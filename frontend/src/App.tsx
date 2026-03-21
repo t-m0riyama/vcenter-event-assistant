@@ -9,14 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import {
-  apiDelete,
-  apiGet,
-  apiPatch,
-  apiPost,
-  getToken,
-  setToken,
-} from './api'
+import { apiDelete, apiGet, apiPatch, apiPost } from './api'
 import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
@@ -135,7 +128,6 @@ type EventScoreRuleRow = {
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('vcenters')
-  const [tokenInput, setTokenInput] = useState(getToken)
   const [err, setErr] = useState<string | null>(null)
   const [retention, setRetention] = useState<AppConfig | null>(null)
 
@@ -153,12 +145,6 @@ export default function App() {
     void loadConfig()
   }, [loadConfig])
 
-  const applyToken = () => {
-    setToken(tokenInput.trim())
-    setErr(null)
-    void loadConfig()
-  }
-
   return (
     <TimeZoneProvider>
       <div className="app">
@@ -170,19 +156,7 @@ export default function App() {
               {retention.metric_retention_days} 日（サーバー設定）
             </p>
           )}
-          <div className="auth-row">
-            <label>
-              Bearer トークン（設定時は必須）
-              <input
-                type="password"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="未設定の場合は認証なし（開発用）"
-              />
-            </label>
-            <button type="button" className="btn btn--filled" onClick={applyToken}>
-              保存
-            </button>
+          <div className="header-toolbar">
             <TimeZoneSelect />
           </div>
         </header>

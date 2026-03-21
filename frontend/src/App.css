@@ -16,7 +16,7 @@
   color: var(--color-text-secondary);
 }
 
-.auth-row {
+.header-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-3);
@@ -24,18 +24,7 @@
   margin-bottom: var(--spacing-4);
 }
 
-.auth-row label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  font-size: var(--font-size-footnote);
-}
-
-.auth-row input {
-  min-width: 280px;
-}
-
-.auth-row .tz-select select {
+.header-toolbar .tz-select select {
   min-width: 200px;
   max-width: min(420px, 100vw);
 }

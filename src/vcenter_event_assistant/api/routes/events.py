@@ -12,7 +12,6 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import EventListResponse, EventRead, EventUserCommentPatch
-from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import EventRecord
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -38,7 +37,6 @@ def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -
 @router.get("", response_model=EventListResponse)
 async def list_events(
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
     vcenter_id: uuid.UUID | None = None,
     from_time: datetime | None = Query(default=None, alias="from"),
     to_time: datetime | None = Query(default=None, alias="to"),
@@ -95,7 +93,6 @@ async def patch_event_comment(
     event_id: int,
     body: EventUserCommentPatch,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> EventRead:
     row = await session.get(EventRecord, event_id)
     if row is None:

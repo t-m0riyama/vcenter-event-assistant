@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import MetricPoint, MetricSeriesResponse
-from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import MetricSample
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -41,7 +40,6 @@ def _metric_filter_clauses(
 async def list_metrics(
     response: Response,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
     vcenter_id: uuid.UUID | None = None,
     metric_key: str = Query(..., min_length=1, max_length=256),
     from_time: datetime | None = Query(default=None, alias="from"),

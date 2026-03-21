@@ -19,10 +19,6 @@ class Settings(BaseSettings):
         ),
     )
 
-    auth_bearer_token: str | None = Field(default=None, description="If set, require Authorization: Bearer")
-    auth_basic_username: str | None = Field(default=None)
-    auth_basic_password: str | None = Field(default=None)
-
     event_poll_interval_seconds: int = Field(default=120, ge=10)
     perf_sample_interval_seconds: int = Field(default=300, ge=60)
     event_retention_days: int = Field(

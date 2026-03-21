@@ -1,19 +1,5 @@
-const TOKEN_KEY = 'vea_bearer_token'
-
-export function getToken(): string {
-  return localStorage.getItem(TOKEN_KEY) ?? ''
-}
-
-export function setToken(t: string): void {
-  if (t) localStorage.setItem(TOKEN_KEY, t)
-  else localStorage.removeItem(TOKEN_KEY)
-}
-
 function headers(): HeadersInit {
-  const h: Record<string, string> = { Accept: 'application/json' }
-  const t = getToken()
-  if (t) h.Authorization = `Bearer ${t}`
-  return h
+  return { Accept: 'application/json' }
 }
 
 export async function apiGet<T>(path: string): Promise<T> {

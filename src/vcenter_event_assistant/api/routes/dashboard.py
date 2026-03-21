@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import DashboardSummary, EventRead, HighCpuHostRow
-from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -19,7 +18,6 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/summary", response_model=DashboardSummary)
 async def dashboard_summary(
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> DashboardSummary:
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(hours=24)

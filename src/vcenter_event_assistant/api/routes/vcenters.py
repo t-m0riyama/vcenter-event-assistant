@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
-from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect, read_connection_info
 from vcenter_event_assistant.db.models import VCenter
 
@@ -21,7 +20,6 @@ router = APIRouter(prefix="/vcenters", tags=["vcenters"])
 @router.get("", response_model=list[VCenterRead])
 async def list_vcenters(
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> list[VCenter]:
     res = await session.execute(select(VCenter).order_by(VCenter.name))
     return list(res.scalars().all())
@@ -31,7 +29,6 @@ async def list_vcenters(
 async def create_vcenter(
     body: VCenterCreate,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> VCenter:
     vc = VCenter(
         name=body.name,
@@ -51,7 +48,6 @@ async def create_vcenter(
 async def get_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> VCenter:
     res = await session.execute(select(VCenter).where(VCenter.id == vcenter_id))
     vc = res.scalar_one_or_none()
@@ -65,7 +61,6 @@ async def update_vcenter(
     vcenter_id: uuid.UUID,
     body: VCenterUpdate,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> VCenter:
     res = await session.execute(select(VCenter).where(VCenter.id == vcenter_id))
     vc = res.scalar_one_or_none()
@@ -83,7 +78,6 @@ async def update_vcenter(
 async def delete_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> None:
     res = await session.execute(select(VCenter).where(VCenter.id == vcenter_id))
     vc = res.scalar_one_or_none()
@@ -96,7 +90,6 @@ async def delete_vcenter(
 async def test_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> dict:
     res = await session.execute(select(VCenter).where(VCenter.id == vcenter_id))
     vc = res.scalar_one_or_none()

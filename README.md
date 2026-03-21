@@ -41,12 +41,9 @@ cd frontend && npm install && npm run dev
 
 本番で API と同一プロセスから静的ファイルを配信する場合は `frontend` で `npm run build` 後、`frontend/dist` を配置すると `create_app()` が配信します。
 
-## 認証（任意）
+## セキュリティ
 
-`.env` で次を設定すると API に認証がかかります。未設定の場合は認証なし（閉域前提の開発用）。
-
-- `AUTH_BEARER_TOKEN`
-- または `AUTH_BASIC_USERNAME` / `AUTH_BASIC_PASSWORD`
+アプリ自体は認証を行いません。本番ではリバースプロキシで TLS・認証・ネットワーク制限を行い、インターネットに直接公開しないでください。
 
 ## データベースマイグレーション（Alembic）
 
