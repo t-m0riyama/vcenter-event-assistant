@@ -121,7 +121,7 @@ export function MetricsPanel({
             onChange={(e) => setMetricKey(e.target.value)}
           >
             {metricKeys.length === 0 ? (
-              <option value="">収集済みメトリクスがありません</option>
+              <option value="">メトリクスキーがありません</option>
             ) : (
               metricKeys.map((k) => (
                 <option key={k} value={k}>
