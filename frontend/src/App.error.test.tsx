@@ -74,7 +74,10 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '再読込' })[0]).toBeInTheDocument()
+      const [h] = screen.getAllByRole('heading', {
+        name: '高 CPU ホスト（直近24h サンプル上位）',
+      })
+      expect(h).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'イベント' }))
     await waitFor(() => {
@@ -101,7 +104,10 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '再読込' })[0]).toBeInTheDocument()
+      const [h] = screen.getAllByRole('heading', {
+        name: '高 CPU ホスト（直近24h サンプル上位）',
+      })
+      expect(h).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'vCenter' }))
     await waitFor(() => {
@@ -131,7 +137,10 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '再読込' })[0]).toBeInTheDocument()
+      const [h] = screen.getAllByRole('heading', {
+        name: '高 CPU ホスト（直近24h サンプル上位）',
+      })
+      expect(h).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'メトリクス' }))
     await waitFor(() => {

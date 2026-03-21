@@ -237,11 +237,6 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
 
   return (
     <div className="panel">
-      <p>
-        <button type="button" className="btn btn--filled" onClick={() => void load()}>
-          再読込
-        </button>
-      </p>
       <div className="stats">
         <div className="stat">
           <span className="label">登録 vCenter</span>
@@ -414,9 +409,6 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   return (
     <div className="panel">
       <div className="toolbar">
-        <p className="events-tz-hint">
-          時刻はヘッダーの「表示タイムゾーン」に従って表示されます。
-        </p>
         <label>
           最小スコア
           <input
@@ -465,9 +457,6 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         <span className="toolbar__meta">
           {total === 0 ? '全 0 件' : `全 ${total} 件中 ${start}–${end} 件を表示`}
         </span>
-        <button type="button" className="btn btn--filled" onClick={() => void load()}>
-          再読込
-        </button>
         <details className="toolbar__filters-details">
           <summary className="toolbar__filters-summary">
             <span className="toolbar__filters-summary__title">絞り込み条件</span>
@@ -831,10 +820,6 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
 
   return (
     <div className="panel">
-      <p className="hint">
-        メトリクスはバックグラウンド（既定で数分ごと）または「手動で収集」で vCenter
-        から取り込まれます。vCenter が「有効」でないと収集されません。
-      </p>
       <div className="toolbar">
         <label>
           vCenter

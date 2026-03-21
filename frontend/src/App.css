@@ -210,13 +210,6 @@
   margin-bottom: var(--spacing-4);
 }
 
-.events-tz-hint {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: var(--font-size-footnote);
-  color: var(--color-text-secondary);
-}
-
 .toolbar__filters-details {
   flex-basis: 100%;
   border: 1px solid var(--color-border);
