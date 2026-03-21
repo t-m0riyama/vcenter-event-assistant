@@ -167,6 +167,20 @@
   font-size: var(--font-size-footnote);
 }
 
+.toolbar__pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  align-self: center;
+}
+
+.toolbar__meta {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+  align-self: center;
+}
+
 .metric-total {
   font-size: var(--font-size-footnote);
   color: var(--color-text-secondary);

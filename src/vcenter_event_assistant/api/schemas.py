@@ -54,6 +54,13 @@ class EventRead(BaseModel):
     notable_tags: list | None
 
 
+class EventListResponse(BaseModel):
+    """Event list page: ``total`` matches filters before ``limit``/``offset``; ``items`` is the current page."""
+
+    items: list[EventRead]
+    total: int
+
+
 class MetricPoint(BaseModel):
     sampled_at: datetime
     value: float

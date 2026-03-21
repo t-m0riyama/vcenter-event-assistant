@@ -8,9 +8,14 @@ export function formatIsoInTimeZone(
   if (Number.isNaN(d.getTime())) {
     return '—'
   }
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-    timeZone,
-  }).format(d)
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'short',
+      timeStyle: 'medium',
+      timeZone,
+    }).format(d)
+  } catch {
+    // Invalid timeZone or environment quirks must not crash the UI.
+    return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+  }
 }

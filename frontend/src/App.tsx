@@ -67,6 +67,27 @@ type AppConfig = {
   metric_retention_days: number
 }
 
+/** Coerce API fields to arrays so `.map` never runs on null / objects (runtime safety). */
+function asArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : []
+}
+
+/** Accepts `{ items, total }` or a legacy JSON array so we never set `rows` to undefined (avoids render crash). */
+function normalizeEventListPayload(raw: unknown): { items: EventRow[]; total: number } {
+  if (Array.isArray(raw)) {
+    return { items: raw as EventRow[], total: raw.length }
+  }
+  if (raw && typeof raw === 'object') {
+    const o = raw as { items?: unknown; total?: unknown }
+    const items = asArray<EventRow>(o.items)
+    const total = typeof o.total === 'number' ? o.total : items.length
+    return { items, total }
+  }
+  return { items: [], total: 0 }
+}
+
+const EVENT_PAGE_SIZES = [20, 50, 100, 200] as const
+
 type Tab = 'summary' | 'events' | 'metrics' | 'vcenters'
 
 export default function App() {
@@ -212,7 +233,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
           </tr>
         </thead>
         <tbody>
-          {data.high_cpu_hosts.map((h, i) => (
+          {asArray<Summary['high_cpu_hosts'][number]>(data.high_cpu_hosts).map((h, i) => (
             <tr key={`${h.entity_name}-${i}`}>
               <td>{h.entity_name}</td>
               <td>{h.value.toFixed(1)}</td>
@@ -233,7 +254,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
           </tr>
         </thead>
         <tbody>
-          {data.top_notable_events.map((e) => (
+          {asArray<EventRow>(data.top_notable_events).map((e) => (
             <tr key={e.id}>
               <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
               <td>{e.event_type}</td>
@@ -250,24 +271,47 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
 function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
   const [rows, setRows] = useState<EventRow[]>([])
+  const [total, setTotal] = useState(0)
   const [minScore, setMinScore] = useState('')
+  const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
     onError(null)
     try {
-      const q = new URLSearchParams({ limit: '100' })
+      const q = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String((page - 1) * pageSize),
+      })
       if (minScore) q.set('min_score', minScore)
-      const list = await apiGet<EventRow[]>(`/api/events?${q.toString()}`)
-      setRows(list)
+      const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
+      const { items, total: nextTotal } = normalizeEventListPayload(raw)
+      setRows(items)
+      setTotal(nextTotal)
+      const maxPage =
+        nextTotal === 0 ? 1 : Math.max(1, Math.ceil(nextTotal / pageSize))
+      setPage((p) => (p > maxPage ? maxPage : p))
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
-  }, [onError, minScore])
+  }, [onError, minScore, page, pageSize])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
+
+  const { start, end, safePage } = useMemo(() => {
+    if (total === 0) return { start: 0, end: 0, safePage: 1 }
+    const maxPage = Math.max(1, Math.ceil(total / pageSize))
+    const sp = Math.min(page, maxPage)
+    const s = (sp - 1) * pageSize + 1
+    const e = Math.min(sp * pageSize, total)
+    return { start: s, end: e, safePage: sp }
+  }, [page, pageSize, total])
+
+  const canPrev = safePage > 1
+  const canNext = total > 0 && safePage * pageSize < total
 
   return (
     <div className="panel">
@@ -276,10 +320,50 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
           最小スコア
           <input
             value={minScore}
-            onChange={(e) => setMinScore(e.target.value)}
+            onChange={(e) => {
+              setMinScore(e.target.value)
+              setPage(1)
+            }}
             placeholder="例: 40"
           />
         </label>
+        <label>
+          表示件数
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value) as (typeof EVENT_PAGE_SIZES)[number])
+              setPage(1)
+            }}
+          >
+            {EVENT_PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="toolbar__pagination">
+          <button
+            type="button"
+            className="btn"
+            disabled={!canPrev}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            前へ
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={!canNext}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            次へ
+          </button>
+        </div>
+        <span className="toolbar__meta">
+          {total === 0 ? '全 0 件' : `全 ${total} 件中 ${start}–${end} 件を表示`}
+        </span>
         <button type="button" className="btn btn--filled" onClick={() => void load()}>
           再読込
         </button>
@@ -295,7 +379,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((e) => (
+          {asArray<EventRow>(rows).map((e) => (
             <tr key={e.id}>
               <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
               <td>{e.event_type}</td>
@@ -324,8 +408,8 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const load = useCallback(async () => {
     onError(null)
     try {
-      const data = await apiGet<VCenter[]>('/api/vcenters')
-      setList(data)
+      const data = await apiGet<unknown>('/api/vcenters')
+      setList(asArray<VCenter>(data))
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
@@ -483,10 +567,11 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [chartResetKey, setChartResetKey] = useState(0)
 
   useEffect(() => {
-    void apiGet<VCenter[]>('/api/vcenters')
+    void apiGet<unknown>('/api/vcenters')
       .then((v) => {
-        setVcenters(v)
-        setVcenterId((prev) => prev || v[0]?.id || '')
+        const arr = asArray<VCenter>(v)
+        setVcenters(arr)
+        setVcenterId((prev) => prev || arr[0]?.id || '')
       })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
   }, [onError])
