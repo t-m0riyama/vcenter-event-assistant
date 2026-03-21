@@ -17,6 +17,7 @@ import {
   getToken,
   setToken,
 } from './api'
+import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneContext'
 import './App.css'
 
 type VCenter = {
@@ -79,24 +80,26 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>vCenter Event Assistant</h1>
-        <div className="auth-row">
-          <label>
-            Bearer トークン（設定時は必須）
-            <input
-              type="password"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="未設定の場合は認証なし（開発用）"
-            />
-          </label>
-          <button type="button" onClick={applyToken}>
-            保存
-          </button>
-        </div>
-      </header>
+    <TimeZoneProvider>
+      <div className="app">
+        <header className="header">
+          <h1>vCenter Event Assistant</h1>
+          <div className="auth-row">
+            <label>
+              Bearer トークン（設定時は必須）
+              <input
+                type="password"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="未設定の場合は認証なし（開発用）"
+              />
+            </label>
+            <button type="button" onClick={applyToken}>
+              保存
+            </button>
+            <TimeZoneSelect />
+          </div>
+        </header>
 
       {err && <div className="error-banner">{err}</div>}
 
@@ -125,7 +128,8 @@ export default function App() {
         {tab === 'vcenters' && <VCentersPanel onError={setErr} />}
         {tab === 'metrics' && <MetricsPanel onError={setErr} />}
       </main>
-    </div>
+      </div>
+    </TimeZoneProvider>
   )
 }
 

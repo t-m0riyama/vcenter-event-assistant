@@ -30,6 +30,12 @@
   padding: 0.4rem 0.5rem;
 }
 
+.auth-row .tz-select select {
+  min-width: 200px;
+  max-width: min(420px, 100vw);
+  padding: 0.4rem 0.5rem;
+}
+
 .auth-row button {
   padding: 0.45rem 0.9rem;
 }
