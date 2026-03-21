@@ -635,6 +635,20 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
+  const toggleEnabled = async (v: VCenter) => {
+    const msg = v.is_enabled ? '無効にしますか？' : '有効にしますか？'
+    if (!confirm(msg)) return
+    onError(null)
+    try {
+      await apiPatch(`/api/vcenters/${v.id}`, {
+        is_enabled: !v.is_enabled,
+      })
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const test = async (id: string) => {
     onError(null)
     try {
@@ -724,17 +738,9 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
                 <button
                   type="button"
                   className="btn btn--gray"
-                  onClick={() =>
-                    void apiPatch(`/api/vcenters/${v.id}`, {
-                      is_enabled: !v.is_enabled,
-                    })
-                      .then(load)
-                      .catch((e) =>
-                        onError(e instanceof Error ? e.message : String(e)),
-                      )
-                  }
+                  onClick={() => void toggleEnabled(v)}
                 >
-                  切替
+                  {v.is_enabled ? '無効' : '有効'}
                 </button>
                 <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
                   削除
