@@ -63,17 +63,21 @@ test.describe('イベント（空）', () => {
   })
 })
 
-test.describe('グラフ（メトリクスなし）', () => {
-  test('空メトリクスと再取得無効', async ({ page }) => {
+test.describe('グラフ（メトリクス未収集）', () => {
+  test('既知メトリクスキーを表示し再取得できる', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('button', { name: 'グラフ' }).click()
 
     await expect(page.getByLabel('vCenter')).toBeVisible()
-    await expect(page.getByLabel('メトリクスキー')).toBeVisible()
+    const metricSelect = page.getByLabel('メトリクスキー')
+    await expect(metricSelect).toBeVisible()
     await expect(page.getByRole('button', { name: '手動で収集' })).toBeVisible()
 
-    await expect(page.getByLabel('メトリクスキー')).toHaveText(/収集済みメトリクスがありません/)
-    await expect(page.getByRole('button', { name: '再取得' })).toBeDisabled()
+    // DB にサンプルがなくてもフロントのカタログでキーが選べる（/api/metrics/keys とマージ）
+    await expect(metricSelect.locator('option')).toHaveCount(14)
+    await expect(metricSelect.locator('option[value="host.cpu.usage_pct"]')).toHaveCount(1)
+    await expect(metricSelect).toHaveValue('datastore.space.used_bytes', { timeout: 10_000 })
+    await expect(page.getByRole('button', { name: '再取得' })).toBeEnabled()
     await expectNoErrorBanner(page)
   })
 })

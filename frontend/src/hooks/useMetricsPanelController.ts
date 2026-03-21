@@ -23,6 +23,7 @@ import {
   type MetricPoint,
 } from '../metrics/normalizeMetricSeriesResponse'
 import type { MetricCsvExportOptions } from '../metrics/metricCsv'
+import { mergeMetricKeyOptions } from '../metrics/knownMetricKeys'
 import { useChartThemeColors } from '../theme/useChartThemeColors'
 
 export function useMetricsPanelController(
@@ -32,8 +33,10 @@ export function useMetricsPanelController(
   const { timeZone } = useTimeZone()
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
-  const [metricKeys, setMetricKeys] = useState<string[]>([])
-  const [metricKey, setMetricKey] = useState('')
+  const [metricKeys, setMetricKeys] = useState<string[]>(() => mergeMetricKeyOptions([]))
+  const [metricKey, setMetricKey] = useState(
+    () => mergeMetricKeyOptions([])[0] ?? '',
+  )
   const [points, setPoints] = useState<MetricPoint[]>([])
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -82,17 +85,21 @@ export function useMetricsPanelController(
     try {
       const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
       const data = await apiGet<{ metric_keys?: unknown }>(`/api/metrics/keys${q}`)
-      const keys = asArray<string>(data.metric_keys)
+      const keys = mergeMetricKeyOptions(asArray<string>(data.metric_keys))
+      // Read ref after await so we respect metric key changes during the request.
       const prev = metricKeyRef.current
-      const nextKey = keys.includes(prev) ? prev : keys[0] ?? ''
+      const nextKey = keys.includes(prev) ? prev : (keys[0] ?? '')
       setMetricKeys(keys)
       setMetricKey(nextKey)
       return nextKey
     } catch (e) {
       onError(toErrorMessage(e))
-      setMetricKeys([])
-      setMetricKey('')
-      return ''
+      const keys = mergeMetricKeyOptions([])
+      const prev = metricKeyRef.current
+      const nextKey = keys.includes(prev) ? prev : (keys[0] ?? '')
+      setMetricKeys(keys)
+      setMetricKey(nextKey)
+      return nextKey
     }
   }, [vcenterId, onError])
 
