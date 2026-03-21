@@ -502,7 +502,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
               <th>種別</th>
               <th>スコア</th>
               <th>メッセージ</th>
-              <th>コメント</th>
+              <th>運用メモ</th>
             </tr>
           </thead>
           <tbody>
@@ -943,7 +943,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
             <th>重大度</th>
             <th>スコア</th>
             <th>メッセージ</th>
-            <th>コメント</th>
+            <th>運用メモ</th>
           </tr>
         </thead>
         <tbody>
@@ -963,7 +963,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
                       onChange={(ev) => setCommentDraft(ev.target.value)}
                       rows={3}
                       maxLength={8000}
-                      aria-label="イベントコメント"
+                      aria-label="運用メモ"
                     />
                     <div className="event-comment-actions">
                       <button
