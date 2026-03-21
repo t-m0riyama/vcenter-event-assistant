@@ -102,6 +102,12 @@ class MetricSeriesResponse(BaseModel):
     total: int
 
 
+class MetricKeysResponse(BaseModel):
+    """Distinct ``metric_key`` values present in stored samples (optionally scoped to one vCenter)."""
+
+    metric_keys: list[str]
+
+
 class HighCpuHostRow(BaseModel):
     """Dashboard summary row: ``sampled_at`` is normalized to UTC so JSON uses ``Z`` (JS parses as UTC)."""
 

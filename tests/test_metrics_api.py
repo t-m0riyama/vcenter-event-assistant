@@ -63,3 +63,88 @@ async def test_metrics_empty_total_zero(client: AsyncClient) -> None:
     body = resp.json()
     assert body["total"] == 0
     assert body["points"] == []
+
+
+@pytest.mark.asyncio
+async def test_metric_keys_distinct_sorted_and_scoped_by_vcenter(client: AsyncClient) -> None:
+    r1 = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "vc-a",
+            "host": "a.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    r2 = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "vc-b",
+            "host": "b.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+    vid_a = uuid.UUID(r1.json()["id"])
+    vid_b = uuid.UUID(r2.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    async with session_scope() as session:
+        session.add(
+            MetricSample(
+                vcenter_id=vid_a,
+                sampled_at=base,
+                entity_type="HostSystem",
+                entity_moid="m1",
+                entity_name="h1",
+                metric_key="host.cpu.usage_pct",
+                value=1.0,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid_a,
+                sampled_at=base + timedelta(seconds=1),
+                entity_type="HostSystem",
+                entity_moid="m1",
+                entity_name="h1",
+                metric_key="host.mem.usage_pct",
+                value=2.0,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid_b,
+                sampled_at=base + timedelta(seconds=2),
+                entity_type="HostSystem",
+                entity_moid="m2",
+                entity_name="h2",
+                metric_key="host.mem.usage_pct",
+                value=3.0,
+            )
+        )
+
+    resp_all = await client.get("/api/metrics/keys")
+    assert resp_all.status_code == 200
+    assert resp_all.json()["metric_keys"] == ["host.cpu.usage_pct", "host.mem.usage_pct"]
+
+    resp_a = await client.get(f"/api/metrics/keys?vcenter_id={vid_a}")
+    assert resp_a.status_code == 200
+    assert resp_a.json()["metric_keys"] == ["host.cpu.usage_pct", "host.mem.usage_pct"]
+
+    resp_b = await client.get(f"/api/metrics/keys?vcenter_id={vid_b}")
+    assert resp_b.status_code == 200
+    assert resp_b.json()["metric_keys"] == ["host.mem.usage_pct"]
+
+
+@pytest.mark.asyncio
+async def test_metric_keys_empty_when_no_samples(client: AsyncClient) -> None:
+    resp = await client.get("/api/metrics/keys")
+    assert resp.status_code == 200
+    assert resp.json()["metric_keys"] == []

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import MetricPoint, MetricSeriesResponse
+from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint, MetricSeriesResponse
 from vcenter_event_assistant.db.models import MetricSample
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -34,6 +34,20 @@ def _metric_filter_clauses(
     if entity_moid is not None:
         clauses.append(MetricSample.entity_moid == entity_moid)
     return clauses
+
+
+@router.get("/keys", response_model=MetricKeysResponse)
+async def list_metric_keys(
+    session: AsyncSession = Depends(get_session),
+    vcenter_id: uuid.UUID | None = None,
+) -> MetricKeysResponse:
+    q = select(MetricSample.metric_key).distinct()
+    if vcenter_id is not None:
+        q = q.where(MetricSample.vcenter_id == vcenter_id)
+    q = q.order_by(MetricSample.metric_key.asc())
+    res = await session.execute(q)
+    keys = [row[0] for row in res.all()]
+    return MetricKeysResponse(metric_keys=keys)
 
 
 @router.get("", response_model=MetricSeriesResponse)

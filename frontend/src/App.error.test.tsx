@@ -131,8 +131,11 @@ describe('App error banner', () => {
         if (url.includes('/api/vcenters')) {
           return Promise.resolve(jsonResponse([]))
         }
-        if (url.includes('/api/metrics')) {
+        if (url.includes('/api/metrics?')) {
           return Promise.resolve(new Response('m err', { status: 500 }))
+        }
+        if (url.includes('/api/metrics/keys')) {
+          return Promise.resolve(jsonResponse({ metric_keys: ['host.cpu.usage_pct'] }))
         }
         return Promise.resolve(new Response('n', { status: 404 }))
       }),

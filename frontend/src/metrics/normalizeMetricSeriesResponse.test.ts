@@ -40,6 +40,7 @@ describe('normalizeMetricSeriesResponse', () => {
         sampled_at: '2024-01-01T00:00:00Z',
         value: 1,
         entity_name: 'h',
+        entity_moid: 'moid-1',
         metric_key: 'k',
         vcenter_id: '00000000-0000-0000-0000-000000000000',
       },
@@ -52,6 +53,7 @@ describe('normalizeMetricSeriesResponse', () => {
       sampled_at: '2024-01-01T00:00:00Z',
       value: 10,
       entity_name: 'host',
+      entity_moid: 'm1',
       metric_key: 'k',
       vcenter_id: '00000000-0000-0000-0000-000000000000',
     }
@@ -73,6 +75,7 @@ describe('normalizeMetricSeriesResponse', () => {
       sampled_at: '2024-01-01T00:00:00Z',
       value: 5,
       entity_name: 'e',
+      entity_moid: 'em',
       metric_key: 'm',
       vcenter_id: 'vc',
     }
@@ -81,6 +84,7 @@ describe('normalizeMetricSeriesResponse', () => {
         points: [
           valid,
           { ...valid, entity_name: null },
+          { ...valid, entity_moid: null },
           { ...valid, metric_key: undefined },
           { ...valid, vcenter_id: 123 },
         ],
@@ -94,6 +98,7 @@ describe('normalizeMetricSeriesResponse', () => {
       sampled_at: '2024-01-01T00:00:00Z',
       value: 1,
       entity_name: 'e',
+      entity_moid: 'x',
       metric_key: 'm',
       vcenter_id: 'v',
     }

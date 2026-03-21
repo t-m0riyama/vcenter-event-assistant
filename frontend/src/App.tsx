@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -14,6 +14,11 @@ import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
 import { MetricsChartErrorBoundary } from './metrics/MetricsChartErrorBoundary'
+import {
+  buildMetricsExportBasename,
+  downloadChartSvg,
+} from './metrics/downloadChartSvg'
+import { downloadMetricPointsCsv } from './metrics/metricCsv'
 import {
   normalizeMetricSeriesResponse,
   type MetricPoint,
@@ -1023,12 +1028,18 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
-  const [metricKey, setMetricKey] = useState('host.cpu.usage_pct')
+  const [metricKeys, setMetricKeys] = useState<string[]>([])
+  const [metricKey, setMetricKey] = useState('')
   const [points, setPoints] = useState<MetricPoint[]>([])
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [ingesting, setIngesting] = useState(false)
   const [chartResetKey, setChartResetKey] = useState(0)
+  const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
+  const lastSeriesFetchRef = useRef<{ vcenterId: string; metricKey: string } | null>(null)
+  const metricKeyRef = useRef(metricKey)
+  const chartWrapRef = useRef<HTMLDivElement>(null)
+  metricKeyRef.current = metricKey
 
   useEffect(() => {
     void apiGet<unknown>('/api/vcenters')
@@ -1040,26 +1051,68 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
   }, [onError])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    onError(null)
+  const loadMetricKeys = useCallback(async (): Promise<string> => {
     try {
-      const q = new URLSearchParams({ metric_key: metricKey, limit: '500' })
-      if (vcenterId) q.set('vcenter_id', vcenterId)
-      const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
-      const normalized = normalizeMetricSeriesResponse(data)
-      setPoints(normalized.points)
-      setMetricTotal(normalized.total)
+      const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
+      const data = await apiGet<{ metric_keys?: unknown }>(`/api/metrics/keys${q}`)
+      const keys = asArray<string>(data.metric_keys)
+      const prev = metricKeyRef.current
+      const nextKey = keys.includes(prev) ? prev : keys[0] ?? ''
+      setMetricKeys(keys)
+      setMetricKey(nextKey)
+      return nextKey
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
+      setMetricKeys([])
+      setMetricKey('')
+      return ''
     }
-  }, [vcenterId, metricKey, onError])
+  }, [vcenterId, onError])
+
+  const load = useCallback(
+    async (overrideKey?: string) => {
+      const key = (overrideKey ?? metricKey).trim()
+      if (!key) {
+        onError(null)
+        setPoints([])
+        setMetricTotal(null)
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      onError(null)
+      try {
+        const q = new URLSearchParams({ metric_key: key, limit: '500' })
+        if (vcenterId) q.set('vcenter_id', vcenterId)
+        const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
+        const normalized = normalizeMetricSeriesResponse(data)
+        setPoints(normalized.points)
+        setMetricTotal(normalized.total)
+      } catch (e) {
+        onError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
+      }
+    },
+    [vcenterId, metricKey, onError],
+  )
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void (async () => {
+      let key = metricKey
+      if (prevVcenterForKeysRef.current !== vcenterId) {
+        prevVcenterForKeysRef.current = vcenterId
+        key = await loadMetricKeys()
+      }
+      const sig = { vcenterId, metricKey: key }
+      const prev = lastSeriesFetchRef.current
+      if (prev && prev.vcenterId === sig.vcenterId && prev.metricKey === sig.metricKey) {
+        return
+      }
+      lastSeriesFetchRef.current = sig
+      await load(key)
+    })()
+  }, [vcenterId, metricKey, load, loadMetricKeys])
 
   const runIngest = async () => {
     setIngesting(true)
@@ -1069,7 +1122,9 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         '/api/ingest/run',
         {},
       )
-      await load()
+      lastSeriesFetchRef.current = null
+      const key = await loadMetricKeys()
+      await load(key)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1082,12 +1137,50 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       (points ?? [])
         .filter((p) => p != null && Number.isFinite(p.value))
         .map((p) => ({
-          t: formatIsoInTimeZone(String(p.sampled_at), timeZone),
+          t: formatIsoInTimeZone(String(p.sampled_at), timeZone, { omitSeconds: true }),
           v: p.value,
           name: p.entity_name ?? '',
         })),
     [points, timeZone],
   )
+
+  const metricsChartLegendName = useMemo(() => {
+    const keyPart = metricKey || '—'
+    if (!vcenterId) {
+      return `全て / ${keyPart}`
+    }
+    const v = vcenters.find((c) => c.id === vcenterId)
+    const vcLabel = v?.name ?? vcenterId
+    return `${vcLabel} / ${keyPart}`
+  }, [vcenterId, vcenters, metricKey])
+
+  const vcenterExportLabel = useMemo(() => {
+    if (!vcenterId) return 'all'
+    const v = vcenters.find((c) => c.id === vcenterId)
+    return v?.name ?? vcenterId
+  }, [vcenterId, vcenters])
+
+  const exportDisabled = loading || !metricKey || points.length === 0
+
+  const downloadSvg = () => {
+    try {
+      const base = buildMetricsExportBasename(vcenterId, vcenterExportLabel, metricKey)
+      downloadChartSvg(chartWrapRef.current, `${base}.svg`)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const downloadCsv = () => {
+    try {
+      const base = buildMetricsExportBasename(vcenterId, vcenterExportLabel, metricKey)
+      downloadMetricPointsCsv(points, `${base}.csv`)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   return (
     <div className="panel">
@@ -1108,18 +1201,30 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         </label>
         <label>
           メトリクスキー
-          <input
+          <select
             value={metricKey}
+            disabled={metricKeys.length === 0}
             onChange={(e) => setMetricKey(e.target.value)}
-          />
+          >
+            {metricKeys.length === 0 ? (
+              <option value="">収集済みメトリクスがありません</option>
+            ) : (
+              metricKeys.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))
+            )}
+          </select>
         </label>
         <button
           type="button"
           className="btn btn--filled"
-          disabled={loading}
+          disabled={loading || !metricKey}
           onClick={() => {
             setChartResetKey((k) => k + 1)
-            void load()
+            lastSeriesFetchRef.current = null
+            void load(metricKey)
           }}
         >
           {loading ? '取得中…' : '再取得'}
@@ -1132,13 +1237,34 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         >
           {ingesting ? '収集中…' : '手動で収集'}
         </button>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={exportDisabled}
+          onClick={downloadSvg}
+        >
+          グラフをダウンロード
+        </button>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={exportDisabled}
+          onClick={downloadCsv}
+        >
+          CSV をダウンロード
+        </button>
         {metricTotal !== null && !loading && (
           <span className="metric-total">
             条件一致: {metricTotal} 件（表示: {points.length} 件まで）
           </span>
         )}
       </div>
-      {!loading && metricTotal === 0 && (
+      {!loading && metricKeys.length === 0 && (
+        <p className="hint">
+          この条件で DB に保存されたメトリクスがありません。「手動で収集」を実行するか、スケジュール取り込みを待ってから再度開いてください。
+        </p>
+      )}
+      {!loading && metricTotal === 0 && metricKey && (
         <div className="empty-metrics">
           <p>該当するメトリクスがありません（条件一致 0 件）。</p>
           <ul>
@@ -1149,7 +1275,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         </div>
       )}
       <MetricsChartErrorBoundary key={`${vcenterId}-${metricKey}-${chartResetKey}`}>
-        <div className="chart-wrap">
+        <div className="chart-wrap" ref={chartWrapRef}>
           <ResponsiveContainer width="100%" height={320}>
             <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
               <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
@@ -1160,7 +1286,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
               <Line
                 type="monotone"
                 dataKey="v"
-                name="値"
+                name={metricsChartLegendName}
                 stroke={CHART_STROKE_PRIMARY}
                 dot={false}
                 isAnimationActive={false}

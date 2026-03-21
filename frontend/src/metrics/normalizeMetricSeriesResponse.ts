@@ -2,6 +2,7 @@ export type MetricPoint = {
   sampled_at: string
   value: number
   entity_name: string
+  entity_moid: string
   metric_key: string
   vcenter_id: string
 }
@@ -24,6 +25,7 @@ function isValidMetricPoint(x: unknown): x is MetricPoint {
   if (!isNonEmptyString(sampledAt)) return false
   if (Number.isNaN(new Date(sampledAt).getTime())) return false
   if (typeof p.entity_name !== 'string') return false
+  if (typeof p.entity_moid !== 'string') return false
   if (typeof p.metric_key !== 'string') return false
   if (typeof p.vcenter_id !== 'string') return false
   return true
@@ -40,6 +42,7 @@ export function normalizeMetricSeriesResponse(data: unknown): MetricSeriesRespon
         sampled_at: p.sampled_at,
         value: p.value,
         entity_name: p.entity_name,
+        entity_moid: p.entity_moid,
         metric_key: p.metric_key,
         vcenter_id: p.vcenter_id,
       }))
