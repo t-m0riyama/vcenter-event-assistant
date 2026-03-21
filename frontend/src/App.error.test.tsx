@@ -9,6 +9,7 @@ const emptySummary = {
   notable_events_last_24h: 0,
   top_notable_events: [] as unknown[],
   high_cpu_hosts: [] as unknown[],
+  top_event_types_24h: [] as unknown[],
 }
 
 const emptyConfig = {

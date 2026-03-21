@@ -121,12 +121,20 @@ class HighCpuHostRow(BaseModel):
         return v.astimezone(timezone.utc)
 
 
+class EventTypeCountRow(BaseModel):
+    """Event type bucket: ``event_count`` is occurrences in the dashboard window (e.g. last 24h)."""
+
+    event_type: str
+    event_count: int
+
+
 class DashboardSummary(BaseModel):
     vcenter_count: int
     events_last_24h: int
     notable_events_last_24h: int
     top_notable_events: list[EventRead]
     high_cpu_hosts: list[HighCpuHostRow]
+    top_event_types_24h: list[EventTypeCountRow]
 
 
 class AppConfigResponse(BaseModel):

@@ -98,6 +98,6 @@ async def patch_event_comment(
     if row is None:
         raise HTTPException(status_code=404, detail="event not found")
     row.user_comment = body.user_comment
-    await session.commit()
+    await session.flush()
     await session.refresh(row)
     return EventRead.model_validate(row)

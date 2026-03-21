@@ -9,10 +9,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import DashboardSummary, EventRead, HighCpuHostRow
+from vcenter_event_assistant.api.schemas import (
+    DashboardSummary,
+    EventRead,
+    EventTypeCountRow,
+    HighCpuHostRow,
+)
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+_TOP_EVENT_TYPES_LIMIT = 10
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -39,6 +46,19 @@ async def dashboard_summary(
         .limit(10)
     )
     top = list(top_q.scalars().all())
+
+    event_cnt = func.count().label("event_cnt")
+    type_q = await session.execute(
+        select(EventRecord.event_type, event_cnt)
+        .where(EventRecord.occurred_at >= day_ago)
+        .group_by(EventRecord.event_type)
+        .order_by(event_cnt.desc())
+        .limit(_TOP_EVENT_TYPES_LIMIT)
+    )
+    top_event_types = [
+        EventTypeCountRow(event_type=str(et), event_count=int(c or 0))
+        for et, c in type_q.all()
+    ]
 
     cpu_rank = (
         select(
@@ -81,4 +101,5 @@ async def dashboard_summary(
         notable_events_last_24h=int(notable_24.scalar_one() or 0),
         top_notable_events=[EventRead.model_validate(e) for e in top],
         high_cpu_hosts=high_cpu,
+        top_event_types_24h=top_event_types,
     )
