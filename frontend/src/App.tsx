@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -68,6 +76,45 @@ type MetricPoint = {
 type MetricSeriesResponse = {
   points: MetricPoint[]
   total: number
+}
+
+function normalizeMetricSeriesResponse(data: unknown): MetricSeriesResponse {
+  if (!data || typeof data !== 'object') {
+    return { points: [], total: 0 }
+  }
+  const o = data as Record<string, unknown>
+  const rawPoints = o.points
+  const points = Array.isArray(rawPoints) ? (rawPoints as MetricPoint[]) : []
+  const totalRaw = o.total
+  const total = typeof totalRaw === 'number' && Number.isFinite(totalRaw) ? totalRaw : 0
+  return { points, total }
+}
+
+/** Catches Recharts/SVG failures so a chart bug does not blank the whole app. */
+class MetricsChartErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error('Metrics chart error:', error, info.componentStack)
+  }
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      return (
+        <p className="hint" role="status">
+          チャートを表示できませんでした。再取得するか、ページを再読み込みしてください。
+        </p>
+      )
+    }
+    return this.props.children
+  }
 }
 
 type Tab = 'summary' | 'events' | 'vcenters' | 'metrics'
@@ -461,6 +508,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [ingesting, setIngesting] = useState(false)
+  const [chartResetKey, setChartResetKey] = useState(0)
 
   useEffect(() => {
     void apiGet<VCenter[]>('/api/vcenters')
@@ -477,9 +525,10 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     try {
       const q = new URLSearchParams({ metric_key: metricKey, limit: '500' })
       if (vcenterId) q.set('vcenter_id', vcenterId)
-      const data = await apiGet<MetricSeriesResponse>(`/api/metrics?${q.toString()}`)
-      setPoints(data.points)
-      setMetricTotal(data.total)
+      const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
+      const normalized = normalizeMetricSeriesResponse(data)
+      setPoints(normalized.points)
+      setMetricTotal(normalized.total)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -507,11 +556,17 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
-  const chartData = points.map((p) => ({
-    t: formatIsoInTimeZone(p.sampled_at, timeZone),
-    v: p.value,
-    name: p.entity_name,
-  }))
+  const chartData = useMemo(
+    () =>
+      (points ?? [])
+        .filter((p) => p != null && Number.isFinite(p.value))
+        .map((p) => ({
+          t: formatIsoInTimeZone(String(p.sampled_at), timeZone),
+          v: p.value,
+          name: p.entity_name ?? '',
+        })),
+    [points, timeZone],
+  )
 
   return (
     <div className="panel">
@@ -541,7 +596,15 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
             onChange={(e) => setMetricKey(e.target.value)}
           />
         </label>
-        <button type="button" className="btn btn--filled" disabled={loading} onClick={() => void load()}>
+        <button
+          type="button"
+          className="btn btn--filled"
+          disabled={loading}
+          onClick={() => {
+            setChartResetKey((k) => k + 1)
+            void load()
+          }}
+        >
           {loading ? '取得中…' : '再取得'}
         </button>
         <button
@@ -568,24 +631,27 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
           </ul>
         </div>
       )}
-      <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={chartData}>
-            <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
-            <XAxis dataKey="t" minTickGap={24} />
-            <YAxis domain={[0, 100]} />
-            <Tooltip />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="v"
-              name="値"
-              stroke={CHART_STROKE_PRIMARY}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      <MetricsChartErrorBoundary key={`${vcenterId}-${metricKey}-${chartResetKey}`}>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
+              <XAxis dataKey="t" minTickGap={24} />
+              <YAxis domain={[0, 100]} />
+              <Tooltip />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="v"
+                name="値"
+                stroke={CHART_STROKE_PRIMARY}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </MetricsChartErrorBoundary>
     </div>
   )
 }

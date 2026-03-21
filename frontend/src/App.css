@@ -197,6 +197,8 @@
 }
 
 .chart-wrap {
+  width: 100%;
+  min-height: 320px;
   margin-top: var(--spacing-4);
 }
 
