@@ -14,6 +14,7 @@ from vcenter_event_assistant.api.schemas import (
     EventRead,
     EventTypeCountRow,
     HighCpuHostRow,
+    HighMemHostRow,
 )
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 
@@ -95,11 +96,47 @@ async def dashboard_summary(
         for r in cpu_rows
     ]
 
+    mem_rank = (
+        select(
+            MetricSample.id,
+            func.row_number()
+            .over(
+                partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
+                order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
+            )
+            .label("rn"),
+        )
+        .where(
+            MetricSample.metric_key == "host.mem.usage_pct",
+            MetricSample.sampled_at >= day_ago,
+        )
+    ).subquery()
+
+    mem_q = await session.execute(
+        select(MetricSample)
+        .join(mem_rank, MetricSample.id == mem_rank.c.id)
+        .where(mem_rank.c.rn == 1)
+        .order_by(MetricSample.value.desc())
+        .limit(10)
+    )
+    mem_rows = list(mem_q.scalars().all())
+    high_mem = [
+        HighMemHostRow(
+            vcenter_id=str(r.vcenter_id),
+            entity_name=r.entity_name,
+            entity_moid=r.entity_moid,
+            value=r.value,
+            sampled_at=r.sampled_at,
+        )
+        for r in mem_rows
+    ]
+
     return DashboardSummary(
         vcenter_count=int(vc_count.scalar_one() or 0),
         events_last_24h=int(ev_24.scalar_one() or 0),
         notable_events_last_24h=int(notable_24.scalar_one() or 0),
         top_notable_events=[EventRead.model_validate(e) for e in top],
         high_cpu_hosts=high_cpu,
+        high_mem_hosts=high_mem,
         top_event_types_24h=top_event_types,
     )

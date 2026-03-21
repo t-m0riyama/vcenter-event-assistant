@@ -43,18 +43,21 @@ type EventRow = {
   user_comment?: string | null
 }
 
+type SummaryHostMetricRow = {
+  vcenter_id: string
+  entity_name: string
+  entity_moid: string
+  value: number
+  sampled_at: string
+}
+
 type Summary = {
   vcenter_count: number
   events_last_24h: number
   notable_events_last_24h: number
   top_notable_events: EventRow[]
-  high_cpu_hosts: Array<{
-    vcenter_id: string
-    entity_name: string
-    entity_moid: string
-    value: number
-    sampled_at: string
-  }>
+  high_cpu_hosts: SummaryHostMetricRow[]
+  high_mem_hosts: SummaryHostMetricRow[]
   top_event_types_24h: Array<{ event_type: string; event_count: number }>
 }
 
@@ -355,8 +358,28 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
           </tr>
         </thead>
         <tbody>
-          {asArray<Summary['high_cpu_hosts'][number]>(data.high_cpu_hosts).map((h, i) => (
+          {asArray<SummaryHostMetricRow>(data.high_cpu_hosts).map((h, i) => (
             <tr key={`${h.entity_name}-${i}`}>
+              <td>{h.entity_name}</td>
+              <td>{h.value.toFixed(1)}</td>
+              <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>高メモリ使用率ホスト（直近24h サンプル上位）</h2>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>ホスト</th>
+            <th>メモリ %</th>
+            <th>時刻</th>
+          </tr>
+        </thead>
+        <tbody>
+          {asArray<SummaryHostMetricRow>(data.high_mem_hosts).map((h, i) => (
+            <tr key={`${h.entity_name}-mem-${i}`}>
               <td>{h.entity_name}</td>
               <td>{h.value.toFixed(1)}</td>
               <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
