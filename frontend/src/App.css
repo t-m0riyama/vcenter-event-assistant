@@ -16,9 +16,20 @@
   color: var(--color-text-secondary);
 }
 
+.panel .tz-select {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  font-size: var(--font-size-footnote);
+}
+
 .panel .tz-select select {
   min-width: 200px;
   max-width: min(420px, 100vw);
+}
+
+.general-settings-field + .general-settings-field {
+  margin-top: var(--spacing-6);
 }
 
 .panel {
@@ -30,9 +41,9 @@
 }
 
 .error-banner {
-  background: color-mix(in srgb, var(--color-error) 12%, white);
+  background: var(--color-error-surface);
   color: var(--color-error);
-  border: 1px solid color-mix(in srgb, var(--color-error) 35%, white);
+  border: 1px solid var(--color-error-border);
   padding: var(--spacing-3) var(--spacing-4);
   border-radius: var(--radius-control);
   margin-bottom: var(--spacing-4);
@@ -64,7 +75,7 @@
 .tabs button:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 3px #fff,
+    0 0 0 3px var(--color-focus-ring-surface),
     0 0 0 6px var(--color-primary-focus-ring);
 }
 
@@ -100,7 +111,7 @@
 .settings-subtabs button:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 3px #fff,
+    0 0 0 3px var(--color-focus-ring-surface),
     0 0 0 6px var(--color-primary-focus-ring);
 }
 
@@ -436,6 +447,7 @@
   width: 100%;
   min-height: 320px;
   margin-top: var(--spacing-4);
+  color: var(--color-text-primary);
 }
 
 .hint {
@@ -507,12 +519,12 @@ textarea:focus-visible {
 .btn:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 3px #fff,
+    0 0 0 3px var(--color-focus-ring-surface),
     0 0 0 6px var(--color-primary-focus-ring);
 }
 
 .btn--filled {
-  color: #fff;
+  color: var(--color-on-primary);
   background: var(--color-primary);
   border-color: var(--color-primary);
 }

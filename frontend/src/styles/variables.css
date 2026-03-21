@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;
@@ -26,10 +27,28 @@
 
   --color-text-primary: var(--color-gray-900);
   --color-text-secondary: var(--color-gray-500);
+  --color-text: var(--color-text-primary);
   --color-background: #ffffff;
   --color-background-elevated: #ffffff;
   --color-background-secondary: var(--color-gray-50);
   --color-border: var(--color-gray-200);
+
+  --color-error-surface: color-mix(
+    in srgb,
+    var(--color-error) 12%,
+    var(--color-background)
+  );
+  --color-error-border: color-mix(
+    in srgb,
+    var(--color-error) 35%,
+    var(--color-background)
+  );
+  --color-focus-ring-surface: #ffffff;
+  --color-on-primary: #ffffff;
+
+  --color-chart-grid: var(--color-gray-200);
+  --color-chart-primary: var(--color-primary);
+  --color-chart-secondary: var(--color-success);
 
   --font-size-large-title: 34px;
   --font-size-title3: 20px;
@@ -45,6 +64,50 @@
   --radius-button: 10px;
   --radius-control: 6px;
   --shadow-panel: 0 2px 12px rgba(26, 31, 41, 0.06);
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --color-primary: #0a84ff;
+  --color-primary-dark: #409cff;
+  --color-primary-50: rgba(10, 132, 255, 0.18);
+  --color-primary-focus-ring: rgba(10, 132, 255, 0.45);
+
+  --color-gray-50: #2c2c2e;
+  --color-gray-100: #3a3a3c;
+  --color-gray-200: #48484a;
+  --color-gray-300: #636366;
+  --color-gray-400: #8e8e93;
+  --color-gray-500: #aeaeb2;
+  --color-gray-700: #d1d1d6;
+  --color-gray-900: #f2f2f7;
+
+  --color-text-primary: var(--color-gray-900);
+  --color-text-secondary: var(--color-gray-400);
+  --color-text: var(--color-text-primary);
+  --color-background: #000000;
+  --color-background-elevated: #1c1c1e;
+  --color-background-secondary: #2c2c2e;
+  --color-border: var(--color-gray-200);
+
+  --color-error-surface: color-mix(
+    in srgb,
+    var(--color-error) 18%,
+    var(--color-background-elevated)
+  );
+  --color-error-border: color-mix(
+    in srgb,
+    var(--color-error) 45%,
+    var(--color-border)
+  );
+  --color-focus-ring-surface: var(--color-background);
+  --color-on-primary: #ffffff;
+
+  --color-chart-grid: var(--color-gray-200);
+  --color-chart-primary: var(--color-primary);
+  --color-chart-secondary: #30d158;
+
+  --shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.45);
 }
 
 @media (max-width: 768px) {

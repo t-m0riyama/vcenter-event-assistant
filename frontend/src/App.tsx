@@ -56,11 +56,10 @@ import {
   normalizeMetricSeriesResponse,
   type MetricPoint,
 } from './metrics/normalizeMetricSeriesResponse'
-import {
-  CHART_STROKE_GRID,
-  CHART_STROKE_PRIMARY,
-  CHART_STROKE_SECONDARY,
-} from './styles/chartStrokes'
+import { ThemeProvider } from './theme/ThemeProvider'
+import type { ThemePreference } from './theme/themeStorage'
+import { useChartThemeColors } from './theme/useChartThemeColors'
+import { useTheme } from './theme/useTheme'
 import './App.css'
 
 type VCenter = {
@@ -309,6 +308,7 @@ export default function App() {
   }, [loadConfig])
 
   return (
+    <ThemeProvider>
     <TimeZoneProvider>
       <div className="app">
         <header className="header">
@@ -402,16 +402,43 @@ export default function App() {
       </main>
       </div>
     </TimeZoneProvider>
+    </ThemeProvider>
+  )
+}
+
+function ThemeAppearanceSelect() {
+  const { preference, setPreference } = useTheme()
+  return (
+    <label className="tz-select">
+      外観
+      <select
+        value={preference}
+        onChange={(e) => setPreference(e.target.value as ThemePreference)}
+        aria-label="外観"
+      >
+        <option value="system">システムに合わせる</option>
+        <option value="light">ライト</option>
+        <option value="dark">ダーク</option>
+      </select>
+    </label>
   )
 }
 
 function GeneralSettingsPanel() {
   return (
     <div className="panel">
-      <p className="hint">
-        日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
-      </p>
-      <TimeZoneSelect />
+      <div className="general-settings-field">
+        <p className="hint">
+          ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。
+        </p>
+        <ThemeAppearanceSelect />
+      </div>
+      <div className="general-settings-field">
+        <p className="hint">
+          日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
+        </p>
+        <TimeZoneSelect />
+      </div>
     </div>
   )
 }
@@ -1118,11 +1145,20 @@ function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
 }
 
 /** X 軸目盛り専用。`useTimeZone()` をここで読むことで Recharts の Redux 同期と親のクロージャに依存しない。 */
-function MetricsXAxisTick(props: Record<string, unknown>) {
+function MetricsXAxisTick(
+  props: Record<string, unknown> & { readonly tickFill?: string },
+) {
   const { timeZone } = useTimeZone()
-  const { payload, ...rest } = props
+  const { tickFill, payload, ...rest } = props
   const label = formatChartAxisTick(extractTickAxisValue(payload), timeZone)
-  return <Text {...(rest as ComponentProps<typeof Text>)}>{label}</Text>
+  return (
+    <Text
+      {...(rest as ComponentProps<typeof Text>)}
+      fill={tickFill || undefined}
+    >
+      {label}
+    </Text>
+  )
 }
 
 function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
@@ -1328,6 +1364,7 @@ function MetricsPanel({
   } | null>(null)
   const metricKeyRef = useRef(metricKey)
   const chartWrapRef = useRef<HTMLDivElement>(null)
+  const chartColors = useChartThemeColors()
   metricKeyRef.current = metricKey
 
   useEffect(() => {
@@ -1585,8 +1622,10 @@ function MetricsPanel({
   )
 
   const metricsXAxisTick = useCallback(
-    (props: Record<string, unknown>) => <MetricsXAxisTick {...props} />,
-    [],
+    (props: Record<string, unknown>) => (
+      <MetricsXAxisTick {...props} tickFill={chartColors.axisTick} />
+    ),
+    [chartColors.axisTick],
   )
 
   const vcenterExportLabel = useMemo(() => {
@@ -1762,7 +1801,10 @@ function MetricsPanel({
               data={chartData}
               margin={{ top: 8, right: 12, left: 4, bottom: 8 }}
             >
-              <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
+              <CartesianGrid
+                stroke={chartColors.grid}
+                strokeDasharray="3 3"
+              />
               <XAxis
                 dataKey="tMs"
                 type="number"
@@ -1772,12 +1814,17 @@ function MetricsPanel({
                 tick={metricsXAxisTick}
                 minTickGap={24}
               />
-              <YAxis yAxisId="left" domain={['auto', 'auto']} />
+              <YAxis
+                yAxisId="left"
+                domain={['auto', 'auto']}
+                tick={{ fill: chartColors.axisTick }}
+              />
               <YAxis
                 yAxisId="right"
                 orientation="right"
                 domain={['auto', 'auto']}
                 allowDecimals={false}
+                tick={{ fill: chartColors.axisTick }}
               />
               <Tooltip labelFormatter={formatAxisTimeLabel} />
               <Legend />
@@ -1786,7 +1833,7 @@ function MetricsPanel({
                 type="monotone"
                 dataKey="v"
                 name={metricsChartLegendName}
-                stroke={CHART_STROKE_PRIMARY}
+                stroke={chartColors.primary}
                 dot={false}
                 isAnimationActive={false}
               />
@@ -1796,7 +1843,7 @@ function MetricsPanel({
                   type="monotone"
                   dataKey="evCount"
                   name={eventSeriesLegendName}
-                  stroke={CHART_STROKE_SECONDARY}
+                  stroke={chartColors.secondary}
                   dot={false}
                   isAnimationActive={false}
                 />

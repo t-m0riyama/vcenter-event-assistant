@@ -8,6 +8,12 @@ test.describe('設定の全サブタブ', () => {
 
     await page.getByRole('button', { name: '一般' }).click()
     await expect(
+      page.getByText(
+        'ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。',
+      ),
+    ).toBeVisible()
+    await expect(page.getByLabel('外観')).toBeVisible()
+    await expect(
       page.getByText('日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。'),
     ).toBeVisible()
     await expectNoErrorBanner(page)
