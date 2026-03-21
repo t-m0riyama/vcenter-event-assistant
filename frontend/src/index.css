@@ -1,23 +1,2 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    sans-serif;
-  line-height: 1.45;
-  color: #1a1a1a;
-  background: #fff;
-}
-
-button {
-  font: inherit;
-  cursor: pointer;
-}
+@import "./styles/variables.css";
+@import "./styles/base.css";

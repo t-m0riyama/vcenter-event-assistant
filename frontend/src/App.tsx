@@ -96,21 +96,25 @@ export default function App() {
                 placeholder="未設定の場合は認証なし（開発用）"
               />
             </label>
-            <button type="button" onClick={applyToken}>
+            <button type="button" className="btn btn--filled" onClick={applyToken}>
               保存
             </button>
             <TimeZoneSelect />
           </div>
         </header>
 
-      {err && <div className="error-banner">{err}</div>}
+      {err && (
+        <div className="error-banner" role="alert">
+          {err}
+        </div>
+      )}
 
       <nav className="tabs">
         {(['summary', 'events', 'vcenters', 'metrics'] as const).map((t) => (
           <button
             key={t}
             type="button"
-            className={tab === t ? 'active' : ''}
+            className={tab === t ? 'active' : undefined}
             onClick={() => {
               setTab(t)
               setErr(null)
@@ -159,7 +163,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   return (
     <div className="panel">
       <p>
-        <button type="button" onClick={() => void load()}>
+        <button type="button" className="btn btn--filled" onClick={() => void load()}>
           再読込
         </button>
       </p>
@@ -256,7 +260,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
             placeholder="例: 40"
           />
         </label>
-        <button type="button" onClick={() => void load()}>
+        <button type="button" className="btn btn--filled" onClick={() => void load()}>
           再読込
         </button>
       </div>
@@ -394,7 +398,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
           有効
         </label>
       </div>
-      <button type="button" onClick={() => void add()}>
+      <button type="button" className="btn btn--filled" onClick={() => void add()}>
         追加
       </button>
 
@@ -417,11 +421,12 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
               </td>
               <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
               <td className="actions">
-                <button type="button" onClick={() => void test(v.id)}>
+                <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
                   接続テスト
                 </button>
                 <button
                   type="button"
+                  className="btn btn--gray"
                   onClick={() =>
                     void apiPatch(`/api/vcenters/${v.id}`, {
                       is_enabled: !v.is_enabled,
@@ -434,7 +439,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
                 >
                   切替
                 </button>
-                <button type="button" onClick={() => void remove(v.id)}>
+                <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
                   削除
                 </button>
               </td>
@@ -535,10 +540,15 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
             onChange={(e) => setMetricKey(e.target.value)}
           />
         </label>
-        <button type="button" disabled={loading} onClick={() => void load()}>
+        <button type="button" className="btn btn--filled" disabled={loading} onClick={() => void load()}>
           {loading ? '取得中…' : '再取得'}
         </button>
-        <button type="button" disabled={ingesting} onClick={() => void runIngest()}>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={ingesting}
+          onClick={() => void runIngest()}
+        >
           {ingesting ? '収集中…' : '手動で収集'}
         </button>
         {metricTotal !== null && !loading && (
@@ -560,12 +570,18 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
             <XAxis dataKey="t" minTickGap={24} />
             <YAxis domain={[0, 100]} />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="v" name="値" stroke="#0d6efd" dot={false} />
+            <Line
+              type="monotone"
+              dataKey="v"
+              name="値"
+              stroke="var(--color-primary)"
+              dot={false}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
