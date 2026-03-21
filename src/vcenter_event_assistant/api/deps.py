@@ -1,0 +1,18 @@
+"""FastAPI dependencies."""
+
+from collections.abc import AsyncIterator
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from vcenter_event_assistant.db.session import get_session_factory
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    factory = get_session_factory()
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
