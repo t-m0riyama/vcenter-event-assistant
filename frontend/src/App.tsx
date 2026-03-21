@@ -26,6 +26,16 @@ import {
 } from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
+import { ZonedRangeFields } from './datetime/ZonedRangeFields'
+import {
+  isValidUtcRangeOrder,
+  zonedLocalDateTimeToUtcIso,
+} from './datetime/zonedLocalDateTime'
+import {
+  EMPTY_ZONED_RANGE_PARTS,
+  zonedRangePartsToCombinedInputs,
+  type ZonedRangeParts,
+} from './datetime/zonedRangeParts'
 import { MetricsChartErrorBoundary } from './metrics/MetricsChartErrorBoundary'
 import {
   buildMetricsExportBasename,
@@ -163,6 +173,93 @@ function summarizeEventTextFilters(
   return out
 }
 
+type EventRangeResolve =
+  | { ok: true; from?: string; to?: string }
+  | { ok: false; message: string }
+
+/**
+ * Maps optional wall-clock range inputs (display time zone) to API `from` / `to` UTC ISO strings.
+ */
+function resolveEventApiRange(
+  rangeFromInput: string,
+  rangeToInput: string,
+  timeZone: string,
+): EventRangeResolve {
+  const rf = rangeFromInput.trim()
+  const rt = rangeToInput.trim()
+  if (!rf && !rt) return { ok: true }
+  let fromUtc: string | undefined
+  let toUtc: string | undefined
+  if (rf) {
+    const iso = zonedLocalDateTimeToUtcIso(rf, timeZone)
+    if (!iso) {
+      return {
+        ok: false,
+        message:
+          '開始の日付・時刻が解釈できないか、この時刻は存在しません（例: サマータイムの欠落時刻）。日付と時刻を確認してください。',
+      }
+    }
+    fromUtc = iso
+  }
+  if (rt) {
+    const iso = zonedLocalDateTimeToUtcIso(rt, timeZone)
+    if (!iso) {
+      return {
+        ok: false,
+        message:
+          '終了の日付・時刻が解釈できないか、この時刻は存在しません（例: サマータイムの欠落時刻）。日付と時刻を確認してください。',
+      }
+    }
+    toUtc = iso
+  }
+  if (fromUtc && toUtc && !isValidUtcRangeOrder(fromUtc, toUtc)) {
+    return { ok: false, message: '開始は終了より前の時刻にしてください。' }
+  }
+  return { ok: true, from: fromUtc, to: toUtc }
+}
+
+type MetricsGraphRangeResolve =
+  | { mode: 'none' }
+  | { mode: 'range'; from: string; to: string }
+  | { mode: 'invalid'; message: string }
+
+/**
+ * Graph tab: either both start/end are empty (no time filter), or both must be valid (same rules as events).
+ * One-sided input is rejected so `GET /api/events/rate-series` can use the same bounds as metrics when a range is set.
+ */
+function resolveMetricsGraphRange(
+  rangeFromInput: string,
+  rangeToInput: string,
+  timeZone: string,
+): MetricsGraphRangeResolve {
+  const rf = rangeFromInput.trim()
+  const rt = rangeToInput.trim()
+  if (!rf && !rt) return { mode: 'none' }
+  if (!rf || !rt) {
+    return {
+      mode: 'invalid',
+      message:
+        'グラフの表示期間は開始・終了を両方入力するか、両方空にしてください（片方だけでは指定できません）。',
+    }
+  }
+  const r = resolveEventApiRange(rf, rt, timeZone)
+  if (!r.ok) return { mode: 'invalid', message: r.message }
+  if (!r.from || !r.to) {
+    return { mode: 'invalid', message: '開始と終了を解釈できませんでした。' }
+  }
+  return { mode: 'range', from: r.from, to: r.to }
+}
+
+/** Graph tab: one-line summary for collapsed range `<details>` (no `open` = default closed). */
+function summarizeGraphRangePreview(parts: ZonedRangeParts): string {
+  const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(parts)
+  const rf = rangeFromInput.trim()
+  const rt = rangeToInput.trim()
+  if (!rf && !rt) return '指定なし'
+  if (!rf || !rt) return '入力中'
+  return `${parts.fromDate} ～ ${parts.toDate}`
+}
+
 function eventRowToCsvRow(e: EventRow, vcenterName: string, timeZone: string): EventCsvRow {
   return {
     id: e.id,
@@ -207,6 +304,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void loadConfig()
   }, [loadConfig])
 
@@ -498,10 +596,20 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
+  const { rangeFromInput, rangeToInput } = useMemo(
+    () => zonedRangePartsToCombinedInputs(rangeParts),
+    [rangeParts],
+  )
 
   const load = useCallback(async () => {
     onError(null)
     try {
+      const range = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
+      if (!range.ok) {
+        onError(range.message)
+        return
+      }
       const q = new URLSearchParams({
         limit: String(pageSize),
         offset: String((page - 1) * pageSize),
@@ -515,6 +623,8 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
       if (msg) q.set('message_contains', msg)
       const cm = filterComment.trim()
       if (cm) q.set('comment_contains', cm)
+      if (range.from) q.set('from', range.from)
+      if (range.to) q.set('to', range.to)
       const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
       const { items, total: nextTotal } = normalizeEventListPayload(raw)
       setRows(items)
@@ -534,10 +644,12 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     filterComment,
     page,
     pageSize,
+    rangeFromInput,
+    rangeToInput,
+    timeZone,
   ])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -564,6 +676,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     filterSeverity,
     filterMessage,
     filterComment,
+    rangeParts,
   ])
 
   const beginCommentEdit = (e: EventRow) => {
@@ -594,6 +707,11 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     onError(null)
     setExporting(true)
     try {
+      const range = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
+      if (!range.ok) {
+        onError(range.message)
+        return
+      }
       const vcenters = await apiGet<unknown>('/api/vcenters')
       const vcenterList = asArray<VCenter>(vcenters)
       const nameById = new Map(vcenterList.map((v) => [v.id, v.name]))
@@ -615,6 +733,8 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         if (msg) q.set('message_contains', msg)
         const cm = filterComment.trim()
         if (cm) q.set('comment_contains', cm)
+        if (range.from) q.set('from', range.from)
+        if (range.to) q.set('to', range.to)
         const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
         const { items, total } = normalizeEventListPayload(raw)
         totalExpected = total
@@ -650,6 +770,8 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     filterMessage,
     filterComment,
     timeZone,
+    rangeFromInput,
+    rangeToInput,
   ])
 
   return (
@@ -723,6 +845,17 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
               )}
             </span>
           </summary>
+          <p className="hint toolbar__filters-hint">
+            表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。未入力の端は制限なし。日付だけ選んだ場合は、開始は
+            0:00・終了は 23:59 として扱います。クイックで直近の範囲を入れられます。
+          </p>
+          <ZonedRangeFields
+            value={rangeParts}
+            onChange={(next) => {
+              setRangeParts(next)
+              setPage(1)
+            }}
+          />
           <div className="toolbar__filters" aria-label="イベントの絞り込み（種別・重大度・メッセージ・コメント）">
             <label>
               種別（含む）
@@ -1182,8 +1315,17 @@ function MetricsPanel({
     Array<{ bucket_start: string; count: number }> | null
   >(null)
   const [eventSeriesLoading, setEventSeriesLoading] = useState(false)
+  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
+  const { rangeFromInput, rangeToInput } = useMemo(
+    () => zonedRangePartsToCombinedInputs(rangeParts),
+    [rangeParts],
+  )
   const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
-  const lastSeriesFetchRef = useRef<{ vcenterId: string; metricKey: string } | null>(null)
+  const lastSeriesFetchRef = useRef<{
+    vcenterId: string
+    metricKey: string
+    rangeKey: string
+  } | null>(null)
   const metricKeyRef = useRef(metricKey)
   const chartWrapRef = useRef<HTMLDivElement>(null)
   metricKeyRef.current = metricKey
@@ -1224,31 +1366,51 @@ function MetricsPanel({
   }, [vcenterId, onError])
 
   const load = useCallback(
-    async (overrideKey?: string) => {
+    async (overrideKey?: string): Promise<boolean> => {
       const key = (overrideKey ?? metricKey).trim()
       if (!key) {
         onError(null)
         setPoints([])
         setMetricTotal(null)
         setLoading(false)
-        return
+        return false
+      }
+      const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
+      if (graphRange.mode === 'invalid') {
+        onError(graphRange.message)
+        setPoints([])
+        setMetricTotal(null)
+        setLoading(false)
+        return false
       }
       setLoading(true)
       onError(null)
       try {
-        const q = new URLSearchParams({ metric_key: key, limit: '500' })
+        const limit = graphRange.mode === 'range' ? '10000' : '500'
+        const q = new URLSearchParams({ metric_key: key, limit })
         if (vcenterId) q.set('vcenter_id', vcenterId)
+        if (graphRange.mode === 'range') {
+          q.set('from', graphRange.from)
+          q.set('to', graphRange.to)
+        }
         const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
         const normalized = normalizeMetricSeriesResponse(data)
         setPoints(normalized.points)
         setMetricTotal(normalized.total)
+        return true
       } catch (e) {
         onError(e instanceof Error ? e.message : String(e))
+        return false
       } finally {
         setLoading(false)
       }
     },
-    [vcenterId, metricKey, onError],
+    [vcenterId, metricKey, onError, rangeFromInput, rangeToInput, timeZone],
+  )
+
+  const graphRangeForOverlay = useMemo(
+    () => resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone),
+    [rangeFromInput, rangeToInput, timeZone],
   )
 
   useEffect(() => {
@@ -1258,15 +1420,21 @@ function MetricsPanel({
         prevVcenterForKeysRef.current = vcenterId
         key = await loadMetricKeys()
       }
-      const sig = { vcenterId, metricKey: key }
+      const rangeKey = `${rangeParts.fromDate}|${rangeParts.fromTime}|${rangeParts.toDate}|${rangeParts.toTime}`
+      const sig = { vcenterId, metricKey: key, rangeKey }
       const prev = lastSeriesFetchRef.current
-      if (prev && prev.vcenterId === sig.vcenterId && prev.metricKey === sig.metricKey) {
+      if (
+        prev &&
+        prev.vcenterId === sig.vcenterId &&
+        prev.metricKey === sig.metricKey &&
+        prev.rangeKey === sig.rangeKey
+      ) {
         return
       }
-      lastSeriesFetchRef.current = sig
-      await load(key)
+      const ok = await load(key)
+      if (ok) lastSeriesFetchRef.current = sig
     })()
-  }, [vcenterId, metricKey, load, loadMetricKeys])
+  }, [vcenterId, metricKey, load, loadMetricKeys, rangeParts])
 
   useEffect(() => {
     const et = chartEventType.trim()
@@ -1275,27 +1443,44 @@ function MetricsPanel({
       setEventSeriesLoading(false)
       return
     }
+    if (graphRangeForOverlay.mode === 'invalid') {
+      setEventRateBuckets(null)
+      setEventSeriesLoading(false)
+      return
+    }
     let cancelled = false
     setEventSeriesLoading(true)
     void (async () => {
-      let minTs = Infinity
-      let maxTs = -Infinity
-      for (const p of points) {
-        const t = parseApiUtcInstantMs(p.sampled_at)
-        if (Number.isFinite(t)) {
-          if (t < minTs) minTs = t
-          if (t > maxTs) maxTs = t
+      let from: string
+      let to: string
+      if (graphRangeForOverlay.mode === 'range') {
+        from = graphRangeForOverlay.from
+        to = graphRangeForOverlay.to
+      } else {
+        let minTs = Infinity
+        let maxTs = -Infinity
+        for (const p of points) {
+          const t = parseApiUtcInstantMs(p.sampled_at)
+          if (Number.isFinite(t)) {
+            if (t < minTs) minTs = t
+            if (t > maxTs) maxTs = t
+          }
         }
-      }
-      if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
-        if (!cancelled) {
-          setEventRateBuckets(null)
-          setEventSeriesLoading(false)
+        if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
+          if (!cancelled) {
+            setEventRateBuckets(null)
+            setEventSeriesLoading(false)
+          }
+          return
         }
-        return
+        from = new Date(minTs).toISOString()
+        to = new Date(maxTs).toISOString()
       }
-      const from = new Date(minTs).toISOString()
-      const to = new Date(maxTs).toISOString()
+      const fromMs = parseApiUtcInstantMs(from)
+      const toMs = parseApiUtcInstantMs(to)
+      if (fromMs >= toMs) {
+        to = new Date(fromMs + Math.max(perfBucketSeconds, 60) * 1000).toISOString()
+      }
       try {
         const q = new URLSearchParams({
           event_type: et,
@@ -1323,7 +1508,7 @@ function MetricsPanel({
     return () => {
       cancelled = true
     }
-  }, [points, chartEventType, vcenterId, perfBucketSeconds, onError])
+  }, [points, chartEventType, vcenterId, perfBucketSeconds, onError, graphRangeForOverlay])
 
   const runIngest = async () => {
     setIngesting(true)
@@ -1536,6 +1721,20 @@ function MetricsPanel({
           </span>
         )}
       </div>
+      <details className="toolbar__filters-details metrics-panel__range-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">表示期間</span>
+          <span className="toolbar__filters-summary__preview">
+            {summarizeGraphRangePreview(rangeParts)}
+          </span>
+        </summary>
+        <p className="hint toolbar__filters-hint">
+          表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。開始・終了は両方指定するか、すべて空にしてください。日付のみの場合は開始は
+          0:00・終了は 23:59 です。期間を指定するとメトリクスは最大 10000
+          点まで取得し、イベント件数オーバーレイも同じ区間で集計します。
+        </p>
+        <ZonedRangeFields value={rangeParts} onChange={setRangeParts} />
+      </details>
       <p className="hint">
         イベント件数はサーバ設定のメトリクス取得間隔（{perfBucketSeconds}
         秒）と同じ幅のバケットに集計されます。種別を空にするとメトリクスのみ表示します。
