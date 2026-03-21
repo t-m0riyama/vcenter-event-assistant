@@ -144,7 +144,7 @@ describe('App error banner', () => {
     await waitFor(() => {
       expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
     })
-    fireEvent.click(within(tabNav()).getByRole('button', { name: 'メトリクス' }))
+    fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
     })

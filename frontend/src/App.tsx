@@ -220,7 +220,7 @@ export default function App() {
           >
             {t === 'summary' && '概要'}
             {t === 'events' && 'イベント'}
-            {t === 'metrics' && 'メトリクス'}
+            {t === 'metrics' && 'グラフ'}
             {t === 'settings' && '設定'}
           </button>
         ))}
