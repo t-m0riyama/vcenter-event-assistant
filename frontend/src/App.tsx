@@ -20,6 +20,7 @@ import {
 import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
+import { CHART_STROKE_GRID, CHART_STROKE_PRIMARY } from './styles/chartStrokes'
 import './App.css'
 
 type VCenter = {
@@ -570,7 +571,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={chartData}>
-            <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
+            <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
             <XAxis dataKey="t" minTickGap={24} />
             <YAxis domain={[0, 100]} />
             <Tooltip />
@@ -579,7 +580,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
               type="monotone"
               dataKey="v"
               name="値"
-              stroke="var(--color-primary)"
+              stroke={CHART_STROKE_PRIMARY}
               dot={false}
             />
           </LineChart>
