@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.collectors.events import fetch_events_blocking
 from vcenter_event_assistant.collectors.perf import sample_hosts_blocking
 from vcenter_event_assistant.db.models import EventRecord, IngestionState, MetricSample, VCenter
-from vcenter_event_assistant.rules.notable import score_event
+from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
+from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 from vcenter_event_assistant.settings import get_settings
 
 
@@ -39,6 +40,7 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
         since=since,
     )
 
+    deltas = await load_event_score_delta_map(session)
     inserted = 0
     for r in normalized:
         exists = await session.execute(
@@ -55,6 +57,8 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
             severity=r.get("severity"),
             message=r["message"],
         )
+        delta = deltas.get(r["event_type"], 0)
+        final_score = clamp_notable_total(nr.score, delta)
         ev = EventRecord(
             vcenter_id=vcenter.id,
             occurred_at=r["occurred_at"],
@@ -66,7 +70,7 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
             entity_type=r.get("entity_type"),
             vmware_key=int(r["vmware_key"]),
             chain_id=r.get("chain_id"),
-            notable_score=nr.score,
+            notable_score=final_score,
             notable_tags=nr.tags,
         )
         session.add(ev)
@@ -121,6 +125,13 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
         session.add(ms)
         inserted += 1
     return inserted
+
+
+async def purge_old_events(session: AsyncSession) -> int:
+    settings = get_settings()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.event_retention_days)
+    res = await session.execute(delete(EventRecord).where(EventRecord.occurred_at < cutoff))
+    return res.rowcount or 0
 
 
 async def purge_old_metrics(session: AsyncSession) -> int:

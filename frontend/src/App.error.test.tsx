@@ -11,6 +11,11 @@ const emptySummary = {
   high_cpu_hosts: [] as unknown[],
 }
 
+const emptyConfig = {
+  event_retention_days: 7,
+  metric_retention_days: 7,
+}
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -36,7 +41,13 @@ describe('App error banner', () => {
   it('shows role=alert when dashboard summary fails', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(new Response('bad', { status: 500 })),
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(emptyConfig))
+        }
+        return Promise.resolve(new Response('bad', { status: 500 }))
+      }),
     )
     render(<App />)
     await waitFor(() => {
@@ -49,6 +60,9 @@ describe('App error banner', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
         const url = String(input)
+        if (url.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(emptyConfig))
+        }
         if (url.includes('/api/dashboard/summary')) {
           return Promise.resolve(jsonResponse(emptySummary))
         }
@@ -60,7 +74,10 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '再読込' })[0]).toBeInTheDocument()
+      const [h] = screen.getAllByRole('heading', {
+        name: '高 CPU ホスト（直近24h サンプル上位）',
+      })
+      expect(h).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'イベント' }))
     await waitFor(() => {
@@ -73,6 +90,9 @@ describe('App error banner', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
         const url = String(input)
+        if (url.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(emptyConfig))
+        }
         if (url.includes('/api/dashboard/summary')) {
           return Promise.resolve(jsonResponse(emptySummary))
         }
@@ -84,9 +104,18 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '再読込' })[0]).toBeInTheDocument()
+      const [h] = screen.getAllByRole('heading', {
+        name: '高 CPU ホスト（直近24h サンプル上位）',
+      })
+      expect(h).toBeInTheDocument()
     })
-    fireEvent.click(within(tabNav()).getByRole('button', { name: 'vCenter' }))
+    fireEvent.click(within(tabNav()).getByRole('button', { name: '設定' }))
+    fireEvent.click(
+      within(document.querySelector('nav.settings-subtabs') as HTMLElement).getByRole(
+        'button',
+        { name: 'vCenter' },
+      ),
+    )
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('503 vc fail')
     })
@@ -97,6 +126,9 @@ describe('App error banner', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
         const url = String(input)
+        if (url.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(emptyConfig))
+        }
         if (url.includes('/api/dashboard/summary')) {
           return Promise.resolve(jsonResponse(emptySummary))
         }
@@ -111,7 +143,10 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '再読込' })[0]).toBeInTheDocument()
+      const [h] = screen.getAllByRole('heading', {
+        name: '高 CPU ホスト（直近24h サンプル上位）',
+      })
+      expect(h).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'メトリクス' }))
     await waitFor(() => {

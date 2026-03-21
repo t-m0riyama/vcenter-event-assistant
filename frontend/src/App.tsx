@@ -47,6 +47,7 @@ type EventRow = {
   severity: string | null
   notable_score: number
   notable_tags: string[] | null
+  user_comment?: string | null
 }
 
 type Summary = {
@@ -62,16 +63,100 @@ type Summary = {
   }>
 }
 
-type Tab = 'summary' | 'events' | 'vcenters' | 'metrics'
+type AppConfig = {
+  event_retention_days: number
+  metric_retention_days: number
+}
+
+/** Coerce API fields to arrays so `.map` never runs on null / objects (runtime safety). */
+function asArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : []
+}
+
+/** Accepts `{ items, total }` or a legacy JSON array so we never set `rows` to undefined (avoids render crash). */
+function normalizeEventListPayload(raw: unknown): { items: EventRow[]; total: number } {
+  if (Array.isArray(raw)) {
+    return { items: raw as EventRow[], total: raw.length }
+  }
+  if (raw && typeof raw === 'object') {
+    const o = raw as { items?: unknown; total?: unknown }
+    const items = asArray<EventRow>(o.items)
+    const total = typeof o.total === 'number' ? o.total : items.length
+    return { items, total }
+  }
+  return { items: [], total: 0 }
+}
+
+const EVENT_PAGE_SIZES = [20, 50, 100, 200] as const
+
+const EVENT_TEXT_FILTER_SUMMARY_CLIP = 18
+const EVENT_TEXT_FILTER_SUMMARY_MAX = 96
+
+function clipForFilterSummary(s: string, max: number): string {
+  const t = s.trim()
+  if (!t) return ''
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`
+}
+
+/** One-line preview for collapsed 種別/重大度/メッセージ/コメント filters. */
+function summarizeEventTextFilters(
+  filterEventType: string,
+  filterSeverity: string,
+  filterMessage: string,
+  filterComment: string,
+): string {
+  const pairs: Array<{ label: string; value: string }> = [
+    { label: '種別', value: filterEventType },
+    { label: '重大度', value: filterSeverity },
+    { label: 'メッセージ', value: filterMessage },
+    { label: 'コメント', value: filterComment },
+  ]
+  const active = pairs.filter((p) => p.value.trim())
+  if (active.length === 0) return '条件なし'
+  let out = active
+    .map((p) => `${p.label}「${clipForFilterSummary(p.value, EVENT_TEXT_FILTER_SUMMARY_CLIP)}」`)
+    .join(' · ')
+  if (out.length > EVENT_TEXT_FILTER_SUMMARY_MAX) {
+    out = `${out.slice(0, EVENT_TEXT_FILTER_SUMMARY_MAX - 1)}…`
+  }
+  return out
+}
+
+type Tab = 'summary' | 'events' | 'metrics' | 'settings'
+
+type SettingsSubTab = 'score_rules' | 'vcenters'
+
+type EventScoreRuleRow = {
+  id: number
+  event_type: string
+  score_delta: number
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
+  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('vcenters')
   const [tokenInput, setTokenInput] = useState(getToken)
   const [err, setErr] = useState<string | null>(null)
+  const [retention, setRetention] = useState<AppConfig | null>(null)
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const c = await apiGet<AppConfig>('/api/config')
+      setRetention(c)
+    } catch (e) {
+      setRetention(null)
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadConfig()
+  }, [loadConfig])
 
   const applyToken = () => {
     setToken(tokenInput.trim())
     setErr(null)
+    void loadConfig()
   }
 
   return (
@@ -79,6 +164,12 @@ export default function App() {
       <div className="app">
         <header className="header">
           <h1>vCenter Event Assistant</h1>
+          {retention && (
+            <p className="retention-hint">
+              データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
+              {retention.metric_retention_days} 日（サーバー設定）
+            </p>
+          )}
           <div className="auth-row">
             <label>
               Bearer トークン（設定時は必須）
@@ -103,7 +194,7 @@ export default function App() {
       )}
 
       <nav className="tabs">
-        {(['summary', 'events', 'vcenters', 'metrics'] as const).map((t) => (
+        {(['summary', 'events', 'metrics', 'settings'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -115,17 +206,48 @@ export default function App() {
           >
             {t === 'summary' && '概要'}
             {t === 'events' && 'イベント'}
-            {t === 'vcenters' && 'vCenter'}
             {t === 'metrics' && 'メトリクス'}
+            {t === 'settings' && '設定'}
           </button>
         ))}
       </nav>
 
       <main className="main">
+        {tab === 'settings' && (
+          <nav className="settings-subtabs" aria-label="設定">
+            <button
+              type="button"
+              className={settingsSubTab === 'vcenters' ? 'active' : undefined}
+              aria-selected={settingsSubTab === 'vcenters'}
+              onClick={() => {
+                setSettingsSubTab('vcenters')
+                setErr(null)
+              }}
+            >
+              vCenter
+            </button>
+            <button
+              type="button"
+              className={settingsSubTab === 'score_rules' ? 'active' : undefined}
+              aria-selected={settingsSubTab === 'score_rules'}
+              onClick={() => {
+                setSettingsSubTab('score_rules')
+                setErr(null)
+              }}
+            >
+              スコアルール
+            </button>
+          </nav>
+        )}
         {tab === 'summary' && <SummaryPanel onError={setErr} />}
         {tab === 'events' && <EventsPanel onError={setErr} />}
-        {tab === 'vcenters' && <VCentersPanel onError={setErr} />}
         {tab === 'metrics' && <MetricsPanel onError={setErr} />}
+        {tab === 'settings' && settingsSubTab === 'score_rules' && (
+          <ScoreRulesPanel onError={setErr} />
+        )}
+        {tab === 'settings' && settingsSubTab === 'vcenters' && (
+          <VCentersPanel onError={setErr} />
+        )}
       </main>
       </div>
     </TimeZoneProvider>
@@ -155,11 +277,6 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
 
   return (
     <div className="panel">
-      <p>
-        <button type="button" className="btn btn--filled" onClick={() => void load()}>
-          再読込
-        </button>
-      </p>
       <div className="stats">
         <div className="stat">
           <span className="label">登録 vCenter</span>
@@ -185,7 +302,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
           </tr>
         </thead>
         <tbody>
-          {data.high_cpu_hosts.map((h, i) => (
+          {asArray<Summary['high_cpu_hosts'][number]>(data.high_cpu_hosts).map((h, i) => (
             <tr key={`${h.entity_name}-${i}`}>
               <td>{h.entity_name}</td>
               <td>{h.value.toFixed(1)}</td>
@@ -203,15 +320,19 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
             <th>種別</th>
             <th>スコア</th>
             <th>メッセージ</th>
+            <th>コメント</th>
           </tr>
         </thead>
         <tbody>
-          {data.top_notable_events.map((e) => (
+          {asArray<EventRow>(data.top_notable_events).map((e) => (
             <tr key={e.id}>
               <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
               <td>{e.event_type}</td>
               <td>{e.notable_score}</td>
               <td className="msg">{e.message}</td>
+              <td className="event-comment-cell event-comment-cell--readonly">
+                {e.user_comment ?? '—'}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -223,24 +344,107 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
 function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
   const [rows, setRows] = useState<EventRow[]>([])
+  const [total, setTotal] = useState(0)
   const [minScore, setMinScore] = useState('')
+  const [filterEventType, setFilterEventType] = useState('')
+  const [filterSeverity, setFilterSeverity] = useState('')
+  const [filterMessage, setFilterMessage] = useState('')
+  const [filterComment, setFilterComment] = useState('')
+  const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
+  const [page, setPage] = useState(1)
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
+  const [commentDraft, setCommentDraft] = useState('')
 
   const load = useCallback(async () => {
     onError(null)
     try {
-      const q = new URLSearchParams({ limit: '100' })
+      const q = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String((page - 1) * pageSize),
+      })
       if (minScore) q.set('min_score', minScore)
-      const list = await apiGet<EventRow[]>(`/api/events?${q.toString()}`)
-      setRows(list)
+      const et = filterEventType.trim()
+      if (et) q.set('event_type_contains', et)
+      const sv = filterSeverity.trim()
+      if (sv) q.set('severity_contains', sv)
+      const msg = filterMessage.trim()
+      if (msg) q.set('message_contains', msg)
+      const cm = filterComment.trim()
+      if (cm) q.set('comment_contains', cm)
+      const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
+      const { items, total: nextTotal } = normalizeEventListPayload(raw)
+      setRows(items)
+      setTotal(nextTotal)
+      const maxPage =
+        nextTotal === 0 ? 1 : Math.max(1, Math.ceil(nextTotal / pageSize))
+      setPage((p) => (p > maxPage ? maxPage : p))
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
-  }, [onError, minScore])
+  }, [
+    onError,
+    minScore,
+    filterEventType,
+    filterSeverity,
+    filterMessage,
+    filterComment,
+    page,
+    pageSize,
+  ])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
+
+  const { start, end, safePage } = useMemo(() => {
+    if (total === 0) return { start: 0, end: 0, safePage: 1 }
+    const maxPage = Math.max(1, Math.ceil(total / pageSize))
+    const sp = Math.min(page, maxPage)
+    const s = (sp - 1) * pageSize + 1
+    const e = Math.min(sp * pageSize, total)
+    return { start: s, end: e, safePage: sp }
+  }, [page, pageSize, total])
+
+  const canPrev = safePage > 1
+  const canNext = total > 0 && safePage * pageSize < total
+
+  useEffect(() => {
+    setEditingCommentId(null)
+    setCommentDraft('')
+  }, [
+    page,
+    pageSize,
+    minScore,
+    filterEventType,
+    filterSeverity,
+    filterMessage,
+    filterComment,
+  ])
+
+  const beginCommentEdit = (e: EventRow) => {
+    setEditingCommentId(e.id)
+    setCommentDraft(e.user_comment ?? '')
+  }
+
+  const cancelCommentEdit = () => {
+    setEditingCommentId(null)
+    setCommentDraft('')
+  }
+
+  const saveComment = async (eventId: number) => {
+    onError(null)
+    try {
+      const updated = await apiPatch<EventRow>(`/api/events/${eventId}`, {
+        user_comment: commentDraft.trim() === '' ? null : commentDraft,
+      })
+      setRows((prev) => prev.map((r) => (r.id === eventId ? { ...r, ...updated } : r)))
+      setEditingCommentId(null)
+      setCommentDraft('')
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   return (
     <div className="panel">
@@ -249,13 +453,113 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
           最小スコア
           <input
             value={minScore}
-            onChange={(e) => setMinScore(e.target.value)}
+            onChange={(e) => {
+              setMinScore(e.target.value)
+              setPage(1)
+            }}
             placeholder="例: 40"
           />
         </label>
-        <button type="button" className="btn btn--filled" onClick={() => void load()}>
-          再読込
-        </button>
+        <label>
+          表示件数
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value) as (typeof EVENT_PAGE_SIZES)[number])
+              setPage(1)
+            }}
+          >
+            {EVENT_PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="toolbar__pagination">
+          <button
+            type="button"
+            className="btn"
+            disabled={!canPrev}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            前へ
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={!canNext}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            次へ
+          </button>
+        </div>
+        <span className="toolbar__meta">
+          {total === 0 ? '全 0 件' : `全 ${total} 件中 ${start}–${end} 件を表示`}
+        </span>
+        <details className="toolbar__filters-details">
+          <summary className="toolbar__filters-summary">
+            <span className="toolbar__filters-summary__title">絞り込み条件</span>
+            <span className="toolbar__filters-summary__preview">
+              {summarizeEventTextFilters(
+                filterEventType,
+                filterSeverity,
+                filterMessage,
+                filterComment,
+              )}
+            </span>
+          </summary>
+          <div className="toolbar__filters" aria-label="イベントの絞り込み（種別・重大度・メッセージ・コメント）">
+            <label>
+              種別（含む）
+              <input
+                value={filterEventType}
+                onChange={(e) => {
+                  setFilterEventType(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              重大度（含む）
+              <input
+                value={filterSeverity}
+                onChange={(e) => {
+                  setFilterSeverity(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              メッセージ（含む）
+              <input
+                value={filterMessage}
+                onChange={(e) => {
+                  setFilterMessage(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              コメント（含む）
+              <input
+                value={filterComment}
+                onChange={(e) => {
+                  setFilterComment(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        </details>
       </div>
       <table className="table">
         <thead>
@@ -265,16 +569,199 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
             <th>重大度</th>
             <th>スコア</th>
             <th>メッセージ</th>
+            <th>コメント</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((e) => (
+          {asArray<EventRow>(rows).map((e) => (
             <tr key={e.id}>
               <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
               <td>{e.event_type}</td>
               <td>{e.severity ?? ''}</td>
               <td>{e.notable_score}</td>
               <td className="msg">{e.message}</td>
+              <td className="event-comment-cell">
+                {editingCommentId === e.id ? (
+                  <div className="event-comment-edit">
+                    <textarea
+                      className="event-comment-textarea"
+                      value={commentDraft}
+                      onChange={(ev) => setCommentDraft(ev.target.value)}
+                      rows={3}
+                      maxLength={8000}
+                      aria-label="イベントコメント"
+                    />
+                    <div className="event-comment-actions">
+                      <button
+                        type="button"
+                        className="btn btn--filled"
+                        onClick={() => void saveComment(e.id)}
+                      >
+                        保存
+                      </button>
+                      <button type="button" className="btn" onClick={cancelCommentEdit}>
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="event-comment-view">
+                    <span className="event-comment-preview">
+                      {e.user_comment?.trim() ? e.user_comment : '—'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => beginCommentEdit(e)}
+                    >
+                      編集
+                    </button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
+  const [list, setList] = useState<EventScoreRuleRow[]>([])
+  const [newType, setNewType] = useState('')
+  const [newDelta, setNewDelta] = useState(0)
+  const [draftDelta, setDraftDelta] = useState<Record<number, number>>({})
+
+  const load = useCallback(async () => {
+    onError(null)
+    try {
+      const data = await apiGet<EventScoreRuleRow[]>('/api/event-score-rules')
+      setList(data)
+      const d: Record<number, number> = {}
+      for (const r of data) {
+        d[r.id] = r.score_delta
+      }
+      setDraftDelta(d)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }, [onError])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
+    void load()
+  }, [load])
+
+  const add = async () => {
+    const et = newType.trim()
+    if (!et) {
+      onError('イベント種別を入力してください')
+      return
+    }
+    onError(null)
+    try {
+      await apiPost('/api/event-score-rules', {
+        event_type: et,
+        score_delta: newDelta,
+      })
+      setNewType('')
+      setNewDelta(0)
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const save = async (id: number) => {
+    onError(null)
+    try {
+      const v = draftDelta[id]
+      await apiPatch(`/api/event-score-rules/${id}`, {
+        score_delta: typeof v === 'number' && Number.isFinite(v) ? v : 0,
+      })
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const remove = async (id: number) => {
+    if (!confirm('このルールを削除しますか？既存イベントのスコアはルールなしのベースに戻ります。')) return
+    onError(null)
+    try {
+      await apiDelete(`/api/event-score-rules/${id}`)
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="panel">
+      <p className="hint">
+        イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。最終スコアは 0〜100
+        に収まります。既存の取り込み済みイベントにも、ルールの保存・変更・削除時に再計算が反映されます。
+      </p>
+      <h2>追加</h2>
+      <div className="form-grid score-rules-form">
+        <label>
+          イベント種別（完全一致）
+          <input
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            placeholder="例: vim.event.VmPoweredOnEvent"
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          加算（負数可）
+          <input
+            type="number"
+            value={newDelta}
+            onChange={(e) => setNewDelta(Number(e.target.value))}
+          />
+        </label>
+      </div>
+      <button type="button" className="btn btn--filled" onClick={() => void add()}>
+        追加
+      </button>
+
+      <h2>一覧</h2>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>イベント種別</th>
+            <th>加算</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((r) => (
+            <tr key={r.id}>
+              <td className="msg">{r.event_type}</td>
+              <td>
+                <input
+                  type="number"
+                  className="score-rules-delta-input"
+                  aria-label={`${r.event_type} の加算`}
+                  value={draftDelta[r.id] ?? r.score_delta}
+                  onChange={(e) =>
+                    setDraftDelta((prev) => ({
+                      ...prev,
+                      [r.id]: Number(e.target.value),
+                    }))
+                  }
+                />
+              </td>
+              <td className="actions">
+                <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
+                  保存
+                </button>
+                <button type="button" className="btn btn--gray" onClick={() => void remove(r.id)}>
+                  削除
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -297,8 +784,8 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const load = useCallback(async () => {
     onError(null)
     try {
-      const data = await apiGet<VCenter[]>('/api/vcenters')
-      setList(data)
+      const data = await apiGet<unknown>('/api/vcenters')
+      setList(asArray<VCenter>(data))
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
@@ -325,6 +812,20 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
     onError(null)
     try {
       await apiDelete(`/api/vcenters/${id}`)
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const toggleEnabled = async (v: VCenter) => {
+    const msg = v.is_enabled ? '無効にしますか？' : '有効にしますか？'
+    if (!confirm(msg)) return
+    onError(null)
+    try {
+      await apiPatch(`/api/vcenters/${v.id}`, {
+        is_enabled: !v.is_enabled,
+      })
       await load()
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
@@ -420,17 +921,9 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
                 <button
                   type="button"
                   className="btn btn--gray"
-                  onClick={() =>
-                    void apiPatch(`/api/vcenters/${v.id}`, {
-                      is_enabled: !v.is_enabled,
-                    })
-                      .then(load)
-                      .catch((e) =>
-                        onError(e instanceof Error ? e.message : String(e)),
-                      )
-                  }
+                  onClick={() => void toggleEnabled(v)}
                 >
-                  切替
+                  {v.is_enabled ? '無効' : '有効'}
                 </button>
                 <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
                   削除
@@ -456,10 +949,11 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [chartResetKey, setChartResetKey] = useState(0)
 
   useEffect(() => {
-    void apiGet<VCenter[]>('/api/vcenters')
+    void apiGet<unknown>('/api/vcenters')
       .then((v) => {
-        setVcenters(v)
-        setVcenterId((prev) => prev || v[0]?.id || '')
+        const arr = asArray<VCenter>(v)
+        setVcenters(arr)
+        setVcenterId((prev) => prev || arr[0]?.id || '')
       })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
   }, [onError])
@@ -515,10 +1009,6 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
 
   return (
     <div className="panel">
-      <p className="hint">
-        メトリクスはバックグラウンド（既定で数分ごと）または「手動で収集」で vCenter
-        から取り込まれます。vCenter が「有効」でないと収集されません。
-      </p>
       <div className="toolbar">
         <label>
           vCenter

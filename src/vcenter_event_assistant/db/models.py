@@ -43,8 +43,20 @@ class EventRecord(Base):
     chain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notable_score: Mapped[int] = mapped_column(Integer, default=0, index=True)
     notable_tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    user_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     vcenter: Mapped["VCenter"] = relationship(back_populates="events")
+
+
+class EventScoreRule(Base):
+    """Per-event-type additive adjustment to ``score_event`` base score (stored in ``events.notable_score``)."""
+
+    __tablename__ = "event_score_rules"
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_score_rules_event_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(512), nullable=False)
+    score_delta: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class MetricSample(Base):

@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import DashboardSummary, EventRead
+from vcenter_event_assistant.api.schemas import DashboardSummary, EventRead, HighCpuHostRow
 from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 
@@ -42,21 +42,38 @@ async def dashboard_summary(
     )
     top = list(top_q.scalars().all())
 
+    cpu_rank = (
+        select(
+            MetricSample.id,
+            func.row_number()
+            .over(
+                partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
+                order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
+            )
+            .label("rn"),
+        )
+        .where(
+            MetricSample.metric_key == "host.cpu.usage_pct",
+            MetricSample.sampled_at >= day_ago,
+        )
+    ).subquery()
+
     cpu_q = await session.execute(
         select(MetricSample)
-        .where(MetricSample.metric_key == "host.cpu.usage_pct", MetricSample.sampled_at >= day_ago)
+        .join(cpu_rank, MetricSample.id == cpu_rank.c.id)
+        .where(cpu_rank.c.rn == 1)
         .order_by(MetricSample.value.desc())
         .limit(10)
     )
     cpu_rows = list(cpu_q.scalars().all())
     high_cpu = [
-        {
-            "vcenter_id": str(r.vcenter_id),
-            "entity_name": r.entity_name,
-            "entity_moid": r.entity_moid,
-            "value": r.value,
-            "sampled_at": r.sampled_at.isoformat(),
-        }
+        HighCpuHostRow(
+            vcenter_id=str(r.vcenter_id),
+            entity_name=r.entity_name,
+            entity_moid=r.entity_moid,
+            value=r.value,
+            sampled_at=r.sampled_at,
+        )
         for r in cpu_rows
     ]
 

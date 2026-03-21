@@ -74,6 +74,23 @@ def score_event(
     return NotableResult(score=min(score, 100), tags=uniq_tags)
 
 
+def clamp_notable_total(base_score: int, score_delta: int) -> int:
+    """Apply additive delta and clamp to 0..100 (matches stored ``notable_score`` semantics)."""
+    return max(0, min(100, base_score + score_delta))
+
+
+def final_notable_score(
+    *,
+    event_type: str,
+    severity: str | None,
+    message: str,
+    score_delta: int = 0,
+) -> int:
+    """Base score from ``score_event`` plus optional per-type delta, clamped to 0..100."""
+    base = score_event(event_type=event_type, severity=severity, message=message).score
+    return clamp_notable_total(base, score_delta)
+
+
 def flag_metric_spike(
     *,
     metric_key: str,
