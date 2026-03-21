@@ -39,6 +39,8 @@ class VCenterRead(BaseModel):
 
 
 class EventRead(BaseModel):
+    """Event row: ``occurred_at`` is normalized to UTC so JSON uses ``Z`` (JS parses as UTC)."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -52,6 +54,29 @@ class EventRead(BaseModel):
     entity_type: str | None
     notable_score: int
     notable_tags: list | None
+    user_comment: str | None = None
+
+    @field_validator("occurred_at", mode="before")
+    @classmethod
+    def occurred_at_to_utc(cls, v: object) -> datetime:
+        if not isinstance(v, datetime):
+            raise TypeError("occurred_at must be a datetime")
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+
+
+class EventUserCommentPatch(BaseModel):
+    """Update operator memo on a single event (``null`` clears the comment)."""
+
+    user_comment: str | None = Field(..., max_length=8000)
+
+    @field_validator("user_comment", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: object) -> object:
+        if v == "":
+            return None
+        return v
 
 
 class EventListResponse(BaseModel):

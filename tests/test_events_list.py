@@ -48,6 +48,8 @@ async def test_list_events_returns_total_and_pages(client: AsyncClient) -> None:
     assert d0["total"] == 5
     assert len(d0["items"]) == 2
     assert [x["message"] for x in d0["items"]] == ["m0", "m1"]
+    # UTC instant explicit in JSON so browsers parse consistently (not as local time).
+    assert d0["items"][0]["occurred_at"].endswith("Z")
 
     r1 = await client.get("/api/events?limit=2&offset=2")
     assert r1.status_code == 200

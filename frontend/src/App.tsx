@@ -47,6 +47,7 @@ type EventRow = {
   severity: string | null
   notable_score: number
   notable_tags: string[] | null
+  user_comment?: string | null
 }
 
 type Summary = {
@@ -251,6 +252,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
             <th>種別</th>
             <th>スコア</th>
             <th>メッセージ</th>
+            <th>コメント</th>
           </tr>
         </thead>
         <tbody>
@@ -260,6 +262,9 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
               <td>{e.event_type}</td>
               <td>{e.notable_score}</td>
               <td className="msg">{e.message}</td>
+              <td className="event-comment-cell event-comment-cell--readonly">
+                {e.user_comment ?? '—'}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -275,6 +280,8 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [minScore, setMinScore] = useState('')
   const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
   const [page, setPage] = useState(1)
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
+  const [commentDraft, setCommentDraft] = useState('')
 
   const load = useCallback(async () => {
     onError(null)
@@ -313,9 +320,41 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const canPrev = safePage > 1
   const canNext = total > 0 && safePage * pageSize < total
 
+  useEffect(() => {
+    setEditingCommentId(null)
+    setCommentDraft('')
+  }, [page, pageSize, minScore])
+
+  const beginCommentEdit = (e: EventRow) => {
+    setEditingCommentId(e.id)
+    setCommentDraft(e.user_comment ?? '')
+  }
+
+  const cancelCommentEdit = () => {
+    setEditingCommentId(null)
+    setCommentDraft('')
+  }
+
+  const saveComment = async (eventId: number) => {
+    onError(null)
+    try {
+      const updated = await apiPatch<EventRow>(`/api/events/${eventId}`, {
+        user_comment: commentDraft.trim() === '' ? null : commentDraft,
+      })
+      setRows((prev) => prev.map((r) => (r.id === eventId ? { ...r, ...updated } : r)))
+      setEditingCommentId(null)
+      setCommentDraft('')
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <div className="panel">
       <div className="toolbar">
+        <p className="events-tz-hint">
+          時刻はヘッダーの「表示タイムゾーン」に従って表示されます。
+        </p>
         <label>
           最小スコア
           <input
@@ -376,6 +415,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
             <th>重大度</th>
             <th>スコア</th>
             <th>メッセージ</th>
+            <th>コメント</th>
           </tr>
         </thead>
         <tbody>
@@ -386,6 +426,45 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
               <td>{e.severity ?? ''}</td>
               <td>{e.notable_score}</td>
               <td className="msg">{e.message}</td>
+              <td className="event-comment-cell">
+                {editingCommentId === e.id ? (
+                  <div className="event-comment-edit">
+                    <textarea
+                      className="event-comment-textarea"
+                      value={commentDraft}
+                      onChange={(ev) => setCommentDraft(ev.target.value)}
+                      rows={3}
+                      maxLength={8000}
+                      aria-label="イベントコメント"
+                    />
+                    <div className="event-comment-actions">
+                      <button
+                        type="button"
+                        className="btn btn--filled"
+                        onClick={() => void saveComment(e.id)}
+                      >
+                        保存
+                      </button>
+                      <button type="button" className="btn" onClick={cancelCommentEdit}>
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="event-comment-view">
+                    <span className="event-comment-preview">
+                      {e.user_comment?.trim() ? e.user_comment : '—'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => beginCommentEdit(e)}
+                    >
+                      編集
+                    </button>
+                  </div>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

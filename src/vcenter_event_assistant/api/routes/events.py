@@ -5,12 +5,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import EventListResponse, EventRead
+from vcenter_event_assistant.api.schemas import EventListResponse, EventRead, EventUserCommentPatch
 from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import EventRecord
 
@@ -53,3 +53,19 @@ async def list_events(
         items=[EventRead.model_validate(r) for r in rows],
         total=total,
     )
+
+
+@router.patch("/{event_id}", response_model=EventRead)
+async def patch_event_comment(
+    event_id: int,
+    body: EventUserCommentPatch,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_auth),
+) -> EventRead:
+    row = await session.get(EventRecord, event_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    row.user_comment = body.user_comment
+    await session.commit()
+    await session.refresh(row)
+    return EventRead.model_validate(row)

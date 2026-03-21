@@ -3,8 +3,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event, inspect, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from vcenter_event_assistant.db.base import Base
@@ -69,7 +69,26 @@ async def session_scope(settings: Settings | None = None) -> AsyncIterator[Async
             raise
 
 
+async def _ensure_events_user_comment_column(engine: AsyncEngine) -> None:
+    """Add ``events.user_comment`` when DB predates that column (``create_all`` does not alter tables)."""
+
+    def sync_check(sync_conn) -> None:
+        insp = inspect(sync_conn)
+        if not insp.has_table("events"):
+            return
+        cols = [c["name"] for c in insp.get_columns("events")]
+        if "user_comment" in cols:
+            return
+        sync_conn.execute(
+            text("ALTER TABLE events ADD COLUMN user_comment TEXT"),
+        )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(sync_check)
+
+
 async def init_db(settings: Settings | None = None) -> None:
     engine = get_engine(settings=settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _ensure_events_user_comment_column(engine)

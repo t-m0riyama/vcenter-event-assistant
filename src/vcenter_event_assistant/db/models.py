@@ -43,6 +43,7 @@ class EventRecord(Base):
     chain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notable_score: Mapped[int] = mapped_column(Integer, default=0, index=True)
     notable_tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    user_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     vcenter: Mapped["VCenter"] = relationship(back_populates="events")
 
