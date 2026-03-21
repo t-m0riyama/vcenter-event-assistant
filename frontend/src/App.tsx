@@ -1,12 +1,4 @@
-import {
-  Component,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ErrorInfo,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -28,6 +20,11 @@ import {
 import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
+import { MetricsChartErrorBoundary } from './metrics/MetricsChartErrorBoundary'
+import {
+  normalizeMetricSeriesResponse,
+  type MetricPoint,
+} from './metrics/normalizeMetricSeriesResponse'
 import { CHART_STROKE_GRID, CHART_STROKE_PRIMARY } from './styles/chartStrokes'
 import './App.css'
 
@@ -63,58 +60,6 @@ type Summary = {
     value: number
     sampled_at: string
   }>
-}
-
-type MetricPoint = {
-  sampled_at: string
-  value: number
-  entity_name: string
-  metric_key: string
-  vcenter_id: string
-}
-
-type MetricSeriesResponse = {
-  points: MetricPoint[]
-  total: number
-}
-
-function normalizeMetricSeriesResponse(data: unknown): MetricSeriesResponse {
-  if (!data || typeof data !== 'object') {
-    return { points: [], total: 0 }
-  }
-  const o = data as Record<string, unknown>
-  const rawPoints = o.points
-  const points = Array.isArray(rawPoints) ? (rawPoints as MetricPoint[]) : []
-  const totalRaw = o.total
-  const total = typeof totalRaw === 'number' && Number.isFinite(totalRaw) ? totalRaw : 0
-  return { points, total }
-}
-
-/** Catches Recharts/SVG failures so a chart bug does not blank the whole app. */
-class MetricsChartErrorBoundary extends Component<
-  { children: ReactNode },
-  { hasError: boolean }
-> {
-  state = { hasError: false }
-
-  static getDerivedStateFromError(): { hasError: boolean } {
-    return { hasError: true }
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('Metrics chart error:', error, info.componentStack)
-  }
-
-  render(): ReactNode {
-    if (this.state.hasError) {
-      return (
-        <p className="hint" role="status">
-          チャートを表示できませんでした。再取得するか、ページを再読み込みしてください。
-        </p>
-      )
-    }
-    return this.props.children
-  }
 }
 
 type Tab = 'summary' | 'events' | 'vcenters' | 'metrics'
