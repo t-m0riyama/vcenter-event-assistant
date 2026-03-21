@@ -123,6 +123,28 @@ async def test_metric_keys_distinct_sorted_and_scoped_by_vcenter(client: AsyncCl
         )
         session.add(
             MetricSample(
+                vcenter_id=vid_a,
+                sampled_at=base + timedelta(seconds=3),
+                entity_type="HostSystem",
+                entity_moid="m1",
+                entity_name="h1",
+                metric_key="host.net.bytes_rx_kbps",
+                value=100.0,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid_a,
+                sampled_at=base + timedelta(seconds=4),
+                entity_type="Datastore",
+                entity_moid="ds-1",
+                entity_name="ds1",
+                metric_key="datastore.space.used_pct",
+                value=55.0,
+            )
+        )
+        session.add(
+            MetricSample(
                 vcenter_id=vid_b,
                 sampled_at=base + timedelta(seconds=2),
                 entity_type="HostSystem",
@@ -135,11 +157,21 @@ async def test_metric_keys_distinct_sorted_and_scoped_by_vcenter(client: AsyncCl
 
     resp_all = await client.get("/api/metrics/keys")
     assert resp_all.status_code == 200
-    assert resp_all.json()["metric_keys"] == ["host.cpu.usage_pct", "host.mem.usage_pct"]
+    assert resp_all.json()["metric_keys"] == [
+        "datastore.space.used_pct",
+        "host.cpu.usage_pct",
+        "host.mem.usage_pct",
+        "host.net.bytes_rx_kbps",
+    ]
 
     resp_a = await client.get(f"/api/metrics/keys?vcenter_id={vid_a}")
     assert resp_a.status_code == 200
-    assert resp_a.json()["metric_keys"] == ["host.cpu.usage_pct", "host.mem.usage_pct"]
+    assert resp_a.json()["metric_keys"] == [
+        "datastore.space.used_pct",
+        "host.cpu.usage_pct",
+        "host.mem.usage_pct",
+        "host.net.bytes_rx_kbps",
+    ]
 
     resp_b = await client.get(f"/api/metrics/keys?vcenter_id={vid_b}")
     assert resp_b.status_code == 200
