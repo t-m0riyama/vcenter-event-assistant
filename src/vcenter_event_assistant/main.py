@@ -59,7 +59,7 @@ def create_app() -> FastAPI:
     api.include_router(dashboard_router)
 
     @api.post("/ingest/run")
-    async def run_ingest_now(_: None = Depends(require_auth)) -> dict[str, str]:
+    async def run_ingest_now(_: None = Depends(require_auth)) -> dict[str, str | int]:
         from sqlalchemy import select
 
         from vcenter_event_assistant.db.models import VCenter
@@ -84,7 +84,7 @@ def create_app() -> FastAPI:
                 res = await session.execute(select(VCenter).where(VCenter.id == vid))
                 vc = res.scalar_one()
                 m_total += await ingest_metrics_for_vcenter(session, vc)
-        return {"status": "ok", "events_inserted": str(ev_total), "metrics_inserted": str(m_total)}
+        return {"status": "ok", "events_inserted": ev_total, "metrics_inserted": m_total}
 
     app.include_router(api)
 

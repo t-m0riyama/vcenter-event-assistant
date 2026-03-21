@@ -1,0 +1,59 @@
+:root {
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+
+  --color-primary: #007aff;
+  --color-primary-dark: #005ecb;
+  --color-primary-50: #e8f2ff;
+  --color-primary-focus-ring: rgba(0, 122, 255, 0.32);
+  --color-success: #34c759;
+  --color-warning: #ffcc00;
+  --color-error: #ff3b30;
+
+  --color-gray-50: #f7f8fa;
+  --color-gray-100: #eff1f4;
+  --color-gray-200: #dde2e8;
+  --color-gray-300: #c9d0da;
+  --color-gray-400: #9ea7b4;
+  --color-gray-500: #6e7785;
+  --color-gray-700: #3e4652;
+  --color-gray-900: #1a1f29;
+
+  --color-text-primary: var(--color-gray-900);
+  --color-text-secondary: var(--color-gray-500);
+  --color-background: #ffffff;
+  --color-background-elevated: #ffffff;
+  --color-background-secondary: var(--color-gray-50);
+  --color-border: var(--color-gray-200);
+
+  --font-size-large-title: 34px;
+  --font-size-title3: 20px;
+  --font-size-body: 17px;
+  --font-size-subhead: 15px;
+  --font-size-footnote: 13px;
+  --font-size-caption2: 11px;
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --radius-panel: 14px;
+  --radius-button: 10px;
+  --radius-control: 6px;
+  --shadow-panel: 0 2px 12px rgba(26, 31, 41, 0.06);
+}
+
+@media (max-width: 768px) {
+  :root {
+    --font-size-large-title: 30px;
+    --font-size-title3: 18px;
+    --font-size-body: 16px;
+    --font-size-subhead: 14px;
+    --font-size-footnote: 12px;
+    --font-size-caption2: 11px;
+  }
+}

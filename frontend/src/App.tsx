@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -20,6 +20,12 @@ import {
 import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
+import { MetricsChartErrorBoundary } from './metrics/MetricsChartErrorBoundary'
+import {
+  normalizeMetricSeriesResponse,
+  type MetricPoint,
+} from './metrics/normalizeMetricSeriesResponse'
+import { CHART_STROKE_GRID, CHART_STROKE_PRIMARY } from './styles/chartStrokes'
 import './App.css'
 
 type VCenter = {
@@ -56,19 +62,6 @@ type Summary = {
   }>
 }
 
-type MetricPoint = {
-  sampled_at: string
-  value: number
-  entity_name: string
-  metric_key: string
-  vcenter_id: string
-}
-
-type MetricSeriesResponse = {
-  points: MetricPoint[]
-  total: number
-}
-
 type Tab = 'summary' | 'events' | 'vcenters' | 'metrics'
 
 export default function App() {
@@ -96,21 +89,25 @@ export default function App() {
                 placeholder="未設定の場合は認証なし（開発用）"
               />
             </label>
-            <button type="button" onClick={applyToken}>
+            <button type="button" className="btn btn--filled" onClick={applyToken}>
               保存
             </button>
             <TimeZoneSelect />
           </div>
         </header>
 
-      {err && <div className="error-banner">{err}</div>}
+      {err && (
+        <div className="error-banner" role="alert">
+          {err}
+        </div>
+      )}
 
       <nav className="tabs">
         {(['summary', 'events', 'vcenters', 'metrics'] as const).map((t) => (
           <button
             key={t}
             type="button"
-            className={tab === t ? 'active' : ''}
+            className={tab === t ? 'active' : undefined}
             onClick={() => {
               setTab(t)
               setErr(null)
@@ -159,7 +156,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   return (
     <div className="panel">
       <p>
-        <button type="button" onClick={() => void load()}>
+        <button type="button" className="btn btn--filled" onClick={() => void load()}>
           再読込
         </button>
       </p>
@@ -256,7 +253,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
             placeholder="例: 40"
           />
         </label>
-        <button type="button" onClick={() => void load()}>
+        <button type="button" className="btn btn--filled" onClick={() => void load()}>
           再読込
         </button>
       </div>
@@ -394,7 +391,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
           有効
         </label>
       </div>
-      <button type="button" onClick={() => void add()}>
+      <button type="button" className="btn btn--filled" onClick={() => void add()}>
         追加
       </button>
 
@@ -417,11 +414,12 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
               </td>
               <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
               <td className="actions">
-                <button type="button" onClick={() => void test(v.id)}>
+                <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
                   接続テスト
                 </button>
                 <button
                   type="button"
+                  className="btn btn--gray"
                   onClick={() =>
                     void apiPatch(`/api/vcenters/${v.id}`, {
                       is_enabled: !v.is_enabled,
@@ -434,7 +432,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
                 >
                   切替
                 </button>
-                <button type="button" onClick={() => void remove(v.id)}>
+                <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
                   削除
                 </button>
               </td>
@@ -455,6 +453,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [ingesting, setIngesting] = useState(false)
+  const [chartResetKey, setChartResetKey] = useState(0)
 
   useEffect(() => {
     void apiGet<VCenter[]>('/api/vcenters')
@@ -471,9 +470,10 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     try {
       const q = new URLSearchParams({ metric_key: metricKey, limit: '500' })
       if (vcenterId) q.set('vcenter_id', vcenterId)
-      const data = await apiGet<MetricSeriesResponse>(`/api/metrics?${q.toString()}`)
-      setPoints(data.points)
-      setMetricTotal(data.total)
+      const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
+      const normalized = normalizeMetricSeriesResponse(data)
+      setPoints(normalized.points)
+      setMetricTotal(normalized.total)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -489,7 +489,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     setIngesting(true)
     onError(null)
     try {
-      await apiPost<{ status: string; events_inserted: string; metrics_inserted: string }>(
+      await apiPost<{ status: string; events_inserted: number; metrics_inserted: number }>(
         '/api/ingest/run',
         {},
       )
@@ -501,11 +501,17 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
-  const chartData = points.map((p) => ({
-    t: formatIsoInTimeZone(p.sampled_at, timeZone),
-    v: p.value,
-    name: p.entity_name,
-  }))
+  const chartData = useMemo(
+    () =>
+      (points ?? [])
+        .filter((p) => p != null && Number.isFinite(p.value))
+        .map((p) => ({
+          t: formatIsoInTimeZone(String(p.sampled_at), timeZone),
+          v: p.value,
+          name: p.entity_name ?? '',
+        })),
+    [points, timeZone],
+  )
 
   return (
     <div className="panel">
@@ -535,10 +541,23 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
             onChange={(e) => setMetricKey(e.target.value)}
           />
         </label>
-        <button type="button" disabled={loading} onClick={() => void load()}>
+        <button
+          type="button"
+          className="btn btn--filled"
+          disabled={loading}
+          onClick={() => {
+            setChartResetKey((k) => k + 1)
+            void load()
+          }}
+        >
           {loading ? '取得中…' : '再取得'}
         </button>
-        <button type="button" disabled={ingesting} onClick={() => void runIngest()}>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={ingesting}
+          onClick={() => void runIngest()}
+        >
           {ingesting ? '収集中…' : '手動で収集'}
         </button>
         {metricTotal !== null && !loading && (
@@ -557,18 +576,27 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
           </ul>
         </div>
       )}
-      <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="t" minTickGap={24} />
-            <YAxis domain={[0, 100]} />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="v" name="値" stroke="#0d6efd" dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      <MetricsChartErrorBoundary key={`${vcenterId}-${metricKey}-${chartResetKey}`}>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
+              <XAxis dataKey="t" minTickGap={24} />
+              <YAxis domain={[0, 100]} />
+              <Tooltip />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="v"
+                name="値"
+                stroke={CHART_STROKE_PRIMARY}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </MetricsChartErrorBoundary>
     </div>
   )
 }
