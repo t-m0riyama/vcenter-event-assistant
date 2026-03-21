@@ -317,19 +317,22 @@
   flex-wrap: wrap;
   gap: var(--spacing-2);
   align-items: center;
-  align-self: center;
 }
 
 .toolbar__meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: var(--font-size-footnote);
   color: var(--color-text-secondary);
-  align-self: center;
 }
 
 .metric-total {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: var(--font-size-footnote);
   color: var(--color-text-secondary);
-  align-self: center;
 }
 
 .form-grid {
