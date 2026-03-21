@@ -489,7 +489,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     setIngesting(true)
     onError(null)
     try {
-      await apiPost<{ status: string; events_inserted: string; metrics_inserted: string }>(
+      await apiPost<{ status: string; events_inserted: number; metrics_inserted: number }>(
         '/api/ingest/run',
         {},
       )

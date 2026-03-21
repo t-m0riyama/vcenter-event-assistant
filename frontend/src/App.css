@@ -183,7 +183,7 @@
 
 .form-grid .check {
   flex-direction: row;
-  align-items: end;
+  align-items: center;
   gap: var(--spacing-2);
 }
 
@@ -235,12 +235,14 @@ textarea {
   border: 1px solid var(--color-border);
   background: var(--color-background);
   color: var(--color-text-primary);
-  padding: 0 var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-2);
+  line-height: 1.25;
 }
 
 textarea {
   min-height: 88px;
   padding: var(--spacing-2);
+  line-height: 1.45;
 }
 
 input::placeholder,
