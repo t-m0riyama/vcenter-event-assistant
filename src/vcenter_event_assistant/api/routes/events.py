@@ -10,6 +10,7 @@ from sqlalchemy import Integer, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import (
     EventListResponse,
@@ -40,12 +41,6 @@ def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -
     """Substring match, case-insensitive; works on SQLite and PostgreSQL via ``ilike`` + escape."""
     hay = func.coalesce(column, literal(""))
     return hay.ilike(f"%{_escape_like_metachars(needle)}%", escape="\\")
-
-
-def _to_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 def _epoch_seconds_expr(dialect_name: str):
@@ -84,8 +79,8 @@ async def event_rate_series(
     bucket_seconds: int | None = Query(default=None, ge=60, le=86400),
     vcenter_id: uuid.UUID | None = None,
 ) -> EventRateSeriesResponse:
-    ft = _to_utc(from_time)
-    tt = _to_utc(to_time)
+    ft = to_utc(from_time)
+    tt = to_utc(to_time)
     if ft >= tt:
         raise HTTPException(status_code=400, detail="from must be before to")
 
@@ -145,9 +140,9 @@ async def list_events(
     if vcenter_id is not None:
         conditions.append(EventRecord.vcenter_id == vcenter_id)
     if from_time is not None:
-        conditions.append(EventRecord.occurred_at >= from_time)
+        conditions.append(EventRecord.occurred_at >= to_utc(from_time))
     if to_time is not None:
-        conditions.append(EventRecord.occurred_at <= to_time)
+        conditions.append(EventRecord.occurred_at <= to_utc(to_time))
     if min_score is not None:
         conditions.append(EventRecord.notable_score >= min_score)
 
