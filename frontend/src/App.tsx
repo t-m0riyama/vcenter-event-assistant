@@ -1367,17 +1367,17 @@ function MetricsPanel({
 
   const load = useCallback(
     async (overrideKey?: string): Promise<boolean> => {
-      const key = (overrideKey ?? metricKey).trim()
-      if (!key) {
-        onError(null)
+      const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
+      if (graphRange.mode === 'invalid') {
+        onError(graphRange.message)
         setPoints([])
         setMetricTotal(null)
         setLoading(false)
         return false
       }
-      const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
-      if (graphRange.mode === 'invalid') {
-        onError(graphRange.message)
+      const key = (overrideKey ?? metricKey).trim()
+      if (!key) {
+        onError(null)
         setPoints([])
         setMetricTotal(null)
         setLoading(false)
