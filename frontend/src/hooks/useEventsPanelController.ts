@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPatch } from '../api'
 import type { EventRow, VCenter } from '../api/schemas'
-import { normalizeEventListPayload } from '../api/schemas'
+import { eventRowSchema, normalizeEventListPayload } from '../api/schemas'
 import { resolveEventApiRange } from '../datetime/graphRange'
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
@@ -138,9 +138,10 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
     async (eventId: number) => {
       onError(null)
       try {
-        const updated = await apiPatch<EventRow>(`/api/events/${eventId}`, {
+        const raw = await apiPatch<unknown>(`/api/events/${eventId}`, {
           user_comment: commentDraft.trim() === '' ? null : commentDraft,
         })
+        const updated = eventRowSchema.parse(raw)
         setRows((prev) => prev.map((r) => (r.id === eventId ? { ...r, ...updated } : r)))
         setEditingCommentId(null)
         setCommentDraft('')

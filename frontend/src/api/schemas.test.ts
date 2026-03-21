@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeEventListPayload, parseSummary } from './schemas'
+import { eventRowSchema, normalizeEventListPayload, parseSummary } from './schemas'
+
+describe('eventRowSchema', () => {
+  it('parses API event row shape (e.g. PATCH response)', () => {
+    const row = eventRowSchema.parse({
+      id: 1,
+      vcenter_id: 'vc',
+      occurred_at: '2025-01-01T00:00:00Z',
+      event_type: 't',
+      message: 'm',
+      severity: null,
+      notable_score: 0,
+      notable_tags: null,
+      user_comment: 'hello',
+    })
+    expect(row.user_comment).toBe('hello')
+  })
+})
 
 describe('normalizeEventListPayload', () => {
   it('parses array responses', () => {
