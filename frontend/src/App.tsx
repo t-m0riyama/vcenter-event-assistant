@@ -18,6 +18,12 @@ import {
   buildMetricsExportBasename,
   downloadChartSvg,
 } from './metrics/downloadChartSvg'
+import {
+  buildEventExportFilename,
+  downloadEventListCsv,
+  eventRowsToCsv,
+} from './events/eventCsv'
+import type { EventCsvRow } from './events/eventCsv'
 import { downloadMetricPointsCsv } from './metrics/metricCsv'
 import {
   normalizeMetricSeriesResponse,
@@ -45,6 +51,9 @@ type EventRow = {
   severity: string | null
   notable_score: number
   notable_tags: string[] | null
+  user_name?: string | null
+  entity_name?: string | null
+  entity_type?: string | null
   user_comment?: string | null
 }
 
@@ -96,6 +105,9 @@ function normalizeEventListPayload(raw: unknown): { items: EventRow[]; total: nu
 
 const EVENT_PAGE_SIZES = [20, 50, 100, 200] as const
 
+/** Matches `GET /api/events` max `limit` for chunked export. */
+const EVENT_EXPORT_CHUNK = 200
+
 const EVENT_TEXT_FILTER_SUMMARY_CLIP = 18
 const EVENT_TEXT_FILTER_SUMMARY_MAX = 96
 
@@ -127,6 +139,23 @@ function summarizeEventTextFilters(
     out = `${out.slice(0, EVENT_TEXT_FILTER_SUMMARY_MAX - 1)}…`
   }
   return out
+}
+
+function eventRowToCsvRow(e: EventRow, vcenterName: string, timeZone: string): EventCsvRow {
+  return {
+    id: e.id,
+    occurred_at: formatIsoInTimeZone(e.occurred_at, timeZone),
+    vcenter_name: vcenterName,
+    event_type: e.event_type,
+    message: e.message,
+    severity: e.severity,
+    user_name: e.user_name ?? null,
+    entity_name: e.entity_name ?? null,
+    entity_type: e.entity_type ?? null,
+    notable_score: e.notable_score,
+    notable_tags: e.notable_tags as unknown[] | null,
+    user_comment: e.user_comment ?? null,
+  }
 }
 
 type Tab = 'summary' | 'events' | 'metrics' | 'settings'
@@ -441,6 +470,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [page, setPage] = useState(1)
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     onError(null)
@@ -533,6 +563,68 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
+  const downloadCsv = useCallback(async () => {
+    onError(null)
+    setExporting(true)
+    try {
+      const vcenters = await apiGet<unknown>('/api/vcenters')
+      const vcenterList = asArray<VCenter>(vcenters)
+      const nameById = new Map(vcenterList.map((v) => [v.id, v.name]))
+
+      const all: EventRow[] = []
+      let offset = 0
+      let totalExpected = 0
+      for (;;) {
+        const q = new URLSearchParams({
+          limit: String(EVENT_EXPORT_CHUNK),
+          offset: String(offset),
+        })
+        if (minScore) q.set('min_score', minScore)
+        const et = filterEventType.trim()
+        if (et) q.set('event_type_contains', et)
+        const sv = filterSeverity.trim()
+        if (sv) q.set('severity_contains', sv)
+        const msg = filterMessage.trim()
+        if (msg) q.set('message_contains', msg)
+        const cm = filterComment.trim()
+        if (cm) q.set('comment_contains', cm)
+        const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
+        const { items, total } = normalizeEventListPayload(raw)
+        totalExpected = total
+        all.push(...items)
+        offset += items.length
+        if (items.length === 0) break
+        if (all.length >= totalExpected) break
+      }
+      all.sort(
+        (a, b) =>
+          new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime(),
+      )
+      const csv = eventRowsToCsv(
+        all.map((e) =>
+          eventRowToCsvRow(
+            e,
+            nameById.get(e.vcenter_id) ?? e.vcenter_id,
+            timeZone,
+          ),
+        ),
+      )
+      downloadEventListCsv(csv, buildEventExportFilename())
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExporting(false)
+    }
+  }, [
+    onError,
+    minScore,
+    filterEventType,
+    filterSeverity,
+    filterMessage,
+    filterComment,
+    timeZone,
+  ])
+
   return (
     <div className="panel">
       <div className="toolbar">
@@ -584,6 +676,14 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         <span className="toolbar__meta">
           {total === 0 ? '全 0 件' : `全 ${total} 件中 ${start}–${end} 件を表示`}
         </span>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={exporting || total === 0}
+          onClick={() => void downloadCsv()}
+        >
+          {exporting ? '出力中…' : 'CSV をダウンロード'}
+        </button>
         <details className="toolbar__filters-details">
           <summary className="toolbar__filters-summary">
             <span className="toolbar__filters-summary__title">絞り込み条件</span>
