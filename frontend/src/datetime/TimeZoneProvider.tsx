@@ -1,18 +1,18 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
 import { getSortedTimeZoneOptions } from './listTimeZones'
+import { TimeZoneContext } from './timeZoneContext'
 import {
   getDefaultBrowserTimeZone,
   isValidIanaTimeZone,
   readStoredTimeZone,
   writeStoredTimeZone,
 } from './timeZoneStorage'
+import { useTimeZone } from './useTimeZone'
 
 function resolveInitialTimeZone(): string {
   const stored = readStoredTimeZone()
@@ -23,13 +23,6 @@ function resolveInitialTimeZone(): string {
   writeStoredTimeZone(tz)
   return tz
 }
-
-type TimeZoneContextValue = {
-  timeZone: string
-  setTimeZone: (tz: string) => void
-}
-
-const TimeZoneContext = createContext<TimeZoneContextValue | null>(null)
 
 export function TimeZoneProvider({ children }: { children: ReactNode }) {
   const [timeZone, setTimeZoneState] = useState(resolveInitialTimeZone)
@@ -50,14 +43,6 @@ export function TimeZoneProvider({ children }: { children: ReactNode }) {
   return (
     <TimeZoneContext.Provider value={value}>{children}</TimeZoneContext.Provider>
   )
-}
-
-export function useTimeZone(): TimeZoneContextValue {
-  const ctx = useContext(TimeZoneContext)
-  if (!ctx) {
-    throw new Error('useTimeZone must be used within TimeZoneProvider')
-  }
-  return ctx
 }
 
 export function TimeZoneSelect() {

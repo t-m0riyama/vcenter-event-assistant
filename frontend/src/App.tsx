@@ -18,7 +18,8 @@ import {
   setToken,
 } from './api'
 import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
-import { TimeZoneProvider, TimeZoneSelect, useTimeZone } from './datetime/TimeZoneContext'
+import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
+import { useTimeZone } from './datetime/useTimeZone'
 import './App.css'
 
 type VCenter = {
@@ -149,6 +150,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   }, [onError])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -239,6 +241,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   }, [onError, minScore])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -305,6 +308,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   }, [onError])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
