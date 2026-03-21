@@ -136,6 +136,8 @@ build/
 # frontend
 frontend/node_modules/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
 
 # vCenter settings
 app/config/vcenters/*.yml
