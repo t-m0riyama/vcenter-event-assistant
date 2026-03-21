@@ -1,31 +1,65 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react'
 import {
   CartesianGrid,
   Legend,
   Line,
   LineChart,
   ResponsiveContainer,
+  Text,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import { apiDelete, apiGet, apiPatch, apiPost } from './api'
 import {
-  apiDelete,
-  apiGet,
-  apiPatch,
-  apiPost,
-  getToken,
-  setToken,
-} from './api'
-import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
+  extractTickAxisValue,
+  formatChartAxisTick,
+  formatIsoInTimeZone,
+  parseApiUtcInstantMs,
+} from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
+import { ZonedRangeFields } from './datetime/ZonedRangeFields'
+import {
+  isValidUtcRangeOrder,
+  zonedLocalDateTimeToUtcIso,
+} from './datetime/zonedLocalDateTime'
+import {
+  EMPTY_ZONED_RANGE_PARTS,
+  zonedRangePartsToCombinedInputs,
+  type ZonedRangeParts,
+} from './datetime/zonedRangeParts'
 import { MetricsChartErrorBoundary } from './metrics/MetricsChartErrorBoundary'
+import {
+  buildMetricsExportBasename,
+  downloadChartSvg,
+} from './metrics/downloadChartSvg'
+import {
+  buildEventExportFilename,
+  downloadEventListCsv,
+  eventRowsToCsv,
+} from './events/eventCsv'
+import type { EventCsvRow } from './events/eventCsv'
+import {
+  downloadMetricPointsCsv,
+  type MetricCsvExportOptions,
+} from './metrics/metricCsv'
+import { buildMetricsChartModel } from './metrics/buildMetricsChartModel'
 import {
   normalizeMetricSeriesResponse,
   type MetricPoint,
 } from './metrics/normalizeMetricSeriesResponse'
-import { CHART_STROKE_GRID, CHART_STROKE_PRIMARY } from './styles/chartStrokes'
+import { ThemeProvider } from './theme/ThemeProvider'
+import type { ThemePreference } from './theme/themeStorage'
+import { useChartThemeColors } from './theme/useChartThemeColors'
+import { useTheme } from './theme/useTheme'
 import './App.css'
 
 type VCenter = {
@@ -47,7 +81,18 @@ type EventRow = {
   severity: string | null
   notable_score: number
   notable_tags: string[] | null
+  user_name?: string | null
+  entity_name?: string | null
+  entity_type?: string | null
   user_comment?: string | null
+}
+
+type SummaryHostMetricRow = {
+  vcenter_id: string
+  entity_name: string
+  entity_moid: string
+  value: number
+  sampled_at: string
 }
 
 type Summary = {
@@ -55,17 +100,19 @@ type Summary = {
   events_last_24h: number
   notable_events_last_24h: number
   top_notable_events: EventRow[]
-  high_cpu_hosts: Array<{
-    vcenter_id: string
-    entity_name: string
-    value: number
-    sampled_at: string
+  high_cpu_hosts: SummaryHostMetricRow[]
+  high_mem_hosts: SummaryHostMetricRow[]
+  top_event_types_24h: Array<{
+    event_type: string
+    event_count: number
+    max_notable_score: number
   }>
 }
 
 type AppConfig = {
   event_retention_days: number
   metric_retention_days: number
+  perf_sample_interval_seconds: number
 }
 
 /** Coerce API fields to arrays so `.map` never runs on null / objects (runtime safety). */
@@ -88,6 +135,9 @@ function normalizeEventListPayload(raw: unknown): { items: EventRow[]; total: nu
 }
 
 const EVENT_PAGE_SIZES = [20, 50, 100, 200] as const
+
+/** Matches `GET /api/events` max `limit` for chunked export. */
+const EVENT_EXPORT_CHUNK = 200
 
 const EVENT_TEXT_FILTER_SUMMARY_CLIP = 18
 const EVENT_TEXT_FILTER_SUMMARY_MAX = 96
@@ -122,9 +172,113 @@ function summarizeEventTextFilters(
   return out
 }
 
+type EventRangeResolve =
+  | { ok: true; from?: string; to?: string }
+  | { ok: false; message: string }
+
+/**
+ * Maps optional wall-clock range inputs (display time zone) to API `from` / `to` UTC ISO strings.
+ */
+function resolveEventApiRange(
+  rangeFromInput: string,
+  rangeToInput: string,
+  timeZone: string,
+): EventRangeResolve {
+  const rf = rangeFromInput.trim()
+  const rt = rangeToInput.trim()
+  if (!rf && !rt) return { ok: true }
+  let fromUtc: string | undefined
+  let toUtc: string | undefined
+  if (rf) {
+    const iso = zonedLocalDateTimeToUtcIso(rf, timeZone)
+    if (!iso) {
+      return {
+        ok: false,
+        message:
+          '開始の日付・時刻が解釈できないか、この時刻は存在しません（例: サマータイムの欠落時刻）。日付と時刻を確認してください。',
+      }
+    }
+    fromUtc = iso
+  }
+  if (rt) {
+    const iso = zonedLocalDateTimeToUtcIso(rt, timeZone)
+    if (!iso) {
+      return {
+        ok: false,
+        message:
+          '終了の日付・時刻が解釈できないか、この時刻は存在しません（例: サマータイムの欠落時刻）。日付と時刻を確認してください。',
+      }
+    }
+    toUtc = iso
+  }
+  if (fromUtc && toUtc && !isValidUtcRangeOrder(fromUtc, toUtc)) {
+    return { ok: false, message: '開始は終了より前の時刻にしてください。' }
+  }
+  return { ok: true, from: fromUtc, to: toUtc }
+}
+
+type MetricsGraphRangeResolve =
+  | { mode: 'none' }
+  | { mode: 'range'; from: string; to: string }
+  | { mode: 'invalid'; message: string }
+
+/**
+ * Graph tab: either both start/end are empty (no time filter), or both must be valid (same rules as events).
+ * One-sided input is rejected so `GET /api/events/rate-series` can use the same bounds as metrics when a range is set.
+ */
+function resolveMetricsGraphRange(
+  rangeFromInput: string,
+  rangeToInput: string,
+  timeZone: string,
+): MetricsGraphRangeResolve {
+  const rf = rangeFromInput.trim()
+  const rt = rangeToInput.trim()
+  if (!rf && !rt) return { mode: 'none' }
+  if (!rf || !rt) {
+    return {
+      mode: 'invalid',
+      message:
+        'グラフの表示期間は開始・終了を両方入力するか、両方空にしてください（片方だけでは指定できません）。',
+    }
+  }
+  const r = resolveEventApiRange(rf, rt, timeZone)
+  if (!r.ok) return { mode: 'invalid', message: r.message }
+  if (!r.from || !r.to) {
+    return { mode: 'invalid', message: '開始と終了を解釈できませんでした。' }
+  }
+  return { mode: 'range', from: r.from, to: r.to }
+}
+
+/** Graph tab: one-line summary for collapsed range `<details>` (no `open` = default closed). */
+function summarizeGraphRangePreview(parts: ZonedRangeParts): string {
+  const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(parts)
+  const rf = rangeFromInput.trim()
+  const rt = rangeToInput.trim()
+  if (!rf && !rt) return '指定なし'
+  if (!rf || !rt) return '入力中'
+  return `${parts.fromDate} ～ ${parts.toDate}`
+}
+
+function eventRowToCsvRow(e: EventRow, vcenterName: string, timeZone: string): EventCsvRow {
+  return {
+    id: e.id,
+    occurred_at: formatIsoInTimeZone(e.occurred_at, timeZone),
+    vcenter_name: vcenterName,
+    event_type: e.event_type,
+    message: e.message,
+    severity: e.severity,
+    user_name: e.user_name ?? null,
+    entity_name: e.entity_name ?? null,
+    entity_type: e.entity_type ?? null,
+    notable_score: e.notable_score,
+    notable_tags: e.notable_tags as unknown[] | null,
+    user_comment: e.user_comment ?? null,
+  }
+}
+
 type Tab = 'summary' | 'events' | 'metrics' | 'settings'
 
-type SettingsSubTab = 'score_rules' | 'vcenters'
+type SettingsSubTab = 'general' | 'vcenters' | 'score_rules'
 
 type EventScoreRuleRow = {
   id: number
@@ -134,8 +288,7 @@ type EventScoreRuleRow = {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
-  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('vcenters')
-  const [tokenInput, setTokenInput] = useState(getToken)
+  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
   const [err, setErr] = useState<string | null>(null)
   const [retention, setRetention] = useState<AppConfig | null>(null)
 
@@ -150,16 +303,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void loadConfig()
   }, [loadConfig])
 
-  const applyToken = () => {
-    setToken(tokenInput.trim())
-    setErr(null)
-    void loadConfig()
-  }
-
   return (
+    <ThemeProvider>
     <TimeZoneProvider>
       <div className="app">
         <header className="header">
@@ -170,21 +319,6 @@ export default function App() {
               {retention.metric_retention_days} 日（サーバー設定）
             </p>
           )}
-          <div className="auth-row">
-            <label>
-              Bearer トークン（設定時は必須）
-              <input
-                type="password"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="未設定の場合は認証なし（開発用）"
-              />
-            </label>
-            <button type="button" className="btn btn--filled" onClick={applyToken}>
-              保存
-            </button>
-            <TimeZoneSelect />
-          </div>
         </header>
 
       {err && (
@@ -206,7 +340,7 @@ export default function App() {
           >
             {t === 'summary' && '概要'}
             {t === 'events' && 'イベント'}
-            {t === 'metrics' && 'メトリクス'}
+            {t === 'metrics' && 'グラフ'}
             {t === 'settings' && '設定'}
           </button>
         ))}
@@ -215,6 +349,17 @@ export default function App() {
       <main className="main">
         {tab === 'settings' && (
           <nav className="settings-subtabs" aria-label="設定">
+            <button
+              type="button"
+              className={settingsSubTab === 'general' ? 'active' : undefined}
+              aria-selected={settingsSubTab === 'general'}
+              onClick={() => {
+                setSettingsSubTab('general')
+                setErr(null)
+              }}
+            >
+              一般
+            </button>
             <button
               type="button"
               className={settingsSubTab === 'vcenters' ? 'active' : undefined}
@@ -241,7 +386,13 @@ export default function App() {
         )}
         {tab === 'summary' && <SummaryPanel onError={setErr} />}
         {tab === 'events' && <EventsPanel onError={setErr} />}
-        {tab === 'metrics' && <MetricsPanel onError={setErr} />}
+        {tab === 'metrics' && (
+          <MetricsPanel
+            onError={setErr}
+            perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+          />
+        )}
+        {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
         {tab === 'settings' && settingsSubTab === 'score_rules' && (
           <ScoreRulesPanel onError={setErr} />
         )}
@@ -251,6 +402,44 @@ export default function App() {
       </main>
       </div>
     </TimeZoneProvider>
+    </ThemeProvider>
+  )
+}
+
+function ThemeAppearanceSelect() {
+  const { preference, setPreference } = useTheme()
+  return (
+    <label className="tz-select">
+      外観
+      <select
+        value={preference}
+        onChange={(e) => setPreference(e.target.value as ThemePreference)}
+        aria-label="外観"
+      >
+        <option value="system">システムに合わせる</option>
+        <option value="light">ライト</option>
+        <option value="dark">ダーク</option>
+      </select>
+    </label>
+  )
+}
+
+function GeneralSettingsPanel() {
+  return (
+    <div className="panel">
+      <div className="general-settings-field">
+        <p className="hint">
+          ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。
+        </p>
+        <ThemeAppearanceSelect />
+      </div>
+      <div className="general-settings-field">
+        <p className="hint">
+          日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
+        </p>
+        <TimeZoneSelect />
+      </div>
+    </div>
   )
 }
 
@@ -275,6 +464,13 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
 
   if (!data) return <p>読み込み中…</p>
 
+  const notableRows = asArray<EventRow>(data.top_notable_events)
+  const topEventTypesRows = asArray<Summary['top_event_types_24h'][number]>(
+    data.top_event_types_24h,
+  )
+  const highCpuRows = asArray<SummaryHostMetricRow>(data.high_cpu_hosts)
+  const highMemRows = asArray<SummaryHostMetricRow>(data.high_mem_hosts)
+
   return (
     <div className="panel">
       <div className="stats">
@@ -292,51 +488,123 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
         </div>
       </div>
 
-      <h2>高 CPU ホスト（直近24h サンプル上位）</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>ホスト</th>
-            <th>CPU %</th>
-            <th>時刻</th>
-          </tr>
-        </thead>
-        <tbody>
-          {asArray<Summary['high_cpu_hosts'][number]>(data.high_cpu_hosts).map((h, i) => (
-            <tr key={`${h.entity_name}-${i}`}>
-              <td>{h.entity_name}</td>
-              <td>{h.value.toFixed(1)}</td>
-              <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+      <details open className="toolbar__filters-details summary-panel__notable-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">要注意イベント（上位）</span>
+          <span className="toolbar__filters-summary__preview">
+            {notableRows.length === 0 ? '該当なし' : `${notableRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>時刻</th>
+              <th>種別</th>
+              <th>スコア</th>
+              <th>メッセージ</th>
+              <th>運用メモ</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {notableRows.map((e) => (
+              <tr key={e.id}>
+                <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
+                <td>{e.event_type}</td>
+                <td>{e.notable_score}</td>
+                <td className="msg">{e.message}</td>
+                <td className="event-comment-cell event-comment-cell--readonly">
+                  {e.user_comment ?? '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
 
-      <h2>要注意イベント（上位）</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>時刻</th>
-            <th>種別</th>
-            <th>スコア</th>
-            <th>メッセージ</th>
-            <th>コメント</th>
-          </tr>
-        </thead>
-        <tbody>
-          {asArray<EventRow>(data.top_notable_events).map((e) => (
-            <tr key={e.id}>
-              <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
-              <td>{e.event_type}</td>
-              <td>{e.notable_score}</td>
-              <td className="msg">{e.message}</td>
-              <td className="event-comment-cell event-comment-cell--readonly">
-                {e.user_comment ?? '—'}
-              </td>
+      <details className="toolbar__filters-details summary-panel__event-type-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">イベント種別（直近24h 件数上位）</span>
+          <span className="toolbar__filters-summary__preview">
+            {topEventTypesRows.length === 0 ? '該当なし' : `${topEventTypesRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th scope="col">順位</th>
+              <th scope="col">種別</th>
+              <th scope="col">件数</th>
+              <th scope="col">スコア</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {topEventTypesRows.map((row, i) => (
+              <tr key={`${row.event_type}-${i}`}>
+                <td>{i + 1}</td>
+                <td className="msg">{row.event_type}</td>
+                <td>{row.event_count}</td>
+                <td>{row.max_notable_score}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+
+      <details open className="toolbar__filters-details summary-panel__host-metric-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">高 CPU ホスト（直近24h サンプル上位）</span>
+          <span className="toolbar__filters-summary__preview">
+            {highCpuRows.length === 0 ? '該当なし' : `${highCpuRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>ホスト</th>
+              <th>CPU %</th>
+              <th>時刻</th>
+            </tr>
+          </thead>
+          <tbody>
+            {highCpuRows.map((h, i) => (
+              <tr key={`${h.entity_name}-${i}`}>
+                <td>{h.entity_name}</td>
+                <td>{h.value.toFixed(1)}</td>
+                <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+
+      <details open className="toolbar__filters-details summary-panel__host-metric-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">
+            高メモリ使用率ホスト（直近24h サンプル上位）
+          </span>
+          <span className="toolbar__filters-summary__preview">
+            {highMemRows.length === 0 ? '該当なし' : `${highMemRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>ホスト</th>
+              <th>メモリ %</th>
+              <th>時刻</th>
+            </tr>
+          </thead>
+          <tbody>
+            {highMemRows.map((h, i) => (
+              <tr key={`${h.entity_name}-mem-${i}`}>
+                <td>{h.entity_name}</td>
+                <td>{h.value.toFixed(1)}</td>
+                <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
     </div>
   )
 }
@@ -354,10 +622,21 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [page, setPage] = useState(1)
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
+  const { rangeFromInput, rangeToInput } = useMemo(
+    () => zonedRangePartsToCombinedInputs(rangeParts),
+    [rangeParts],
+  )
 
   const load = useCallback(async () => {
     onError(null)
     try {
+      const range = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
+      if (!range.ok) {
+        onError(range.message)
+        return
+      }
       const q = new URLSearchParams({
         limit: String(pageSize),
         offset: String((page - 1) * pageSize),
@@ -371,6 +650,8 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
       if (msg) q.set('message_contains', msg)
       const cm = filterComment.trim()
       if (cm) q.set('comment_contains', cm)
+      if (range.from) q.set('from', range.from)
+      if (range.to) q.set('to', range.to)
       const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
       const { items, total: nextTotal } = normalizeEventListPayload(raw)
       setRows(items)
@@ -390,10 +671,12 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     filterComment,
     page,
     pageSize,
+    rangeFromInput,
+    rangeToInput,
+    timeZone,
   ])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -420,6 +703,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     filterSeverity,
     filterMessage,
     filterComment,
+    rangeParts,
   ])
 
   const beginCommentEdit = (e: EventRow) => {
@@ -445,6 +729,77 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
       onError(e instanceof Error ? e.message : String(e))
     }
   }
+
+  const downloadCsv = useCallback(async () => {
+    onError(null)
+    setExporting(true)
+    try {
+      const range = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
+      if (!range.ok) {
+        onError(range.message)
+        return
+      }
+      const vcenters = await apiGet<unknown>('/api/vcenters')
+      const vcenterList = asArray<VCenter>(vcenters)
+      const nameById = new Map(vcenterList.map((v) => [v.id, v.name]))
+
+      const all: EventRow[] = []
+      let offset = 0
+      let totalExpected = 0
+      for (;;) {
+        const q = new URLSearchParams({
+          limit: String(EVENT_EXPORT_CHUNK),
+          offset: String(offset),
+        })
+        if (minScore) q.set('min_score', minScore)
+        const et = filterEventType.trim()
+        if (et) q.set('event_type_contains', et)
+        const sv = filterSeverity.trim()
+        if (sv) q.set('severity_contains', sv)
+        const msg = filterMessage.trim()
+        if (msg) q.set('message_contains', msg)
+        const cm = filterComment.trim()
+        if (cm) q.set('comment_contains', cm)
+        if (range.from) q.set('from', range.from)
+        if (range.to) q.set('to', range.to)
+        const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
+        const { items, total } = normalizeEventListPayload(raw)
+        totalExpected = total
+        all.push(...items)
+        offset += items.length
+        if (items.length === 0) break
+        if (all.length >= totalExpected) break
+      }
+      all.sort(
+        (a, b) =>
+          parseApiUtcInstantMs(a.occurred_at) - parseApiUtcInstantMs(b.occurred_at),
+      )
+      const csv = eventRowsToCsv(
+        all.map((e) =>
+          eventRowToCsvRow(
+            e,
+            nameById.get(e.vcenter_id) ?? e.vcenter_id,
+            timeZone,
+          ),
+        ),
+      )
+      downloadEventListCsv(csv, buildEventExportFilename())
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExporting(false)
+    }
+  }, [
+    onError,
+    minScore,
+    filterEventType,
+    filterSeverity,
+    filterMessage,
+    filterComment,
+    timeZone,
+    rangeFromInput,
+    rangeToInput,
+  ])
 
   return (
     <div className="panel">
@@ -497,6 +852,14 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         <span className="toolbar__meta">
           {total === 0 ? '全 0 件' : `全 ${total} 件中 ${start}–${end} 件を表示`}
         </span>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={exporting || total === 0}
+          onClick={() => void downloadCsv()}
+        >
+          {exporting ? '出力中…' : 'CSV をダウンロード'}
+        </button>
         <details className="toolbar__filters-details">
           <summary className="toolbar__filters-summary">
             <span className="toolbar__filters-summary__title">絞り込み条件</span>
@@ -509,6 +872,17 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
               )}
             </span>
           </summary>
+          <p className="hint toolbar__filters-hint">
+            表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。未入力の端は制限なし。日付だけ選んだ場合は、開始は
+            0:00・終了は 23:59 として扱います。クイックで直近の範囲を入れられます。
+          </p>
+          <ZonedRangeFields
+            value={rangeParts}
+            onChange={(next) => {
+              setRangeParts(next)
+              setPage(1)
+            }}
+          />
           <div className="toolbar__filters" aria-label="イベントの絞り込み（種別・重大度・メッセージ・コメント）">
             <label>
               種別（含む）
@@ -569,7 +943,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
             <th>重大度</th>
             <th>スコア</th>
             <th>メッセージ</th>
-            <th>コメント</th>
+            <th>運用メモ</th>
           </tr>
         </thead>
         <tbody>
@@ -589,7 +963,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
                       onChange={(ev) => setCommentDraft(ev.target.value)}
                       rows={3}
                       maxLength={8000}
-                      aria-label="イベントコメント"
+                      aria-label="運用メモ"
                     />
                     <div className="event-comment-actions">
                       <button
@@ -770,6 +1144,23 @@ function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
   )
 }
 
+/** X 軸目盛り専用。`useTimeZone()` をここで読むことで Recharts の Redux 同期と親のクロージャに依存しない。 */
+function MetricsXAxisTick(
+  props: Record<string, unknown> & { readonly tickFill?: string },
+) {
+  const { timeZone } = useTimeZone()
+  const { tickFill, payload, ...rest } = props
+  const label = formatChartAxisTick(extractTickAxisValue(payload), timeZone)
+  return (
+    <Text
+      {...(rest as ComponentProps<typeof Text>)}
+      fill={tickFill || undefined}
+    >
+      {label}
+    </Text>
+  )
+}
+
 function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<VCenter[]>([])
   const [form, setForm] = useState({
@@ -937,16 +1328,46 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   )
 }
 
-function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
+const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
+
+function MetricsPanel({
+  onError,
+  perfBucketSeconds,
+}: {
+  onError: (e: string | null) => void
+  perfBucketSeconds: number
+}) {
   const { timeZone } = useTimeZone()
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
-  const [metricKey, setMetricKey] = useState('host.cpu.usage_pct')
+  const [metricKeys, setMetricKeys] = useState<string[]>([])
+  const [metricKey, setMetricKey] = useState('')
   const [points, setPoints] = useState<MetricPoint[]>([])
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [ingesting, setIngesting] = useState(false)
   const [chartResetKey, setChartResetKey] = useState(0)
+  const [chartEventType, setChartEventType] = useState('')
+  const [eventTypeOptions, setEventTypeOptions] = useState<string[]>([])
+  const [eventRateBuckets, setEventRateBuckets] = useState<
+    Array<{ bucket_start: string; count: number }> | null
+  >(null)
+  const [eventSeriesLoading, setEventSeriesLoading] = useState(false)
+  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
+  const { rangeFromInput, rangeToInput } = useMemo(
+    () => zonedRangePartsToCombinedInputs(rangeParts),
+    [rangeParts],
+  )
+  const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
+  const lastSeriesFetchRef = useRef<{
+    vcenterId: string
+    metricKey: string
+    rangeKey: string
+  } | null>(null)
+  const metricKeyRef = useRef(metricKey)
+  const chartWrapRef = useRef<HTMLDivElement>(null)
+  const chartColors = useChartThemeColors()
+  metricKeyRef.current = metricKey
 
   useEffect(() => {
     void apiGet<unknown>('/api/vcenters')
@@ -958,26 +1379,175 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
   }, [onError])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    onError(null)
+  useEffect(() => {
+    const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
+    void apiGet<{ event_types?: unknown }>(`/api/events/event-types${q}`)
+      .then((d) => setEventTypeOptions(asArray<string>(d.event_types)))
+      .catch(() => setEventTypeOptions([]))
+  }, [vcenterId])
+
+  const loadMetricKeys = useCallback(async (): Promise<string> => {
     try {
-      const q = new URLSearchParams({ metric_key: metricKey, limit: '500' })
-      if (vcenterId) q.set('vcenter_id', vcenterId)
-      const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
-      const normalized = normalizeMetricSeriesResponse(data)
-      setPoints(normalized.points)
-      setMetricTotal(normalized.total)
+      const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
+      const data = await apiGet<{ metric_keys?: unknown }>(`/api/metrics/keys${q}`)
+      const keys = asArray<string>(data.metric_keys)
+      const prev = metricKeyRef.current
+      const nextKey = keys.includes(prev) ? prev : keys[0] ?? ''
+      setMetricKeys(keys)
+      setMetricKey(nextKey)
+      return nextKey
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
+      setMetricKeys([])
+      setMetricKey('')
+      return ''
     }
-  }, [vcenterId, metricKey, onError])
+  }, [vcenterId, onError])
+
+  const load = useCallback(
+    async (overrideKey?: string): Promise<boolean> => {
+      const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
+      if (graphRange.mode === 'invalid') {
+        onError(graphRange.message)
+        setPoints([])
+        setMetricTotal(null)
+        setLoading(false)
+        return false
+      }
+      const key = (overrideKey ?? metricKey).trim()
+      if (!key) {
+        onError(null)
+        setPoints([])
+        setMetricTotal(null)
+        setLoading(false)
+        return false
+      }
+      setLoading(true)
+      onError(null)
+      try {
+        const limit = graphRange.mode === 'range' ? '10000' : '500'
+        const q = new URLSearchParams({ metric_key: key, limit })
+        if (vcenterId) q.set('vcenter_id', vcenterId)
+        if (graphRange.mode === 'range') {
+          q.set('from', graphRange.from)
+          q.set('to', graphRange.to)
+        }
+        const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
+        const normalized = normalizeMetricSeriesResponse(data)
+        setPoints(normalized.points)
+        setMetricTotal(normalized.total)
+        return true
+      } catch (e) {
+        onError(e instanceof Error ? e.message : String(e))
+        return false
+      } finally {
+        setLoading(false)
+      }
+    },
+    [vcenterId, metricKey, onError, rangeFromInput, rangeToInput, timeZone],
+  )
+
+  const graphRangeForOverlay = useMemo(
+    () => resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone),
+    [rangeFromInput, rangeToInput, timeZone],
+  )
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void (async () => {
+      let key = metricKey
+      if (prevVcenterForKeysRef.current !== vcenterId) {
+        prevVcenterForKeysRef.current = vcenterId
+        key = await loadMetricKeys()
+      }
+      const rangeKey = `${rangeParts.fromDate}|${rangeParts.fromTime}|${rangeParts.toDate}|${rangeParts.toTime}`
+      const sig = { vcenterId, metricKey: key, rangeKey }
+      const prev = lastSeriesFetchRef.current
+      if (
+        prev &&
+        prev.vcenterId === sig.vcenterId &&
+        prev.metricKey === sig.metricKey &&
+        prev.rangeKey === sig.rangeKey
+      ) {
+        return
+      }
+      const ok = await load(key)
+      if (ok) lastSeriesFetchRef.current = sig
+    })()
+  }, [vcenterId, metricKey, load, loadMetricKeys, rangeParts])
+
+  useEffect(() => {
+    const et = chartEventType.trim()
+    if (!et || points.length === 0) {
+      setEventRateBuckets(null)
+      setEventSeriesLoading(false)
+      return
+    }
+    if (graphRangeForOverlay.mode === 'invalid') {
+      setEventRateBuckets(null)
+      setEventSeriesLoading(false)
+      return
+    }
+    let cancelled = false
+    setEventSeriesLoading(true)
+    void (async () => {
+      let from: string
+      let to: string
+      if (graphRangeForOverlay.mode === 'range') {
+        from = graphRangeForOverlay.from
+        to = graphRangeForOverlay.to
+      } else {
+        let minTs = Infinity
+        let maxTs = -Infinity
+        for (const p of points) {
+          const t = parseApiUtcInstantMs(p.sampled_at)
+          if (Number.isFinite(t)) {
+            if (t < minTs) minTs = t
+            if (t > maxTs) maxTs = t
+          }
+        }
+        if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
+          if (!cancelled) {
+            setEventRateBuckets(null)
+            setEventSeriesLoading(false)
+          }
+          return
+        }
+        from = new Date(minTs).toISOString()
+        to = new Date(maxTs).toISOString()
+      }
+      const fromMs = parseApiUtcInstantMs(from)
+      const toMs = parseApiUtcInstantMs(to)
+      if (fromMs >= toMs) {
+        to = new Date(fromMs + Math.max(perfBucketSeconds, 60) * 1000).toISOString()
+      }
+      try {
+        const q = new URLSearchParams({
+          event_type: et,
+          from,
+          to,
+          bucket_seconds: String(perfBucketSeconds),
+        })
+        if (vcenterId) q.set('vcenter_id', vcenterId)
+        const data = await apiGet<{
+          buckets?: Array<{ bucket_start: string; count: number }>
+        }>(`/api/events/rate-series?${q.toString()}`)
+        if (!cancelled) {
+          setEventRateBuckets(Array.isArray(data.buckets) ? data.buckets : [])
+          onError(null)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setEventRateBuckets(null)
+          onError(e instanceof Error ? e.message : String(e))
+        }
+      } finally {
+        if (!cancelled) setEventSeriesLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [points, chartEventType, vcenterId, perfBucketSeconds, onError, graphRangeForOverlay])
 
   const runIngest = async () => {
     setIngesting(true)
@@ -987,7 +1557,9 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         '/api/ingest/run',
         {},
       )
-      await load()
+      lastSeriesFetchRef.current = null
+      const key = await loadMetricKeys()
+      await load(key)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -995,17 +1567,141 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
-  const chartData = useMemo(
-    () =>
-      (points ?? [])
-        .filter((p) => p != null && Number.isFinite(p.value))
-        .map((p) => ({
-          t: formatIsoInTimeZone(String(p.sampled_at), timeZone),
-          v: p.value,
-          name: p.entity_name ?? '',
-        })),
-    [points, timeZone],
+  const countByEpochSec = useMemo(() => {
+    const m = new Map<number, number>()
+    if (!eventRateBuckets) return m
+    for (const b of eventRateBuckets) {
+      const sec = Math.floor(parseApiUtcInstantMs(String(b.bucket_start)) / 1000)
+      m.set(sec, b.count)
+    }
+    return m
+  }, [eventRateBuckets])
+
+  const showEventLine =
+    chartEventType.trim().length > 0 && eventRateBuckets != null && !eventSeriesLoading
+
+  const leftYAxisLabel = useMemo(() => {
+    const k = metricKey.trim()
+    return k.endsWith('_pct') ? '％' : undefined
+  }, [metricKey])
+
+  const metricsChartMargin = useMemo(
+    () => ({
+      top: 8,
+      right: showEventLine ? 44 : 12,
+      left: leftYAxisLabel ? 32 : 8,
+      bottom: 8,
+    }),
+    [showEventLine, leftYAxisLabel],
   )
+
+  const chartModel = useMemo(
+    () =>
+      buildMetricsChartModel(
+        metricKey,
+        points ?? [],
+        perfBucketSeconds,
+        showEventLine,
+        countByEpochSec,
+      ),
+    [metricKey, points, perfBucketSeconds, showEventLine, countByEpochSec],
+  )
+
+  const chartData = chartModel.rows
+
+  const vcenterLabelForChart = useMemo(() => {
+    if (!vcenterId) return '全て'
+    const v = vcenters.find((c) => c.id === vcenterId)
+    return v?.name ?? vcenterId
+  }, [vcenterId, vcenters])
+
+  const metricsChartTitleLines = useMemo(() => {
+    const mk = metricKey.trim() || '—'
+    const line1 = `${vcenterLabelForChart} / ${mk}`
+    const et = chartEventType.trim()
+    const rangeLabel = summarizeGraphRangePreview(rangeParts)
+    const line2Parts: string[] = []
+    if (et) line2Parts.push(`イベント種別: ${et}`)
+    line2Parts.push(`期間: ${rangeLabel}`)
+    const line2 = line2Parts.join(' · ')
+    return { line1, line2 }
+  }, [vcenterLabelForChart, metricKey, chartEventType, rangeParts])
+
+  const metricsChartLegendName = useMemo(() => {
+    const keyPart = metricKey || '—'
+    if (!vcenterId) {
+      return `全て / ${keyPart}`
+    }
+    const v = vcenters.find((c) => c.id === vcenterId)
+    const vcLabel = v?.name ?? vcenterId
+    return `${vcLabel} / ${keyPart}`
+  }, [vcenterId, vcenters, metricKey])
+
+  const eventSeriesLegendName = useMemo(() => {
+    const et = chartEventType.trim()
+    if (!et) return 'イベント件数'
+    return `イベント（${et}）`
+  }, [chartEventType])
+
+  const formatAxisTimeLabel = useCallback(
+    (value: unknown) => formatChartAxisTick(value, timeZone),
+    [timeZone],
+  )
+
+  const metricsXAxisTick = useCallback(
+    (props: Record<string, unknown>) => (
+      <MetricsXAxisTick {...props} tickFill={chartColors.axisTick} />
+    ),
+    [chartColors.axisTick],
+  )
+
+  /** 目盛りが 10 以上のときは整数表示（未満は既定の小数表示）。 */
+  const formatYAxisTick = useCallback((value: number) => {
+    if (!Number.isFinite(value)) return ''
+    if (Math.abs(value) >= 10) return String(Math.round(value))
+    return String(value)
+  }, [])
+
+  const vcenterExportLabel = useMemo(() => {
+    if (!vcenterId) return 'all'
+    const v = vcenters.find((c) => c.id === vcenterId)
+    return v?.name ?? vcenterId
+  }, [vcenterId, vcenters])
+
+  const csvExportOptions: MetricCsvExportOptions | undefined = useMemo(() => {
+    const et = chartEventType.trim()
+    if (!et || !eventRateBuckets) return undefined
+    return {
+      bucketSeconds: perfBucketSeconds,
+      eventCountByBucketEpochSec: countByEpochSec,
+      overlayEventType: et,
+    }
+  }, [chartEventType, eventRateBuckets, perfBucketSeconds, countByEpochSec])
+
+  const exportDisabled =
+    loading || !metricKey || points.length === 0 || eventSeriesLoading
+
+  const downloadSvg = () => {
+    try {
+      const base = buildMetricsExportBasename(vcenterId, vcenterExportLabel, metricKey)
+      downloadChartSvg(chartWrapRef.current, `${base}.svg`, {
+        lines: [metricsChartTitleLines.line1, metricsChartTitleLines.line2],
+      })
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const downloadCsv = () => {
+    try {
+      const base = buildMetricsExportBasename(vcenterId, vcenterExportLabel, metricKey)
+      downloadMetricPointsCsv(points, `${base}.csv`, csvExportOptions)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   return (
     <div className="panel">
@@ -1026,18 +1722,46 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         </label>
         <label>
           メトリクスキー
-          <input
+          <select
             value={metricKey}
+            disabled={metricKeys.length === 0}
             onChange={(e) => setMetricKey(e.target.value)}
+          >
+            {metricKeys.length === 0 ? (
+              <option value="">収集済みメトリクスがありません</option>
+            ) : (
+              metricKeys.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        <label>
+          イベント種別（任意・完全一致）
+          <input
+            type="text"
+            value={chartEventType}
+            onChange={(e) => setChartEventType(e.target.value)}
+            list="metrics-event-type-options"
+            placeholder="例: VmPoweredOnEvent"
+            autoComplete="off"
           />
+          <datalist id="metrics-event-type-options">
+            {eventTypeOptions.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
         </label>
         <button
           type="button"
           className="btn btn--filled"
-          disabled={loading}
+          disabled={loading || !metricKey}
           onClick={() => {
             setChartResetKey((k) => k + 1)
-            void load()
+            lastSeriesFetchRef.current = null
+            void load(metricKey)
           }}
         >
           {loading ? '取得中…' : '再取得'}
@@ -1050,13 +1774,52 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         >
           {ingesting ? '収集中…' : '手動で収集'}
         </button>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={exportDisabled}
+          onClick={downloadSvg}
+        >
+          グラフをダウンロード
+        </button>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={exportDisabled}
+          onClick={downloadCsv}
+        >
+          CSV をダウンロード
+        </button>
         {metricTotal !== null && !loading && (
           <span className="metric-total">
             条件一致: {metricTotal} 件（表示: {points.length} 件まで）
           </span>
         )}
       </div>
-      {!loading && metricTotal === 0 && (
+      <details className="toolbar__filters-details metrics-panel__range-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">表示期間</span>
+          <span className="toolbar__filters-summary__preview">
+            {summarizeGraphRangePreview(rangeParts)}
+          </span>
+        </summary>
+        <p className="hint toolbar__filters-hint">
+          表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。開始・終了は両方指定するか、すべて空にしてください。日付のみの場合は開始は
+          0:00・終了は 23:59 です。期間を指定するとメトリクスは最大 10000
+          点まで取得し、イベント件数オーバーレイも同じ区間で集計します。
+        </p>
+        <ZonedRangeFields value={rangeParts} onChange={setRangeParts} />
+      </details>
+      <p className="hint">
+        イベント件数はサーバ設定のメトリクス取得間隔（{perfBucketSeconds}
+        秒）と同じ幅のバケットに集計されます。種別を空にするとメトリクスのみ表示します。
+      </p>
+      {!loading && metricKeys.length === 0 && (
+        <p className="hint">
+          この条件で DB に保存されたメトリクスがありません。「手動で収集」を実行するか、スケジュール取り込みを待ってから再度開いてください。
+        </p>
+      )}
+      {!loading && metricTotal === 0 && metricKey && (
         <div className="empty-metrics">
           <p>該当するメトリクスがありません（条件一致 0 件）。</p>
           <ul>
@@ -1067,22 +1830,102 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
         </div>
       )}
       <MetricsChartErrorBoundary key={`${vcenterId}-${metricKey}-${chartResetKey}`}>
-        <div className="chart-wrap">
+        <h2 className="metrics-chart__title">
+          <span className="metrics-chart__title-line">{metricsChartTitleLines.line1}</span>
+          <span className="metrics-chart__title-line">{metricsChartTitleLines.line2}</span>
+        </h2>
+        <div className="chart-wrap" ref={chartWrapRef}>
           <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-              <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
-              <XAxis dataKey="t" minTickGap={24} />
-              <YAxis domain={[0, 100]} />
-              <Tooltip />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="v"
-                name="値"
-                stroke={CHART_STROKE_PRIMARY}
-                dot={false}
-                isAnimationActive={false}
+            <LineChart
+              key={timeZone}
+              data={chartData}
+              margin={metricsChartMargin}
+            >
+              <CartesianGrid
+                stroke={chartColors.grid}
+                strokeDasharray="3 3"
               />
+              <XAxis
+                dataKey="tMs"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={formatAxisTimeLabel}
+                tick={metricsXAxisTick}
+                minTickGap={24}
+              />
+              <YAxis
+                yAxisId="left"
+                domain={[0, 'auto']}
+                tick={{ fill: chartColors.axisTick }}
+                tickFormatter={formatYAxisTick}
+                label={
+                  leftYAxisLabel
+                    ? {
+                        value: leftYAxisLabel,
+                        angle: -90,
+                        position: 'insideLeft',
+                        style: { fill: chartColors.axisTick, fontSize: 11 },
+                      }
+                    : undefined
+                }
+              />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                domain={[0, 'auto']}
+                allowDecimals={false}
+                tick={{ fill: chartColors.axisTick }}
+                tickFormatter={formatYAxisTick}
+                label={
+                  showEventLine
+                    ? {
+                        value: 'イベント件数',
+                        angle: 90,
+                        position: 'insideRight',
+                        style: { fill: chartColors.axisTick, fontSize: 11 },
+                      }
+                    : undefined
+                }
+              />
+              <Tooltip labelFormatter={formatAxisTimeLabel} />
+              <Legend />
+              {chartModel.mode === 'single' ? (
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="v"
+                  name={metricsChartLegendName}
+                  stroke={chartColors.primary}
+                  dot={LINE_CHART_DATA_DOT}
+                  isAnimationActive={false}
+                />
+              ) : (
+                chartModel.metricSeries.map((s, i) => (
+                  <Line
+                    key={s.dataKey}
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={s.dataKey}
+                    name={`${vcenterLabelForChart} / ${s.legendName}`}
+                    stroke={chartColors.series[i % chartColors.series.length]}
+                    connectNulls={false}
+                    dot={LINE_CHART_DATA_DOT}
+                    isAnimationActive={false}
+                  />
+                ))
+              )}
+              {showEventLine && (
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="evCount"
+                  name={eventSeriesLegendName}
+                  stroke={chartColors.secondary}
+                  dot={LINE_CHART_DATA_DOT}
+                  isAnimationActive={false}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>

@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import EventScoreRuleCreate, EventScoreRuleRead, EventScoreRuleUpdate
-from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import EventScoreRule
 from vcenter_event_assistant.services.event_scores import recalculate_notable_scores_for_event_type
 
@@ -18,7 +17,6 @@ router = APIRouter(prefix="/event-score-rules", tags=["event-score-rules"])
 @router.get("", response_model=list[EventScoreRuleRead])
 async def list_event_score_rules(
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> list[EventScoreRule]:
     res = await session.execute(select(EventScoreRule).order_by(EventScoreRule.event_type.asc()))
     return list(res.scalars().all())
@@ -28,7 +26,6 @@ async def list_event_score_rules(
 async def create_event_score_rule(
     body: EventScoreRuleCreate,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> EventScoreRule:
     if not body.event_type.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="event_type is required")
@@ -55,7 +52,6 @@ async def patch_event_score_rule(
     rule_id: int,
     body: EventScoreRuleUpdate,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> EventScoreRule:
     row = await session.get(EventScoreRule, rule_id)
     if row is None:
@@ -75,7 +71,6 @@ async def patch_event_score_rule(
 async def delete_event_score_rule(
     rule_id: int,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
 ) -> None:
     row = await session.get(EventScoreRule, rule_id)
     if row is None:

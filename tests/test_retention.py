@@ -23,20 +23,7 @@ async def test_get_app_config(client: AsyncClient) -> None:
     data = r.json()
     assert data["event_retention_days"] == 7
     assert data["metric_retention_days"] == 7
-
-
-@pytest.mark.asyncio
-async def test_get_app_config_without_token_when_bearer_auth_enabled(client: AsyncClient) -> None:
-    """Retention hints are public; /api/config must not require Bearer (see App mount loadConfig)."""
-    os.environ["AUTH_BEARER_TOKEN"] = "secret-token-for-test"
-    get_settings.cache_clear()
-    try:
-        r = await client.get("/api/config")
-        assert r.status_code == 200
-        assert r.json()["event_retention_days"] == 7
-    finally:
-        os.environ.pop("AUTH_BEARER_TOKEN", None)
-        get_settings.cache_clear()
+    assert data["perf_sample_interval_seconds"] == 300
 
 
 @pytest.mark.asyncio

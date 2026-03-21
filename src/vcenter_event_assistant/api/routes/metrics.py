@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import MetricPoint, MetricSeriesResponse
-from vcenter_event_assistant.auth.dependencies import require_auth
+from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint, MetricSeriesResponse
 from vcenter_event_assistant.db.models import MetricSample
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -29,19 +29,32 @@ def _metric_filter_clauses(
     if vcenter_id is not None:
         clauses.append(MetricSample.vcenter_id == vcenter_id)
     if from_time is not None:
-        clauses.append(MetricSample.sampled_at >= from_time)
+        clauses.append(MetricSample.sampled_at >= to_utc(from_time))
     if to_time is not None:
-        clauses.append(MetricSample.sampled_at <= to_time)
+        clauses.append(MetricSample.sampled_at <= to_utc(to_time))
     if entity_moid is not None:
         clauses.append(MetricSample.entity_moid == entity_moid)
     return clauses
+
+
+@router.get("/keys", response_model=MetricKeysResponse)
+async def list_metric_keys(
+    session: AsyncSession = Depends(get_session),
+    vcenter_id: uuid.UUID | None = None,
+) -> MetricKeysResponse:
+    q = select(MetricSample.metric_key).distinct()
+    if vcenter_id is not None:
+        q = q.where(MetricSample.vcenter_id == vcenter_id)
+    q = q.order_by(MetricSample.metric_key.asc())
+    res = await session.execute(q)
+    keys = [row[0] for row in res.all()]
+    return MetricKeysResponse(metric_keys=keys)
 
 
 @router.get("", response_model=MetricSeriesResponse)
 async def list_metrics(
     response: Response,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_auth),
     vcenter_id: uuid.UUID | None = None,
     metric_key: str = Query(..., min_length=1, max_length=256),
     from_time: datetime | None = Query(default=None, alias="from"),

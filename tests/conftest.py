@@ -9,9 +9,6 @@ from httpx import ASGITransport, AsyncClient
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SCHEDULER_ENABLED"] = "false"
-os.environ.pop("AUTH_BEARER_TOKEN", None)
-os.environ.pop("AUTH_BASIC_USERNAME", None)
-os.environ.pop("AUTH_BASIC_PASSWORD", None)
 
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.main import create_app

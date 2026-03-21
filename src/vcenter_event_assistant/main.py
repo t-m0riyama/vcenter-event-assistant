@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +18,6 @@ from vcenter_event_assistant.api.routes.events import router as events_router
 from vcenter_event_assistant.api.routes.health import router as health_router
 from vcenter_event_assistant.api.routes.metrics import router as metrics_router
 from vcenter_event_assistant.api.routes.vcenters import router as vcenters_router
-from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.session import init_db
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.settings import get_settings
@@ -63,7 +62,7 @@ def create_app() -> FastAPI:
     api.include_router(dashboard_router)
 
     @api.post("/ingest/run")
-    async def run_ingest_now(_: None = Depends(require_auth)) -> dict[str, str | int]:
+    async def run_ingest_now() -> dict[str, str | int]:
         from sqlalchemy import select
 
         from vcenter_event_assistant.db.models import VCenter

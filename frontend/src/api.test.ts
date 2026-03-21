@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiDelete, apiGet, apiPatch, apiPost, setToken } from './api'
+import { apiDelete, apiGet, apiPatch, apiPost } from './api'
 
 describe('api', () => {
   beforeEach(() => {
@@ -74,21 +74,5 @@ describe('api', () => {
   it('apiDelete throws when not ok', async () => {
     fetchMock().mockResolvedValueOnce(new Response('gone', { status: 500 }))
     await expect(apiDelete('/api/foo')).rejects.toThrow('500 gone')
-  })
-
-  it('sends Authorization when token is set', async () => {
-    setToken('secret')
-    fetchMock().mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-    )
-    await apiGet('/api/x')
-    expect(fetchMock()).toHaveBeenCalledWith(
-      '/api/x',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer secret',
-        }),
-      }),
-    )
   })
 })

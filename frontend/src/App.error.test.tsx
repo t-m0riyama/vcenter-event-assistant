@@ -9,11 +9,14 @@ const emptySummary = {
   notable_events_last_24h: 0,
   top_notable_events: [] as unknown[],
   high_cpu_hosts: [] as unknown[],
+  high_mem_hosts: [] as unknown[],
+  top_event_types_24h: [] as unknown[],
 }
 
 const emptyConfig = {
   event_retention_days: 7,
   metric_retention_days: 7,
+  perf_sample_interval_seconds: 300,
 }
 
 function jsonResponse(data: unknown, status = 200) {
@@ -74,10 +77,7 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      const [h] = screen.getAllByRole('heading', {
-        name: '高 CPU ホスト（直近24h サンプル上位）',
-      })
-      expect(h).toBeInTheDocument()
+      expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'イベント' }))
     await waitFor(() => {
@@ -104,10 +104,7 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      const [h] = screen.getAllByRole('heading', {
-        name: '高 CPU ホスト（直近24h サンプル上位）',
-      })
-      expect(h).toBeInTheDocument()
+      expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: '設定' }))
     fireEvent.click(
@@ -135,20 +132,23 @@ describe('App error banner', () => {
         if (url.includes('/api/vcenters')) {
           return Promise.resolve(jsonResponse([]))
         }
-        if (url.includes('/api/metrics')) {
+        if (url.includes('/api/metrics?')) {
           return Promise.resolve(new Response('m err', { status: 500 }))
+        }
+        if (url.includes('/api/metrics/keys')) {
+          return Promise.resolve(jsonResponse({ metric_keys: ['host.cpu.usage_pct'] }))
+        }
+        if (url.includes('/api/events/event-types')) {
+          return Promise.resolve(jsonResponse({ event_types: [] }))
         }
         return Promise.resolve(new Response('n', { status: 404 }))
       }),
     )
     render(<App />)
     await waitFor(() => {
-      const [h] = screen.getAllByRole('heading', {
-        name: '高 CPU ホスト（直近24h サンプル上位）',
-      })
-      expect(h).toBeInTheDocument()
+      expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
     })
-    fireEvent.click(within(tabNav()).getByRole('button', { name: 'メトリクス' }))
+    fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
     })
