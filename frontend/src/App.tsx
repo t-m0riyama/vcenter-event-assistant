@@ -17,6 +17,9 @@ import {
   getToken,
   setToken,
 } from './api'
+import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
+import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
+import { useTimeZone } from './datetime/useTimeZone'
 import './App.css'
 
 type VCenter = {
@@ -79,24 +82,26 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>vCenter Event Assistant</h1>
-        <div className="auth-row">
-          <label>
-            Bearer トークン（設定時は必須）
-            <input
-              type="password"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="未設定の場合は認証なし（開発用）"
-            />
-          </label>
-          <button type="button" onClick={applyToken}>
-            保存
-          </button>
-        </div>
-      </header>
+    <TimeZoneProvider>
+      <div className="app">
+        <header className="header">
+          <h1>vCenter Event Assistant</h1>
+          <div className="auth-row">
+            <label>
+              Bearer トークン（設定時は必須）
+              <input
+                type="password"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="未設定の場合は認証なし（開発用）"
+              />
+            </label>
+            <button type="button" onClick={applyToken}>
+              保存
+            </button>
+            <TimeZoneSelect />
+          </div>
+        </header>
 
       {err && <div className="error-banner">{err}</div>}
 
@@ -125,11 +130,13 @@ export default function App() {
         {tab === 'vcenters' && <VCentersPanel onError={setErr} />}
         {tab === 'metrics' && <MetricsPanel onError={setErr} />}
       </main>
-    </div>
+      </div>
+    </TimeZoneProvider>
   )
 }
 
 function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
+  const { timeZone } = useTimeZone()
   const [data, setData] = useState<Summary | null>(null)
 
   const load = useCallback(async () => {
@@ -143,6 +150,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   }, [onError])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -184,7 +192,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
             <tr key={`${h.entity_name}-${i}`}>
               <td>{h.entity_name}</td>
               <td>{h.value.toFixed(1)}</td>
-              <td>{h.sampled_at}</td>
+              <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
             </tr>
           ))}
         </tbody>
@@ -203,7 +211,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
         <tbody>
           {data.top_notable_events.map((e) => (
             <tr key={e.id}>
-              <td>{e.occurred_at}</td>
+              <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
               <td>{e.event_type}</td>
               <td>{e.notable_score}</td>
               <td className="msg">{e.message}</td>
@@ -216,6 +224,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
 }
 
 function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
+  const { timeZone } = useTimeZone()
   const [rows, setRows] = useState<EventRow[]>([])
   const [minScore, setMinScore] = useState('')
 
@@ -232,6 +241,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   }, [onError, minScore])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -263,7 +273,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         <tbody>
           {rows.map((e) => (
             <tr key={e.id}>
-              <td>{e.occurred_at}</td>
+              <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
               <td>{e.event_type}</td>
               <td>{e.severity ?? ''}</td>
               <td>{e.notable_score}</td>
@@ -298,6 +308,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   }, [onError])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
 
@@ -436,6 +447,7 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
 }
 
 function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
+  const { timeZone } = useTimeZone()
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
   const [metricKey, setMetricKey] = useState('host.cpu.usage_pct')
@@ -490,7 +502,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   }
 
   const chartData = points.map((p) => ({
-    t: new Date(p.sampled_at).toLocaleString(),
+    t: formatIsoInTimeZone(p.sampled_at, timeZone),
     v: p.value,
     name: p.entity_name,
   }))
