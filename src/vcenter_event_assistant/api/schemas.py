@@ -145,6 +145,7 @@ class EventTypeCountRow(BaseModel):
 
     event_type: str
     event_count: int
+    max_notable_score: int
 
 
 class DashboardSummary(BaseModel):

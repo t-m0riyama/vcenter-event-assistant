@@ -17,6 +17,8 @@ from vcenter_event_assistant.api.schemas import (
     HighMemHostRow,
 )
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
+from vcenter_event_assistant.rules.notable import final_notable_score
+from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -56,9 +58,37 @@ async def dashboard_summary(
         .order_by(event_cnt.desc())
         .limit(_TOP_EVENT_TYPES_LIMIT)
     )
+    type_rows = [(str(et), int(c or 0)) for et, c in type_q.all()]
+    top_types = [t for t, _ in type_rows]
+
+    delta_map = await load_event_score_delta_map(session)
+    max_by_type: dict[str, int] = {t: 0 for t in top_types}
+    if top_types:
+        ev_for_types = await session.execute(
+            select(EventRecord.event_type, EventRecord.severity, EventRecord.message).where(
+                EventRecord.occurred_at >= day_ago,
+                EventRecord.event_type.in_(top_types),
+            )
+        )
+        for et, sev, msg in ev_for_types.all():
+            et_s = str(et)
+            d = delta_map.get(et_s, 0)
+            sc = final_notable_score(
+                event_type=et_s,
+                severity=sev,
+                message=msg or "",
+                score_delta=d,
+            )
+            if sc > max_by_type[et_s]:
+                max_by_type[et_s] = sc
+
     top_event_types = [
-        EventTypeCountRow(event_type=str(et), event_count=int(c or 0))
-        for et, c in type_q.all()
+        EventTypeCountRow(
+            event_type=et,
+            event_count=cnt,
+            max_notable_score=max_by_type[et],
+        )
+        for et, cnt in type_rows
     ]
 
     cpu_rank = (

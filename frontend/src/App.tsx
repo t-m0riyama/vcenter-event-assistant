@@ -58,7 +58,11 @@ type Summary = {
   top_notable_events: EventRow[]
   high_cpu_hosts: SummaryHostMetricRow[]
   high_mem_hosts: SummaryHostMetricRow[]
-  top_event_types_24h: Array<{ event_type: string; event_count: number }>
+  top_event_types_24h: Array<{
+    event_type: string
+    event_count: number
+    max_notable_score: number
+  }>
 }
 
 type AppConfig = {
@@ -300,6 +304,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
             <th scope="col">順位</th>
             <th scope="col">種別</th>
             <th scope="col">件数</th>
+            <th scope="col">スコア</th>
           </tr>
         </thead>
         <tbody>
@@ -309,6 +314,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
                 <td>{i + 1}</td>
                 <td className="msg">{row.event_type}</td>
                 <td>{row.event_count}</td>
+                <td>{row.max_notable_score}</td>
               </tr>
             ),
           )}

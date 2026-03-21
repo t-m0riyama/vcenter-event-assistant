@@ -6,8 +6,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import EventRecord, MetricSample
+from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, MetricSample
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.rules.notable import final_notable_score
 
 
 @pytest.mark.asyncio
@@ -241,6 +242,7 @@ async def test_top_event_types_24h_orders_by_count_desc_and_excludes_stale(clien
     rows = body["top_event_types_24h"]
     assert [r["event_type"] for r in rows] == ["TypeA", "TypeB", "TypeC"]
     assert [r["event_count"] for r in rows] == [3, 2, 1]
+    assert [r["max_notable_score"] for r in rows] == [0, 0, 0]
     assert body["events_last_24h"] == 6
 
 
@@ -279,3 +281,55 @@ async def test_top_event_types_24h_returns_at_most_ten_types(client: AsyncClient
     rows = resp.json()["top_event_types_24h"]
     assert len(rows) == 10
     assert all(r["event_count"] == 1 for r in rows)
+    assert all(r["max_notable_score"] == 0 for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_top_event_types_24h_max_notable_score_uses_current_rules_not_stored_column(
+    client: AsyncClient,
+) -> None:
+    """Dashboard recomputes scores with ``load_event_score_delta_map`` + ``final_notable_score``."""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-etype-rule-score",
+            "host": "vc-rule.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+    et = "CustomRuleScoreType"
+
+    async with session_scope() as session:
+        session.add(EventScoreRule(event_type=et, score_delta=25))
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type=et,
+                message="ok",
+                severity="error",
+                vmware_key=1,
+                notable_score=0,
+            )
+        )
+
+    expected = final_notable_score(
+        event_type=et,
+        severity="error",
+        message="ok",
+        score_delta=25,
+    )
+
+    resp = await client.get("/api/dashboard/summary")
+    assert resp.status_code == 200
+    row = resp.json()["top_event_types_24h"][0]
+    assert row["event_type"] == et
+    assert row["event_count"] == 1
+    assert row["max_notable_score"] == expected
+    assert expected != 0
