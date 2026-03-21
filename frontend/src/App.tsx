@@ -62,7 +62,7 @@ type Summary = {
   }>
 }
 
-type Tab = 'summary' | 'events' | 'vcenters' | 'metrics'
+type Tab = 'summary' | 'events' | 'metrics' | 'vcenters'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
@@ -103,7 +103,7 @@ export default function App() {
       )}
 
       <nav className="tabs">
-        {(['summary', 'events', 'vcenters', 'metrics'] as const).map((t) => (
+        {(['summary', 'events', 'metrics', 'vcenters'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -124,8 +124,8 @@ export default function App() {
       <main className="main">
         {tab === 'summary' && <SummaryPanel onError={setErr} />}
         {tab === 'events' && <EventsPanel onError={setErr} />}
-        {tab === 'vcenters' && <VCentersPanel onError={setErr} />}
         {tab === 'metrics' && <MetricsPanel onError={setErr} />}
+        {tab === 'vcenters' && <VCentersPanel onError={setErr} />}
       </main>
       </div>
     </TimeZoneProvider>
