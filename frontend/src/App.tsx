@@ -1,14 +1,18 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
 import { EventsPanel } from './panels/events/EventsPanel'
-import { MetricsPanel } from './panels/metrics/MetricsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
 import './App.css'
+
+const MetricsPanel = lazy(async () => {
+  const m = await import('./panels/metrics/MetricsPanel')
+  return { default: m.MetricsPanel }
+})
 
 type Tab = 'summary' | 'events' | 'metrics' | 'settings'
 
@@ -100,10 +104,12 @@ export default function App() {
             {tab === 'summary' && <SummaryPanel onError={setErr} />}
             {tab === 'events' && <EventsPanel onError={setErr} />}
             {tab === 'metrics' && (
-              <MetricsPanel
-                onError={setErr}
-                perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
-              />
+              <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
+                <MetricsPanel
+                  onError={setErr}
+                  perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+                />
+              </Suspense>
             )}
             {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
             {tab === 'settings' && settingsSubTab === 'score_rules' && (
