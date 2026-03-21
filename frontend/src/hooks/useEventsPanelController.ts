@@ -10,6 +10,7 @@ import {
   zonedRangePartsToCombinedInputs,
   type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
+import { buildEventListSearchParams } from '../events/buildEventListQuery'
 import {
   EVENT_EXPORT_CHUNK,
   EVENT_PAGE_SIZES,
@@ -56,21 +57,19 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
         onError(range.message)
         return
       }
-      const q = new URLSearchParams({
-        limit: String(pageSize),
-        offset: String((page - 1) * pageSize),
+      const filters = {
+        minScore,
+        filterEventType,
+        filterSeverity,
+        filterMessage,
+        filterComment,
+      }
+      const q = buildEventListSearchParams({
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        filters,
+        range: { from: range.from, to: range.to },
       })
-      if (minScore) q.set('min_score', minScore)
-      const et = filterEventType.trim()
-      if (et) q.set('event_type_contains', et)
-      const sv = filterSeverity.trim()
-      if (sv) q.set('severity_contains', sv)
-      const msg = filterMessage.trim()
-      if (msg) q.set('message_contains', msg)
-      const cm = filterComment.trim()
-      if (cm) q.set('comment_contains', cm)
-      if (range.from) q.set('from', range.from)
-      if (range.to) q.set('to', range.to)
       const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
       const { items, total: nextTotal } = normalizeEventListPayload(raw)
       setRows(items)
@@ -161,6 +160,13 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
         onError(range.message)
         return
       }
+      const filters = {
+        minScore,
+        filterEventType,
+        filterSeverity,
+        filterMessage,
+        filterComment,
+      }
       const vcenters = await apiGet<unknown>('/api/vcenters')
       const vcenterList = asArray<VCenter>(vcenters)
       const nameById = new Map(vcenterList.map((v) => [v.id, v.name]))
@@ -169,21 +175,12 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
       let offset = 0
       let totalExpected = 0
       for (;;) {
-        const q = new URLSearchParams({
-          limit: String(EVENT_EXPORT_CHUNK),
-          offset: String(offset),
+        const q = buildEventListSearchParams({
+          limit: EVENT_EXPORT_CHUNK,
+          offset,
+          filters,
+          range: { from: range.from, to: range.to },
         })
-        if (minScore) q.set('min_score', minScore)
-        const et = filterEventType.trim()
-        if (et) q.set('event_type_contains', et)
-        const sv = filterSeverity.trim()
-        if (sv) q.set('severity_contains', sv)
-        const msg = filterMessage.trim()
-        if (msg) q.set('message_contains', msg)
-        const cm = filterComment.trim()
-        if (cm) q.set('comment_contains', cm)
-        if (range.from) q.set('from', range.from)
-        if (range.to) q.set('to', range.to)
         const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
         const { items, total, rawItemCount } = normalizeEventListPayload(raw)
         totalExpected = total
