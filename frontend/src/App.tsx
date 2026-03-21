@@ -279,6 +279,11 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   if (!data) return <p>読み込み中…</p>
 
   const notableRows = asArray<EventRow>(data.top_notable_events)
+  const topEventTypesRows = asArray<Summary['top_event_types_24h'][number]>(
+    data.top_event_types_24h,
+  )
+  const highCpuRows = asArray<SummaryHostMetricRow>(data.high_cpu_hosts)
+  const highMemRows = asArray<SummaryHostMetricRow>(data.high_mem_hosts)
 
   return (
     <div className="panel">
@@ -297,31 +302,7 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
         </div>
       </div>
 
-      <h2>イベント種別（直近24h 件数上位）</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th scope="col">順位</th>
-            <th scope="col">種別</th>
-            <th scope="col">件数</th>
-            <th scope="col">スコア</th>
-          </tr>
-        </thead>
-        <tbody>
-          {asArray<Summary['top_event_types_24h'][number]>(data.top_event_types_24h).map(
-            (row, i) => (
-              <tr key={`${row.event_type}-${i}`}>
-                <td>{i + 1}</td>
-                <td className="msg">{row.event_type}</td>
-                <td>{row.event_count}</td>
-                <td>{row.max_notable_score}</td>
-              </tr>
-            ),
-          )}
-        </tbody>
-      </table>
-
-      <details className="toolbar__filters-details summary-panel__notable-details">
+      <details open className="toolbar__filters-details summary-panel__notable-details">
         <summary className="toolbar__filters-summary">
           <span className="toolbar__filters-summary__title">要注意イベント（上位）</span>
           <span className="toolbar__filters-summary__preview">
@@ -354,45 +335,90 @@ function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
         </table>
       </details>
 
-      <h2>高 CPU ホスト（直近24h サンプル上位）</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>ホスト</th>
-            <th>CPU %</th>
-            <th>時刻</th>
-          </tr>
-        </thead>
-        <tbody>
-          {asArray<SummaryHostMetricRow>(data.high_cpu_hosts).map((h, i) => (
-            <tr key={`${h.entity_name}-${i}`}>
-              <td>{h.entity_name}</td>
-              <td>{h.value.toFixed(1)}</td>
-              <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+      <details className="toolbar__filters-details summary-panel__event-type-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">イベント種別（直近24h 件数上位）</span>
+          <span className="toolbar__filters-summary__preview">
+            {topEventTypesRows.length === 0 ? '該当なし' : `${topEventTypesRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th scope="col">順位</th>
+              <th scope="col">種別</th>
+              <th scope="col">件数</th>
+              <th scope="col">スコア</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {topEventTypesRows.map((row, i) => (
+              <tr key={`${row.event_type}-${i}`}>
+                <td>{i + 1}</td>
+                <td className="msg">{row.event_type}</td>
+                <td>{row.event_count}</td>
+                <td>{row.max_notable_score}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
 
-      <h2>高メモリ使用率ホスト（直近24h サンプル上位）</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>ホスト</th>
-            <th>メモリ %</th>
-            <th>時刻</th>
-          </tr>
-        </thead>
-        <tbody>
-          {asArray<SummaryHostMetricRow>(data.high_mem_hosts).map((h, i) => (
-            <tr key={`${h.entity_name}-mem-${i}`}>
-              <td>{h.entity_name}</td>
-              <td>{h.value.toFixed(1)}</td>
-              <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+      <details open className="toolbar__filters-details summary-panel__host-metric-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">高 CPU ホスト（直近24h サンプル上位）</span>
+          <span className="toolbar__filters-summary__preview">
+            {highCpuRows.length === 0 ? '該当なし' : `${highCpuRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>ホスト</th>
+              <th>CPU %</th>
+              <th>時刻</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {highCpuRows.map((h, i) => (
+              <tr key={`${h.entity_name}-${i}`}>
+                <td>{h.entity_name}</td>
+                <td>{h.value.toFixed(1)}</td>
+                <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+
+      <details open className="toolbar__filters-details summary-panel__host-metric-details">
+        <summary className="toolbar__filters-summary">
+          <span className="toolbar__filters-summary__title">
+            高メモリ使用率ホスト（直近24h サンプル上位）
+          </span>
+          <span className="toolbar__filters-summary__preview">
+            {highMemRows.length === 0 ? '該当なし' : `${highMemRows.length} 件`}
+          </span>
+        </summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>ホスト</th>
+              <th>メモリ %</th>
+              <th>時刻</th>
+            </tr>
+          </thead>
+          <tbody>
+            {highMemRows.map((h, i) => (
+              <tr key={`${h.entity_name}-mem-${i}`}>
+                <td>{h.entity_name}</td>
+                <td>{h.value.toFixed(1)}</td>
+                <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
     </div>
   )
 }
