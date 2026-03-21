@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class VCenterCreate(BaseModel):
@@ -70,9 +70,28 @@ class MetricSeriesResponse(BaseModel):
     total: int
 
 
+class HighCpuHostRow(BaseModel):
+    """Dashboard summary row: ``sampled_at`` is normalized to UTC so JSON uses ``Z`` (JS parses as UTC)."""
+
+    vcenter_id: str
+    entity_name: str
+    entity_moid: str
+    value: float
+    sampled_at: datetime
+
+    @field_validator("sampled_at", mode="before")
+    @classmethod
+    def sampled_at_to_utc(cls, v: object) -> datetime:
+        if not isinstance(v, datetime):
+            raise TypeError("sampled_at must be a datetime")
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+
+
 class DashboardSummary(BaseModel):
     vcenter_count: int
     events_last_24h: int
     notable_events_last_24h: int
     top_notable_events: list[EventRead]
-    high_cpu_hosts: list[dict]
+    high_cpu_hosts: list[HighCpuHostRow]
