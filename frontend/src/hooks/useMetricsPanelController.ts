@@ -34,7 +34,9 @@ export function useMetricsPanelController(
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
   const [metricKeys, setMetricKeys] = useState<string[]>(() => mergeMetricKeyOptions([]))
-  const [metricKey, setMetricKey] = useState('')
+  const [metricKey, setMetricKey] = useState(
+    () => mergeMetricKeyOptions([])[0] ?? '',
+  )
   const [points, setPoints] = useState<MetricPoint[]>([])
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -80,11 +82,12 @@ export function useMetricsPanelController(
   }, [vcenterId])
 
   const loadMetricKeys = useCallback(async (): Promise<string> => {
-    const prev = metricKeyRef.current
     try {
       const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
       const data = await apiGet<{ metric_keys?: unknown }>(`/api/metrics/keys${q}`)
       const keys = mergeMetricKeyOptions(asArray<string>(data.metric_keys))
+      // Read ref after await so we respect metric key changes during the request.
+      const prev = metricKeyRef.current
       const nextKey = keys.includes(prev) ? prev : (keys[0] ?? '')
       setMetricKeys(keys)
       setMetricKey(nextKey)
@@ -92,6 +95,7 @@ export function useMetricsPanelController(
     } catch (e) {
       onError(toErrorMessage(e))
       const keys = mergeMetricKeyOptions([])
+      const prev = metricKeyRef.current
       const nextKey = keys.includes(prev) ? prev : (keys[0] ?? '')
       setMetricKeys(keys)
       setMetricKey(nextKey)
