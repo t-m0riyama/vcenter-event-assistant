@@ -23,6 +23,10 @@ import {
   type MetricPoint,
 } from '../metrics/normalizeMetricSeriesResponse'
 import type { MetricCsvExportOptions } from '../metrics/metricCsv'
+import {
+  fetchMetricKeysForVcenter,
+  pickMetricKeyAfterFetch,
+} from '../metrics/fetchMetricKeys'
 import { mergeMetricKeyOptions } from '../metrics/knownMetricKeys'
 import { useChartThemeColors } from '../theme/useChartThemeColors'
 
@@ -83,12 +87,9 @@ export function useMetricsPanelController(
 
   const loadMetricKeys = useCallback(async (): Promise<string> => {
     try {
-      const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
-      const data = await apiGet<{ metric_keys?: unknown }>(`/api/metrics/keys${q}`)
-      const keys = mergeMetricKeyOptions(asArray<string>(data.metric_keys))
-      // Read ref after await so we respect metric key changes during the request.
+      const keys = await fetchMetricKeysForVcenter(vcenterId)
       const prev = metricKeyRef.current
-      const nextKey = keys.includes(prev) ? prev : (keys[0] ?? '')
+      const nextKey = pickMetricKeyAfterFetch(prev, keys)
       setMetricKeys(keys)
       setMetricKey(nextKey)
       return nextKey
@@ -96,7 +97,7 @@ export function useMetricsPanelController(
       onError(toErrorMessage(e))
       const keys = mergeMetricKeyOptions([])
       const prev = metricKeyRef.current
-      const nextKey = keys.includes(prev) ? prev : (keys[0] ?? '')
+      const nextKey = pickMetricKeyAfterFetch(prev, keys)
       setMetricKeys(keys)
       setMetricKey(nextKey)
       return nextKey

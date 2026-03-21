@@ -148,6 +148,8 @@ describe('App error banner', () => {
     await waitFor(() => {
       expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
     })
+    // `App` lazy-loads MetricsPanel; preload so Suspense resolves under jsdom.
+    await import('./panels/metrics/MetricsPanel')
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
