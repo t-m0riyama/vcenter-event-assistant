@@ -117,7 +117,7 @@ function summarizeEventTextFilters(
 
 type Tab = 'summary' | 'events' | 'metrics' | 'settings'
 
-type SettingsSubTab = 'score_rules' | 'vcenters'
+type SettingsSubTab = 'general' | 'vcenters' | 'score_rules'
 
 type EventScoreRuleRow = {
   id: number
@@ -127,7 +127,7 @@ type EventScoreRuleRow = {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
-  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('vcenters')
+  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
   const [err, setErr] = useState<string | null>(null)
   const [retention, setRetention] = useState<AppConfig | null>(null)
 
@@ -156,9 +156,6 @@ export default function App() {
               {retention.metric_retention_days} 日（サーバー設定）
             </p>
           )}
-          <div className="header-toolbar">
-            <TimeZoneSelect />
-          </div>
         </header>
 
       {err && (
@@ -191,6 +188,17 @@ export default function App() {
           <nav className="settings-subtabs" aria-label="設定">
             <button
               type="button"
+              className={settingsSubTab === 'general' ? 'active' : undefined}
+              aria-selected={settingsSubTab === 'general'}
+              onClick={() => {
+                setSettingsSubTab('general')
+                setErr(null)
+              }}
+            >
+              一般
+            </button>
+            <button
+              type="button"
               className={settingsSubTab === 'vcenters' ? 'active' : undefined}
               aria-selected={settingsSubTab === 'vcenters'}
               onClick={() => {
@@ -216,6 +224,7 @@ export default function App() {
         {tab === 'summary' && <SummaryPanel onError={setErr} />}
         {tab === 'events' && <EventsPanel onError={setErr} />}
         {tab === 'metrics' && <MetricsPanel onError={setErr} />}
+        {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
         {tab === 'settings' && settingsSubTab === 'score_rules' && (
           <ScoreRulesPanel onError={setErr} />
         )}
@@ -225,6 +234,17 @@ export default function App() {
       </main>
       </div>
     </TimeZoneProvider>
+  )
+}
+
+function GeneralSettingsPanel() {
+  return (
+    <div className="panel">
+      <p className="hint">
+        日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
+      </p>
+      <TimeZoneSelect />
+    </div>
   )
 }
 

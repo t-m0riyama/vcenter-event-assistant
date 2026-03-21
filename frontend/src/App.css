@@ -16,15 +16,7 @@
   color: var(--color-text-secondary);
 }
 
-.header-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-3);
-  align-items: flex-end;
-  margin-bottom: var(--spacing-4);
-}
-
-.header-toolbar .tz-select select {
+.panel .tz-select select {
   min-width: 200px;
   max-width: min(420px, 100vw);
 }
