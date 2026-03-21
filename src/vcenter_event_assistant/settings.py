@@ -25,7 +25,16 @@ class Settings(BaseSettings):
 
     event_poll_interval_seconds: int = Field(default=120, ge=10)
     perf_sample_interval_seconds: int = Field(default=300, ge=60)
-    metric_retention_days: int = Field(default=30, ge=1)
+    event_retention_days: int = Field(
+        default=7,
+        ge=1,
+        description="Delete events older than this many days (occurred_at).",
+    )
+    metric_retention_days: int = Field(
+        default=7,
+        ge=1,
+        description="Delete metric samples older than this many days (sampled_at).",
+    )
 
     cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
 

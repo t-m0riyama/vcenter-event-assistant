@@ -15,6 +15,7 @@ from vcenter_event_assistant.services.ingestion import (
     ingest_events_for_vcenter,
     ingest_metrics_for_vcenter,
     list_enabled_vcenters,
+    purge_old_events,
     purge_old_metrics,
 )
 from vcenter_event_assistant.settings import get_settings
@@ -60,9 +61,12 @@ def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
     async def purge() -> None:
         try:
             async with session_scope() as session:
-                n = await purge_old_metrics(session)
-                if n:
-                    logger.info("purged old metric samples count=%s", n)
+                n_ev = await purge_old_events(session)
+                if n_ev:
+                    logger.info("purged old events count=%s", n_ev)
+                n_m = await purge_old_metrics(session)
+                if n_m:
+                    logger.info("purged old metric samples count=%s", n_m)
         except Exception:
             logger.exception("purge failed")
 

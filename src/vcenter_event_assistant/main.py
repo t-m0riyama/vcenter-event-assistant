@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
 from vcenter_event_assistant.api.routes.events import router as events_router
 from vcenter_event_assistant.api.routes.health import router as health_router
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
 
     api = APIRouter(prefix="/api")
+    api.include_router(config_router)
     api.include_router(vcenters_router)
     api.include_router(events_router)
     api.include_router(metrics_router)

@@ -95,3 +95,10 @@ class DashboardSummary(BaseModel):
     notable_events_last_24h: int
     top_notable_events: list[EventRead]
     high_cpu_hosts: list[HighCpuHostRow]
+
+
+class AppConfigResponse(BaseModel):
+    """Read-only retention settings (from environment)."""
+
+    event_retention_days: int
+    metric_retention_days: int

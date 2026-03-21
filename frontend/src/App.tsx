@@ -62,16 +62,37 @@ type Summary = {
   }>
 }
 
+type AppConfig = {
+  event_retention_days: number
+  metric_retention_days: number
+}
+
 type Tab = 'summary' | 'events' | 'metrics' | 'vcenters'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
   const [tokenInput, setTokenInput] = useState(getToken)
   const [err, setErr] = useState<string | null>(null)
+  const [retention, setRetention] = useState<AppConfig | null>(null)
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const c = await apiGet<AppConfig>('/api/config')
+      setRetention(c)
+    } catch (e) {
+      setRetention(null)
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadConfig()
+  }, [loadConfig])
 
   const applyToken = () => {
     setToken(tokenInput.trim())
     setErr(null)
+    void loadConfig()
   }
 
   return (
@@ -79,6 +100,12 @@ export default function App() {
       <div className="app">
         <header className="header">
           <h1>vCenter Event Assistant</h1>
+          {retention && (
+            <p className="retention-hint">
+              データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
+              {retention.metric_retention_days} 日（サーバー設定）
+            </p>
+          )}
           <div className="auth-row">
             <label>
               Bearer トークン（設定時は必須）

@@ -10,6 +10,12 @@
   margin: 0 0 var(--spacing-4);
 }
 
+.retention-hint {
+  margin: calc(-1 * var(--spacing-2)) 0 var(--spacing-4);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
 .auth-row {
   display: flex;
   flex-wrap: wrap;

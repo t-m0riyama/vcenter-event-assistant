@@ -123,6 +123,13 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
     return inserted
 
 
+async def purge_old_events(session: AsyncSession) -> int:
+    settings = get_settings()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.event_retention_days)
+    res = await session.execute(delete(EventRecord).where(EventRecord.occurred_at < cutoff))
+    return res.rowcount or 0
+
+
 async def purge_old_metrics(session: AsyncSession) -> int:
     settings = get_settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.metric_retention_days)
