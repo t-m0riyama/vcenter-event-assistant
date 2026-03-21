@@ -23,6 +23,7 @@ async def test_get_app_config(client: AsyncClient) -> None:
     data = r.json()
     assert data["event_retention_days"] == 7
     assert data["metric_retention_days"] == 7
+    assert data["perf_sample_interval_seconds"] == 300
 
 
 @pytest.mark.asyncio

@@ -1,16 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react'
 import {
   CartesianGrid,
   Legend,
   Line,
   LineChart,
   ResponsiveContainer,
+  Text,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
 import { apiDelete, apiGet, apiPatch, apiPost } from './api'
-import { formatIsoInTimeZone } from './datetime/formatIsoInTimeZone'
+import {
+  extractTickAxisValue,
+  formatChartAxisTick,
+  formatIsoInTimeZone,
+  parseApiUtcInstantMs,
+} from './datetime/formatIsoInTimeZone'
 import { TimeZoneProvider, TimeZoneSelect } from './datetime/TimeZoneProvider'
 import { useTimeZone } from './datetime/useTimeZone'
 import { MetricsChartErrorBoundary } from './metrics/MetricsChartErrorBoundary'
@@ -24,12 +37,20 @@ import {
   eventRowsToCsv,
 } from './events/eventCsv'
 import type { EventCsvRow } from './events/eventCsv'
-import { downloadMetricPointsCsv } from './metrics/metricCsv'
+import {
+  bucketEpochUtcSec,
+  downloadMetricPointsCsv,
+  type MetricCsvExportOptions,
+} from './metrics/metricCsv'
 import {
   normalizeMetricSeriesResponse,
   type MetricPoint,
 } from './metrics/normalizeMetricSeriesResponse'
-import { CHART_STROKE_GRID, CHART_STROKE_PRIMARY } from './styles/chartStrokes'
+import {
+  CHART_STROKE_GRID,
+  CHART_STROKE_PRIMARY,
+  CHART_STROKE_SECONDARY,
+} from './styles/chartStrokes'
 import './App.css'
 
 type VCenter = {
@@ -82,6 +103,7 @@ type Summary = {
 type AppConfig = {
   event_retention_days: number
   metric_retention_days: number
+  perf_sample_interval_seconds: number
 }
 
 /** Coerce API fields to arrays so `.map` never runs on null / objects (runtime safety). */
@@ -266,7 +288,12 @@ export default function App() {
         )}
         {tab === 'summary' && <SummaryPanel onError={setErr} />}
         {tab === 'events' && <EventsPanel onError={setErr} />}
-        {tab === 'metrics' && <MetricsPanel onError={setErr} />}
+        {tab === 'metrics' && (
+          <MetricsPanel
+            onError={setErr}
+            perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+          />
+        )}
         {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
         {tab === 'settings' && settingsSubTab === 'score_rules' && (
           <ScoreRulesPanel onError={setErr} />
@@ -598,7 +625,7 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
       }
       all.sort(
         (a, b) =>
-          new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime(),
+          parseApiUtcInstantMs(a.occurred_at) - parseApiUtcInstantMs(b.occurred_at),
       )
       const csv = eventRowsToCsv(
         all.map((e) =>
@@ -957,6 +984,14 @@ function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
   )
 }
 
+/** X 軸目盛り専用。`useTimeZone()` をここで読むことで Recharts の Redux 同期と親のクロージャに依存しない。 */
+function MetricsXAxisTick(props: Record<string, unknown>) {
+  const { timeZone } = useTimeZone()
+  const { payload, ...rest } = props
+  const label = formatChartAxisTick(extractTickAxisValue(payload), timeZone)
+  return <Text {...(rest as ComponentProps<typeof Text>)}>{label}</Text>
+}
+
 function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<VCenter[]>([])
   const [form, setForm] = useState({
@@ -1124,7 +1159,13 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   )
 }
 
-function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
+function MetricsPanel({
+  onError,
+  perfBucketSeconds,
+}: {
+  onError: (e: string | null) => void
+  perfBucketSeconds: number
+}) {
   const { timeZone } = useTimeZone()
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
@@ -1135,6 +1176,12 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [loading, setLoading] = useState(false)
   const [ingesting, setIngesting] = useState(false)
   const [chartResetKey, setChartResetKey] = useState(0)
+  const [chartEventType, setChartEventType] = useState('')
+  const [eventTypeOptions, setEventTypeOptions] = useState<string[]>([])
+  const [eventRateBuckets, setEventRateBuckets] = useState<
+    Array<{ bucket_start: string; count: number }> | null
+  >(null)
+  const [eventSeriesLoading, setEventSeriesLoading] = useState(false)
   const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
   const lastSeriesFetchRef = useRef<{ vcenterId: string; metricKey: string } | null>(null)
   const metricKeyRef = useRef(metricKey)
@@ -1150,6 +1197,13 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
   }, [onError])
+
+  useEffect(() => {
+    const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
+    void apiGet<{ event_types?: unknown }>(`/api/events/event-types${q}`)
+      .then((d) => setEventTypeOptions(asArray<string>(d.event_types)))
+      .catch(() => setEventTypeOptions([]))
+  }, [vcenterId])
 
   const loadMetricKeys = useCallback(async (): Promise<string> => {
     try {
@@ -1214,6 +1268,63 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     })()
   }, [vcenterId, metricKey, load, loadMetricKeys])
 
+  useEffect(() => {
+    const et = chartEventType.trim()
+    if (!et || points.length === 0) {
+      setEventRateBuckets(null)
+      setEventSeriesLoading(false)
+      return
+    }
+    let cancelled = false
+    setEventSeriesLoading(true)
+    void (async () => {
+      let minTs = Infinity
+      let maxTs = -Infinity
+      for (const p of points) {
+        const t = parseApiUtcInstantMs(p.sampled_at)
+        if (Number.isFinite(t)) {
+          if (t < minTs) minTs = t
+          if (t > maxTs) maxTs = t
+        }
+      }
+      if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
+        if (!cancelled) {
+          setEventRateBuckets(null)
+          setEventSeriesLoading(false)
+        }
+        return
+      }
+      const from = new Date(minTs).toISOString()
+      const to = new Date(maxTs).toISOString()
+      try {
+        const q = new URLSearchParams({
+          event_type: et,
+          from,
+          to,
+          bucket_seconds: String(perfBucketSeconds),
+        })
+        if (vcenterId) q.set('vcenter_id', vcenterId)
+        const data = await apiGet<{
+          buckets?: Array<{ bucket_start: string; count: number }>
+        }>(`/api/events/rate-series?${q.toString()}`)
+        if (!cancelled) {
+          setEventRateBuckets(Array.isArray(data.buckets) ? data.buckets : [])
+          onError(null)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setEventRateBuckets(null)
+          onError(e instanceof Error ? e.message : String(e))
+        }
+      } finally {
+        if (!cancelled) setEventSeriesLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [points, chartEventType, vcenterId, perfBucketSeconds, onError])
+
   const runIngest = async () => {
     setIngesting(true)
     onError(null)
@@ -1232,16 +1343,39 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     }
   }
 
+  const countByEpochSec = useMemo(() => {
+    const m = new Map<number, number>()
+    if (!eventRateBuckets) return m
+    for (const b of eventRateBuckets) {
+      const sec = Math.floor(parseApiUtcInstantMs(String(b.bucket_start)) / 1000)
+      m.set(sec, b.count)
+    }
+    return m
+  }, [eventRateBuckets])
+
+  const showEventLine =
+    chartEventType.trim().length > 0 && eventRateBuckets != null && !eventSeriesLoading
+
   const chartData = useMemo(
     () =>
       (points ?? [])
-        .filter((p) => p != null && Number.isFinite(p.value))
-        .map((p) => ({
-          t: formatIsoInTimeZone(String(p.sampled_at), timeZone, { omitSeconds: true }),
-          v: p.value,
-          name: p.entity_name ?? '',
-        })),
-    [points, timeZone],
+        .filter((p) => {
+          if (p == null || !Number.isFinite(p.value)) return false
+          return Number.isFinite(parseApiUtcInstantMs(String(p.sampled_at)))
+        })
+        .map((p) => {
+          const sampled = String(p.sampled_at)
+          const tMs = parseApiUtcInstantMs(sampled)
+          const bucketSec = bucketEpochUtcSec(sampled, perfBucketSeconds)
+          const evCount = showEventLine ? (countByEpochSec.get(bucketSec) ?? 0) : 0
+          return {
+            tMs,
+            v: p.value,
+            evCount,
+            name: p.entity_name ?? '',
+          }
+        }),
+    [points, perfBucketSeconds, showEventLine, countByEpochSec],
   )
 
   const metricsChartLegendName = useMemo(() => {
@@ -1254,13 +1388,40 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
     return `${vcLabel} / ${keyPart}`
   }, [vcenterId, vcenters, metricKey])
 
+  const eventSeriesLegendName = useMemo(() => {
+    const et = chartEventType.trim()
+    if (!et) return 'イベント件数'
+    return `イベント（${et}）`
+  }, [chartEventType])
+
+  const formatAxisTimeLabel = useCallback(
+    (value: unknown) => formatChartAxisTick(value, timeZone),
+    [timeZone],
+  )
+
+  const metricsXAxisTick = useCallback(
+    (props: Record<string, unknown>) => <MetricsXAxisTick {...props} />,
+    [],
+  )
+
   const vcenterExportLabel = useMemo(() => {
     if (!vcenterId) return 'all'
     const v = vcenters.find((c) => c.id === vcenterId)
     return v?.name ?? vcenterId
   }, [vcenterId, vcenters])
 
-  const exportDisabled = loading || !metricKey || points.length === 0
+  const csvExportOptions: MetricCsvExportOptions | undefined = useMemo(() => {
+    const et = chartEventType.trim()
+    if (!et || !eventRateBuckets) return undefined
+    return {
+      bucketSeconds: perfBucketSeconds,
+      eventCountByBucketEpochSec: countByEpochSec,
+      overlayEventType: et,
+    }
+  }, [chartEventType, eventRateBuckets, perfBucketSeconds, countByEpochSec])
+
+  const exportDisabled =
+    loading || !metricKey || points.length === 0 || eventSeriesLoading
 
   const downloadSvg = () => {
     try {
@@ -1275,7 +1436,7 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
   const downloadCsv = () => {
     try {
       const base = buildMetricsExportBasename(vcenterId, vcenterExportLabel, metricKey)
-      downloadMetricPointsCsv(points, `${base}.csv`)
+      downloadMetricPointsCsv(points, `${base}.csv`, csvExportOptions)
       onError(null)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
@@ -1316,6 +1477,22 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
               ))
             )}
           </select>
+        </label>
+        <label>
+          イベント種別（任意・完全一致）
+          <input
+            type="text"
+            value={chartEventType}
+            onChange={(e) => setChartEventType(e.target.value)}
+            list="metrics-event-type-options"
+            placeholder="例: VmPoweredOnEvent"
+            autoComplete="off"
+          />
+          <datalist id="metrics-event-type-options">
+            {eventTypeOptions.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
         </label>
         <button
           type="button"
@@ -1359,6 +1536,10 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
           </span>
         )}
       </div>
+      <p className="hint">
+        イベント件数はサーバ設定のメトリクス取得間隔（{perfBucketSeconds}
+        秒）と同じ幅のバケットに集計されます。種別を空にするとメトリクスのみ表示します。
+      </p>
       {!loading && metricKeys.length === 0 && (
         <p className="hint">
           この条件で DB に保存されたメトリクスがありません。「手動で収集」を実行するか、スケジュール取り込みを待ってから再度開いてください。
@@ -1377,13 +1558,32 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
       <MetricsChartErrorBoundary key={`${vcenterId}-${metricKey}-${chartResetKey}`}>
         <div className="chart-wrap" ref={chartWrapRef}>
           <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+            <LineChart
+              key={timeZone}
+              data={chartData}
+              margin={{ top: 8, right: 12, left: 4, bottom: 8 }}
+            >
               <CartesianGrid stroke={CHART_STROKE_GRID} strokeDasharray="3 3" />
-              <XAxis dataKey="t" minTickGap={24} />
-              <YAxis domain={[0, 100]} />
-              <Tooltip />
+              <XAxis
+                dataKey="tMs"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={formatAxisTimeLabel}
+                tick={metricsXAxisTick}
+                minTickGap={24}
+              />
+              <YAxis yAxisId="left" domain={['auto', 'auto']} />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                domain={['auto', 'auto']}
+                allowDecimals={false}
+              />
+              <Tooltip labelFormatter={formatAxisTimeLabel} />
               <Legend />
               <Line
+                yAxisId="left"
                 type="monotone"
                 dataKey="v"
                 name={metricsChartLegendName}
@@ -1391,6 +1591,17 @@ function MetricsPanel({ onError }: { onError: (e: string | null) => void }) {
                 dot={false}
                 isAnimationActive={false}
               />
+              {showEventLine && (
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="evCount"
+                  name={eventSeriesLegendName}
+                  stroke={CHART_STROKE_SECONDARY}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>

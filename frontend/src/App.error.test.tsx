@@ -16,6 +16,7 @@ const emptySummary = {
 const emptyConfig = {
   event_retention_days: 7,
   metric_retention_days: 7,
+  perf_sample_interval_seconds: 300,
 }
 
 function jsonResponse(data: unknown, status = 200) {
@@ -136,6 +137,9 @@ describe('App error banner', () => {
         }
         if (url.includes('/api/metrics/keys')) {
           return Promise.resolve(jsonResponse({ metric_keys: ['host.cpu.usage_pct'] }))
+        }
+        if (url.includes('/api/events/event-types')) {
+          return Promise.resolve(jsonResponse({ event_types: [] }))
         }
         return Promise.resolve(new Response('n', { status: 404 }))
       }),

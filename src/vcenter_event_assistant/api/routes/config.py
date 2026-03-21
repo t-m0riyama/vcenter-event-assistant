@@ -16,4 +16,5 @@ async def get_app_config() -> AppConfigResponse:
     return AppConfigResponse(
         event_retention_days=s.event_retention_days,
         metric_retention_days=s.metric_retention_days,
+        perf_sample_interval_seconds=s.perf_sample_interval_seconds,
     )

@@ -87,12 +87,23 @@ class EventListResponse(BaseModel):
 
 
 class MetricPoint(BaseModel):
+    """Metric sample: ``sampled_at`` is normalized to UTC so JSON uses ``Z`` (JS parses as UTC)."""
+
     sampled_at: datetime
     value: float
     entity_name: str
     entity_moid: str
     metric_key: str
     vcenter_id: uuid.UUID
+
+    @field_validator("sampled_at", mode="before")
+    @classmethod
+    def sampled_at_to_utc(cls, v: object) -> datetime:
+        if not isinstance(v, datetime):
+            raise TypeError("sampled_at must be a datetime")
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
 
 
 class MetricSeriesResponse(BaseModel):
@@ -169,6 +180,27 @@ class AppConfigResponse(BaseModel):
 
     event_retention_days: int
     metric_retention_days: int
+    perf_sample_interval_seconds: int
+
+
+class EventRateBucket(BaseModel):
+    """UTC bucket start and event count in ``[bucket_start, bucket_start + bucket_seconds)``."""
+
+    bucket_start: datetime
+    count: int
+
+
+class EventRateSeriesResponse(BaseModel):
+    """Histogram of event counts per time bucket (aligned to UTC epoch boundaries)."""
+
+    bucket_seconds: int
+    buckets: list[EventRateBucket]
+
+
+class EventTypesResponse(BaseModel):
+    """Distinct event types for UI pickers."""
+
+    event_types: list[str]
 
 
 class EventScoreRuleCreate(BaseModel):

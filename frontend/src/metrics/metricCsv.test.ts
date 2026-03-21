@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { escapeCsvField, metricPointsToCsv } from './metricCsv'
+import { bucketEpochUtcSec, escapeCsvField, metricPointsToCsv } from './metricCsv'
 import type { MetricPoint } from './normalizeMetricSeriesResponse'
+
+describe('bucketEpochUtcSec', () => {
+  it('matches naive ISO without Z to explicit UTC Z', () => {
+    expect(bucketEpochUtcSec('2025-01-01T00:00:00', 300)).toBe(
+      bucketEpochUtcSec('2025-01-01T00:00:00.000Z', 300),
+    )
+  })
+})
 
 describe('escapeCsvField', () => {
   it('returns plain string when no special chars', () => {
@@ -49,5 +57,17 @@ describe('metricPointsToCsv', () => {
   it('escapes fields with commas in entity_name', () => {
     const csv = metricPointsToCsv([{ ...base, entity_name: 'h,ost' }])
     expect(csv).toContain('"h,ost"')
+  })
+
+  it('adds event overlay columns when options are complete', () => {
+    const m = new Map<number, number>([[bucketEpochUtcSec(base.sampled_at, 300), 2]])
+    const csv = metricPointsToCsv([base], {
+      bucketSeconds: 300,
+      eventCountByBucketEpochSec: m,
+      overlayEventType: 'VmPoweredOnEvent',
+    })
+    expect(csv).toContain('event_type_overlay,bucket_epoch_utc_sec,event_count_in_bucket')
+    expect(csv).toContain('VmPoweredOnEvent')
+    expect(csv).toContain(',2\r\n')
   })
 })

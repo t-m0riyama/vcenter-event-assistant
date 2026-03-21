@@ -1,3 +1,5 @@
+import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
+
 export type MetricPoint = {
   sampled_at: string
   value: number
@@ -23,7 +25,7 @@ function isValidMetricPoint(x: unknown): x is MetricPoint {
   if (typeof value !== 'number' || !Number.isFinite(value)) return false
   const sampledAt = p.sampled_at
   if (!isNonEmptyString(sampledAt)) return false
-  if (Number.isNaN(new Date(sampledAt).getTime())) return false
+  if (Number.isNaN(parseApiUtcInstantMs(sampledAt))) return false
   if (typeof p.entity_name !== 'string') return false
   if (typeof p.entity_moid !== 'string') return false
   if (typeof p.metric_key !== 'string') return false

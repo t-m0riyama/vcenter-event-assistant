@@ -53,6 +53,9 @@ async def test_metrics_returns_total_and_respects_limit(client: AsyncClient) -> 
     assert body["total"] == 3
     assert len(body["points"]) == 2
     assert body["points"][0]["value"] == 10.0
+    ts0 = body["points"][0]["sampled_at"]
+    assert isinstance(ts0, str)
+    assert ts0.endswith("Z") or "+00:00" in ts0
 
 
 @pytest.mark.asyncio
