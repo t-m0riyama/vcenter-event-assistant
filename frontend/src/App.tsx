@@ -122,10 +122,19 @@ function summarizeEventTextFilters(
   return out
 }
 
-type Tab = 'summary' | 'events' | 'metrics' | 'vcenters'
+type Tab = 'summary' | 'events' | 'metrics' | 'settings'
+
+type SettingsSubTab = 'score_rules' | 'vcenters'
+
+type EventScoreRuleRow = {
+  id: number
+  event_type: string
+  score_delta: number
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
+  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('vcenters')
   const [tokenInput, setTokenInput] = useState(getToken)
   const [err, setErr] = useState<string | null>(null)
   const [retention, setRetention] = useState<AppConfig | null>(null)
@@ -185,7 +194,7 @@ export default function App() {
       )}
 
       <nav className="tabs">
-        {(['summary', 'events', 'metrics', 'vcenters'] as const).map((t) => (
+        {(['summary', 'events', 'metrics', 'settings'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -197,17 +206,48 @@ export default function App() {
           >
             {t === 'summary' && '概要'}
             {t === 'events' && 'イベント'}
-            {t === 'vcenters' && 'vCenter'}
             {t === 'metrics' && 'メトリクス'}
+            {t === 'settings' && '設定'}
           </button>
         ))}
       </nav>
 
       <main className="main">
+        {tab === 'settings' && (
+          <nav className="settings-subtabs" aria-label="設定">
+            <button
+              type="button"
+              className={settingsSubTab === 'vcenters' ? 'active' : undefined}
+              aria-selected={settingsSubTab === 'vcenters'}
+              onClick={() => {
+                setSettingsSubTab('vcenters')
+                setErr(null)
+              }}
+            >
+              vCenter
+            </button>
+            <button
+              type="button"
+              className={settingsSubTab === 'score_rules' ? 'active' : undefined}
+              aria-selected={settingsSubTab === 'score_rules'}
+              onClick={() => {
+                setSettingsSubTab('score_rules')
+                setErr(null)
+              }}
+            >
+              スコアルール
+            </button>
+          </nav>
+        )}
         {tab === 'summary' && <SummaryPanel onError={setErr} />}
         {tab === 'events' && <EventsPanel onError={setErr} />}
         {tab === 'metrics' && <MetricsPanel onError={setErr} />}
-        {tab === 'vcenters' && <VCentersPanel onError={setErr} />}
+        {tab === 'settings' && settingsSubTab === 'score_rules' && (
+          <ScoreRulesPanel onError={setErr} />
+        )}
+        {tab === 'settings' && settingsSubTab === 'vcenters' && (
+          <VCentersPanel onError={setErr} />
+        )}
       </main>
       </div>
     </TimeZoneProvider>
@@ -578,6 +618,149 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
                     </button>
                   </div>
                 )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
+  const [list, setList] = useState<EventScoreRuleRow[]>([])
+  const [newType, setNewType] = useState('')
+  const [newDelta, setNewDelta] = useState(0)
+  const [draftDelta, setDraftDelta] = useState<Record<number, number>>({})
+
+  const load = useCallback(async () => {
+    onError(null)
+    try {
+      const data = await apiGet<EventScoreRuleRow[]>('/api/event-score-rules')
+      setList(data)
+      const d: Record<number, number> = {}
+      for (const r of data) {
+        d[r.id] = r.score_delta
+      }
+      setDraftDelta(d)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }, [onError])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
+    void load()
+  }, [load])
+
+  const add = async () => {
+    const et = newType.trim()
+    if (!et) {
+      onError('イベント種別を入力してください')
+      return
+    }
+    onError(null)
+    try {
+      await apiPost('/api/event-score-rules', {
+        event_type: et,
+        score_delta: newDelta,
+      })
+      setNewType('')
+      setNewDelta(0)
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const save = async (id: number) => {
+    onError(null)
+    try {
+      const v = draftDelta[id]
+      await apiPatch(`/api/event-score-rules/${id}`, {
+        score_delta: typeof v === 'number' && Number.isFinite(v) ? v : 0,
+      })
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const remove = async (id: number) => {
+    if (!confirm('このルールを削除しますか？既存イベントのスコアはルールなしのベースに戻ります。')) return
+    onError(null)
+    try {
+      await apiDelete(`/api/event-score-rules/${id}`)
+      await load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="panel">
+      <p className="hint">
+        イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。最終スコアは 0〜100
+        に収まります。既存の取り込み済みイベントにも、ルールの保存・変更・削除時に再計算が反映されます。
+      </p>
+      <h2>追加</h2>
+      <div className="form-grid score-rules-form">
+        <label>
+          イベント種別（完全一致）
+          <input
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            placeholder="例: vim.event.VmPoweredOnEvent"
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          加算（負数可）
+          <input
+            type="number"
+            value={newDelta}
+            onChange={(e) => setNewDelta(Number(e.target.value))}
+          />
+        </label>
+      </div>
+      <button type="button" className="btn btn--filled" onClick={() => void add()}>
+        追加
+      </button>
+
+      <h2>一覧</h2>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>イベント種別</th>
+            <th>加算</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((r) => (
+            <tr key={r.id}>
+              <td className="msg">{r.event_type}</td>
+              <td>
+                <input
+                  type="number"
+                  className="score-rules-delta-input"
+                  aria-label={`${r.event_type} の加算`}
+                  value={draftDelta[r.id] ?? r.score_delta}
+                  onChange={(e) =>
+                    setDraftDelta((prev) => ({
+                      ...prev,
+                      [r.id]: Number(e.target.value),
+                    }))
+                  }
+                />
+              </td>
+              <td className="actions">
+                <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
+                  保存
+                </button>
+                <button type="button" className="btn btn--gray" onClick={() => void remove(r.id)}>
+                  削除
+                </button>
               </td>
             </tr>
           ))}

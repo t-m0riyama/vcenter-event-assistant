@@ -48,6 +48,17 @@ class EventRecord(Base):
     vcenter: Mapped["VCenter"] = relationship(back_populates="events")
 
 
+class EventScoreRule(Base):
+    """Per-event-type additive adjustment to ``score_event`` base score (stored in ``events.notable_score``)."""
+
+    __tablename__ = "event_score_rules"
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_score_rules_event_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(512), nullable=False)
+    score_delta: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class MetricSample(Base):
     __tablename__ = "metric_samples"
     __table_args__ = (

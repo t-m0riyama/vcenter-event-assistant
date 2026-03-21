@@ -109,7 +109,13 @@ describe('App error banner', () => {
       })
       expect(h).toBeInTheDocument()
     })
-    fireEvent.click(within(tabNav()).getByRole('button', { name: 'vCenter' }))
+    fireEvent.click(within(tabNav()).getByRole('button', { name: '設定' }))
+    fireEvent.click(
+      within(document.querySelector('nav.settings-subtabs') as HTMLElement).getByRole(
+        'button',
+        { name: 'vCenter' },
+      ),
+    )
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('503 vc fail')
     })

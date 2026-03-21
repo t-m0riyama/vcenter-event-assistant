@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
+from vcenter_event_assistant.api.routes.event_score_rules import router as event_score_rules_router
 from vcenter_event_assistant.api.routes.events import router as events_router
 from vcenter_event_assistant.api.routes.health import router as health_router
 from vcenter_event_assistant.api.routes.metrics import router as metrics_router
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
 
     api = APIRouter(prefix="/api")
     api.include_router(config_router)
+    api.include_router(event_score_rules_router)
     api.include_router(vcenters_router)
     api.include_router(events_router)
     api.include_router(metrics_router)

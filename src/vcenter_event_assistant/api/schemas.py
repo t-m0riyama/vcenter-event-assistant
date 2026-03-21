@@ -134,3 +134,27 @@ class AppConfigResponse(BaseModel):
 
     event_retention_days: int
     metric_retention_days: int
+
+
+class EventScoreRuleCreate(BaseModel):
+    event_type: str = Field(min_length=1, max_length=512)
+    score_delta: int = Field(ge=-10_000, le=10_000)
+
+    @field_validator("event_type", mode="before")
+    @classmethod
+    def strip_event_type(cls, v: object) -> object:
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+
+class EventScoreRuleUpdate(BaseModel):
+    score_delta: int = Field(ge=-10_000, le=10_000)
+
+
+class EventScoreRuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_type: str
+    score_delta: int
