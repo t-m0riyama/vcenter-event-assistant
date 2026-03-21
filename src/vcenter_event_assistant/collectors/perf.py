@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from pyVmomi import vim
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
+from vcenter_event_assistant.collectors.datastore_metrics import sample_datastore_metrics_blocking
+from vcenter_event_assistant.collectors.host_perf_counters import collect_host_perf_metric_rows
+
+logger = logging.getLogger(__name__)
 
 
 def _iter_hosts(si) -> list[Any]:
@@ -61,12 +66,17 @@ def sample_hosts_blocking(
     username: str,
     password: str,
 ) -> list[dict[str, Any]]:
-    """Return flattened metric sample dicts for all hosts."""
+    """Return flattened metric sample dicts for all hosts and datastores."""
     si = connect_vcenter(host=host, port=port, username=username, password=password)
     try:
         rows: list[dict[str, Any]] = []
         for h in _iter_hosts(si):
             rows.extend(_host_metrics(h))
+            rows.extend(collect_host_perf_metric_rows(si, h))
+        try:
+            rows.extend(sample_datastore_metrics_blocking(si))
+        except Exception:
+            logger.exception("datastore metric sampling failed")
         return rows
     finally:
         disconnect(si)
