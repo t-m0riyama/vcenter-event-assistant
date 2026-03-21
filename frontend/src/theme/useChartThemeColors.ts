@@ -6,11 +6,24 @@ import {
   CHART_STROKE_SECONDARY,
 } from '../styles/chartStrokes'
 
+const CHART_SERIES_FALLBACK = [
+  CHART_STROKE_PRIMARY,
+  CHART_STROKE_SECONDARY,
+  '#ff9500',
+  '#ff3b30',
+  '#af52de',
+  '#5ac8fa',
+  '#ff375f',
+  '#6e7785',
+] as const
+
 export type ChartThemeColors = {
   grid: string
   primary: string
   secondary: string
   axisTick: string
+  /** 多系列（例: `host.*` のホスト別）のストローク。最大 8 色を巡回。 */
+  series: readonly string[]
 }
 
 /**
@@ -32,6 +45,11 @@ export function useChartThemeColors(): ChartThemeColors {
     const axisTick =
       cs.getPropertyValue('--color-text-secondary').trim() ||
       CHART_STROKE_GRID
-    return { grid, primary, secondary, axisTick }
+    const series: string[] = []
+    for (let i = 1; i <= 8; i++) {
+      const v = cs.getPropertyValue(`--color-chart-series-${i}`).trim()
+      series.push(v || CHART_SERIES_FALLBACK[i - 1])
+    }
+    return { grid, primary, secondary, axisTick, series }
   }, [effectiveTheme])
 }

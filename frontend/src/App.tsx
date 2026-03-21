@@ -48,10 +48,10 @@ import {
 } from './events/eventCsv'
 import type { EventCsvRow } from './events/eventCsv'
 import {
-  bucketEpochUtcSec,
   downloadMetricPointsCsv,
   type MetricCsvExportOptions,
 } from './metrics/metricCsv'
+import { buildMetricsChartModel } from './metrics/buildMetricsChartModel'
 import {
   normalizeMetricSeriesResponse,
   type MetricPoint,
@@ -1328,6 +1328,8 @@ function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   )
 }
 
+const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
+
 function MetricsPanel({
   onError,
   perfBucketSeconds,
@@ -1578,27 +1580,52 @@ function MetricsPanel({
   const showEventLine =
     chartEventType.trim().length > 0 && eventRateBuckets != null && !eventSeriesLoading
 
-  const chartData = useMemo(
-    () =>
-      (points ?? [])
-        .filter((p) => {
-          if (p == null || !Number.isFinite(p.value)) return false
-          return Number.isFinite(parseApiUtcInstantMs(String(p.sampled_at)))
-        })
-        .map((p) => {
-          const sampled = String(p.sampled_at)
-          const tMs = parseApiUtcInstantMs(sampled)
-          const bucketSec = bucketEpochUtcSec(sampled, perfBucketSeconds)
-          const evCount = showEventLine ? (countByEpochSec.get(bucketSec) ?? 0) : 0
-          return {
-            tMs,
-            v: p.value,
-            evCount,
-            name: p.entity_name ?? '',
-          }
-        }),
-    [points, perfBucketSeconds, showEventLine, countByEpochSec],
+  const leftYAxisLabel = useMemo(() => {
+    const k = metricKey.trim()
+    return k.endsWith('_pct') ? '％' : undefined
+  }, [metricKey])
+
+  const metricsChartMargin = useMemo(
+    () => ({
+      top: 8,
+      right: showEventLine ? 44 : 12,
+      left: leftYAxisLabel ? 32 : 8,
+      bottom: 8,
+    }),
+    [showEventLine, leftYAxisLabel],
   )
+
+  const chartModel = useMemo(
+    () =>
+      buildMetricsChartModel(
+        metricKey,
+        points ?? [],
+        perfBucketSeconds,
+        showEventLine,
+        countByEpochSec,
+      ),
+    [metricKey, points, perfBucketSeconds, showEventLine, countByEpochSec],
+  )
+
+  const chartData = chartModel.rows
+
+  const vcenterLabelForChart = useMemo(() => {
+    if (!vcenterId) return '全て'
+    const v = vcenters.find((c) => c.id === vcenterId)
+    return v?.name ?? vcenterId
+  }, [vcenterId, vcenters])
+
+  const metricsChartTitleLines = useMemo(() => {
+    const mk = metricKey.trim() || '—'
+    const line1 = `${vcenterLabelForChart} / ${mk}`
+    const et = chartEventType.trim()
+    const rangeLabel = summarizeGraphRangePreview(rangeParts)
+    const line2Parts: string[] = []
+    if (et) line2Parts.push(`イベント種別: ${et}`)
+    line2Parts.push(`期間: ${rangeLabel}`)
+    const line2 = line2Parts.join(' · ')
+    return { line1, line2 }
+  }, [vcenterLabelForChart, metricKey, chartEventType, rangeParts])
 
   const metricsChartLegendName = useMemo(() => {
     const keyPart = metricKey || '—'
@@ -1628,6 +1655,13 @@ function MetricsPanel({
     [chartColors.axisTick],
   )
 
+  /** 目盛りが 10 以上のときは整数表示（未満は既定の小数表示）。 */
+  const formatYAxisTick = useCallback((value: number) => {
+    if (!Number.isFinite(value)) return ''
+    if (Math.abs(value) >= 10) return String(Math.round(value))
+    return String(value)
+  }, [])
+
   const vcenterExportLabel = useMemo(() => {
     if (!vcenterId) return 'all'
     const v = vcenters.find((c) => c.id === vcenterId)
@@ -1650,7 +1684,9 @@ function MetricsPanel({
   const downloadSvg = () => {
     try {
       const base = buildMetricsExportBasename(vcenterId, vcenterExportLabel, metricKey)
-      downloadChartSvg(chartWrapRef.current, `${base}.svg`)
+      downloadChartSvg(chartWrapRef.current, `${base}.svg`, {
+        lines: [metricsChartTitleLines.line1, metricsChartTitleLines.line2],
+      })
       onError(null)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
@@ -1794,12 +1830,16 @@ function MetricsPanel({
         </div>
       )}
       <MetricsChartErrorBoundary key={`${vcenterId}-${metricKey}-${chartResetKey}`}>
+        <h2 className="metrics-chart__title">
+          <span className="metrics-chart__title-line">{metricsChartTitleLines.line1}</span>
+          <span className="metrics-chart__title-line">{metricsChartTitleLines.line2}</span>
+        </h2>
         <div className="chart-wrap" ref={chartWrapRef}>
           <ResponsiveContainer width="100%" height={320}>
             <LineChart
               key={timeZone}
               data={chartData}
-              margin={{ top: 8, right: 12, left: 4, bottom: 8 }}
+              margin={metricsChartMargin}
             >
               <CartesianGrid
                 stroke={chartColors.grid}
@@ -1816,27 +1856,65 @@ function MetricsPanel({
               />
               <YAxis
                 yAxisId="left"
-                domain={['auto', 'auto']}
+                domain={[0, 'auto']}
                 tick={{ fill: chartColors.axisTick }}
+                tickFormatter={formatYAxisTick}
+                label={
+                  leftYAxisLabel
+                    ? {
+                        value: leftYAxisLabel,
+                        angle: -90,
+                        position: 'insideLeft',
+                        style: { fill: chartColors.axisTick, fontSize: 11 },
+                      }
+                    : undefined
+                }
               />
               <YAxis
                 yAxisId="right"
                 orientation="right"
-                domain={['auto', 'auto']}
+                domain={[0, 'auto']}
                 allowDecimals={false}
                 tick={{ fill: chartColors.axisTick }}
+                tickFormatter={formatYAxisTick}
+                label={
+                  showEventLine
+                    ? {
+                        value: 'イベント件数',
+                        angle: 90,
+                        position: 'insideRight',
+                        style: { fill: chartColors.axisTick, fontSize: 11 },
+                      }
+                    : undefined
+                }
               />
               <Tooltip labelFormatter={formatAxisTimeLabel} />
               <Legend />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="v"
-                name={metricsChartLegendName}
-                stroke={chartColors.primary}
-                dot={false}
-                isAnimationActive={false}
-              />
+              {chartModel.mode === 'single' ? (
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="v"
+                  name={metricsChartLegendName}
+                  stroke={chartColors.primary}
+                  dot={LINE_CHART_DATA_DOT}
+                  isAnimationActive={false}
+                />
+              ) : (
+                chartModel.metricSeries.map((s, i) => (
+                  <Line
+                    key={s.dataKey}
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={s.dataKey}
+                    name={`${vcenterLabelForChart} / ${s.legendName}`}
+                    stroke={chartColors.series[i % chartColors.series.length]}
+                    connectNulls={false}
+                    dot={LINE_CHART_DATA_DOT}
+                    isAnimationActive={false}
+                  />
+                ))
+              )}
               {showEventLine && (
                 <Line
                   yAxisId="right"
@@ -1844,7 +1922,7 @@ function MetricsPanel({
                   dataKey="evCount"
                   name={eventSeriesLegendName}
                   stroke={chartColors.secondary}
-                  dot={false}
+                  dot={LINE_CHART_DATA_DOT}
                   isAnimationActive={false}
                 />
               )}
