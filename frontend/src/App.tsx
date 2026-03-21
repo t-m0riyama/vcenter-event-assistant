@@ -89,6 +89,39 @@ function normalizeEventListPayload(raw: unknown): { items: EventRow[]; total: nu
 
 const EVENT_PAGE_SIZES = [20, 50, 100, 200] as const
 
+const EVENT_TEXT_FILTER_SUMMARY_CLIP = 18
+const EVENT_TEXT_FILTER_SUMMARY_MAX = 96
+
+function clipForFilterSummary(s: string, max: number): string {
+  const t = s.trim()
+  if (!t) return ''
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`
+}
+
+/** One-line preview for collapsed 種別/重大度/メッセージ/コメント filters. */
+function summarizeEventTextFilters(
+  filterEventType: string,
+  filterSeverity: string,
+  filterMessage: string,
+  filterComment: string,
+): string {
+  const pairs: Array<{ label: string; value: string }> = [
+    { label: '種別', value: filterEventType },
+    { label: '重大度', value: filterSeverity },
+    { label: 'メッセージ', value: filterMessage },
+    { label: 'コメント', value: filterComment },
+  ]
+  const active = pairs.filter((p) => p.value.trim())
+  if (active.length === 0) return '条件なし'
+  let out = active
+    .map((p) => `${p.label}「${clipForFilterSummary(p.value, EVENT_TEXT_FILTER_SUMMARY_CLIP)}」`)
+    .join(' · ')
+  if (out.length > EVENT_TEXT_FILTER_SUMMARY_MAX) {
+    out = `${out.slice(0, EVENT_TEXT_FILTER_SUMMARY_MAX - 1)}…`
+  }
+  return out
+}
+
 type Tab = 'summary' | 'events' | 'metrics' | 'vcenters'
 
 export default function App() {
@@ -278,6 +311,10 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const [rows, setRows] = useState<EventRow[]>([])
   const [total, setTotal] = useState(0)
   const [minScore, setMinScore] = useState('')
+  const [filterEventType, setFilterEventType] = useState('')
+  const [filterSeverity, setFilterSeverity] = useState('')
+  const [filterMessage, setFilterMessage] = useState('')
+  const [filterComment, setFilterComment] = useState('')
   const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
   const [page, setPage] = useState(1)
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
@@ -291,6 +328,14 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         offset: String((page - 1) * pageSize),
       })
       if (minScore) q.set('min_score', minScore)
+      const et = filterEventType.trim()
+      if (et) q.set('event_type_contains', et)
+      const sv = filterSeverity.trim()
+      if (sv) q.set('severity_contains', sv)
+      const msg = filterMessage.trim()
+      if (msg) q.set('message_contains', msg)
+      const cm = filterComment.trim()
+      if (cm) q.set('comment_contains', cm)
       const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
       const { items, total: nextTotal } = normalizeEventListPayload(raw)
       setRows(items)
@@ -301,7 +346,16 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
-  }, [onError, minScore, page, pageSize])
+  }, [
+    onError,
+    minScore,
+    filterEventType,
+    filterSeverity,
+    filterMessage,
+    filterComment,
+    page,
+    pageSize,
+  ])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
@@ -323,7 +377,15 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   useEffect(() => {
     setEditingCommentId(null)
     setCommentDraft('')
-  }, [page, pageSize, minScore])
+  }, [
+    page,
+    pageSize,
+    minScore,
+    filterEventType,
+    filterSeverity,
+    filterMessage,
+    filterComment,
+  ])
 
   const beginCommentEdit = (e: EventRow) => {
     setEditingCommentId(e.id)
@@ -406,6 +468,69 @@ function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
         <button type="button" className="btn btn--filled" onClick={() => void load()}>
           再読込
         </button>
+        <details className="toolbar__filters-details">
+          <summary className="toolbar__filters-summary">
+            <span className="toolbar__filters-summary__title">絞り込み条件</span>
+            <span className="toolbar__filters-summary__preview">
+              {summarizeEventTextFilters(
+                filterEventType,
+                filterSeverity,
+                filterMessage,
+                filterComment,
+              )}
+            </span>
+          </summary>
+          <div className="toolbar__filters" aria-label="イベントの絞り込み（種別・重大度・メッセージ・コメント）">
+            <label>
+              種別（含む）
+              <input
+                value={filterEventType}
+                onChange={(e) => {
+                  setFilterEventType(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              重大度（含む）
+              <input
+                value={filterSeverity}
+                onChange={(e) => {
+                  setFilterSeverity(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              メッセージ（含む）
+              <input
+                value={filterMessage}
+                onChange={(e) => {
+                  setFilterMessage(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              コメント（含む）
+              <input
+                value={filterComment}
+                onChange={(e) => {
+                  setFilterComment(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="部分一致"
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        </details>
       </div>
       <table className="table">
         <thead>

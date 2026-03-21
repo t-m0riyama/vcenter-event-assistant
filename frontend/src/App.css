@@ -217,6 +217,94 @@
   color: var(--color-text-secondary);
 }
 
+.toolbar__filters-details {
+  flex-basis: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
+.toolbar__filters-summary {
+  cursor: pointer;
+  font-size: var(--font-size-footnote);
+  list-style: none;
+  padding: var(--spacing-2);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-3));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  border-radius: var(--radius-sm, 4px);
+  transition: background-color 0.12s ease;
+}
+
+.toolbar__filters-summary::-webkit-details-marker {
+  display: none;
+}
+
+.toolbar__filters-summary::marker {
+  content: '';
+}
+
+.toolbar__filters-summary:hover {
+  background-color: color-mix(in srgb, var(--color-border) 35%, transparent);
+}
+
+.toolbar__filters-summary:focus-visible {
+  outline: 2px solid var(--color-border);
+  outline-offset: 2px;
+}
+
+.toolbar__filters-summary::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-top: 0.35em solid transparent;
+  border-bottom: 0.35em solid transparent;
+  border-left: 0.55em solid var(--color-text-secondary);
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.toolbar__filters-details[open] > .toolbar__filters-summary::before {
+  transform: rotate(90deg);
+}
+
+.toolbar__filters-details[open] > .toolbar__filters-summary {
+  margin-bottom: 0;
+}
+
+.toolbar__filters-summary__title {
+  font-weight: 500;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+
+.toolbar__filters-summary__preview {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar__filters-details .toolbar__filters {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.toolbar__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  flex-basis: 100%;
+  align-items: flex-end;
+}
+
 .toolbar label {
   display: flex;
   flex-direction: column;

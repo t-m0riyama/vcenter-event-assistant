@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import EventListResponse, EventRead, EventUserCommentPatch
@@ -15,6 +16,23 @@ from vcenter_event_assistant.auth.dependencies import require_auth
 from vcenter_event_assistant.db.models import EventRecord
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+
+def _strip_query(s: str | None) -> str | None:
+    if s is None:
+        return None
+    t = s.strip()
+    return t if t else None
+
+
+def _escape_like_metachars(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -> ColumnElement[bool]:
+    """Substring match, case-insensitive; works on SQLite and PostgreSQL via ``ilike`` + escape."""
+    hay = func.coalesce(column, literal(""))
+    return hay.ilike(f"%{_escape_like_metachars(needle)}%", escape="\\")
 
 
 @router.get("", response_model=EventListResponse)
@@ -25,6 +43,10 @@ async def list_events(
     from_time: datetime | None = Query(default=None, alias="from"),
     to_time: datetime | None = Query(default=None, alias="to"),
     min_score: int | None = Query(default=None, ge=0, le=100),
+    event_type_contains: str | None = Query(default=None),
+    severity_contains: str | None = Query(default=None),
+    message_contains: str | None = Query(default=None),
+    comment_contains: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> EventListResponse:
@@ -37,6 +59,19 @@ async def list_events(
         conditions.append(EventRecord.occurred_at <= to_time)
     if min_score is not None:
         conditions.append(EventRecord.notable_score >= min_score)
+
+    et = _strip_query(event_type_contains)
+    if et is not None:
+        conditions.append(_contains_case_insensitive(EventRecord.event_type, et))
+    sv = _strip_query(severity_contains)
+    if sv is not None:
+        conditions.append(_contains_case_insensitive(EventRecord.severity, sv))
+    msg = _strip_query(message_contains)
+    if msg is not None:
+        conditions.append(_contains_case_insensitive(EventRecord.message, msg))
+    cm = _strip_query(comment_contains)
+    if cm is not None:
+        conditions.append(_contains_case_insensitive(EventRecord.user_comment, cm))
 
     count_q = select(func.count()).select_from(EventRecord)
     if conditions:
