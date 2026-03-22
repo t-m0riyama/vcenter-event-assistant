@@ -222,6 +222,7 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
   ])
 
   return {
+    load,
     timeZone,
     rows,
     total,

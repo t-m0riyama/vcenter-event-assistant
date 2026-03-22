@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import type { EventRow } from '../../api/schemas'
 import {
   formatIsoInTimeZone,
@@ -6,10 +7,22 @@ import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
+import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
+import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { asArray } from '../../utils/asArray'
 
 export function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const c = useEventsPanelController(onError)
+  const { load: reloadEvents } = c
+  const { autoRefreshEnabled, autoRefreshIntervalMinutes } = useAutoRefreshPreferences()
+  const intervalMs = useMemo(
+    () => autoRefreshIntervalMinutes * 60_000,
+    [autoRefreshIntervalMinutes],
+  )
+  const onAutoRefresh = useCallback(() => {
+    void reloadEvents()
+  }, [reloadEvents])
+  useIntervalWhenEnabled(autoRefreshEnabled, intervalMs, onAutoRefresh)
 
   return (
     <div className="panel">

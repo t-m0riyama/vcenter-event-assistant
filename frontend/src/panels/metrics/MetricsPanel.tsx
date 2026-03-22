@@ -20,7 +20,9 @@ import { MetricsChartErrorBoundary } from '../../metrics/MetricsChartErrorBounda
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { summarizeGraphRangePreview } from '../../datetime/graphRange'
 import { toErrorMessage } from '../../utils/errors'
+import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useMetricsPanelController } from '../../hooks/useMetricsPanelController'
+import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { formatChartTooltipNumber } from '../../metrics/chartYAxisFormat'
 import {
   xAxisBottomMarginForWidth,
@@ -77,6 +79,17 @@ export function MetricsPanel({
     exportDisabled,
     csvExportOptions,
   } = useMetricsPanelController(onError, perfBucketSeconds)
+
+  const { autoRefreshEnabled, autoRefreshIntervalMinutes } = useAutoRefreshPreferences()
+  const intervalMs = useMemo(
+    () => autoRefreshIntervalMinutes * 60_000,
+    [autoRefreshIntervalMinutes],
+  )
+  const onAutoRefreshMetrics = useCallback(() => {
+    invalidateSeriesCache()
+    void load(metricKey, { silent: true })
+  }, [invalidateSeriesCache, load, metricKey])
+  useIntervalWhenEnabled(autoRefreshEnabled, intervalMs, onAutoRefreshMetrics)
 
   const [chartWrapWidthPx, setChartWrapWidthPx] = useState(0)
   useLayoutEffect(() => {

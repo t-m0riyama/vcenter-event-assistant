@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet } from '../../api'
 import {
   parseSummary,
@@ -8,32 +8,54 @@ import {
 } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
+import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { useSummaryTopNotableMinScore } from '../../preferences/useSummaryTopNotableMinScore'
+import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { asArray } from '../../utils/asArray'
 import { toErrorMessage } from '../../utils/errors'
 
 export function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
   const { topNotableMinScore } = useSummaryTopNotableMinScore()
+  const { autoRefreshEnabled, autoRefreshIntervalMinutes } = useAutoRefreshPreferences()
   const [data, setData] = useState<Summary | null>(null)
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
 
-  const load = useCallback(async () => {
-    onError(null)
-    setLoadState('loading')
-    try {
-      const q = new URLSearchParams({
-        top_notable_min_score: String(topNotableMinScore),
-      })
-      const raw = await apiGet<unknown>(`/api/dashboard/summary?${q.toString()}`)
-      setData(parseSummary(raw))
-      setLoadState('ready')
-    } catch (e) {
-      setData(null)
-      onError(toErrorMessage(e))
-      setLoadState('error')
-    }
-  }, [onError, topNotableMinScore])
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent === true
+      onError(null)
+      if (!silent) {
+        setLoadState('loading')
+      }
+      try {
+        const q = new URLSearchParams({
+          top_notable_min_score: String(topNotableMinScore),
+        })
+        const raw = await apiGet<unknown>(`/api/dashboard/summary?${q.toString()}`)
+        setData(parseSummary(raw))
+        setLoadState('ready')
+      } catch (e) {
+        if (!silent) {
+          setData(null)
+          setLoadState('error')
+        }
+        onError(toErrorMessage(e))
+      }
+    },
+    [onError, topNotableMinScore],
+  )
+
+  const intervalMs = useMemo(
+    () => autoRefreshIntervalMinutes * 60_000,
+    [autoRefreshIntervalMinutes],
+  )
+
+  const onAutoRefresh = useCallback(() => {
+    void load({ silent: true })
+  }, [load])
+
+  useIntervalWhenEnabled(autoRefreshEnabled, intervalMs, onAutoRefresh)
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch

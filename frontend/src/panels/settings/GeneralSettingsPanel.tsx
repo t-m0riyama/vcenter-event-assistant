@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { TimeZoneSelect } from '../../datetime/TimeZoneProvider'
+import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { useSummaryTopNotableMinScore } from '../../preferences/useSummaryTopNotableMinScore'
 import type { ThemePreference } from '../../theme/themeStorage'
 import { useTheme } from '../../theme/useTheme'
@@ -24,14 +25,25 @@ function ThemeAppearanceSelect() {
 
 export function GeneralSettingsPanel() {
   const { topNotableMinScore, setTopNotableMinScore } = useSummaryTopNotableMinScore()
+  const {
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    autoRefreshIntervalMinutes,
+    setAutoRefreshIntervalMinutes,
+  } = useAutoRefreshPreferences()
   /**
    * `null` = 未編集（表示は常に `topNotableMinScore` に追従）。
    * 文字列 = フォーカス中のドラフト。親の再レンダーでも上書きされない。
    */
   const [notableScoreDraft, setNotableScoreDraft] = useState<string | null>(null)
+  /** 更新間隔（分）の入力ドラフト。 */
+  const [intervalDraft, setIntervalDraft] = useState<string | null>(null)
 
   const notableScoreDisplay =
     notableScoreDraft !== null ? notableScoreDraft : String(topNotableMinScore)
+
+  const intervalMinutesDisplay =
+    intervalDraft !== null ? intervalDraft : String(autoRefreshIntervalMinutes)
 
   return (
     <div className="panel">
@@ -82,6 +94,55 @@ export function GeneralSettingsPanel() {
               setNotableScoreDraft(null)
             }}
             aria-label="要注意イベントの最小スコア"
+          />
+        </label>
+      </div>
+      <div className="general-settings-field">
+        <p className="hint">
+          概要・イベント・グラフの各タブを表示している間だけ、一定間隔でサーバーから最新データを再取得します。別のタブへ切り替えたあとに戻ったときは、その時点で再読み込みされます。選択はこのブラウザに保存されます。
+        </p>
+        <label className="tz-select tz-select--inline">
+          <input
+            type="checkbox"
+            checked={autoRefreshEnabled}
+            onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+            aria-label="自動更新"
+          />
+          自動更新
+        </label>
+      </div>
+      <div className="general-settings-field">
+        <p className="hint">自動更新の間隔です。1〜300 分。選択はこのブラウザに保存されます。</p>
+        <label className="tz-select">
+          更新の間隔（分）
+          <input
+            type="number"
+            min={1}
+            max={300}
+            step={1}
+            disabled={!autoRefreshEnabled}
+            value={intervalMinutesDisplay}
+            onFocus={() => {
+              setIntervalDraft(String(autoRefreshIntervalMinutes))
+            }}
+            onChange={(e) => {
+              setIntervalDraft(e.target.value)
+            }}
+            onBlur={(e) => {
+              const raw = e.currentTarget.value.trim()
+              if (raw === '') {
+                setIntervalDraft(null)
+                return
+              }
+              const n = Number.parseInt(raw, 10)
+              if (Number.isNaN(n)) {
+                setIntervalDraft(null)
+                return
+              }
+              setAutoRefreshIntervalMinutes(n)
+              setIntervalDraft(null)
+            }}
+            aria-label="更新の間隔（分）"
           />
         </label>
       </div>

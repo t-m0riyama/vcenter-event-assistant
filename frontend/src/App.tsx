@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
+import { AutoRefreshPreferencesProvider } from './preferences/AutoRefreshPreferencesProvider'
 import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
@@ -28,6 +29,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <TimeZoneProvider>
+        <AutoRefreshPreferencesProvider>
         <SummaryTopNotableMinScoreProvider>
           <div className="app">
             <header className="header">
@@ -123,6 +125,7 @@ export default function App() {
             </main>
           </div>
         </SummaryTopNotableMinScoreProvider>
+        </AutoRefreshPreferencesProvider>
       </TimeZoneProvider>
     </ThemeProvider>
   )

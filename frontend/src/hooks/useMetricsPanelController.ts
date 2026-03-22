@@ -109,7 +109,8 @@ export function useMetricsPanelController(
   }, [vcenterId, onError])
 
   const load = useCallback(
-    async (overrideKey?: string): Promise<boolean> => {
+    async (overrideKey?: string, options?: { silent?: boolean }): Promise<boolean> => {
+      const silent = options?.silent === true
       const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
       if (graphRange.mode === 'invalid') {
         onError(graphRange.message)
@@ -126,7 +127,9 @@ export function useMetricsPanelController(
         setLoading(false)
         return false
       }
-      setLoading(true)
+      if (!silent) {
+        setLoading(true)
+      }
       onError(null)
       try {
         const limit = graphRange.mode === 'range' ? '10000' : '500'
