@@ -4,7 +4,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `@superpowers:subagent-driven-development`（推奨）または `@superpowers:executing-plans` でタスク単位に実装。チェックボックス（`- [ ]`）で進捗管理。
 
-**Goal:** [`docs/event-type-guides/README.md`](../../event-type-guides/README.md) に記載の第2弾に向け、**第1弾と同一スキーマ**の追加用シード [`data/seed/event-type-guides-priority-v2.json`](../../../data/seed/event-type-guides-priority-v2.json) と出典表 [`docs/event-type-guides/citations-priority-v2.md`](../../event-type-guides/citations-priority-v2.md) を整備し、Vitest でパース検証しつつ、**バッチ単位**でガイド本文を積み上げる。**priority v2 の `guides` 件数の目標は 100 件**（`v1` と重複しない `event_type` のみ。進捗はリポジトリのシードと README の件数表記で追跡する）。
+**Goal:** [`docs/event-type-guides/README.md`](../../event-type-guides/README.md) に記載の第2弾に向け、**第1弾と同一スキーマ**の追加用シード [`data/seed/event-type-guides-priority-v2.json`](../../../data/seed/event-type-guides-priority-v2.json) と出典表 [`docs/event-type-guides/citations-priority-v2.md`](../../event-type-guides/citations-priority-v2.md) を整備し、Vitest でパース検証しつつ、**バッチ単位**でガイド本文を積み上げる。**priority v2 の `guides` は `v1` と重複しない `vim.event.Event` 下位型のうち、Broadcom vSphere Web Services API 7.0／pyvmomi 9 で列挙可能な範囲を網羅する（現行の上限 **463 件**。500 件などの数値目標は API 上の型数を超えられない）。（進捗は README の件数表記で追跡する。）
 
 **Architecture:** ファイル形式は変更しない（[`eventTypeGuidesFileSchema`](../../../frontend/src/api/schemas.ts) の `format: "vea-event-type-guides"`、`version` は整数 `>= 1` — アプリのエクスポートは現状 `version: 1` 固定）。第2弾 JSON は **第1弾に含まれる `event_type` と重複しない**ことをリポジトリルールとする（単一ファイル内の重複も禁止 — 既存 Zod の `superRefine` と同じ）。
 
@@ -120,9 +120,9 @@ comm -12 \
 
 ### Task 3 以降: コンテンツバッチ（第2弾の本体・繰り返し）
 
-**件数目標:** v2 シードの `guides` を **計 100 件**まで拡張する（現時点の実装済み件数を引いた残りを、バックログまたはカテゴリ補完で埋める）。
+**件数目標:** v2 シードの `guides` を **463 件**（`vim.event.Event` 下位型のうち v1 と重複しないものの、現行 pyvmomi で列挙できる最大数）まで拡張する。途中経過ではバックログまたはカテゴリ補完で埋める。
 
-**バッチのまとめ方:** **1 バッチ = 50 件**とする。1 バッチの作業では、ガイド本文・出典表・`exportedAt`・README の件数表記を **まとめて** 更新し、**1 PR（またはバッチ単位の 1 コミット）** に収める。100 件に到達するまでの残件が 50 未満の最終バッチだけ、**残り件数ぶん**を 1 バッチにまとめる（例: 8 件済みなら、次が 50 件、さらに次が 42 件で計 100 件）。
+**バッチのまとめ方:** **1 バッチ = 50 件**を推奨する。1 バッチの作業では、ガイド本文・出典表・`exportedAt`・README の件数表記を **まとめて** 更新し、**1 PR（またはバッチ単位の 1 コミット）** に収める。全件網羅時の一括更新も可。
 
 **Files:**
 
@@ -141,7 +141,7 @@ comm -12 \
 
 - [ ] **Step 6:** Commit（**50 件バッチ**ごとに 1 回。最終バッチのみ 50 件未満でもよい）。
 
-**完了の定義（第2弾・priority v2）:** `guides` が **100 件**に達した時点で目標達成とみなす（型の存在確認が取れない `event_type` はスキップし、バックログに残す）。README の関連ファイル表に **現在の v2 シード件数** をメンテし、100 件未満の場合は残件数の目安が分かるようにする（任意）。
+**完了の定義（第2弾・priority v2）:** `guides` が **463 件**に達し、残る `vim.event.Event` 下位型が v1 と重複しない範囲でなくなった時点で目標達成とみなす（型の存在確認が取れない `event_type` はスキップし、バックログに残す）。README の関連ファイル表に **現在の v2 シード件数** をメンテする。
 
 ---
 
