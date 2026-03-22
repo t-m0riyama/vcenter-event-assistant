@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   formatChartTooltipNumber,
   formatChartYAxisTick,
+  getMetricBitrateScale,
   getMetricStorageScale,
+  metricValueToBitsPerSecond,
   metricValueToBytes,
 } from './chartYAxisFormat'
 
@@ -52,12 +54,37 @@ describe('getMetricStorageScale', () => {
   })
 })
 
+describe('getMetricBitrateScale', () => {
+  it('detects suffix order (longer *bps before _bps)', () => {
+    expect(getMetricBitrateScale('host.net.custom_bps')).toBe('bps')
+    expect(getMetricBitrateScale('host.disk.read_kbps')).toBe('kbps')
+    expect(getMetricBitrateScale('x_mbps')).toBe('mbps')
+    expect(getMetricBitrateScale('pool.rate_tbps')).toBe('tbps')
+    expect(getMetricBitrateScale('dc.total_pbps')).toBe('pbps')
+    expect(getMetricBitrateScale('dc.total_ybps')).toBe('ybps')
+  })
+
+  it('returns null for non-bitrate keys', () => {
+    expect(getMetricBitrateScale('host.cpu.usage_pct')).toBe(null)
+    expect(getMetricBitrateScale('datastore.space.used_bytes')).toBe(null)
+  })
+})
+
 describe('metricValueToBytes', () => {
   it('scales by SI exponents (1000^exp)', () => {
     expect(metricValueToBytes(1, 'kbytes')).toBe(1000)
     expect(metricValueToBytes(2, 'mbytes')).toBe(2 * 1000 * 1000)
     expect(metricValueToBytes(1, 'tbytes')).toBe(1000 ** 4)
     expect(metricValueToBytes(1, 'ybytes')).toBe(1000 ** 8)
+  })
+})
+
+describe('metricValueToBitsPerSecond', () => {
+  it('scales by SI exponents (same as storage keys)', () => {
+    expect(metricValueToBitsPerSecond(1, 'kbps')).toBe(1000)
+    expect(metricValueToBitsPerSecond(2, 'mbps')).toBe(2 * 1000 * 1000)
+    expect(metricValueToBitsPerSecond(1, 'tbps')).toBe(1000 ** 4)
+    expect(metricValueToBitsPerSecond(1, 'ybps')).toBe(1000 ** 8)
   })
 })
 
@@ -86,6 +113,33 @@ describe('formatChartYAxisTick storage metrics', () => {
   })
 })
 
+describe('formatChartYAxisTick bitrate metrics', () => {
+  it('formats bps with K/M/G/T suffixes on axis (SI 1000, not 万/億)', () => {
+    expect(formatChartYAxisTick(1536, 'metric', 'host.disk.read_kbps')).toMatch(/M/)
+    expect(formatChartYAxisTick(1536, 'metric', 'host.disk.read_kbps')).not.toMatch(/万/)
+    expect(formatChartYAxisTick(1_000_000_000, 'metric', 'host.net.bytes_rx_kbps')).toMatch(/T/)
+  })
+
+  it('infers scale from key: _kbps 1000 → 1M, _mbps 1000 → 1G', () => {
+    expect(formatChartYAxisTick(1000, 'metric', 'host.disk.read_kbps')).toBe('1M')
+    expect(formatChartYAxisTick(1000, 'metric', 'x.throughput_mbps')).toBe('1G')
+  })
+
+  it('interprets _kbps as kilo-units (1000 bps per unit)', () => {
+    expect(formatChartYAxisTick(1, 'metric', 'host.disk.read_kbps')).toBe('1K')
+  })
+
+  it('formats T and above from raw bps or *_tbps keys', () => {
+    expect(formatChartYAxisTick(1, 'metric', 'ds.rate_tbps')).toBe('1T')
+    expect(formatChartYAxisTick(10 ** 24, 'metric', 'host.net.usage_kbps')).toMatch(/Y/)
+    expect(formatChartYAxisTick(1, 'metric', 'dc.total_ybps')).toBe('1Y')
+  })
+
+  it('uses bps label at base tier', () => {
+    expect(formatChartYAxisTick(42, 'metric', 'custom.metric_bps')).toBe('42 bps')
+  })
+})
+
 describe('formatChartTooltipNumber', () => {
   it('uses storage format for byte metrics and plain for evCount', () => {
     expect(formatChartTooltipNumber(2048, { metricKey: 'datastore.space.used_bytes' })).toMatch(
@@ -98,6 +152,12 @@ describe('formatChartTooltipNumber', () => {
         dataKey: 'evCount',
       }),
     ).toBe('10')
+  })
+
+  it('uses bitrate format for *bps metrics', () => {
+    expect(formatChartTooltipNumber(2048, { metricKey: 'host.disk.read_kbps' })).toMatch(/M/)
+    expect(formatChartTooltipNumber(500, { metricKey: 'host.net.custom_bps' })).toMatch(/500/)
+    expect(formatChartTooltipNumber(500, { metricKey: 'host.net.custom_bps' })).toMatch(/bps/)
   })
 
   it('formats with grouping for readability', () => {
