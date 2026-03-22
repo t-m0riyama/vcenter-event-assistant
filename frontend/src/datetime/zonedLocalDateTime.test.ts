@@ -92,4 +92,24 @@ describe('getWallClockInZone', () => {
     expect(w.hour).toBe(12)
     expect(w.minute).toBe(0)
   })
+
+  it('JST 深夜 0:00 は hour 24 表記でも翌暦日 0:00 として解釈する', () => {
+    const ms = new Date('2025-06-14T15:00:00.000Z').getTime()
+    const w = getWallClockInZone(ms, 'Asia/Tokyo')
+    expect(w.year).toBe(2025)
+    expect(w.month).toBe(6)
+    expect(w.day).toBe(15)
+    expect(w.hour).toBe(0)
+    expect(w.minute).toBe(0)
+  })
+
+  it('24:00 が年跨ぎでも暦日を繰り上げる', () => {
+    const ms = new Date('2024-12-31T15:00:00.000Z').getTime()
+    const w = getWallClockInZone(ms, 'Asia/Tokyo')
+    expect(w.year).toBe(2025)
+    expect(w.month).toBe(1)
+    expect(w.day).toBe(1)
+    expect(w.hour).toBe(0)
+    expect(w.minute).toBe(0)
+  })
 })

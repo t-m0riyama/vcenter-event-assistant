@@ -49,9 +49,9 @@ export function parseZonedLocalDateTimeInput(s: string): {
 }
 
 /**
- * Calendar parts for an instant, in the given IANA time zone (wall clock).
+ * Intl の `formatToParts` から壁時計を取得する（`hour: 24` は正規化しない）。
  */
-export function getWallClockInZone(utcMs: number, timeZone: string): ZonedWallParts {
+function getWallClockInZoneRaw(utcMs: number, timeZone: string): ZonedWallParts {
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
@@ -67,17 +67,59 @@ export function getWallClockInZone(utcMs: number, timeZone: string): ZonedWallPa
   for (const p of parts) {
     if (p.type !== 'literal') map[p.type] = p.value
   }
-  let hour = Number(map.hour)
-  /** 一部環境では深夜が 24 時表記になる（h23 指定でも hour 24 が返ることがある） */
-  if (hour === 24) {
-    hour = 0
-  }
   return {
     year: Number(map.year),
     month: Number(map.month),
     day: Number(map.day),
-    hour,
+    hour: Number(map.hour),
     minute: Number(map.minute),
+  }
+}
+
+/**
+ * `hour === 24` が「その暦日の終了（＝翌暦日の 0 時）」か、
+ * 「当日 0 時」の別表記かを、1 分前の暦日と比較して判定する。
+ */
+function isHour24EndOfCalendarDay(
+  utcMs: number,
+  timeZone: string,
+  wall: ZonedWallParts,
+): boolean {
+  const prev = getWallClockInZoneRaw(utcMs - 60000, timeZone)
+  return (
+    prev.year === wall.year &&
+    prev.month === wall.month &&
+    prev.day === wall.day
+  )
+}
+
+/**
+ * Calendar parts for an instant, in the given IANA time zone (wall clock).
+ */
+export function getWallClockInZone(utcMs: number, timeZone: string): ZonedWallParts {
+  const raw = getWallClockInZoneRaw(utcMs, timeZone)
+  let { year, month, day, hour, minute } = raw
+
+  /**
+   * `hour === 24` は (1) その日の終了＝翌暦日 0:00、(2) 当日 0:00 の別表記 の両方がありうる。
+   * (1) のみ暦日を +1 する。(2) は直前の分が前日のため `isHour24EndOfCalendarDay` が false になる。
+   */
+  if (hour === 24) {
+    hour = 0
+    if (!isHour24EndOfCalendarDay(utcMs, timeZone, raw)) {
+      return { year, month, day, hour, minute }
+    }
+    const next = new Date(Date.UTC(year, month - 1, day + 1))
+    year = next.getUTCFullYear()
+    month = next.getUTCMonth() + 1
+    day = next.getUTCDate()
+  }
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
   }
 }
 
