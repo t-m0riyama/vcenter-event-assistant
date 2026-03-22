@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from httpx import AsyncClient
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SEED_JSON = _REPO_ROOT / "data" / "seed" / "event-type-guides-priority-v1.json"
 
 
 @pytest.mark.asyncio
@@ -177,3 +183,30 @@ async def test_event_type_guides_import_empty_file_deletes_all_when_flag(client:
     assert imp.json()["guides_count"] == 0
     lst = await client.get("/api/event-type-guides")
     assert lst.json() == []
+
+
+@pytest.mark.asyncio
+async def test_event_type_guides_import_priority_v1_seed_file(client: AsyncClient) -> None:
+    """リポジトリのシード JSON が `POST /import` でそのまま取り込めること（Task 5 Step 6 の自動検証）。"""
+    raw = json.loads(_SEED_JSON.read_text(encoding="utf-8"))
+    assert raw["format"] == "vea-event-type-guides"
+    guides = raw["guides"]
+
+    imp = await client.post(
+        "/api/event-type-guides/import",
+        json={
+            "overwrite_existing": True,
+            "delete_guides_not_in_import": False,
+            "guides": guides,
+        },
+    )
+    assert imp.status_code == 200
+    assert imp.json()["guides_count"] == len(guides)
+
+    lst = await client.get("/api/event-type-guides")
+    assert lst.status_code == 200
+    rows = lst.json()
+    assert len(rows) == len(guides)
+    by_type = {r["event_type"]: r for r in rows}
+    assert by_type["vim.event.HostDisconnectedEvent"]["action_required"] is True
+    assert by_type["vim.event.VmPoweredOnEvent"]["action_required"] is False

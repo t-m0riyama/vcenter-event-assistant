@@ -1,8 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   buildEventTypeGuidesExportPayload,
   eventTypeGuidesFileSchema,
 } from './schemas'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 describe('eventTypeGuidesFileSchema', () => {
   it('accepts valid export shape', () => {
@@ -33,6 +38,17 @@ describe('eventTypeGuidesFileSchema', () => {
       ],
     }
     expect(() => eventTypeGuidesFileSchema.parse(raw)).toThrow()
+  })
+})
+
+describe('data/seed/event-type-guides-priority-v1.json', () => {
+  it('parses with eventTypeGuidesFileSchema', () => {
+    const path = join(here, '../../../data/seed/event-type-guides-priority-v1.json')
+    const raw: unknown = JSON.parse(readFileSync(path, 'utf-8'))
+    const parsed = eventTypeGuidesFileSchema.parse(raw)
+    expect(parsed.format).toBe('vea-event-type-guides')
+    expect(parsed.version).toBe(1)
+    expect(parsed.guides.length).toBeGreaterThan(0)
   })
 })
 
