@@ -1,6 +1,15 @@
 import { z } from 'zod'
 import { asArray } from '../utils/asArray'
 
+/** イベント種別ガイド（API の `EventTypeGuideSnippet` に対応） */
+export const eventTypeGuideSnippetSchema = z.object({
+  general_meaning: z.string().nullable().optional(),
+  typical_causes: z.string().nullable().optional(),
+  remediation: z.string().nullable().optional(),
+})
+
+export type EventTypeGuideSnippet = z.infer<typeof eventTypeGuideSnippetSchema>
+
 export const eventRowSchema = z
   .object({
     id: z.number(),
@@ -15,6 +24,7 @@ export const eventRowSchema = z
     entity_name: z.string().nullable().optional(),
     entity_type: z.string().nullable().optional(),
     user_comment: z.string().nullable().optional(),
+    type_guide: eventTypeGuideSnippetSchema.nullable().optional(),
   })
   .passthrough()
 
@@ -112,6 +122,18 @@ export const eventScoreRuleRowSchema = z.object({
 export type EventScoreRuleRow = z.infer<typeof eventScoreRuleRowSchema>
 
 export const eventScoreRuleListSchema = z.array(eventScoreRuleRowSchema)
+
+export const eventTypeGuideRowSchema = z.object({
+  id: z.number(),
+  event_type: z.string(),
+  general_meaning: z.string().nullable().optional(),
+  typical_causes: z.string().nullable().optional(),
+  remediation: z.string().nullable().optional(),
+})
+
+export type EventTypeGuideRow = z.infer<typeof eventTypeGuideRowSchema>
+
+export const eventTypeGuideListSchema = z.array(eventTypeGuideRowSchema)
 
 /** エクスポート／インポート用の1行（DB の id は含めない） */
 export const eventScoreRuleExportEntrySchema = z.object({

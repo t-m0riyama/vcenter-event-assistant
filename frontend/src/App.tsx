@@ -5,6 +5,7 @@ import { AutoRefreshPreferencesProvider } from './preferences/AutoRefreshPrefere
 import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
+import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
@@ -18,7 +19,7 @@ const MetricsPanel = lazy(async () => {
 
 type Tab = 'summary' | 'events' | 'metrics' | 'settings'
 
-type SettingsSubTab = 'general' | 'vcenters' | 'score_rules'
+type SettingsSubTab = 'general' | 'vcenters' | 'score_rules' | 'event_type_guides'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
@@ -103,6 +104,17 @@ export default function App() {
                   >
                     スコアルール
                   </button>
+                  <button
+                    type="button"
+                    className={settingsSubTab === 'event_type_guides' ? 'active' : undefined}
+                    aria-selected={settingsSubTab === 'event_type_guides'}
+                    onClick={() => {
+                      setSettingsSubTab('event_type_guides')
+                      setErr(null)
+                    }}
+                  >
+                    種別ガイド
+                  </button>
                 </nav>
               )}
               {tab === 'summary' && <SummaryPanel onError={setErr} />}
@@ -118,6 +130,9 @@ export default function App() {
               {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
               {tab === 'settings' && settingsSubTab === 'score_rules' && (
                 <ScoreRulesPanel onError={setErr} />
+              )}
+              {tab === 'settings' && settingsSubTab === 'event_type_guides' && (
+                <EventTypeGuidesPanel onError={setErr} />
               )}
               {tab === 'settings' && settingsSubTab === 'vcenters' && (
                 <VCentersPanel onError={setErr} />

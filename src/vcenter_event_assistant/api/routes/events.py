@@ -17,10 +17,11 @@ from vcenter_event_assistant.api.schemas import (
     EventRateBucket,
     EventRateSeriesResponse,
     EventRead,
+    EventTypeGuideSnippet,
     EventTypesResponse,
     EventUserCommentPatch,
 )
-from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide
 from vcenter_event_assistant.settings import get_settings
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -170,8 +171,30 @@ async def list_events(
     q = q.order_by(EventRecord.occurred_at.desc()).offset(offset).limit(limit)
     res = await session.execute(q)
     rows = list(res.scalars().all())
+    types = {r.event_type for r in rows}
+    guides_by_type: dict[str, EventTypeGuide] = {}
+    if types:
+        gr = await session.execute(select(EventTypeGuide).where(EventTypeGuide.event_type.in_(types)))
+        for g in gr.scalars().all():
+            guides_by_type[g.event_type] = g
+
+    def _with_guide(r: EventRecord) -> EventRead:
+        base = EventRead.model_validate(r)
+        guide = guides_by_type.get(r.event_type)
+        if guide is None:
+            return base
+        return base.model_copy(
+            update={
+                "type_guide": EventTypeGuideSnippet(
+                    general_meaning=guide.general_meaning,
+                    typical_causes=guide.typical_causes,
+                    remediation=guide.remediation,
+                ),
+            },
+        )
+
     return EventListResponse(
-        items=[EventRead.model_validate(r) for r in rows],
+        items=[_with_guide(r) for r in rows],
         total=total,
     )
 

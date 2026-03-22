@@ -59,6 +59,19 @@ class EventScoreRule(Base):
     score_delta: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class EventTypeGuide(Base):
+    """イベント種別ごとの一般的な説明・原因・対処（運用者が登録）。"""
+
+    __tablename__ = "event_type_guides"
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_type_guides_event_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(512), nullable=False)
+    general_meaning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    typical_causes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class MetricSample(Base):
     __tablename__ = "metric_samples"
     __table_args__ = (

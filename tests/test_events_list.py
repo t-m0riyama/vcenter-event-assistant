@@ -301,3 +301,64 @@ async def test_list_events_text_filters_with_min_score(client: AsyncClient) -> N
     data = resp.json()
     assert data["total"] == 1
     assert data["items"][0]["notable_score"] == 60
+
+
+@pytest.mark.asyncio
+async def test_list_events_includes_type_guide(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "ev-guide",
+            "host": "vc.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    g = await client.post(
+        "/api/event-type-guides",
+        json={
+            "event_type": "GuideEvt",
+            "general_meaning": "一般的な意味",
+            "typical_causes": "想定原因",
+            "remediation": "対処手順",
+        },
+    )
+    assert g.status_code == 201
+
+    async with session_scope() as session:
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="GuideEvt",
+                message="m1",
+                vmware_key=1,
+                notable_score=10,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base - timedelta(minutes=1),
+                event_type="NoGuideEvt",
+                message="m2",
+                vmware_key=2,
+                notable_score=10,
+            )
+        )
+
+    resp = await client.get("/api/events?limit=10")
+    assert resp.status_code == 200
+    data = resp.json()
+    by_type = {x["event_type"]: x for x in data["items"]}
+    assert by_type["GuideEvt"]["type_guide"] is not None
+    assert by_type["GuideEvt"]["type_guide"]["general_meaning"] == "一般的な意味"
+    assert by_type["GuideEvt"]["type_guide"]["typical_causes"] == "想定原因"
+    assert by_type["GuideEvt"]["type_guide"]["remediation"] == "対処手順"
+    assert by_type["NoGuideEvt"]["type_guide"] is None
