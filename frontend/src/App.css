@@ -249,6 +249,51 @@
 .event-type-guide-cell {
   max-width: 200px;
   min-width: 6rem;
+  /** ポップアップがセル幅に引きずられて極端に狭くならないよう、子は別幅指定 */
+  overflow: visible;
+}
+
+.event-type-guide-cell__wrap {
+  position: relative;
+}
+
+/** ホバー／キーボードフォーカスで表示（スクリーンリーダーは details 側を優先し、こちらは aria-hidden） */
+.event-type-guide-popover {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 40;
+  margin-top: var(--spacing-1);
+  /** 親ラッパーは「表示」幅に縮むため % に頼らず rem で確保する */
+  width: max-content;
+  min-width: 22rem;
+  max-width: min(40rem, 94vw);
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--spacing-2);
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: var(--shadow-panel);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    visibility 0.12s ease;
+}
+
+.event-type-guide-cell__wrap:hover .event-type-guide-popover,
+.event-type-guide-cell__wrap:focus-within .event-type-guide-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-type-guide-popover {
+    transition: none;
+  }
 }
 
 .event-type-guide-details summary {

@@ -87,8 +87,48 @@ async def _ensure_events_user_comment_column(engine: AsyncEngine) -> None:
         await conn.run_sync(sync_check)
 
 
+async def ensure_event_type_guides_action_required_column(engine: AsyncEngine) -> None:
+    """``event_type_guides.action_required`` を、旧 DB（列なし）向けに追加する。``create_all`` は既存テーブルを変更しない。
+
+    SQLite は ``inspect.get_columns`` が期待どおりでないケースがあるため、列の有無は ``PRAGMA table_info`` で判定する。
+    """
+
+    def sync_check(sync_conn) -> None:
+        insp = inspect(sync_conn)
+        if not insp.has_table("event_type_guides"):
+            return
+        dialect = sync_conn.dialect.name
+        if dialect == "sqlite":
+            res = sync_conn.execute(text("PRAGMA table_info(event_type_guides)"))
+            cols = [row[1] for row in res.fetchall()]
+        else:
+            cols = [c["name"] for c in insp.get_columns("event_type_guides")]
+        if "action_required" in cols:
+            return
+        if dialect == "postgresql":
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE event_type_guides ADD COLUMN action_required BOOLEAN NOT NULL DEFAULT false"
+                ),
+            )
+        else:
+            # SQLite 等: BOOLEAN は 0/1
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE event_type_guides ADD COLUMN action_required BOOLEAN NOT NULL DEFAULT 0"
+                ),
+            )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(sync_check)
+
+
 async def init_db(settings: Settings | None = None) -> None:
+    # すべてのモデルを Base.metadata に登録してから create_all する
+    import vcenter_event_assistant.db.models  # noqa: F401
+
     engine = get_engine(settings=settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _ensure_events_user_comment_column(engine)
+    await ensure_event_type_guides_action_required_column(engine)

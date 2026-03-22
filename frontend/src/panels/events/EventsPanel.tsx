@@ -5,6 +5,7 @@ import {
 } from '../../datetime/formatIsoInTimeZone'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
+import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
 import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
@@ -183,17 +184,19 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
               <td>{e.event_type}</td>
               <td className="event-type-guide-cell">
                 {e.type_guide ? (
-                  <details className="event-type-guide-details">
-                    <summary>表示</summary>
-                    <dl className="event-type-guide-dl">
-                      <dt>一般的な意味</dt>
-                      <dd>{e.type_guide.general_meaning?.trim() ? e.type_guide.general_meaning : '—'}</dd>
-                      <dt>想定される原因</dt>
-                      <dd>{e.type_guide.typical_causes?.trim() ? e.type_guide.typical_causes : '—'}</dd>
-                      <dt>対処方法</dt>
-                      <dd>{e.type_guide.remediation?.trim() ? e.type_guide.remediation : '—'}</dd>
-                    </dl>
-                  </details>
+                  <div className="event-type-guide-cell__wrap">
+                    <details className="event-type-guide-details">
+                      <summary className="event-type-guide-summary">表示</summary>
+                      <EventTypeGuideBody guide={e.type_guide} />
+                    </details>
+                    <div
+                      className="event-type-guide-popover"
+                      role="tooltip"
+                      aria-hidden="true"
+                    >
+                      <EventTypeGuideBody guide={e.type_guide} />
+                    </div>
+                  </div>
                 ) : (
                   '—'
                 )}
