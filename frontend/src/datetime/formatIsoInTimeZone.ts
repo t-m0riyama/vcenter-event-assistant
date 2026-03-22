@@ -60,6 +60,27 @@ export function extractTickAxisValue(payload: unknown): unknown {
 export type FormatChartAxisTickOptions = {
   /** 比較用の「今」。省略時は `Date.now()`（テスト用に固定可） */
   readonly nowMs?: number
+  /**
+   * 表示期間が短いとき true。月日を出さず時刻（時分）のみにする。
+   * 既存の年省略ロジックより優先される。
+   */
+  readonly omitMonthDay?: boolean
+}
+
+/**
+ * 月日なし（時分のみ）。短いレンジの X 軸用。
+ */
+function formatChartAxisTickTimeOnly(ms: number, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone,
+      hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(ms))
+  } catch {
+    return formatIsoInTimeZone(new Date(ms).toISOString(), timeZone, { omitSeconds: true })
+  }
 }
 
 /**
@@ -141,6 +162,10 @@ export function formatChartAxisTick(
     return String(value)
   }
   if (!Number.isFinite(ms)) return String(value)
+
+  if (options?.omitMonthDay === true) {
+    return formatChartAxisTickTimeOnly(ms, timeZone)
+  }
 
   const nowMs = options?.nowMs ?? Date.now()
   if (shouldOmitYearInChartAxis(ms, timeZone, nowMs)) {

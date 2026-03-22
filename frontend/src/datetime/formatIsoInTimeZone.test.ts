@@ -106,4 +106,18 @@ describe('formatChartAxisTick', () => {
     const s = formatChartAxisTick(ms, 'UTC', { nowMs })
     expect(s).toMatch(/2025/)
   })
+
+  it('omitMonthDay: 時刻のみ（スラッシュ区切りの日付を含まない）', () => {
+    const ms = new Date('2026-06-15T10:30:00.000+09:00').getTime()
+    const s = formatChartAxisTick(ms, 'Asia/Tokyo', { omitMonthDay: true })
+    expect(s).toMatch(/:/)
+    expect(s).not.toMatch(/\//)
+  })
+
+  it('omitMonthDay: false は従来どおり年付きフル表示になりうる', () => {
+    const nowMs = Date.UTC(2024, 5, 1, 0, 0, 0)
+    const ms = new Date('2025-06-15T03:00:00.000Z').getTime()
+    const s = formatChartAxisTick(ms, 'UTC', { omitMonthDay: false, nowMs })
+    expect(s).toMatch(/2025/)
+  })
 })

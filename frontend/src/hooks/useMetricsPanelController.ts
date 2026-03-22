@@ -6,6 +6,7 @@ import { toErrorMessage } from '../utils/errors'
 import {
   parseApiUtcInstantMs,
   formatChartAxisTick,
+  type FormatChartAxisTickOptions,
 } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
 import {
@@ -30,6 +31,9 @@ import {
 import { mergeMetricKeyOptions } from '../metrics/knownMetricKeys'
 import { formatChartYAxisTick } from '../metrics/chartYAxisFormat'
 import { useChartThemeColors } from '../theme/useChartThemeColors'
+
+/** 系列 `tMs` の幅がこれ以下なら X 軸は月日を省略し時刻のみ */
+const CHART_TIME_SPAN_OMIT_MONTH_DAY_MS = 2 * 86400000
 
 export function useMetricsPanelController(
   onError: (e: string | null) => void,
@@ -310,6 +314,21 @@ export function useMetricsPanelController(
 
   const chartData = chartModel.rows
 
+  const chartAxisTickFormatOptions = useMemo((): FormatChartAxisTickOptions => {
+    if (chartData.length === 0) {
+      return { omitMonthDay: false }
+    }
+    let minT = chartData[0].tMs
+    let maxT = chartData[0].tMs
+    for (let i = 1; i < chartData.length; i++) {
+      const t = chartData[i].tMs
+      if (t < minT) minT = t
+      if (t > maxT) maxT = t
+    }
+    const spanMs = maxT - minT
+    return { omitMonthDay: spanMs <= CHART_TIME_SPAN_OMIT_MONTH_DAY_MS }
+  }, [chartData])
+
   const vcenterLabelForChart = useMemo(() => {
     if (!vcenterId) return '全て'
     const v = vcenters.find((c) => c.id === vcenterId)
@@ -345,8 +364,8 @@ export function useMetricsPanelController(
   }, [chartEventType])
 
   const formatAxisTimeLabel = useCallback(
-    (value: unknown) => formatChartAxisTick(value, timeZone),
-    [timeZone],
+    (value: unknown) => formatChartAxisTick(value, timeZone, chartAxisTickFormatOptions),
+    [timeZone, chartAxisTickFormatOptions],
   )
 
   const formatYAxisTickMetric = useCallback(
@@ -417,6 +436,7 @@ export function useMetricsPanelController(
     metricsChartTitleLines,
     metricsChartLegendName,
     eventSeriesLegendName,
+    chartAxisTickFormatOptions,
     formatAxisTimeLabel,
     formatYAxisTickMetric,
     formatYAxisTickCount,

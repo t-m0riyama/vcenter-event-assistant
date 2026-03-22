@@ -66,6 +66,7 @@ export function MetricsPanel({
     metricsChartTitleLines,
     metricsChartLegendName,
     eventSeriesLegendName,
+    chartAxisTickFormatOptions,
     formatAxisTimeLabel,
     formatYAxisTickMetric,
     formatYAxisTickCount,
@@ -76,9 +77,13 @@ export function MetricsPanel({
 
   const metricsXAxisTick = useCallback(
     (props: Record<string, unknown>) => (
-      <MetricsXAxisTick {...props} tickFill={chartColors.axisTick} />
+      <MetricsXAxisTick
+        {...props}
+        tickFill={chartColors.axisTick}
+        tickFormatOptions={chartAxisTickFormatOptions}
+      />
     ),
-    [chartColors.axisTick],
+    [chartAxisTickFormatOptions, chartColors.axisTick],
   )
 
   const tooltipFormatter: NonNullable<TooltipProps['formatter']> = useCallback(
