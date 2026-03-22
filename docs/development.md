@@ -53,4 +53,3 @@ Windows のコマンドプロンプトでは環境変数の付け方が異なる
 | `settings-general.png` | 設定 → 一般 |
 | `settings-vcenters.png` | 設定 → vCenter |
 | `settings-score-rules.png` | 設定 → スコアルール |
-| `settings-event-type-guides.png` | 設定 → イベント種別ガイド |

@@ -1,10 +1,10 @@
 # vCenter Event Assistant（フロントエンド）
 
-[vCenter Event Assistant](../README.md) の Web UI です。React・TypeScript・[Vite](https://vite.dev/) で実装し、バックエンドの FastAPI と同一オリジンまたは開発時プロキシ経由で API を呼び出します。イベントの一覧・概要、ホストメトリクスのグラフ、vCenter 登録やスコアルール・イベント種別ガイドなどの設定をブラウザから行えます。
+[vCenter Event Assistant](../README.md) の Web UI です。React・TypeScript・[Vite](https://vite.dev/) で実装し、バックエンドの FastAPI と同一オリジンまたは開発時プロキシ経由で API を呼び出します。イベントの一覧・概要、ホストメトリクスのグラフ、vCenter 登録やスコアルールなどの設定をブラウザから行えます。
 
 ## 画面の例
 
-以下はリポジトリ管理のキャプチャ（[`../docs/images/`](../docs/images/)）です。データ内容は環境により異なります。
+以下はリポジトリ内のキャプチャ（[`../docs/images/`](../docs/images/)）です。データ内容は環境により異なります。
 
 ### 概要
 
@@ -28,11 +28,11 @@
 
 テーマ（ライト / ダーク / システム）や、日時表示に使うタイムゾーンをブラウザに保存します。
 
-![設定 › 一般](../docs/images/settings-general.png)
+![設定の一般タブ](../docs/images/settings-general.png)
 
 ### その他の画面・キャプチャの更新
 
-全タブの一覧と PNG の再取得手順は [**開発者向けメモ（`docs/development.md`）**](../docs/development.md) を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。
+全タブの一覧と PNG の再取得手順は **[開発者向けメモ（`docs/development.md`）](../docs/development.md)** を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。
 
 ```bash
 uv run scripts/capture_ui_screenshots.py
@@ -44,15 +44,17 @@ uv run scripts/capture_ui_screenshots.py --existing
 
 `frontend` ディレクトリで実行します。
 
-| コマンド | 説明 |
-|---------|------|
-| `npm install` | 依存関係のインストール |
-| `npm run dev` | 開発サーバー（HMR） |
-| `npm run build` | 本番用ビルド（`dist/`） |
-| `npm run test` | Vitest 単体テスト |
-| `npm run lint` | ESLint |
-| `npm run e2e` | ビルド後に Playwright E2E |
+
+| コマンド                  | 説明                                       |
+| --------------------- | ---------------------------------------- |
+| `npm install`         | 依存関係のインストール                              |
+| `npm run dev`         | 開発サーバー（HMR）                              |
+| `npm run build`       | 本番用ビルド（`dist/`）                          |
+| `npm run test`        | Vitest 単体テスト                             |
+| `npm run lint`        | ESLint                                   |
+| `npm run e2e`         | ビルド後に Playwright E2E                     |
 | `npm run screenshots` | ビルド後にドキュメント用スクリーンショットのみ取得（`docs/images`） |
+
 
 バックエンドの起動・環境変数は [リポジトリルートの README](../README.md) を参照してください。
 

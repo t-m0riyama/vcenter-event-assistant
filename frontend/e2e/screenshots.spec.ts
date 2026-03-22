@@ -66,13 +66,4 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
     path: path.join(docsImagesDir, 'settings-score-rules.png'),
     fullPage: true,
   })
-
-  await page.getByRole('button', { name: 'イベント種別ガイド' }).click()
-  await expect(
-    page.getByRole('heading', { name: 'エクスポート・インポート' }),
-  ).toBeVisible()
-  await page.screenshot({
-    path: path.join(docsImagesDir, 'settings-event-type-guides.png'),
-    fullPage: true,
-  })
 })
