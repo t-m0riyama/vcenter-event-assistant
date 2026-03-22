@@ -6,6 +6,8 @@ import {
   type Summary,
   type SummaryHostMetricRow,
 } from '../../api/schemas'
+import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
+import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
@@ -103,6 +105,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             <tr>
               <th>時刻</th>
               <th>種別</th>
+              <th>ガイド</th>
               <th>スコア</th>
               <th>メッセージ</th>
               <th>運用メモ</th>
@@ -110,9 +113,33 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
           </thead>
           <tbody>
             {notableRows.map((e) => (
-              <tr key={e.id}>
+              <tr
+                key={e.id}
+                className={
+                  shouldHighlightEventRowForAction(e.type_guide) ? 'event-row--action-required' : undefined
+                }
+              >
                 <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
                 <td>{e.event_type}</td>
+                <td className="event-type-guide-cell">
+                  {e.type_guide ? (
+                    <div className="event-type-guide-cell__wrap">
+                      <details className="event-type-guide-details">
+                        <summary className="event-type-guide-summary">表示</summary>
+                        <EventTypeGuideBody guide={e.type_guide} />
+                      </details>
+                      <div
+                        className="event-type-guide-popover"
+                        role="tooltip"
+                        aria-hidden="true"
+                      >
+                        <EventTypeGuideBody guide={e.type_guide} />
+                      </div>
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td>{e.notable_score}</td>
                 <td className="msg">{e.message}</td>
                 <td className="event-comment-cell event-comment-cell--readonly">
@@ -136,15 +163,40 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             <tr>
               <th scope="col">順位</th>
               <th scope="col">種別</th>
+              <th scope="col">ガイド</th>
               <th scope="col">件数</th>
               <th scope="col">スコア</th>
             </tr>
           </thead>
           <tbody>
             {topEventTypesRows.map((row, i) => (
-              <tr key={`${row.event_type}-${i}`}>
+              <tr
+                key={`${row.event_type}-${i}`}
+                className={
+                  shouldHighlightEventRowForAction(row.type_guide) ? 'event-row--action-required' : undefined
+                }
+              >
                 <td>{i + 1}</td>
                 <td className="msg">{row.event_type}</td>
+                <td className="event-type-guide-cell">
+                  {row.type_guide ? (
+                    <div className="event-type-guide-cell__wrap">
+                      <details className="event-type-guide-details">
+                        <summary className="event-type-guide-summary">表示</summary>
+                        <EventTypeGuideBody guide={row.type_guide} />
+                      </details>
+                      <div
+                        className="event-type-guide-popover"
+                        role="tooltip"
+                        aria-hidden="true"
+                      >
+                        <EventTypeGuideBody guide={row.type_guide} />
+                      </div>
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td>{row.event_count}</td>
                 <td>{row.max_notable_score}</td>
               </tr>

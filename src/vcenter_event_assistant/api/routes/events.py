@@ -21,6 +21,7 @@ from vcenter_event_assistant.api.schemas import (
     EventUserCommentPatch,
 )
 from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
 from vcenter_event_assistant.settings import get_settings
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -170,8 +171,10 @@ async def list_events(
     q = q.order_by(EventRecord.occurred_at.desc()).offset(offset).limit(limit)
     res = await session.execute(q)
     rows = list(res.scalars().all())
+    items = await attach_type_guides_to_event_reads(session, rows)
+
     return EventListResponse(
-        items=[EventRead.model_validate(r) for r in rows],
+        items=items,
         total=total,
     )
 

@@ -5,6 +5,8 @@ import {
 } from '../../datetime/formatIsoInTimeZone'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
+import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
+import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
@@ -163,6 +165,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
           <tr>
             <th>時刻</th>
             <th>種別</th>
+            <th>ガイド</th>
             <th>重大度</th>
             <th>スコア</th>
             <th>メッセージ</th>
@@ -171,9 +174,33 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
         </thead>
         <tbody>
           {asArray<EventRow>(c.rows).map((e) => (
-            <tr key={e.id}>
+            <tr
+              key={e.id}
+              className={
+                shouldHighlightEventRowForAction(e.type_guide) ? 'event-row--action-required' : undefined
+              }
+            >
               <td>{formatIsoInTimeZone(e.occurred_at, c.timeZone)}</td>
               <td>{e.event_type}</td>
+              <td className="event-type-guide-cell">
+                {e.type_guide ? (
+                  <div className="event-type-guide-cell__wrap">
+                    <details className="event-type-guide-details">
+                      <summary className="event-type-guide-summary">表示</summary>
+                      <EventTypeGuideBody guide={e.type_guide} />
+                    </details>
+                    <div
+                      className="event-type-guide-popover"
+                      role="tooltip"
+                      aria-hidden="true"
+                    >
+                      <EventTypeGuideBody guide={e.type_guide} />
+                    </div>
+                  </div>
+                ) : (
+                  '—'
+                )}
+              </td>
               <td>{e.severity ?? ''}</td>
               <td>{e.notable_score}</td>
               <td className="msg">{e.message}</td>

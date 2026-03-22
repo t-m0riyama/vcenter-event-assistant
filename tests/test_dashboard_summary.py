@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, MetricSample
+from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, EventTypeGuide, MetricSample
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.rules.notable import final_notable_score
 
@@ -336,6 +336,57 @@ async def test_top_event_types_24h_max_notable_score_uses_current_rules_not_stor
 
 
 @pytest.mark.asyncio
+async def test_top_event_types_24h_includes_type_guide_when_registered(client: AsyncClient) -> None:
+    """種別ガイドが登録されている event_type は top_event_types_24h に type_guide を含む。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-etype-guide",
+            "host": "vc-eg.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+    et = "vim.event.GuidedTopType"
+
+    async with session_scope() as session:
+        session.add(
+            EventTypeGuide(
+                event_type=et,
+                general_meaning="意味テキスト",
+                typical_causes=None,
+                remediation=None,
+                action_required=True,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type=et,
+                message="m",
+                vmware_key=1,
+                notable_score=0,
+            )
+        )
+
+    resp = await client.get("/api/dashboard/summary")
+    assert resp.status_code == 200
+    rows = resp.json()["top_event_types_24h"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["event_type"] == et
+    assert row["type_guide"] is not None
+    assert row["type_guide"]["general_meaning"] == "意味テキスト"
+    assert row["type_guide"]["action_required"] is True
+
+
+@pytest.mark.asyncio
 async def test_top_notable_events_respects_top_notable_min_score_query(client: AsyncClient) -> None:
     """``top_notable_min_score`` で要注意一覧が絞り込まれる。0 なら非負スコアをすべて含められる。"""
     r = await client.post(
@@ -387,3 +438,53 @@ async def test_top_notable_events_respects_top_notable_min_score_query(client: A
     top0 = resp_min0.json()["top_notable_events"]
     scores = [row["notable_score"] for row in top0]
     assert 50 in scores and 0 in scores
+
+
+@pytest.mark.asyncio
+async def test_top_notable_events_includes_type_guide_action_required(client: AsyncClient) -> None:
+    """要注意イベント上位に ``type_guide``（``action_required`` 含む）が付く。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-guide",
+            "host": "vc-guide.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    g = await client.post(
+        "/api/event-type-guides",
+        json={
+            "event_type": "NeedActionEvt",
+            "general_meaning": "説明",
+            "action_required": True,
+        },
+    )
+    assert g.status_code == 201
+
+    async with session_scope() as session:
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="NeedActionEvt",
+                message="msg",
+                vmware_key=1,
+                notable_score=55,
+            )
+        )
+
+    resp = await client.get("/api/dashboard/summary?top_notable_min_score=1")
+    assert resp.status_code == 200
+    top = resp.json()["top_notable_events"]
+    assert len(top) >= 1
+    row = next(x for x in top if x["event_type"] == "NeedActionEvt")
+    assert row["type_guide"] is not None
+    assert row["type_guide"]["action_required"] is True
+    assert row["type_guide"]["general_meaning"] == "説明"

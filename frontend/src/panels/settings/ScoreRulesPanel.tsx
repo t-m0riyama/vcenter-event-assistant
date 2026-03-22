@@ -8,6 +8,7 @@ import {
   type EventScoreRuleRow,
   type EventScoreRulesFile,
 } from '../../api/schemas'
+import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
 import {
   formatScoreRulesFileParseError,
@@ -24,16 +25,6 @@ function confirmDestructiveImport(deleteRulesNotInImport: boolean, ruleCount: nu
   return confirm(
     'ファイルに含まれないイベント種別のルールは削除されます。よろしいですか？',
   )
-}
-
-function downloadJsonFile(filename: string, value: unknown) {
-  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
