@@ -76,3 +76,7 @@ UI ドキュメント用のスクリーンショット再取得は `uv run scrip
 フロントエンドの画面例・開発コマンドは [frontend/README.md](frontend/README.md) を参照してください。
 
 開発者向けの手順（UI スクリーンショットの再取得など）は [docs/development.md](docs/development.md) を参照してください。
+
+## ライセンス
+
+本リポジトリは [Apache License 2.0](LICENSE) の下で提供されます。著作権表示は [NOTICE](NOTICE) を参照してください。
