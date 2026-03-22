@@ -295,7 +295,8 @@ export function useMetricsPanelController(
       top: 8,
       right: showEventLine ? 56 : 48,
       left: leftYAxisLabel ? 58 : 52,
-      bottom: 8,
+      /** X 軸ラベルを斜めにするための余白（`MetricsXAxisTick` の回転に合わせる） */
+      bottom: 44,
     }),
     [showEventLine, leftYAxisLabel],
   )

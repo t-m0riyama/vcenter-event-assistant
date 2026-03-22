@@ -7,7 +7,10 @@ import {
 } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 
-/** X 軸目盛り専用。`useTimeZone()` をここで読むことで Recharts の Redux 同期と親のクロージャに依存しない。 */
+/**
+ * X 軸目盛り専用。`useTimeZone()` をここで読むことで Recharts の Redux 同期と親のクロージャに依存しない。
+ * ラベルは斜め表示し、隣接テキストの重なりを抑える。
+ */
 export function MetricsXAxisTick(
   props: Record<string, unknown> & {
     readonly tickFill?: string
@@ -25,6 +28,10 @@ export function MetricsXAxisTick(
     <Text
       {...(rest as ComponentProps<typeof Text>)}
       fill={tickFill || undefined}
+      angle={-40}
+      textAnchor="end"
+      verticalAnchor="middle"
+      dy={6}
     >
       {label}
     </Text>

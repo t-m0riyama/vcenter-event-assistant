@@ -98,7 +98,8 @@ function isHour24EndOfCalendarDay(
  */
 export function getWallClockInZone(utcMs: number, timeZone: string): ZonedWallParts {
   const raw = getWallClockInZoneRaw(utcMs, timeZone)
-  let { year, month, day, hour, minute } = raw
+  const { minute } = raw
+  let { year, month, day, hour } = raw
 
   /**
    * `hour === 24` は (1) その日の終了＝翌暦日 0:00、(2) 当日 0:00 の別表記 の両方がありうる。

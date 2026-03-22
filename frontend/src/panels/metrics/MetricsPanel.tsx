@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useLayoutEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   CartesianGrid,
@@ -22,6 +22,7 @@ import { summarizeGraphRangePreview } from '../../datetime/graphRange'
 import { toErrorMessage } from '../../utils/errors'
 import { useMetricsPanelController } from '../../hooks/useMetricsPanelController'
 import { formatChartTooltipNumber } from '../../metrics/chartYAxisFormat'
+import { xAxisMinTickGapForWidth, xAxisTickCountForWidth } from './chartXAxisLayout'
 import { MetricsXAxisTick } from './MetricsXAxisTick'
 
 const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
@@ -74,6 +75,22 @@ export function MetricsPanel({
     exportDisabled,
     csvExportOptions,
   } = useMetricsPanelController(onError, perfBucketSeconds)
+
+  const [chartWrapWidthPx, setChartWrapWidthPx] = useState(0)
+  useLayoutEffect(() => {
+    const el = chartWrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width
+      if (w != null && Number.isFinite(w)) setChartWrapWidthPx(w)
+    })
+    ro.observe(el)
+    setChartWrapWidthPx(el.getBoundingClientRect().width)
+    return () => ro.disconnect()
+  }, [chartWrapRef])
+
+  const xAxisMinTickGap = xAxisMinTickGapForWidth(chartWrapWidthPx)
+  const xAxisTickCount = xAxisTickCountForWidth(chartWrapWidthPx)
 
   const metricsXAxisTick = useCallback(
     (props: Record<string, unknown>) => (
@@ -264,7 +281,8 @@ export function MetricsPanel({
                 domain={['dataMin', 'dataMax']}
                 tickFormatter={formatAxisTimeLabel}
                 tick={metricsXAxisTick}
-                minTickGap={24}
+                minTickGap={xAxisMinTickGap}
+                tickCount={xAxisTickCount}
               />
               <YAxis
                 yAxisId="left"
