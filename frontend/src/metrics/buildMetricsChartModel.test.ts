@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildMetricsChartModel,
   hostMetricSeriesDataKey,
+  isDatastoreMetricKey,
   isHostMetricKey,
 } from './buildMetricsChartModel'
 import { bucketEpochUtcSec } from './metricCsv'
@@ -24,6 +25,17 @@ describe('isHostMetricKey', () => {
   it('returns false for other keys', () => {
     expect(isHostMetricKey('vm.cpu')).toBe(false)
     expect(isHostMetricKey('')).toBe(false)
+  })
+})
+
+describe('isDatastoreMetricKey', () => {
+  it('returns true for datastore.* keys', () => {
+    expect(isDatastoreMetricKey('datastore.space.used_bytes')).toBe(true)
+    expect(isDatastoreMetricKey('  datastore.space.used_pct')).toBe(true)
+  })
+  it('returns false for other keys', () => {
+    expect(isDatastoreMetricKey('host.cpu.usage_pct')).toBe(false)
+    expect(isDatastoreMetricKey('')).toBe(false)
   })
 })
 
@@ -111,5 +123,43 @@ describe('buildMetricsChartModel', () => {
     const names = new Set(r.metricSeries.map((s) => s.legendName))
     expect(names.has('dup (a)')).toBe(true)
     expect(names.has('dup (b)')).toBe(true)
+  })
+
+  it('datastore mode: splits series by entity_moid and merges same timestamp into one row', () => {
+    const t = '2025-01-01T12:00:00Z'
+    const points: MetricPoint[] = [
+      basePoint({
+        metric_key: 'datastore.space.used_pct',
+        sampled_at: t,
+        value: 11,
+        entity_moid: 'ds-1',
+        entity_name: 'DS-1',
+      }),
+      basePoint({
+        metric_key: 'datastore.space.used_pct',
+        sampled_at: t,
+        value: 22,
+        entity_moid: 'ds-2',
+        entity_name: 'DS-2',
+      }),
+      basePoint({
+        metric_key: 'datastore.space.used_pct',
+        sampled_at: '2025-01-01T13:00:00Z',
+        value: 33,
+        entity_moid: 'ds-1',
+        entity_name: 'DS-1',
+      }),
+    ]
+    const r = buildMetricsChartModel('datastore.space.used_pct', points, 300, false, new Map())
+    expect(r.mode).toBe('host')
+    if (r.mode !== 'host') throw new Error('expected host')
+    expect(r.metricSeries).toHaveLength(2)
+    expect(r.metricSeries.map((s) => s.dataKey).sort()).toEqual(['m_ds_1', 'm_ds_2'])
+    expect(r.rows).toHaveLength(2)
+    const k1 = hostMetricSeriesDataKey('ds-1')
+    const k2 = hostMetricSeriesDataKey('ds-2')
+    const row0 = r.rows.find((row) => row.tMs === Date.parse(t))
+    expect(row0?.[k1]).toBe(11)
+    expect(row0?.[k2]).toBe(22)
   })
 })

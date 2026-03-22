@@ -10,7 +10,18 @@ export function isHostMetricKey(metricKey: string): boolean {
 }
 
 /**
- * Recharts の `dataKey` 用に `entity_moid` を列名として使える形にする。
+ * `datastore.*` メトリクスキーかどうか（データストア単位の系列に分割する）。
+ */
+export function isDatastoreMetricKey(metricKey: string): boolean {
+  return metricKey.trim().startsWith('datastore.')
+}
+
+function isEntitySplitMetricKey(metricKey: string): boolean {
+  return isHostMetricKey(metricKey) || isDatastoreMetricKey(metricKey)
+}
+
+/**
+ * Recharts の `dataKey` 用に `entity_moid`（ホスト MOID・データストア MOID 共通）を列名として使える形にする。
  */
 export function hostMetricSeriesDataKey(entityMoid: string): string {
   const s = String(entityMoid).trim()
@@ -80,7 +91,7 @@ function buildLegendNamesByMoid(points: MetricPoint[]): Map<string, string> {
 
 /**
  * メトリクスグラフ用の行データと左軸系列メタデータを組み立てる。
- * `host.*` のときはホスト（`entity_moid`）ごとに列を分ける。
+ * `host.*` または `datastore.*` のときは `entity_moid` ごとに列を分け、同一時刻を 1 行にマージする。
  */
 export function buildMetricsChartModel(
   metricKey: string,
@@ -90,7 +101,7 @@ export function buildMetricsChartModel(
   countByEpochSec: ReadonlyMap<number, number>,
 ): BuildMetricsChartModelResult {
   const valid = filterValidPoints(points)
-  if (!isHostMetricKey(metricKey)) {
+  if (!isEntitySplitMetricKey(metricKey)) {
     const rows: MetricChartRowSingle[] = valid.map((p) => {
       const sampled = String(p.sampled_at)
       const tMs = parseApiUtcInstantMs(sampled)

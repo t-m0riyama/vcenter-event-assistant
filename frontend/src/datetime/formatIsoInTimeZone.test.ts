@@ -114,6 +114,14 @@ describe('formatChartAxisTick', () => {
     expect(s).not.toMatch(/\//)
   })
 
+  it('omitMonthDay: 無効な timeZone でも日付を含まない（Intl 失敗時は UTC の時分のみ）', () => {
+    const ms = new Date('2026-06-15T01:30:00.000Z').getTime()
+    const s = formatChartAxisTick(ms, 'Invalid/Timezone', { omitMonthDay: true })
+    expect(s).toMatch(/^\d{2}:\d{2} UTC$/)
+    expect(s).not.toMatch(/\//)
+    expect(s).not.toMatch(/202/)
+  })
+
   it('omitMonthDay: false は従来どおり年付きフル表示になりうる', () => {
     const nowMs = Date.UTC(2024, 5, 1, 0, 0, 0)
     const ms = new Date('2025-06-15T03:00:00.000Z').getTime()

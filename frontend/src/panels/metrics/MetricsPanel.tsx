@@ -337,6 +337,7 @@ export function MetricsPanel({
                 />
               ) : (
                 chartModel.metricSeries.map((s, i) => (
+                  /* エンティティ別の欠損時刻は未採取（0 ではない）。直前の点から次の点へ線でつなぐ */
                   <Line
                     key={s.dataKey}
                     yAxisId="left"
@@ -344,7 +345,7 @@ export function MetricsPanel({
                     dataKey={s.dataKey}
                     name={`${vcenterLabelForChart} / ${s.legendName}`}
                     stroke={chartColors.series[i % chartColors.series.length]}
-                    connectNulls={false}
+                    connectNulls
                     dot={LINE_CHART_DATA_DOT}
                     isAnimationActive={false}
                   />
