@@ -292,11 +292,12 @@ export function useMetricsPanelController(
 
   const metricsChartMargin = useMemo(
     () => ({
-      top: 8,
+      /** 上部凡例（多系列・長文で折り返しあり）用 */
+      top: 44,
       right: showEventLine ? 56 : 48,
       left: leftYAxisLabel ? 58 : 52,
-      /** X 軸ラベルを斜めにするための余白（`MetricsXAxisTick` の回転に合わせる） */
-      bottom: 44,
+      /** 斜めティック・X 軸ラベル「時刻」用（`MetricsXAxisTick` / `XAxis.label`） */
+      bottom: 56,
     }),
     [showEventLine, leftYAxisLabel],
   )

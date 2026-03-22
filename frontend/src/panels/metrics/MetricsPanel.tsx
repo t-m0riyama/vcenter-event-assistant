@@ -271,7 +271,7 @@ export function MetricsPanel({
           <span className="metrics-chart__title-line">{metricsChartTitleLines.line2}</span>
         </h2>
         <div className="chart-wrap" ref={chartWrapRef}>
-          <ResponsiveContainer width="100%" height={320}>
+          <ResponsiveContainer width="100%" height={380}>
             <LineChart key={timeZone} data={chartData} margin={metricsChartMargin}>
               <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
               <XAxis
@@ -283,6 +283,12 @@ export function MetricsPanel({
                 tick={metricsXAxisTick}
                 minTickGap={xAxisMinTickGap}
                 tickCount={xAxisTickCount}
+                label={{
+                  value: '時刻',
+                  position: 'bottom',
+                  offset: 10,
+                  style: { fill: chartColors.axisTick, fontSize: 11 },
+                }}
               />
               <YAxis
                 yAxisId="left"
@@ -324,7 +330,11 @@ export function MetricsPanel({
                 labelFormatter={formatAxisTimeLabel}
                 formatter={tooltipFormatter}
               />
-              <Legend />
+              <Legend
+                verticalAlign="top"
+                align="right"
+                wrapperStyle={{ paddingBottom: 6 }}
+              />
               {chartModel.mode === 'single' ? (
                 <Line
                   yAxisId="left"
