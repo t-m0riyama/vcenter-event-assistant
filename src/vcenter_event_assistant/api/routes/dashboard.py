@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,7 @@ _TOP_EVENT_TYPES_LIMIT = 10
 @router.get("/summary", response_model=DashboardSummary)
 async def dashboard_summary(
     session: AsyncSession = Depends(get_session),
+    top_notable_min_score: Annotated[int, Query(ge=0, le=100)] = 1,
 ) -> DashboardSummary:
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(hours=24)
@@ -44,7 +46,10 @@ async def dashboard_summary(
 
     top_q = await session.execute(
         select(EventRecord)
-        .where(EventRecord.occurred_at >= day_ago)
+        .where(
+            EventRecord.occurred_at >= day_ago,
+            EventRecord.notable_score >= top_notable_min_score,
+        )
         .order_by(EventRecord.notable_score.desc(), EventRecord.occurred_at.desc())
         .limit(10)
     )

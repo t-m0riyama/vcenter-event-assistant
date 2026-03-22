@@ -333,3 +333,57 @@ async def test_top_event_types_24h_max_notable_score_uses_current_rules_not_stor
     assert row["event_count"] == 1
     assert row["max_notable_score"] == expected
     assert expected != 0
+
+
+@pytest.mark.asyncio
+async def test_top_notable_events_respects_top_notable_min_score_query(client: AsyncClient) -> None:
+    """``top_notable_min_score`` filters the summary notable list; 0 includes all non-negative scores."""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-top-notable-min",
+            "host": "vc-topn.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    async with session_scope() as session:
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="HighScore",
+                message="a",
+                vmware_key=1,
+                notable_score=50,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="ZeroScore",
+                message="b",
+                vmware_key=2,
+                notable_score=0,
+            )
+        )
+
+    resp_min1 = await client.get("/api/dashboard/summary?top_notable_min_score=1")
+    assert resp_min1.status_code == 200
+    top1 = resp_min1.json()["top_notable_events"]
+    assert len(top1) == 1
+    assert top1[0]["notable_score"] == 50
+    assert top1[0]["event_type"] == "HighScore"
+
+    resp_min0 = await client.get("/api/dashboard/summary?top_notable_min_score=0")
+    assert resp_min0.status_code == 200
+    top0 = resp_min0.json()["top_notable_events"]
+    scores = [row["notable_score"] for row in top0]
+    assert 50 in scores and 0 in scores

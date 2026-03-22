@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
+import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
@@ -27,99 +28,101 @@ export default function App() {
   return (
     <ThemeProvider>
       <TimeZoneProvider>
-        <div className="app">
-          <header className="header">
-            <h1>vCenter Event Assistant</h1>
-            {retention && (
-              <p className="retention-hint">
-                データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
-                {retention.metric_retention_days} 日（サーバー設定）
-              </p>
+        <SummaryTopNotableMinScoreProvider>
+          <div className="app">
+            <header className="header">
+              <h1>vCenter Event Assistant</h1>
+              {retention && (
+                <p className="retention-hint">
+                  データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
+                  {retention.metric_retention_days} 日（サーバー設定）
+                </p>
+              )}
+            </header>
+
+            {err && (
+              <div className="error-banner" role="alert">
+                {err}
+              </div>
             )}
-          </header>
 
-          {err && (
-            <div className="error-banner" role="alert">
-              {err}
-            </div>
-          )}
-
-          <nav className="tabs">
-            {(['summary', 'events', 'metrics', 'settings'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={tab === t ? 'active' : undefined}
-                onClick={() => {
-                  setTab(t)
-                  setErr(null)
-                }}
-              >
-                {t === 'summary' && '概要'}
-                {t === 'events' && 'イベント'}
-                {t === 'metrics' && 'グラフ'}
-                {t === 'settings' && '設定'}
-              </button>
-            ))}
-          </nav>
-
-          <main className="main">
-            {tab === 'settings' && (
-              <nav className="settings-subtabs" aria-label="設定">
+            <nav className="tabs">
+              {(['summary', 'events', 'metrics', 'settings'] as const).map((t) => (
                 <button
+                  key={t}
                   type="button"
-                  className={settingsSubTab === 'general' ? 'active' : undefined}
-                  aria-selected={settingsSubTab === 'general'}
+                  className={tab === t ? 'active' : undefined}
                   onClick={() => {
-                    setSettingsSubTab('general')
+                    setTab(t)
                     setErr(null)
                   }}
                 >
-                  一般
+                  {t === 'summary' && '概要'}
+                  {t === 'events' && 'イベント'}
+                  {t === 'metrics' && 'グラフ'}
+                  {t === 'settings' && '設定'}
                 </button>
-                <button
-                  type="button"
-                  className={settingsSubTab === 'vcenters' ? 'active' : undefined}
-                  aria-selected={settingsSubTab === 'vcenters'}
-                  onClick={() => {
-                    setSettingsSubTab('vcenters')
-                    setErr(null)
-                  }}
-                >
-                  vCenter
-                </button>
-                <button
-                  type="button"
-                  className={settingsSubTab === 'score_rules' ? 'active' : undefined}
-                  aria-selected={settingsSubTab === 'score_rules'}
-                  onClick={() => {
-                    setSettingsSubTab('score_rules')
-                    setErr(null)
-                  }}
-                >
-                  スコアルール
-                </button>
-              </nav>
-            )}
-            {tab === 'summary' && <SummaryPanel onError={setErr} />}
-            {tab === 'events' && <EventsPanel onError={setErr} />}
-            {tab === 'metrics' && (
-              <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
-                <MetricsPanel
-                  onError={setErr}
-                  perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
-                />
-              </Suspense>
-            )}
-            {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
-            {tab === 'settings' && settingsSubTab === 'score_rules' && (
-              <ScoreRulesPanel onError={setErr} />
-            )}
-            {tab === 'settings' && settingsSubTab === 'vcenters' && (
-              <VCentersPanel onError={setErr} />
-            )}
-          </main>
-        </div>
+              ))}
+            </nav>
+
+            <main className="main">
+              {tab === 'settings' && (
+                <nav className="settings-subtabs" aria-label="設定">
+                  <button
+                    type="button"
+                    className={settingsSubTab === 'general' ? 'active' : undefined}
+                    aria-selected={settingsSubTab === 'general'}
+                    onClick={() => {
+                      setSettingsSubTab('general')
+                      setErr(null)
+                    }}
+                  >
+                    一般
+                  </button>
+                  <button
+                    type="button"
+                    className={settingsSubTab === 'vcenters' ? 'active' : undefined}
+                    aria-selected={settingsSubTab === 'vcenters'}
+                    onClick={() => {
+                      setSettingsSubTab('vcenters')
+                      setErr(null)
+                    }}
+                  >
+                    vCenter
+                  </button>
+                  <button
+                    type="button"
+                    className={settingsSubTab === 'score_rules' ? 'active' : undefined}
+                    aria-selected={settingsSubTab === 'score_rules'}
+                    onClick={() => {
+                      setSettingsSubTab('score_rules')
+                      setErr(null)
+                    }}
+                  >
+                    スコアルール
+                  </button>
+                </nav>
+              )}
+              {tab === 'summary' && <SummaryPanel onError={setErr} />}
+              {tab === 'events' && <EventsPanel onError={setErr} />}
+              {tab === 'metrics' && (
+                <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
+                  <MetricsPanel
+                    onError={setErr}
+                    perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+                  />
+                </Suspense>
+              )}
+              {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
+              {tab === 'settings' && settingsSubTab === 'score_rules' && (
+                <ScoreRulesPanel onError={setErr} />
+              )}
+              {tab === 'settings' && settingsSubTab === 'vcenters' && (
+                <VCentersPanel onError={setErr} />
+              )}
+            </main>
+          </div>
+        </SummaryTopNotableMinScoreProvider>
       </TimeZoneProvider>
     </ThemeProvider>
   )

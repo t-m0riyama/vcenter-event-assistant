@@ -8,11 +8,13 @@ import {
 } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
+import { useSummaryTopNotableMinScore } from '../../preferences/useSummaryTopNotableMinScore'
 import { asArray } from '../../utils/asArray'
 import { toErrorMessage } from '../../utils/errors'
 
 export function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
+  const { topNotableMinScore } = useSummaryTopNotableMinScore()
   const [data, setData] = useState<Summary | null>(null)
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
 
@@ -20,7 +22,10 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
     onError(null)
     setLoadState('loading')
     try {
-      const raw = await apiGet<unknown>('/api/dashboard/summary')
+      const q = new URLSearchParams({
+        top_notable_min_score: String(topNotableMinScore),
+      })
+      const raw = await apiGet<unknown>(`/api/dashboard/summary?${q.toString()}`)
       setData(parseSummary(raw))
       setLoadState('ready')
     } catch (e) {
@@ -28,7 +33,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
       onError(toErrorMessage(e))
       setLoadState('error')
     }
-  }, [onError])
+  }, [onError, topNotableMinScore])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
