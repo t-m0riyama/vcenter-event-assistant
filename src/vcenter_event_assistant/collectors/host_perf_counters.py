@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +13,45 @@ from pyVmomi import vim
 logger = logging.getLogger(__name__)
 
 _DEFAULT_REALTIME_INTERVAL_SEC = 20
+
+# `MetricSample.entity_moid` の上限（複合 ID 用にホスト MOID + サフィックスを収める）
+_MAX_ENTITY_MOID_LEN = 256
+_MAX_ENTITY_NAME_LEN = 1024
+
+
+def _sanitize_perf_instance_for_moid(instance: str, *, host_moid_len: int) -> str:
+    """
+    インスタンス名を `entity_moid` のサフィックスとして安全な短い文字列にする。
+    長い NAA 等はハッシュで短縮する。
+    """
+    raw = (instance or "").strip()
+    safe = re.sub(r"[^a-zA-Z0-9]+", "_", raw).strip("_")
+    if not safe:
+        safe = "instance"
+    # "host_moid:" + suffix が _MAX_ENTITY_MOID_LEN 以下
+    max_suffix = max(8, _MAX_ENTITY_MOID_LEN - host_moid_len - 1)
+    if len(safe) > max_suffix:
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+        prefix_len = max(0, max_suffix - 1 - len(digest))
+        safe = f"{safe[:prefix_len]}_{digest}" if prefix_len else digest
+        if len(safe) > max_suffix:
+            safe = safe[:max_suffix]
+    return safe
+
+
+def _composite_entity_moid(host_moid: str, instance: str) -> str:
+    suffix = _sanitize_perf_instance_for_moid(instance, host_moid_len=len(host_moid))
+    out = f"{host_moid}:{suffix}"
+    if len(out) <= _MAX_ENTITY_MOID_LEN:
+        return out
+    return out[:_MAX_ENTITY_MOID_LEN]
+
+
+def _composite_entity_name(host_name: str, instance: str) -> str:
+    s = f"{host_name} / {instance}"
+    if len(s) <= _MAX_ENTITY_NAME_LEN:
+        return s
+    return s[: _MAX_ENTITY_NAME_LEN - 1] + "…"
 
 # (metric_key, perf group, counter name, rollup)
 _TARGET_SPECS: tuple[tuple[str, str, str, int], ...] = (
@@ -66,6 +107,14 @@ def _latest_in_series(series: vim.PerfMetricSeries) -> float:
     return float(vals[-1])
 
 
+def _round_metric_value(metric_key: str, val: float) -> float:
+    if metric_key.endswith("_pct"):
+        return round(val, 2)
+    if metric_key.endswith("_kbps") or metric_key.endswith("_total"):
+        return round(val, 4)
+    return float(val)
+
+
 def parse_perf_query_result_rows(
     *,
     entity_moid: str,
@@ -75,11 +124,13 @@ def parse_perf_query_result_rows(
     counter_id_to_metric_key: dict[int, str],
 ) -> list[dict[str, Any]]:
     """
-    Turn QueryPerf results into metric sample dicts.
+    QueryPerf の結果をメトリクス行に変換する。
 
-    Sums values across instances (NICs / devices) that share the same counter id.
+    同一 counterId の複数インスタンス（NIC / デバイス）は **合算せず**、系列ごとに 1 行とする。
+    `instance` が空のときはホスト側の集約カウンタとして `entity_moid` / `entity_name` をそのまま使う。
     """
-    totals: dict[int, float] = {}
+    # (counterId, instance) ごとに最新値（重複系列があれば上書き）
+    by_pair: dict[tuple[int, str], float] = {}
     for pem in perf_entity_metrics:
         for ser in getattr(pem, "value", None) or []:
             mid = getattr(ser, "id", None)
@@ -88,25 +139,27 @@ def parse_perf_query_result_rows(
             cid = int(getattr(mid, "counterId", 0) or 0)
             if cid not in counter_id_to_metric_key:
                 continue
-            v = _latest_in_series(ser)
-            totals[cid] = totals.get(cid, 0.0) + v
+            inst = getattr(mid, "instance", "") or ""
+            by_pair[(cid, inst)] = _latest_in_series(ser)
 
     rows: list[dict[str, Any]] = []
-    for cid, total in totals.items():
+    for (cid, inst), raw_val in by_pair.items():
         mk = counter_id_to_metric_key.get(cid)
         if not mk:
             continue
-        val = total
-        if mk.endswith("_pct"):
-            val = round(val, 2)
-        elif mk.endswith("_kbps") or mk.endswith("_total"):
-            val = round(val, 4)
+        val = _round_metric_value(mk, float(raw_val))
+        if inst == "":
+            emoid = entity_moid
+            ename = entity_name
+        else:
+            emoid = _composite_entity_moid(entity_moid, inst)
+            ename = _composite_entity_name(entity_name, inst)
         rows.append(
             {
                 "sampled_at": sampled_at,
                 "entity_type": "HostSystem",
-                "entity_moid": entity_moid,
-                "entity_name": entity_name,
+                "entity_moid": emoid,
+                "entity_name": ename,
                 "metric_key": mk,
                 "value": float(val),
             }

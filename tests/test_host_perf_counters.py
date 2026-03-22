@@ -15,7 +15,7 @@ from vcenter_event_assistant.collectors.host_perf_counters import (
 from vcenter_event_assistant.collectors import host_perf_counters as hpc
 
 
-def test_parse_perf_query_result_rows_sums_instances_and_maps_keys() -> None:
+def test_parse_perf_query_result_rows_splits_instances_and_maps_keys() -> None:
     sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
     s1 = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[10.0])
     s2 = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic1"), value=[5.0])
@@ -31,11 +31,19 @@ def test_parse_perf_query_result_rows_sums_instances_and_maps_keys() -> None:
             202: "host.disk.read_kbps",
         },
     )
-    by_key = {r["metric_key"]: r["value"] for r in rows}
-    assert by_key["host.net.dropped_rx_total"] == 15.0
-    assert by_key["host.disk.read_kbps"] == 3.25
+    assert len(rows) == 3
     assert all(r["entity_type"] == "HostSystem" for r in rows)
-    assert rows[0]["entity_moid"] == "host-1"
+    net_rows = [r for r in rows if r["metric_key"] == "host.net.dropped_rx_total"]
+    assert len(net_rows) == 2
+    net_by_moid = {r["entity_moid"]: r for r in net_rows}
+    assert net_by_moid["host-1:vmnic0"]["value"] == 10.0
+    assert net_by_moid["host-1:vmnic1"]["value"] == 5.0
+    assert net_by_moid["host-1:vmnic0"]["entity_name"] == "esxi1 / vmnic0"
+    disk_rows = [r for r in rows if r["metric_key"] == "host.disk.read_kbps"]
+    assert len(disk_rows) == 1
+    assert disk_rows[0]["value"] == 3.25
+    assert disk_rows[0]["entity_moid"] == "host-1"
+    assert disk_rows[0]["entity_name"] == "esxi1"
 
 
 def test_collect_host_perf_metric_rows_returns_rows_when_query_perf_succeeds() -> None:
@@ -55,23 +63,28 @@ def test_collect_host_perf_metric_rows_returns_rows_when_query_perf_succeeds() -
         rollupType=vim.PerformanceManager.CounterInfo.RollupType.average,
     )
 
-    avail_net = SimpleNamespace(counterId=101, instance="vmnic0")
+    avail_net0 = SimpleNamespace(counterId=101, instance="vmnic0")
+    avail_net1 = SimpleNamespace(counterId=101, instance="vmnic1")
     avail_disk = SimpleNamespace(counterId=202, instance="")
 
-    ser_net = SimpleNamespace(
+    ser_net0 = SimpleNamespace(
         id=SimpleNamespace(counterId=101, instance="vmnic0"),
         value=[7.0],
+    )
+    ser_net1 = SimpleNamespace(
+        id=SimpleNamespace(counterId=101, instance="vmnic1"),
+        value=[3.0],
     )
     ser_disk = SimpleNamespace(
         id=SimpleNamespace(counterId=202, instance=""),
         value=[128.5],
     )
-    pem = SimpleNamespace(value=[ser_net, ser_disk])
+    pem = SimpleNamespace(value=[ser_net0, ser_net1, ser_disk])
 
     perf_manager = MagicMock()
     perf_manager.perfCounter = [counter_net, counter_disk]
     perf_manager.QueryPerfProviderSummary.return_value = SimpleNamespace(refreshRate=20)
-    perf_manager.QueryAvailablePerfMetric.return_value = [avail_net, avail_disk]
+    perf_manager.QueryAvailablePerfMetric.return_value = [avail_net0, avail_net1, avail_disk]
     perf_manager.QueryPerf.return_value = [pem]
 
     content = SimpleNamespace(perfManager=perf_manager)
@@ -91,9 +104,17 @@ def test_collect_host_perf_metric_rows_returns_rows_when_query_perf_succeeds() -
     keys = {r["metric_key"] for r in rows}
     assert "host.net.dropped_rx_total" in keys
     assert "host.disk.read_kbps" in keys
-    by_key = {r["metric_key"]: r["value"] for r in rows}
-    assert by_key["host.net.dropped_rx_total"] == 7.0
-    assert by_key["host.disk.read_kbps"] == 128.5
+    assert len(rows) == 3
+    net_rows = [r for r in rows if r["metric_key"] == "host.net.dropped_rx_total"]
+    assert len(net_rows) == 2
+    assert {r["entity_moid"] for r in net_rows} == {"moid-9:vmnic0", "moid-9:vmnic1"}
+    by_net = {r["entity_moid"]: r["value"] for r in net_rows}
+    assert by_net["moid-9:vmnic0"] == 7.0
+    assert by_net["moid-9:vmnic1"] == 3.0
+    disk_rows = [r for r in rows if r["metric_key"] == "host.disk.read_kbps"]
+    assert len(disk_rows) == 1
+    assert disk_rows[0]["value"] == 128.5
+    assert disk_rows[0]["entity_moid"] == "moid-9"
 
 
 def test_collect_host_perf_metric_rows_returns_empty_on_query_failure() -> None:

@@ -68,6 +68,30 @@ export type FormatChartAxisTickOptions = {
 }
 
 /**
+ * `Intl.DateTimeFormat` が失敗したとき、`omitMonthDay` 用に UTC の時分のみを返す（日付・年は含めない）。
+ */
+function formatUtcHourMinuteForChartTick(ms: number): string {
+  const d = new Date(ms)
+  if (Number.isNaN(d.getTime())) return '—'
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${hh}:${mm} UTC`
+}
+
+/**
+ * `Intl` 失敗時の「年なし」相当（月日＋時分、UTC）。4 桁の暦年は含めない。
+ */
+function formatUtcMonthDayHourMinuteForChartTick(ms: number): string {
+  const d = new Date(ms)
+  if (Number.isNaN(d.getTime())) return '—'
+  const month = d.getUTCMonth() + 1
+  const day = d.getUTCDate()
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${month}/${day} ${hh}:${mm} UTC`
+}
+
+/**
  * 月日なし（時分のみ）。短いレンジの X 軸用。
  */
 function formatChartAxisTickTimeOnly(ms: number, timeZone: string): string {
@@ -79,7 +103,7 @@ function formatChartAxisTickTimeOnly(ms: number, timeZone: string): string {
       minute: '2-digit',
     }).format(new Date(ms))
   } catch {
-    return formatIsoInTimeZone(new Date(ms).toISOString(), timeZone, { omitSeconds: true })
+    return formatUtcHourMinuteForChartTick(ms)
   }
 }
 
@@ -97,7 +121,7 @@ function formatChartAxisTickWithoutYear(ms: number, timeZone: string): string {
       minute: '2-digit',
     }).format(new Date(ms))
   } catch {
-    return formatIsoInTimeZone(new Date(ms).toISOString(), timeZone, { omitSeconds: true })
+    return formatUtcMonthDayHourMinuteForChartTick(ms)
   }
 }
 
