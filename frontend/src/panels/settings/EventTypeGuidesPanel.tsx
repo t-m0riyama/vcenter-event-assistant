@@ -167,11 +167,14 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
       </button>
 
       <h2>一覧</h2>
+      <p className="hint event-type-guides-list__hint">
+        行をクリックすると展開し、内容の編集・保存・削除ができます。
+      </p>
       <ul className="event-type-guides-list">
         {list.map((r) => {
           const d = draft[r.id] ?? rowToDraft(r)
           const preview = formatEventTypeGuideCollapsedPreview(d, { maxChars: 200 })
-          const summaryAria = `${r.event_type}、${d.action_required ? '要対処' : '対処不要'}`
+          const summaryAria = `${r.event_type}、${d.action_required ? '要対処' : '対処不要'}、折りたたみ、クリックで展開`
           return (
             <li key={r.id} className="event-type-guides-list__item">
               <details className="event-type-guide-row">
@@ -179,6 +182,26 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
                   className="event-type-guide-row__summary"
                   aria-label={summaryAria}
                 >
+                  <span className="event-type-guide-row__disclosure" aria-hidden="true">
+                    <svg
+                      className="event-type-guide-row__chevron"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M9 6l6 6-6 6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
                   <div className="event-type-guide-row__summary-inner">
                     <div className="event-type-guide-row__head">
                       <span className="event-type-guide-row__type msg">{r.event_type}</span>

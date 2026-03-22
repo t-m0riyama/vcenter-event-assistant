@@ -113,7 +113,7 @@ export default function App() {
                       setErr(null)
                     }}
                   >
-                    種別ガイド
+                    イベント種別ガイド
                   </button>
                 </nav>
               )}
