@@ -67,11 +67,16 @@ export function getWallClockInZone(utcMs: number, timeZone: string): ZonedWallPa
   for (const p of parts) {
     if (p.type !== 'literal') map[p.type] = p.value
   }
+  let hour = Number(map.hour)
+  /** 一部環境では深夜が 24 時表記になる（h23 指定でも hour 24 が返ることがある） */
+  if (hour === 24) {
+    hour = 0
+  }
   return {
     year: Number(map.year),
     month: Number(map.month),
     day: Number(map.day),
-    hour: Number(map.hour),
+    hour,
     minute: Number(map.minute),
   }
 }
@@ -107,6 +112,20 @@ export function zonedLocalDateTimeToUtcIso(dateTimeLocal: string, timeZone: stri
     }
   }
   return null
+}
+
+/**
+ * 指定した暦日のローカル 00:00 に相当する UTC エポック ms。存在しない日（うるう日など）や DST ギャップでは `null`。
+ */
+export function zonedCalendarDateMidnightUtcMs(
+  year: number,
+  month: number,
+  day: number,
+  timeZone: string,
+): number | null {
+  const iso = zonedLocalDateTimeToUtcIso(`${year}-${pad2(month)}-${pad2(day)}T00:00`, timeZone)
+  if (!iso) return null
+  return parseApiUtcInstantMs(iso)
 }
 
 /**

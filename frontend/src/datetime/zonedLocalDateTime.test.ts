@@ -4,6 +4,7 @@ import {
   isValidUtcRangeOrder,
   parseZonedLocalDateTimeInput,
   utcIsoToZonedLocalDateTimeInput,
+  zonedCalendarDateMidnightUtcMs,
   zonedLocalDateTimeToUtcIso,
 } from './zonedLocalDateTime'
 
@@ -41,6 +42,26 @@ describe('zonedLocalDateTimeToUtcIso', () => {
 
   it('returns null for invalid time zone', () => {
     expect(zonedLocalDateTimeToUtcIso('2025-06-15T12:00', 'Not/AZone')).toBeNull()
+  })
+})
+
+describe('zonedLocalDateTimeToUtcIso midnight', () => {
+  it('resolves Asia/Tokyo local midnight (not only noon)', () => {
+    expect(zonedLocalDateTimeToUtcIso('2025-06-15T00:00', 'Asia/Tokyo')).toBe(
+      '2025-06-14T15:00:00.000Z',
+    )
+    expect(zonedLocalDateTimeToUtcIso('2026-06-15T00:00', 'Asia/Tokyo')).toBe(
+      '2026-06-14T15:00:00.000Z',
+    )
+  })
+})
+
+describe('zonedCalendarDateMidnightUtcMs', () => {
+  it('returns UTC ms for local midnight (Asia/Tokyo)', () => {
+    const ms = zonedCalendarDateMidnightUtcMs(2026, 6, 15, 'Asia/Tokyo')
+    expect(ms).not.toBeNull()
+    const nowMs = new Date('2026-03-22T12:00:00.000+09:00').getTime()
+    expect(ms!).toBeGreaterThan(nowMs)
   })
 })
 

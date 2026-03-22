@@ -55,16 +55,55 @@ describe('extractTickAxisValue', () => {
 })
 
 describe('formatChartAxisTick', () => {
-  it('formats Date with IANA zone (not browser default string)', () => {
+  const tzTokyo = 'Asia/Tokyo'
+
+  it('フル表示: tick が now より後の暦年（年を付ける）', () => {
+    const nowMs = new Date('2024-06-01T00:00:00.000+09:00').getTime()
+    const tickMs = new Date('2025-06-15T12:00:00.000+09:00').getTime()
+    const s = formatChartAxisTick(tickMs, tzTokyo, { nowMs })
+    expect(s).toMatch(/2025/)
+  })
+
+  it('同年: 年を省略', () => {
+    const nowMs = new Date('2026-03-22T12:00:00.000+09:00').getTime()
+    const tickMs = new Date('2026-06-15T10:00:00.000+09:00').getTime()
+    const s = formatChartAxisTick(tickMs, tzTokyo, { nowMs })
+    expect(s).not.toMatch(/2026/)
+  })
+
+  it('昨年かつ今年の同じ月日がまだ未来: 年省略', () => {
+    const nowMs = new Date('2026-03-22T12:00:00.000+09:00').getTime()
+    const tickMs = new Date('2025-06-15T10:00:00.000+09:00').getTime()
+    const s = formatChartAxisTick(tickMs, tzTokyo, { nowMs })
+    expect(s).not.toMatch(/2025/)
+  })
+
+  it('昨年だが今年の同じ月日は既に過ぎた: 年付き', () => {
+    const nowMs = new Date('2026-03-22T12:00:00.000+09:00').getTime()
+    const tickMs = new Date('2025-03-10T10:00:00.000+09:00').getTime()
+    const s = formatChartAxisTick(tickMs, tzTokyo, { nowMs })
+    expect(s).toMatch(/2025/)
+  })
+
+  it('2年以上前: 年付き', () => {
+    const nowMs = new Date('2026-03-22T12:00:00.000+09:00').getTime()
+    const tickMs = new Date('2024-08-01T10:00:00.000+09:00').getTime()
+    const s = formatChartAxisTick(tickMs, tzTokyo, { nowMs })
+    expect(s).toMatch(/2024/)
+  })
+
+  it('Date でも IANA ゾーンで整形（browser の toString ではない）', () => {
+    const nowMs = new Date('2024-06-01T00:00:00.000+09:00').getTime()
     const d = new Date('2025-06-15T03:00:00.000Z')
-    const s = formatChartAxisTick(d, 'Asia/Tokyo')
+    const s = formatChartAxisTick(d, 'Asia/Tokyo', { nowMs })
     expect(s).toMatch(/2025/)
     expect(s).toMatch(/12:00/)
   })
 
-  it('formats epoch ms', () => {
+  it('epoch ms と UTC', () => {
+    const nowMs = Date.UTC(2024, 5, 1, 0, 0, 0)
     const ms = new Date('2025-06-15T03:00:00.000Z').getTime()
-    const s = formatChartAxisTick(ms, 'UTC')
+    const s = formatChartAxisTick(ms, 'UTC', { nowMs })
     expect(s).toMatch(/2025/)
   })
 })

@@ -1,3 +1,8 @@
+import {
+  getWallClockInZone,
+  zonedCalendarDateMidnightUtcMs,
+} from './zonedLocalDateTime'
+
 export type FormatIsoInTimeZoneOptions = {
   locale?: string
   /** When true, omit seconds (e.g. chart time axis). Uses `timeStyle: 'short'`. */
@@ -51,11 +56,77 @@ export function extractTickAxisValue(payload: unknown): unknown {
   return payload
 }
 
+/** `formatChartAxisTick` のオプション */
+export type FormatChartAxisTickOptions = {
+  /** 比較用の「今」。省略時は `Date.now()`（テスト用に固定可） */
+  readonly nowMs?: number
+}
+
+/**
+ * 年なし（月日＋時分）。`formatIsoInTimeZone` の omitSeconds と同様に秒は出さない。
+ */
+function formatChartAxisTickWithoutYear(ms: number, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone,
+      hourCycle: 'h23',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(ms))
+  } catch {
+    return formatIsoInTimeZone(new Date(ms).toISOString(), timeZone, { omitSeconds: true })
+  }
+}
+
+/**
+ * 同年、または昨年で「今年の同じ月日」がまだ来ていない場合は年を省略する。
+ */
+function shouldOmitYearInChartAxis(
+  tickMs: number,
+  timeZone: string,
+  nowMs: number,
+): boolean {
+  let wallTick: ReturnType<typeof getWallClockInZone>
+  let wallNow: ReturnType<typeof getWallClockInZone>
+  try {
+    wallTick = getWallClockInZone(tickMs, timeZone)
+    wallNow = getWallClockInZone(nowMs, timeZone)
+  } catch {
+    return false
+  }
+
+  const yTick = wallTick.year
+  const yNow = wallNow.year
+
+  if (yTick === yNow) return true
+
+  if (yTick === yNow - 1) {
+    const sameMdThisYear = zonedCalendarDateMidnightUtcMs(
+      yNow,
+      wallTick.month,
+      wallTick.day,
+      timeZone,
+    )
+    if (sameMdThisYear === null) return false
+    return sameMdThisYear > nowMs
+  }
+
+  return false
+}
+
 /**
  * Formats Recharts axis/tooltip values (often `Date` for time scales, or ms number).
  * Avoids `String(date)` which follows the browser locale, not the selected IANA zone.
+ *
+ * 同年は `YYYY/` を省略し、昨年で「今年の同じ月日」がまだ未来なら省略（曖昧な場合は年付き）。
  */
-export function formatChartAxisTick(value: unknown, timeZone: string): string {
+export function formatChartAxisTick(
+  value: unknown,
+  timeZone: string,
+  options?: FormatChartAxisTickOptions,
+): string {
   if (value == null) return ''
   let ms: number
   if (value instanceof Date) {
@@ -70,5 +141,10 @@ export function formatChartAxisTick(value: unknown, timeZone: string): string {
     return String(value)
   }
   if (!Number.isFinite(ms)) return String(value)
+
+  const nowMs = options?.nowMs ?? Date.now()
+  if (shouldOmitYearInChartAxis(ms, timeZone, nowMs)) {
+    return formatChartAxisTickWithoutYear(ms, timeZone)
+  }
   return formatIsoInTimeZone(new Date(ms).toISOString(), timeZone, { omitSeconds: true })
 }
