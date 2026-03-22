@@ -6,6 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Takeyuki Moriyama", email = "3154232+t-m0riyama@users.noreply.github.com" }
 ]
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",

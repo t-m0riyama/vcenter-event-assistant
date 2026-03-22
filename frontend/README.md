@@ -58,6 +58,10 @@ uv run scripts/capture_ui_screenshots.py --existing
 
 バックエンドの起動・環境変数は [リポジトリルートの README](../README.md) を参照してください。
 
+## ライセンス
+
+本ディレクトリを含む本プロジェクトは [Apache License 2.0](../LICENSE) に従います。著作権表示は [NOTICE](../NOTICE) を参照してください。
+
 ## スタック補足
 
 このディレクトリは `npm create vite@latest` 由来の構成を引き継いでいます。React Compiler の有効化、型対応 ESLint ルールの拡張、Vite の詳細は [Vite 公式ドキュメント](https://vite.dev/guide/) および [React ドキュメント](https://react.dev/) を参照してください。
