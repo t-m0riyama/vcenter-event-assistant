@@ -112,6 +112,9 @@ work/
 # working repo directory
 working-repos
 
+# git worktrees（並行チェックアウト用）
+.worktrees/
+
 # sample directory
 samples
 
