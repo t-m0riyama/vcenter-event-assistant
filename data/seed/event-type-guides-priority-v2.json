@@ -1,13 +1,1287 @@
 {
   "format": "vea-event-type-guides",
   "version": 1,
-  "exportedAt": "2026-03-22T15:00:00.000Z",
+  "exportedAt": "2026-03-22T18:30:00.000Z",
   "guides": [
+    {
+      "event_type": "vim.event.AccountCreatedEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`AccountCreatedEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AccountRemovedEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`AccountRemovedEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.AccountUpdatedEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`AccountUpdatedEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AdminPasswordNotChangedEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`AdminPasswordNotChangedEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmAcknowledgedEvent",
+      "general_meaning": "アラームが確認（Ack）されたことを示すイベントです。",
+      "typical_causes": "しきい値逸脱後の運用確認、手動確認、通知ワークフローなど。",
+      "remediation": "アラームの根本原因が解消済みか、残タスクがないかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmActionTriggeredEvent",
+      "general_meaning": "アラームに紐づく自動アクションが起動したことを示すイベントです。",
+      "typical_causes": "SNMP／メール／スクリプト連携、しきい値逸脱など。",
+      "remediation": "アクションの成否と通知先、誤爆がないかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmClearedEvent",
+      "general_meaning": "アラーム状態がクリアされたことを示すイベントです。",
+      "typical_causes": "メトリクス正常化、しきい値変更、オブジェクト復旧など。",
+      "remediation": "再発監視と、根本原因が残っていないかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmCreatedEvent",
+      "general_meaning": "アラームのライフサイクルに関するイベントです（`AlarmCreatedEvent`）。",
+      "typical_causes": "しきい値超過、定義変更、通知設定、オブジェクトの状態変化など。",
+      "remediation": "アラーム定義と実際のメトリクス／イベントを照合し、通知先とエスカレーションを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmEmailCompletedEvent",
+      "general_meaning": "アラーム通知メールの送信が完了したことを示すイベントです。",
+      "typical_causes": "通知設定、しきい値逸脱、運用スケジュールなど。",
+      "remediation": "宛先・スパム除外・メールゲートウェイの到達性を必要に応じて確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmEmailFailedEvent",
+      "general_meaning": "アラーム通知メールの送信に失敗したことを示すイベントです。",
+      "typical_causes": "SMTP 設定、DNS、ファイアウォール、認証エラーなど。",
+      "remediation": "メールインフラと vCenter の通知設定を修正し、重要アラームが見逃されないようにします。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.AlarmEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "アラーム定義と実際のメトリクス／イベントを照合し、通知先とエスカレーションを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmReconfiguredEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmReconfiguredEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "アラーム定義と実際のメトリクス／イベントを照合し、通知先とエスカレーションを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmRemovedEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmRemovedEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.AlarmScriptCompleteEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmScriptCompleteEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "アラーム定義と実際のメトリクス／イベントを照合し、通知先とエスカレーションを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmScriptFailedEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmScriptFailedEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.AlarmSnmpCompletedEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmSnmpCompletedEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "アラーム定義と実際のメトリクス／イベントを照合し、通知先とエスカレーションを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlarmSnmpFailedEvent",
+      "general_meaning": "アラームに関するイベントです（`AlarmSnmpFailedEvent`）。",
+      "typical_causes": "しきい値、通知、スクリプト連携、オブジェクトの状態変化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.AlarmStatusChangedEvent",
+      "general_meaning": "アラームのライフサイクルに関するイベントです（`AlarmStatusChangedEvent`）。",
+      "typical_causes": "しきい値超過、定義変更、通知設定、オブジェクトの状態変化など。",
+      "remediation": "アラーム定義と実際のメトリクス／イベントを照合し、通知先とエスカレーションを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AllVirtualMachinesLicensedEvent",
+      "general_meaning": "ライセンスに関するイベントです（`AllVirtualMachinesLicensedEvent`）。",
+      "typical_causes": "契約、キー適用、評価期限、インベントリ変更など。",
+      "remediation": "有効ライセンスの割当と、機能制限・コンプライアンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AlreadyAuthenticatedSessionEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`AlreadyAuthenticatedSessionEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.AuthorizationEvent",
+      "general_meaning": "vCenter が記録するイベントです（`AuthorizationEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.BadUsernameSessionEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`BadUsernameSessionEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CanceledHostOperationEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CanceledHostOperationEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ClusterComplianceCheckedEvent",
+      "general_meaning": "クラスタのコンプライアンス検査が実行されたことを示すイベントです。",
+      "typical_causes": "プロファイル適用、定期チェック、構成ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連するホスト／クラスタ設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ClusterCreatedEvent",
+      "general_meaning": "新規クラスタが作成されたことを示すイベントです。",
+      "typical_causes": "新規構築、分割、テスト環境の追加など。",
+      "remediation": "DRS／HA 方針、ライセンス、ネットワーク設計が意図どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ClusterDasAdmissionControlFailedEvent",
+      "general_meaning": "HA／クラスタ（DAS）関連のイベントです（`ClusterDasAdmissionControlFailedEvent`）。",
+      "typical_causes": "ホスト障害、入退、許容障害数、許可される電源オン数の制約など。",
+      "remediation": "クラスタの健全性、許容設定、FDM／ネットワーク分断と照合します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ClusterDestroyedEvent",
+      "general_meaning": "クラスタが削除されたことを示すイベントです。",
+      "typical_causes": "縮退、環境廃止、誤操作など。",
+      "remediation": "残存 VM／ホストの扱いと、変更管理との整合を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ClusterEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`ClusterEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ClusterOvercommittedEvent",
+      "general_meaning": "クラスタのリソースがオーバーコミット状態にあることを示すイベントです。",
+      "typical_causes": "急な VM 増加、リソースプール設定、DRS／容量計画のずれなど。",
+      "remediation": "実効容量と許容障害、パフォーマンス影響を評価し、追加リソースまたは配置調整を検討します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ClusterReconfiguredEvent",
+      "general_meaning": "クラスタ構成（DRS／HA 等）が変更されたことを示すイベントです。",
+      "typical_causes": "運用変更、トラブルシュート、バージョンアップ手順など。",
+      "remediation": "変更内容が変更依頼と一致するか、関連するホスト・VM に副作用がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ClusterStatusChangedEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`ClusterStatusChangedEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ComplianceProfileAssignedEvent",
+      "general_meaning": "コンプライアンス・プロファイルがオブジェクトに割り当てられたことを示すイベントです。",
+      "typical_causes": "標準化、監査対応、新規ホスト／クラスタの取り込みなど。",
+      "remediation": "割り当て後のスキャン結果と、非準拠の扱いを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomFieldDefAddedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CustomFieldDefAddedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomFieldDefEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CustomFieldDefEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomFieldDefRemovedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CustomFieldDefRemovedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.CustomFieldDefRenamedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CustomFieldDefRenamedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomFieldEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CustomFieldEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomFieldValueChangedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`CustomFieldValueChangedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomizationEvent",
+      "general_meaning": "ゲストカスタマイゼーションに関するイベントです（`CustomizationEvent`）。",
+      "typical_causes": "テンプレート、クローン、Sysprep／cloud-init など。",
+      "remediation": "カスタマイズ仕様とゲストログを照合し、失敗時は仕様とテンプレートを見直します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomizationFailed",
+      "general_meaning": "ゲストカスタマイゼーションが失敗したことを示すイベントです。",
+      "typical_causes": "Sysprep／cloud-init エラー、テンプレート不整合、ネットワーク名解決など。",
+      "remediation": "カスタマイズ仕様とゲストログを突き合わせ、再デプロイまたは仕様修正を行います。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.CustomizationLinuxIdentityFailed",
+      "general_meaning": "ゲストカスタマイゼーションに関するイベントです（`CustomizationLinuxIdentityFailed`）。",
+      "typical_causes": "テンプレート、クローン、Sysprep／cloud-init など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.CustomizationNetworkSetupFailed",
+      "general_meaning": "ゲストカスタマイゼーションに関するイベントです（`CustomizationNetworkSetupFailed`）。",
+      "typical_causes": "テンプレート、クローン、Sysprep／cloud-init など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.CustomizationStartedEvent",
+      "general_meaning": "ゲストカスタマイゼーション（Sysprep 等）に関するイベントです。",
+      "typical_causes": "テンプレートからのデプロイ、クローン後のカスタマイズ、自動化など。",
+      "remediation": "カスタマイズ仕様ログとゲストの起動結果を照合します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomizationSucceeded",
+      "general_meaning": "ゲストカスタマイゼーション（Sysprep 等）に関するイベントです。",
+      "typical_causes": "テンプレートからのデプロイ、クローン後のカスタマイズ、自動化など。",
+      "remediation": "カスタマイズ仕様ログとゲストの起動結果を照合します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.CustomizationSysprepFailed",
+      "general_meaning": "Windows Sysprep によるカスタマイゼーションが失敗したことを示すイベントです。",
+      "typical_causes": "SID／ドメイン参加、ドライバ、テンプレート汚染など。",
+      "remediation": "Sysprep ログとテンプレート健全性を確認し、手順を見直します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.CustomizationUnknownFailure",
+      "general_meaning": "ゲストカスタマイゼーションに関するイベントです（`CustomizationUnknownFailure`）。",
+      "typical_causes": "テンプレート、クローン、Sysprep／cloud-init など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DVPortgroupCreatedEvent",
+      "general_meaning": "分散スイッチ上に分散ポートグループが作成されたことを示すイベントです。",
+      "typical_causes": "ネットワーク設計変更、セグメント追加、自動化など。",
+      "remediation": "VLAN／セキュリティポリシーが設計どおりか、既存 VM への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DVPortgroupDestroyedEvent",
+      "general_meaning": "分散ポートグループが削除されたことを示すイベントです。",
+      "typical_causes": "ネットワーク整理、誤削除、環境廃止など。",
+      "remediation": "接続中 VM やテンプレートへの影響がないか、変更管理と照合します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DVPortgroupEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DVPortgroupEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DVPortgroupReconfiguredEvent",
+      "general_meaning": "分散ポートグループの構成が変更されたことを示すイベントです。",
+      "typical_causes": "VLAN 変更、セキュリティ設定、チーミング関連など。",
+      "remediation": "変更が変更依頼と一致し、通信断が発生していないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DVPortgroupRenamedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DVPortgroupRenamedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DasAdmissionControlDisabledEvent",
+      "general_meaning": "HA の入場制御（Admission Control）が無効化されたことを示すイベントです。",
+      "typical_causes": "運用上の一時設定、誤操作、トラブルシュートなど。",
+      "remediation": "意図的かを確認し、許容障害に耐えられる構成かを再評価します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DasAdmissionControlEnabledEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DasAdmissionControlEnabledEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DasAgentFoundEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DasAgentFoundEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DasAgentUnavailableEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DasAgentUnavailableEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DasClusterFailedHostEvent",
+      "general_meaning": "HA／クラスタ（DAS）関連のイベントです（`DasClusterFailedHostEvent`）。",
+      "typical_causes": "ホスト障害、入退、許容障害数、許可される電源オン数の制約など。",
+      "remediation": "クラスタの健全性、許容設定、FDM／ネットワーク分断と照合します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DasClusterIsolatedEvent",
+      "general_meaning": "HA クラスタがネットワーク分断等により孤立状態と判断されたことを示すイベントです。",
+      "typical_causes": "管理／データ／ハートビート経路の障害、設定変更など。",
+      "remediation": "分断原因の除去と、分裂脳（split-brain）リスクの有無を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DasDisabledEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DasDisabledEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DasEnabledEvent",
+      "general_meaning": "クラスタで HA（DAS）が有効化されたことを示すイベントです。",
+      "typical_causes": "新規クラスタ、ポリシー変更、トラブルシュート後の再有効化など。",
+      "remediation": "許容障害数とリソース予約が運用要件を満たすか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DasHostFailedEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DasHostFailedEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DasHostIsolatedEvent",
+      "general_meaning": "ホストが HA の観点で孤立と判断されたことを示すイベントです。",
+      "typical_causes": "ハートビートデータストア／ネットワーク障害、設定不整合など。",
+      "remediation": "ネットワークとストレージ経路、FDM ログを調査し、分断を解消します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DatacenterCreatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`DatacenterCreatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatacenterEvent",
+      "general_meaning": "vCenter が記録するイベントです（`DatacenterEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatacenterRenamedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`DatacenterRenamedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreCapacityIncreasedEvent",
+      "general_meaning": "データストアの容量が増加した（拡張された）ことを示すイベントです。",
+      "typical_causes": "LUN 拡張、VMFS 拡張、ストレージ側プロビジョニングなど。",
+      "remediation": "拡張が計画どおりか、バックアップ／レプリケーション方針に影響がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreDestroyedEvent",
+      "general_meaning": "データストアに関するイベントです（`DatastoreDestroyedEvent`）。",
+      "typical_causes": "ストレージメンテナンス、パス変更、容量・プロビジョニング、NAS／VMFS 操作など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DatastoreDiscoveredEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreDiscoveredEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreDuplicatedEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreDuplicatedEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreFileCopiedEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreFileCopiedEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreFileDeletedEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreFileDeletedEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreFileEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreFileEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreFileMovedEvent",
+      "general_meaning": "データストア上のファイル移動が記録されたことを示すイベントです。",
+      "typical_causes": "Storage vMotion、手動コピー、バックアップツールなど。",
+      "remediation": "移動元／先の整合と、VM が参照するパスが期待どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreIORMReconfiguredEvent",
+      "general_meaning": "データストアの Storage I/O Control（IORM）設定が変更されたことを示すイベントです。",
+      "typical_causes": "性能チューニング、共有ストレージでの公平性制御など。",
+      "remediation": "しきい値とワークロード特性が整合するか、副作用がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastorePrincipalConfigured",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastorePrincipalConfigured`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastorePrincipalUpdated",
+      "general_meaning": "データストアのプリンシパル（権限主体）情報が更新されたことを示すイベントです。",
+      "typical_causes": "権限変更、ストレージ再登録、セキュリティポリシー適用など。",
+      "remediation": "バックアップ／管理操作が引き続き成功するか、権限が過不足ないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreRemovedOnHostEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreRemovedOnHostEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreRenamedEvent",
+      "general_meaning": "データストアに関するイベントです（`DatastoreRenamedEvent`）。",
+      "typical_causes": "ストレージメンテナンス、パス変更、容量・プロビジョニング、NAS／VMFS 操作など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DatastoreRenamedOnHostEvent",
+      "general_meaning": "データストア／ストレージに関するイベントです（`DatastoreRenamedOnHostEvent`）。",
+      "typical_causes": "パス変更、容量、スナップショット、バックアップ連携など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsDisabledEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsDisabledEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsEnabledEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsEnabledEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsEnteredStandbyModeEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsEnteredStandbyModeEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsEnteringStandbyModeEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsEnteringStandbyModeEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsExitStandbyModeFailedEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsExitStandbyModeFailedEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DrsExitedStandbyModeEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsExitedStandbyModeEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsExitingStandbyModeEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsExitingStandbyModeEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsInvocationFailedEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsInvocationFailedEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DrsRecoveredFromFailureEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsRecoveredFromFailureEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DrsResourceConfigureFailedEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsResourceConfigureFailedEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.DrsResourceConfigureSyncedEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsResourceConfigureSyncedEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsResourcePoolVmMovedEvent",
+      "general_meaning": "DRS またはリソースプール関連の移動を記録するイベントです。",
+      "typical_causes": "負荷分散、ルール違反の解消、メンテナンスなど。",
+      "remediation": "移動先ホストとリソースプールが意図どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsResourcePoolVmRegisteredEvent",
+      "general_meaning": "DRS 管理下のリソースプールに VM が登録されたことを示すイベントです。",
+      "typical_causes": "新規配置、プール間移動、自動化など。",
+      "remediation": "リソース割当と制限、親プール階層が設計どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsResourcePoolVmUnregisteredEvent",
+      "general_meaning": "DRS 管理下のリソースプールから VM の登録が外れたことを示すイベントです。",
+      "typical_causes": "削除、プール変更、移動など。",
+      "remediation": "意図した運用か、残リソースとライセンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsRuleComplianceEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsRuleComplianceEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsRuleViolationEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsRuleViolationEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsSoftRuleViolationEvent",
+      "general_meaning": "クラスタ／DRS／HA（DAS）に関するイベントです（`DrsSoftRuleViolationEvent`）。",
+      "typical_causes": "リソース、許容設定、ホスト入退、分断、ポリシー変更など。",
+      "remediation": "クラスタ設定と FDM／ネットワーク状態を照合し、許容障害と VM 配置を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsVmMigratedEvent",
+      "general_meaning": "DRS またはリソースプール関連の移動を記録するイベントです。",
+      "typical_causes": "負荷分散、ルール違反の解消、メンテナンスなど。",
+      "remediation": "移動先ホストとリソースプールが意図どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DrsVmPoweredOffEvent",
+      "general_meaning": "DRS によって仮想マシンの電源オフが行われたことを示すイベントです（`VmPoweredOffEvent` 系と組み合わせて解釈します）。",
+      "typical_causes": "負荷分散、メンテナンス、クラスタポリシーに基づく停止など。",
+      "remediation": "意図したクラスタ運用か、停止先・タイミングが設計どおりかを確認します。",
+      "action_required": false
+    },
     {
       "event_type": "vim.event.DrsVmPoweredOnEvent",
       "general_meaning": "DRS によって仮想マシンの電源オンが行われたことを示すイベントです。`VmPoweredOnEvent` を継承し、DRS による起動である点が区別されます。",
       "typical_causes": "負荷分散、メンテナンス後の再配置、初期配置ポリシーに基づく起動など。",
       "remediation": "意図したクラスタ運用であれば記録確認で足ります。想定外の起動先ホストがある場合は、DRS 設定・アフィニティ規則・メンテナンスモードと突き合わせます。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DuplicateIpDetectedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`DuplicateIpDetectedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvpgImportEvent",
+      "general_meaning": "vCenter が記録するイベントです（`DvpgImportEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvpgRestoreEvent",
+      "general_meaning": "vCenter が記録するイベントです（`DvpgRestoreEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsCreatedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsCreatedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsDestroyedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsDestroyedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsHealthStatusChangeEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsHealthStatusChangeEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsHostBackInSyncEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsHostBackInSyncEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsHostJoinedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsHostJoinedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsHostLeftEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsHostLeftEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsHostStatusUpdated",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsHostStatusUpdated`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsHostWentOutOfSyncEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsHostWentOutOfSyncEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsImportEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsImportEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsMergedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsMergedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortBlockedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortBlockedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortConnectedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortConnectedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortCreatedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortCreatedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortDeletedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortDeletedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortDisconnectedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortDisconnectedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortEnteredPassthruEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortEnteredPassthruEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortExitedPassthruEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortExitedPassthruEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortJoinPortgroupEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortJoinPortgroupEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortLeavePortgroupEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortLeavePortgroupEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortLinkDownEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortLinkDownEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortLinkUpEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortLinkUpEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortReconfiguredEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortReconfiguredEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortRuntimeChangeEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortRuntimeChangeEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortUnblockedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortUnblockedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsPortVendorSpecificStateChangeEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsPortVendorSpecificStateChangeEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsReconfiguredEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsReconfiguredEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsRenamedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsRenamedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsRestoreEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsRestoreEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsUpgradeAvailableEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsUpgradeAvailableEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsUpgradeInProgressEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsUpgradeInProgressEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsUpgradeRejectedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsUpgradeRejectedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.DvsUpgradedEvent",
+      "general_meaning": "分散スイッチ／ネットワークに関するイベントです（`DvsUpgradedEvent`）。",
+      "typical_causes": "VLAN、セキュリティポリシー、物理アップリンク、メンテナンスなど。",
+      "remediation": "接続先 VM とポート設定が設計どおりか、通信断がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.EnteredMaintenanceModeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`EnteredMaintenanceModeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.EnteredStandbyModeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`EnteredStandbyModeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.EnteringMaintenanceModeEvent",
+      "general_meaning": "ホストのメンテナンスモードに関する遷移を記録するイベントです（入退の区別は型名に従う）。",
+      "typical_causes": "計画メンテナンス、パッチ、ハードウェア作業、自動化によるメンテナンス操作など。",
+      "remediation": "メンテナンス計画と一致するか、VM の退避・電源状態が期待どおりかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.EnteringStandbyModeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`EnteringStandbyModeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ErrorUpgradeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ErrorUpgradeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.EventEx",
+      "general_meaning": "vCenter が記録するイベントです（`EventEx`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ExitMaintenanceModeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ExitMaintenanceModeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ExitStandbyModeFailedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ExitStandbyModeFailedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ExitedStandbyModeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ExitedStandbyModeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ExitingMaintenanceModeEvent",
+      "general_meaning": "ホストのメンテナンスモードに関する遷移を記録するイベントです（入退の区別は型名に従う）。",
+      "typical_causes": "計画メンテナンス、パッチ、ハードウェア作業、自動化によるメンテナンス操作など。",
+      "remediation": "メンテナンス計画と一致するか、VM の退避・電源状態が期待どおりかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ExitingStandbyModeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ExitingStandbyModeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ExtendedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ExtendedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.FailoverLevelRestored",
+      "general_meaning": "vCenter が記録するイベントです（`FailoverLevelRestored`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GeneralEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GeneralHostErrorEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralHostErrorEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.GeneralHostInfoEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralHostInfoEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GeneralHostWarningEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralHostWarningEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GeneralUserEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralUserEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GeneralVmErrorEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralVmErrorEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.GeneralVmInfoEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralVmInfoEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GeneralVmWarningEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GeneralVmWarningEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GhostDvsProxySwitchDetectedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GhostDvsProxySwitchDetectedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.GhostDvsProxySwitchRemovedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GhostDvsProxySwitchRemovedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.GlobalMessageChangedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`GlobalMessageChangedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HealthStatusChangedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`HealthStatusChangedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostAddFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostAddFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostAddedEvent",
+      "general_meaning": "ホストが vCenter インベントリに追加されたことを示すイベントです。",
+      "typical_causes": "新規構築、拡張、再接続、復旧後の登録など。",
+      "remediation": "追加が変更管理と一致するか、クラスタ／ネットワーク／ライセンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostAddedToClusterEvent",
+      "general_meaning": "ホストのクラスタ加入／離脱に関するイベントです。",
+      "typical_causes": "拡張、縮退、メンテナンス、障害対応など。",
+      "remediation": "クラスタ容量とライセンス、DRS／HA 設定への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostAdminDisableEvent",
+      "general_meaning": "ホストに関するイベントです（`HostAdminDisableEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostAdminEnableEvent",
+      "general_meaning": "ホストに関するイベントです（`HostAdminEnableEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostCertificateExpirationEvent",
+      "general_meaning": "ホスト証明書の有効期限が近づいている、または期限切れが検出されたことを示すイベントです。",
+      "typical_causes": "証明書ライフサイクル、ミドルウェア更新遅延など。",
+      "remediation": "期限前に更新または入れ替えを行い、管理接続の途切れを防ぎます。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCertificateRenewedEvent",
+      "general_meaning": "ホスト証明書が更新されたことを示すイベントです。",
+      "typical_causes": "計画更新、自動ローテーション、トラブルシュート後の再発行など。",
+      "remediation": "クライアント信頼ストアと、接続エラーが解消したかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedAccountFailedEvent",
+      "general_meaning": "ホスト接続時にアカウント認証が失敗したことを示すイベントです。",
+      "typical_causes": "パスワード期限、権限、AD／ローカルアカウントの不整合など。",
+      "remediation": "接続アカウントの資格情報とドメイン／ホスト側の設定を修正します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedAlreadyManagedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCnxFailedAlreadyManagedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedBadCcagentEvent",
+      "general_meaning": "ホスト接続に失敗した（Hostd／エージェント関連の不整合）ことを示すイベントです。",
+      "typical_causes": "エージェント不整合、アップグレード途中、ファイル破損など。",
+      "remediation": "エージェントの修復／再インストール、互換性とパッチ適用状況を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedBadUsernameEvent",
+      "general_meaning": "ホスト接続に失敗した（ユーザー名が不正）ことを示すイベントです。",
+      "typical_causes": "資格情報の誤り、ドメイン参加の変化など。",
+      "remediation": "接続アカウントと権限を修正し、再試行します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedBadVersionEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCnxFailedBadVersionEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedCcagentUpgradeEvent",
+      "general_meaning": "ホスト接続に失敗した（エージェントのアップグレード処理が原因）ことを示すイベントです。",
+      "typical_causes": "アップグレード中断、互換性、一時的な再起動など。",
+      "remediation": "アップグレード手順とログを確認し、完了またはロールバック方針を決めます。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedEvent",
+      "general_meaning": "ホスト接続に失敗したことを示す汎用イベントです（詳細は関連イベントと併せて解釈します）。",
+      "typical_causes": "ネットワーク、認証、サービス停止、証明書など。",
+      "remediation": "`reason` と同時刻のホスト／クラスタログを突き合わせ、接続経路を復旧します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedNetworkErrorEvent",
+      "general_meaning": "ホスト接続に失敗した（ネットワークエラー）ことを示すイベントです。",
+      "typical_causes": "経路断、DNS、ファイアウォール、NIC 障害など。",
+      "remediation": "管理／vMotion／ストレージ経路を切り分け、物理／仮想スイッチ設定を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedNoAccessEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCnxFailedNoAccessEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedNoConnectionEvent",
+      "general_meaning": "ホスト接続に失敗した（接続不能）ことを示すイベントです。",
+      "typical_causes": "ホスト停止、管理ネットワーク分断、エージェント未起動など。",
+      "remediation": "ホストの生存と管理 IP の到達性を確認し、必要に応じて現地／KVM で調査します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedNoLicenseEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCnxFailedNoLicenseEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedNotFoundEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCnxFailedNotFoundEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostCnxFailedTimeoutEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCnxFailedTimeoutEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostComplianceCheckedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostComplianceCheckedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostCompliantEvent",
+      "general_meaning": "ホストに関するイベントです（`HostCompliantEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostConfigAppliedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostConfigAppliedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
       "action_required": false
     },
     {
@@ -18,10 +1292,1193 @@
       "action_required": false
     },
     {
+      "event_type": "vim.event.HostConnectionLostEvent",
+      "general_meaning": "ホストに関するイベントです（`HostConnectionLostEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDasDisabledEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasDisabledEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDasDisablingEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasDisablingEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDasEnabledEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasEnabledEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDasEnablingEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasEnablingEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDasErrorEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasErrorEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostDasEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDasOkEvent",
+      "general_meaning": "ホストに関するイベントです（`HostDasOkEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostEnableAdminFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostEnableAdminFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostEvent",
+      "general_meaning": "ホストに関するイベントです（`HostEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostExtraNetworksEvent",
+      "general_meaning": "ホストに関するイベントです（`HostExtraNetworksEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostGetShortNameFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostGetShortNameFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostIPAddressChangedEvent",
+      "general_meaning": "ホストの管理 IP アドレスが変更されたことを示すイベントです。",
+      "typical_causes": "ネットワーク再設計、DHCP、手動変更など。",
+      "remediation": "DNS／ファイアウォール／監視の更新と、vCenter からの接続性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostInAuditModeEvent",
+      "general_meaning": "ホストに関するイベントです（`HostInAuditModeEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostInventoryFullEvent",
+      "general_meaning": "ホストに関するイベントです（`HostInventoryFullEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostInventoryUnreadableEvent",
+      "general_meaning": "ホストに関するイベントです（`HostInventoryUnreadableEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostIpChangedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostIpChangedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostIpInconsistentEvent",
+      "general_meaning": "ホストに関するイベントです（`HostIpInconsistentEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostIpToShortNameFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostIpToShortNameFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostIsolationIpPingFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostIsolationIpPingFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostKernelPanicEvent",
+      "general_meaning": "ホストでカーネルパニックが発生したことを示すイベントです。",
+      "typical_causes": "ドライバ、ハードウェア、メモリ障害など。",
+      "remediation": "同時刻のハードウェア／ストレージログと照合し、パッチ適用や部品交換を検討します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostLicenseExpiredEvent",
+      "general_meaning": "ホストのライセンスが期限切れである、または無効と判断されたことを示すイベントです。",
+      "typical_causes": "契約更新漏れ、キー適用ミス、評価期限など。",
+      "remediation": "有効なライセンスを割り当て、機能制限解除とコンプライアンスを確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostLocalPortCreatedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostLocalPortCreatedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostMissingNetworksEvent",
+      "general_meaning": "ホストに関するイベントです（`HostMissingNetworksEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostMonitoringStateChangedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostMonitoringStateChangedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostNoAvailableNetworksEvent",
+      "general_meaning": "ホストに関するイベントです（`HostNoAvailableNetworksEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostNoHAEnabledPortGroupsEvent",
+      "general_meaning": "ホストに関するイベントです（`HostNoHAEnabledPortGroupsEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostNoRedundantManagementNetworkEvent",
+      "general_meaning": "ホストに関するイベントです（`HostNoRedundantManagementNetworkEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostNonCompliantEvent",
+      "general_meaning": "ホストに関するイベントです（`HostNonCompliantEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostNotInClusterEvent",
+      "general_meaning": "ホストがクラスタに属していない状態が記録されたことを示すイベントです。",
+      "typical_causes": "単独ホスト運用、クラスタからの一時外し、構成確認など。",
+      "remediation": "意図した構成か、HA／DRS の対象外によるリスクを評価します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostOvercommittedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostOvercommittedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostPrimaryAgentNotShortNameEvent",
+      "general_meaning": "ホストに関するイベントです（`HostPrimaryAgentNotShortNameEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostProfileAppliedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostProfileAppliedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostReconnectionFailedEvent",
+      "general_meaning": "ホストの再接続試行が失敗したことを示すイベントです。",
+      "typical_causes": "認証、証明書、ネットワーク、サービス異常など。",
+      "remediation": "切断原因を切り分け、エージェントとネットワークを復旧してから再接続します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostRemovedEvent",
+      "general_meaning": "ホストが vCenter インベントリから除去されたことを示すイベントです。",
+      "typical_causes": "縮退、リプレース、メンテナンス、誤操作など。",
+      "remediation": "除去が計画どおりか、当該ホスト上 VM の扱いとデータストア接続を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostRemovedFromClusterEvent",
+      "general_meaning": "ホストのクラスタ加入／離脱に関するイベントです。",
+      "typical_causes": "拡張、縮退、メンテナンス、障害対応など。",
+      "remediation": "クラスタ容量とライセンス、DRS／HA 設定への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostShortNameInconsistentEvent",
+      "general_meaning": "ホストに関するイベントです（`HostShortNameInconsistentEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostShortNameToIpFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostShortNameToIpFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
       "event_type": "vim.event.HostShutdownEvent",
       "general_meaning": "ホストのシャットダウンが記録されたことを示すイベントです。`reason` に理由が含まれる場合があります。",
       "typical_causes": "計画メンテナンス、パッチ適用、電源操作、ハードウェア交換、意図しない停止など。",
       "remediation": "`reason` と変更管理・作業予定を照合します。計画外の場合は、ハードウェア／ストレージログと同時刻のホスト／クラスタイベントを確認し、必要に応じて VM の退避状況を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostSpecificationChangedEvent",
+      "general_meaning": "ホストの仕様情報（CPU／メモリ等のモデル情報）が変化したことを示すイベントです。",
+      "typical_causes": "ハードウェア交換、CPU 互換モード、インベントリの再スキャンなど。",
+      "remediation": "ライセンス算定と VM の互換性設定に影響がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostSpecificationRequireEvent",
+      "general_meaning": "ホストに関するイベントです（`HostSpecificationRequireEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostSpecificationUpdateEvent",
+      "general_meaning": "ホストに関するイベントです（`HostSpecificationUpdateEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostStatusChangedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostStatusChangedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostSubSpecificationDeleteEvent",
+      "general_meaning": "ホストに関するイベントです（`HostSubSpecificationDeleteEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostSubSpecificationUpdateEvent",
+      "general_meaning": "ホストに関するイベントです（`HostSubSpecificationUpdateEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostSyncFailedEvent",
+      "general_meaning": "ホスト側の同期処理が失敗したことを示すイベントです（文脈により詳細は関連情報を参照）。",
+      "typical_causes": "プロファイル同期、状態同期、外部システム連携など。",
+      "remediation": "失敗理由と同時刻のタスク／ログを追跡し、再試行または設定修正を行います。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostUpgradeFailedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostUpgradeFailedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.HostUserWorldSwapNotEnabledEvent",
+      "general_meaning": "ホストに関するイベントです（`HostUserWorldSwapNotEnabledEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostVnicConnectedToCustomizedDVPortEvent",
+      "general_meaning": "ホストに関するイベントです（`HostVnicConnectedToCustomizedDVPortEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostVnicReconfiguredEvent",
+      "general_meaning": "ホストの vNIC 構成が変更されたことを示すイベントです。",
+      "typical_causes": "チーミング、VLAN、セキュリティポリシー、メンテナンスなど。",
+      "remediation": "管理／vMotion／ストレージ通信が意図どおり維持されているか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostWwnChangedEvent",
+      "general_meaning": "ホストに関するイベントです（`HostWwnChangedEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostWwnConflictEvent",
+      "general_meaning": "ホストに関するイベントです（`HostWwnConflictEvent`）。",
+      "typical_causes": "ハードウェア、ネットワーク、エージェント、クラスタ／メンテナンス操作など。",
+      "remediation": "`reason` や同時刻のホスト／ストレージログと照合し、接続性と健全性を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.IncorrectHostInformationEvent",
+      "general_meaning": "vCenter が記録するイベントです（`IncorrectHostInformationEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.InfoUpgradeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`InfoUpgradeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.InsufficientFailoverResourcesEvent",
+      "general_meaning": "vCenter が記録するイベントです（`InsufficientFailoverResourcesEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.InvalidEditionEvent",
+      "general_meaning": "vCenter が記録するイベントです（`InvalidEditionEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LicenseEvent",
+      "general_meaning": "ライセンスに関するイベントです（`LicenseEvent`）。",
+      "typical_causes": "契約、キー適用、評価期限、インベントリ変更など。",
+      "remediation": "有効ライセンスの割当と、機能制限・コンプライアンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LicenseExpiredEvent",
+      "general_meaning": "製品ライセンスが期限切れであることが検出されたことを示すイベントです。",
+      "typical_causes": "契約更新、キー入れ替え、評価期間終了など。",
+      "remediation": "有効ライセンスを適用し、機能停止やコンプライアンス違反を防ぎます。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.LicenseNonComplianceEvent",
+      "general_meaning": "ライセンスに関するイベントです（`LicenseNonComplianceEvent`）。",
+      "typical_causes": "契約、キー適用、評価期限、インベントリ変更など。",
+      "remediation": "有効ライセンスの割当と、機能制限・コンプライアンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LicenseRestrictedEvent",
+      "general_meaning": "ライセンスに関するイベントです（`LicenseRestrictedEvent`）。",
+      "typical_causes": "契約、キー適用、評価期限、インベントリ変更など。",
+      "remediation": "有効ライセンスの割当と、機能制限・コンプライアンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LicenseServerAvailableEvent",
+      "general_meaning": "ライセンスに関するイベントです（`LicenseServerAvailableEvent`）。",
+      "typical_causes": "契約、キー適用、評価期限、インベントリ変更など。",
+      "remediation": "有効ライセンスの割当と、機能制限・コンプライアンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LicenseServerUnavailableEvent",
+      "general_meaning": "ライセンスに関するイベントです（`LicenseServerUnavailableEvent`）。",
+      "typical_causes": "契約、キー適用、評価期限、インベントリ変更など。",
+      "remediation": "有効ライセンスの割当と、機能制限・コンプライアンスへの影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LocalDatastoreCreatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`LocalDatastoreCreatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LocalTSMEnabledEvent",
+      "general_meaning": "vCenter が記録するイベントです（`LocalTSMEnabledEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LockerMisconfiguredEvent",
+      "general_meaning": "vCenter が記録するイベントです（`LockerMisconfiguredEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.LockerReconfiguredEvent",
+      "general_meaning": "vCenter が記録するイベントです（`LockerReconfiguredEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.MigrationErrorEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationErrorEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.MigrationEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.MigrationHostErrorEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationHostErrorEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.MigrationHostWarningEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationHostWarningEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.MigrationResourceErrorEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationResourceErrorEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.MigrationResourceWarningEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationResourceWarningEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.MigrationWarningEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MigrationWarningEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.MtuMatchEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MtuMatchEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.MtuMismatchEvent",
+      "general_meaning": "vCenter が記録するイベントです（`MtuMismatchEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NASDatastoreCreatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NASDatastoreCreatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NasDatastoreMountedEvent",
+      "general_meaning": "データストアに関するイベントです（`NasDatastoreMountedEvent`）。",
+      "typical_causes": "ストレージメンテナンス、パス変更、容量・プロビジョニング、NAS／VMFS 操作など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NetworkRollbackEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NetworkRollbackEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NoAccessUserEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NoAccessUserEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NoDatastoresConfiguredEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NoDatastoresConfiguredEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NoLicenseEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NoLicenseEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NoMaintenanceModeDrsRecommendationForVM",
+      "general_meaning": "vCenter が記録するイベントです（`NoMaintenanceModeDrsRecommendationForVM`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NonVIWorkloadDetectedOnDatastoreEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NonVIWorkloadDetectedOnDatastoreEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.NotEnoughResourcesToStartVmEvent",
+      "general_meaning": "vCenter が記録するイベントです（`NotEnoughResourcesToStartVmEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.OutOfSyncDvsHost",
+      "general_meaning": "vCenter が記録するイベントです（`OutOfSyncDvsHost`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.PermissionAddedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`PermissionAddedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.PermissionEvent",
+      "general_meaning": "vCenter が記録するイベントです（`PermissionEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.PermissionRemovedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`PermissionRemovedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.PermissionUpdatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`PermissionUpdatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileAssociatedEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileAssociatedEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連オブジェクトの設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileChangedEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileChangedEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連オブジェクトの設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileCreatedEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileCreatedEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連オブジェクトの設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileDissociatedEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileDissociatedEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連オブジェクトの設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連オブジェクトの設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileReferenceHostChangedEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileReferenceHostChangedEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "非準拠項目の是正計画と、関連オブジェクトの設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ProfileRemovedEvent",
+      "general_meaning": "プロファイル／コンプライアンスに関するイベントです（`ProfileRemovedEvent`）。",
+      "typical_causes": "ホスト／クラスタの標準化、スキャン、ドリフト検知など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.RecoveryEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RecoveryEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.RemoteTSMEnabledEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RemoteTSMEnabledEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ResourcePoolCreatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ResourcePoolCreatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ResourcePoolDestroyedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ResourcePoolDestroyedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ResourcePoolEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ResourcePoolEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ResourcePoolMovedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ResourcePoolMovedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ResourcePoolReconfiguredEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ResourcePoolReconfiguredEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ResourceViolatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ResourceViolatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.RoleAddedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RoleAddedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.RoleEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RoleEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.RoleRemovedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RoleRemovedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.RoleUpdatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RoleUpdatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.RollbackEvent",
+      "general_meaning": "vCenter が記録するイベントです（`RollbackEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskCompletedEvent",
+      "general_meaning": "スケジュールタスクの実行に関するイベントです。",
+      "typical_causes": "定期メンテナンス、スクリプト、レポート、自動化ジョブなど。",
+      "remediation": "スケジュール定義と実行結果、失敗時の再実行ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskCreatedEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskCreatedEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "スケジュール定義と実行結果、失敗時の再実行ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskEmailCompletedEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskEmailCompletedEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "スケジュール定義と実行結果、失敗時の再実行ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskEmailFailedEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskEmailFailedEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "スケジュール定義と実行結果、失敗時の再実行ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskFailedEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskFailedEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskReconfiguredEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskReconfiguredEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "スケジュール定義と実行結果、失敗時の再実行ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskRemovedEvent",
+      "general_meaning": "スケジュールタスクに関するイベントです（`ScheduledTaskRemovedEvent`）。",
+      "typical_causes": "定期ジョブ、スクリプト、メンテナンスウィンドウなど。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ScheduledTaskStartedEvent",
+      "general_meaning": "スケジュールタスクの実行に関するイベントです。",
+      "typical_causes": "定期メンテナンス、スクリプト、レポート、自動化ジョブなど。",
+      "remediation": "スケジュール定義と実行結果、失敗時の再実行ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.ServerLicenseExpiredEvent",
+      "general_meaning": "vCenter が記録するイベントです（`ServerLicenseExpiredEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.ServerStartedSessionEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`ServerStartedSessionEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.SessionEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`SessionEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.SessionTerminatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`SessionTerminatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.SnapshotCreatedEvent",
+      "general_meaning": "スナップショット操作に関するイベントです（`SnapshotCreatedEvent`）。",
+      "typical_causes": "バックアップ、更新前の退避、テスト、自動スナップショットポリシーなど。",
+      "remediation": "スナップショット連鎖とディスク使用量、リストア手順を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.SnapshotRemovedEvent",
+      "general_meaning": "スナップショット操作に関するイベントです（`SnapshotRemovedEvent`）。",
+      "typical_causes": "バックアップ、更新前の退避、テスト、自動スナップショットポリシーなど。",
+      "remediation": "スナップショット連鎖とディスク使用量、リストア手順を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.SnapshotRestoredEvent",
+      "general_meaning": "スナップショット操作に関するイベントです（`SnapshotRestoredEvent`）。",
+      "typical_causes": "バックアップ、更新前の退避、テスト、自動スナップショットポリシーなど。",
+      "remediation": "スナップショット連鎖とディスク使用量、リストア手順を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TaskEvent",
+      "general_meaning": "タスクに紐づく汎用イベントです。詳細は関連するタスク情報と併せて解釈します。",
+      "typical_causes": "各種 API 操作、UI 操作、スケジュール実行など。",
+      "remediation": "タスク ID と `userName`、失敗時はエラー詳細を追跡します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TaskTimeoutEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TaskTimeoutEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TeamingMatchEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TeamingMatchEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TeamingMisMatchEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TeamingMisMatchEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TemplateBeingUpgradedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TemplateBeingUpgradedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TemplateUpgradeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TemplateUpgradeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TemplateUpgradeFailedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TemplateUpgradeFailedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.TemplateUpgradedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TemplateUpgradedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.TimedOutHostOperationEvent",
+      "general_meaning": "vCenter が記録するイベントです（`TimedOutHostOperationEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UnlicensedVirtualMachinesEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UnlicensedVirtualMachinesEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UnlicensedVirtualMachinesFoundEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UnlicensedVirtualMachinesFoundEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UpdatedAgentBeingRestartedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UpdatedAgentBeingRestartedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UpgradeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UpgradeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UplinkPortMtuNotSupportEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UplinkPortMtuNotSupportEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UplinkPortMtuSupportEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UplinkPortMtuSupportEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UplinkPortVlanTrunkedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UplinkPortVlanTrunkedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UplinkPortVlanUntrunkedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`UplinkPortVlanUntrunkedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UserAssignedToGroup",
+      "general_meaning": "アカウント／セッションに関するイベントです（`UserAssignedToGroup`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UserLoginSessionEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`UserLoginSessionEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UserLogoutSessionEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`UserLogoutSessionEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UserPasswordChanged",
+      "general_meaning": "アカウント／セッションに関するイベントです（`UserPasswordChanged`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UserUnassignedFromGroup",
+      "general_meaning": "アカウント／セッションに関するイベントです（`UserUnassignedFromGroup`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.UserUpgradeEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`UserUpgradeEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VMFSDatastoreCreatedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VMFSDatastoreCreatedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VMFSDatastoreExpandedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VMFSDatastoreExpandedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VMFSDatastoreExtendedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VMFSDatastoreExtendedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VMotionLicenseExpiredEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VMotionLicenseExpiredEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VcAgentUninstallFailedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VcAgentUninstallFailedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VcAgentUninstalledEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VcAgentUninstalledEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VcAgentUpgradeFailedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VcAgentUpgradeFailedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VcAgentUpgradedEvent",
+      "general_meaning": "vCenter が記録するイベントです（`VcAgentUpgradedEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VimAccountPasswordChangedEvent",
+      "general_meaning": "アカウント／セッションに関するイベントです（`VimAccountPasswordChangedEvent`）。",
+      "typical_causes": "ログイン、権限、パスワードポリシー、認証基盤など。",
+      "remediation": "監査上、許可された操作か、セキュリティポリシーと整合するかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmAcquiredMksTicketEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmAcquiredMksTicketEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmAcquiredTicketEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmAcquiredTicketEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmAcquiringMksTicketEvent",
+      "general_meaning": "仮想マシンへのリモートコンソール（MKS）用チケット取得が行われたことを示すイベントです。",
+      "typical_causes": "管理者・運用者によるコンソール接続、サポート作業など。",
+      "remediation": "監査上、許可された操作か、`userName` と変更管理を照合します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmAutoRenameEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmAutoRenameEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingClonedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmBeingClonedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingClonedNoFolderEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmBeingClonedNoFolderEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingCreatedEvent",
+      "general_meaning": "仮想マシンの作成プロセスに関するイベントです（進行と完了の区別は型名に従う）。",
+      "typical_causes": "新規デプロイ、テンプレートからの配置、自動化など。",
+      "remediation": "作成元と配置先、リソース割当が設計どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingDeployedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmBeingDeployedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingHotMigratedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmBeingHotMigratedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingMigratedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmBeingMigratedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmBeingRelocatedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmBeingRelocatedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmCloneEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmCloneEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmCloneFailedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmCloneFailedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
       "action_required": true
     },
     {
@@ -32,10 +2489,493 @@
       "action_required": false
     },
     {
+      "event_type": "vim.event.VmConfigMissingEvent",
+      "general_meaning": "仮想マシン構成情報が見つからない、または欠落している状態を示すイベントです。",
+      "typical_causes": "ストレージ切断、VM ファイルの欠損、パス変更、同期遅延など。",
+      "remediation": "データストアの接続と `.vmx` の所在を確認し、バックアップからのリストアや再登録を検討します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmConfigQuestionEvent",
+      "general_meaning": "仮想マシンに未回答の構成上の質問（Question）があることを示すイベントです。",
+      "typical_causes": "ディスク UUID の衝突、移行後のデバイス不一致、仮想ハードウェアの選択など。",
+      "remediation": "vSphere クライアントで該当 VM の質問に回答し、意図した構成に確定します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmConnectedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmConnectedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmCreatedEvent",
+      "general_meaning": "仮想マシンの作成プロセスに関するイベントです（進行と完了の区別は型名に従う）。",
+      "typical_causes": "新規デプロイ、テンプレートからの配置、自動化など。",
+      "remediation": "作成元と配置先、リソース割当が設計どおりか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDasBeingResetEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDasBeingResetEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDasBeingResetWithScreenshotEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDasBeingResetWithScreenshotEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDasResetFailedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDasResetFailedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmDasUpdateErrorEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDasUpdateErrorEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmDasUpdateOkEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDasUpdateOkEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDateRolledBackEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDateRolledBackEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDeployFailedEvent",
+      "general_meaning": "操作または処理が失敗したことを示すイベントです（`VmDeployFailedEvent`）。",
+      "typical_causes": "リソース不足、ストレージ／ネットワーク障害、設定不整合、ゲスト応答欠如など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmDeployedEvent",
+      "general_meaning": "OVF／テンプレート等からのデプロイが完了したことを示すイベントです。",
+      "typical_causes": "カタログ、コンテンツライブラリ、自動化パイプラインなど。",
+      "remediation": "デプロイ後のネットワーク・ストレージ設定を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDisconnectedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDisconnectedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDiscoveredEvent",
+      "general_meaning": "新たに仮想マシンが検出された（ディスカバされた）ことを示すイベントです。",
+      "typical_causes": "データストアのスキャン、手動パス追加、他環境からのストレージ接続など。",
+      "remediation": "検出された VM が正規のインベントリに含めるべきものか、重複登録がないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmDiskFailedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmDiskFailedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmEmigratingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmEmigratingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmEndRecordingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmEndRecordingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmEndReplayingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmEndReplayingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmFailedMigrateEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedMigrateEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedRelayoutEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedRelayoutEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedRelayoutOnVmfs2DatastoreEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedRelayoutOnVmfs2DatastoreEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedStartingSecondaryEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedStartingSecondaryEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToPowerOffEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedToPowerOffEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToPowerOnEvent",
+      "general_meaning": "操作または処理が失敗したことを示すイベントです（`VmFailedToPowerOnEvent`）。",
+      "typical_causes": "リソース不足、ストレージ／ネットワーク障害、設定不整合、ゲスト応答欠如など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToRebootGuestEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedToRebootGuestEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToResetEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedToResetEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToShutdownGuestEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedToShutdownGuestEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToStandbyGuestEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedToStandbyGuestEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedToSuspendEvent",
+      "general_meaning": "操作または処理が失敗したことを示すイベントです（`VmFailedToSuspendEvent`）。",
+      "typical_causes": "リソース不足、ストレージ／ネットワーク障害、設定不整合、ゲスト応答欠如など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailedUpdatingSecondaryConfig",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailedUpdatingSecondaryConfig`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailoverEvent",
+      "general_meaning": "HA による VM のフェイルオーバーが発生したことを示すイベントです。",
+      "typical_causes": "プライマリホスト障害、ネットワーク分断、ポリシーによる再起動など。",
+      "remediation": "障害ホストの復旧と、ゲストアプリの整合性確認を行います。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFailoverFailed",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFailoverFailed`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmFaultToleranceStateChangedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFaultToleranceStateChangedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmFaultToleranceTurnedOffEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFaultToleranceTurnedOffEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmFaultToleranceVmTerminatedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmFaultToleranceVmTerminatedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmGuestOSCrashedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmGuestOSCrashedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmGuestRebootEvent",
+      "general_meaning": "ゲスト OS の再起動が要求または実行されたことを示すイベントです。",
+      "typical_causes": "パッチ適用、メンテナンス、Tools 更新、トラブルシュートなど。",
+      "remediation": "計画内の再起動か確認し、アプリ整合性と監視アラートを追跡します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmGuestShutdownFailedEvent",
+      "general_meaning": "操作または処理が失敗したことを示すイベントです（`VmGuestShutdownFailedEvent`）。",
+      "typical_causes": "リソース不足、ストレージ／ネットワーク障害、設定不整合、ゲスト応答欠如など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmGuestStandbyEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmGuestStandbyEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmHealthMonitoringStateChangedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmHealthMonitoringStateChangedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmInstanceUuidAssignedEvent",
+      "general_meaning": "仮想マシンに instanceUuid が付与された（または変更された）ことを示すイベントです。",
+      "typical_causes": "新規作成、インポート、再登録、UUID の再割当など。",
+      "remediation": "バックアップ／レプリケーション／監査 ID がアプリ要件と整合するか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmInstanceUuidChangedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmInstanceUuidChangedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmInstanceUuidConflictEvent",
+      "general_meaning": "仮想マシンの instanceUuid の衝突が検出されたことを示すイベントです。インベントリ整合性に影響し得ます。",
+      "typical_causes": "複製・インポート・リストア時の UUID 重複、手動コピー、外部ツールによる登録など。",
+      "remediation": "重複 VM の特定、どちらを正とするかを運用で決め、再登録や UUID 付け替え方針に従います。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmMacAssignedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMacAssignedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMacChangedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMacChangedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMacConflictEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMacConflictEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMaxFTRestartCountReached",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMaxFTRestartCountReached`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMaxRestartCountReached",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMaxRestartCountReached`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMessageErrorEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMessageErrorEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmMessageEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMessageEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMessageWarningEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMessageWarningEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMigratedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmMigratedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmMigrationFailedEvent",
+      "general_meaning": "操作または処理が失敗したことを示すイベントです（`VmMigrationFailedEvent`）。",
+      "typical_causes": "リソース不足、ストレージ／ネットワーク障害、設定不整合、ゲスト応答欠如など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmNoCompatibleHostForSecondaryEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmNoCompatibleHostForSecondaryEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmNoNetworkAccessEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmNoNetworkAccessEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmOrphanedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmOrphanedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmPowerOffOnIsolationEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmPowerOffOnIsolationEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmPoweringOnWithCustomizedDVPortEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmPoweringOnWithCustomizedDVPortEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmPrimaryFailoverEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmPrimaryFailoverEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmReconfiguredEvent",
+      "general_meaning": "仮想マシンの構成（ハードウェア設定など）が変更されたことを示すイベントです。",
+      "typical_causes": "スケールアウト／リソース調整、デバイス追加、ポリシー変更、テンプレート適用後の差分など。",
+      "remediation": "変更内容が変更依頼と一致するか、ゲスト／アプリの要件に適合するかを確認します。",
+      "action_required": false
+    },
+    {
       "event_type": "vim.event.VmRegisteredEvent",
       "general_meaning": "仮想マシンが vCenter 管理下へ正常に登録されたことを示すイベントです。",
       "typical_causes": "新規登録、インベントリからの再登録、移管後の登録、リストア後の登録など。",
       "remediation": "誰が・どのパス／データストアから登録したかを確認し、変更手順と整合するか見ます。意図しない VM の登録がないか、監査上の観点で必要なら `userName` を追跡します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRelayoutSuccessfulEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmRelayoutSuccessfulEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRelayoutUpToDateEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmRelayoutUpToDateEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmReloadFromPathEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmReloadFromPathEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmReloadFromPathFailedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmReloadFromPathFailedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmRelocateFailedEvent",
+      "general_meaning": "操作または処理が失敗したことを示すイベントです（`VmRelocateFailedEvent`）。",
+      "typical_causes": "リソース不足、ストレージ／ネットワーク障害、設定不整合、ゲスト応答欠如など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmRelocateSpecEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmRelocateSpecEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRemoteConsoleConnectedEvent",
+      "general_meaning": "リモートコンソールの接続／切断に関するイベントです。",
+      "typical_causes": "トラブルシュート、メンテナンス、誤接続の可能性など。",
+      "remediation": "セッションの必要性とアクセス制御ポリシーを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRemoteConsoleDisconnectedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmRemoteConsoleDisconnectedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
       "action_required": false
     },
     {
@@ -46,10 +2986,108 @@
       "action_required": false
     },
     {
+      "event_type": "vim.event.VmRenamedEvent",
+      "general_meaning": "仮想マシンの表示名などが変更されたことを示すイベントです。",
+      "typical_causes": "運用命名規則の適用、自動化、移管後の整理など。",
+      "remediation": "変更が変更管理と一致し、監視・バックアップの対象名に影響しないか確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRequirementsExceedCurrentEVCModeEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmRequirementsExceedCurrentEVCModeEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
       "event_type": "vim.event.VmResettingEvent",
       "general_meaning": "仮想マシンがリセット処理に入ったことを示すイベントです（ハードリセット相当の動作の記録）。",
       "typical_causes": "ユーザーまたは管理操作によるリセット、ゲスト応答不能時の対処、スクリプトによる強制再起動など。",
       "remediation": "計画された操作か確認し、ゲスト／アプリの整合性（ファイルシステム、DB）に影響がないか必要に応じて確認します。頻発する場合は、ハングやリソース不足の調査を行います。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmResourcePoolMovedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmResourcePoolMovedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmResourceReallocatedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmResourceReallocatedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRestartedOnAlternateHostEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmRestartedOnAlternateHostEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmResumingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmResumingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSecondaryAddedEvent",
+      "general_meaning": "フォールトトレランスのセカンダリ VM に関するイベントです。",
+      "typical_causes": "FT の有効化／構成変更、セカンダリの追加や無効化など。",
+      "remediation": "FT 状態とネットワーク／ストレージ要件を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSecondaryDisabledBySystemEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmSecondaryDisabledBySystemEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSecondaryDisabledEvent",
+      "general_meaning": "フォールトトレランスのセカンダリ VM に関するイベントです。",
+      "typical_causes": "FT の有効化／構成変更、セカンダリの追加や無効化など。",
+      "remediation": "FT 状態とネットワーク／ストレージ要件を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSecondaryEnabledEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmSecondaryEnabledEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSecondaryStartedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmSecondaryStartedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmShutdownOnIsolationEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmShutdownOnIsolationEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmStartRecordingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmStartRecordingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmStartReplayingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmStartReplayingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
       "action_required": false
     },
     {
@@ -58,6 +3096,153 @@
       "typical_causes": "電源オン操作、再起動シーケンスの一部、DRS／HA による起動など。",
       "remediation": "直後に `VmPoweredOnEvent` やエラー系イベントが続くかを確認します。完了しない場合は、ホストリソース、ストレージ接続、ロック／競合を調査します。",
       "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmStartingSecondaryEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmStartingSecondaryEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmStaticMacConflictEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmStaticMacConflictEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmStoppingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmStoppingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSuspendingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmSuspendingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmTimedoutStartingEvent",
+      "general_meaning": "仮想マシンの起動処理がタイムアウトしたことを示すイベントです。",
+      "typical_causes": "ストレージ遅延、リソース不足、ロック競合、ゲスト起動のハングなど。",
+      "remediation": "ホスト・データストア・リソースプールの状態と、同時刻のエラーイベントを調査し、再起動または構成見直しを行います。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmTimedoutStartingSecondaryEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmTimedoutStartingSecondaryEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmUnsupportedStartingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUnsupportedStartingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmUpgradeCompleteEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUpgradeCompleteEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmUpgradeFailedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUpgradeFailedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmUpgradingEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUpgradingEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmUuidAssignedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUuidAssignedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmUuidChangedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUuidChangedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmUuidConflictEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmUuidConflictEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmVnicPoolReservationViolationClearEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmVnicPoolReservationViolationClearEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmVnicPoolReservationViolationRaiseEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmVnicPoolReservationViolationRaiseEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmWwnAssignedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmWwnAssignedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmWwnChangedEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmWwnChangedEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmWwnConflictEvent",
+      "general_meaning": "仮想マシンに関するイベントです（`VmWwnConflictEvent`）。",
+      "typical_causes": "電源操作、移動、構成変更、ゲスト応答、ストレージ／ネットワーク状態など。",
+      "remediation": "同時刻の VM／ホスト／データストアイベントとタスクログを照合し、意図した操作かを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmfsDatastoreExpandedEvent",
+      "general_meaning": "データストアに関するイベントです（`VmfsDatastoreExpandedEvent`）。",
+      "typical_causes": "ストレージメンテナンス、パス変更、容量・プロビジョニング、NAS／VMFS 操作など。",
+      "remediation": "接続パスと VM の整合、バックアップ／DR 方針への影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.WarningUpgradeEvent",
+      "general_meaning": "vCenter が記録するイベントです（`WarningUpgradeEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "同時刻のタスク・関連イベントと照合し、運用上の影響を確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.iScsiBootFailureEvent",
+      "general_meaning": "vCenter が記録するイベントです（`iScsiBootFailureEvent`）。",
+      "typical_causes": "関連オブジェクトの状態変化、API／UI 操作、自動化など。",
+      "remediation": "エラー内容と同時刻のホスト・データストア・アラームを突き合わせ、再試行可否と恒久対策を判断します。",
+      "action_required": true
     }
   ]
 }

@@ -48,9 +48,11 @@ Broadcom／VMware 公式ドキュメントを根拠に、vCenter が記録する
 - 対象 vSphere の **リリースノート**と **API リファレンスの差分**を確認し、変更があった `event_type` だけシードと出典表を更新する。
 - 更新したら **参照日** を新しくする。
 
-## 第2弾（数百件）への拡張
+## 第2弾（priority v2）への拡張
 
 - シードと出典表を分けて管理する: [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json)、[`citations-priority-v2.md`](./citations-priority-v2.md)。実装計画の正本は [`docs/superpowers/plans/2026-03-22-event-type-guides-priority-v2.md`](../superpowers/plans/2026-03-22-event-type-guides-priority-v2.md)。
+- **件数の上限:** Broadcom **vSphere Web Services API 7.0** のデータオブジェクト索引に現れる `vim.event.*` のうち、**`vim.event.Event` を継承する型**（pyvmomi 9 系の定義と照合可能）かつ **v1 と重複しない**ものの総数に物理的な上限がある。本リポジトリの v2 シードは **463 件**で当該範囲を網羅する（500 件などの目標値は、新しいイベント型が API に追加されるまで満たせない）。
+- 追記作業は **50 件を 1 バッチ**としてまとめる運用を推奨する（大規模一括更新時は例外可。詳細は実装計画）。
 - v2 の `event_type` は **v1 シードと重複させない**（追加専用）。v1 に既にある種別の修正が必要なら v1 の JSON を編集する。
 - 優先度は [`priority-list-rationale.md`](./priority-list-rationale.md) の **priority v2** 手順で再計算し、バックログ（チケット）に残した `event_type` を順次処理する。
 
@@ -59,7 +61,7 @@ Broadcom／VMware 公式ドキュメントを根拠に、vCenter が記録する
 | ファイル | 説明 |
 |----------|------|
 | [`data/seed/event-type-guides-priority-v1.json`](../../data/seed/event-type-guides-priority-v1.json) | 第1弾インポート用シード（`vea-event-type-guides`） |
-| [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json) | 第2弾インポート用シード（v1 と重複しない `event_type` のみ追加。本文は逐次拡張。現時点 8 件） |
+| [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json) | 第2弾インポート用シード（v1 と重複しない `event_type` のみ追加。`vim.event.Event` 下位型のうち現行 API で列挙可能な範囲を網羅。現時点 **463 件**） |
 | [`citations-priority-v1.md`](./citations-priority-v1.md) | 第1弾の出典表 |
 | [`citations-priority-v2.md`](./citations-priority-v2.md) | 第2弾の出典表 |
 | [`priority-list-rationale.md`](./priority-list-rationale.md) | 優先リストの決め方（機微情報はコミットしない） |
