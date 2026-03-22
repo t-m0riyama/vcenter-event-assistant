@@ -9,6 +9,10 @@ import {
   type EventScoreRulesFile,
 } from '../../api/schemas'
 import { toErrorMessage } from '../../utils/errors'
+import {
+  formatScoreRulesFileParseError,
+  formatScoreRulesImportApiError,
+} from './scoreRulesImportErrors'
 
 function confirmDestructiveImport(deleteRulesNotInImport: boolean, ruleCount: number): boolean {
   if (!deleteRulesNotInImport) return true
@@ -128,7 +132,7 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
       const json: unknown = JSON.parse(text)
       parsedFile = eventScoreRulesFileSchema.parse(json)
     } catch (err) {
-      onError(toErrorMessage(err))
+      onError(formatScoreRulesFileParseError(err))
       return
     }
 
@@ -143,10 +147,17 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
         delete_rules_not_in_import: deleteRulesNotInImport,
         rules: parsedFile.rules,
       })
-      eventScoreRulesImportResponseSchema.parse(raw)
+      try {
+        eventScoreRulesImportResponseSchema.parse(raw)
+      } catch {
+        onError(
+          'サーバーからの応答を解釈できませんでした。アプリを最新版に更新するか、しばらくしてから再度お試しください。',
+        )
+        return
+      }
       await load()
     } catch (err) {
-      onError(toErrorMessage(err))
+      onError(formatScoreRulesImportApiError(err))
     }
   }
 
