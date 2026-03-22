@@ -31,3 +31,19 @@ async def recalculate_notable_scores_for_event_type(
             score_delta=score_delta,
         )
     return len(rows)
+
+
+async def recalculate_all_notable_scores(session: AsyncSession) -> int:
+    """Recompute ``notable_score`` for every event row using the current rule map. Returns rows scanned."""
+    delta_map = await load_event_score_delta_map(session)
+    res = await session.execute(select(EventRecord))
+    rows = list(res.scalars().all())
+    for row in rows:
+        d = delta_map.get(row.event_type, 0)
+        row.notable_score = final_notable_score(
+            event_type=row.event_type,
+            severity=row.severity,
+            message=row.message,
+            score_delta=d,
+        )
+    return len(rows)

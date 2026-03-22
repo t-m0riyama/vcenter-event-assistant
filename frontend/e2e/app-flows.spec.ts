@@ -30,6 +30,9 @@ test.describe('設定の全サブタブ', () => {
         'イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。',
       ),
     ).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'エクスポート・インポート' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'ファイルにエクスポート' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'ファイルからインポート' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '追加' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '一覧' })).toBeVisible()
     await expectNoErrorBanner(page)

@@ -1,16 +1,45 @@
-import { useCallback, useEffect, useState } from 'react'
-import { z } from 'zod'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
-import { eventScoreRuleRowSchema, type EventScoreRuleRow } from '../../api/schemas'
+import {
+  buildScoreRulesExportPayload,
+  eventScoreRuleListSchema,
+  eventScoreRulesFileSchema,
+  eventScoreRulesImportResponseSchema,
+  type EventScoreRuleRow,
+  type EventScoreRulesFile,
+} from '../../api/schemas'
 import { toErrorMessage } from '../../utils/errors'
 
-const eventScoreRuleListSchema = z.array(eventScoreRuleRowSchema)
+function confirmDestructiveImport(deleteRulesNotInImport: boolean, ruleCount: number): boolean {
+  if (!deleteRulesNotInImport) return true
+  if (ruleCount === 0) {
+    return confirm(
+      'このファイルにはルールが含まれていません。既存のルールをすべて削除します。よろしいですか？',
+    )
+  }
+  return confirm(
+    'ファイルに含まれないイベント種別のルールは削除されます。よろしいですか？',
+  )
+}
+
+function downloadJsonFile(filename: string, value: unknown) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<EventScoreRuleRow[]>([])
   const [newType, setNewType] = useState('')
   const [newDelta, setNewDelta] = useState(0)
   const [draftDelta, setDraftDelta] = useState<Record<number, number>>({})
+  const [overwriteExisting, setOverwriteExisting] = useState(true)
+  const [deleteRulesNotInImport, setDeleteRulesNotInImport] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     onError(null)
@@ -77,12 +106,104 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
     }
   }
 
+  const exportToFile = () => {
+    onError(null)
+    try {
+      const payload = buildScoreRulesExportPayload(list)
+      const name = `vea-score-rules-${new Date().toISOString().slice(0, 10)}.json`
+      downloadJsonFile(name, payload)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    }
+  }
+
+  const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    let parsedFile: EventScoreRulesFile
+    try {
+      const text = await file.text()
+      const json: unknown = JSON.parse(text)
+      parsedFile = eventScoreRulesFileSchema.parse(json)
+    } catch (err) {
+      onError(toErrorMessage(err))
+      return
+    }
+
+    if (!confirmDestructiveImport(deleteRulesNotInImport, parsedFile.rules.length)) {
+      return
+    }
+
+    onError(null)
+    try {
+      const raw = await apiPost<unknown>('/api/event-score-rules/import', {
+        overwrite_existing: overwriteExisting,
+        delete_rules_not_in_import: deleteRulesNotInImport,
+        rules: parsedFile.rules,
+      })
+      eventScoreRulesImportResponseSchema.parse(raw)
+      await load()
+    } catch (err) {
+      onError(toErrorMessage(err))
+    }
+  }
+
   return (
     <div className="panel">
       <p className="hint">
         イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。最終スコアは 0〜100
         に収まります。既存の取り込み済みイベントにも、ルールの保存・変更・削除時に再計算が反映されます。
       </p>
+      <h2>エクスポート・インポート</h2>
+      <p className="hint">
+        ルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。
+      </p>
+      <fieldset className="score-rules-import-options">
+        <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
+        <div className="form-grid score-rules-form score-rules-import-options__grid">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={overwriteExisting}
+              onChange={(e) => setOverwriteExisting(e.target.checked)}
+              aria-label="既存の同一イベント種別を上書き"
+            />
+            既存の同一イベント種別を上書き
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={deleteRulesNotInImport}
+              onChange={(e) => setDeleteRulesNotInImport(e.target.checked)}
+              aria-label="ファイルに含まれないイベント種別のルールを削除"
+            />
+            ファイルに含まれないイベント種別のルールを削除
+          </label>
+        </div>
+      </fieldset>
+      <div className="score-rules-file-actions">
+        <button type="button" className="btn btn--gray" onClick={exportToFile}>
+          ファイルにエクスポート
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden-file-input"
+          aria-label="スコアルール JSON を選択"
+          onChange={(ev) => void onImportFileChange(ev)}
+        />
+        <button
+          type="button"
+          className="btn btn--filled"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          ファイルからインポート
+        </button>
+      </div>
+
       <h2>追加</h2>
       <div className="form-grid score-rules-form">
         <label>

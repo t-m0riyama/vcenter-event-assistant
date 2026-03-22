@@ -225,3 +225,18 @@ class EventScoreRuleRead(BaseModel):
     id: int
     event_type: str
     score_delta: int
+
+
+class EventScoreRulesImportRequest(BaseModel):
+    """一括インポート。``rules`` 内の ``event_type`` は重複不可。"""
+
+    overwrite_existing: bool = True
+    delete_rules_not_in_import: bool = False
+    rules: list[EventScoreRuleCreate]
+
+
+class EventScoreRulesImportResponse(BaseModel):
+    """インポート適用後のルール件数と、再計算したイベント行数。"""
+
+    rules_count: int
+    events_updated: int
