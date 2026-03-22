@@ -47,7 +47,8 @@ describe('data/seed/event-type-guides-priority-v1.json', () => {
     const raw: unknown = JSON.parse(readFileSync(path, 'utf-8'))
     const parsed = eventTypeGuidesFileSchema.parse(raw)
     expect(parsed.format).toBe('vea-event-type-guides')
-    expect(parsed.guides).toEqual([])
+    expect(parsed.version).toBe(1)
+    expect(parsed.guides.length).toBeGreaterThan(0)
   })
 })
 

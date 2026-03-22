@@ -11,10 +11,21 @@
 | `参照日` | 当方が内容を確認した日（YYYY-MM-DD） |
 | `メモ` | どの節・どの型定義を根拠にしたか、一言 |
 
-## テンプレ（行を複製して追記）
+## 共通参照（イベント全般）
 
 | event_type | 参照 URL | 参照日 | メモ |
 |------------|----------|--------|------|
-| （例）`vim.event.VmPoweredOnEvent` | （例）https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmPoweredOnEvent.html | YYYY-MM-DD | `VmPoweredOnEvent` データオブジェクト説明 |
+| （共通） | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-sdks-tools/8-0/web-services-sdk-programming-guide/events-and-alarms/understanding-events.html | 2026-03-22 | Event データオブジェクトの概要、永続化の考え方 |
 
-（以下、第1弾の行を追加）
+## 第1弾（データオブジェクト別）
+
+| event_type | 参照 URL | 参照日 | メモ |
+|------------|----------|--------|------|
+| `vim.event.VmPoweredOnEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmPoweredOnEvent.html | 2026-03-22 | Data Object Description（電源オン完了） |
+| `vim.event.VmPoweredOffEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmPoweredOffEvent.html | 2026-03-22 | Data Object Description（電源オフ完了） |
+| `vim.event.VmSuspendedEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmSuspendedEvent.html | 2026-03-22 | Data Object Description（サスペンド完了） |
+| `vim.event.VmRelocatedEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmRelocatedEvent.html | 2026-03-22 | Data Object Description（リロケーション完了）とプロパティ説明 |
+| `vim.event.VmGuestShutdownEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmGuestShutdownEvent.html | 2026-03-22 | Data Object Description（ゲストシャットダウン要求） |
+| `vim.event.HostDisconnectedEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.HostDisconnectedEvent.html | 2026-03-22 | Data Object Description（ホスト切断）と `reason` |
+
+**注:** API リファレンスは **vSphere Web Services API 7.0** のページを使用（型定義の説明はバージョン間で共通部分が多い）。より新しい API バージョンの同型ページが利用可能な場合は、チーム方針に合わせて差し替えてよい。

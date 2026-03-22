@@ -1,6 +1,49 @@
 {
   "format": "vea-event-type-guides",
   "version": 1,
-  "exportedAt": "2026-03-22T00:00:00.000Z",
-  "guides": []
+  "exportedAt": "2026-03-22T12:00:00.000Z",
+  "guides": [
+    {
+      "event_type": "vim.event.VmPoweredOnEvent",
+      "general_meaning": "仮想マシンの電源オン処理が完了したことを示すイベントです。VM の起動シーケンスが終了し、ゲスト OS の実行が可能になったタイミングで記録されます。",
+      "typical_causes": "ユーザーまたは自動化による電源オン操作、DRS／HA による起動、メンテナンス後の復帰など。",
+      "remediation": "意図した操作であれば記録のみ確認します。意図しない起動の場合は、誰が・どの API／クライアントから操作したかを `Event` の `userName` や監査ログと突き合わせます。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmPoweredOffEvent",
+      "general_meaning": "仮想マシンの電源オフ処理が完了したことを示すイベントです。ゲストの実行が停止した状態になったタイミングで記録されます。",
+      "typical_causes": "ユーザー操作によるシャットダウン、ゲスト OS 内のシャットダウン、ホストメンテナンスに伴う停止、リソース制御など。",
+      "remediation": "計画停止であれば問題ありません。突発的な大量発生時は、スケジュール変更やホスト障害と同時刻のイベントを照合します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmSuspendedEvent",
+      "general_meaning": "仮想マシンのサスペンドが完了したことを示すイベントです。メモリイメージの保存など、サスペンド処理が終了したタイミングで記録されます。",
+      "typical_causes": "手動サスペンド、ストレージやリソース逼迫に伴う対応、スクリプトによる制御など。",
+      "remediation": "意図したサスペンドかを確認し、復帰手順（レジューム）とストレージ上のスナップショット／一時ファイルの整合を必要に応じて確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRelocatedEvent",
+      "general_meaning": "仮想マシンの移動（リロケーション）が完了したことを示すイベントです。ソース／宛先のデータセンター・データストア・ホストなどの情報が関連付けられます。",
+      "typical_causes": "Storage vMotion、vMotion、DRS による移動、メンテナンスモード入り前の退避など。",
+      "remediation": "移動経路と宛先リソースが設計どおりかを確認します。パフォーマンス問題が続く場合は、宛先データストアやネットワークのボトルネックを調査します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmGuestShutdownEvent",
+      "general_meaning": "ゲスト OS に対するシャットダウン要求が発行されたことを示すイベントです（ゲスト内での処理完了は別イベントと組み合わせて解釈します）。",
+      "typical_causes": "ゲスト OS のシャットダウン、VMware Tools 経由の制御、ユーザー／自動化からのシャットダウン指示など。",
+      "remediation": "計画メンテナンスやアプリ停止手順と整合するか確認します。意図しないシャットダウンが続く場合は、Tools の状態とゲスト／アプリログを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostDisconnectedEvent",
+      "general_meaning": "ホストとの接続が切断されたことを示すイベントです。`reason` に切断理由が含まれる場合があります。",
+      "typical_causes": "ネットワーク障害、管理エージェントの不調、認証／証明書の問題、ホスト側の再起動やハングなど。",
+      "remediation": "ホストの電源・ネットワーク・管理サービスを確認し、`reason` と同時刻のハードウェア／ストレージイベントを突き合わせます。クラスタ環境では他ホストへの VM 退避状況も確認します。",
+      "action_required": true
+    }
+  ]
 }
