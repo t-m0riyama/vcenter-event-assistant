@@ -67,6 +67,10 @@ uv run ruff check src tests
 uv run pytest -q
 ```
 
+UI ドキュメント用のスクリーンショット再取得は `uv run scripts/capture_ui_screenshots.py`（詳細は [docs/development.md](docs/development.md)）。
+
 ## ドキュメント
 
 設計・構成の整理は [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md) を参照してください。
+
+開発者向けの手順（UI スクリーンショットの再取得など）は [docs/development.md](docs/development.md) を参照してください。

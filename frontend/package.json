@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "npm run build && playwright test",
-    "e2e:install": "playwright install"
+    "e2e:install": "playwright install",
+    "screenshots": "npm run build && playwright test e2e/screenshots.spec.ts",
+    "screenshots:existing": "PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=8000 playwright test e2e/screenshots.spec.ts"
   },
   "dependencies": {
     "react": "^19.2.4",
