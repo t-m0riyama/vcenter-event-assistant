@@ -45,6 +45,7 @@ export const topEventTypeRowSchema = z.object({
   event_type: z.string(),
   event_count: z.number(),
   max_notable_score: z.number(),
+  type_guide: eventTypeGuideSnippetSchema.nullable().optional(),
 })
 
 export const summarySchema = z

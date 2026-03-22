@@ -19,7 +19,10 @@ from vcenter_event_assistant.api.schemas import (
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
-from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
+from vcenter_event_assistant.services.event_type_guide_attach import (
+    attach_type_guides_to_event_reads,
+    attach_type_guides_to_event_type_count_rows,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -106,6 +109,7 @@ async def dashboard_summary(
         )
         for et, cnt in type_rows
     ]
+    top_event_types = await attach_type_guides_to_event_type_count_rows(session, top_event_types)
 
     cpu_rank = (
         select(

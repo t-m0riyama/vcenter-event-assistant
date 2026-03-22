@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, MetricSample
+from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, EventTypeGuide, MetricSample
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.rules.notable import final_notable_score
 
@@ -333,6 +333,57 @@ async def test_top_event_types_24h_max_notable_score_uses_current_rules_not_stor
     assert row["event_count"] == 1
     assert row["max_notable_score"] == expected
     assert expected != 0
+
+
+@pytest.mark.asyncio
+async def test_top_event_types_24h_includes_type_guide_when_registered(client: AsyncClient) -> None:
+    """種別ガイドが登録されている event_type は top_event_types_24h に type_guide を含む。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-etype-guide",
+            "host": "vc-eg.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+    et = "vim.event.GuidedTopType"
+
+    async with session_scope() as session:
+        session.add(
+            EventTypeGuide(
+                event_type=et,
+                general_meaning="意味テキスト",
+                typical_causes=None,
+                remediation=None,
+                action_required=True,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type=et,
+                message="m",
+                vmware_key=1,
+                notable_score=0,
+            )
+        )
+
+    resp = await client.get("/api/dashboard/summary")
+    assert resp.status_code == 200
+    rows = resp.json()["top_event_types_24h"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["event_type"] == et
+    assert row["type_guide"] is not None
+    assert row["type_guide"]["general_meaning"] == "意味テキスト"
+    assert row["type_guide"]["action_required"] is True
 
 
 @pytest.mark.asyncio

@@ -173,6 +173,7 @@ class EventTypeCountRow(BaseModel):
     event_type: str
     event_count: int
     max_notable_score: int
+    type_guide: EventTypeGuideSnippet | None = None
 
 
 class DashboardSummary(BaseModel):
