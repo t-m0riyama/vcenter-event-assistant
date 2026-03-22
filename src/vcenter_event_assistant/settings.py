@@ -39,6 +39,15 @@ class Settings(BaseSettings):
 
     scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
 
+    digest_scheduler_enabled: bool = Field(
+        default=False,
+        description="True のとき APScheduler に日次ダイジェストジョブを登録する（scheduler_enabled も True であること）。",
+    )
+    digest_cron: str = Field(
+        default="0 7 * * *",
+        description="日次ダイジェストの cron（APScheduler CronTrigger）。既定は毎日 UTC 7:00。",
+    )
+
     llm_provider: LlmProvider = Field(
         default="openai_compatible",
         description=(

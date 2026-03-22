@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from vcenter_event_assistant.db.models import DigestRecord, EventRecord, MetricSample, VCenter
+from vcenter_event_assistant.db.models import DigestRecord, EventRecord, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.digest_run import run_digest_once
 from vcenter_event_assistant.settings import Settings

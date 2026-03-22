@@ -1,5 +1,13 @@
 # 開発者向けメモ
 
+## バッチダイジェスト API（実験的）
+
+- `GET /api/digests` … 保存済みダイジェスト一覧（`limit` / `offset`）
+- `GET /api/digests/{id}` … 1 件取得
+- `POST /api/digests/run` … 手動生成。JSON 省略時は **直前の UTC 暦日** を対象。`from_time` / `to_time` を両方指定すると任意期間
+
+環境変数は `.env.example` の「Batch digest」を参照。`LLM_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。
+
 ## UI スクリーンショット（`docs/images`）
 
 ドキュメント用の画面キャプチャは Playwright で取得し、`docs/images/*.png` に保存します。テスト定義は `frontend/e2e/screenshots.spec.ts` です。

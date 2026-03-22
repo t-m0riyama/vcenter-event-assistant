@@ -6,11 +6,14 @@ import logging
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from sqlalchemy import select
 
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.services.digest_run import run_digest_once
+from vcenter_event_assistant.services.digest_window import utc_yesterday_window
 from vcenter_event_assistant.services.ingestion import (
     ingest_events_for_vcenter,
     ingest_metrics_for_vcenter,
@@ -70,9 +73,31 @@ def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
         except Exception:
             logger.exception("purge failed")
 
+    async def run_daily_digest() -> None:
+        """直前の UTC 暦日を対象にダイジェストを 1 件生成する。"""
+        fr, to = utc_yesterday_window()
+        try:
+            async with session_scope() as session:
+                row = await run_digest_once(
+                    session,
+                    kind="daily",
+                    from_utc=fr,
+                    to_utc=to,
+                    settings=get_settings(),
+                )
+                logger.info("digest created id=%s period=%s..%s", row.id, fr.isoformat(), to.isoformat())
+        except Exception:
+            logger.exception("daily digest job failed")
+
     scheduler.add_job(poll_events, "interval", seconds=settings.event_poll_interval_seconds, id="poll_events")
     scheduler.add_job(poll_perf, "interval", seconds=settings.perf_sample_interval_seconds, id="poll_perf")
     scheduler.add_job(purge, "interval", hours=6, id="purge_metrics")
+    if settings.digest_scheduler_enabled:
+        scheduler.add_job(
+            run_daily_digest,
+            CronTrigger.from_crontab(settings.digest_cron),
+            id="digest_daily",
+        )
     scheduler.start()
     app.state.scheduler = scheduler
     return scheduler

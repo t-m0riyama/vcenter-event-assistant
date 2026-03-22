@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
+from vcenter_event_assistant.api.routes.digests import router as digests_router
 from vcenter_event_assistant.api.routes.event_score_rules import router as event_score_rules_router
 from vcenter_event_assistant.api.routes.event_type_guides import router as event_type_guides_router
 from vcenter_event_assistant.api.routes.events import router as events_router
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     api.include_router(events_router)
     api.include_router(metrics_router)
     api.include_router(dashboard_router)
+    api.include_router(digests_router)
 
     @api.post("/ingest/run")
     async def run_ingest_now() -> dict[str, str | int]:

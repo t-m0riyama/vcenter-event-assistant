@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class VCenterCreate(BaseModel):
@@ -315,3 +315,49 @@ class EventScoreRulesImportResponse(BaseModel):
 
     rules_count: int
     events_updated: int
+
+
+class DigestRead(BaseModel):
+    """保存済みダイジェスト 1 件。時刻は UTC に正規化して JSON に ``Z`` を付与する。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    period_start: datetime
+    period_end: datetime
+    kind: str
+    body_markdown: str
+    status: str
+    error_message: str | None
+    llm_model: str | None
+    created_at: datetime
+
+    @field_validator("period_start", "period_end", "created_at", mode="before")
+    @classmethod
+    def digest_datetimes_to_utc(cls, v: object) -> datetime:
+        if not isinstance(v, datetime):
+            raise TypeError("expected datetime")
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+
+
+class DigestListResponse(BaseModel):
+    items: list[DigestRead]
+    total: int
+
+
+class DigestRunRequest(BaseModel):
+    """手動ダイジェスト実行。``from_time`` / ``to_time`` を省略すると直前の UTC 暦日を対象とする。"""
+
+    kind: str = Field(default="daily", max_length=64)
+    from_time: datetime | None = None
+    to_time: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_window(self) -> DigestRunRequest:
+        if (self.from_time is None) != (self.to_time is None):
+            raise ValueError("from_time と to_time は両方指定するか、両方省略してください")
+        if self.from_time is not None and self.to_time is not None and self.from_time >= self.to_time:
+            raise ValueError("from_time は to_time より前である必要があります")
+        return self
