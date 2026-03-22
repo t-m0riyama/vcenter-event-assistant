@@ -72,3 +72,108 @@ async def test_create_event_type_guide_action_required(client: AsyncClient) -> N
     patch = await client.patch(f"/api/event-type-guides/{gid}", json={"action_required": False})
     assert patch.status_code == 200
     assert patch.json()["action_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_event_type_guides_import_duplicate_event_type_returns_400(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/event-type-guides/import",
+        json={
+            "overwrite_existing": True,
+            "delete_guides_not_in_import": False,
+            "guides": [
+                {"event_type": "vim.event.A", "general_meaning": "a"},
+                {"event_type": "vim.event.A", "general_meaning": "b"},
+            ],
+        },
+    )
+    assert r.status_code == 400
+    assert "duplicate" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_event_type_guides_import_overwrite_and_delete_orphans(client: AsyncClient) -> None:
+    a = await client.post(
+        "/api/event-type-guides",
+        json={"event_type": "orphan.Type", "general_meaning": "o"},
+    )
+    assert a.status_code == 201
+    b = await client.post(
+        "/api/event-type-guides",
+        json={"event_type": "keep.Type", "general_meaning": "k"},
+    )
+    assert b.status_code == 201
+
+    imp = await client.post(
+        "/api/event-type-guides/import",
+        json={
+            "overwrite_existing": True,
+            "delete_guides_not_in_import": True,
+            "guides": [
+                {
+                    "event_type": "keep.Type",
+                    "general_meaning": "updated",
+                    "typical_causes": None,
+                    "remediation": None,
+                    "action_required": True,
+                },
+            ],
+        },
+    )
+    assert imp.status_code == 200
+    assert imp.json()["guides_count"] == 1
+
+    lst = await client.get("/api/event-type-guides")
+    assert lst.status_code == 200
+    rows = lst.json()
+    assert len(rows) == 1
+    assert rows[0]["event_type"] == "keep.Type"
+    assert rows[0]["general_meaning"] == "updated"
+    assert rows[0]["action_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_event_type_guides_import_skip_overwrite_keeps_text(client: AsyncClient) -> None:
+    created = await client.post(
+        "/api/event-type-guides",
+        json={"event_type": "vim.event.SkipGuide", "general_meaning": "original"},
+    )
+    assert created.status_code == 201
+
+    imp = await client.post(
+        "/api/event-type-guides/import",
+        json={
+            "overwrite_existing": False,
+            "delete_guides_not_in_import": False,
+            "guides": [
+                {
+                    "event_type": "vim.event.SkipGuide",
+                    "general_meaning": "new",
+                    "action_required": True,
+                },
+            ],
+        },
+    )
+    assert imp.status_code == 200
+
+    lst = await client.get("/api/event-type-guides")
+    row = next(r for r in lst.json() if r["event_type"] == "vim.event.SkipGuide")
+    assert row["general_meaning"] == "original"
+    assert row["action_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_event_type_guides_import_empty_file_deletes_all_when_flag(client: AsyncClient) -> None:
+    await client.post("/api/event-type-guides", json={"event_type": "t.only", "general_meaning": "x"})
+    imp = await client.post(
+        "/api/event-type-guides/import",
+        json={
+            "overwrite_existing": True,
+            "delete_guides_not_in_import": True,
+            "guides": [],
+        },
+    )
+    assert imp.status_code == 200
+    assert imp.json()["guides_count"] == 0
+    lst = await client.get("/api/event-type-guides")
+    assert lst.json() == []

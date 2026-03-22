@@ -1,8 +1,30 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
-import { eventTypeGuideListSchema, type EventTypeGuideRow } from '../../api/schemas'
+import {
+  buildEventTypeGuidesExportPayload,
+  eventTypeGuideListSchema,
+  eventTypeGuidesFileSchema,
+  eventTypeGuidesImportResponseSchema,
+  type EventTypeGuideRow,
+  type EventTypeGuidesFile,
+} from '../../api/schemas'
+import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
 import { formatEventTypeGuideCollapsedPreview } from './EventTypeGuideCollapsedPreview'
+import {
+  formatEventTypeGuidesFileParseError,
+  formatEventTypeGuidesImportApiError,
+} from './eventTypeGuidesImportErrors'
+
+function confirmDestructiveGuideImport(deleteGuidesNotInImport: boolean, guideCount: number): boolean {
+  if (!deleteGuidesNotInImport) return true
+  if (guideCount === 0) {
+    return confirm(
+      'このファイルにはガイドが含まれていません。既存のガイドをすべて削除します。よろしいですか？',
+    )
+  }
+  return confirm('ファイルに含まれないイベント種別のガイドは削除されます。よろしいですか？')
+}
 
 type Draft = {
   general_meaning: string
@@ -31,6 +53,9 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   const [newRemediation, setNewRemediation] = useState('')
   const [newActionRequired, setNewActionRequired] = useState(false)
   const [draft, setDraft] = useState<Record<number, Draft>>({})
+  const [overwriteExisting, setOverwriteExisting] = useState(true)
+  const [deleteGuidesNotInImport, setDeleteGuidesNotInImport] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     onError(null)
@@ -107,11 +132,110 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
     }
   }
 
+  const exportToFile = () => {
+    onError(null)
+    try {
+      const payload = buildEventTypeGuidesExportPayload(list)
+      const name = `vea-event-type-guides-${new Date().toISOString().slice(0, 10)}.json`
+      downloadJsonFile(name, payload)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    }
+  }
+
+  const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    let parsedFile: EventTypeGuidesFile
+    try {
+      const text = await file.text()
+      const json: unknown = JSON.parse(text)
+      parsedFile = eventTypeGuidesFileSchema.parse(json)
+    } catch (err) {
+      onError(formatEventTypeGuidesFileParseError(err))
+      return
+    }
+
+    if (!confirmDestructiveGuideImport(deleteGuidesNotInImport, parsedFile.guides.length)) {
+      return
+    }
+
+    onError(null)
+    try {
+      const raw = await apiPost<unknown>('/api/event-type-guides/import', {
+        overwrite_existing: overwriteExisting,
+        delete_guides_not_in_import: deleteGuidesNotInImport,
+        guides: parsedFile.guides,
+      })
+      try {
+        eventTypeGuidesImportResponseSchema.parse(raw)
+      } catch {
+        onError(
+          'サーバーからの応答を解釈できませんでした。アプリを最新版に更新するか、しばらくしてから再度お試しください。',
+        )
+        return
+      }
+      await load()
+    } catch (err) {
+      onError(formatEventTypeGuidesImportApiError(err))
+    }
+  }
+
   return (
     <div className="panel">
       <p className="hint">
         イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに、一般的な意味・想定される原因・対処方法を登録します。「対処が必要」をオンにすると、概要・イベント一覧で該当行を強調します。
       </p>
+
+      <h2>エクスポート・インポート</h2>
+      <p className="hint">
+        ガイドを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。
+      </p>
+      <fieldset className="score-rules-import-options">
+        <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
+        <div className="form-grid score-rules-form score-rules-import-options__grid">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={overwriteExisting}
+              onChange={(ev) => setOverwriteExisting(ev.target.checked)}
+              aria-label="既存の同一イベント種別を上書き"
+            />
+            既存の同一イベント種別を上書き
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={deleteGuidesNotInImport}
+              onChange={(ev) => setDeleteGuidesNotInImport(ev.target.checked)}
+              aria-label="ファイルに含まれないイベント種別のガイドを削除"
+            />
+            ファイルに含まれないイベント種別のガイドを削除
+          </label>
+        </div>
+      </fieldset>
+      <div className="score-rules-file-actions">
+        <button type="button" className="btn btn--gray" onClick={exportToFile}>
+          ファイルにエクスポート
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden-file-input"
+          aria-label="イベント種別ガイド JSON を選択"
+          onChange={(ev) => void onImportFileChange(ev)}
+        />
+        <button
+          type="button"
+          className="btn btn--filled"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          ファイルからインポート
+        </button>
+      </div>
 
       <h2>追加</h2>
       <div className="form-grid score-rules-form event-type-guides-form">

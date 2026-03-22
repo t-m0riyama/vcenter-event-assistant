@@ -288,6 +288,20 @@ class EventTypeGuideRead(BaseModel):
     action_required: bool
 
 
+class EventTypeGuidesImportRequest(BaseModel):
+    """一括インポート。``guides`` 内の ``event_type`` は重複不可。"""
+
+    overwrite_existing: bool = True
+    delete_guides_not_in_import: bool = False
+    guides: list[EventTypeGuideCreate]
+
+
+class EventTypeGuidesImportResponse(BaseModel):
+    """インポート適用後のガイド件数。"""
+
+    guides_count: int
+
+
 class EventScoreRulesImportRequest(BaseModel):
     """一括インポート。``rules`` 内の ``event_type`` は重複不可。"""
 
