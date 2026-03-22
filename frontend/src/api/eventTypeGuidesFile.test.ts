@@ -52,6 +52,18 @@ describe('data/seed/event-type-guides-priority-v1.json', () => {
   })
 })
 
+describe('data/seed/event-type-guides-priority-v2.json', () => {
+  it('parses with eventTypeGuidesFileSchema', () => {
+    const path = join(here, '../../../data/seed/event-type-guides-priority-v2.json')
+    const raw: unknown = JSON.parse(readFileSync(path, 'utf-8'))
+    const parsed = eventTypeGuidesFileSchema.parse(raw)
+    expect(parsed.format).toBe('vea-event-type-guides')
+    expect(parsed.version).toBe(1)
+    // 雛形は空配列。第2弾に本文を入れた最初のバッチと同じ PR で toBeGreaterThan(0) に切り替える
+    expect(parsed.guides.length).toBe(0)
+  })
+})
+
 describe('buildEventTypeGuidesExportPayload', () => {
   it('builds validated file payload', () => {
     const p = buildEventTypeGuidesExportPayload([
