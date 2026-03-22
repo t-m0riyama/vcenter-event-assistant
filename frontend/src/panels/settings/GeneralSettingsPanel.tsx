@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { TimeZoneSelect } from '../../datetime/TimeZoneProvider'
 import { useSummaryTopNotableMinScore } from '../../preferences/useSummaryTopNotableMinScore'
 import type { ThemePreference } from '../../theme/themeStorage'
@@ -23,6 +24,14 @@ function ThemeAppearanceSelect() {
 
 export function GeneralSettingsPanel() {
   const { topNotableMinScore, setTopNotableMinScore } = useSummaryTopNotableMinScore()
+  /**
+   * `null` = 未編集（表示は常に `topNotableMinScore` に追従）。
+   * 文字列 = フォーカス中のドラフト。親の再レンダーでも上書きされない。
+   */
+  const [notableScoreDraft, setNotableScoreDraft] = useState<string | null>(null)
+
+  const notableScoreDisplay =
+    notableScoreDraft !== null ? notableScoreDraft : String(topNotableMinScore)
 
   return (
     <div className="panel">
@@ -51,17 +60,26 @@ export function GeneralSettingsPanel() {
             min={0}
             max={100}
             step={1}
-            value={topNotableMinScore}
+            value={notableScoreDisplay}
+            onFocus={() => {
+              setNotableScoreDraft(String(topNotableMinScore))
+            }}
             onChange={(e) => {
-              const raw = e.target.value
+              setNotableScoreDraft(e.target.value)
+            }}
+            onBlur={(e) => {
+              const raw = e.currentTarget.value.trim()
               if (raw === '') {
+                setNotableScoreDraft(null)
                 return
               }
               const n = Number.parseInt(raw, 10)
               if (Number.isNaN(n)) {
+                setNotableScoreDraft(null)
                 return
               }
               setTopNotableMinScore(n)
+              setNotableScoreDraft(null)
             }}
             aria-label="要注意イベントの最小スコア"
           />
