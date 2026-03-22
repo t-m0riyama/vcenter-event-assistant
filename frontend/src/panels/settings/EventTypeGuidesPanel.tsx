@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
 import { eventTypeGuideListSchema, type EventTypeGuideRow } from '../../api/schemas'
 import { toErrorMessage } from '../../utils/errors'
+import { formatEventTypeGuideCollapsedPreview } from './EventTypeGuideCollapsedPreview'
 
 type Draft = {
   general_meaning: string
@@ -20,7 +21,7 @@ function rowToDraft(r: EventTypeGuideRow): Draft {
 }
 
 /**
- * 設定タブ「種別ガイド」: イベント種別ごとの意味・原因・対処の登録・編集。
+ * 設定タブ「イベント種別ガイド」: イベント種別ごとの意味・原因・対処の登録・編集。
  */
 export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<EventTypeGuideRow[]>([])
@@ -166,94 +167,107 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
       </button>
 
       <h2>一覧</h2>
-      <table className="table event-type-guides-table">
-        <thead>
-          <tr>
-            <th>イベント種別</th>
-            <th>意味 / 原因 / 対処</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((r) => (
-            <tr key={r.id}>
-              <td className="msg event-type-guides-type-cell">{r.event_type}</td>
-              <td className="event-type-guides-edit-cells">
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={draft[r.id]?.action_required ?? false}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), action_required: e.target.checked },
-                      }))
-                    }
-                    aria-label={`${r.event_type} は対処が必要`}
-                  />
-                  対処が必要（一覧で強調）
-                </label>
-                <label>
-                  一般的な意味
-                  <textarea
-                    className="event-type-guides-textarea"
-                    aria-label={`${r.event_type} の一般的な意味`}
-                    value={draft[r.id]?.general_meaning ?? ''}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), general_meaning: e.target.value },
-                      }))
-                    }
-                    rows={2}
-                    maxLength={8000}
-                  />
-                </label>
-                <label>
-                  想定される原因
-                  <textarea
-                    className="event-type-guides-textarea"
-                    aria-label={`${r.event_type} の想定される原因`}
-                    value={draft[r.id]?.typical_causes ?? ''}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), typical_causes: e.target.value },
-                      }))
-                    }
-                    rows={2}
-                    maxLength={8000}
-                  />
-                </label>
-                <label>
-                  対処方法
-                  <textarea
-                    className="event-type-guides-textarea"
-                    aria-label={`${r.event_type} の対処方法`}
-                    value={draft[r.id]?.remediation ?? ''}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), remediation: e.target.value },
-                      }))
-                    }
-                    rows={2}
-                    maxLength={8000}
-                  />
-                </label>
-              </td>
-              <td className="actions">
-                <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
-                  保存
-                </button>
-                <button type="button" className="btn btn--gray" onClick={() => void remove(r.id)}>
-                  削除
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ul className="event-type-guides-list">
+        {list.map((r) => {
+          const d = draft[r.id] ?? rowToDraft(r)
+          const preview = formatEventTypeGuideCollapsedPreview(d, { maxChars: 200 })
+          const summaryAria = `${r.event_type}、${d.action_required ? '要対処' : '対処不要'}`
+          return (
+            <li key={r.id} className="event-type-guides-list__item">
+              <details className="event-type-guide-row">
+                <summary
+                  className="event-type-guide-row__summary"
+                  aria-label={summaryAria}
+                >
+                  <div className="event-type-guide-row__summary-inner">
+                    <div className="event-type-guide-row__head">
+                      <span className="event-type-guide-row__type msg">{r.event_type}</span>
+                      {d.action_required ? (
+                        <span className="event-type-guide-row__badge">要対処</span>
+                      ) : null}
+                    </div>
+                    <p className="event-type-guide-row__preview">{preview}</p>
+                  </div>
+                </summary>
+                <div className="event-type-guide-row__body">
+                  <div className="event-type-guides-edit-cells">
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={draft[r.id]?.action_required ?? false}
+                        onChange={(e) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), action_required: e.target.checked },
+                          }))
+                        }
+                        aria-label={`${r.event_type} は対処が必要`}
+                      />
+                      対処が必要（一覧で強調）
+                    </label>
+                    <label>
+                      一般的な意味
+                      <textarea
+                        className="event-type-guides-textarea"
+                        aria-label={`${r.event_type} の一般的な意味`}
+                        value={draft[r.id]?.general_meaning ?? ''}
+                        onChange={(e) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), general_meaning: e.target.value },
+                          }))
+                        }
+                        rows={2}
+                        maxLength={8000}
+                      />
+                    </label>
+                    <label>
+                      想定される原因
+                      <textarea
+                        className="event-type-guides-textarea"
+                        aria-label={`${r.event_type} の想定される原因`}
+                        value={draft[r.id]?.typical_causes ?? ''}
+                        onChange={(e) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), typical_causes: e.target.value },
+                          }))
+                        }
+                        rows={2}
+                        maxLength={8000}
+                      />
+                    </label>
+                    <label>
+                      対処方法
+                      <textarea
+                        className="event-type-guides-textarea"
+                        aria-label={`${r.event_type} の対処方法`}
+                        value={draft[r.id]?.remediation ?? ''}
+                        onChange={(e) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), remediation: e.target.value },
+                          }))
+                        }
+                        rows={2}
+                        maxLength={8000}
+                      />
+                    </label>
+                  </div>
+                  <div className="event-type-guide-row__actions">
+                    <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
+                      保存
+                    </button>
+                    <button type="button" className="btn btn--gray" onClick={() => void remove(r.id)}>
+                      削除
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

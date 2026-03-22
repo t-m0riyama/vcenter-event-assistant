@@ -322,11 +322,95 @@
   word-break: break-word;
 }
 
-.event-type-guides-table .event-type-guides-edit-cells {
+/** 設定パネル「イベント種別ガイド」一覧（折りたたみ行） */
+.event-type-guides-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+}
+
+.event-type-guides-list__item {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.event-type-guides-list__item:last-child {
+  border-bottom: none;
+}
+
+.event-type-guide-row__summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-background-elevated);
+}
+
+.event-type-guide-row__summary::-webkit-details-marker {
+  display: none;
+}
+
+.event-type-guide-row__summary-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  text-align: left;
+}
+
+.event-type-guide-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.event-type-guide-row__type {
+  word-break: break-word;
+  font-weight: var(--font-weight-semibold);
+}
+
+/** 設定パネル用の要対処バッジ（イベント一覧の行強調クラスとは別） */
+.event-type-guide-row__badge {
+  flex-shrink: 0;
+  font-size: var(--font-size-caption2);
+  font-weight: var(--font-weight-semibold);
+  padding: 0.1rem var(--spacing-2);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--color-error);
+  border: 1px solid var(--color-error-border);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-background-elevated));
+}
+
+.event-type-guide-row__preview {
+  margin: 0;
+  font-size: var(--font-size-caption2);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.event-type-guide-row__body {
+  padding: 0 var(--spacing-3) var(--spacing-3);
+  background: var(--color-background);
+}
+
+.event-type-guide-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+}
+
+.event-type-guides-list .event-type-guides-edit-cells {
   min-width: 280px;
 }
 
-.event-type-guides-table .event-type-guides-edit-cells label {
+.event-type-guides-list .event-type-guides-edit-cells label {
   display: block;
   margin-bottom: var(--spacing-2);
 }
