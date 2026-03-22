@@ -28,6 +28,18 @@ export function GeneralSettingsPanel() {
     <div className="panel">
       <div className="general-settings-field">
         <p className="hint">
+          ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。
+        </p>
+        <ThemeAppearanceSelect />
+      </div>
+      <div className="general-settings-field">
+        <p className="hint">
+          日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
+        </p>
+        <TimeZoneSelect />
+      </div>
+      <div className="general-settings-field">
+        <p className="hint">
           {
             '概要タブの「要注意イベント（上位）」に表示するイベントの、保存済みスコア（notable_score）の下限です。0 は下限なし（スコア 0 も含む）、1 以上はその値未満を一覧から除外します。0〜100。選択はこのブラウザに保存されます。'
           }
@@ -54,18 +66,6 @@ export function GeneralSettingsPanel() {
             aria-label="要注意イベントの最小スコア"
           />
         </label>
-      </div>
-      <div className="general-settings-field">
-        <p className="hint">
-          ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。
-        </p>
-        <ThemeAppearanceSelect />
-      </div>
-      <div className="general-settings-field">
-        <p className="hint">
-          日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
-        </p>
-        <TimeZoneSelect />
       </div>
     </div>
   )

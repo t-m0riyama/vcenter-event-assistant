@@ -28,6 +28,13 @@
   max-width: min(420px, 100vw);
 }
 
+.panel .tz-select input[type='number'] {
+  min-width: 200px;
+  max-width: min(420px, 100vw);
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .general-settings-field + .general-settings-field {
   margin-top: var(--spacing-6);
 }
