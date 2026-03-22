@@ -207,7 +207,7 @@ cd frontend && npm run test -- src/api/eventTypeGuidesFile.test.ts
 
 Expected: **PASS**
 
-- [ ] **Step 6: （任意）ローカルで API 起動後、UI からインポートし一覧表示を確認**
+- [x] **Step 6: 取り込み検証** — （任意）ローカルで API 起動後、UI からインポートし一覧表示を確認。**または** CI／`pytest` の [`test_event_type_guides_import_priority_v1_seed_file`](../../../tests/test_event_type_guides_api.py) で、リポジトリの [`data/seed/event-type-guides-priority-v1.json`](../../../data/seed/event-type-guides-priority-v1.json) を `POST /api/event-type-guides/import` に渡し、件数と代表行が期待どおりであることを自動検証する（UI と同じ API 経路）。
 
 - [x] **Step 7: Commit**
 
@@ -257,7 +257,7 @@ git commit -m "docs: complete event type guides maintenance readme"
 
 計画書は [`docs/superpowers/plans/2026-03-22-event-type-guides-official-docs-content.md`](./2026-03-22-event-type-guides-official-docs-content.md) に保存済み。
 
-一次実装は **`feat/event-type-guides`** 上で完了。残作業は **Task 5 Step 6（UI 手動確認）** が任意のみ。
+一次実装は **`feat/event-type-guides`** 上で完了。Task 5 Step 6 は **API 統合テスト**で代替可能（上記）。純粋な UI スモークは任意。
 
 **実行オプション（追補・拡張時）:**
 
