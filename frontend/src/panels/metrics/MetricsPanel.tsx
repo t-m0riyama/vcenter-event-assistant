@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   CartesianGrid,
@@ -22,7 +22,11 @@ import { summarizeGraphRangePreview } from '../../datetime/graphRange'
 import { toErrorMessage } from '../../utils/errors'
 import { useMetricsPanelController } from '../../hooks/useMetricsPanelController'
 import { formatChartTooltipNumber } from '../../metrics/chartYAxisFormat'
-import { xAxisMinTickGapForWidth, xAxisTickCountForWidth } from './chartXAxisLayout'
+import {
+  xAxisBottomMarginForWidth,
+  xAxisMinTickGapForWidth,
+  xAxisTickCountForWidth,
+} from './chartXAxisLayout'
 import { MetricsXAxisTick } from './MetricsXAxisTick'
 
 const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
@@ -91,6 +95,14 @@ export function MetricsPanel({
 
   const xAxisMinTickGap = xAxisMinTickGapForWidth(chartWrapWidthPx)
   const xAxisTickCount = xAxisTickCountForWidth(chartWrapWidthPx)
+
+  const lineChartMargin = useMemo(
+    () => ({
+      ...metricsChartMargin,
+      bottom: xAxisBottomMarginForWidth(chartWrapWidthPx),
+    }),
+    [metricsChartMargin, chartWrapWidthPx],
+  )
 
   const metricsXAxisTick = useCallback(
     (props: Record<string, unknown>) => (
@@ -272,7 +284,7 @@ export function MetricsPanel({
         </h2>
         <div className="chart-wrap" ref={chartWrapRef}>
           <ResponsiveContainer width="100%" height={380}>
-            <LineChart key={timeZone} data={chartData} margin={metricsChartMargin}>
+            <LineChart key={timeZone} data={chartData} margin={lineChartMargin}>
               <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
               <XAxis
                 dataKey="tMs"

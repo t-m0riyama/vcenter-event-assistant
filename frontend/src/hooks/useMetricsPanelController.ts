@@ -290,14 +290,13 @@ export function useMetricsPanelController(
     return k.endsWith('_pct') ? '％' : undefined
   }, [metricKey])
 
+  /** 下余白は `MetricsPanel` で `xAxisBottomMarginForWidth` と合成する */
   const metricsChartMargin = useMemo(
     () => ({
       /** 上部凡例（多系列・長文で折り返しあり）用 */
       top: 44,
       right: showEventLine ? 56 : 48,
       left: leftYAxisLabel ? 58 : 52,
-      /** 斜めティック・X 軸ラベル「時刻」用（`MetricsXAxisTick` / `XAxis.label`） */
-      bottom: 56,
     }),
     [showEventLine, leftYAxisLabel],
   )
