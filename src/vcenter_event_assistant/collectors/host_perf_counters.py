@@ -115,6 +115,41 @@ def _round_metric_value(metric_key: str, val: float) -> float:
     return float(val)
 
 
+def _is_aggregate_perf_instance(instance: str) -> bool:
+    """
+    vSphere の集約に相当する instance かどうか。
+    空文字、`*`、英字 Total / All（大小無視）を集約とみなす。
+    """
+    if instance == "":
+        return True
+    s = instance.strip()
+    if s == "*":
+        return True
+    if s.casefold() in ("total", "all"):
+        return True
+    return False
+
+
+def _drop_aggregate_instances_when_named_exist(by_pair: dict[tuple[int, str], float]) -> None:
+    """
+    同一 counterId に「名前付き」インスタンスが 1 本以上あるとき、
+    集約インスタンスに対応するキーを by_pair から除く（グラフの重複系列を防ぐ）。
+    集約のみのときは何もしない。
+    """
+    by_cid: dict[int, set[str]] = {}
+    for cid, inst in by_pair:
+        by_cid.setdefault(cid, set()).add(inst)
+    to_drop: list[tuple[int, str]] = []
+    for cid, insts in by_cid.items():
+        non_agg = [i for i in insts if not _is_aggregate_perf_instance(i)]
+        if len(insts) >= 2 and len(non_agg) >= 1:
+            for i in insts:
+                if _is_aggregate_perf_instance(i):
+                    to_drop.append((cid, i))
+    for key in to_drop:
+        by_pair.pop(key, None)
+
+
 def parse_perf_query_result_rows(
     *,
     entity_moid: str,
@@ -128,6 +163,9 @@ def parse_perf_query_result_rows(
 
     同一 counterId の複数インスタンス（NIC / デバイス）は **合算せず**、系列ごとに 1 行とする。
     `instance` が空のときはホスト側の集約カウンタとして `entity_moid` / `entity_name` をそのまま使う。
+
+    同一 counter で名前付きインスタンスと集約（空 / `*` / Total / All）が併存する場合は、
+    集約に対応する行を出さない（グラフで Total 等の重複系列を避ける）。
     """
     # (counterId, instance) ごとに最新値（重複系列があれば上書き）
     by_pair: dict[tuple[int, str], float] = {}
@@ -141,6 +179,8 @@ def parse_perf_query_result_rows(
                 continue
             inst = getattr(mid, "instance", "") or ""
             by_pair[(cid, inst)] = _latest_in_series(ser)
+
+    _drop_aggregate_instances_when_named_exist(by_pair)
 
     rows: list[dict[str, Any]] = []
     for (cid, inst), raw_val in by_pair.items():

@@ -117,6 +117,76 @@ def test_collect_host_perf_metric_rows_returns_rows_when_query_perf_succeeds() -
     assert disk_rows[0]["entity_moid"] == "moid-9"
 
 
+def test_parse_perf_query_result_rows_drops_empty_aggregate_when_named_net_instance_exists() -> None:
+    """同一 counter で `""` と vmnic が併存するとき、集約（空 instance）の行は出さない。"""
+    sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+    s_agg = SimpleNamespace(id=SimpleNamespace(counterId=101, instance=""), value=[99.0])
+    s_nic = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[10.0])
+    pem = SimpleNamespace(value=[s_agg, s_nic])
+    rows = parse_perf_query_result_rows(
+        entity_moid="host-1",
+        entity_name="esxi1",
+        sampled_at=sampled,
+        perf_entity_metrics=[pem],
+        counter_id_to_metric_key={101: "host.net.dropped_rx_total"},
+    )
+    assert len(rows) == 1
+    assert rows[0]["entity_moid"] == "host-1:vmnic0"
+    assert rows[0]["value"] == 10.0
+
+
+def test_parse_perf_query_result_rows_drops_total_instance_when_vmnic_exists() -> None:
+    """Total と名前付き NIC が併存するとき Total の行は出さない。"""
+    sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+    s_total = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="Total"), value=[88.0])
+    s_nic = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[7.0])
+    pem = SimpleNamespace(value=[s_total, s_nic])
+    rows = parse_perf_query_result_rows(
+        entity_moid="host-1",
+        entity_name="esxi1",
+        sampled_at=sampled,
+        perf_entity_metrics=[pem],
+        counter_id_to_metric_key={101: "host.net.dropped_rx_total"},
+    )
+    assert len(rows) == 1
+    assert rows[0]["entity_moid"] == "host-1:vmnic0"
+    assert rows[0]["value"] == 7.0
+
+
+def test_parse_perf_query_result_rows_keeps_total_only_instance() -> None:
+    """Total のみのときは 1 行残す（グラフを空にしない）。"""
+    sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+    s_total = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="Total"), value=[42.0])
+    pem = SimpleNamespace(value=[s_total])
+    rows = parse_perf_query_result_rows(
+        entity_moid="host-1",
+        entity_name="esxi1",
+        sampled_at=sampled,
+        perf_entity_metrics=[pem],
+        counter_id_to_metric_key={101: "host.net.dropped_rx_total"},
+    )
+    assert len(rows) == 1
+    assert rows[0]["entity_moid"] == "host-1:Total"
+    assert rows[0]["value"] == 42.0
+
+
+def test_parse_perf_query_result_rows_keeps_empty_instance_when_only_aggregate() -> None:
+    """空 instance のみの counter は従来どおりホスト MOID の 1 行。"""
+    sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+    s_disk = SimpleNamespace(id=SimpleNamespace(counterId=202, instance=""), value=[3.25])
+    pem = SimpleNamespace(value=[s_disk])
+    rows = parse_perf_query_result_rows(
+        entity_moid="host-1",
+        entity_name="esxi1",
+        sampled_at=sampled,
+        perf_entity_metrics=[pem],
+        counter_id_to_metric_key={202: "host.disk.read_kbps"},
+    )
+    assert len(rows) == 1
+    assert rows[0]["entity_moid"] == "host-1"
+    assert rows[0]["entity_name"] == "esxi1"
+
+
 def test_collect_host_perf_metric_rows_returns_empty_on_query_failure() -> None:
     perf_manager = MagicMock()
     perf_manager.perfCounter = []
