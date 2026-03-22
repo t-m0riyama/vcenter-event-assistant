@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiGet, apiPost } from '../api'
+import { apiGet } from '../api'
 import type { VCenter } from '../api/schemas'
 import { asArray } from '../utils/asArray'
 import { toErrorMessage } from '../utils/errors'
@@ -49,7 +49,6 @@ export function useMetricsPanelController(
   const [points, setPoints] = useState<MetricPoint[]>([])
   const [metricTotal, setMetricTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
-  const [ingesting, setIngesting] = useState(false)
   const [chartResetKey, setChartResetKey] = useState(0)
   const [chartEventType, setChartEventType] = useState('')
   const [eventTypeOptions, setEventTypeOptions] = useState<string[]>([])
@@ -254,24 +253,6 @@ export function useMetricsPanelController(
     }
   }, [points, chartEventType, vcenterId, perfBucketSeconds, onError, graphRangeForOverlay])
 
-  const runIngest = async () => {
-    setIngesting(true)
-    onError(null)
-    try {
-      await apiPost<{ status: string; events_inserted: number; metrics_inserted: number }>(
-        '/api/ingest/run',
-        {},
-      )
-      lastSeriesFetchRef.current = null
-      const key = await loadMetricKeys()
-      await load(key)
-    } catch (e) {
-      onError(toErrorMessage(e))
-    } finally {
-      setIngesting(false)
-    }
-  }
-
   const countByEpochSec = useMemo(() => {
     const m = new Map<number, number>()
     if (!eventRateBuckets) return m
@@ -413,7 +394,6 @@ export function useMetricsPanelController(
     points,
     metricTotal,
     loading,
-    ingesting,
     chartResetKey,
     setChartResetKey,
     chartEventType,
@@ -426,7 +406,6 @@ export function useMetricsPanelController(
     invalidateSeriesCache,
     load,
     loadMetricKeys,
-    runIngest,
     graphRangeForOverlay,
     showEventLine,
     leftYAxisLabel,

@@ -71,7 +71,7 @@ test.describe('グラフ（メトリクス未収集）', () => {
     await expect(page.getByLabel('vCenter')).toBeVisible()
     const metricSelect = page.getByLabel('メトリクスキー')
     await expect(metricSelect).toBeVisible()
-    await expect(page.getByRole('button', { name: '手動で収集' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '再取得' })).toBeVisible()
 
     // DB にサンプルがなくてもフロントのカタログでキーが選べる（/api/metrics/keys とマージ）
     await expect(metricSelect.locator('option')).toHaveCount(14)

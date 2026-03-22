@@ -49,7 +49,6 @@ export function MetricsPanel({
     points,
     metricTotal,
     loading,
-    ingesting,
     chartResetKey,
     setChartResetKey,
     chartEventType,
@@ -61,7 +60,6 @@ export function MetricsPanel({
     chartColors,
     invalidateSeriesCache,
     load,
-    runIngest,
     showEventLine,
     leftYAxisLabel,
     metricsChartMargin,
@@ -217,14 +215,6 @@ export function MetricsPanel({
         <button
           type="button"
           className="btn btn--gray"
-          disabled={ingesting}
-          onClick={() => void runIngest()}
-        >
-          {ingesting ? '収集中…' : '手動で収集'}
-        </button>
-        <button
-          type="button"
-          className="btn btn--gray"
           disabled={exportDisabled}
           onClick={downloadSvg}
         >
@@ -264,7 +254,7 @@ export function MetricsPanel({
       </p>
       {!loading && metricKeys.length === 0 && (
         <p className="hint">
-          この条件で DB に保存されたメトリクスがありません。「手動で収集」を実行するか、スケジュール取り込みを待ってから再度開いてください。
+          この条件で DB に保存されたメトリクスがありません。スケジュール取り込みを待ってから再度開いてください。
         </p>
       )}
       {!loading && metricTotal === 0 && metricKey && (
@@ -272,7 +262,7 @@ export function MetricsPanel({
           <p>該当するメトリクスがありません（条件一致 0 件）。</p>
           <ul>
             <li>vCenter の「有効」がオンか確認してください。</li>
-            <li>初回は「手動で収集」を押すか、数分待ってから「再取得」してください。</li>
+            <li>初回は数分待ってから「再取得」してください。</li>
             <li>接続情報・権限が正しいか、接続テストで確認してください。</li>
           </ul>
         </div>
