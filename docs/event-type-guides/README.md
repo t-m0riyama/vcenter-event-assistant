@@ -8,12 +8,15 @@ Broadcom／VMware 公式ドキュメントを根拠に、vCenter が記録する
 
 1. アプリの **設定** を開く。
 2. **イベント種別ガイド** を選択する。
-3. **インポート** で、このリポジトリの [`data/seed/event-type-guides-priority-v1.json`](../../data/seed/event-type-guides-priority-v1.json) を指定する（上書き・削除オプションは運用方針に合わせる）。
+3. **インポート** で、取り込みたいシード JSON を指定する。
+   - **第1弾のみ:** [`data/seed/event-type-guides-priority-v1.json`](../../data/seed/event-type-guides-priority-v1.json)
+   - **第2弾の追加:** [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json)（第1弾と **別ファイル**。v1 適用済みの DB に **追記だけ** したい場合は、**インポート画面で「ファイルに含まれないガイドを削除」をオフ**のままにする。API の [`EventTypeGuidesImportRequest`](../../src/vcenter_event_assistant/api/schemas.py) および UI の **既定値は `overwrite_existing=true` / `delete_guides_not_in_import=false`** で、追加インポート向きです。）
+   - 上書き・削除オプションは運用方針に合わせる。
 
 ## 公式情報の要約方針
 
 - **長文の転載は行わない。** 意味・原因・対処は自文で要約する。
-- **出典 URL と参照日** は [`citations-priority-v1.md`](./citations-priority-v1.md) に記載し、イベント種別ごとに追跡する。
+- **出典 URL と参照日** は、第1弾が [`citations-priority-v1.md`](./citations-priority-v1.md)、第2弾が [`citations-priority-v2.md`](./citations-priority-v2.md) に記載し、イベント種別ごとに追跡する。
 - 製品バージョンやドキュメント改訂が分かる場合は README および出典表に記す。
 
 ## 対象 vSphere／ドキュメントの前提
@@ -32,7 +35,7 @@ Broadcom／VMware 公式ドキュメントを根拠に、vCenter が記録する
 1. アプリや DB に記録された **`event_type` 文字列をそのまま** 検索キーにする（勝手に短縮しない）。
 2. Broadcom Developer の **vSphere Web Services API** で `vim.event.<名前>` のデータオブジェクトページを開き、**Data Object Description** とプロパティを確認する。
 3. 概念理解が必要なら、TechDocs の **Understanding Events**（Web Services SDK プログラミングガイド）を読む。
-4. 本文は要約し、参照 URL と参照日を [`citations-priority-v1.md`](./citations-priority-v1.md) に追記する。
+4. 本文は要約し、参照 URL と参照日を、対象が第1弾なら [`citations-priority-v1.md`](./citations-priority-v1.md)、第2弾なら [`citations-priority-v2.md`](./citations-priority-v2.md) に追記する。
 
 ## レビュー観点
 
@@ -47,13 +50,16 @@ Broadcom／VMware 公式ドキュメントを根拠に、vCenter が記録する
 
 ## 第2弾（数百件）への拡張
 
-- ファイルを分けて管理する例: `event-type-guides-priority-v2.json`、`citations-priority-v2.md`。
-- 優先度は [`priority-list-rationale.md`](./priority-list-rationale.md) の手順で再計算し、バックログ（チケット）に残した `event_type` を順次処理する。
+- シードと出典表を分けて管理する: [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json)、[`citations-priority-v2.md`](./citations-priority-v2.md)。実装計画の正本は [`docs/superpowers/plans/2026-03-22-event-type-guides-priority-v2.md`](../superpowers/plans/2026-03-22-event-type-guides-priority-v2.md)。
+- v2 の `event_type` は **v1 シードと重複させない**（追加専用）。v1 に既にある種別の修正が必要なら v1 の JSON を編集する。
+- 優先度は [`priority-list-rationale.md`](./priority-list-rationale.md) の **priority v2** 手順で再計算し、バックログ（チケット）に残した `event_type` を順次処理する。
 
 ## 関連ファイル
 
 | ファイル | 説明 |
 |----------|------|
-| [`data/seed/event-type-guides-priority-v1.json`](../../data/seed/event-type-guides-priority-v1.json) | インポート用シード（`vea-event-type-guides`） |
-| [`citations-priority-v1.md`](./citations-priority-v1.md) | 出典表 |
+| [`data/seed/event-type-guides-priority-v1.json`](../../data/seed/event-type-guides-priority-v1.json) | 第1弾インポート用シード（`vea-event-type-guides`） |
+| [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json) | 第2弾インポート用シード（v1 と重複しない `event_type` のみ追加） |
+| [`citations-priority-v1.md`](./citations-priority-v1.md) | 第1弾の出典表 |
+| [`citations-priority-v2.md`](./citations-priority-v2.md) | 第2弾の出典表 |
 | [`priority-list-rationale.md`](./priority-list-rationale.md) | 優先リストの決め方（機微情報はコミットしない） |
