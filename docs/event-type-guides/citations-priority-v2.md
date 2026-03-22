@@ -21,4 +21,13 @@
 
 | event_type | 参照 URL | 参照日 | メモ |
 |------------|----------|--------|------|
-| （コンテンツバッチで追記） | | | |
+| `vim.event.DrsVmPoweredOnEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.DrsVmPoweredOnEvent.html | 2026-03-22 | Data Object Description（DRS による電源オン） |
+| `vim.event.HostConnectedEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.HostConnectedEvent.html | 2026-03-22 | Data Object Description（接続成功） |
+| `vim.event.HostShutdownEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.HostShutdownEvent.html | 2026-03-22 | Data Object Description・`reason` |
+| `vim.event.VmClonedEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmClonedEvent.html | 2026-03-22 | Data Object Description・`sourceVm` |
+| `vim.event.VmRegisteredEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmRegisteredEvent.html | 2026-03-22 | Data Object Description（登録成功） |
+| `vim.event.VmRemovedEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmRemovedEvent.html | 2026-03-22 | Data Object Description（管理からの削除） |
+| `vim.event.VmResettingEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmResettingEvent.html | 2026-03-22 | Data Object Description（リセット） |
+| `vim.event.VmStartingEvent` | https://developer.broadcom.com/xapis/vsphere-web-services-api/7.0/vim.event.VmStartingEvent.html | 2026-03-22 | Data Object Description（電源オン進行と記載。完了は `VmPoweredOnEvent` と区別） |
+
+**注:** API リファレンスは **vSphere Web Services API 7.0** のページを使用（型定義の説明はバージョン間で共通部分が多い）。より新しい API バージョンの同型ページが利用可能な場合は、チーム方針に合わせて差し替えてよい。
