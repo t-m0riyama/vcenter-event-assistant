@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import type { ReactNode } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -6,6 +7,7 @@ import {
   LineChart,
   ResponsiveContainer,
   Tooltip,
+  type TooltipProps,
   XAxis,
   YAxis,
 } from 'recharts'
@@ -19,6 +21,7 @@ import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { summarizeGraphRangePreview } from '../../datetime/graphRange'
 import { toErrorMessage } from '../../utils/errors'
 import { useMetricsPanelController } from '../../hooks/useMetricsPanelController'
+import { formatChartTooltipNumber } from '../../metrics/chartYAxisFormat'
 import { MetricsXAxisTick } from './MetricsXAxisTick'
 
 const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
@@ -64,7 +67,8 @@ export function MetricsPanel({
     metricsChartLegendName,
     eventSeriesLegendName,
     formatAxisTimeLabel,
-    formatYAxisTick,
+    formatYAxisTickMetric,
+    formatYAxisTickCount,
     vcenterExportLabel,
     exportDisabled,
     csvExportOptions,
@@ -75,6 +79,23 @@ export function MetricsPanel({
       <MetricsXAxisTick {...props} tickFill={chartColors.axisTick} />
     ),
     [chartColors.axisTick],
+  )
+
+  const tooltipFormatter: NonNullable<TooltipProps['formatter']> = useCallback(
+    (value, name, item) => {
+      const dataKey =
+        item && typeof item === 'object' && item !== null && 'dataKey' in item
+          ? String((item as { dataKey?: unknown }).dataKey ?? '')
+          : ''
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return [
+          formatChartTooltipNumber(value, { metricKey, dataKey }),
+          name ?? '',
+        ]
+      }
+      return [value as ReactNode, (name ?? '') as ReactNode]
+    },
+    [metricKey],
   )
 
   const downloadSvg = () => {
@@ -242,9 +263,10 @@ export function MetricsPanel({
               />
               <YAxis
                 yAxisId="left"
+                width={68}
                 domain={[0, 'auto']}
                 tick={{ fill: chartColors.axisTick }}
-                tickFormatter={formatYAxisTick}
+                tickFormatter={formatYAxisTickMetric}
                 label={
                   leftYAxisLabel
                     ? {
@@ -258,11 +280,12 @@ export function MetricsPanel({
               />
               <YAxis
                 yAxisId="right"
+                width={56}
                 orientation="right"
                 domain={[0, 'auto']}
                 allowDecimals={false}
                 tick={{ fill: chartColors.axisTick }}
-                tickFormatter={formatYAxisTick}
+                tickFormatter={formatYAxisTickCount}
                 label={
                   showEventLine
                     ? {
@@ -274,7 +297,10 @@ export function MetricsPanel({
                     : undefined
                 }
               />
-              <Tooltip labelFormatter={formatAxisTimeLabel} />
+              <Tooltip
+                labelFormatter={formatAxisTimeLabel}
+                formatter={tooltipFormatter}
+              />
               <Legend />
               {chartModel.mode === 'single' ? (
                 <Line

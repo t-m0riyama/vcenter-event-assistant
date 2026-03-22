@@ -28,6 +28,7 @@ import {
   pickMetricKeyAfterFetch,
 } from '../metrics/fetchMetricKeys'
 import { mergeMetricKeyOptions } from '../metrics/knownMetricKeys'
+import { formatChartYAxisTick } from '../metrics/chartYAxisFormat'
 import { useChartThemeColors } from '../theme/useChartThemeColors'
 
 export function useMetricsPanelController(
@@ -288,8 +289,8 @@ export function useMetricsPanelController(
   const metricsChartMargin = useMemo(
     () => ({
       top: 8,
-      right: showEventLine ? 44 : 12,
-      left: leftYAxisLabel ? 32 : 8,
+      right: showEventLine ? 56 : 48,
+      left: leftYAxisLabel ? 58 : 52,
       bottom: 8,
     }),
     [showEventLine, leftYAxisLabel],
@@ -348,11 +349,15 @@ export function useMetricsPanelController(
     [timeZone],
   )
 
-  const formatYAxisTick = useCallback((value: number) => {
-    if (!Number.isFinite(value)) return ''
-    if (Math.abs(value) >= 10) return String(Math.round(value))
-    return String(value)
-  }, [])
+  const formatYAxisTickMetric = useCallback(
+    (value: number) => formatChartYAxisTick(value, 'metric', metricKey),
+    [metricKey],
+  )
+
+  const formatYAxisTickCount = useCallback(
+    (value: number) => formatChartYAxisTick(value, 'count'),
+    [],
+  )
 
   const vcenterExportLabel = useMemo(() => {
     if (!vcenterId) return 'all'
@@ -413,7 +418,8 @@ export function useMetricsPanelController(
     metricsChartLegendName,
     eventSeriesLegendName,
     formatAxisTimeLabel,
-    formatYAxisTick,
+    formatYAxisTickMetric,
+    formatYAxisTickCount,
     vcenterExportLabel,
     eventSeriesLoading,
     countByEpochSec,
