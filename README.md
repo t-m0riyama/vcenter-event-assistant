@@ -73,4 +73,6 @@ UI ドキュメント用のスクリーンショット再取得は `uv run scrip
 
 設計・構成の整理は [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md) を参照してください。
 
+フロントエンドの画面例・開発コマンドは [frontend/README.md](frontend/README.md) を参照してください。
+
 開発者向けの手順（UI スクリーンショットの再取得など）は [docs/development.md](docs/development.md) を参照してください。
