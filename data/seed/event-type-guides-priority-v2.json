@@ -1,6 +1,63 @@
 {
   "format": "vea-event-type-guides",
   "version": 1,
-  "exportedAt": "2026-03-22T00:00:00.000Z",
-  "guides": []
+  "exportedAt": "2026-03-22T15:00:00.000Z",
+  "guides": [
+    {
+      "event_type": "vim.event.DrsVmPoweredOnEvent",
+      "general_meaning": "DRS によって仮想マシンの電源オンが行われたことを示すイベントです。`VmPoweredOnEvent` を継承し、DRS による起動である点が区別されます。",
+      "typical_causes": "負荷分散、メンテナンス後の再配置、初期配置ポリシーに基づく起動など。",
+      "remediation": "意図したクラスタ運用であれば記録確認で足ります。想定外の起動先ホストがある場合は、DRS 設定・アフィニティ規則・メンテナンスモードと突き合わせます。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostConnectedEvent",
+      "general_meaning": "ホストへの接続が正常に確立されたことを示すイベントです（管理エージェントとの通信が復旧したタイミングなど）。",
+      "typical_causes": "ネットワーク復旧、ホストサービス再起動後、証明書／認証問題の解消後など。",
+      "remediation": "直前の `HostDisconnectedEvent` 等と時系列で照合し、復旧が安定しているか確認します。繰り返し切断／再接続する場合は、根本原因（ネットワーク・DNS・リソース）を調査します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.HostShutdownEvent",
+      "general_meaning": "ホストのシャットダウンが記録されたことを示すイベントです。`reason` に理由が含まれる場合があります。",
+      "typical_causes": "計画メンテナンス、パッチ適用、電源操作、ハードウェア交換、意図しない停止など。",
+      "remediation": "`reason` と変更管理・作業予定を照合します。計画外の場合は、ハードウェア／ストレージログと同時刻のホスト／クラスタイベントを確認し、必要に応じて VM の退避状況を確認します。",
+      "action_required": true
+    },
+    {
+      "event_type": "vim.event.VmClonedEvent",
+      "general_meaning": "仮想マシンのクローン操作が完了したことを示すイベントです。`sourceVm` に元 VM の情報が関連付けられます。",
+      "typical_causes": "テスト用コピー、テンプレート展開、災害対策コピー、自動化パイプラインなど。",
+      "remediation": "クローン先の名前・配置・ストレージが設計どおりか確認します。ライセンスやネットワーク重複がないか、運用ポリシーに沿うかを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRegisteredEvent",
+      "general_meaning": "仮想マシンが vCenter 管理下へ正常に登録されたことを示すイベントです。",
+      "typical_causes": "新規登録、インベントリからの再登録、移管後の登録、リストア後の登録など。",
+      "remediation": "誰が・どのパス／データストアから登録したかを確認し、変更手順と整合するか見ます。意図しない VM の登録がないか、監査上の観点で必要なら `userName` を追跡します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmRemovedEvent",
+      "general_meaning": "仮想マシンが vCenter 管理から削除された（インベントリ上取り除かれた）ことを示すイベントです。ディスクの削除有無は操作内容によります。",
+      "typical_causes": "運用によるインベントリ削除、テンポラリ VM の片付け、自動化によるクリーンアップなど。",
+      "remediation": "削除が変更管理と一致するか確認します。誤削除の疑いがある場合は、バックアップ・スナップショット方針と同時刻のタスクログを確認します。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmResettingEvent",
+      "general_meaning": "仮想マシンがリセット処理に入ったことを示すイベントです（ハードリセット相当の動作の記録）。",
+      "typical_causes": "ユーザーまたは管理操作によるリセット、ゲスト応答不能時の対処、スクリプトによる強制再起動など。",
+      "remediation": "計画された操作か確認し、ゲスト／アプリの整合性（ファイルシステム、DB）に影響がないか必要に応じて確認します。頻発する場合は、ハングやリソース不足の調査を行います。",
+      "action_required": false
+    },
+    {
+      "event_type": "vim.event.VmStartingEvent",
+      "general_meaning": "仮想マシンの電源オン処理が進行していることを示すイベントです。電源オン完了の記録は `VmPoweredOnEvent` と区別して解釈します。",
+      "typical_causes": "電源オン操作、再起動シーケンスの一部、DRS／HA による起動など。",
+      "remediation": "直後に `VmPoweredOnEvent` やエラー系イベントが続くかを確認します。完了しない場合は、ホストリソース、ストレージ接続、ロック／競合を調査します。",
+      "action_required": false
+    }
+  ]
 }

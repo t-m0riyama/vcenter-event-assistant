@@ -59,8 +59,7 @@ describe('data/seed/event-type-guides-priority-v2.json', () => {
     const parsed = eventTypeGuidesFileSchema.parse(raw)
     expect(parsed.format).toBe('vea-event-type-guides')
     expect(parsed.version).toBe(1)
-    // 雛形は空配列。第2弾に本文を入れた最初のバッチと同じ PR で toBeGreaterThan(0) に切り替える
-    expect(parsed.guides.length).toBe(0)
+    expect(parsed.guides.length).toBeGreaterThan(0)
   })
 })
 
