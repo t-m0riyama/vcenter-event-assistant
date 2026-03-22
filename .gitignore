@@ -78,8 +78,10 @@ celerybeat-schedule
 # dotenv
 .env
 
-# Local SQLite data (when using sqlite+aiosqlite file URLs)
-data/
+# Local SQLite data（data 直下のファイルは無視。seed は例外）
+data/*
+!data/seed/
+!data/seed/**
 *.db
 
 # virtualenv
