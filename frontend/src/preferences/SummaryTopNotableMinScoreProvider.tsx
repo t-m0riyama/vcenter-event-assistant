@@ -1,3 +1,6 @@
+/**
+ * 概要の要注意イベント一覧用「最小スコア」設定を Context と localStorage で共有する。
+ */
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { SummaryTopNotableMinScoreContext } from './summaryTopNotableMinScoreContext'
 import {
@@ -6,6 +9,7 @@ import {
   writeStoredSummaryTopNotableMinScore,
 } from './summaryTopNotableMinScoreStorage'
 
+/** マウント時に storage から初期値を読む。 */
 function resolveInitialScore(): number {
   return readStoredSummaryTopNotableMinScore()
 }

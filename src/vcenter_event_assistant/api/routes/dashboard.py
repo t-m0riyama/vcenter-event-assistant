@@ -29,7 +29,17 @@ _TOP_EVENT_TYPES_LIMIT = 10
 @router.get("/summary", response_model=DashboardSummary)
 async def dashboard_summary(
     session: AsyncSession = Depends(get_session),
-    top_notable_min_score: Annotated[int, Query(ge=0, le=100)] = 1,
+    top_notable_min_score: Annotated[
+        int,
+        Query(
+            ge=0,
+            le=100,
+            description=(
+                "概要の要注意イベント（上位）一覧に含める notable_score の下限（0〜100）。"
+                "0 は下限なし（スコア 0 も含む）。"
+            ),
+        ),
+    ] = 1,
 ) -> DashboardSummary:
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(hours=24)
@@ -44,6 +54,7 @@ async def dashboard_summary(
         .where(EventRecord.occurred_at >= day_ago, EventRecord.notable_score >= 40)
     )
 
+    # 直近24h の要注意イベント上位。notable_score がクエリ下限未満の行は除外する。
     top_q = await session.execute(
         select(EventRecord)
         .where(

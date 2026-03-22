@@ -337,7 +337,7 @@ async def test_top_event_types_24h_max_notable_score_uses_current_rules_not_stor
 
 @pytest.mark.asyncio
 async def test_top_notable_events_respects_top_notable_min_score_query(client: AsyncClient) -> None:
-    """``top_notable_min_score`` filters the summary notable list; 0 includes all non-negative scores."""
+    """``top_notable_min_score`` で要注意一覧が絞り込まれる。0 なら非負スコアをすべて含められる。"""
     r = await client.post(
         "/api/vcenters",
         json={

@@ -27,7 +27,7 @@ function createMemoryStorage(): Storage {
 }
 
 describe('clampSummaryTopNotableMinScore', () => {
-  it('clamps to 0–100 and truncates', () => {
+  it('0〜100 に収め、小数は切り捨てる', () => {
     expect(clampSummaryTopNotableMinScore(-5)).toBe(0)
     expect(clampSummaryTopNotableMinScore(101)).toBe(100)
     expect(clampSummaryTopNotableMinScore(42.7)).toBe(42)
@@ -43,21 +43,21 @@ describe('readStoredSummaryTopNotableMinScore', () => {
     vi.unstubAllGlobals()
   })
 
-  it('returns default when unset', () => {
+  it('未設定ならデフォルト 1', () => {
     expect(readStoredSummaryTopNotableMinScore()).toBe(1)
   })
 
-  it('reads valid stored integer', () => {
+  it('有効な整数が保存されていればその値', () => {
     localStorage.setItem(SUMMARY_TOP_NOTABLE_MIN_SCORE_STORAGE_KEY, '40')
     expect(readStoredSummaryTopNotableMinScore()).toBe(40)
   })
 
-  it('returns default when stored value is not a number', () => {
+  it('数値でない文字列ならデフォルト 1', () => {
     localStorage.setItem(SUMMARY_TOP_NOTABLE_MIN_SCORE_STORAGE_KEY, 'x')
     expect(readStoredSummaryTopNotableMinScore()).toBe(1)
   })
 
-  it('clamps out-of-range stored values', () => {
+  it('範囲外はクランプ（例: 500 → 100）', () => {
     localStorage.setItem(SUMMARY_TOP_NOTABLE_MIN_SCORE_STORAGE_KEY, '500')
     expect(readStoredSummaryTopNotableMinScore()).toBe(100)
   })
@@ -72,7 +72,7 @@ describe('writeStoredSummaryTopNotableMinScore', () => {
     vi.unstubAllGlobals()
   })
 
-  it('persists clamped value', () => {
+  it('クランプ後の値が保存される', () => {
     writeStoredSummaryTopNotableMinScore(999)
     expect(localStorage.getItem(SUMMARY_TOP_NOTABLE_MIN_SCORE_STORAGE_KEY)).toBe('100')
     expect(readStoredSummaryTopNotableMinScore()).toBe(100)
