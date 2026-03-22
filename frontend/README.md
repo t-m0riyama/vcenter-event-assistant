@@ -1,73 +1,63 @@
-# React + TypeScript + Vite
+# vCenter Event Assistant（フロントエンド）
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+[vCenter Event Assistant](../README.md) の Web UI です。React・TypeScript・[Vite](https://vite.dev/) で実装し、バックエンドの FastAPI と同一オリジンまたは開発時プロキシ経由で API を呼び出します。イベントの一覧・概要、ホストメトリクスのグラフ、vCenter 登録やスコアルールなどの設定をブラウザから行えます。
 
-Currently, two official plugins are available:
+## 画面の例
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+以下はリポジトリ内のキャプチャ（[`../docs/images/`](../docs/images/)）です。データ内容は環境により異なります。
 
-## React Compiler
+### 概要
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+登録 vCenter 数や直近のイベント件数、スコアの高い要注意イベントの俯瞰を表示します。
 
-## Expanding the ESLint configuration
+![概要タブ](../docs/images/summary.png)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### イベント
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+収集した vCenter イベントを期間・キーワードなどで絞り込み、一覧表示や CSV 出力ができます。
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+![イベントタブ](../docs/images/events.png)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### グラフ（メトリクス）
+
+ホストの CPU・メモリなどの時系列を、vCenter とメトリクス種別を選んで表示します。
+
+![グラフタブ](../docs/images/metrics.png)
+
+### 設定（一般）
+
+テーマ（ライト / ダーク / システム）や、日時表示に使うタイムゾーンをブラウザに保存します。
+
+![設定の一般タブ](../docs/images/settings-general.png)
+
+### その他の画面・キャプチャの更新
+
+全タブの一覧と PNG の再取得手順は **[開発者向けメモ（`docs/development.md`）](../docs/development.md)** を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。
+
+```bash
+uv run scripts/capture_ui_screenshots.py
+# 既に API が動いている場合（ビルド省略）
+uv run scripts/capture_ui_screenshots.py --existing
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 開発コマンド
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+`frontend` ディレクトリで実行します。
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+
+| コマンド                  | 説明                                       |
+| --------------------- | ---------------------------------------- |
+| `npm install`         | 依存関係のインストール                              |
+| `npm run dev`         | 開発サーバー（HMR）                              |
+| `npm run build`       | 本番用ビルド（`dist/`）                          |
+| `npm run test`        | Vitest 単体テスト                             |
+| `npm run lint`        | ESLint                                   |
+| `npm run e2e`         | ビルド後に Playwright E2E                     |
+| `npm run screenshots` | ビルド後にドキュメント用スクリーンショットのみ取得（`docs/images`） |
+
+
+バックエンドの起動・環境変数は [リポジトリルートの README](../README.md) を参照してください。
+
+## スタック補足
+
+このディレクトリは `npm create vite@latest` 由来の構成を引き継いでいます。React Compiler の有効化、型対応 ESLint ルールの拡張、Vite の詳細は [Vite 公式ドキュメント](https://vite.dev/guide/) および [React ドキュメント](https://react.dev/) を参照してください。
