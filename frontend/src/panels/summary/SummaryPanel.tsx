@@ -6,6 +6,7 @@ import {
   type Summary,
   type SummaryHostMetricRow,
 } from '../../api/schemas'
+import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
@@ -110,7 +111,12 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
           </thead>
           <tbody>
             {notableRows.map((e) => (
-              <tr key={e.id}>
+              <tr
+                key={e.id}
+                className={
+                  shouldHighlightEventRowForAction(e.type_guide) ? 'event-row--action-required' : undefined
+                }
+              >
                 <td>{formatIsoInTimeZone(e.occurred_at, timeZone)}</td>
                 <td>{e.event_type}</td>
                 <td>{e.notable_score}</td>

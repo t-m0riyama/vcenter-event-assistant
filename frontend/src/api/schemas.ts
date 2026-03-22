@@ -6,6 +6,7 @@ export const eventTypeGuideSnippetSchema = z.object({
   general_meaning: z.string().nullable().optional(),
   typical_causes: z.string().nullable().optional(),
   remediation: z.string().nullable().optional(),
+  action_required: z.boolean().optional().default(false),
 })
 
 export type EventTypeGuideSnippet = z.infer<typeof eventTypeGuideSnippetSchema>
@@ -129,6 +130,7 @@ export const eventTypeGuideRowSchema = z.object({
   general_meaning: z.string().nullable().optional(),
   typical_causes: z.string().nullable().optional(),
   remediation: z.string().nullable().optional(),
+  action_required: z.boolean(),
 })
 
 export type EventTypeGuideRow = z.infer<typeof eventTypeGuideRowSchema>

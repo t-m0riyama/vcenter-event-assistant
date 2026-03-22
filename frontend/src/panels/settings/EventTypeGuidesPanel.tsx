@@ -7,6 +7,7 @@ type Draft = {
   general_meaning: string
   typical_causes: string
   remediation: string
+  action_required: boolean
 }
 
 function rowToDraft(r: EventTypeGuideRow): Draft {
@@ -14,6 +15,7 @@ function rowToDraft(r: EventTypeGuideRow): Draft {
     general_meaning: r.general_meaning ?? '',
     typical_causes: r.typical_causes ?? '',
     remediation: r.remediation ?? '',
+    action_required: r.action_required,
   }
 }
 
@@ -26,6 +28,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   const [newMeaning, setNewMeaning] = useState('')
   const [newCauses, setNewCauses] = useState('')
   const [newRemediation, setNewRemediation] = useState('')
+  const [newActionRequired, setNewActionRequired] = useState(false)
   const [draft, setDraft] = useState<Record<number, Draft>>({})
 
   const load = useCallback(async () => {
@@ -62,11 +65,13 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
         general_meaning: newMeaning.trim() || null,
         typical_causes: newCauses.trim() || null,
         remediation: newRemediation.trim() || null,
+        action_required: newActionRequired,
       })
       setNewType('')
       setNewMeaning('')
       setNewCauses('')
       setNewRemediation('')
+      setNewActionRequired(false)
       await load()
     } catch (e) {
       onError(toErrorMessage(e))
@@ -82,6 +87,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
         general_meaning: row.general_meaning.trim() || null,
         typical_causes: row.typical_causes.trim() || null,
         remediation: row.remediation.trim() || null,
+        action_required: row.action_required,
       })
       await load()
     } catch (e) {
@@ -103,7 +109,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   return (
     <div className="panel">
       <p className="hint">
-        イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに、一般的な意味・想定される原因・対処方法を登録します。イベント一覧では、登録がある種別にガイドを表示できます。
+        イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに、一般的な意味・想定される原因・対処方法を登録します。「対処が必要」をオンにすると、概要・イベント一覧で該当行を強調します。
       </p>
 
       <h2>追加</h2>
@@ -145,6 +151,15 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
             maxLength={8000}
           />
         </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={newActionRequired}
+            onChange={(e) => setNewActionRequired(e.target.checked)}
+            aria-label="対処が必要（一覧で強調）"
+          />
+          対処が必要（一覧で強調）
+        </label>
       </div>
       <button type="button" className="btn btn--filled" onClick={() => void add()}>
         追加
@@ -164,6 +179,20 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
             <tr key={r.id}>
               <td className="msg event-type-guides-type-cell">{r.event_type}</td>
               <td className="event-type-guides-edit-cells">
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={draft[r.id]?.action_required ?? false}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), action_required: e.target.checked },
+                      }))
+                    }
+                    aria-label={`${r.event_type} は対処が必要`}
+                  />
+                  対処が必要（一覧で強調）
+                </label>
                 <label>
                   一般的な意味
                   <textarea

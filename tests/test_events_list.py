@@ -361,4 +361,5 @@ async def test_list_events_includes_type_guide(client: AsyncClient) -> None:
     assert by_type["GuideEvt"]["type_guide"]["general_meaning"] == "一般的な意味"
     assert by_type["GuideEvt"]["type_guide"]["typical_causes"] == "想定原因"
     assert by_type["GuideEvt"]["type_guide"]["remediation"] == "対処手順"
+    assert by_type["GuideEvt"]["type_guide"]["action_required"] is False
     assert by_type["NoGuideEvt"]["type_guide"] is None

@@ -44,6 +44,7 @@ class EventTypeGuideSnippet(BaseModel):
     general_meaning: str | None = None
     typical_causes: str | None = None
     remediation: str | None = None
+    action_required: bool = False
 
 
 class EventRead(BaseModel):
@@ -244,6 +245,7 @@ class EventTypeGuideCreate(BaseModel):
     general_meaning: str | None = Field(default=None, max_length=_GUIDE_TEXT_MAX)
     typical_causes: str | None = Field(default=None, max_length=_GUIDE_TEXT_MAX)
     remediation: str | None = Field(default=None, max_length=_GUIDE_TEXT_MAX)
+    action_required: bool = False
 
     @field_validator("event_type", mode="before")
     @classmethod
@@ -264,6 +266,7 @@ class EventTypeGuideUpdate(BaseModel):
     general_meaning: str | None = Field(default=None, max_length=_GUIDE_TEXT_MAX)
     typical_causes: str | None = Field(default=None, max_length=_GUIDE_TEXT_MAX)
     remediation: str | None = Field(default=None, max_length=_GUIDE_TEXT_MAX)
+    action_required: bool | None = None
 
     @field_validator("general_meaning", "typical_causes", "remediation", mode="before")
     @classmethod
@@ -281,6 +284,7 @@ class EventTypeGuideRead(BaseModel):
     general_meaning: str | None
     typical_causes: str | None
     remediation: str | None
+    action_required: bool
 
 
 class EventScoreRulesImportRequest(BaseModel):

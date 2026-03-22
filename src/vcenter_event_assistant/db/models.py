@@ -70,6 +70,7 @@ class EventTypeGuide(Base):
     general_meaning: Mapped[str | None] = mapped_column(Text, nullable=True)
     typical_causes: Mapped[str | None] = mapped_column(Text, nullable=True)
     remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class MetricSample(Base):

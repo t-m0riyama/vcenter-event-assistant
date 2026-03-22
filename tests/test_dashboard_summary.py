@@ -387,3 +387,53 @@ async def test_top_notable_events_respects_top_notable_min_score_query(client: A
     top0 = resp_min0.json()["top_notable_events"]
     scores = [row["notable_score"] for row in top0]
     assert 50 in scores and 0 in scores
+
+
+@pytest.mark.asyncio
+async def test_top_notable_events_includes_type_guide_action_required(client: AsyncClient) -> None:
+    """要注意イベント上位に ``type_guide``（``action_required`` 含む）が付く。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-guide",
+            "host": "vc-guide.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    g = await client.post(
+        "/api/event-type-guides",
+        json={
+            "event_type": "NeedActionEvt",
+            "general_meaning": "説明",
+            "action_required": True,
+        },
+    )
+    assert g.status_code == 201
+
+    async with session_scope() as session:
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="NeedActionEvt",
+                message="msg",
+                vmware_key=1,
+                notable_score=55,
+            )
+        )
+
+    resp = await client.get("/api/dashboard/summary?top_notable_min_score=1")
+    assert resp.status_code == 200
+    top = resp.json()["top_notable_events"]
+    assert len(top) >= 1
+    row = next(x for x in top if x["event_type"] == "NeedActionEvt")
+    assert row["type_guide"] is not None
+    assert row["type_guide"]["action_required"] is True
+    assert row["type_guide"]["general_meaning"] == "説明"

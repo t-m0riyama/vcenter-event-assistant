@@ -39,6 +39,7 @@ async def create_event_type_guide(
         general_meaning=body.general_meaning,
         typical_causes=body.typical_causes,
         remediation=body.remediation,
+        action_required=body.action_required,
     )
     session.add(row)
     await session.flush()

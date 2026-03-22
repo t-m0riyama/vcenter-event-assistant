@@ -5,6 +5,7 @@ import {
 } from '../../datetime/formatIsoInTimeZone'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
+import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
@@ -172,7 +173,12 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
         </thead>
         <tbody>
           {asArray<EventRow>(c.rows).map((e) => (
-            <tr key={e.id}>
+            <tr
+              key={e.id}
+              className={
+                shouldHighlightEventRowForAction(e.type_guide) ? 'event-row--action-required' : undefined
+              }
+            >
               <td>{formatIsoInTimeZone(e.occurred_at, c.timeZone)}</td>
               <td>{e.event_type}</td>
               <td className="event-type-guide-cell">

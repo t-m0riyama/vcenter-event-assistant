@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import (
     DashboardSummary,
-    EventRead,
     EventTypeCountRow,
     HighCpuHostRow,
     HighMemHostRow,
@@ -20,6 +19,7 @@ from vcenter_event_assistant.api.schemas import (
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
+from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -177,11 +177,13 @@ async def dashboard_summary(
         for r in mem_rows
     ]
 
+    top_notable_events = await attach_type_guides_to_event_reads(session, top)
+
     return DashboardSummary(
         vcenter_count=int(vc_count.scalar_one() or 0),
         events_last_24h=int(ev_24.scalar_one() or 0),
         notable_events_last_24h=int(notable_24.scalar_one() or 0),
-        top_notable_events=[EventRead.model_validate(e) for e in top],
+        top_notable_events=top_notable_events,
         high_cpu_hosts=high_cpu,
         high_mem_hosts=high_mem,
         top_event_types_24h=top_event_types,

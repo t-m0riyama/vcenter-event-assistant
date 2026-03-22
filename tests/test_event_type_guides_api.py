@@ -24,6 +24,7 @@ async def test_event_type_guides_crud(client: AsyncClient) -> None:
     assert post.status_code == 201
     gid = post.json()["id"]
     assert post.json()["event_type"] == "vim.event.UserLoginSessionEvent"
+    assert post.json()["action_required"] is False
 
     dup = await client.post(
         "/api/event-type-guides",
@@ -52,3 +53,22 @@ async def test_event_type_guides_crud(client: AsyncClient) -> None:
 
     gone = await client.delete(f"/api/event-type-guides/{gid}")
     assert gone.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_event_type_guide_action_required(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/event-type-guides",
+        json={
+            "event_type": "vim.event.Foo",
+            "action_required": True,
+            "general_meaning": "x",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["action_required"] is True
+    gid = r.json()["id"]
+
+    patch = await client.patch(f"/api/event-type-guides/{gid}", json={"action_required": False})
+    assert patch.status_code == 200
+    assert patch.json()["action_required"] is False
