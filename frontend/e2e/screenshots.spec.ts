@@ -27,7 +27,8 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   })
 
   await page.getByRole('button', { name: 'イベント' }).click()
-  await expect(page.getByText('全 0 件')).toBeVisible()
+  // 0 件時は「全 0 件」、1 件以上は「全 N 件中 …」のいずれか
+  await expect(page.getByText(/全 \d+ 件/)).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'events.png'),
     fullPage: true,
