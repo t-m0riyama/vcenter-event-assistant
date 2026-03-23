@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -98,6 +99,36 @@ def test_invalid_display_timezone_warns_and_falls_back(caplog: pytest.LogCapture
     )
     assert "無効な DIGEST_DISPLAY_TIMEZONE" in caplog.text
     assert "+00:00" in md or "Z" in md
+
+
+def test_render_digest_markdown_uses_digest_template_dir(tmp_path: Path) -> None:
+    """``DIGEST_TEMPLATE_DIR`` + ``DIGEST_TEMPLATE_FILE`` 分岐（PATH 空）を検証する。"""
+    tpl = tmp_path / "custom.j2"
+    tpl.write_text("# DIR_BRANCH_OK\n{{ kind }} / {{ display_timezone }}\n", encoding="utf-8")
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t1,
+        vcenter_count=0,
+        total_events=0,
+        notable_events_count=0,
+        top_notable_events=[],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    md = render_digest_markdown(
+        ctx,
+        kind="daily",
+        settings=_minimal_settings(
+            digest_template_dir=str(tmp_path),
+            digest_template_file="custom.j2",
+        ),
+    )
+    assert "DIR_BRANCH_OK" in md
+    assert "daily" in md
+    assert "UTC" in md
 
 
 def test_digest_template_path_missing_file_raises() -> None:

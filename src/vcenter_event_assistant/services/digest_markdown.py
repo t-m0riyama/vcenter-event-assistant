@@ -16,6 +16,9 @@ from vcenter_event_assistant.settings import Settings
 
 _logger = logging.getLogger(__name__)
 
+# 無効 TZ フォールバック時も ``ZoneInfo`` で統一（``datetime.timezone.utc`` と混在させない）
+_UTC_ZONE = ZoneInfo("UTC")
+
 
 def _strip_opt(s: str | None) -> str:
     return (s or "").strip()
@@ -44,10 +47,8 @@ def _load_template_source(settings: Settings) -> str:
 
 
 def _resolve_display_timezone(settings: Settings) -> tuple[ZoneInfo, str]:
-    """表示用 ``ZoneInfo`` と、テンプレに渡すラベル（IANA 名）を返す。"""
+    """表示用タイムゾーン（``ZoneInfo``）と、テンプレに渡すラベル（IANA 名）を返す。"""
     name = _strip_opt(settings.digest_display_timezone) or "UTC"
-    if not name:
-        return timezone.utc, "UTC"
     try:
         return ZoneInfo(name), name
     except KeyError:
@@ -55,7 +56,7 @@ def _resolve_display_timezone(settings: Settings) -> tuple[ZoneInfo, str]:
             "無効な DIGEST_DISPLAY_TIMEZONE=%r のため UTC にフォールバックします",
             name,
         )
-        return timezone.utc, "UTC"
+        return _UTC_ZONE, "UTC"
 
 
 def _parse_to_utc(value: object) -> datetime:
