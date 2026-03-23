@@ -48,6 +48,33 @@ class Settings(BaseSettings):
         description="日次ダイジェストの cron（APScheduler CronTrigger）。既定は毎日 UTC 7:00。",
     )
 
+    digest_template_path: str | None = Field(
+        default=None,
+        description=(
+            "非空のとき最優先でこのファイルを Jinja2 テンプレとして読む（UTF-8）。"
+            "存在しない・読めない場合はエラーとし、DIGEST_TEMPLATE_DIR にはフォールバックしない。"
+            "相対パスはプロセスのカレントディレクトリ基準。"
+        ),
+    )
+    digest_template_dir: str | None = Field(
+        default=None,
+        description=(
+            "DIGEST_TEMPLATE_PATH が空のとき、DIGEST_TEMPLATE_FILE と結合してテンプレパスを構成する。"
+            "ファイルが存在しない場合はエラー（同梱テンプレにはフォールバックしない）。"
+        ),
+    )
+    digest_template_file: str = Field(
+        default="digest.md.j2",
+        description="digest_template_dir と併用するファイル名。",
+    )
+    digest_display_timezone: str = Field(
+        default="UTC",
+        description=(
+            "ダイジェスト本文の日時表示に用いる IANA タイムゾーン名（例: Asia/Tokyo）。"
+            "無効な名前は UTC にフォールバックし警告ログを出す。集計ウィンドウ自体は従来どおり UTC。"
+        ),
+    )
+
     llm_provider: LlmProvider = Field(
         default="openai_compatible",
         description=(

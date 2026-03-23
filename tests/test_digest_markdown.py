@@ -1,9 +1,11 @@
-"""digest_markdown.render_template_digest のテスト。"""
+"""digest_markdown.render_digest_markdown のテスト。"""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+
+import pytest
 
 from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.services.digest_context import (
@@ -11,10 +13,19 @@ from vcenter_event_assistant.services.digest_context import (
     DigestContextEventSnippet,
     DigestEventTypeBucket,
 )
-from vcenter_event_assistant.services.digest_markdown import render_template_digest
+from vcenter_event_assistant.services.digest_markdown import render_digest_markdown
+from vcenter_event_assistant.settings import Settings
 
 
-def test_render_includes_event_count_and_title() -> None:
+def _minimal_settings(**kwargs: object) -> Settings:
+    return Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_api_key=None,
+        **kwargs,
+    )
+
+
+def test_render_digest_markdown_uses_kind_not_title() -> None:
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
     ctx = DigestContext(
@@ -57,9 +68,55 @@ def test_render_includes_event_count_and_title() -> None:
             )
         ],
     )
-    md = render_template_digest(ctx, title="Unit test digest")
-    assert "# Unit test digest" in md
+    md = render_digest_markdown(ctx, kind="daily", settings=_minimal_settings())
+    assert "# vCenter ダイジェスト（daily）" in md
     assert "42" in md
     assert "VmPoweredOnEvent" in md
     assert "ホスト CPU" in md
     assert "ホストメモリ" in md
+
+
+def test_invalid_display_timezone_warns_and_falls_back(caplog: pytest.LogCaptureFixture) -> None:
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t1,
+        vcenter_count=0,
+        total_events=0,
+        notable_events_count=0,
+        top_notable_events=[],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    caplog.set_level("WARNING", logger="vcenter_event_assistant.services.digest_markdown")
+    md = render_digest_markdown(
+        ctx,
+        kind="daily",
+        settings=_minimal_settings(digest_display_timezone="Not/A/Zone"),
+    )
+    assert "無効な DIGEST_DISPLAY_TIMEZONE" in caplog.text
+    assert "+00:00" in md or "Z" in md
+
+
+def test_digest_template_path_missing_file_raises() -> None:
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t1,
+        vcenter_count=0,
+        total_events=0,
+        notable_events_count=0,
+        top_notable_events=[],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    with pytest.raises(FileNotFoundError):
+        render_digest_markdown(
+            ctx,
+            kind="daily",
+            settings=_minimal_settings(digest_template_path="/nonexistent/digest.md.j2"),
+        )

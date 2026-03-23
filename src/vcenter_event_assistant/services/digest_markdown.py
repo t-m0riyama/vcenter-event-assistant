@@ -1,65 +1,94 @@
-"""集約コンテキストから LLM なしの Markdown ダイジェストを生成する。"""
+"""Jinja2 テンプレートから Markdown ダイジェストをレンダリングする。"""
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
+from importlib import resources
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from jinja2 import Environment
 
 from vcenter_event_assistant.services.digest_context import DigestContext
+from vcenter_event_assistant.settings import Settings
 
-# 要注意イベント一覧の最大行数（プロンプト長・可読性のため）
-_MAX_TOP_NOTABLE_EVENTS_IN_MARKDOWN = 20
+_logger = logging.getLogger(__name__)
 
 
-def _fmt_ts(dt: datetime) -> str:
+def _strip_opt(s: str | None) -> str:
+    return (s or "").strip()
+
+
+def _load_template_source(settings: Settings) -> str:
+    """spec「解決順（確定）」に従い UTF-8 でテンプレ全文を読む。"""
+    path_opt = _strip_opt(settings.digest_template_path)
+    if path_opt:
+        p = Path(path_opt)
+        if not p.is_file():
+            msg = f"digest template path is not a readable file: {p}"
+            raise FileNotFoundError(msg)
+        return p.read_text(encoding="utf-8")
+
+    dir_opt = _strip_opt(settings.digest_template_dir)
+    if dir_opt:
+        p = Path(dir_opt) / settings.digest_template_file
+        if not p.is_file():
+            msg = f"digest template under digest_template_dir is not a readable file: {p}"
+            raise FileNotFoundError(msg)
+        return p.read_text(encoding="utf-8")
+
+    ref = resources.files("vcenter_event_assistant") / "templates" / "digest.md.j2"
+    return ref.read_text(encoding="utf-8")
+
+
+def _resolve_display_timezone(settings: Settings) -> tuple[ZoneInfo, str]:
+    """表示用 ``ZoneInfo`` と、テンプレに渡すラベル（IANA 名）を返す。"""
+    name = _strip_opt(settings.digest_display_timezone) or "UTC"
+    if not name:
+        return timezone.utc, "UTC"
+    try:
+        return ZoneInfo(name), name
+    except KeyError:
+        _logger.warning(
+            "無効な DIGEST_DISPLAY_TIMEZONE=%r のため UTC にフォールバックします",
+            name,
+        )
+        return timezone.utc, "UTC"
+
+
+def _parse_to_utc(value: object) -> datetime:
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        s = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+    else:
+        raise TypeError(f"fmt_ts は str または datetime を想定しています: {type(value)!r}")
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
-def render_template_digest(ctx: DigestContext, *, title: str) -> str:
-    """``DigestContext`` から表・箇条書き中心の Markdown を組み立てる（LLM 不要）。"""
-    lines: list[str] = [
-        f"# {title}",
-        "",
-        f"- 集計期間（UTC）: `{_fmt_ts(ctx.from_utc)}` 〜 `{_fmt_ts(ctx.to_utc)}`（半開区間 `[from, to)`）",
-        f"- 登録 vCenter 数: {ctx.vcenter_count}",
-        f"- イベント総数: {ctx.total_events}",
-        f"- 要注意（notable_score ≥ 40）件数: {ctx.notable_events_count}",
-        "",
-        "## 上位イベント種別（件数順）",
-        "",
-        "| 種別 | 件数 | max notable |",
-        "|------|------|-------------|",
-    ]
-    for b in ctx.top_event_types:
-        lines.append(f"| `{b.event_type}` | {b.event_count} | {b.max_notable_score} |")
-    if not ctx.top_event_types:
-        lines.append("| （なし） | | |")
+def _format_ts_value(value: object, display_tz: ZoneInfo) -> str:
+    dt_utc = _parse_to_utc(value)
+    local = dt_utc.astimezone(display_tz)
+    return local.isoformat(timespec="seconds")
 
-    lines.extend(["", "## 要注意イベント（スコア上位）", ""])
-    top_slice = ctx.top_notable_events[:_MAX_TOP_NOTABLE_EVENTS_IN_MARKDOWN]
-    for ev in top_slice:
-        ent = ev.entity_name or "—"
-        lines.append(
-            f"- `{ev.event_type}` score={ev.notable_score} at `{_fmt_ts(ev.occurred_at)}` entity=`{ent}` — {ev.message[:200]}"
-        )
-    if not top_slice:
-        lines.append("- （該当なし）")
-    if len(ctx.top_notable_events) > _MAX_TOP_NOTABLE_EVENTS_IN_MARKDOWN:
-        lines.append(
-            f"\n（他 {len(ctx.top_notable_events) - _MAX_TOP_NOTABLE_EVENTS_IN_MARKDOWN} 件は省略）"
-        )
 
-    lines.extend(["", "## ホスト CPU 利用率（ピーク上位）", "", "| vCenter | ホスト | % | サンプル時刻 |", "|---------|--------|---|--------------|"])
-    for h in ctx.high_cpu_hosts:
-        lines.append(f"| `{h.vcenter_id[:8]}…` | `{h.entity_name}` | {h.value:.1f} | `{_fmt_ts(h.sampled_at)}` |")
-    if not ctx.high_cpu_hosts:
-        lines.append("| | （なし） | | |")
+def render_digest_markdown(ctx: DigestContext, *, kind: str, settings: Settings) -> str:
+    """
+    ``DigestContext`` を Jinja2 で Markdown にレンダリングする。
 
-    lines.extend(["", "## ホストメモリ利用率（ピーク上位）", "", "| vCenter | ホスト | % | サンプル時刻 |", "|---------|--------|---|--------------|"])
-    for h in ctx.high_mem_hosts:
-        lines.append(f"| `{h.vcenter_id[:8]}…` | `{h.entity_name}` | {h.value:.1f} | `{_fmt_ts(h.sampled_at)}` |")
-    if not ctx.high_mem_hosts:
-        lines.append("| | （なし） | | |")
+    Raises:
+        OSError / jinja2 例外: テンプレ読込・構文・レンダリング失敗時（呼び出し側で ``DigestRecord.status=error`` にできる）。
+    """
+    source = _load_template_source(settings)
+    display_tz, display_label = _resolve_display_timezone(settings)
 
-    return "\n".join(lines) + "\n"
+    env = Environment(autoescape=False)
+    env.filters["fmt_ts"] = lambda v: _format_ts_value(v, display_tz)
+    tpl = env.from_string(source)
+    ctx_dict: dict[str, Any] = ctx.model_dump(mode="json")
+    return str(tpl.render(kind=kind, ctx=ctx_dict, display_timezone=display_label)) + "\n"
