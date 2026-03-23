@@ -93,15 +93,17 @@ async def _gemini_generate_content(
     user_block: str,
 ) -> str:
     model = settings.llm_model.strip()
+    # クエリ ?key= は httpx の INFO ログに URL ごと出るため、x-goog-api-key ヘッダーで送る。
     url = (
         "https://generativelanguage.googleapis.com/v1beta/"
-        f"models/{model}:generateContent?key={api_key}"
+        f"models/{model}:generateContent"
     )
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
     body: dict[str, Any] = {
         "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": user_block}]}],
     }
-    r = await client.post(url, json=body)
+    r = await client.post(url, headers=headers, json=body)
     if r.status_code >= 400:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:2000]}")
     data = r.json()

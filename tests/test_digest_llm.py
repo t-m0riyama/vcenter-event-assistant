@@ -93,6 +93,9 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         async def post(self, url: str, **kwargs: object) -> httpx.Response:
             assert "generativelanguage.googleapis.com" in url
             assert "generateContent" in url
+            assert "?key=" not in url
+            hdrs = kwargs.get("headers") or {}
+            assert hdrs.get("x-goog-api-key") == "gemini-key"
             return httpx.Response(
                 200,
                 json={
