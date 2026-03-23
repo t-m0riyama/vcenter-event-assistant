@@ -1,0 +1,55 @@
+# vCenter ダイジェスト（{{ kind }}）
+
+- 集計期間: `{{ ctx.from_utc | fmt_ts }}` 〜 `{{ ctx.to_utc | fmt_ts }}`（半開区間 `[from, to)`；集計は UTC・表示は {{ display_timezone }}）
+- 登録 vCenter 数: {{ ctx.vcenter_count }}
+- イベント総数: {{ ctx.total_events }}
+- 要注意（notable_score ≥ 40）件数: {{ ctx.notable_events_count }}
+
+## 上位イベント種別（件数順）
+
+| 種別 | 件数 | max notable |
+|------|------|-------------|
+{% if ctx.top_event_types %}
+{% for b in ctx.top_event_types %}
+| `{{ b.event_type }}` | {{ b.event_count }} | {{ b.max_notable_score }} |
+{% endfor %}
+{% else %}
+| （なし） | | |
+{% endif %}
+
+## 要注意イベント（スコア上位）
+
+{% for ev in ctx.top_notable_events[:20] %}
+- `{{ ev.event_type }}` score={{ ev.notable_score }} at `{{ ev.occurred_at | fmt_ts }}` entity=`{{ ev.entity_name or "—" }}` — {{ ev.message[:200] }}
+{% else %}
+- （該当なし）
+{% endfor %}
+{% if ctx.top_notable_events | length > 20 %}
+
+（他 {{ ctx.top_notable_events | length - 20 }} 件は省略）
+{% endif %}
+
+## ホスト CPU 利用率（ピーク上位）
+
+| vCenter | ホスト | % | サンプル時刻 |
+|---------|--------|---|--------------|
+{% if ctx.high_cpu_hosts %}
+{% for h in ctx.high_cpu_hosts %}
+| `{{ h.vcenter_id[:8] }}…` | `{{ h.entity_name }}` | {{ h.value|round(1) }} | `{{ h.sampled_at | fmt_ts }}` |
+{% endfor %}
+{% else %}
+| | （なし） | | |
+{% endif %}
+
+## ホストメモリ利用率（ピーク上位）
+
+| vCenter | ホスト | % | サンプル時刻 |
+|---------|--------|---|--------------|
+{% if ctx.high_mem_hosts %}
+{% for h in ctx.high_mem_hosts %}
+| `{{ h.vcenter_id[:8] }}…` | `{{ h.entity_name }}` | {{ h.value|round(1) }} | `{{ h.sampled_at | fmt_ts }}` |
+{% endfor %}
+{% else %}
+| | （なし） | | |
+{% endif %}
+

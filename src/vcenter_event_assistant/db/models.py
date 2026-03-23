@@ -107,3 +107,22 @@ class IngestionState(Base):
     cursor_value: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     vcenter: Mapped["VCenter"] = relationship(back_populates="ingestion_states")
+
+
+class DigestRecord(Base):
+    """バッチ生成した Markdown ダイジェスト（期間・種別ごとに 1 行）。同一期間の再実行は別行として蓄積可能。"""
+
+    __tablename__ = "digest_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    body_markdown: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now().astimezone(),
+    )

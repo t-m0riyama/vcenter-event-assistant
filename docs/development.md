@@ -1,5 +1,17 @@
 # 開発者向けメモ
 
+## バッチダイジェスト API（実験的）
+
+- `GET /api/digests` … 保存済みダイジェスト一覧（`limit` / `offset`）
+- `GET /api/digests/{id}` … 1 件取得
+- `POST /api/digests/run` … 手動生成。JSON 省略時は **直前の UTC 暦日** を対象。`from_time` / `to_time` を両方指定すると任意期間
+
+環境変数は `.env.example` の「Batch digest」を参照。`LLM_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。
+
+ダイジェスト本文は **Jinja2**（`DIGEST_TEMPLATE_*` / 同梱 `digest.md.j2`）。**解決順**・PATH 指定時のエラー扱い・**次回の API / スケジュール実行から**テンプレ変更が反映されることは `.env.example` のコメントを参照。**集計期間**は従来どおり **UTC の `[from, to)`**。**日時の見た目**だけ `DIGEST_DISPLAY_TIMEZONE`（IANA）で変換する。テンプレ構文エラーやファイル不可のときは `DigestRecord.status=error` で保存され LLM は呼ばれない。
+
+**件数の上限:** 同梱テンプレでは要注意イベントなどを `ctx.top_notable_events[:20]` のように**テンプレ内でスライス**しているが、**`ctx` に載る件数は `digest_context.build_digest_context` 側の定数**（例: 上位イベントはクエリで最大 10 件）で決まる。テンプレートだけ行数を増やしても、集約側の上限を上げない限り **DB から渡る行は増えない**（必要なら `digest_context.py` の定数を変更する）。
+
 ## UI スクリーンショット（`docs/images`）
 
 ドキュメント用の画面キャプチャは Playwright で取得し、`docs/images/*.png` に保存します。テスト定義は `frontend/e2e/screenshots.spec.ts` です。
