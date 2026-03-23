@@ -40,8 +40,10 @@
 Run:
 
 ```bash
-cd /path/to/vcenter-event-assistant && uv add jinja2
+cd "$(git rev-parse --show-toplevel)" && uv add jinja2
 ```
+
+（リポジトリルートが分かっている場合は、そのディレクトリで `uv add jinja2` でよい。）
 
 Expected: `pyproject.toml` に `jinja2` が追加される。
 
@@ -96,11 +98,19 @@ git commit -m "feat(settings): add digest template and display timezone options"
 - 1 行目付近で `# vCenter ダイジェスト（{{ kind }}）`（コードから `title` は渡さない）。
 - 期間・件数・表・要注意イベント・CPU/メモリは現行と同じ情報を出す。
 - 要注意イベントは `{% for ev in ctx.top_notable_events[:20] %}` のように **テンプレ内でスライス**。
-- 日時は `{{ ctx.from_utc | fmt_ts }}` 形式（フィルタは次タスクで実装）。
+- 日時は `{{ ctx.from_utc | fmt_ts }}` 形式（フィルタは Task 4 で実装）。
 
-- [ ] **Step 2: パッケージに含まれるよう `pyproject.toml` の package-data または hatch/setuptools の設定を確認**
+**Task 3 と Task 4 の関係:** この時点では `fmt_ts` と `render_digest_markdown` は未実装のため、**Task 3 のコミットだけを取り込んだブランチでは** `render_digest_markdown` による結合テストはまだ存在しない。実装者は **Task 3 と Task 4 を連続して完了**するか、**Task 3 のテンプレ追加と Task 4 のレンダリング実装を 1 コミットにまとめて**よい。CI がコミットごとに全テストする場合、**Task 3 単体のコミット後に `test_digest_markdown` を新 API に切り替えない**こと（Task 4 完了まで旧 API のままにする）。
 
-`vcenter_event_assistant` が `templates/*.j2` をホイールに含めること。既存のパッケージレイアウト（`src/`）に合わせ、`importlib.resources.files("vcenter_event_assistant") / "templates" / "digest.md.j2"` で読めるようにする。
+- [ ] **Step 2: 同梱ファイルがパッケージから読めることを確認**
+
+`pyproject.toml` / `uv_build` で `templates/*.j2` が配布物に含まれることを確認する。次でスモークできる（リポジトリルート、`uv sync` 済み）:
+
+```bash
+uv run python -c "from importlib.resources import files; p = files('vcenter_event_assistant') / 'templates' / 'digest.md.j2'; print(p.read_text(encoding='utf-8')[:120])"
+```
+
+失敗する場合は `[tool.uv]` またはビルドバックエンドのデータファイル設定を見直す。
 
 - [ ] **Step 3: コミット**
 
@@ -136,13 +146,13 @@ Expected: **FAIL**（関数名未定義など）。
 
 - [ ] **Step 2: 解決関数を実装**
 
-解決順（spec 厳守）:
+解決順は **spec「解決順（確定）」** に従う（[`2026-03-23-digest-markdown-template-design.md`](../../specs/2026-03-23-digest-markdown-template-design.md) の設定節）。
 
-1. `digest_template_path` が非空 → そのパスが **ファイルとして存在**すればその内容を使用。存在しなければ **例外**（または spec に合わせてフォールバック — spec は「無効なら次」ではなく PATH 優先なので、**存在しない場合は明確に失敗**でよい。設計書「未設定または無効なら」は PATH が空のときの話。実装メモ: **PATH 指定かつファイルなし → エラー**）。
+要点:
 
-2. `digest_template_dir` が非空 → `Path(dir) / digest_template_file` を読む。
-
-3. それ以外 → `importlib.resources` で同梱 `digest.md.j2` を読む。
+1. **`digest_template_path` が非空** → ファイルとして **読めなければ例外**（**DIR へはフォールバックしない**）。
+2. **`digest_template_path` が空** かつ **`digest_template_dir` が非空** → `Path(dir) / digest_template_file` を読む。**ファイルが存在しない・読めない場合は例外**（同梱へフォールバックしない）。
+3. **上記いずれも使わない** → `importlib.resources` で同梱 `digest.md.j2`。
 
 各ステップで **UTF-8** で全文読み込み（**毎回**）。
 
@@ -164,11 +174,13 @@ def render_digest_markdown(ctx: DigestContext, *, kind: str, settings: Settings)
     return tpl.render(kind=kind, ctx=ctx_dict, display_timezone=resolved_iana_string)
 ```
 
-- [ ] **Step 5: テスト PASS**
+- [ ] **Step 5: テスト PASS と無効 TZ**
 
 Run: `uv run pytest tests/test_digest_markdown.py -v`
 
 Expected: PASS
+
+**無効な `DIGEST_DISPLAY_TIMEZONE`:** `Settings(digest_display_timezone="Not/A/Zone", ...)` のように **不正な IANA** で `render_digest_markdown` を呼び、**UTC フォールバック**（および `warning` ログが出ること）を **1 テスト**で検証する（`caplog` または `pytest` の `caplog` フィクスチャ）。
 
 - [ ] **Step 6: コミット**
 
@@ -243,6 +255,8 @@ rg "render_template_digest" src tests
 
 Expected: ゼロ件。
 
+**注:** 環境変数や `get_settings()` のキャッシュでテンプレパスを切り替える結合テストを書く場合は、テストの前後で `get_settings.cache_clear()` を呼ぶ（`run_digest_once(..., settings=Settings(...))` のように **明示的に `Settings` を渡す**テストは従来どおりキャッシュ不要）。
+
 - [ ] **Step 2: 全テスト**
 
 Run: `uv run pytest -q`
@@ -299,9 +313,24 @@ Expected: すべて PASS
 
 ---
 
-## Plan Review（任意）
+## Plan Review 記録
 
-リポジトリに `plan-document-reviewer-prompt.md` が無い場合、**人間レビュー**で計画と spec の整合を確認する。
+**レビュー日:** 2026-03-23（`plan-document-reviewer` 観点）
+
+**Status:** Approved（下記の指摘を spec / 本計画に反映済み）
+
+**Issues（修正前）:**
+
+- `DIGEST_TEMPLATE_PATH` が「無効」のときに `DIR` へフォールバックするか、spec と計画の文言が曖昧だった → **spec に解決順（確定）**を追記（PATH 非空かつファイル不可は **エラー、DIR に落とさない**；DIR 指定でファイル不可も **エラー、同梱に落とさない**）。
+- `DIGEST_TEMPLATE_DIR` 分岐でファイル不存在時の扱いが計画に無かった → **Step 2** に明記。
+- Task 3 のみのコミットでは `fmt_ts` 未実装のため中間状態が不明瞭 → **Task 3 の注意書き**と「Task 3+4 連続または 1 コミット」を追記。
+- Task 1 の `cd` がプレースホルダ → **`git rev-parse --show-toplevel`** 例に変更。
+- 無効 TZ のテスト・`get_settings` キャッシュ・同梱ファイルの確認コマンドが薄かった → **Task 4 Step 5**、**Task 6 Step 1 注**、**Task 3 Step 2** に追記。
+- `fmt_ts` の「UTC 以外」表現が `UTC` 設定時と矛盾しうる → **spec** で「その TZ でのローカル時刻（UTC は +00:00 等）」に修正。
+
+**Recommendations（ブロックしない）:**
+
+- ホイールに `templates` が入らない場合は `uv build` 後に `.whl` を展開して目視確認してもよい。
 
 ---
 

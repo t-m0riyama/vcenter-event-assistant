@@ -36,10 +36,21 @@
 | 変数 | 説明 |
 |------|------|
 | `DIGEST_TEMPLATE_PATH` | 任意。非空なら **このファイル**を最優先で使用（絶対パス推奨。相対パスは **プロセスのカレントディレクトリ**基準とドキュメント化）。 |
-| `DIGEST_TEMPLATE_DIR` | 任意。`PATH` 未指定時、`DIGEST_TEMPLATE_FILE` と組み合わせてパスを構成。 |
+| `DIGEST_TEMPLATE_DIR` | 任意。`DIGEST_TEMPLATE_PATH` が空のとき、`DIGEST_TEMPLATE_FILE` と組み合わせてパスを構成。 |
 | `DIGEST_TEMPLATE_FILE` | 既定例: `digest.md.j2`。`DIR` と組み合わせて使用。 |
 
-**解決順**: `DIGEST_TEMPLATE_PATH` →（未設定または無効なら）`DIGEST_TEMPLATE_DIR` + `DIGEST_TEMPLATE_FILE` → どちらも使えなければ **パッケージ内の同梱デフォルト**（例: `vcenter_event_assistant` 配下の `templates/digest.md.j2` 等、実装時に確定）。
+**解決順（確定）**:
+
+1. **`DIGEST_TEMPLATE_PATH` が非空のとき**  
+   - 指すパスが **通常ファイルとして存在し読み取り可能**なら、その内容を使用する。  
+   - **存在しない・ディレクトリである・読めない**など **利用できない場合はエラー**とし、**`DIGEST_TEMPLATE_DIR` にはフォールバックしない**（設定ミスを隠さない）。
+
+2. **`DIGEST_TEMPLATE_PATH` が空（未設定）のとき**  
+   - `DIGEST_TEMPLATE_DIR` が非空なら `Path(DIGEST_TEMPLATE_DIR) / DIGEST_TEMPLATE_FILE` を読む。  
+   - **ファイルが存在しない・読めない場合はエラー**（同梱デフォルトにはフォールバックしない）。
+
+3. **`DIGEST_TEMPLATE_PATH` も `DIGEST_TEMPLATE_DIR` も実質使わないとき**（両方とも空など）  
+   - **パッケージ内の同梱デフォルト**（例: `vcenter_event_assistant/templates/digest.md.j2`）を `importlib.resources` で読む。
 
 **読み込み**: **`run_digest_once` のたび**にテンプレートファイルを **毎回読み直す**（次回の手動/API/スケジュール実行から反映）。
 
@@ -68,7 +79,7 @@
 ### フィルタ `fmt_ts`
 
 - **入力**: ISO 文字列または datetime（どちらでも吸収）。
-- **出力**: `DIGEST_DISPLAY_TIMEZONE` に従う **UTC 以外のオフセット付き表示**を既定とする（形式は `YYYY-MM-DDTHH:MM:SS±HH:MM` 等、実装で一貫させる）。
+- **出力**: `DIGEST_DISPLAY_TIMEZONE` に従い **その TZ でのローカル時刻**を表す文字列とする（`UTC` のときは `+00:00` または `Z` 等、実装で一貫させる）。
 - **登録**: Jinja `Environment` に `fmt_ts` をフィルタとして登録。例: `{{ ctx.from_utc | fmt_ts }}`。
 
 ### 件数上限・リスト
