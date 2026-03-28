@@ -35,8 +35,8 @@ flowchart TB
   Browser --> Proxy
   Proxy --> FE
   FE -->|HTTP_API| BE
-  BE -->|pyVmomi_収集| VC
-  BE -.->|ダイジェスト補助| LLM
+  BE -->|イベント、メトリクス収集| VC
+  BE -.->|ダイジェスト要約| LLM
 ```
 
 ## 特長

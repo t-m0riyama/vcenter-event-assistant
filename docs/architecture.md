@@ -23,7 +23,7 @@
 ```mermaid
 flowchart TB
   Browser[ブラウザ]
-  Proxy[リバースプロキシ任意]
+  Proxy[リバースプロキシ（任意）]
   subgraph fe [フロントエンド]
     FE[React_SPA]
   end
@@ -31,13 +31,13 @@ flowchart TB
     BE[FastAPI]
   end
   VC[vCenter]
-  LLM[LLM_API任意ベータ]
+  LLM[LLM_API（任意、ベータ）]
 
   Browser --> Proxy
   Proxy --> FE
   FE -->|HTTP_API| BE
-  BE -->|pyVmomi_収集| VC
-  BE -.->|ダイジェスト補助| LLM
+  BE -->|イベント、メトリクス収集| VC
+  BE -.->|ダイジェスト要約| LLM
 ```
 
 ## データフロー（内部）
