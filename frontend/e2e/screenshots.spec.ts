@@ -7,14 +7,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /** リポジトリルートの `docs/images`（`frontend/e2e` → 2 階層上がルート） */
 const docsImagesDir = path.join(__dirname, '../../docs/images')
 
+/** ドキュメント用 PNG の共通ピクセル寸法（`fullPage: false` のビューポートと一致） */
+const DOC_SCREENSHOT_WIDTH = 1280
+const DOC_SCREENSHOT_HEIGHT = 720
+
 /**
  * ドキュメント用に主要タブの画面を `docs/images` に PNG 保存する。
  * 再取得手順はリポジトリルートの `docs/development.md` を参照。
+ *
+ * バックエンドは `SCREENSHOT_E2E_SEED=1`（Playwright `webServer` 既定）で
+ * ガイド付きイベント等をメモリ DB に挿入する。
  */
 test('主要画面のスクリーンショットを docs/images に保存', async ({ page }) => {
   mkdirSync(docsImagesDir, { recursive: true })
 
   await page.goto('/')
+  await page.setViewportSize({
+    width: DOC_SCREENSHOT_WIDTH,
+    height: DOC_SCREENSHOT_HEIGHT,
+  })
   await expect(
     page.getByRole('heading', { name: 'vCenter Event Assistant' }),
   ).toBeVisible()
@@ -23,15 +34,23 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await expect(page.getByText('登録 vCenter', { exact: true })).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'summary.png'),
-    fullPage: true,
+    fullPage: false,
   })
 
   await page.getByRole('button', { name: 'イベント' }).click()
-  // 0 件時は「全 0 件」、1 件以上は「全 N 件中 …」のいずれか
   await expect(page.getByText(/全 \d+ 件/)).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'events.png'),
-    fullPage: true,
+    fullPage: false,
+  })
+
+  const guideDetails = page.locator('td.event-type-guide-cell details.event-type-guide-details').first()
+  await guideDetails.locator('summary').click()
+  await expect(page.getByText('一般的な意味', { exact: true }).first()).toBeVisible()
+  await guideDetails.scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: path.join(docsImagesDir, 'events-event-type-guide-expanded.png'),
+    fullPage: false,
   })
 
   await page.getByRole('button', { name: 'グラフ' }).click()
@@ -39,7 +58,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await expect(page.getByLabel('メトリクスキー')).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'metrics.png'),
-    fullPage: true,
+    fullPage: false,
   })
 
   await page.getByRole('button', { name: '設定' }).click()
@@ -47,14 +66,14 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await expect(page.getByLabel('外観')).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'settings-general.png'),
-    fullPage: true,
+    fullPage: false,
   })
 
   await page.getByRole('button', { name: 'vCenter' }).click()
   await expect(page.getByRole('heading', { name: '登録' })).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'settings-vcenters.png'),
-    fullPage: true,
+    fullPage: false,
   })
 
   await page.getByRole('button', { name: 'スコアルール' }).click()
@@ -65,6 +84,18 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   ).toBeVisible()
   await page.screenshot({
     path: path.join(docsImagesDir, 'settings-score-rules.png'),
-    fullPage: true,
+    fullPage: false,
+  })
+
+  await page.getByRole('button', { name: 'イベント種別ガイド' }).click()
+  await expect(
+    page.getByText('イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに', {
+      exact: false,
+    }),
+  ).toBeVisible()
+  await page.locator('.event-type-guides-list').scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: path.join(docsImagesDir, 'settings-event-type-guides-list.png'),
+    fullPage: false,
   })
 })

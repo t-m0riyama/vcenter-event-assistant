@@ -34,7 +34,7 @@ export default defineConfig({
   webServer: useExistingServerOnly
     ? undefined
     : {
-        command: `DATABASE_URL=sqlite+aiosqlite:///:memory: SCHEDULER_ENABLED=false uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 127.0.0.1 --port ${port}`,
+        command: `DATABASE_URL=sqlite+aiosqlite:///:memory: SCHEDULER_ENABLED=false SCREENSHOT_E2E_SEED=1 uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 127.0.0.1 --port ${port}`,
         cwd: repoRoot,
         url: `${baseURL}/health`,
         reuseExistingServer: !process.env.CI,
