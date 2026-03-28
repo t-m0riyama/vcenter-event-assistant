@@ -1,7 +1,7 @@
 /**
  * GFM の pipe 表は「ヘッダ行の直後に区切り行（`| --- |`）」が必須。
- * ヘッダとデータの間に空行があるとブロックが分断され、データ行が表にならない。
- * また区切り行が無いとデータ行は生テキストになる。保存済み Markdown を補正する。
+ * ヘッダ・区切り・データのいずれかの間に空行があると表が分断され、複数の表や生テキスト行になる。
+ * 保存済み Markdown を補正する。
  */
 
 function isPipeTableRow(line: string): boolean {
@@ -85,9 +85,25 @@ function indexOfNextNonBlankLine(lines: readonly string[], start: number): numbe
 }
 
 /**
+ * この pipe 行の直後（空行を除く）が区切り行なら、新しい表の先頭行とみなす。
+ * 連続した表のあいだの空行はこの行を境に残す。
+ */
+function isStartOfNewPipeTable(lines: readonly string[], pipeLineIdx: number): boolean {
+  const line = lines[pipeLineIdx]
+  if (line === undefined || !isPipeTableRow(line) || isPipeTableDelimiterRow(line)) {
+    return false
+  }
+  const nextNonBlank = indexOfNextNonBlankLine(lines, pipeLineIdx + 1)
+  if (nextNonBlank >= lines.length) {
+    return false
+  }
+  return isPipeTableDelimiterRow(lines[nextNonBlank]!)
+}
+
+/**
  * 区切り行が欠けている pipe 表を補う。ヘッダとデータの間の空行は削除して 1 つの表にまとめる。
  */
-export function repairPipeTablesForGfm(markdown: string): string {
+function insertMissingDelimiterRows(markdown: string): string {
   const lines = markdown.split(/\r?\n/)
   let i = 0
   while (i < lines.length) {
@@ -124,4 +140,40 @@ export function repairPipeTablesForGfm(markdown: string): string {
     i += 2
   }
   return lines.join('\n')
+}
+
+/**
+ * 同一表内で pipe 行と pipe 行のあいだに空行があると GFM では表が終了する。
+ * 次の pipe 行が「新しい表の先頭」（直後に区切り行）でないときだけ空行を除去する。
+ */
+function removeBlankLinesBetweenPipeTableRows(markdown: string): string {
+  const lines = markdown.split(/\r?\n/)
+  const out: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]!
+    if (line.trim() === '' && out.length > 0) {
+      const prev = out[out.length - 1]!
+      const j = indexOfNextNonBlankLine(lines, i)
+      if (j < lines.length) {
+        const next = lines[j]!
+        if (
+          isPipeTableRow(prev) &&
+          isPipeTableRow(next) &&
+          countPipeColumns(prev) === countPipeColumns(next) &&
+          !isStartOfNewPipeTable(lines, j)
+        ) {
+          i = j
+          continue
+        }
+      }
+    }
+    out.push(line)
+    i += 1
+  }
+  return out.join('\n')
+}
+
+export function repairPipeTablesForGfm(markdown: string): string {
+  return removeBlankLinesBetweenPipeTableRows(insertMissingDelimiterRows(markdown))
 }
