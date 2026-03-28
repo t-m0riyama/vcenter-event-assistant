@@ -61,7 +61,7 @@ async def test_run_digest_once_persists_without_llm() -> None:
         assert row.id is not None
         assert row.status == "ok"
         assert row.kind == "daily"
-        assert "# vCenter ダイジェスト（daily）" in row.body_markdown
+        assert "# vCenter ダイジェスト（日次）" in row.body_markdown
         assert "VmPoweredOnEvent" in row.body_markdown
         assert row.llm_model is None
         assert row.error_message is None

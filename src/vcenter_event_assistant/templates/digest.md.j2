@@ -1,4 +1,4 @@
-# vCenter ダイジェスト（{{ kind }}）
+# vCenter ダイジェスト（{% if kind == "daily" %}日次{% elif kind == "weekly" %}週次{% elif kind == "monthly" %}月次{% else %}{{ kind }}{% endif %}）
 
 - 集計期間: `{{ ctx.from_utc | fmt_ts }}` 〜 `{{ ctx.to_utc | fmt_ts }}`（半開区間 `[from, to)`；集計は UTC・表示は {{ display_timezone }}）
 - 登録 vCenter 数: {{ ctx.vcenter_count }}
