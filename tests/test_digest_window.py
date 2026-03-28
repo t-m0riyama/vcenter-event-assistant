@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from vcenter_event_assistant.services.digest_window import (
+    utc_previous_calendar_month_window,
     utc_previous_week_window,
     utc_yesterday_window,
 )
@@ -53,3 +54,31 @@ def test_previous_week_window_sunday_after_midnight_anchor() -> None:
     fr, to = utc_previous_week_window(now)
     assert to == datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
     assert fr == datetime(2026, 3, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def test_previous_calendar_month_mid_march() -> None:
+    now = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    fr, to = utc_previous_calendar_month_window(now)
+    assert fr == datetime(2026, 2, 1, 0, 0, 0, tzinfo=timezone.utc)
+    assert to == datetime(2026, 3, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def test_previous_calendar_month_on_first_of_month() -> None:
+    now = datetime(2026, 3, 1, 8, 0, 0, tzinfo=timezone.utc)
+    fr, to = utc_previous_calendar_month_window(now)
+    assert fr == datetime(2026, 2, 1, 0, 0, 0, tzinfo=timezone.utc)
+    assert to == datetime(2026, 3, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def test_previous_calendar_month_leap_year() -> None:
+    now = datetime(2024, 3, 10, 0, 0, 0, tzinfo=timezone.utc)
+    fr, to = utc_previous_calendar_month_window(now)
+    assert fr == datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc)
+    assert to == datetime(2024, 3, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def test_previous_calendar_month_year_boundary() -> None:
+    now = datetime(2026, 1, 10, 0, 0, 0, tzinfo=timezone.utc)
+    fr, to = utc_previous_calendar_month_window(now)
+    assert fr == datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
+    assert to == datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
