@@ -41,11 +41,43 @@ class Settings(BaseSettings):
 
     digest_scheduler_enabled: bool = Field(
         default=False,
-        description="True のとき APScheduler に日次ダイジェストジョブを登録する（scheduler_enabled も True であること）。",
+        description=(
+            "（非推奨）日次ダイジェストを有効化するレガシー名。`DIGEST_SCHEDULER_ENABLED`。"
+            "新設の `digest_daily_enabled` と OR で実効化される（`effective_digest_daily_enabled`）。"
+        ),
     )
     digest_cron: str = Field(
         default="0 7 * * *",
-        description="日次ダイジェストの cron（APScheduler CronTrigger）。既定は毎日 UTC 7:00。",
+        description=(
+            "（非推奨）レガシー日次 cron。`DIGEST_CRON`。"
+            "`digest_daily_enabled` が True のときは `digest_daily_cron` が優先され、"
+            "レガシーのみ有効なときだけ本フィールドが実効（`effective_digest_daily_cron`）。"
+        ),
+    )
+
+    digest_daily_enabled: bool = Field(
+        default=False,
+        description="日次ダイジェスト APScheduler ジョブ（`DIGEST_DAILY_ENABLED`）。",
+    )
+    digest_daily_cron: str = Field(
+        default="0 7 * * *",
+        description="日次ダイジェストの cron（`DIGEST_DAILY_CRON`、5 フィールド）。",
+    )
+    digest_weekly_enabled: bool = Field(
+        default=False,
+        description="週次ダイジェスト APScheduler ジョブ（`DIGEST_WEEKLY_ENABLED`）。",
+    )
+    digest_weekly_cron: str = Field(
+        default="0 8 * * 0",
+        description="週次ダイジェストの cron（`DIGEST_WEEKLY_CRON`）。曜日は環境により 0 または 7 が日曜のことがある。",
+    )
+    digest_monthly_enabled: bool = Field(
+        default=False,
+        description="月次ダイジェスト APScheduler ジョブ（`DIGEST_MONTHLY_ENABLED`）。",
+    )
+    digest_monthly_cron: str = Field(
+        default="5 0 1 * *",
+        description="月次ダイジェストの cron（`DIGEST_MONTHLY_CRON`）。例: 毎月 1 日 00:05 UTC。",
     )
 
     digest_template_path: str | None = Field(
@@ -98,6 +130,20 @@ class Settings(BaseSettings):
         description="OpenAI 互換時は gpt-4o-mini 等。Gemini 時は gemini-2.0-flash 等（Google AI Studio のモデル ID）。",
     )
     llm_timeout_seconds: float = Field(default=60.0, ge=5.0, le=600.0)
+
+    @property
+    def effective_digest_daily_enabled(self) -> bool:
+        """日次ダイジェストジョブを登録するか（新フラグとレガシーの OR）。"""
+        return self.digest_daily_enabled or self.digest_scheduler_enabled
+
+    @property
+    def effective_digest_daily_cron(self) -> str:
+        """日次ジョブ用の実効 cron（新 `digest_daily_enabled` 優先、なければレガシー `digest_cron`）。"""
+        if self.digest_daily_enabled:
+            return self.digest_daily_cron
+        if self.digest_scheduler_enabled:
+            return self.digest_cron
+        return self.digest_daily_cron
 
 
 @lru_cache
