@@ -70,7 +70,7 @@ def test_render_digest_markdown_uses_kind_not_title() -> None:
         ],
     )
     md = render_digest_markdown(ctx, kind="daily", settings=_minimal_settings())
-    assert "# vCenter ダイジェスト（daily）" in md
+    assert "# vCenter ダイジェスト（日次）" in md
     assert "42" in md
     assert "VmPoweredOnEvent" in md
     assert "ホスト CPU" in md
