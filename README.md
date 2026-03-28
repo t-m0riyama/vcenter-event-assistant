@@ -193,7 +193,7 @@ uv run ruff check src tests
 uv run pytest -q
 ```
 
-UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は [docs/development.md](docs/development.md)）。
+UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は [docs/development.md](docs/development.md)）。一方、**Playwright E2E**（`frontend` で `npm run e2e`）は **テスト専用プロセスを新規起動**して実施する（既定は別ポート `9323`）。
 
 ## ドキュメント
 

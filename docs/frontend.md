@@ -62,10 +62,11 @@ uv run scripts/capture_ui_screenshots.py --spawn-server
 | `npm run build`       | 本番用ビルド（`dist/`）                          |
 | `npm run test`        | Vitest 単体テスト                             |
 | `npm run lint`        | ESLint                                   |
-| `npm run e2e`         | ビルド後に Playwright E2E                     |
+| `npm run e2e`         | ビルド後に Playwright E2E（**テスト専用** API を Playwright が新規起動。既定ポート `9323`。`screenshots.spec.ts` は除外） |
 | `npm run screenshots` | ドキュメント用スクリーンショットのみ取得（既定で `localhost:8000` の起動済み API 向け） |
 | `npm run screenshots:spawn` | `npm run build` のうえ Playwright が API を起動して取得（シード付きメモリ DB） |
 
+**E2E とドキュメント用キャプチャ:** `npm run e2e` は **手元の 8000 ではなく**、既定どおりテスト用インスタンス（別ポート）で検証する。ドキュメント用 PNG は **あらかじめ 8000 で API＋フロントを起動したうえで** `npm run screenshots` またはリポジトリルートの `uv run scripts/capture_ui_screenshots.py` を使う前提である。設定の詳細は [開発者向けメモ（`docs/development.md`）](development.md) を参照する。
 
 バックエンドの起動・環境変数は [リポジトリルートの README](../README.md) を参照してください。
 

@@ -48,7 +48,8 @@ test.describe('概要（空データ）', () => {
     await expect(page.getByText('24h イベント', { exact: true })).toBeVisible()
     await expect(page.getByText('24h 要注意（スコア≥40）', { exact: true })).toBeVisible()
 
-    const notableSummary = page.locator('.summary-panel__notable-details summary')
+    // `details` 直下の折りたたみ見出しのみ（テーブル内のガイド用 summary と区別）
+    const notableSummary = page.locator('.summary-panel__notable-details > summary')
     await expect(notableSummary).toContainText('要注意イベント（上位）')
     await expect(notableSummary).toContainText('該当なし')
     await expectNoErrorBanner(page)

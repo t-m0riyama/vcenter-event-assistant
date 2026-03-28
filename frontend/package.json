@@ -12,8 +12,8 @@
     "test": "vitest run",
     "e2e": "npm run build && playwright test",
     "e2e:install": "playwright install",
-    "screenshots": "PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=8000 playwright test e2e/screenshots.spec.ts",
-    "screenshots:spawn": "npm run build && playwright test e2e/screenshots.spec.ts"
+    "screenshots": "PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=8000 E2E_RUN_SCREENSHOTS_SPEC=1 WRITE_DOC_SCREENSHOTS_TO_REPO=1 playwright test e2e/screenshots.spec.ts",
+    "screenshots:spawn": "npm run build && SCREENSHOT_E2E_SEED=1 E2E_RUN_SCREENSHOTS_SPEC=1 WRITE_DOC_SCREENSHOTS_TO_REPO=1 playwright test e2e/screenshots.spec.ts"
   },
   "dependencies": {
     "react": "^19.2.4",

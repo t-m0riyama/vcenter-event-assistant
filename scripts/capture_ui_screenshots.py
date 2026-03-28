@@ -44,6 +44,19 @@ def _run(
         sys.exit(result.returncode)
 
 
+def _screenshot_playwright_env() -> dict[str, str]:
+    """ドキュメント用 `screenshots.spec.ts` 実行用（testIgnore 解除・`docs/images` への書き込み許可）。"""
+    return {
+        "E2E_RUN_SCREENSHOTS_SPEC": "1",
+        "WRITE_DOC_SCREENSHOTS_TO_REPO": "1",
+    }
+
+
+def _spawn_server_env() -> dict[str, str]:
+    """Playwright が webServer で API を起動するとき、ドキュメント用 DB シードを有効にする。"""
+    return {**_screenshot_playwright_env(), "SCREENSHOT_E2E_SEED": "1"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="docs/images 向け UI スクリーンショットを Playwright で取得する",
@@ -90,10 +103,13 @@ def main() -> None:
         _run(["npm", "run", "build"], cwd=frontend)
 
     if args.spawn_server:
-        _run(play_cmd, cwd=frontend)
+        _run(play_cmd, cwd=frontend, extra_env=_spawn_server_env())
         return
 
-    env: dict[str, str] = {"PLAYWRIGHT_USE_EXISTING_SERVER": "1"}
+    env: dict[str, str] = {
+        "PLAYWRIGHT_USE_EXISTING_SERVER": "1",
+        **_screenshot_playwright_env(),
+    }
     if args.base_url:
         env["E2E_BASE_URL"] = args.base_url.rstrip("/")
     else:

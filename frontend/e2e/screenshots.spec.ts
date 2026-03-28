@@ -4,22 +4,30 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-/** リポジトリルートの `docs/images`（`frontend/e2e` → 2 階層上がルート） */
-const docsImagesDir = path.join(__dirname, '../../docs/images')
+/** リポジトリにコミットするドキュメント PNG 用（`frontend/e2e` → 2 階層上がルート） */
+const repoDocsImagesDir = path.join(__dirname, '../../docs/images')
+/** `WRITE_DOC_SCREENSHOTS_TO_REPO=1` のときだけここへ保存。それ以外は gitignore された検証用出力のみ。 */
+const screenshotOutputDir =
+  process.env.WRITE_DOC_SCREENSHOTS_TO_REPO === '1'
+    ? repoDocsImagesDir
+    : path.join(__dirname, '../test-results/doc-screenshots')
 
 /** ドキュメント用 PNG の共通ピクセル寸法（`fullPage: false` のビューポートと一致） */
 const DOC_SCREENSHOT_WIDTH = 1280
 const DOC_SCREENSHOT_HEIGHT = 720
 
 /**
- * ドキュメント用に主要タブの画面を `docs/images` に PNG 保存する。
+ * ドキュメント用に主要タブの画面を PNG 保存する。
+ * リポジトリの `docs/images` へ書き込むのは **`WRITE_DOC_SCREENSHOTS_TO_REPO=1` のときだけ**
+ *（`capture_ui_screenshots.py` / `npm run screenshots*` が付与）。未設定時は `frontend/test-results/` のみ。
  * 再取得手順はリポジトリルートの `docs/development.md` を参照。
  *
  * 既定の取得先は既起動の API（例: localhost:8000）。`playwright.config` の webServer は
  * `--spawn-server` 付きで `capture_ui_screenshots.py` を実行したときのみ使う。
+ * `npm run e2e` では `testIgnore` により本ファイルは実行されない（`E2E_RUN_SCREENSHOTS_SPEC=1` で解除）。
  */
 test('主要画面のスクリーンショットを docs/images に保存', async ({ page }) => {
-  mkdirSync(docsImagesDir, { recursive: true })
+  mkdirSync(screenshotOutputDir, { recursive: true })
 
   await page.goto('/')
   await page.setViewportSize({
@@ -33,14 +41,14 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await page.getByRole('button', { name: '概要' }).click()
   await expect(page.getByText('登録 vCenter', { exact: true })).toBeVisible()
   await page.screenshot({
-    path: path.join(docsImagesDir, 'summary.png'),
+    path: path.join(screenshotOutputDir, 'summary.png'),
     fullPage: false,
   })
 
   await page.getByRole('button', { name: 'イベント' }).click()
   await expect(page.getByText(/全 \d+ 件/)).toBeVisible()
   await page.screenshot({
-    path: path.join(docsImagesDir, 'events.png'),
+    path: path.join(screenshotOutputDir, 'events.png'),
     fullPage: false,
   })
 
@@ -57,7 +65,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await guideDetails.scrollIntoViewIfNeeded()
   await page.getByRole('heading', { name: 'vCenter Event Assistant' }).hover({ position: { x: 2, y: 2 } })
   await page.screenshot({
-    path: path.join(docsImagesDir, 'events-event-type-guide-expanded.png'),
+    path: path.join(screenshotOutputDir, 'events-event-type-guide-expanded.png'),
     fullPage: false,
   })
 
@@ -68,7 +76,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   // Recharts は系列ごとに `.recharts-line` を複数描画するため strict 回避で先頭のみ検証する
   await expect(page.locator('.recharts-line').first()).toBeVisible({ timeout: 20_000 })
   await page.screenshot({
-    path: path.join(docsImagesDir, 'metrics.png'),
+    path: path.join(screenshotOutputDir, 'metrics.png'),
     fullPage: false,
   })
 
@@ -76,14 +84,14 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await page.getByRole('button', { name: '一般' }).click()
   await expect(page.getByLabel('外観')).toBeVisible()
   await page.screenshot({
-    path: path.join(docsImagesDir, 'settings-general.png'),
+    path: path.join(screenshotOutputDir, 'settings-general.png'),
     fullPage: false,
   })
 
   await page.getByRole('button', { name: 'vCenter' }).click()
   await expect(page.getByRole('heading', { name: '登録' })).toBeVisible()
   await page.screenshot({
-    path: path.join(docsImagesDir, 'settings-vcenters.png'),
+    path: path.join(screenshotOutputDir, 'settings-vcenters.png'),
     fullPage: false,
   })
 
@@ -94,7 +102,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
     ),
   ).toBeVisible()
   await page.screenshot({
-    path: path.join(docsImagesDir, 'settings-score-rules.png'),
+    path: path.join(screenshotOutputDir, 'settings-score-rules.png'),
     fullPage: false,
   })
 
@@ -106,7 +114,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   ).toBeVisible()
   await page.locator('.event-type-guides-list').scrollIntoViewIfNeeded()
   await page.screenshot({
-    path: path.join(docsImagesDir, 'settings-event-type-guides-list.png'),
+    path: path.join(screenshotOutputDir, 'settings-event-type-guides-list.png'),
     fullPage: false,
   })
 })

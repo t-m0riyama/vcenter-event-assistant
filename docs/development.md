@@ -18,6 +18,14 @@
 
 ドキュメント用の画面キャプチャは Playwright で取得し、`docs/images/*.png` に保存します。テスト定義は `frontend/e2e/screenshots.spec.ts` です。
 
+### ドキュメント用キャプチャと Playwright E2E の前提
+
+| 用途 | 前提 |
+|------|------|
+| **ドキュメント用 PNG**（本節） | 手元で **既に起動している** `http://127.0.0.1:8000`（API とフロントを同一オリジンで配信）を対象にする。`capture_ui_screenshots.py` の既定では Playwright は API を起動しない。 |
+| **`frontend/e2e/*.spec.ts` の E2E** | `npm run e2e` では **テスト専用**の uvicorn を **新規起動**する（既定ポートは環境変数 `E2E_PORT`、既定値は **9323**。開発用 8000 と別）。**`screenshots.spec.ts` はシード DB 前提のため `npm run e2e` の対象外**（ドキュメント取得は `capture_ui_screenshots.py` / `npm run screenshots*`）。設定は [frontend/playwright.config.ts](../frontend/playwright.config.ts)。 |
+| **例外** | ドキュメント PNG を 8000 なしで取るときは `--spawn-server` または `npm run screenshots:spawn`（Playwright がメモリ DB＋シードで API を起動。E2E の `webServer` と同系）。 |
+
 ### 前提
 
 - リポジトリルートで実行する（`scripts/` の相対パスが正しく解決されること）。
@@ -35,7 +43,7 @@
 | `uv run scripts/capture_ui_screenshots.py --base-url http://127.0.0.1:8000` | 接続先 URL を明示 |
 | `uv run scripts/capture_ui_screenshots.py --spawn-server` | Playwright が uvicorn（メモリ DB・`SCREENSHOT_E2E_SEED=1`）を起動。単体テストや CI 向け |
 
-接続先は `PLAYWRIGHT_USE_EXISTING_SERVER=1` と `E2E_PORT` または `E2E_BASE_URL` で制御します（詳細は `frontend/playwright.config.ts`）。
+スクリーンショット取得時の接続先は `PLAYWRIGHT_USE_EXISTING_SERVER=1` と `E2E_PORT` または `E2E_BASE_URL` で制御します（上表のドキュメント用キャプチャ向け。E2E 全般の挙動は `frontend/playwright.config.ts` の先頭コメントを参照）。**リポジトリの `docs/images/*.png` を更新するのは `WRITE_DOC_SCREENSHOTS_TO_REPO=1` のときだけ**（`capture_ui_screenshots.py` と `npm run screenshots*` が付与）。未設定で `screenshots.spec.ts` だけを実行した場合は `frontend/test-results/` に出力され、コミット対象の画像は置き換わりません。
 
 ### 代替: `frontend` で npm
 
