@@ -99,6 +99,21 @@ class Settings(BaseSettings):
         default="digest.md.j2",
         description="digest_template_dir と併用するファイル名。",
     )
+    digest_template_weekly_path: str | None = Field(
+        default=None,
+        description=(
+            "任意。非空かつダイジェストの kind が weekly のとき、このファイルを "
+            "DIGEST_TEMPLATE_PATH / DIGEST_TEMPLATE_DIR より優先して読む（UTF-8）。"
+            "ファイルが存在しない場合はエラー。空のときは通常のテンプレ解決にフォールバック。"
+        ),
+    )
+    digest_template_monthly_path: str | None = Field(
+        default=None,
+        description=(
+            "任意。非空かつ kind が monthly のとき、同様に最優先で読む。"
+            "ファイルが存在しない場合はエラー。空のときは通常解決にフォールバック。"
+        ),
+    )
     digest_display_timezone: str = Field(
         default="UTC",
         description=(

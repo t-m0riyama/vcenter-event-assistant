@@ -24,8 +24,8 @@ def _strip_opt(s: str | None) -> str:
     return (s or "").strip()
 
 
-def _load_template_source(settings: Settings) -> str:
-    """spec「解決順（確定）」に従い UTF-8 でテンプレ全文を読む。"""
+def _load_default_template_source(settings: Settings) -> str:
+    """spec「解決順（確定）」に従い UTF-8 で既定テンプレ全文を読む（kind によらない単一解決）。"""
     path_opt = _strip_opt(settings.digest_template_path)
     if path_opt:
         p = Path(path_opt)
@@ -44,6 +44,27 @@ def _load_template_source(settings: Settings) -> str:
 
     ref = resources.files("vcenter_event_assistant") / "templates" / "digest.md.j2"
     return ref.read_text(encoding="utf-8")
+
+
+def _load_template_source(settings: Settings, *, kind: str) -> str:
+    """kind に応じて週次・月次専用パスを優先し、それ以外は既定解決へフォールバックする。"""
+    weekly_opt = _strip_opt(settings.digest_template_weekly_path)
+    if kind == "weekly" and weekly_opt:
+        p = Path(weekly_opt)
+        if not p.is_file():
+            msg = f"digest template weekly path is not a readable file: {p}"
+            raise FileNotFoundError(msg)
+        return p.read_text(encoding="utf-8")
+
+    monthly_opt = _strip_opt(settings.digest_template_monthly_path)
+    if kind == "monthly" and monthly_opt:
+        p = Path(monthly_opt)
+        if not p.is_file():
+            msg = f"digest template monthly path is not a readable file: {p}"
+            raise FileNotFoundError(msg)
+        return p.read_text(encoding="utf-8")
+
+    return _load_default_template_source(settings)
 
 
 def _resolve_display_timezone(settings: Settings) -> tuple[ZoneInfo, str]:
@@ -85,7 +106,7 @@ def render_digest_markdown(ctx: DigestContext, *, kind: str, settings: Settings)
     Raises:
         OSError / jinja2 例外: テンプレ読込・構文・レンダリング失敗時（呼び出し側で ``DigestRecord.status=error`` にできる）。
     """
-    source = _load_template_source(settings)
+    source = _load_template_source(settings, kind=kind)
     display_tz, display_label = _resolve_display_timezone(settings)
 
     env = Environment(autoescape=False)
