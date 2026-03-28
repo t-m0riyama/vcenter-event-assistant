@@ -28,6 +28,7 @@ flowchart TB
   end
   subgraph be [バックエンド]
     BE[FastAPI]
+    Sched[APScheduler]
   end
   VC[vCenter]
   LLM[LLM_API（任意、ベータ）]
@@ -35,7 +36,8 @@ flowchart TB
   Browser --> Proxy
   Proxy --> FE
   FE -->|HTTP_API| BE
-  BE -->|イベント、メトリクス収集| VC
+  Sched -->|定期実行で収集| VC
+  BE -->|API操作や手動収集| VC
   BE -.->|ダイジェスト要約| LLM
 ```
 
