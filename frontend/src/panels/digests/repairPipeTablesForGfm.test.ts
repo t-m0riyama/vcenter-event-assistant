@@ -78,4 +78,31 @@ describe('repairPipeTablesForGfm', () => {
     expect(fixed).toMatch(/\| vCenter \|[^\n]+\n\| --- \|/)
     expect(fixed).not.toMatch(/\| vCenter \|[^\n]+\n\n\| 7ecd/)
   })
+
+  it('merges stored digest shape: delimiter then blank lines then every data row separated by blanks (1.md sample)', () => {
+    const md = [
+      '## 上位イベント種別（件数順）',
+      '',
+      '| 種別 | 件数 | max notable |',
+      '|------|------|-------------|',
+      '',
+      '',
+      '| `vim.event.UserLogoutSessionEvent` | 1715 | 0 |',
+      '',
+      '| `vim.event.UserLoginSessionEvent` | 1713 | 0 |',
+      '',
+      '| `vim.event.EventEx` | 8 | 0 |',
+      '',
+      '## 要注意イベント（スコア上位）',
+      '',
+      '- note',
+    ].join('\n')
+    const fixed = repairPipeTablesForGfm(md)
+    const start = fixed.indexOf('| 種別 |')
+    const end = fixed.indexOf('## 要注意')
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    const chunk = fixed.slice(start, end)
+    expect(chunk).not.toMatch(/\|\s*\n\n\|/)
+  })
 })
