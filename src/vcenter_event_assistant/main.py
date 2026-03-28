@@ -20,6 +20,7 @@ from vcenter_event_assistant.api.routes.events import router as events_router
 from vcenter_event_assistant.api.routes.health import router as health_router
 from vcenter_event_assistant.api.routes.metrics import router as metrics_router
 from vcenter_event_assistant.api.routes.vcenters import router as vcenters_router
+from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.settings import get_settings
@@ -33,6 +34,7 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO)
     await init_db()
+    await run_screenshot_e2e_seed_if_enabled()
     settings = get_settings()
     if settings.scheduler_enabled:
         setup_scheduler(app)
