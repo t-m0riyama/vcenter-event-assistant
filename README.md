@@ -123,10 +123,23 @@ UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/
 `frontend/dist` にビルド成果物があり `index.html` が存在するとき、FastAPI の `create_app()` が **同一プロセス**で SPA と API を配信する。`dist` が無い場合は API のみ応答し、ブラウザ用の UI は出ない。
 
 1. 初回または依存変更時: `frontend` で `npm install`
+
+```bash
+cd frontend
+npm install
+```
+
 2. `frontend` で `npm run build`（`frontend/dist` を生成）
+
+```bash
+npm run build
+```
+
 3. リポジトリルートでバックエンドを起動する。
 
 ```bash
+cd ../
+
 uv run vcenter-event-assistant
 # または
 uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
