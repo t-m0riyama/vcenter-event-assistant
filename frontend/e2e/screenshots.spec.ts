@@ -65,7 +65,8 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await expect(page.getByLabel('vCenter')).toBeVisible()
   await expect(page.getByLabel('メトリクスキー')).toBeVisible()
   // シード済みメトリクスで折れ線が描画されるまで待つ（空グラフのキャプチャを避ける）
-  await expect(page.locator('.recharts-line')).toBeVisible({ timeout: 20_000 })
+  // Recharts は系列ごとに `.recharts-line` を複数描画するため strict 回避で先頭のみ検証する
+  await expect(page.locator('.recharts-line').first()).toBeVisible({ timeout: 20_000 })
   await page.screenshot({
     path: path.join(docsImagesDir, 'metrics.png'),
     fullPage: false,
