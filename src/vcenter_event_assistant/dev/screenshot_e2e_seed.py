@@ -2,16 +2,19 @@
 Playwright ドキュメント用スクリーンショット向けの最小 DB シード。
 
 環境変数 ``SCREENSHOT_E2E_SEED=1`` のときのみ実行する。本番では無効のままとする。
+
+投入内容: vCenter・イベント種別ガイド・イベントに加え、グラフタブ既定キー向けの
+``MetricSample``（``datastore.space.used_bytes`` の時系列）を含む。
 """
 
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, VCenter
+from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 
 _SCREENSHOT_VC_NAME = "screenshot-e2e-vc"
@@ -81,3 +84,20 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                 notable_score=10,
             ),
         )
+
+        # グラフタブはキー一覧の先頭（`datastore.space.used_bytes`）が既定選択になるため、その系列を投入する。
+        _doc_metric_key = "datastore.space.used_bytes"
+        _doc_entity_moid = "datastore-1001"
+        for i in range(32):
+            sampled = now - timedelta(minutes=2 * (31 - i))
+            session.add(
+                MetricSample(
+                    vcenter_id=vc.id,
+                    sampled_at=sampled,
+                    entity_type="Datastore",
+                    entity_moid=_doc_entity_moid,
+                    entity_name="demo-datastore",
+                    metric_key=_doc_metric_key,
+                    value=float(1_000_000_000 + i * 12_500_000),
+                ),
+            )
