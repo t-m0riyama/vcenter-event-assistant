@@ -6,7 +6,7 @@
 - `GET /api/digests/{id}` … 1 件取得
 - `POST /api/digests/run` … 手動生成。JSON 省略時は **直前の UTC 暦日** を対象。`from_time` / `to_time` を両方指定すると任意期間
 
-環境変数は `.env.example` の「Batch digest」を参照。`LLM_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。
+環境変数は `.env.example` の「Batch digest」を参照。`LLM_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。Ollama などローカルの OpenAI 互換 API の例は README の「ダイジェスト用 LLM」と `.env.example` を参照する。
 
 **定期実行:** `DIGEST_DAILY_*` / `DIGEST_WEEKLY_*` / `DIGEST_MONTHLY_*` で種別ごとに有効化と cron（5 フィールド）を指定。`DIGEST_SCHEDULER_ENABLED` / `DIGEST_CRON` は日次向けレガシー名（非推奨）。週次の集計ウィンドウは **UTC・日曜 0:00 始まりの直前に完了した暦週**（7 日）、月次は **直前の UTC 暦月**。手動 `POST /api/digests/run` は従来どおり任意 `from`/`to` と `kind`。
 
