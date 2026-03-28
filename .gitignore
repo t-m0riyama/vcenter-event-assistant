@@ -150,6 +150,9 @@ app/config/vcenters/*.yml
 # docker compose override
 docker-compose.override.yml
 
+# テンプレートからコピーしたローカル用（テンプレートは追跡する）
+docker-compose.yml
+
 # SpecStory explanation file
 .specstory/
 

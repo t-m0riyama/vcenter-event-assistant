@@ -103,6 +103,26 @@ cd frontend && npm install && npm run dev
 
 本番で API と同一プロセスから静的ファイルを配信する場合は、`frontend` で `npm run build` したあと `frontend/dist` を配置すると、`create_app()` が配信する。
 
+### Docker Compose で起動
+
+前提: [Docker](https://docs.docker.com/get-docker/) および Docker Compose v2（`docker compose` コマンド）。
+
+1. リポジトリルートで `.env` を用意する（未作成なら `cp .env.example .env`）。Compose は `env_file` として参照する。
+2. 利用する DB に合わせて、**テンプレートのいずれかを `docker-compose.yml` にコピー**する（このファイル名が Compose の既定である）。
+   - **SQLite（単一コンテナ・名前付きボリューム）:** `cp docker-compose.sqlite.yml docker-compose.yml`
+   - **PostgreSQL（`postgres` サービス付き）:** `cp docker-compose.postgres.yml docker-compose.yml` のうえ、`.env` に **`POSTGRES_PASSWORD`**（および必要ならユーザー名・DB 名に合わせた他変数）を設定する。接続文字列のパスワードに `@` や `:` などが含まれる場合は、URL 用に**パスワードをエンコード**してから `DATABASE_URL` に含めること。
+3. ビルドして起動する。
+
+```bash
+docker compose up --build
+```
+
+UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/health` でもよい）。
+
+**セキュリティ:** 本アプリ単体は認証を行わない。コンテナをインターネットに直接晒さず、必要に応じてリバースプロキシ側で TLS・認証・ネットワーク制限を行うこと。
+
+テンプレートはリポジトリで `docker-compose.sqlite.yml` / `docker-compose.postgres.yml` として管理し、コピーで生成した `docker-compose.yml` は `.gitignore` により追跡しない。
+
 ## セキュリティ
 
 アプリ自体は認証を行わない。本番ではリバースプロキシで TLS・認証・ネットワーク制限を行い、インターネットに直接公開しないこと。

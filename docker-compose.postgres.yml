@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vea
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vea}
+      POSTGRES_DB: vcenter_event_assistant
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vea -d vcenter_event_assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vea:${POSTGRES_PASSWORD:-vea}@postgres:5432/vcenter_event_assistant
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:
