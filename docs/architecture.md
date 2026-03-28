@@ -4,7 +4,7 @@
 
 ## バックエンド
 
-- **役割**: HTTP API（`/api`）、永続化、vCenter からの収集、定期ジョブ、環境設定に応じた LLM 呼び出し（ダイジェスト補助・ベータ）などを担う。
+- **役割**: HTTP API（`/api`）、永続化、vCenter からの収集、定期ジョブ、環境設定に応じた LLM 呼び出し（ダイジェスト要約・ベータ）などを担う。
 - **実装の所在**: [`src/vcenter_event_assistant/`](../src/vcenter_event_assistant/)（エントリは [`main.py`](../src/vcenter_event_assistant/main.py) の `create_app()`）。
 - **主要要素**: **FastAPI**、**SQLAlchemy**（`DATABASE_URL` で **PostgreSQL** または **SQLite**）、**pyVmomi** による vCenter 接続、**APScheduler** による定期ポーリングとメトリクス削除、オプションの Bearer/Basic 認証。本番ではビルド済みの [`frontend/dist`](../frontend/dist) を同一プロセスから配信できる。
 
@@ -16,7 +16,7 @@
 
 ## システムコンテキスト
 
-利用者はブラウザから **フロントエンド**にアクセスする。本番では **TLS・認証・ネットワーク制限はリバースプロキシ側**で行う想定である（アプリ単体では認証しない）。**バックエンド**が **pyVmomi** 経由で vCenter からイベントやホスト指標を収集する。環境設定により **LLM API** を用いたダイジェスト補助（ベータ）に接続し得る。
+利用者はブラウザから **フロントエンド**にアクセスする。本番では **TLS・認証・ネットワーク制限はリバースプロキシ側**で行う想定である（アプリ単体では認証しない）。**バックエンド**が **pyVmomi** 経由で vCenter からイベントやメトリクスを収集する。環境設定により **LLM API** を用いたダイジェスト要約（ベータ）を実行する。
 
 本番では多くの場合、フロントの静的ファイルと API が **同一オリジン**（`create_app()` による `frontend/dist` 配信）で提供される。下図は論理的な役割の分離を示す。
 
@@ -48,7 +48,7 @@ flowchart TB
 
 ### バックエンド内の収集と永続化
 
-**APScheduler** がイベント／性能サンプルを vCenter から取得し **DB** に保存する。手動収集も同様にバックエンド経由で DB へ書き込む。**`/api`** は同一 DB を参照する。以下は [現状実装ベースのプラン §2](plans/2026-03-21-vcenter-event-assistant-as-built.md) のデータフローと同じ意味である。
+**APScheduler** が定期的にイベント／性能サンプルを vCenter から取得し、 **DB** に保存する。手動収集も同様にバックエンド経由で DB へ書き込む。**`/api`** は同一 DB を参照する。
 
 ```mermaid
 flowchart LR
