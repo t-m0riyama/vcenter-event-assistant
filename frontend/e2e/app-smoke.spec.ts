@@ -8,7 +8,7 @@ test.describe('アプリのスモーク', () => {
       page.getByRole('heading', { name: 'vCenter Event Assistant' }),
     ).toBeVisible()
 
-    const tabs = ['概要', 'イベント', 'グラフ', '設定'] as const
+    const tabs = ['概要', 'イベント', 'グラフ', 'ダイジェスト', '設定'] as const
     for (const name of tabs) {
       await page.getByRole('button', { name }).click()
       await expect(page.locator('[role="alert"]')).toHaveCount(0)

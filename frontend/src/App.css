@@ -852,6 +852,160 @@ textarea:focus-visible {
   cursor: not-allowed;
 }
 
+/* ダイジェスト参照 */
+.digests-count-hint {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
+.digests-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: var(--spacing-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .digests-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.digests-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.digests-row {
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-background-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-footnote);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: baseline;
+}
+
+.digests-row:hover {
+  background: var(--color-background-elevated);
+}
+
+.digests-row.is-selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.digests-row-kind {
+  font-weight: var(--font-weight-semibold);
+}
+
+.digests-row-range {
+  color: var(--color-text-secondary);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.digests-row-status {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-tertiary);
+}
+
+.digests-pager {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+}
+
+.digests-detail-meta {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
+.digest-llm-meta {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
+.digest-aux-warning {
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+  background: var(--color-background-secondary);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-primary);
+}
+
+.digest-markdown {
+  font-size: var(--font-size-subhead);
+  line-height: 1.5;
+}
+
+.digest-markdown h1,
+.digest-markdown h2,
+.digest-markdown h3 {
+  margin: var(--spacing-4) 0 var(--spacing-2);
+  font-weight: var(--font-weight-semibold);
+}
+
+.digest-markdown h1 {
+  font-size: var(--font-size-title3);
+}
+
+.digest-markdown h2 {
+  font-size: var(--font-size-title3);
+}
+
+.digest-markdown p,
+.digest-markdown ul,
+.digest-markdown ol {
+  margin: 0 0 var(--spacing-3);
+}
+
+.digest-markdown ul,
+.digest-markdown ol {
+  padding-left: var(--spacing-6);
+}
+
+.digest-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--font-size-footnote);
+}
+
+.digest-markdown th,
+.digest-markdown td {
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-2) var(--spacing-3);
+  text-align: left;
+}
+
+.digest-markdown pre {
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-3);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--color-background-secondary);
+  font-size: var(--font-size-footnote);
+}
+
+.digest-markdown code {
+  font-size: 0.92em;
+}
+
 @media (max-width: 768px) {
   .app {
     padding: var(--spacing-3) var(--spacing-3) var(--spacing-8);

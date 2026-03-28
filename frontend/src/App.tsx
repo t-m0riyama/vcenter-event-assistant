@@ -8,6 +8,7 @@ import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
+import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
 import './App.css'
@@ -17,7 +18,7 @@ const MetricsPanel = lazy(async () => {
   return { default: m.MetricsPanel }
 })
 
-type Tab = 'summary' | 'events' | 'metrics' | 'settings'
+type Tab = 'summary' | 'events' | 'metrics' | 'digests' | 'settings'
 
 type SettingsSubTab = 'general' | 'vcenters' | 'score_rules' | 'event_type_guides'
 
@@ -50,7 +51,7 @@ export default function App() {
             )}
 
             <nav className="tabs">
-              {(['summary', 'events', 'metrics', 'settings'] as const).map((t) => (
+              {(['summary', 'events', 'metrics', 'digests', 'settings'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -63,6 +64,7 @@ export default function App() {
                   {t === 'summary' && '概要'}
                   {t === 'events' && 'イベント'}
                   {t === 'metrics' && 'グラフ'}
+                  {t === 'digests' && 'ダイジェスト'}
                   {t === 'settings' && '設定'}
                 </button>
               ))}
@@ -127,6 +129,7 @@ export default function App() {
                   />
                 </Suspense>
               )}
+              {tab === 'digests' && <DigestsPanel onError={setErr} />}
               {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
               {tab === 'settings' && settingsSubTab === 'score_rules' && (
                 <ScoreRulesPanel onError={setErr} />

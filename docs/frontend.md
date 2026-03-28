@@ -1,6 +1,6 @@
 # vCenter Event Assistant（フロントエンド）
 
-[vCenter Event Assistant](../README.md) の Web UI です。React・TypeScript・[Vite](https://vite.dev/) で実装し、バックエンドの FastAPI と同一オリジンまたは開発時プロキシ経由で API を呼び出します。イベントの一覧・概要、ホストメトリクスのグラフ、vCenter 登録やスコアルールなどの設定をブラウザから行えます。
+[vCenter Event Assistant](../README.md) の Web UI です。React・TypeScript・[Vite](https://vite.dev/) で実装し、バックエンドの FastAPI と同一オリジンまたは開発時プロキシ経由で API を呼び出します。イベントの一覧・概要、ホストメトリクスのグラフ、保存済みダイジェスト（Markdown）の参照、vCenter 登録やスコアルールなどの設定をブラウザから行えます。
 
 ## 画面の例
 
@@ -25,6 +25,10 @@
 ホストの CPU・メモリなどの時系列を、vCenter とメトリクス種別を選んで表示します。
 
 ![グラフタブ](images/metrics.png)
+
+### ダイジェスト
+
+サーバーが生成した日次などのダイジェストを一覧し、本文（表・LLM 要約を含む Markdown）を表示します。LLM 要約が記録されていない場合は `## LLM 要約` ブロックは表示しません。
 
 ### 設定（一般）
 
