@@ -110,7 +110,11 @@ cd frontend && npm install && npm run dev
 1. リポジトリルートで `.env` を用意する（未作成なら `cp .env.example .env`）。Compose は `env_file` として参照する。
 2. 利用する DB に合わせて、**テンプレートのいずれかを `docker-compose.yml` にコピー**する（このファイル名が Compose の既定である）。
    - **SQLite（単一コンテナ・名前付きボリューム）:** `cp docker-compose.sqlite.yml docker-compose.yml`
-   - **PostgreSQL（`postgres` サービス付き）:** `cp docker-compose.postgres.yml docker-compose.yml` のうえ、`.env` に **`POSTGRES_PASSWORD`**（および必要ならユーザー名・DB 名に合わせた他変数）を設定する。接続文字列のパスワードに `@` や `:` などが含まれる場合は、URL 用に**パスワードをエンコード**してから `DATABASE_URL` に含めること。
+   - **PostgreSQL（`postgres` サービス付き）:** `cp docker-compose.postgres.yml docker-compose.yml` のうえ、`.env` に **`POSTGRES_PASSWORD`** を設定する（`postgres` コンテナと `app` の `DATABASE_URL` の両方で同じ値が使われる）。指定例は次のとおり。
+     - `.env` に 1 行追加する例: `POSTGRES_PASSWORD=changeme`
+     - シェルで一時指定して起動する例: `POSTGRES_PASSWORD='your-secure-password' docker compose up --build`
+     - 省略時は compose テンプレートの既定 `vea` が使われる（開発・試用向け）。
+     - パスワードに `@` や `:` などが含まれる場合は、URL 用に**エンコード**した値を `POSTGRES_PASSWORD` に渡すか、シンプルな文字列に変更すること。
 3. ビルドして起動する。
 
 ```bash
