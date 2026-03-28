@@ -59,11 +59,15 @@ Windows のコマンドプロンプトでは環境変数の付け方が異なる
 
 ### 出力ファイル
 
+すべて **1280×720 ピクセル**（固定ビューポート・ページ全体ではない）です。Playwright が起動する API では `SCREENSHOT_E2E_SEED=1` により、ドキュメント用にガイド付きイベントなどがメモリ DB に挿入されます。**`--existing` で手元の API にだけ向ける場合**は、このシードは付かないため、イベントのガイド展開キャプチャ用に **同等のデータ**を用意するか、該当ステップを手で調整してください。
+
 | ファイル名 | 画面 |
 |-----------|------|
 | `summary.png` | 概要 |
 | `events.png` | イベント |
+| `events-event-type-guide-expanded.png` | イベント → ガイド列「表示」展開 |
 | `metrics.png` | グラフ |
 | `settings-general.png` | 設定 → 一般 |
 | `settings-vcenters.png` | 設定 → vCenter |
 | `settings-score-rules.png` | 設定 → スコアルール |
+| `settings-event-type-guides-list.png` | 設定 → イベント種別ガイド（一覧先頭付近） |
