@@ -87,23 +87,14 @@ cp .env.example .env
 
 ## 起動
 
-バックエンドは次のとおり。
+- **通常利用**: UI と API を **同一オリジン**（`http://localhost:8000`）で使う。Docker Compose、またはローカルでフロントをビルドしてからバックエンドを起動する。
+- **開発用途**: バックエンド（ポート 8000）と Vite 開発サーバー（既定はポート 5173）の **二窓**。ブラウザは Vite の URL を開き、`/api` などは開発サーバーがバックエンドへプロキシする。
 
-```bash
-uv run vcenter-event-assistant
-# または
-uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
-```
+### 通常利用（UI をブラウザで使う）（本番ビルド済み UI）
 
-フロント（別ターミナル）は次のとおり。
+フロントのソースを編集せず UI を使う、または本番に近い単一プロセスで試す場合。
 
-```bash
-cd frontend && npm install && npm run dev
-```
-
-本番で API と同一プロセスから静的ファイルを配信する場合は、`frontend` で `npm run build` したあと `frontend/dist` を配置すると、`create_app()` が配信する。
-
-### Docker Compose で起動
+#### Docker Compose で起動
 
 前提: [Docker](https://docs.docker.com/get-docker/) および Docker Compose v2（`docker compose` コマンド）。
 
@@ -126,6 +117,42 @@ UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/
 **セキュリティ:** 本アプリ単体は認証を行わない。コンテナをインターネットに直接晒さず、必要に応じてリバースプロキシ側で TLS・認証・ネットワーク制限を行うこと。
 
 テンプレートはリポジトリで `docker-compose.sqlite.yml` / `docker-compose.postgres.yml` として管理し、コピーで生成した `docker-compose.yml` は `.gitignore` により追跡しない。
+
+#### ローカルで Python から起動する
+
+`frontend/dist` にビルド成果物があり `index.html` が存在するとき、FastAPI の `create_app()` が **同一プロセス**で SPA と API を配信する。`dist` が無い場合は API のみ応答し、ブラウザ用の UI は出ない。
+
+1. 初回または依存変更時: `frontend` で `npm install`
+2. `frontend` で `npm run build`（`frontend/dist` を生成）
+3. リポジトリルートでバックエンドを起動する。
+
+```bash
+uv run vcenter-event-assistant
+# または
+uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
+```
+
+4. ブラウザで `http://localhost:8000` を開く。
+
+### 開発用途（フロントエンドの改修・HMR）（Vite 開発サーバー）
+
+React / Vite のホットリロードで UI を開発する場合は **別ターミナル**で次を実行する。
+
+**ターミナル 1（バックエンド）**
+
+```bash
+uv run vcenter-event-assistant
+# または
+uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
+```
+
+**ターミナル 2（フロント）** — `npm install` は初回または `package.json` 更新時。
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+**ブラウザ**: 既定では `http://localhost:5173`（Vite が表示する URL でもよい）。`/api` と `/health` は開発サーバーが `http://127.0.0.1:8000` にプロキシする。フロントの npm スクリプト一覧は [docs/frontend.md](docs/frontend.md) を参照する。
 
 ## セキュリティ
 
