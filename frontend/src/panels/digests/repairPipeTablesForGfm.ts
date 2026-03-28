@@ -1,7 +1,7 @@
 /**
  * GFM の pipe 表は「ヘッダ行の直後に区切り行（`| --- |`）」が必須。
- * 欠けると後続の `| ... |` 行が表セルにならず、そのままテキストとして表示される。
- * 保存済み Markdown に区切り行が無いケースを補う。
+ * ヘッダとデータの間に空行があるとブロックが分断され、データ行が表にならない。
+ * また区切り行が無いとデータ行は生テキストになる。保存済み Markdown を補正する。
  */
 
 function isPipeTableRow(line: string): boolean {
@@ -42,31 +42,86 @@ function makeDelimiterRow(columnCount: number): string {
 }
 
 /**
- * 「区切り行の無い pipe 表」の直後に区切り行を挿入する。
- * ヘッダ行の次行が区切り行でなく、かつ次行も pipe 行で列数が一致するときに限る。
+ * 表の「先頭行」だけをヘッダ候補とする（tbody のデータ行同士の間に区切りを入れない）。
+ */
+function isLikelyTableHeaderRow(lines: readonly string[], i: number): boolean {
+  const line = lines[i]
+  if (line === undefined || !isPipeTableRow(line) || isPipeTableDelimiterRow(line)) {
+    return false
+  }
+  if (i === 0) {
+    return true
+  }
+  const prev = lines[i - 1]
+  if (prev === undefined) {
+    return true
+  }
+  const prevTrim = prev.trim()
+  if (prevTrim === '') {
+    return true
+  }
+  if (prevTrim.startsWith('#')) {
+    return true
+  }
+  if (isPipeTableDelimiterRow(prev)) {
+    return false
+  }
+  if (isPipeTableRow(prev) && !isPipeTableDelimiterRow(prev)) {
+    return false
+  }
+  return true
+}
+
+function indexOfNextNonBlankLine(lines: readonly string[], start: number): number {
+  let j = start
+  while (j < lines.length) {
+    const s = lines[j]?.trim() ?? ''
+    if (s !== '') {
+      return j
+    }
+    j += 1
+  }
+  return lines.length
+}
+
+/**
+ * 区切り行が欠けている pipe 表を補う。ヘッダとデータの間の空行は削除して 1 つの表にまとめる。
  */
 export function repairPipeTablesForGfm(markdown: string): string {
   const lines = markdown.split(/\r?\n/)
-  const out: string[] = []
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? ''
-    out.push(line)
-    const next = lines[i + 1]
-    if (next === undefined) {
+  let i = 0
+  while (i < lines.length) {
+    if (!isLikelyTableHeaderRow(lines, i)) {
+      i += 1
       continue
     }
-    if (
-      isPipeTableRow(line) &&
-      !isPipeTableDelimiterRow(line) &&
-      isPipeTableRow(next) &&
-      !isPipeTableDelimiterRow(next)
-    ) {
-      const c0 = countPipeColumns(line)
-      const c1 = countPipeColumns(next)
-      if (c0 >= 2 && c0 === c1) {
-        out.push(makeDelimiterRow(c0))
-      }
+    const header = lines[i]!
+    const colCount = countPipeColumns(header)
+    if (colCount < 2) {
+      i += 1
+      continue
     }
+    const j = indexOfNextNonBlankLine(lines, i + 1)
+    if (j >= lines.length) {
+      i += 1
+      continue
+    }
+    const rowAfterBlanks = lines[j]!
+    if (!isPipeTableRow(rowAfterBlanks) || isPipeTableDelimiterRow(rowAfterBlanks)) {
+      i += 1
+      continue
+    }
+    if (countPipeColumns(rowAfterBlanks) !== colCount) {
+      i += 1
+      continue
+    }
+    const immediate = lines[i + 1]
+    if (immediate !== undefined && isPipeTableDelimiterRow(immediate)) {
+      i += 1
+      continue
+    }
+    lines.splice(i + 1, j - i - 1, makeDelimiterRow(colCount))
+    i += 2
   }
-  return out.join('\n')
+  return lines.join('\n')
 }
