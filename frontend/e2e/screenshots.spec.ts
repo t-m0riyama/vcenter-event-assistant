@@ -15,8 +15,8 @@ const DOC_SCREENSHOT_HEIGHT = 720
  * ドキュメント用に主要タブの画面を `docs/images` に PNG 保存する。
  * 再取得手順はリポジトリルートの `docs/development.md` を参照。
  *
- * バックエンドは `SCREENSHOT_E2E_SEED=1`（Playwright `webServer` 既定）で
- * ガイド付きイベント等をメモリ DB に挿入する。
+ * 既定の取得先は既起動の API（例: localhost:8000）。`playwright.config` の webServer は
+ * `--spawn-server` 付きで `capture_ui_screenshots.py` を実行したときのみ使う。
  */
 test('主要画面のスクリーンショットを docs/images に保存', async ({ page }) => {
   mkdirSync(docsImagesDir, { recursive: true })
@@ -47,7 +47,15 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   const guideDetails = page.locator('td.event-type-guide-cell details.event-type-guide-details').first()
   await guideDetails.locator('summary').click()
   await expect(page.getByText('一般的な意味', { exact: true }).first()).toBeVisible()
+  // ホバー／フォーカスで表示されるツールチップ用ポップオーバーは撮らない（details 展開のみ）
+  await page.evaluate(() => {
+    const a = document.activeElement
+    if (a instanceof HTMLElement) a.blur()
+  })
+  await page.getByRole('heading', { name: 'vCenter Event Assistant' }).hover({ position: { x: 2, y: 2 } })
+  await expect(page.locator('.event-type-guide-popover').first()).toBeHidden()
   await guideDetails.scrollIntoViewIfNeeded()
+  await page.getByRole('heading', { name: 'vCenter Event Assistant' }).hover({ position: { x: 2, y: 2 } })
   await page.screenshot({
     path: path.join(docsImagesDir, 'events-event-type-guide-expanded.png'),
     fullPage: false,

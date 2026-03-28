@@ -25,14 +25,17 @@
 
 ### 推奨: `uv run` スクリプト
 
+**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
+
 | コマンド | 内容 |
 |---------|------|
-| `uv run scripts/capture_ui_screenshots.py` | `npm run build` のうえ、テスト用サーバー起動付きで E2E を実行し、PNG を更新 |
-| `uv run scripts/capture_ui_screenshots.py --existing` | **既に API が動いている**前提。ビルドを省略し、既定で `http://127.0.0.1:8000` に接続 |
-| `uv run scripts/capture_ui_screenshots.py -e --port 9000` | 既存サーバー向け。ポートのみ変更 |
-| `uv run scripts/capture_ui_screenshots.py -e --base-url http://127.0.0.1:8000` | 既存サーバー向け。ホスト・URL を明示 |
+| `uv run scripts/capture_ui_screenshots.py` | 既定で `http://127.0.0.1:8000`（`--port` / `--base-url` で変更可）に接続し PNG を更新 |
+| `uv run scripts/capture_ui_screenshots.py --build` | 実行前に `frontend` で `npm run build` する |
+| `uv run scripts/capture_ui_screenshots.py --port 9000` | 既存サーバーのポートのみ変更 |
+| `uv run scripts/capture_ui_screenshots.py --base-url http://127.0.0.1:8000` | 接続先 URL を明示 |
+| `uv run scripts/capture_ui_screenshots.py --spawn-server` | Playwright が uvicorn（メモリ DB・`SCREENSHOT_E2E_SEED=1`）を起動。単体テストや CI 向け |
 
-`--existing`（`-e`）利用時は、Playwright が別プロセスでサーバーを立てない（`PLAYWRIGHT_USE_EXISTING_SERVER=1`）。接続先は `E2E_PORT` または `E2E_BASE_URL` で制御します（詳細は `frontend/playwright.config.ts`）。
+接続先は `PLAYWRIGHT_USE_EXISTING_SERVER=1` と `E2E_PORT` または `E2E_BASE_URL` で制御します（詳細は `frontend/playwright.config.ts`）。
 
 ### 代替: `frontend` で npm
 
@@ -41,11 +44,11 @@ cd frontend
 npm run screenshots
 ```
 
-既存サーバー向け（Unix 系シェルで `VAR=value command` が使える環境）:
+組み込みサーバーで取得する例（`npm run build` 付き）:
 
 ```bash
 cd frontend
-npm run screenshots:existing
+npm run screenshots:spawn
 ```
 
 ポートを変える例:
@@ -55,11 +58,11 @@ cd frontend
 PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=9000 npx playwright test e2e/screenshots.spec.ts
 ```
 
-Windows のコマンドプロンプトでは環境変数の付け方が異なるため、既存サーバー向けは **`uv run scripts/capture_ui_screenshots.py --existing`** の利用を推奨します。
+Windows のコマンドプロンプトでは環境変数の付け方が異なるため、**`uv run scripts/capture_ui_screenshots.py`** の利用を推奨します。
 
 ### 出力ファイル
 
-すべて **1280×720 ピクセル**（固定ビューポート・ページ全体ではない）です。Playwright が起動する API では `SCREENSHOT_E2E_SEED=1` により、ドキュメント用にガイド付きイベント・**メトリクス時系列**（既定で選択される `datastore.space.used_bytes` など）がメモリ DB に挿入され、グラフタブのキャプチャに折れ線が載ります。**`--existing` で手元の API にだけ向ける場合**は、このシードは付かないため、イベントのガイド展開キャプチャ用に **同等のデータ**を用意するか、該当ステップを手で調整してください。
+すべて **1280×720 ピクセル**（固定ビューポート・ページ全体ではない）です。**既定で既起動の API に向ける場合**、DB の内容は手元環境に依存します（ガイド列・グラフ・イベント種別一覧など、画面にデータが無いと見え方が変わります）。**`--spawn-server`** で Playwright が API を起動するときだけ `SCREENSHOT_E2E_SEED=1` によりガイド付きイベント・メトリクス時系列などがメモリ DB に挿入されます。
 
 | ファイル名 | 画面 |
 |-----------|------|

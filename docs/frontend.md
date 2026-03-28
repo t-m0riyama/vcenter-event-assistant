@@ -45,9 +45,11 @@
 全タブの一覧と PNG の再取得手順は **[開発者向けメモ（`docs/development.md`）](development.md)** を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。
 
 ```bash
+# 既定: 起動済みの http://127.0.0.1:8000 に接続（フロントを更新したら build してサーバー再起動）
 uv run scripts/capture_ui_screenshots.py
-# 既に API が動いている場合（ビルド省略）
-uv run scripts/capture_ui_screenshots.py --existing
+uv run scripts/capture_ui_screenshots.py --build
+# メモリ DB ＋シード付きで Playwright が API を起動するとき（CI 等）
+uv run scripts/capture_ui_screenshots.py --spawn-server
 ```
 
 ## 開発コマンド
@@ -63,7 +65,8 @@ uv run scripts/capture_ui_screenshots.py --existing
 | `npm run test`        | Vitest 単体テスト                             |
 | `npm run lint`        | ESLint                                   |
 | `npm run e2e`         | ビルド後に Playwright E2E                     |
-| `npm run screenshots` | ビルド後にドキュメント用スクリーンショットのみ取得（`docs/images`） |
+| `npm run screenshots` | ドキュメント用スクリーンショットのみ取得（既定で `localhost:8000` の起動済み API 向け） |
+| `npm run screenshots:spawn` | `npm run build` のうえ Playwright が API を起動して取得（シード付きメモリ DB） |
 
 
 バックエンドの起動・環境変数は [リポジトリルートの README](../README.md) を参照してください。

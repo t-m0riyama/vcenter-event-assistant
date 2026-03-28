@@ -129,7 +129,7 @@ uv run ruff check src tests
 uv run pytest -q
 ```
 
-UI ドキュメント用のスクリーンショットの再取得は `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は [docs/development.md](docs/development.md)）。
+UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は [docs/development.md](docs/development.md)）。
 
 ## ドキュメント
 
