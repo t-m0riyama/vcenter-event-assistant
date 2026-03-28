@@ -84,6 +84,14 @@ cp .env.example .env
 | SQLite ファイル      | `sqlite+aiosqlite:///./data/vea.db`（先に `mkdir -p data`）                 |
 | SQLite メモリ       | `sqlite+aiosqlite:///:memory:`（主にテスト）                                   |
 
+### ダイジェスト用 LLM（任意）
+
+環境変数の一覧は [.env.example](.env.example) の「Batch digest」「LLM」を参照する。
+
+- **OpenAI 互換**（`LLM_PROVIDER=openai_compatible`）は、**Ollama** や **LM Studio** など、Chat Completions 形式（`POST …/chat/completions`）のローカル API にも向けられる。
+- **Ollama の例:** `LLM_BASE_URL=http://127.0.0.1:11434/v1`、`LLM_MODEL` には `ollama pull` 済みのモデル名（例: `llama3.2`）。
+- **`LLM_API_KEY` が空のときはテンプレートのみ**でダイジェストを保存し、外部 LLM は呼ばない。ローカルでキー不要なサーバでも、現状は **非空のダミー値**（例: `ollama`）を入れないと LLM 呼び出しに進まない。
+- **Docker Compose で app を動かし**、ホスト上の Ollama に繋ぐ場合は、`LLM_BASE_URL` を `http://host.docker.internal:11434/v1` にする（`localhost` はコンテナ自身を指す。Docker Desktop の macOS / Windows を想定した例）。
 
 ## 起動
 
