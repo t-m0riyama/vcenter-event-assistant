@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { eventRowSchema, normalizeEventListPayload, parseSummary } from './schemas'
+import {
+  eventRowSchema,
+  normalizeEventListPayload,
+  parseDigestListResponse,
+  parseSummary,
+} from './schemas'
 
 describe('eventRowSchema', () => {
   it('parses API event row shape (e.g. PATCH response)', () => {
@@ -66,6 +71,41 @@ describe('normalizeEventListPayload', () => {
     expect(items).toHaveLength(0)
     expect(total).toBe(500)
     expect(rawItemCount).toBe(1)
+  })
+})
+
+describe('parseDigestListResponse', () => {
+  it('parses digest list envelope', () => {
+    const raw = {
+      items: [
+        {
+          id: 1,
+          period_start: '2026-03-27T00:00:00Z',
+          period_end: '2026-03-28T00:00:00Z',
+          kind: 'daily',
+          body_markdown: '# Hello',
+          status: 'ok',
+          error_message: null,
+          llm_model: 'x',
+          created_at: '2026-03-28T01:00:00Z',
+        },
+      ],
+      total: 1,
+    }
+    const parsed = parseDigestListResponse(raw)
+    expect(parsed.total).toBe(1)
+    expect(parsed.items[0]?.body_markdown).toBe('# Hello')
+    expect(parsed.items[0]?.id).toBe(1)
+  })
+
+  it('parses empty items with total', () => {
+    const parsed = parseDigestListResponse({ items: [], total: 0 })
+    expect(parsed.items).toEqual([])
+    expect(parsed.total).toBe(0)
+  })
+
+  it('rejects invalid envelope', () => {
+    expect(() => parseDigestListResponse({})).toThrow()
   })
 })
 
