@@ -10,6 +10,8 @@ from httpx import ASGITransport, AsyncClient
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SCHEDULER_ENABLED"] = "false"
+# 開発者の .env に LLM キーがあっても、テストで外部 API を呼ばない
+os.environ["LLM_API_KEY"] = ""
 
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.main import create_app
