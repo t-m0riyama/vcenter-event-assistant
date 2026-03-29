@@ -758,6 +758,11 @@ tr.event-row--action-required {
   color: var(--color-text-primary);
 }
 
+/* メトリクスグラフ: 凡例クリックで系列の表示を切り替え可能であることを示す */
+.chart-wrap .recharts-legend-item {
+  cursor: pointer;
+}
+
 .hint {
   font-size: var(--font-size-subhead);
   color: var(--color-text-secondary);

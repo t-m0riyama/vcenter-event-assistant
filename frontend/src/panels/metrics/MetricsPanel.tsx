@@ -67,6 +67,8 @@ export function MetricsPanel({
     metricsChartMargin,
     chartModel,
     chartData,
+    hiddenSeriesDataKeys,
+    onMetricsLegendClick,
     vcenterLabelForChart,
     metricsChartTitleLines,
     graphRangeDisplayLabel,
@@ -387,6 +389,7 @@ export function MetricsPanel({
                 verticalAlign="top"
                 align="right"
                 wrapperStyle={{ paddingBottom: 6 }}
+                onClick={onMetricsLegendClick}
               />
               {chartModel.mode === 'single' ? (
                 <Line
@@ -397,6 +400,7 @@ export function MetricsPanel({
                   stroke={chartColors.primary}
                   dot={LINE_CHART_DATA_DOT}
                   isAnimationActive={false}
+                  hide={hiddenSeriesDataKeys.has('v')}
                 />
               ) : (
                 chartModel.metricSeries.map((s, i) => (
@@ -411,6 +415,7 @@ export function MetricsPanel({
                     connectNulls
                     dot={LINE_CHART_DATA_DOT}
                     isAnimationActive={false}
+                    hide={hiddenSeriesDataKeys.has(s.dataKey)}
                   />
                 ))
               )}
@@ -423,6 +428,7 @@ export function MetricsPanel({
                   stroke={chartColors.secondary}
                   dot={LINE_CHART_DATA_DOT}
                   isAnimationActive={false}
+                  hide={hiddenSeriesDataKeys.has('evCount')}
                 />
               )}
             </LineChart>
