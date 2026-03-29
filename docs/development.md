@@ -2,7 +2,7 @@
 
 ## 期間コンテキスト付きチャット
 
-- `POST /api/chat` … 本文 JSON で `from` / `to`（UTC）、`messages`（`role`: `user` | `assistant`、`content`）。**最後の要素は `user`**。任意で `vcenter_id`（単一 vCenter に絞る）、`top_notable_min_score`（既定 1）。**`include_cpu_event_correlation`（既定 `false`）** を `true` にすると、高 CPU サンプル時刻近傍のイベント集計を追加 DB クエリで行い LLM コンテキストにマージする（負荷あり）。閾値・窓は `cpu_correlation_threshold_pct`（既定 85）、`cpu_correlation_window_minutes`（既定 15）。バッチダイジェストには含めない。集約は `build_digest_context` と同じ（期間は DB 上 **UTC の `[from, to)`**）。会話履歴はクライアントが送るだけでサーバーは保持しない。応答は `assistant_content` と `error`（LLM 失敗時は前者が空で後者に短文）。**`llm_context`**（省略可）に、LLM 直前の目安として `json_truncated`（JSON をトークン上限で切り詰めたか）、`estimated_input_tokens` / `max_input_tokens`、`message_turns` が入る。サーバーログにも `json_truncated` 等が出る。
+- `POST /api/chat` … 本文 JSON で `from` / `to`（UTC）、`messages`（`role`: `user` | `assistant`、`content`）。**最後の要素は `user`**。任意で `vcenter_id`（単一 vCenter に絞る）、`top_notable_min_score`（既定 1）。**期間メトリクス（いずれも既定 `false`、追加 DB クエリあり）:** `include_period_metrics_cpu`、`include_period_metrics_memory`、`include_period_metrics_disk_io`、`include_period_metrics_network_io`。オンにしたカテゴリだけ `MetricSample` を期間・`vcenter_id` で読み、時間バケット平均で `period_metrics` として LLM コンテキストにマージする（チャット用の `digest_context` からはホスト別 CPU/メモリのピーク一覧は含めない）。**メトリクストグルが 1 つでもオン**のときは、同じバケット幅で `events` を集計した `event_time_buckets`（件数 0 のバケットは省略）もマージする。バッチダイジェストには含めない。イベント集約は `build_digest_context` と同じ（期間は DB 上 **UTC の `[from, to)`**）。会話履歴はクライアントが送るだけでサーバーは保持しない。応答は `assistant_content` と `error`（LLM 失敗時は前者が空で後者に短文）。**`llm_context`**（省略可）に、LLM 直前の目安として `json_truncated`（JSON をトークン上限で切り詰めたか）、`estimated_input_tokens` / `max_input_tokens`、`message_turns` が入る。サーバーログにも `json_truncated` 等が出る。
 
 環境変数は **ダイジェストと同じ `LLM_*`**（`.env.example` の LLM 節を参照）。`LLM_API_KEY` が空のときは **503**。
 

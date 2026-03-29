@@ -63,15 +63,15 @@ describe('ChatPanel', () => {
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('CPU 近接相関のチェックをオンにすると POST 本文に include_cpu_event_correlation が含まれる', async () => {
+  it('CPU 使用率のチェックをオンにすると POST 本文に include_period_metrics_cpu が含まれる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
         return Promise.resolve(jsonResponse([]))
       }
       if (url.endsWith('/api/chat') && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as { include_cpu_event_correlation?: boolean }
-        expect(body.include_cpu_event_correlation).toBe(true)
+        const body = JSON.parse(String(init.body)) as { include_period_metrics_cpu?: boolean }
+        expect(body.include_period_metrics_cpu).toBe(true)
         return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -83,7 +83,7 @@ describe('ChatPanel', () => {
       expect(fetchMock).toHaveBeenCalled()
     })
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /CPU 高負荷とイベントの近接集約を含める/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^CPU 使用率$/ }))
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
       target: { value: 'q' },
     })

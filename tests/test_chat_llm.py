@@ -8,11 +8,8 @@ import pytest
 
 from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
-from vcenter_event_assistant.services.correlation_context import (
-    CorrelationAnchorRow,
-    CorrelationEventInWindow,
-    CpuEventCorrelationPayload,
-)
+from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext, DigestEventTypeBucket
 from vcenter_event_assistant.settings import Settings
 
@@ -258,7 +255,7 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
 
 
 @pytest.mark.asyncio
-async def test_run_period_chat_includes_correlation_in_user_block_when_set(
+async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     s = Settings(
@@ -269,23 +266,12 @@ async def test_run_period_chat_includes_correlation_in_user_block_when_set(
         llm_model="gpt-4o-mini",
     )
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
-    correlation = CpuEventCorrelationPayload(
-        cpu_threshold_pct=85.0,
-        window_minutes=15,
-        rows=[
-            CorrelationAnchorRow(
-                host="esxi-1",
-                anchor_time=t0,
-                cpu_at_anchor=91.0,
-                events_in_window=[
-                    CorrelationEventInWindow(
-                        event_type="VmPoweredOnEvent",
-                        count=1,
-                        sample_occurred_at=t0,
-                    ),
-                ],
-            ),
-        ],
+    t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
+    pm = PeriodMetricsPayload(
+        bucket_minutes=15,
+        from_utc=t0,
+        to_utc=t1,
+        cpu=[],
     )
     captured: dict[str, object] = {}
 
@@ -330,11 +316,83 @@ async def test_run_period_chat_includes_correlation_in_user_block_when_set(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
-        correlation=correlation,
+        period_metrics=pm,
     )
     assert err is None
     assert out == "y"
     assert meta is not None
     user_block = str(captured["messages"][1]["content"])
-    assert "cpu_event_correlation" in user_block
+    assert "period_metrics" in user_block
+    assert "digest_context" in user_block
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_api_key="sk-test",
+        llm_provider="openai_compatible",
+        llm_base_url="https://api.openai.com/v1",
+        llm_model="gpt-4o-mini",
+    )
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
+    etb = EventTimeBucketsPayload(
+        bucket_minutes=60,
+        from_utc=t0,
+        to_utc=t1,
+        buckets=[],
+    )
+    captured: dict[str, object] = {}
+
+    class _StreamOk:
+        status_code = 200
+
+        async def aread(self) -> bytes:
+            return b""
+
+        async def aiter_lines(self) -> object:
+            yield 'data: {"choices":[{"delta":{"content":"z"}}]}'
+            yield "data: [DONE]"
+
+    class _StreamCm:
+        def __init__(self, resp: _StreamOk) -> None:
+            self._resp = resp
+
+        async def __aenter__(self) -> _StreamOk:
+            return self._resp
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+    class _FakeClient:
+        async def __aenter__(self) -> "_FakeClient":
+            return self
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
+            body = kwargs.get("json") or {}
+            captured["messages"] = body.get("messages") or []
+            return _StreamCm(_StreamOk())
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
+        lambda *a, **k: _FakeClient(),
+    )
+
+    out, err, meta = await run_period_chat(
+        s,
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="q")],
+        event_time_buckets=etb,
+    )
+    assert err is None
+    assert out == "z"
+    assert meta is not None
+    user_block = str(captured["messages"][1]["content"])
+    assert "event_time_buckets" in user_block
     assert "digest_context" in user_block

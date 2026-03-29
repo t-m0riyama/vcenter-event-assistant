@@ -28,7 +28,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
-  const [includeCpuEventCorrelation, setIncludeCpuEventCorrelation] = useState(false)
+  const [includePeriodMetricsCpu, setIncludePeriodMetricsCpu] = useState(false)
+  const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
+  const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
+  const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
 
   useEffect(() => {
@@ -67,7 +70,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         from: resolved.from,
         to: resolved.to,
         messages: nextMessages,
-        include_cpu_event_correlation: includeCpuEventCorrelation,
+        include_period_metrics_cpu: includePeriodMetricsCpu,
+        include_period_metrics_memory: includePeriodMetricsMemory,
+        include_period_metrics_disk_io: includePeriodMetricsDiskIo,
+        include_period_metrics_network_io: includePeriodMetricsNetworkIo,
       }
       if (vcenterId) {
         body.vcenter_id = vcenterId
@@ -86,7 +92,18 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     } finally {
       setLoading(false)
     }
-  }, [draft, messages, onError, rangeParts, timeZone, vcenterId, includeCpuEventCorrelation])
+  }, [
+    draft,
+    messages,
+    onError,
+    rangeParts,
+    timeZone,
+    vcenterId,
+    includePeriodMetricsCpu,
+    includePeriodMetricsMemory,
+    includePeriodMetricsDiskIo,
+    includePeriodMetricsNetworkIo,
+  ])
 
   return (
     <div className="panel chat-panel">
@@ -117,17 +134,51 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         </label>
       </section>
 
-      <section className="chat-panel__section" aria-label="CPU 近接相関">
+      <section className="chat-panel__section" aria-label="期間メトリクス">
+        <p className="hint chat-panel__metrics-hint">LLM に含めるメトリクス（期間内をバケット平均で送る・追加 DB クエリあり）</p>
         <label className="chat-panel__checkbox-label">
           <input
             type="checkbox"
-            checked={includeCpuEventCorrelation}
+            checked={includePeriodMetricsCpu}
             onChange={(e) => {
-              setIncludeCpuEventCorrelation(e.target.checked)
+              setIncludePeriodMetricsCpu(e.target.checked)
             }}
             disabled={loading}
           />
-          CPU 高負荷とイベントの近接集約を含める（追加 DB クエリあり）
+          CPU 使用率
+        </label>
+        <label className="chat-panel__checkbox-label">
+          <input
+            type="checkbox"
+            checked={includePeriodMetricsMemory}
+            onChange={(e) => {
+              setIncludePeriodMetricsMemory(e.target.checked)
+            }}
+            disabled={loading}
+          />
+          メモリ使用率
+        </label>
+        <label className="chat-panel__checkbox-label">
+          <input
+            type="checkbox"
+            checked={includePeriodMetricsDiskIo}
+            onChange={(e) => {
+              setIncludePeriodMetricsDiskIo(e.target.checked)
+            }}
+            disabled={loading}
+          />
+          ディスク IO
+        </label>
+        <label className="chat-panel__checkbox-label">
+          <input
+            type="checkbox"
+            checked={includePeriodMetricsNetworkIo}
+            onChange={(e) => {
+              setIncludePeriodMetricsNetworkIo(e.target.checked)
+            }}
+            disabled={loading}
+          />
+          ネットワーク IO
         </label>
       </section>
 

@@ -11,7 +11,8 @@ import httpx
 import tiktoken
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
-from vcenter_event_assistant.services.correlation_context import CpuEventCorrelationPayload
+from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import (
     _collect_openai_chat_stream_text,
@@ -37,14 +38,35 @@ def _chat_token_encoding() -> tiktoken.Encoding:
     return tiktoken.get_encoding("cl100k_base")
 
 _CHAT_SYSTEM_PROMPT = (
-    "あなたは vCenter 運用のアシスタントです。入力には、指定期間に集約したイベントとメトリクスの JSON と、"
-    "運用者との会話履歴が含まれます。JSON に `cpu_event_correlation` が含まれる場合は、"
-    "高 CPU サンプル時刻の前後に同一ホストで発生したイベントの集計であり、"
-    "時刻の近接に基づくものであって因果関係や確定的な相関を意味しません。\n"
+    "あなたは vCenter 運用のアシスタントです。入力 JSON の構造を次のように解釈してください。\n"
+    "\n"
+    "【digest_context】"
+    " 集計期間は from_utc〜to_utc（他ブロックと同じ）。"
+    " top_notable_event_groups には種別ごとに occurred_at_first / occurred_at_last などの時刻フィールドがある"
+    "（全件の発生時刻リストではないが、時刻情報が無いと誤解しないこと）。"
+    " top_event_types は種別ごとの件数サマリ。total_events は期間内の合計です。\n"
+    "\n"
+    "【period_metrics】（キーがある場合のみ）"
+    " 同じ期間のメトリクスをホスト等ごとに時間バケット平均したもの（利用者がオンにしたカテゴリのみ）。"
+    " 値は常に「高負荷」を意味するわけではなく、通常範囲や一部指標だけの場合もある。"
+    " bucket_start_utc はバケット開始時刻。digest_context のイベントとは別集計であり、"
+    "イベント 1 件とメトリクス 1 点を同一レコードで結合したデータではない。\n"
+    "\n"
+    "【event_time_buckets】（キーがある場合のみ）"
+    " 同じ期間のイベントを、period_metrics と同一の bucket 幅（bucket_minutes / bucket_start_utc の刻み）で"
+    " 件数集計したもの。digest の top_notable 等とは別クエリ。行単位でメトリクスと結合したデータではないが、"
+    " 時刻軸は揃っているため粗い対照として言及できる。\n"
+    "\n"
+    "【相関について】"
+    " メトリクスとイベントを時刻で 1 対 1 に結びつけ、「負荷の瞬間にどのイベントが起きたか」を厳密に証明する情報は通常含まれない。"
+    " period_metrics の値は高負荷を前提としない。ただし occurred_at_* や event_time_buckets と"
+    " 同一期間・同一バケット刻みで粗く並べて対照として言及することはできる。"
+    " 近接や傾向から因果を断定しない。\n"
     "\n"
     "【回答の原則】\n"
     "- 事実・数値は、与えられた JSON（および会話内で明示された内容）に根ざして答える。推測で新しい事実を加えない。\n"
     "- JSON に無い情報は「不明」「入力に含まれていません」と述べる。\n"
+    "- top_notable_event_groups に時刻フィールドがあるのに「イベントに時刻がない」と述べない。\n"
     "- 日本語で簡潔に答える。不要に長い Markdown やコードフェンスは避ける。\n"
     "- ホスト名・イベント種別・件数などを引用するときは、JSON の値と矛盾させない。\n"
 )
@@ -155,12 +177,15 @@ def _fit_chat_payload_to_token_budget(
 
 
 def _merged_context_user_block(ctx_json: str) -> str:
-    """`digest_context` 単体、または `cpu_event_correlation` 付きマージ JSON のユーザーブロック。"""
+    """マージ済み JSON（`digest_context` ± `period_metrics` ± `event_time_buckets`）のユーザーブロック。"""
     return (
-        "以下は指定期間の vCenter 集約 JSON です。"
-        "キー `digest_context` にイベント・メトリクス集約が含まれます。"
-        "キー `cpu_event_correlation` が含まれる場合は、高 CPU 時刻近傍のイベント集計です（時刻近接であり因果断定ではありません）。"
-        "これを根拠として後続の会話に答えてください。\n\n"
+        "以下は同一指定期間の vCenter 集約 JSON です。"
+        " `digest_context` はイベントの件数・種別サマリと、要注意グループ（occurred_at_first / occurred_at_last 等を含む）。"
+        " チャットではホスト別 CPU/メモリのピーク一覧は省いています。"
+        " `period_metrics` がある場合はメトリクスのバケット平均（digest と別クエリ。行単位の結合ではない。"
+        " 値は常に高負荷を意味するわけではない）。"
+        " `event_time_buckets` がある場合はイベント件数の時間バケット（period_metrics と同一時刻軸だが行単位結合ではない）。"
+        " システムプロンプトの【digest_context】【period_metrics】【event_time_buckets】の説明に従って解釈してください。\n\n"
         f"```json\n{ctx_json}\n```"
     )
 
@@ -233,12 +258,14 @@ async def run_period_chat(
     *,
     context: DigestContext,
     messages: list[ChatMessage],
-    correlation: CpuEventCorrelationPayload | None = None,
+    period_metrics: PeriodMetricsPayload | None = None,
+    event_time_buckets: EventTimeBucketsPayload | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
 
-    ``correlation`` を渡すと ``digest_context`` と ``cpu_event_correlation`` をマージした JSON を入力とする。
+    ``period_metrics`` / ``event_time_buckets`` を渡すと ``digest_context`` とマージした JSON を入力とする。
+    チャットでは ``digest_context`` からホスト別 CPU/メモリピーク（``high_cpu_hosts`` / ``high_mem_hosts``）を除く。
 
     Returns:
         (assistant_text, error_message, llm_context_meta)。
@@ -249,9 +276,14 @@ async def run_period_chat(
     if not key:
         return ("", None, None)
 
-    payload: dict[str, Any] = {"digest_context": context.model_dump(mode="json")}
-    if correlation is not None:
-        payload["cpu_event_correlation"] = correlation.model_dump(mode="json")
+    digest_obj = context.model_dump(mode="json")
+    digest_obj.pop("high_cpu_hosts", None)
+    digest_obj.pop("high_mem_hosts", None)
+    payload: dict[str, Any] = {"digest_context": digest_obj}
+    if period_metrics is not None:
+        payload["period_metrics"] = period_metrics.model_dump(mode="json")
+    if event_time_buckets is not None:
+        payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, messages)
     block = _merged_context_user_block(ctx_json)
     est_tokens = _estimate_chat_input_tokens(block, trimmed)
