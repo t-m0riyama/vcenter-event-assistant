@@ -148,9 +148,12 @@ describe('App error banner', () => {
     await waitFor(() => {
       expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
     })
-    // `App` lazy-loads MetricsPanel; preload so Suspense resolves under jsdom.
+    // `App` は MetricsPanel を lazy + Suspense する。フォールバックのままでは fetch も onError も走らない。
     await import('./panels/metrics/MetricsPanel')
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
+    await waitFor(() => {
+      expect(screen.queryByText('グラフを読み込み中…')).not.toBeInTheDocument()
+    })
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
     })
