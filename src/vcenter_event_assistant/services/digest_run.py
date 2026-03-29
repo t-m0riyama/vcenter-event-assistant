@@ -43,6 +43,7 @@ async def run_digest_once(
         )
         session.add(row)
         await session.flush()
+        await session.refresh(row)
         return row
 
     body, llm_err = await augment_digest_with_llm(s, context=ctx, template_markdown=md)
@@ -61,4 +62,5 @@ async def run_digest_once(
     )
     session.add(row)
     await session.flush()
+    await session.refresh(row)
     return row

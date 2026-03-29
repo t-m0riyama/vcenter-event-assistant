@@ -50,7 +50,7 @@ async def list_digests(
 
     q = (
         select(DigestRecord)
-        .order_by(DigestRecord.created_at.desc())
+        .order_by(DigestRecord.created_at.desc(), DigestRecord.id.desc())
         .offset(offset)
         .limit(limit)
     )
@@ -101,4 +101,7 @@ async def run_digest(
         to_utc=period_end,
         settings=get_settings(),
     )
+    # レスポンス用 ``DigestRead`` の検証で失敗すると ``get_session`` が rollback する。
+    # flush 済みでも未コミットのため行が消えるため、検証より前にコミットして永続化する。
+    await session.commit()
     return DigestRead.model_validate(row)

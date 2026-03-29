@@ -130,7 +130,12 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
 
   return (
     <div className="panel digests-panel">
-      <h2>ダイジェスト</h2>
+      <div className="digests-panel-header">
+        <h2>ダイジェスト</h2>
+        <button type="button" className="btn btn--gray digests-refresh" onClick={() => void load()}>
+          一覧を更新
+        </button>
+      </div>
       <p className="digests-count-hint">全 {total} 件</p>
 
       {items.length === 0 ? (

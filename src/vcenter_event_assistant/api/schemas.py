@@ -335,11 +335,22 @@ class DigestRead(BaseModel):
     @field_validator("period_start", "period_end", "created_at", mode="before")
     @classmethod
     def digest_datetimes_to_utc(cls, v: object) -> datetime:
-        if not isinstance(v, datetime):
-            raise TypeError("expected datetime")
-        if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+        """
+        ORM からは ``datetime`` が来る想定だが、ドライバ差で ISO 文字列になる場合も UTC に正規化する。
+        """
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=timezone.utc)
+            return v.astimezone(timezone.utc)
+        if isinstance(v, str):
+            s = v.strip()
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        raise TypeError("expected datetime or ISO-8601 string")
 
 
 class DigestListResponse(BaseModel):

@@ -6,10 +6,11 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
@@ -55,6 +56,18 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    class NoStoreApiCacheMiddleware(BaseHTTPMiddleware):
+        """動的 API の GET が中間キャッシュ・ブラウザに残らないよう ``Cache-Control: no-store`` を付与する。"""
+
+        async def dispatch(self, request: Request, call_next):
+            response = await call_next(request)
+            p = request.url.path
+            if p == "/api" or p.startswith("/api/"):
+                response.headers["Cache-Control"] = "no-store"
+            return response
+
+    app.add_middleware(NoStoreApiCacheMiddleware)
 
     app.include_router(health_router)
 

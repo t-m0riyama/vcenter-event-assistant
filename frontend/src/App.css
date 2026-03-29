@@ -853,6 +853,23 @@ textarea:focus-visible {
 }
 
 /* ダイジェスト参照 */
+.digests-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-2);
+}
+
+.digests-panel-header h2 {
+  margin: 0;
+}
+
+.digests-refresh {
+  flex-shrink: 0;
+}
+
 .digests-count-hint {
   margin: 0 0 var(--spacing-3);
   font-size: var(--font-size-footnote);

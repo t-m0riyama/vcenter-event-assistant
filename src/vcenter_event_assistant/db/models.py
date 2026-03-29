@@ -1,7 +1,7 @@
 """ORM models."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,7 +19,10 @@ class VCenter(Base):
     username: Mapped[str] = mapped_column(String(512))
     password: Mapped[str] = mapped_column(String(2048))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now().astimezone())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
 
     events: Mapped[list["EventRecord"]] = relationship(back_populates="vcenter")
     metric_samples: Mapped[list["MetricSample"]] = relationship(back_populates="vcenter")
@@ -122,7 +125,8 @@ class DigestRecord(Base):
     status: Mapped[str] = mapped_column(String(32), index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # UTC で保存（ローカル now だと SQLite 等で tz 欠落時に naive が UTC 扱いされ、表示が 9h ずれる）。
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now().astimezone(),
+        default=lambda: datetime.now(timezone.utc),
     )
