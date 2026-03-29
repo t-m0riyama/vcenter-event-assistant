@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import httpx
 import pytest
 
 from vcenter_event_assistant.api.schemas import ChatMessage
