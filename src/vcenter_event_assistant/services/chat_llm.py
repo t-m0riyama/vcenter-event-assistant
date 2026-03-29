@@ -11,6 +11,7 @@ import httpx
 import tiktoken
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
+from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import (
@@ -50,9 +51,14 @@ _CHAT_SYSTEM_PROMPT = (
     " bucket_start_utc はバケット開始時刻。digest_context のイベントとは別集計であり、"
     "イベント 1 件と CPU 値 1 点を同一レコードで結合したデータではない。\n"
     "\n"
+    "【event_time_buckets】（キーがある場合のみ）"
+    " 同じ期間のイベントを、period_metrics と同一の bucket 幅（bucket_minutes / bucket_start_utc の刻み）で"
+    " 件数集計したもの。digest の top_notable 等とは別クエリ。行単位でメトリクスと結合したデータではないが、"
+    " 時刻軸は揃っているため粗い対照として言及できる。\n"
+    "\n"
     "【相関について】"
     " 「高負荷の瞬間にどのイベントが起きたか」を厳密に証明する結合情報は通常含まれない。"
-    " ただし occurred_at_* と period_metrics のバケットを、同一期間内の粗い対照として言及することはできる。"
+    " ただし occurred_at_* と period_metrics / event_time_buckets のバケットを、同一期間内の粗い対照として言及することはできる。"
     " 近接や傾向から因果を断定しない。\n"
     "\n"
     "【回答の原則】\n"
@@ -169,13 +175,14 @@ def _fit_chat_payload_to_token_budget(
 
 
 def _merged_context_user_block(ctx_json: str) -> str:
-    """マージ済み JSON（`digest_context` ± `period_metrics`）のユーザーブロック。"""
+    """マージ済み JSON（`digest_context` ± `period_metrics` ± `event_time_buckets`）のユーザーブロック。"""
     return (
         "以下は同一指定期間の vCenter 集約 JSON です。"
         " `digest_context` はイベントの件数・種別サマリと、要注意グループ（occurred_at_first / occurred_at_last 等を含む）。"
         " チャットではホスト別 CPU/メモリのピーク一覧は省いています。"
         " `period_metrics` がある場合はメトリクスのバケット平均（digest と別クエリ。行単位の結合ではない）。"
-        " システムプロンプトの【digest_context】【period_metrics】の説明に従って解釈してください。\n\n"
+        " `event_time_buckets` がある場合はイベント件数の時間バケット（period_metrics と同一時刻軸だが行単位結合ではない）。"
+        " システムプロンプトの【digest_context】【period_metrics】【event_time_buckets】の説明に従って解釈してください。\n\n"
         f"```json\n{ctx_json}\n```"
     )
 
@@ -249,11 +256,12 @@ async def run_period_chat(
     context: DigestContext,
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None = None,
+    event_time_buckets: EventTimeBucketsPayload | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
 
-    ``period_metrics`` を渡すと ``digest_context`` とマージした JSON を入力とする。
+    ``period_metrics`` / ``event_time_buckets`` を渡すと ``digest_context`` とマージした JSON を入力とする。
     チャットでは ``digest_context`` からホスト別 CPU/メモリピーク（``high_cpu_hosts`` / ``high_mem_hosts``）を除く。
 
     Returns:
@@ -271,6 +279,8 @@ async def run_period_chat(
     payload: dict[str, Any] = {"digest_context": digest_obj}
     if period_metrics is not None:
         payload["period_metrics"] = period_metrics.model_dump(mode="json")
+    if event_time_buckets is not None:
+        payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, messages)
     block = _merged_context_user_block(ctx_json)
     est_tokens = _estimate_chat_input_tokens(block, trimmed)

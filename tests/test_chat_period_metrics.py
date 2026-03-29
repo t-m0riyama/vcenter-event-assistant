@@ -12,6 +12,7 @@ from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.chat_period_metrics import (
     PeriodMetricsPayload,
     build_chat_period_metrics,
+    compute_chat_bucket_seconds,
 )
 
 
@@ -182,3 +183,76 @@ async def test_build_chat_period_metrics_cpu_only_on_does_not_include_memory_key
     assert out is not None
     assert out.cpu is not None
     assert out.memory is None
+
+
+def test_compute_chat_bucket_seconds_matches_internal_rule() -> None:
+    """公開関数がメトリクス内部と同じバケット幅を返す。"""
+    from_utc = datetime(2026, 3, 22, 10, 0, 0, tzinfo=timezone.utc)
+    to_utc = from_utc + timedelta(hours=2)
+    assert compute_chat_bucket_seconds(from_utc, to_utc) == 15 * 60
+
+
+@pytest.mark.asyncio
+async def test_build_chat_period_metrics_uses_explicit_bucket_sec() -> None:
+    """bucket_sec を指定すると、その幅でバケット化する（1 時間に 2 サンプルが同一バケット）。"""
+    vid = uuid.uuid4()
+    host = "esxi-1"
+    from_utc = datetime(2026, 3, 22, 10, 0, 0, tzinfo=timezone.utc)
+    to_utc = from_utc + timedelta(hours=2)
+    t_a = from_utc + timedelta(minutes=5)
+    t_b = from_utc + timedelta(minutes=20)
+
+    async with session_scope() as session:
+        session.add(
+            VCenter(
+                id=vid,
+                name="vc",
+                host="h",
+                port=443,
+                username="u",
+                password="p",
+                is_enabled=True,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid,
+                sampled_at=t_a,
+                entity_type="HostSystem",
+                entity_moid="m1",
+                entity_name=host,
+                metric_key="host.cpu.usage_pct",
+                value=40.0,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid,
+                sampled_at=t_b,
+                entity_type="HostSystem",
+                entity_moid="m1",
+                entity_name=host,
+                metric_key="host.cpu.usage_pct",
+                value=60.0,
+            )
+        )
+
+    async with session_scope() as session:
+        out = await build_chat_period_metrics(
+            session,
+            from_utc,
+            to_utc,
+            vcenter_id=None,
+            include_cpu=True,
+            include_memory=False,
+            include_disk_io=False,
+            include_network_io=False,
+            bucket_sec=3600,
+        )
+
+    assert out is not None
+    assert out.bucket_minutes == 60
+    assert len(out.cpu) == 1
+    assert len(out.cpu[0].series) == 1
+    assert abs(out.cpu[0].series[0].avg - 50.0) < 0.01
+    assert out.cpu[0].series[0].n == 2

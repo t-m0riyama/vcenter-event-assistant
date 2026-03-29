@@ -8,8 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import ChatRequest, ChatResponse
+from vcenter_event_assistant.services.chat_event_time_buckets import build_chat_event_time_buckets
 from vcenter_event_assistant.services.chat_llm import run_period_chat
-from vcenter_event_assistant.services.chat_period_metrics import build_chat_period_metrics
+from vcenter_event_assistant.services.chat_period_metrics import (
+    build_chat_period_metrics,
+    compute_chat_bucket_seconds,
+)
 from vcenter_event_assistant.services.digest_context import build_digest_context
 from vcenter_event_assistant.settings import get_settings
 
@@ -53,7 +57,9 @@ async def post_chat(
         ],
     )
     period_metrics = None
+    event_time_buckets = None
     if want_metrics:
+        bucket_sec = compute_chat_bucket_seconds(ft, tt)
         period_metrics = await build_chat_period_metrics(
             session,
             ft,
@@ -63,6 +69,14 @@ async def post_chat(
             include_memory=body.include_period_metrics_memory,
             include_disk_io=body.include_period_metrics_disk_io,
             include_network_io=body.include_period_metrics_network_io,
+            bucket_sec=bucket_sec,
+        )
+        event_time_buckets = await build_chat_event_time_buckets(
+            session,
+            ft,
+            tt,
+            vcenter_id=body.vcenter_id,
+            bucket_sec=bucket_sec,
         )
 
     text, err, llm_meta = await run_period_chat(
@@ -70,5 +84,6 @@ async def post_chat(
         context=ctx,
         messages=list(body.messages),
         period_metrics=period_metrics,
+        event_time_buckets=event_time_buckets,
     )
     return ChatResponse(assistant_content=text, error=err, llm_context=llm_meta)

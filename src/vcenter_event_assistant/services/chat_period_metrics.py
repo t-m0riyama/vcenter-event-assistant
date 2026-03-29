@@ -63,6 +63,25 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def compute_chat_bucket_seconds(
+    from_utc: datetime,
+    to_utc: datetime,
+    *,
+    max_buckets: int = 48,
+) -> int:
+    """
+    メトリクス・イベント時刻バケットで共有するバケット幅（秒）。
+
+    ``build_chat_period_metrics(..., bucket_sec=compute_chat_bucket_seconds(...))`` のように
+    他集計と同じ幅に揃える。
+    """
+    from_utc = _as_utc(from_utc)
+    to_utc = _as_utc(to_utc)
+    if from_utc >= to_utc:
+        raise ValueError("from_utc must be before to_utc")
+    return _bucket_seconds_for_range(from_utc, to_utc, max_buckets=max_buckets)
+
+
 def _bucket_seconds_for_range(
     from_utc: datetime,
     to_utc: datetime,
@@ -124,12 +143,14 @@ async def build_chat_period_metrics(
     include_network_io: bool,
     max_buckets: int = 48,
     max_hosts_per_category: int = 15,
+    bucket_sec: int | None = None,
 ) -> PeriodMetricsPayload | None:
     """
     指定期間のメトリクスを時間バケット平均で集約する。
 
     - すべてのトグルがオフなら ``None``。
     - ``from_utc >= to_utc`` は ``ValueError``。
+    - ``bucket_sec`` を指定するとその幅でバケット化（イベントバケットと揃える用途）。
     """
     from_utc = _as_utc(from_utc)
     to_utc = _as_utc(to_utc)
@@ -146,8 +167,13 @@ async def build_chat_period_metrics(
         include_disk_io,
         include_network_io,
     )
-    bucket_sec = _bucket_seconds_for_range(from_utc, to_utc, max_buckets=max_buckets)
-    bucket_minutes = max(1, bucket_sec // 60)
+    if bucket_sec is not None:
+        if bucket_sec < 1:
+            raise ValueError("bucket_sec must be >= 1")
+        bucket_sec_used = bucket_sec
+    else:
+        bucket_sec_used = _bucket_seconds_for_range(from_utc, to_utc, max_buckets=max_buckets)
+    bucket_minutes = max(1, bucket_sec_used // 60)
 
     clauses = [
         MetricSample.metric_key.in_(keys),
@@ -173,7 +199,7 @@ async def build_chat_period_metrics(
         offset_sec = (sampled - from_utc).total_seconds()
         if offset_sec < 0:
             continue
-        bidx = int(offset_sec // bucket_sec)
+        bidx = int(offset_sec // bucket_sec_used)
         key = (cat, r.entity_moid, r.metric_key, bidx)
         acc[key].append(float(r.value))
         entity_name_by_moid[(cat, r.entity_moid)] = (r.entity_name or "").strip() or r.entity_moid
@@ -211,7 +237,7 @@ async def build_chat_period_metrics(
             points: list[PeriodMetricBucketPoint] = []
             for bidx in sorted(buckets_map.keys()):
                 avg, n = buckets_map[bidx]
-                bucket_start = from_utc + timedelta(seconds=bidx * bucket_sec)
+                bucket_start = from_utc + timedelta(seconds=bidx * bucket_sec_used)
                 points.append(
                     PeriodMetricBucketPoint(bucket_start_utc=bucket_start, avg=avg, n=n),
                 )
