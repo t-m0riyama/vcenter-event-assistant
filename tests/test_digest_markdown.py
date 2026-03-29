@@ -193,7 +193,7 @@ def test_invalid_display_timezone_warns_and_falls_back(caplog: pytest.LogCapture
         high_cpu_hosts=[],
         high_mem_hosts=[],
     )
-    caplog.set_level("WARNING", logger="vcenter_event_assistant.services.digest_markdown")
+    caplog.set_level("WARNING", logger="vcenter_event_assistant.services.digest_timezone")
     md = render_digest_markdown(
         ctx,
         kind="daily",

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
@@ -12,12 +11,8 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment
 
 from vcenter_event_assistant.services.digest_context import DigestContext
+from vcenter_event_assistant.services.digest_timezone import resolve_digest_timezone
 from vcenter_event_assistant.settings import Settings
-
-_logger = logging.getLogger(__name__)
-
-# 無効 TZ フォールバック時も ``ZoneInfo`` で統一（``datetime.timezone.utc`` と混在させない）
-_UTC_ZONE = ZoneInfo("UTC")
 
 
 def _strip_opt(s: str | None) -> str:
@@ -69,15 +64,7 @@ def _load_template_source(settings: Settings, *, kind: str) -> str:
 
 def _resolve_display_timezone(settings: Settings) -> tuple[ZoneInfo, str]:
     """表示用タイムゾーン（``ZoneInfo``）と、テンプレに渡すラベル（IANA 名）を返す。"""
-    name = _strip_opt(settings.digest_display_timezone) or "UTC"
-    try:
-        return ZoneInfo(name), name
-    except KeyError:
-        _logger.warning(
-            "無効な DIGEST_DISPLAY_TIMEZONE=%r のため UTC にフォールバックします",
-            name,
-        )
-        return _UTC_ZONE, "UTC"
+    return resolve_digest_timezone(settings)
 
 
 def _parse_to_utc(value: object) -> datetime:
