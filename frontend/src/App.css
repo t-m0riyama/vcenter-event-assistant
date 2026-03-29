@@ -891,8 +891,9 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+/* 一覧で約 5 行分が収まる高さ（4 行相当だった 24rem の 5/4） */
 .digests-list-scroll {
-  max-height: min(70vh, 24rem);
+  max-height: min(70vh, 30rem);
   overflow-y: auto;
   min-height: 0;
 }
@@ -911,7 +912,7 @@ textarea:focus-visible {
   }
 
   .digests-list-scroll {
-    max-height: min(50vh, 20rem);
+    max-height: min(50vh, 25rem);
   }
 
   .digests-detail--sticky {
