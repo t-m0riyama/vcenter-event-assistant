@@ -8,7 +8,7 @@ import pytest
 
 from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
-from vcenter_event_assistant.services.digest_context import DigestContext
+from vcenter_event_assistant.services.digest_context import DigestContext, DigestEventTypeBucket
 from vcenter_event_assistant.settings import Settings
 
 
@@ -161,3 +161,84 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
     )
     assert err is None
     assert out == "Gemini の回答"
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_truncates_json_when_token_budget_tight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """集約 JSON が推定トークン上限を超えるとき、切り詰めてから API に送る。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_api_key="sk-test",
+        llm_provider="openai_compatible",
+        llm_base_url="https://api.openai.com/v1",
+        llm_model="gpt-4o-mini",
+        llm_chat_max_input_tokens=2500,
+    )
+    pad = "x" * 120_000
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    huge_ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t0,
+        vcenter_count=0,
+        total_events=0,
+        notable_events_count=0,
+        top_notable_event_groups=[],
+        top_event_types=[
+            DigestEventTypeBucket(event_type=pad, event_count=1, max_notable_score=0),
+        ],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    captured: dict[str, object] = {}
+
+    class _StreamOk:
+        status_code = 200
+
+        async def aread(self) -> bytes:
+            return b""
+
+        async def aiter_lines(self) -> object:
+            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
+            yield "data: [DONE]"
+
+    class _StreamCm:
+        def __init__(self, resp: _StreamOk) -> None:
+            self._resp = resp
+
+        async def __aenter__(self) -> _StreamOk:
+            return self._resp
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+    class _FakeClient:
+        async def __aenter__(self) -> "_FakeClient":
+            return self
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
+            body = kwargs.get("json") or {}
+            captured["messages"] = body.get("messages") or []
+            return _StreamCm(_StreamOk())
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
+        lambda *a, **k: _FakeClient(),
+    )
+
+    out, err = await run_period_chat(
+        s,
+        context=huge_ctx,
+        messages=[ChatMessage(role="user", content="質問")],
+    )
+    assert err is None
+    assert out == "ok"
+    api_messages = captured["messages"]
+    assert isinstance(api_messages, list)
+    user_block = str(api_messages[1]["content"])
+    assert "…（JSON 長のため切り詰め）" in user_block
+    assert len(user_block) < len(pad)

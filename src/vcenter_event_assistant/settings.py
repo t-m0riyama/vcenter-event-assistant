@@ -192,6 +192,15 @@ class Settings(BaseSettings):
             "値を変えたらプロセス再起動が必要（get_settings が lru_cache のため）。"
         ),
     )
+    llm_chat_max_input_tokens: int = Field(
+        default=32_000,
+        ge=512,
+        le=256_000,
+        description=(
+            "チャット LLM の入力全体の目安トークン上限（tiktoken cl100k_base で推定。"
+            "Gemini 公式のトークン数と一致しない場合がある（`LLM_CHAT_MAX_INPUT_TOKENS`）。"
+        ),
+    )
 
     @property
     def effective_digest_daily_enabled(self) -> bool:
