@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from functools import lru_cache
 from typing import Any
 
 import httpx
+import tiktoken
 
 from vcenter_event_assistant.api.schemas import ChatMessage
+from vcenter_event_assistant.services.correlation_context import CpuEventCorrelationPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import (
     _collect_openai_chat_stream_text,
@@ -19,11 +23,24 @@ from vcenter_event_assistant.settings import Settings
 _logger = logging.getLogger(__name__)
 
 _MAX_CHAT_MESSAGES = 20
-_MAX_CHAT_MESSAGE_CHARS_TOTAL = 32_000
+
+# digest_llm._trim_context_json の切り詰め末尾と同一（二分探索で使用）
+_JSON_TRUNCATION_SUFFIX = "\n…（JSON 長のため切り詰め）"
+
+# メッセージ境界のオーバーヘッド（tiktoken 推定に加算する概算。OpenAI / Gemini いずれも厳密ではない）
+_CHAT_MESSAGE_OVERHEAD_TOKENS_PER_TURN = 4
+
+
+@lru_cache(maxsize=1)
+def _chat_token_encoding() -> tiktoken.Encoding:
+    """チャット入力のトークン目安（Gemini 公式のカウントとは一致しない場合がある）。"""
+    return tiktoken.get_encoding("cl100k_base")
 
 _CHAT_SYSTEM_PROMPT = (
     "あなたは vCenter 運用のアシスタントです。入力には、指定期間に集約したイベントとメトリクスの JSON と、"
-    "運用者との会話履歴が含まれます。\n"
+    "運用者との会話履歴が含まれます。JSON に `cpu_event_correlation` が含まれる場合は、"
+    "高 CPU サンプル時刻の前後に同一ホストで発生したイベントの集計であり、"
+    "時刻の近接に基づくものであって因果関係や確定的な相関を意味しません。\n"
     "\n"
     "【回答の原則】\n"
     "- 事実・数値は、与えられた JSON（および会話内で明示された内容）に根ざして答える。推測で新しい事実を加えない。\n"
@@ -53,20 +70,96 @@ def _log_chat_llm_failure(settings: Settings, exc: BaseException) -> None:
         )
 
 
-def _trim_chat_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
-    """件数・合計文字数の上限で古いターンから削る。"""
+def _trim_json_raw(raw: str, max_chars: int) -> str:
+    """単一の JSON 文字列を切り詰める（`json.dumps` は呼び出し側で1回にまとめる）。"""
+    if len(raw) <= max_chars:
+        return raw
+    return raw[:max_chars] + _JSON_TRUNCATION_SUFFIX
+
+
+def _estimate_chat_input_tokens(block: str, trimmed: list[ChatMessage]) -> int:
+    """
+    システムプロンプト + コンテキストブロック + 会話のトークン数の目安。
+
+    OpenAI 互換・Gemini ともに同一の文字列集合を想定した近似（Gemini 公式とは一致しない）。
+    """
+    enc = _chat_token_encoding()
+    n = len(enc.encode(_CHAT_SYSTEM_PROMPT)) + len(enc.encode(block))
+    for m in trimmed:
+        n += len(enc.encode(m.content))
+    n += _CHAT_MESSAGE_OVERHEAD_TOKENS_PER_TURN * (2 + len(trimmed))
+    return n
+
+
+def _best_json_string_for_budget(
+    raw_json: str,
+    trimmed: list[ChatMessage],
+    max_tokens: int,
+) -> tuple[str, bool]:
+    """
+    `raw_json` を短くしつつ、推定トークンが `max_tokens` 以下になるよう調整する。
+
+    Returns:
+        (ctx_json, truncated)。全文が収まるときは truncated=False。
+    """
+    full = raw_json
+    block = _merged_context_user_block(full)
+    if _estimate_chat_input_tokens(block, trimmed) <= max_tokens:
+        return full, False
+
+    lo, hi = 1, max(1, len(full) - 1)
+    best: str | None = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        ctx = _trim_json_raw(full, mid)
+        blk = _merged_context_user_block(ctx)
+        if _estimate_chat_input_tokens(blk, trimmed) <= max_tokens:
+            best = ctx
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    if best is None:
+        return _trim_json_raw(full, 1), True
+    return best, True
+
+
+def _fit_chat_payload_to_token_budget(
+    settings: Settings,
+    payload: dict[str, Any],
+    messages: list[ChatMessage],
+) -> tuple[str, list[ChatMessage], bool]:
+    """
+    集約 JSON と会話を `llm_chat_max_input_tokens` 以下に収める。
+
+    先に JSON を短くし、足りなければ古い会話から削る。
+
+    Returns:
+        (ctx_json, trimmed_messages, json_truncated)
+    """
+    max_tokens = settings.llm_chat_max_input_tokens
     trimmed = messages[-_MAX_CHAT_MESSAGES:]
-    while trimmed:
-        total = sum(len(m.content) for m in trimmed)
-        if total <= _MAX_CHAT_MESSAGE_CHARS_TOTAL:
-            break
+    json_truncated = False
+
+    while True:
+        raw_json = json.dumps(payload, ensure_ascii=False)
+        ctx_json, jtrunc = _best_json_string_for_budget(raw_json, trimmed, max_tokens)
+        json_truncated = json_truncated or jtrunc
+        block = _merged_context_user_block(ctx_json)
+        if _estimate_chat_input_tokens(block, trimmed) <= max_tokens:
+            return ctx_json, trimmed, json_truncated
+        if not trimmed:
+            ctx_json = _trim_context_json(payload, max_chars=1)
+            return ctx_json, [], True
         trimmed = trimmed[1:]
-    return trimmed
 
 
-def _context_user_block(ctx_json: str) -> str:
+def _merged_context_user_block(ctx_json: str) -> str:
+    """`digest_context` 単体、または `cpu_event_correlation` 付きマージ JSON のユーザーブロック。"""
     return (
-        "以下は指定期間の vCenter イベント・メトリクス集約 JSON です。"
+        "以下は指定期間の vCenter 集約 JSON です。"
+        "キー `digest_context` にイベント・メトリクス集約が含まれます。"
+        "キー `cpu_event_correlation` が含まれる場合は、高 CPU 時刻近傍のイベント集計です（時刻近接であり因果断定ではありません）。"
         "これを根拠として後続の会話に答えてください。\n\n"
         f"```json\n{ctx_json}\n```"
     )
@@ -140,9 +233,12 @@ async def run_period_chat(
     *,
     context: DigestContext,
     messages: list[ChatMessage],
+    correlation: CpuEventCorrelationPayload | None = None,
 ) -> tuple[str, str | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
+
+    ``correlation`` を渡すと ``digest_context`` と ``cpu_event_correlation`` をマージした JSON を入力とする。
 
     Returns:
         (assistant_text, error_message)。API キーが空のときは (\"\", None)。
@@ -152,9 +248,12 @@ async def run_period_chat(
     if not key:
         return ("", None)
 
-    trimmed = _trim_chat_messages(messages)
-    ctx_json = _trim_context_json(context.model_dump(mode="json"))
-    block = _context_user_block(ctx_json)
+    payload: dict[str, Any] = {"digest_context": context.model_dump(mode="json")}
+    if correlation is not None:
+        payload["cpu_event_correlation"] = correlation.model_dump(mode="json")
+    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, messages)
+    block = _merged_context_user_block(ctx_json)
+    est_tokens = _estimate_chat_input_tokens(block, trimmed)
 
     api_messages: list[dict[str, str]] = [
         {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
@@ -165,11 +264,15 @@ async def run_period_chat(
 
     try:
         _logger.info(
-            "chat LLM リクエスト json_chars=%s message_turns=%s timeout_seconds=%s model=%s",
+            "chat LLM リクエスト est_input_tokens=%s json_chars=%s json_truncated=%s message_turns=%s "
+            "timeout_seconds=%s model=%s max_input_tokens=%s",
+            est_tokens,
             len(ctx_json),
+            json_truncated,
             len(trimmed),
             settings.llm_timeout_seconds,
             settings.llm_model,
+            settings.llm_chat_max_input_tokens,
         )
         timeout = httpx.Timeout(settings.llm_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:

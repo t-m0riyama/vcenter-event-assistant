@@ -87,11 +87,19 @@ def _log_digest_llm_failure(settings: Settings, exc: BaseException) -> None:
         )
 
 
-def _trim_context_json(payload: dict[str, Any]) -> str:
+def _trim_context_json(payload: dict[str, Any], *, max_chars: int | None = None) -> str:
+    """
+    集約 JSON を文字数上限で切り詰める。
+
+    Args:
+        payload: LLM に渡す dict（通常は ``DigestContext.model_dump(mode="json")``）。
+        max_chars: 上限文字数。未指定時はダイジェスト用の既定（80,000）。チャットはトークン予算に合わせて小さく渡す。
+    """
+    limit = _MAX_CONTEXT_JSON_CHARS if max_chars is None else max_chars
     raw = json.dumps(payload, ensure_ascii=False)
-    if len(raw) <= _MAX_CONTEXT_JSON_CHARS:
+    if len(raw) <= limit:
         return raw
-    return raw[:_MAX_CONTEXT_JSON_CHARS] + "\n…（JSON 長のため切り詰め）"
+    return raw[:limit] + "\n…（JSON 長のため切り詰め）"
 
 
 async def augment_digest_with_llm(

@@ -9,6 +9,7 @@ from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import ChatRequest, ChatResponse
 from vcenter_event_assistant.services.chat_llm import run_period_chat
+from vcenter_event_assistant.services.correlation_context import build_cpu_event_correlation
 from vcenter_event_assistant.services.digest_context import build_digest_context
 from vcenter_event_assistant.settings import get_settings
 
@@ -42,5 +43,25 @@ async def post_chat(
         top_notable_min_score=body.top_notable_min_score,
         vcenter_id=body.vcenter_id,
     )
-    text, err = await run_period_chat(settings, context=ctx, messages=list(body.messages))
+
+    correlation = None
+    if body.include_cpu_event_correlation:
+        built = await build_cpu_event_correlation(
+            session,
+            ft,
+            tt,
+            vcenter_id=body.vcenter_id,
+            threshold_pct=body.cpu_correlation_threshold_pct,
+            window_minutes=body.cpu_correlation_window_minutes,
+            max_anchors=20,
+        )
+        if built.rows:
+            correlation = built
+
+    text, err = await run_period_chat(
+        settings,
+        context=ctx,
+        messages=list(body.messages),
+        correlation=correlation,
+    )
     return ChatResponse(assistant_content=text, error=err)
