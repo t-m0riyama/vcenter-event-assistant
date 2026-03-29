@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import httpx
 
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.settings import Settings
+
+_logger = logging.getLogger(__name__)
 
 _MAX_CONTEXT_JSON_CHARS = 80_000
 
@@ -18,6 +21,47 @@ _SYSTEM_PROMPT = (
     "先頭行を「## LLM 要約」とし、その下に日本語の箇条書きを続けてください。"
     "数値・事実は入力を正とし、推測で情報を追加しないでください。"
 )
+
+
+def _llm_failure_detail_for_user(exc: BaseException) -> str:
+    """
+    ユーザー向け `error_message` 用。
+
+    - httpx のタイムアウトは `ReadTimeout('')` のように `str` が空になりやすいため、
+      日本語で「応答がタイムアウト」と明示する。
+    - その他で `str(exc)` が空や空白のみのときは例外型名を返す（「省略（）」を防ぐ）。
+    """
+    if isinstance(exc, httpx.TimeoutException):
+        text = str(exc).strip()
+        head = type(exc).__name__ + (f": {text}" if text else "")
+        return (
+            f"{head}（応答がタイムアウトしました。LLM_TIMEOUT_SECONDS を延長するか、"
+            "ローカル Ollama ではより軽いモデル・短いプロンプトを検討してください）"
+        )
+    text = str(exc).strip()
+    if text:
+        return text
+    return type(exc).__name__
+
+
+def _log_digest_llm_failure(settings: Settings, exc: BaseException) -> None:
+    """運用向け。API キーはログに出さない。"""
+    if settings.llm_provider == "openai_compatible":
+        base = (settings.llm_base_url or "").rstrip("/")
+        _logger.warning(
+            "digest LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
+            base,
+            settings.llm_model,
+            exc,
+            exc_info=True,
+        )
+    else:
+        _logger.warning(
+            "digest LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
+            settings.llm_model,
+            exc,
+            exc_info=True,
+        )
 
 
 def _trim_context_json(payload: dict[str, Any]) -> str:
@@ -48,6 +92,13 @@ async def augment_digest_with_llm(
     user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{template_markdown}"
 
     try:
+        _logger.info(
+            "digest LLM リクエスト json_chars=%s user_message_chars=%s timeout_seconds=%s model=%s",
+            len(ctx_json),
+            len(user_block),
+            settings.llm_timeout_seconds,
+            settings.llm_model,
+        )
         timeout = httpx.Timeout(settings.llm_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if settings.llm_provider == "openai_compatible":
@@ -57,7 +108,38 @@ async def augment_digest_with_llm(
         merged = template_markdown.rstrip() + "\n\n" + summary.strip() + "\n"
         return (merged, None)
     except Exception as e:
-        return (template_markdown, f"LLM 要約は省略（{e!s}）")
+        _log_digest_llm_failure(settings, e)
+        detail = _llm_failure_detail_for_user(e)
+        return (template_markdown, f"LLM 要約は省略（{detail}）")
+
+
+async def _collect_openai_chat_stream_text(response: httpx.Response) -> str:
+    """
+    OpenAI 互換の ``stream: true`` 応答（SSE ``data: {...}``）から assistant 本文を連結する。
+
+    Ollama は非ストリーミングの長い生成をサーバー側で打ち切り（例: 約 2 分で 500）ことがあるため、
+    ストリーミングで受けてトークン間の待ちを避ける。
+    """
+    parts: list[str] = []
+    async for line in response.aiter_lines():
+        line = line.strip()
+        if not line or line.startswith(":"):
+            continue
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].lstrip()
+        if payload == "[DONE]":
+            break
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        for choice in data.get("choices") or []:
+            delta = choice.get("delta") or {}
+            c = delta.get("content")
+            if c is not None:
+                parts.append(str(c))
+    return "".join(parts)
 
 
 async def _openai_chat_completion(
@@ -75,15 +157,16 @@ async def _openai_chat_completion(
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_block},
         ],
+        "stream": True,
     }
-    r = await client.post(url, headers=headers, json=body)
-    if r.status_code >= 400:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:2000]}")
-    data = r.json()
-    try:
-        return str(data["choices"][0]["message"]["content"])
-    except (KeyError, IndexError, TypeError) as e:
-        raise ValueError(f"OpenAI 互換レスポンスの解析に失敗: {data!r}") from e
+    async with client.stream("POST", url, headers=headers, json=body) as response:
+        if response.status_code >= 400:
+            err_body = (await response.aread()).decode("utf-8", errors="replace")[:2000]
+            raise RuntimeError(f"HTTP {response.status_code}: {err_body}")
+        summary = await _collect_openai_chat_stream_text(response)
+    if not summary.strip():
+        raise ValueError("OpenAI 互換ストリーミング応答に assistant 本文がありません（choices[].delta.content が空）")
+    return summary
 
 
 async def _gemini_generate_content(

@@ -144,7 +144,15 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         description="OpenAI 互換時は gpt-4o-mini 等。Gemini 時は gemini-2.0-flash 等（Google AI Studio のモデル ID）。",
     )
-    llm_timeout_seconds: float = Field(default=60.0, ge=5.0, le=600.0)
+    llm_timeout_seconds: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=7200.0,
+        description=(
+            "httpx の読み取りタイムアウト（秒）。ローカル Ollama は長いプロンプトで数分〜かかることがある。"
+            "値を変えたらプロセス再起動が必要（get_settings が lru_cache のため）。"
+        ),
+    )
 
     @property
     def effective_digest_daily_enabled(self) -> bool:
