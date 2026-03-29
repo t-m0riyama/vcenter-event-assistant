@@ -46,7 +46,8 @@ async def post_chat(
 
     correlation = None
     if body.include_cpu_event_correlation:
-        built = await build_cpu_event_correlation(
+        # rows が空でもペイロードを渡す（LLM が「キーが無い」と誤解しないようにする）
+        correlation = await build_cpu_event_correlation(
             session,
             ft,
             tt,
@@ -55,8 +56,6 @@ async def post_chat(
             window_minutes=body.cpu_correlation_window_minutes,
             max_anchors=20,
         )
-        if built.rows:
-            correlation = built
 
     text, err = await run_period_chat(
         settings,
