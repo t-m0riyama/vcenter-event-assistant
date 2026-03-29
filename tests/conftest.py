@@ -21,9 +21,14 @@ get_settings.cache_clear()
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """`test_digest*` / `test_digests_api*` を高負荷マーカーに付与（既定の addopts で除外）。"""
+    """`test_digest*` / `test_digests_api*` を高負荷マーカーに付与（既定の addopts で除外）。
+
+    `test_digest_llm.py` は HTTP モックのみのため `digest_heavy` に含めない。
+    """
     for item in items:
         name = Path(str(item.path)).name
+        if name == "test_digest_llm.py":
+            continue
         if name.startswith("test_digest") or name == "test_digests_api.py":
             item.add_marker(pytest.mark.digest_heavy)
 

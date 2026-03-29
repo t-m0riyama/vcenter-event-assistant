@@ -8,8 +8,16 @@ import httpx
 import pytest
 
 from vcenter_event_assistant.services.digest_context import DigestContext
-from vcenter_event_assistant.services.digest_llm import augment_digest_with_llm
+from vcenter_event_assistant.services.digest_llm import _SYSTEM_PROMPT, augment_digest_with_llm
 from vcenter_event_assistant.settings import Settings
+
+
+def test_system_prompt_defines_non_overlapping_llm_section() -> None:
+    """案 A: 冒頭メタ・表のなぞり再掲を禁じ、追記ブロックの役割を明示する。"""
+    assert "【禁止：本文との重複】" in _SYSTEM_PROMPT
+    assert "【推奨：補足として書くこと】" in _SYSTEM_PROMPT
+    assert "末尾に追記される「## LLM 要約」" in _SYSTEM_PROMPT
+    assert "ホスト CPU/メモリ利用率" in _SYSTEM_PROMPT
 
 
 def _minimal_ctx() -> DigestContext:
