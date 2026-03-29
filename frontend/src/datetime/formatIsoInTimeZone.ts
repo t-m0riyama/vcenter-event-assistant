@@ -48,6 +48,29 @@ export function formatIsoInTimeZone(
   }
 }
 
+/**
+ * API の ISO 時刻文字列を、指定 IANA タイムゾーンの暦日（日付のみ）に整形する。
+ * 一覧の期間ラベルなど、時刻を表示しない用途向け（`dateStyle: 'short'` のみ）。
+ */
+export function formatIsoDateOnlyInTimeZone(
+  isoString: string,
+  timeZone: string,
+  locale?: string,
+): string {
+  const d = new Date(parseApiUtcInstantMs(isoString))
+  if (Number.isNaN(d.getTime())) {
+    return '—'
+  }
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'short',
+      timeZone,
+    }).format(d)
+  } catch {
+    return d.toISOString().slice(0, 10)
+  }
+}
+
 /** Recharts passes either `{ value, coordinate, ... }` or the raw tick value depending on version/path. */
 export function extractTickAxisValue(payload: unknown): unknown {
   if (payload != null && typeof payload === 'object' && 'value' in payload) {

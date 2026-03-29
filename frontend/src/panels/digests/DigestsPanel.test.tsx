@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { DigestRead } from '../../api/schemas'
 import { downloadTextFile } from '../../utils/downloadTextFile'
-import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import { formatIsoDateOnlyInTimeZone, formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
@@ -176,12 +176,14 @@ describe('DigestsPanel', () => {
     }
   })
 
-  it('一覧ナビの期間表示に秒を含めない', async () => {
+  it('一覧ナビに開始日付のみ表示し、レンジや時刻付き開始ラベルは出さない', async () => {
     const prevTz = localStorage.getItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
     localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
     const periodStart = '2026-03-27T00:00:00Z'
     const periodEnd = '2026-03-28T00:00:00Z'
-    const expectedRange = `${formatIsoInTimeZone(periodStart, 'Asia/Tokyo', { omitSeconds: true })} 〜 ${formatIsoInTimeZone(periodEnd, 'Asia/Tokyo', { omitSeconds: true })}`
+    const expectedStartDateLabel = formatIsoDateOnlyInTimeZone(periodStart, 'Asia/Tokyo')
+    const rangeLabel = `${formatIsoInTimeZone(periodStart, 'Asia/Tokyo', { omitSeconds: true })} 〜 ${formatIsoInTimeZone(periodEnd, 'Asia/Tokyo', { omitSeconds: true })}`
+    const startWithTimeLabel = formatIsoInTimeZone(periodStart, 'Asia/Tokyo', { omitSeconds: true })
 
     try {
       vi.stubGlobal(
@@ -219,7 +221,11 @@ describe('DigestsPanel', () => {
       })
 
       const listNav = screen.getByRole('navigation', { name: 'ダイジェスト一覧' })
-      expect(within(listNav).getByText(expectedRange)).toBeInTheDocument()
+      expect(within(listNav).getByText('daily')).toBeInTheDocument()
+      expect(within(listNav).getByText(expectedStartDateLabel)).toBeInTheDocument()
+      expect(within(listNav).queryByText('〜')).toBeNull()
+      expect(within(listNav).queryByText(rangeLabel)).toBeNull()
+      expect(within(listNav).queryByText(startWithTimeLabel)).toBeNull()
     } finally {
       if (prevTz === null) {
         localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)

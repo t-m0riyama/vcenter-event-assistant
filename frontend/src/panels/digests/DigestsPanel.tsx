@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { apiGet } from '../../api'
 import { parseDigestListResponse, type DigestRead } from '../../api/schemas'
-import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import { formatIsoDateOnlyInTimeZone, formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
 import { downloadTextFile } from '../../utils/downloadTextFile'
@@ -119,6 +119,11 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
     [timeZone],
   )
 
+  const formatListPeriodStartDate = useCallback(
+    (iso: string) => formatIsoDateOnlyInTimeZone(iso, timeZone),
+    [timeZone],
+  )
+
   const formatRange = useCallback(
     (fromIso: string, toIso: string) =>
       `${formatDigestInstant(fromIso)} 〜 ${formatDigestInstant(toIso)}`,
@@ -171,7 +176,9 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
                         }}
                       >
                         <span className="digests-row-kind">{d.kind}</span>
-                        <span className="digests-row-range">{formatRange(d.period_start, d.period_end)}</span>
+                        <span className="digests-row-range">
+                          {formatListPeriodStartDate(d.period_start)}
+                        </span>
                         <span className="digests-row-status">{d.status}</span>
                         <span className="digests-row-created">
                           作成 {formatDigestInstant(d.created_at)}

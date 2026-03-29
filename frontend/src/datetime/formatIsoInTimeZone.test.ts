@@ -3,6 +3,7 @@ import {
   extractTickAxisValue,
   formatChartAxisTick,
   formatChartTooltipLabel,
+  formatIsoDateOnlyInTimeZone,
   formatIsoInTimeZone,
   parseApiUtcInstantMs,
 } from './formatIsoInTimeZone'
@@ -54,6 +55,18 @@ describe('formatIsoInTimeZone', () => {
 
   it('returns em dash for invalid date string', () => {
     expect(formatIsoInTimeZone('not-a-date', 'UTC')).toBe('—')
+  })
+})
+
+describe('formatIsoDateOnlyInTimeZone', () => {
+  it('Asia/Tokyo で暦年を含み、時刻表記（HH:mm 相当）を含まない', () => {
+    const s = formatIsoDateOnlyInTimeZone('2026-03-27T00:00:00Z', 'Asia/Tokyo')
+    expectFormattedStringContainsCalendarYear(s, 2026)
+    expect(s).not.toMatch(/\d{1,2}:\d{2}/)
+  })
+
+  it('無効な入力は全角ダッシュを返す', () => {
+    expect(formatIsoDateOnlyInTimeZone('not-a-date', 'UTC')).toBe('—')
   })
 })
 
