@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
 from vcenter_event_assistant.api.routes.digests import router as digests_router
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     api.include_router(metrics_router)
     api.include_router(dashboard_router)
     api.include_router(digests_router)
+    api.include_router(chat_router)
 
     @api.post("/ingest/run")
     async def run_ingest_now() -> dict[str, str | int]:

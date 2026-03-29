@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -356,6 +357,38 @@ class DigestRead(BaseModel):
 class DigestListResponse(BaseModel):
     items: list[DigestRead]
     total: int
+
+
+class ChatMessage(BaseModel):
+    """チャット 1 ターン（クライアント送受信・LLM 呼び出しの両方で使用）。"""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+class ChatRequest(BaseModel):
+    """期間指定チャット。JSON では ``from`` / ``to`` キー（クエリと同様の別名）。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
+    messages: list[ChatMessage] = Field(min_length=1)
+    vcenter_id: uuid.UUID | None = None
+    top_notable_min_score: int = Field(default=1, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def last_message_is_user(self) -> ChatRequest:
+        if self.messages[-1].role != "user":
+            raise ValueError("最後のメッセージは user である必要があります")
+        return self
+
+
+class ChatResponse(BaseModel):
+    """チャット API の応答。LLM 失敗時は ``assistant_content`` が空で ``error`` に理由。"""
+
+    assistant_content: str
+    error: str | None = None
 
 
 class DigestRunRequest(BaseModel):

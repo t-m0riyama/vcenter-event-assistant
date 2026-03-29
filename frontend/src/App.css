@@ -1075,6 +1075,63 @@ textarea:focus-visible {
   font-size: 0.92em;
 }
 
+.chat-panel__section {
+  margin-bottom: var(--spacing-4);
+}
+
+.chat-panel__messages {
+  list-style: none;
+  margin: 0 0 var(--spacing-4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+}
+
+.chat-panel__msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  align-items: flex-start;
+}
+
+.chat-panel__msg--assistant {
+  align-items: flex-end;
+}
+
+.chat-panel__msg--assistant .chat-panel__bubble {
+  background: var(--color-background-secondary);
+}
+
+.chat-panel__role {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
+.chat-panel__bubble {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: min(100%, 560px);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+}
+
+.chat-panel__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  align-items: flex-start;
+}
+
+.chat-panel__composer textarea {
+  width: min(100%, 560px);
+  box-sizing: border-box;
+  font: inherit;
+}
+
 @media (max-width: 768px) {
   .app {
     padding: var(--spacing-3) var(--spacing-3) var(--spacing-8);

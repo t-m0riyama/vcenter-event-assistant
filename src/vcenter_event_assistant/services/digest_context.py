@@ -127,34 +127,45 @@ async def build_digest_context(
     to_utc: datetime,
     *,
     top_notable_min_score: int = 1,
+    vcenter_id: uuid.UUID | None = None,
 ) -> DigestContext:
-    """``from_utc <= t < to_utc`` のイベント・サンプルを集約する（時刻は timezone-aware を想定）。"""
+    """``from_utc <= t < to_utc`` のイベント・サンプルを集約する（時刻は timezone-aware を想定）。
+
+    ``vcenter_id`` を指定した場合は、その vCenter に属するイベント・メトリクスのみを対象とする。
+    このとき ``vcenter_count`` は単一スコープであることを示す **1** とする（登録 vCenter 総数ではない）。
+    """
     if from_utc >= to_utc:
         raise ValueError("from_utc must be before to_utc")
 
-    vc_count = await session.execute(select(func.count()).select_from(VCenter))
-    ev_q = await session.execute(
-        select(func.count())
-        .select_from(EventRecord)
-        .where(EventRecord.occurred_at >= from_utc, EventRecord.occurred_at < to_utc)
-    )
+    if vcenter_id is not None:
+        vcenter_count = 1
+    else:
+        vc_count = await session.execute(select(func.count()).select_from(VCenter))
+        vcenter_count = int(vc_count.scalar_one() or 0)
+
+    ev_clauses = [
+        EventRecord.occurred_at >= from_utc,
+        EventRecord.occurred_at < to_utc,
+    ]
+    if vcenter_id is not None:
+        ev_clauses.append(EventRecord.vcenter_id == vcenter_id)
+
+    ev_q = await session.execute(select(func.count()).select_from(EventRecord).where(*ev_clauses))
+    notable_clauses = [
+        *ev_clauses,
+        EventRecord.notable_score >= _NOTABLE_SCORE_THRESHOLD,
+    ]
     notable_q = await session.execute(
-        select(func.count())
-        .select_from(EventRecord)
-        .where(
-            EventRecord.occurred_at >= from_utc,
-            EventRecord.occurred_at < to_utc,
-            EventRecord.notable_score >= _NOTABLE_SCORE_THRESHOLD,
-        )
+        select(func.count()).select_from(EventRecord).where(*notable_clauses)
     )
 
+    top_clauses = [
+        *ev_clauses,
+        EventRecord.notable_score >= top_notable_min_score,
+    ]
     top_q = await session.execute(
         select(EventRecord)
-        .where(
-            EventRecord.occurred_at >= from_utc,
-            EventRecord.occurred_at < to_utc,
-            EventRecord.notable_score >= top_notable_min_score,
-        )
+        .where(*top_clauses)
         .order_by(EventRecord.notable_score.desc(), EventRecord.occurred_at.desc())
         .limit(_TOP_NOTABLE_RAW_FETCH_LIMIT)
     )
@@ -178,7 +189,7 @@ async def build_digest_context(
     event_cnt = func.count().label("event_cnt")
     type_q = await session.execute(
         select(EventRecord.event_type, event_cnt)
-        .where(EventRecord.occurred_at >= from_utc, EventRecord.occurred_at < to_utc)
+        .where(*ev_clauses)
         .group_by(EventRecord.event_type)
         .order_by(event_cnt.desc())
         .limit(_TOP_EVENT_TYPES_LIMIT)
@@ -191,8 +202,7 @@ async def build_digest_context(
     if top_types:
         ev_for_types = await session.execute(
             select(EventRecord.event_type, EventRecord.severity, EventRecord.message).where(
-                EventRecord.occurred_at >= from_utc,
-                EventRecord.occurred_at < to_utc,
+                *ev_clauses,
                 EventRecord.event_type.in_(top_types),
             )
         )
@@ -217,6 +227,14 @@ async def build_digest_context(
         for et, cnt in type_rows
     ]
 
+    metric_clauses = [
+        MetricSample.metric_key == "host.cpu.usage_pct",
+        MetricSample.sampled_at >= from_utc,
+        MetricSample.sampled_at < to_utc,
+    ]
+    if vcenter_id is not None:
+        metric_clauses.append(MetricSample.vcenter_id == vcenter_id)
+
     cpu_rank = (
         select(
             MetricSample.id,
@@ -227,11 +245,7 @@ async def build_digest_context(
             )
             .label("rn"),
         )
-        .where(
-            MetricSample.metric_key == "host.cpu.usage_pct",
-            MetricSample.sampled_at >= from_utc,
-            MetricSample.sampled_at < to_utc,
-        )
+        .where(*metric_clauses)
     ).subquery()
 
     cpu_q = await session.execute(
@@ -253,6 +267,14 @@ async def build_digest_context(
         for r in cpu_rows
     ]
 
+    mem_metric_clauses = [
+        MetricSample.metric_key == "host.mem.usage_pct",
+        MetricSample.sampled_at >= from_utc,
+        MetricSample.sampled_at < to_utc,
+    ]
+    if vcenter_id is not None:
+        mem_metric_clauses.append(MetricSample.vcenter_id == vcenter_id)
+
     mem_rank = (
         select(
             MetricSample.id,
@@ -263,11 +285,7 @@ async def build_digest_context(
             )
             .label("rn"),
         )
-        .where(
-            MetricSample.metric_key == "host.mem.usage_pct",
-            MetricSample.sampled_at >= from_utc,
-            MetricSample.sampled_at < to_utc,
-        )
+        .where(*mem_metric_clauses)
     ).subquery()
 
     mem_q = await session.execute(
@@ -292,7 +310,7 @@ async def build_digest_context(
     return DigestContext(
         from_utc=from_utc,
         to_utc=to_utc,
-        vcenter_count=int(vc_count.scalar_one() or 0),
+        vcenter_count=vcenter_count,
         total_events=int(ev_q.scalar_one() or 0),
         notable_events_count=int(notable_q.scalar_one() or 0),
         top_notable_event_groups=top_groups,
