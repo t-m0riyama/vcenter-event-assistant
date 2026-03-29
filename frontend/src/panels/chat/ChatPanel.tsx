@@ -23,6 +23,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
+  const [includeCpuEventCorrelation, setIncludeCpuEventCorrelation] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -60,6 +61,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         from: resolved.from,
         to: resolved.to,
         messages: nextMessages,
+        include_cpu_event_correlation: includeCpuEventCorrelation,
       }
       if (vcenterId) {
         body.vcenter_id = vcenterId
@@ -77,7 +79,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     } finally {
       setLoading(false)
     }
-  }, [draft, messages, onError, rangeParts, timeZone, vcenterId])
+  }, [draft, messages, onError, rangeParts, timeZone, vcenterId, includeCpuEventCorrelation])
 
   return (
     <div className="panel chat-panel">
@@ -105,6 +107,20 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
               </option>
             ))}
           </select>
+        </label>
+      </section>
+
+      <section className="chat-panel__section" aria-label="CPU 近接相関">
+        <label className="chat-panel__checkbox-label">
+          <input
+            type="checkbox"
+            checked={includeCpuEventCorrelation}
+            onChange={(e) => {
+              setIncludeCpuEventCorrelation(e.target.checked)
+            }}
+            disabled={loading}
+          />
+          CPU 高負荷とイベントの近接集約を含める（追加 DB クエリあり）
         </label>
       </section>
 

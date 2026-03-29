@@ -11,6 +11,7 @@ import httpx
 import tiktoken
 
 from vcenter_event_assistant.api.schemas import ChatMessage
+from vcenter_event_assistant.services.correlation_context import CpuEventCorrelationPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import (
     _collect_openai_chat_stream_text,
@@ -37,7 +38,9 @@ def _chat_token_encoding() -> tiktoken.Encoding:
 
 _CHAT_SYSTEM_PROMPT = (
     "あなたは vCenter 運用のアシスタントです。入力には、指定期間に集約したイベントとメトリクスの JSON と、"
-    "運用者との会話履歴が含まれます。\n"
+    "運用者との会話履歴が含まれます。JSON に `cpu_event_correlation` が含まれる場合は、"
+    "高 CPU サンプル時刻の前後に同一ホストで発生したイベントの集計であり、"
+    "時刻の近接に基づくものであって因果関係や確定的な相関を意味しません。\n"
     "\n"
     "【回答の原則】\n"
     "- 事実・数値は、与えられた JSON（および会話内で明示された内容）に根ざして答える。推測で新しい事実を加えない。\n"
@@ -100,7 +103,7 @@ def _best_json_string_for_budget(
         (ctx_json, truncated)。全文が収まるときは truncated=False。
     """
     full = raw_json
-    block = _context_user_block(full)
+    block = _merged_context_user_block(full)
     if _estimate_chat_input_tokens(block, trimmed) <= max_tokens:
         return full, False
 
@@ -109,7 +112,7 @@ def _best_json_string_for_budget(
     while lo <= hi:
         mid = (lo + hi) // 2
         ctx = _trim_json_raw(full, mid)
-        blk = _context_user_block(ctx)
+        blk = _merged_context_user_block(ctx)
         if _estimate_chat_input_tokens(blk, trimmed) <= max_tokens:
             best = ctx
             lo = mid + 1
@@ -142,7 +145,7 @@ def _fit_chat_payload_to_token_budget(
         raw_json = json.dumps(payload, ensure_ascii=False)
         ctx_json, jtrunc = _best_json_string_for_budget(raw_json, trimmed, max_tokens)
         json_truncated = json_truncated or jtrunc
-        block = _context_user_block(ctx_json)
+        block = _merged_context_user_block(ctx_json)
         if _estimate_chat_input_tokens(block, trimmed) <= max_tokens:
             return ctx_json, trimmed, json_truncated
         if not trimmed:
@@ -151,9 +154,12 @@ def _fit_chat_payload_to_token_budget(
         trimmed = trimmed[1:]
 
 
-def _context_user_block(ctx_json: str) -> str:
+def _merged_context_user_block(ctx_json: str) -> str:
+    """`digest_context` 単体、または `cpu_event_correlation` 付きマージ JSON のユーザーブロック。"""
     return (
-        "以下は指定期間の vCenter イベント・メトリクス集約 JSON です。"
+        "以下は指定期間の vCenter 集約 JSON です。"
+        "キー `digest_context` にイベント・メトリクス集約が含まれます。"
+        "キー `cpu_event_correlation` が含まれる場合は、高 CPU 時刻近傍のイベント集計です（時刻近接であり因果断定ではありません）。"
         "これを根拠として後続の会話に答えてください。\n\n"
         f"```json\n{ctx_json}\n```"
     )
@@ -227,9 +233,12 @@ async def run_period_chat(
     *,
     context: DigestContext,
     messages: list[ChatMessage],
+    correlation: CpuEventCorrelationPayload | None = None,
 ) -> tuple[str, str | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
+
+    ``correlation`` を渡すと ``digest_context`` と ``cpu_event_correlation`` をマージした JSON を入力とする。
 
     Returns:
         (assistant_text, error_message)。API キーが空のときは (\"\", None)。
@@ -239,9 +248,11 @@ async def run_period_chat(
     if not key:
         return ("", None)
 
-    payload = context.model_dump(mode="json")
+    payload: dict[str, Any] = {"digest_context": context.model_dump(mode="json")}
+    if correlation is not None:
+        payload["cpu_event_correlation"] = correlation.model_dump(mode="json")
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, messages)
-    block = _context_user_block(ctx_json)
+    block = _merged_context_user_block(ctx_json)
     est_tokens = _estimate_chat_input_tokens(block, trimmed)
 
     api_messages: list[dict[str, str]] = [

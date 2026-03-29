@@ -62,4 +62,38 @@ describe('ChatPanel', () => {
     )
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('CPU 近接相関のチェックをオンにすると POST 本文に include_cpu_event_correlation が含まれる', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { include_cpu_event_correlation?: boolean }
+        expect(body.include_cpu_event_correlation).toBe(true)
+        return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /CPU 高負荷とイベントの近接集約を含める/ }))
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => {
+      const posts = fetchMock.mock.calls.filter(
+        (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
+      )
+      expect(posts.length).toBeGreaterThanOrEqual(1)
+    })
+  })
 })
