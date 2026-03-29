@@ -348,9 +348,13 @@ class DigestListResponse(BaseModel):
 
 
 class DigestRunRequest(BaseModel):
-    """手動ダイジェスト実行。``from_time`` / ``to_time`` を省略すると直前の UTC 暦日を対象とする。"""
+    """手動ダイジェスト実行。``from_time`` / ``to_time`` を省略すると ``DIGEST_DISPLAY_TIMEZONE`` に基づく直前期間を対象とする（日次=直前暦日、週次=直前週、月次=直前月）。"""
 
-    kind: str = Field(default="daily", max_length=64)
+    kind: str = Field(
+        default="daily",
+        max_length=64,
+        description="daily / weekly / monthly。期間省略時はこの種別に応じた集計ウィンドウ（設定 TZ の暦）を使う。",
+    )
     from_time: datetime | None = None
     to_time: datetime | None = None
 

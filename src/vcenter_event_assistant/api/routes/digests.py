@@ -13,10 +13,17 @@ from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import DigestListResponse, DigestRead, DigestRunRequest
 from vcenter_event_assistant.db.models import DigestRecord
 from vcenter_event_assistant.services.digest_run import run_digest_once
-from vcenter_event_assistant.services.digest_window import utc_yesterday_window
+from vcenter_event_assistant.services.digest_timezone import resolve_digest_timezone
+from vcenter_event_assistant.services.digest_window import (
+    zoned_previous_calendar_month_window,
+    zoned_previous_week_window,
+    zoned_yesterday_window,
+)
 from vcenter_event_assistant.settings import get_settings
 
 router = APIRouter(prefix="/digests", tags=["digests"])
+
+_DEFAULT_WINDOW_KINDS = frozenset({"daily", "weekly", "monthly"})
 
 
 @router.get("", response_model=DigestListResponse)
@@ -56,11 +63,29 @@ async def run_digest(
     if req.from_time is not None and req.to_time is not None:
         period_start = to_utc(req.from_time)
         period_end = to_utc(req.to_time)
+        kind_arg = req.kind
     else:
-        period_start, period_end = utc_yesterday_window()
+        kind_norm = req.kind.strip().lower()
+        if kind_norm not in _DEFAULT_WINDOW_KINDS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "digest kind must be one of daily, weekly, monthly when from_time and to_time are omitted; "
+                    f"got {req.kind!r}"
+                ),
+            )
+        settings = get_settings()
+        tz, _ = resolve_digest_timezone(settings)
+        if kind_norm == "daily":
+            period_start, period_end = zoned_yesterday_window(None, tz)
+        elif kind_norm == "weekly":
+            period_start, period_end = zoned_previous_week_window(None, tz)
+        else:
+            period_start, period_end = zoned_previous_calendar_month_window(None, tz)
+        kind_arg = kind_norm
     row = await run_digest_once(
         session,
-        kind=req.kind,
+        kind=kind_arg,
         from_utc=period_start,
         to_utc=period_end,
         settings=get_settings(),
