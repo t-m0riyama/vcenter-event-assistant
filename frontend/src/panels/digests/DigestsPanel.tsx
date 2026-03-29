@@ -6,18 +6,14 @@ import { parseDigestListResponse, type DigestRead } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
-import { repairPipeTablesForGfm } from './repairPipeTablesForGfm'
-import { stripLlmDigestSection } from './stripLlmDigestSection'
+import { downloadTextFile } from '../../utils/downloadTextFile'
+import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
+import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
 
 /** 1 ページあたりのダイジェスト件数（`GET /api/digests` の `limit`） */
 export const DIGEST_LIST_PAGE_SIZE = 50
 
 type LoadState = 'loading' | 'ready' | 'error'
-
-function displayMarkdownForDigest(d: DigestRead): string {
-  const raw = d.llm_model != null ? d.body_markdown : stripLlmDigestSection(d.body_markdown)
-  return repairPipeTablesForGfm(raw)
-}
 
 function SelectedDigestDetail({
   selected,
@@ -28,12 +24,26 @@ function SelectedDigestDetail({
   formatRange: (fromIso: string, toIso: string) => string
   formatDigestInstant: (iso: string) => string
 }) {
-  const bodyMd = displayMarkdownForDigest(selected)
+  const bodyMd = getDigestBodyMarkdownForDisplay(selected)
   return (
     <>
       <p className="digests-detail-meta">
         {formatRange(selected.period_start, selected.period_end)} · 作成{' '}
         {formatDigestInstant(selected.created_at)}
+      </p>
+      <p className="digests-detail-download">
+        <button
+          type="button"
+          className="btn btn--gray"
+          onClick={() => {
+            downloadTextFile(
+              buildDigestDownloadFilename(selected),
+              getDigestBodyMarkdownForDisplay(selected),
+            )
+          }}
+        >
+          Markdown をダウンロード
+        </button>
       </p>
       {selected.llm_model != null && (
         <p className="digest-llm-meta">LLM 要約あり（{selected.llm_model}）</p>

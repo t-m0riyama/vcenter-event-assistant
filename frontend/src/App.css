@@ -997,6 +997,10 @@ textarea:focus-visible {
   color: var(--color-text-secondary);
 }
 
+.digests-detail-download {
+  margin: 0 0 var(--spacing-2);
+}
+
 .digest-llm-meta {
   margin: 0 0 var(--spacing-2);
   font-size: var(--font-size-footnote);
