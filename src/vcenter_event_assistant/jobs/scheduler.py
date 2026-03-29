@@ -13,10 +13,11 @@ from sqlalchemy import select
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.digest_run import run_digest_once
+from vcenter_event_assistant.services.digest_timezone import resolve_digest_timezone
 from vcenter_event_assistant.services.digest_window import (
-    utc_previous_calendar_month_window,
-    utc_previous_week_window,
-    utc_yesterday_window,
+    zoned_previous_calendar_month_window,
+    zoned_previous_week_window,
+    zoned_yesterday_window,
 )
 from vcenter_event_assistant.services.ingestion import (
     ingest_events_for_vcenter,
@@ -34,8 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 async def run_daily_digest() -> None:
-    """直前の UTC 暦日を対象に日次ダイジェストを 1 件生成する。"""
-    fr, to = utc_yesterday_window()
+    """設定 TZ の直前暦日を対象に日次ダイジェストを 1 件生成する。"""
+    tz, _ = resolve_digest_timezone(get_settings())
+    fr, to = zoned_yesterday_window(None, tz)
     try:
         async with session_scope() as session:
             row = await run_digest_once(
@@ -56,8 +58,9 @@ async def run_daily_digest() -> None:
 
 
 async def run_weekly_digest() -> None:
-    """直前の UTC 日曜始まり暦週を対象に週次ダイジェストを 1 件生成する。"""
-    fr, to = utc_previous_week_window()
+    """設定 TZ の日曜 0:00 始まりの直前暦週を対象に週次ダイジェストを 1 件生成する。"""
+    tz, _ = resolve_digest_timezone(get_settings())
+    fr, to = zoned_previous_week_window(None, tz)
     try:
         async with session_scope() as session:
             row = await run_digest_once(
@@ -78,8 +81,9 @@ async def run_weekly_digest() -> None:
 
 
 async def run_monthly_digest() -> None:
-    """直前の UTC 暦月を対象に月次ダイジェストを 1 件生成する。"""
-    fr, to = utc_previous_calendar_month_window()
+    """設定 TZ の直前暦月を対象に月次ダイジェストを 1 件生成する。"""
+    tz, _ = resolve_digest_timezone(get_settings())
+    fr, to = zoned_previous_calendar_month_window(None, tz)
     try:
         async with session_scope() as session:
             row = await run_digest_once(
