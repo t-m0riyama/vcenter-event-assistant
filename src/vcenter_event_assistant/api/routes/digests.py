@@ -26,6 +26,19 @@ router = APIRouter(prefix="/digests", tags=["digests"])
 _DEFAULT_WINDOW_KINDS = frozenset({"daily", "weekly", "monthly"})
 
 
+def _canonical_digest_kind(raw: str) -> str:
+    """
+    既知の ``kind`` は小文字に正規化する（``_load_template_source`` の ``weekly`` / ``monthly`` 判定と一致させる）。
+
+    それ以外の文字列は前後空白のみ除去し、大文字小文字は保持する。
+    """
+    stripped = raw.strip()
+    key = stripped.lower()
+    if key in _DEFAULT_WINDOW_KINDS:
+        return key
+    return stripped
+
+
 @router.get("", response_model=DigestListResponse)
 async def list_digests(
     session: AsyncSession = Depends(get_session),
@@ -60,13 +73,12 @@ async def run_digest(
     session: AsyncSession = Depends(get_session),
 ) -> DigestRead:
     req = body
+    kind_arg = _canonical_digest_kind(req.kind)
     if req.from_time is not None and req.to_time is not None:
         period_start = to_utc(req.from_time)
         period_end = to_utc(req.to_time)
-        kind_arg = req.kind
     else:
-        kind_norm = req.kind.strip().lower()
-        if kind_norm not in _DEFAULT_WINDOW_KINDS:
+        if kind_arg not in _DEFAULT_WINDOW_KINDS:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -76,13 +88,12 @@ async def run_digest(
             )
         settings = get_settings()
         tz, _ = resolve_digest_timezone(settings)
-        if kind_norm == "daily":
+        if kind_arg == "daily":
             period_start, period_end = zoned_yesterday_window(None, tz)
-        elif kind_norm == "weekly":
+        elif kind_arg == "weekly":
             period_start, period_end = zoned_previous_week_window(None, tz)
         else:
             period_start, period_end = zoned_previous_calendar_month_window(None, tz)
-        kind_arg = kind_norm
     row = await run_digest_once(
         session,
         kind=kind_arg,

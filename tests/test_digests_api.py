@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -80,3 +81,38 @@ async def test_run_digest_with_explicit_window(client: AsyncClient) -> None:
     )
     assert r.status_code == 200
     assert "VmPoweredOnEvent" in r.json()["body_markdown"]
+
+
+@pytest.mark.asyncio
+async def test_post_run_explicit_window_normalizes_kind_for_weekly_template(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``kind`` が ``Weekly`` でも週次専用テンプレに載る（小文字正規化）。"""
+    tpl = tmp_path / "weekly_only.j2"
+    tpl.write_text("# BRANCH_WEEKLY_ONLY\n", encoding="utf-8")
+    monkeypatch.setenv("DIGEST_TEMPLATE_WEEKLY_PATH", str(tpl))
+
+    from httpx import ASGITransport, AsyncClient
+
+    from vcenter_event_assistant.main import create_app
+    from vcenter_event_assistant.settings import get_settings
+
+    get_settings.cache_clear()
+    app = create_app()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/digests/run",
+                json={
+                    "kind": "Weekly",
+                    "from_time": "2026-03-10T00:00:00Z",
+                    "to_time": "2026-03-11T00:00:00Z",
+                },
+            )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["kind"] == "weekly"
+        assert "BRANCH_WEEKLY_ONLY" in data["body_markdown"]
+    finally:
+        get_settings.cache_clear()

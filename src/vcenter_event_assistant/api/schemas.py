@@ -353,7 +353,10 @@ class DigestRunRequest(BaseModel):
     kind: str = Field(
         default="daily",
         max_length=64,
-        description="daily / weekly / monthly。期間省略時はこの種別に応じた集計ウィンドウ（設定 TZ の暦）を使う。",
+        description=(
+            "daily / weekly / monthly（大文字小文字は区別しない）。"
+            "期間省略時はこの種別に応じた集計ウィンドウ（設定 TZ の暦）を使う。"
+        ),
     )
     from_time: datetime | None = None
     to_time: datetime | None = None
