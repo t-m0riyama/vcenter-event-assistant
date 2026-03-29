@@ -103,7 +103,12 @@ class Settings(BaseSettings):
     )
     digest_weekly_cron: str = Field(
         default="0 8 * * 0",
-        description="週次ダイジェストの cron（`DIGEST_WEEKLY_CRON`）。曜日は環境により 0 または 7 が日曜のことがある。",
+        description=(
+            "週次ダイジェストの cron（`DIGEST_WEEKLY_CRON`、5 フィールド）。"
+            "既定は毎週月曜 8:00（ローカル TZ。曜日 0）。"
+            "APScheduler は曜日を Python weekday と同じに解釈する（0=月曜…6=日曜）。"
+            "Unix cron の 7（日曜の別表記）は使えない。"
+        ),
     )
     digest_monthly_enabled: bool = Field(
         default=False,
