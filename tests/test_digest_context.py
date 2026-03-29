@@ -123,6 +123,90 @@ async def test_build_digest_context_groups_same_event_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_build_digest_context_filters_by_vcenter_id() -> None:
+    """vcenter_id 指定時は該当 vCenter のイベント・メトリクスのみ集約する。"""
+    vid_a = uuid.uuid4()
+    vid_b = uuid.uuid4()
+    base = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+    window_start = base - timedelta(hours=1)
+    window_end = base + timedelta(hours=1)
+
+    async with session_scope() as session:
+        for vid, name in ((vid_a, "vc-a"), (vid_b, "vc-b")):
+            session.add(
+                VCenter(
+                    id=vid,
+                    name=name,
+                    host="h",
+                    port=443,
+                    username="u",
+                    password="p",
+                    is_enabled=True,
+                )
+            )
+        session.add(
+            EventRecord(
+                vcenter_id=vid_a,
+                occurred_at=base,
+                event_type="TypeA",
+                message="a",
+                severity="info",
+                vmware_key=1,
+                notable_score=10,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid_b,
+                occurred_at=base,
+                event_type="TypeB",
+                message="b",
+                severity="info",
+                vmware_key=2,
+                notable_score=20,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid_a,
+                sampled_at=base,
+                entity_type="HostSystem",
+                entity_moid="moid-a",
+                entity_name="esxi-a",
+                metric_key="host.cpu.usage_pct",
+                value=50.0,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vid_b,
+                sampled_at=base,
+                entity_type="HostSystem",
+                entity_moid="moid-b",
+                entity_name="esxi-b",
+                metric_key="host.cpu.usage_pct",
+                value=99.0,
+            )
+        )
+
+    async with session_scope() as session:
+        ctx = await build_digest_context(
+            session,
+            window_start,
+            window_end,
+            top_notable_min_score=1,
+            vcenter_id=vid_a,
+        )
+
+    assert ctx.vcenter_count == 1
+    assert ctx.total_events == 1
+    assert ctx.top_notable_event_groups[0].event_type == "TypeA"
+    assert len(ctx.high_cpu_hosts) == 1
+    assert ctx.high_cpu_hosts[0].entity_name == "esxi-a"
+    assert abs(ctx.high_cpu_hosts[0].value - 50.0) < 0.01
+
+
+@pytest.mark.asyncio
 async def test_build_digest_context_rejects_inverted_window() -> None:
     a = datetime(2026, 1, 1, tzinfo=timezone.utc)
     b = datetime(2026, 1, 2, tzinfo=timezone.utc)
