@@ -6,18 +6,12 @@ import { parseDigestListResponse, type DigestRead } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
-import { repairPipeTablesForGfm } from './repairPipeTablesForGfm'
-import { stripLlmDigestSection } from './stripLlmDigestSection'
+import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
 
 /** 1 ページあたりのダイジェスト件数（`GET /api/digests` の `limit`） */
 export const DIGEST_LIST_PAGE_SIZE = 50
 
 type LoadState = 'loading' | 'ready' | 'error'
-
-function displayMarkdownForDigest(d: DigestRead): string {
-  const raw = d.llm_model != null ? d.body_markdown : stripLlmDigestSection(d.body_markdown)
-  return repairPipeTablesForGfm(raw)
-}
 
 function SelectedDigestDetail({
   selected,
@@ -28,7 +22,7 @@ function SelectedDigestDetail({
   formatRange: (fromIso: string, toIso: string) => string
   formatDigestInstant: (iso: string) => string
 }) {
-  const bodyMd = displayMarkdownForDigest(selected)
+  const bodyMd = getDigestBodyMarkdownForDisplay(selected)
   return (
     <>
       <p className="digests-detail-meta">
