@@ -8,6 +8,9 @@ test.describe('グラフ・表示期間バリデーション（高）', () => {
 
     const rangeDetails = page.locator('details.metrics-panel__range-details')
     await rangeDetails.locator('summary').click()
+    // デフォルトは直近24時間で終端も埋まっているため、片側のみにするには終了を空にする
+    await rangeDetails.getByLabel('終了日').fill('')
+    await rangeDetails.getByLabel('終了時刻').fill('')
     await rangeDetails.getByLabel('開始日').fill('2025-01-01')
 
     await expectErrorBanner(

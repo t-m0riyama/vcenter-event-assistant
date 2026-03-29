@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  METRICS_DEFAULT_ROLLING_DURATION_MS,
   combineDateAndOptionalTime,
+  formatRollingDurationLabel,
   presetRelativeRangeWallParts,
+  presetRelativeRangeWallPartsWithUtcFallback,
   splitZonedLocalDateTimeInput,
   zonedRangePartsToCombinedInputs,
 } from './zonedRangeParts'
@@ -43,6 +46,41 @@ describe('splitZonedLocalDateTimeInput', () => {
       date: '2025-06-15',
       time: '12:30',
     })
+  })
+})
+
+describe('presetRelativeRangeWallPartsWithUtcFallback', () => {
+  it('無効な timeZone でも UTC で非空の窓を返す', () => {
+    const p = presetRelativeRangeWallPartsWithUtcFallback(
+      METRICS_DEFAULT_ROLLING_DURATION_MS,
+      'Invalid/NotATimeZone',
+    )
+    expect(p.fromDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.toDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe('formatRollingDurationLabel', () => {
+  it('24 時間は直近24時間と表示する', () => {
+    expect(formatRollingDurationLabel(METRICS_DEFAULT_ROLLING_DURATION_MS)).toBe('直近24時間')
+  })
+
+  it('7 日分は直近 7 日と表示する', () => {
+    expect(formatRollingDurationLabel(7 * 86400000)).toBe('直近 7 日')
+  })
+})
+
+describe('METRICS_DEFAULT_ROLLING_DURATION_MS', () => {
+  it('は 24 時間分のミリ秒である', () => {
+    expect(METRICS_DEFAULT_ROLLING_DURATION_MS).toBe(24 * 60 * 60 * 1000)
+  })
+
+  it('を presetRelativeRangeWallParts に渡すと四フィールドが揃う', () => {
+    const p = presetRelativeRangeWallParts(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC')
+    expect(p.fromDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.toDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.fromTime.length).toBeGreaterThan(0)
+    expect(p.toTime.length).toBeGreaterThan(0)
   })
 })
 

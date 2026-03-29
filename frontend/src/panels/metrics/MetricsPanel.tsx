@@ -18,7 +18,6 @@ import {
 import { downloadMetricPointsCsv } from '../../metrics/metricCsv'
 import { MetricsChartErrorBoundary } from '../../metrics/MetricsChartErrorBoundary'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
-import { summarizeGraphRangePreview } from '../../datetime/graphRange'
 import { toErrorMessage } from '../../utils/errors'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useMetricsPanelController } from '../../hooks/useMetricsPanelController'
@@ -57,11 +56,12 @@ export function MetricsPanel({
     setChartEventType,
     eventTypeOptions,
     rangeParts,
-    setRangeParts,
+    onGraphRangeFieldsChange,
+    applyRollingPreset,
     chartWrapRef,
     chartColors,
-    invalidateSeriesCache,
-    load,
+    runMetricsAutoRefresh,
+    reloadMetricsSeries,
     showEventLine,
     leftYAxisLabel,
     metricsChartMargin,
@@ -69,6 +69,7 @@ export function MetricsPanel({
     chartData,
     vcenterLabelForChart,
     metricsChartTitleLines,
+    graphRangeDisplayLabel,
     metricsChartLegendName,
     eventSeriesLegendName,
     chartAxisTickFormatOptions,
@@ -80,16 +81,16 @@ export function MetricsPanel({
     csvExportOptions,
   } = useMetricsPanelController(onError, perfBucketSeconds)
 
-  const { autoRefreshEnabled, autoRefreshIntervalMinutes } = useAutoRefreshPreferences()
+  const {
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    autoRefreshIntervalMinutes,
+  } = useAutoRefreshPreferences()
   const intervalMs = useMemo(
     () => autoRefreshIntervalMinutes * 60_000,
     [autoRefreshIntervalMinutes],
   )
-  const onAutoRefreshMetrics = useCallback(() => {
-    invalidateSeriesCache()
-    void load(metricKey, { silent: true })
-  }, [invalidateSeriesCache, load, metricKey])
-  useIntervalWhenEnabled(autoRefreshEnabled, intervalMs, onAutoRefreshMetrics)
+  useIntervalWhenEnabled(autoRefreshEnabled, intervalMs, runMetricsAutoRefresh)
 
   const [chartWrapWidthPx, setChartWrapWidthPx] = useState(0)
   useLayoutEffect(() => {
@@ -219,8 +220,7 @@ export function MetricsPanel({
           disabled={loading || !metricKey}
           onClick={() => {
             setChartResetKey((k) => k + 1)
-            invalidateSeriesCache()
-            void load(metricKey)
+            reloadMetricsSeries()
           }}
         >
           {loading ? '取得中…' : '再取得'}
@@ -251,7 +251,7 @@ export function MetricsPanel({
         <summary className="toolbar__filters-summary">
           <span className="toolbar__filters-summary__title">表示期間</span>
           <span className="toolbar__filters-summary__preview">
-            {summarizeGraphRangePreview(rangeParts)}
+            {graphRangeDisplayLabel}
           </span>
         </summary>
         <p className="hint toolbar__filters-hint">
@@ -259,7 +259,22 @@ export function MetricsPanel({
           0:00・終了は 23:59 です。期間を指定するとメトリクスは最大 10000
           点まで取得し、イベント件数オーバーレイも同じ区間で集計します。
         </p>
-        <ZonedRangeFields value={rangeParts} onChange={setRangeParts} />
+        <div className="metrics-panel__range-auto-refresh">
+          <label className="tz-select tz-select--inline">
+            <input
+              type="checkbox"
+              checked={autoRefreshEnabled}
+              onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+              aria-label="自動更新"
+            />
+            自動更新（{autoRefreshIntervalMinutes} 分ごと）
+          </label>
+        </div>
+        <ZonedRangeFields
+          value={rangeParts}
+          onChange={onGraphRangeFieldsChange}
+          onQuickPreset={applyRollingPreset}
+        />
       </details>
       <p className="hint">
         イベント件数はサーバ設定のメトリクス取得間隔（{perfBucketSeconds}

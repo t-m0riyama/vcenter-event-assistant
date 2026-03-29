@@ -10,13 +10,22 @@ type ZonedRangeFieldsProps = {
   /** Current four field values. */
   value: ZonedRangeParts
   onChange: (next: ZonedRangeParts) => void
+  /**
+   * 指定時はクイックのみこのコールバックへ渡す（グラフのローリング窓を親が管理する場合）。
+   * 未指定時は従来どおり `onChange` にプリセット適用結果を渡す。
+   */
+  onQuickPreset?: (durationMs: number) => void
 }
 
 /**
  * Native date/time pickers for a wall-clock range in the app display time zone.
  * Values are combined server-side with {@link zonedRangePartsToCombinedInputs}.
  */
-export function ZonedRangeFields({ value, onChange }: ZonedRangeFieldsProps) {
+export function ZonedRangeFields({
+  value,
+  onChange,
+  onQuickPreset,
+}: ZonedRangeFieldsProps) {
   const { timeZone } = useTimeZone()
 
   const setPart = (patch: Partial<ZonedRangeParts>) => {
@@ -24,6 +33,10 @@ export function ZonedRangeFields({ value, onChange }: ZonedRangeFieldsProps) {
   }
 
   const applyPreset = (durationMs: number) => {
+    if (onQuickPreset) {
+      onQuickPreset(durationMs)
+      return
+    }
     onChange(presetRelativeRangeWallParts(durationMs, timeZone))
   }
 

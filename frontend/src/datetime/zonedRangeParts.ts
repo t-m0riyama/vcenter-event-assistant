@@ -10,6 +10,9 @@ export type ZonedRangeParts = {
   readonly toTime: string
 }
 
+/** グラフタブの初期表示など「直近 N」相対窓のデフォルト長さ（ミリ秒）。24 時間。 */
+export const METRICS_DEFAULT_ROLLING_DURATION_MS = 86400000
+
 /** Initial empty range (no `from` / `to` filter). */
 export const EMPTY_ZONED_RANGE_PARTS: ZonedRangeParts = {
   fromDate: '',
@@ -90,4 +93,34 @@ export function presetRelativeRangeWallParts(
     toDate: b.date,
     toTime: b.time,
   }
+}
+
+/**
+ * {@link presetRelativeRangeWallParts} が空になる場合（無効な IANA など）に UTC で再試行する。
+ */
+export function presetRelativeRangeWallPartsWithUtcFallback(
+  durationMs: number,
+  timeZone: string,
+): ZonedRangeParts {
+  const p = presetRelativeRangeWallParts(durationMs, timeZone)
+  if (p.fromDate && p.toDate) return p
+  return presetRelativeRangeWallParts(durationMs, 'UTC')
+}
+
+/**
+ * ローリング窓の長さをグラフ見出し・折りたたみ要約用の短い日本語にする。
+ */
+export function formatRollingDurationLabel(durationMs: number): string {
+  if (durationMs === METRICS_DEFAULT_ROLLING_DURATION_MS) {
+    return '直近24時間'
+  }
+  const days = durationMs / 86400000
+  if (Number.isInteger(days) && days >= 1 && days <= 366) {
+    return `直近 ${days} 日`
+  }
+  const hours = Math.round(durationMs / 3600000)
+  if (hours >= 1 && hours < 48) {
+    return `直近 ${hours} 時間`
+  }
+  return `直近 ${Math.max(1, Math.round(durationMs / 86400000))} 日`
 }

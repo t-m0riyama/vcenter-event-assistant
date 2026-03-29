@@ -608,6 +608,10 @@ tr.event-row--action-required {
   margin-top: var(--spacing-3);
 }
 
+.metrics-panel__range-auto-refresh {
+  margin-top: var(--spacing-2);
+}
+
 .toolbar__filters {
   display: flex;
   flex-wrap: wrap;

@@ -10,10 +10,15 @@ import {
 } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
 import {
-  EMPTY_ZONED_RANGE_PARTS,
+  METRICS_DEFAULT_ROLLING_DURATION_MS,
+  formatRollingDurationLabel,
+  presetRelativeRangeWallPartsWithUtcFallback,
   zonedRangePartsToCombinedInputs,
   type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
+
+/** グラフの表示期間がクイックプリセットに追従するか、手入力固定か。 */
+export type GraphRangeFollowMode = 'rolling' | 'manual'
 import {
   resolveMetricsGraphRange,
   summarizeGraphRangePreview,
@@ -40,6 +45,11 @@ export function useMetricsPanelController(
   perfBucketSeconds: number,
 ) {
   const { timeZone } = useTimeZone()
+  const [graphRangeFollowMode, setGraphRangeFollowMode] =
+    useState<GraphRangeFollowMode>('rolling')
+  const [rollingDurationMs, setRollingDurationMs] = useState(
+    METRICS_DEFAULT_ROLLING_DURATION_MS,
+  )
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
   const [metricKeys, setMetricKeys] = useState<string[]>(() => mergeMetricKeyOptions([]))
@@ -56,11 +66,17 @@ export function useMetricsPanelController(
     Array<{ bucket_start: string; count: number }> | null
   >(null)
   const [eventSeriesLoading, setEventSeriesLoading] = useState(false)
-  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
+  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
+    presetRelativeRangeWallPartsWithUtcFallback(
+      METRICS_DEFAULT_ROLLING_DURATION_MS,
+      timeZone,
+    ),
+  )
   const { rangeFromInput, rangeToInput } = useMemo(
     () => zonedRangePartsToCombinedInputs(rangeParts),
     [rangeParts],
   )
+  const prevTimeZoneRef = useRef<string | null>(null)
   const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
   const lastSeriesFetchRef = useRef<{
     vcenterId: string
@@ -71,6 +87,32 @@ export function useMetricsPanelController(
   const chartWrapRef = useRef<HTMLDivElement>(null)
   const chartColors = useChartThemeColors()
   metricKeyRef.current = metricKey
+
+  const onGraphRangeFieldsChange = useCallback((next: ZonedRangeParts) => {
+    setGraphRangeFollowMode('manual')
+    setRangeParts(next)
+  }, [])
+
+  const applyRollingPreset = useCallback(
+    (durationMs: number) => {
+      setGraphRangeFollowMode('rolling')
+      setRollingDurationMs(durationMs)
+      setRangeParts(presetRelativeRangeWallPartsWithUtcFallback(durationMs, timeZone))
+    },
+    [timeZone],
+  )
+
+  useEffect(() => {
+    if (prevTimeZoneRef.current === null) {
+      prevTimeZoneRef.current = timeZone
+      return
+    }
+    if (prevTimeZoneRef.current === timeZone) return
+    prevTimeZoneRef.current = timeZone
+    if (graphRangeFollowMode !== 'rolling') return
+    setRangeParts(presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone))
+    lastSeriesFetchRef.current = null
+  }, [timeZone, graphRangeFollowMode, rollingDurationMs])
 
   useEffect(() => {
     void apiGet<unknown>('/api/vcenters')
@@ -320,17 +362,24 @@ export function useMetricsPanelController(
     return v?.name ?? vcenterId
   }, [vcenterId, vcenters])
 
+  /** グラフ見出し・表示期間サマリー共通。ローリング時は「直近24時間」表記で誤解を防ぐ。 */
+  const graphRangeDisplayLabel = useMemo(() => {
+    if (graphRangeFollowMode === 'rolling') {
+      return formatRollingDurationLabel(rollingDurationMs)
+    }
+    return summarizeGraphRangePreview(rangeParts)
+  }, [graphRangeFollowMode, rollingDurationMs, rangeParts])
+
   const metricsChartTitleLines = useMemo(() => {
     const mk = metricKey.trim() || '—'
     const line1 = `${vcenterLabelForChart} / ${mk}`
     const et = chartEventType.trim()
-    const rangeLabel = summarizeGraphRangePreview(rangeParts)
     const line2Parts: string[] = []
     if (et) line2Parts.push(`イベント種別: ${et}`)
-    line2Parts.push(`期間: ${rangeLabel}`)
+    line2Parts.push(`期間: ${graphRangeDisplayLabel}`)
     const line2 = line2Parts.join(' · ')
     return { line1, line2 }
-  }, [vcenterLabelForChart, metricKey, chartEventType, rangeParts])
+  }, [vcenterLabelForChart, metricKey, chartEventType, graphRangeDisplayLabel])
 
   const metricsChartLegendName = useMemo(() => {
     const keyPart = metricKey || '—'
@@ -386,6 +435,35 @@ export function useMetricsPanelController(
     lastSeriesFetchRef.current = null
   }, [])
 
+  const runMetricsAutoRefresh = useCallback(() => {
+    invalidateSeriesCache()
+    if (graphRangeFollowMode === 'rolling') {
+      setRangeParts(
+        presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone),
+      )
+      return
+    }
+    void load(metricKey, { silent: true })
+  }, [
+    graphRangeFollowMode,
+    invalidateSeriesCache,
+    load,
+    metricKey,
+    rollingDurationMs,
+    timeZone,
+  ])
+
+  const reloadMetricsSeries = useCallback(() => {
+    invalidateSeriesCache()
+    if (graphRangeFollowMode === 'rolling') {
+      setRangeParts(
+        presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone),
+      )
+      return
+    }
+    void load(metricKey)
+  }, [graphRangeFollowMode, invalidateSeriesCache, load, metricKey, rollingDurationMs, timeZone])
+
   return {
     timeZone,
     vcenters,
@@ -403,11 +481,15 @@ export function useMetricsPanelController(
     setChartEventType,
     eventTypeOptions,
     rangeParts,
-    setRangeParts,
+    graphRangeFollowMode,
+    onGraphRangeFieldsChange,
+    applyRollingPreset,
     chartWrapRef,
     chartColors,
     invalidateSeriesCache,
     load,
+    runMetricsAutoRefresh,
+    reloadMetricsSeries,
     loadMetricKeys,
     graphRangeForOverlay,
     showEventLine,
@@ -417,6 +499,7 @@ export function useMetricsPanelController(
     chartData,
     vcenterLabelForChart,
     metricsChartTitleLines,
+    graphRangeDisplayLabel,
     metricsChartLegendName,
     eventSeriesLegendName,
     chartAxisTickFormatOptions,
