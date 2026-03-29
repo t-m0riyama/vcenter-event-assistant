@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { LegendPayload } from 'recharts'
 import { apiGet } from '../api'
 import type { VCenter } from '../api/schemas'
 import { asArray } from '../utils/asArray'
@@ -25,6 +26,11 @@ import {
   summarizeGraphRangePreview,
 } from '../datetime/graphRange'
 import { buildMetricsChartModel } from '../metrics/buildMetricsChartModel'
+import {
+  buildMetricsChartSeriesIdentityKey,
+  legendDataKeyToString,
+  toggleHiddenSeriesDataKey,
+} from '../metrics/metricsChartSeriesVisibility'
 import {
   normalizeMetricSeriesResponse,
   type MetricPoint,
@@ -340,6 +346,29 @@ export function useMetricsPanelController(
     [metricKey, points, perfBucketSeconds, showEventLine, countByEpochSec],
   )
 
+  const [hiddenSeriesDataKeys, setHiddenSeriesDataKeys] = useState<Set<string>>(() => new Set())
+
+  const seriesIdentityKey = useMemo(
+    () =>
+      buildMetricsChartSeriesIdentityKey({
+        metricKey,
+        chartMode: chartModel.mode === 'single' ? 'single' : 'host',
+        metricSeriesDataKeys: chartModel.metricSeries.map((s) => s.dataKey),
+        showEventLine,
+      }),
+    [metricKey, chartModel, showEventLine],
+  )
+
+  useEffect(() => {
+    setHiddenSeriesDataKeys(new Set())
+  }, [seriesIdentityKey])
+
+  const onMetricsLegendClick = useCallback((data: LegendPayload) => {
+    const key = legendDataKeyToString(data.dataKey)
+    if (key === null) return
+    setHiddenSeriesDataKeys((prev) => toggleHiddenSeriesDataKey(prev, key))
+  }, [])
+
   const chartData = chartModel.rows
 
   const chartAxisTickFormatOptions = useMemo((): FormatChartAxisTickOptions => {
@@ -506,6 +535,8 @@ export function useMetricsPanelController(
     metricsChartMargin,
     chartModel,
     chartData,
+    hiddenSeriesDataKeys,
+    onMetricsLegendClick,
     vcenterLabelForChart,
     metricsChartTitleLines,
     graphRangeDisplayLabel,
