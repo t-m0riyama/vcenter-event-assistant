@@ -151,8 +151,8 @@ class Settings(BaseSettings):
     digest_display_timezone: str = Field(
         default="UTC",
         description=(
-            "ダイジェスト本文の日時表示に用いる IANA タイムゾーン名（例: Asia/Tokyo）。"
-            "無効な名前は UTC にフォールバックし警告ログを出す。集計ウィンドウ自体は従来どおり UTC。"
+            "ダイジェスト本文の日時表示および日次・週次・月次の集計ウィンドウの暦境界に用いる IANA タイムゾーン名（例: Asia/Tokyo）。"
+            "無効な名前は UTC にフォールバックし警告ログを出す。"
         ),
     )
 
