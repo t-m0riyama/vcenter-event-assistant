@@ -376,12 +376,22 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     vcenter_id: uuid.UUID | None = None
     top_notable_min_score: int = Field(default=1, ge=0, le=100)
-    include_cpu_event_correlation: bool = Field(
+    include_period_metrics_cpu: bool = Field(
         default=False,
-        description="真のときのみ高 CPU 近傍イベントの追加 DB 集計を行い LLM コンテキストにマージする（負荷あり）",
+        description="真のとき期間内 CPU 使用率をバケット平均で LLM コンテキストに含める（追加 DB クエリ）",
     )
-    cpu_correlation_threshold_pct: float = Field(default=85.0, ge=0.0, le=100.0)
-    cpu_correlation_window_minutes: int = Field(default=15, ge=1, le=180)
+    include_period_metrics_memory: bool = Field(
+        default=False,
+        description="真のとき期間内メモリ使用率をバケット平均で含める",
+    )
+    include_period_metrics_disk_io: bool = Field(
+        default=False,
+        description="真のとき期間内ディスク IO 系メトリクスをバケット平均で含める",
+    )
+    include_period_metrics_network_io: bool = Field(
+        default=False,
+        description="真のとき期間内ネットワーク IO 系メトリクスをバケット平均で含める",
+    )
 
     @model_validator(mode="after")
     def last_message_is_user(self) -> ChatRequest:

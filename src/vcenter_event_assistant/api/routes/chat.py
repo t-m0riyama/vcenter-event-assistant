@@ -9,7 +9,7 @@ from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import ChatRequest, ChatResponse
 from vcenter_event_assistant.services.chat_llm import run_period_chat
-from vcenter_event_assistant.services.correlation_context import build_cpu_event_correlation
+from vcenter_event_assistant.services.chat_period_metrics import build_chat_period_metrics
 from vcenter_event_assistant.services.digest_context import build_digest_context
 from vcenter_event_assistant.settings import get_settings
 
@@ -44,23 +44,31 @@ async def post_chat(
         vcenter_id=body.vcenter_id,
     )
 
-    correlation = None
-    if body.include_cpu_event_correlation:
-        # rows が空でもペイロードを渡す（LLM が「キーが無い」と誤解しないようにする）
-        correlation = await build_cpu_event_correlation(
+    want_metrics = any(
+        [
+            body.include_period_metrics_cpu,
+            body.include_period_metrics_memory,
+            body.include_period_metrics_disk_io,
+            body.include_period_metrics_network_io,
+        ],
+    )
+    period_metrics = None
+    if want_metrics:
+        period_metrics = await build_chat_period_metrics(
             session,
             ft,
             tt,
             vcenter_id=body.vcenter_id,
-            threshold_pct=body.cpu_correlation_threshold_pct,
-            window_minutes=body.cpu_correlation_window_minutes,
-            max_anchors=20,
+            include_cpu=body.include_period_metrics_cpu,
+            include_memory=body.include_period_metrics_memory,
+            include_disk_io=body.include_period_metrics_disk_io,
+            include_network_io=body.include_period_metrics_network_io,
         )
 
     text, err, llm_meta = await run_period_chat(
         settings,
         context=ctx,
         messages=list(body.messages),
-        correlation=correlation,
+        period_metrics=period_metrics,
     )
     return ChatResponse(assistant_content=text, error=err, llm_context=llm_meta)

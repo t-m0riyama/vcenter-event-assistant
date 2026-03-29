@@ -8,11 +8,7 @@ import pytest
 
 from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
-from vcenter_event_assistant.services.correlation_context import (
-    CorrelationAnchorRow,
-    CorrelationEventInWindow,
-    CpuEventCorrelationPayload,
-)
+from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext, DigestEventTypeBucket
 from vcenter_event_assistant.settings import Settings
 
@@ -258,7 +254,7 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
 
 
 @pytest.mark.asyncio
-async def test_run_period_chat_includes_correlation_in_user_block_when_set(
+async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     s = Settings(
@@ -269,23 +265,12 @@ async def test_run_period_chat_includes_correlation_in_user_block_when_set(
         llm_model="gpt-4o-mini",
     )
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
-    correlation = CpuEventCorrelationPayload(
-        cpu_threshold_pct=85.0,
-        window_minutes=15,
-        rows=[
-            CorrelationAnchorRow(
-                host="esxi-1",
-                anchor_time=t0,
-                cpu_at_anchor=91.0,
-                events_in_window=[
-                    CorrelationEventInWindow(
-                        event_type="VmPoweredOnEvent",
-                        count=1,
-                        sample_occurred_at=t0,
-                    ),
-                ],
-            ),
-        ],
+    t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
+    pm = PeriodMetricsPayload(
+        bucket_minutes=15,
+        from_utc=t0,
+        to_utc=t1,
+        cpu=[],
     )
     captured: dict[str, object] = {}
 
@@ -330,11 +315,11 @@ async def test_run_period_chat_includes_correlation_in_user_block_when_set(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
-        correlation=correlation,
+        period_metrics=pm,
     )
     assert err is None
     assert out == "y"
     assert meta is not None
     user_block = str(captured["messages"][1]["content"])
-    assert "cpu_event_correlation" in user_block
+    assert "period_metrics" in user_block
     assert "digest_context" in user_block

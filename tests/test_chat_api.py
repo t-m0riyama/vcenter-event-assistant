@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta
-from vcenter_event_assistant.services.correlation_context import CpuEventCorrelationPayload
+from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.settings import get_settings
 
 
@@ -148,7 +150,7 @@ async def test_post_chat_returns_error_field_when_llm_returns_error(
 
 
 @pytest.mark.asyncio
-async def test_post_chat_calls_correlation_builder_when_flag_true(
+async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -157,12 +159,17 @@ async def test_post_chat_calls_correlation_builder_when_flag_true(
 
     calls: list[int] = []
 
-    async def _spy(*a: object, **k: object) -> CpuEventCorrelationPayload:
+    async def _spy(*a: object, **k: object) -> PeriodMetricsPayload:
         calls.append(1)
-        return CpuEventCorrelationPayload(cpu_threshold_pct=85.0, window_minutes=15, rows=[])
+        return PeriodMetricsPayload(
+            bucket_minutes=15,
+            from_utc=datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc),
+            to_utc=datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc),
+            cpu=[],
+        )
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.chat.build_cpu_event_correlation",
+        "vcenter_event_assistant.api.routes.chat.build_chat_period_metrics",
         _spy,
     )
 
@@ -176,25 +183,25 @@ async def test_post_chat_calls_correlation_builder_when_flag_true(
 
     r = await client.post(
         "/api/chat",
-        json={**_chat_body(), "include_cpu_event_correlation": True},
+        json={**_chat_body(), "include_period_metrics_cpu": True},
     )
     assert r.status_code == 200
     assert len(calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_post_chat_skips_correlation_builder_when_flag_false(
+async def test_post_chat_skips_period_metrics_builder_when_all_toggles_false(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _boom(*a: object, **k: object) -> CpuEventCorrelationPayload:
-        raise AssertionError("build_cpu_event_correlation must not be called")
+    async def _boom(*a: object, **k: object) -> PeriodMetricsPayload:
+        raise AssertionError("build_chat_period_metrics must not be called")
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.chat.build_cpu_event_correlation",
+        "vcenter_event_assistant.api.routes.chat.build_chat_period_metrics",
         _boom,
     )
 
