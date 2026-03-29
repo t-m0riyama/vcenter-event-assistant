@@ -40,7 +40,73 @@ class CpuEventCorrelationPayload(BaseModel):
     correlation_profile: Literal["cpu_threshold_window"] = "cpu_threshold_window"
     cpu_threshold_pct: float = Field(description="アンカー選定に用いた CPU 利用率の下限（%）")
     window_minutes: int = Field(description="アンカー時刻前後の窓の半分（± 分）。窓内のイベントを集計する")
+    anchor_selection: Literal["threshold_met", "per_host_peak_fallback"] = Field(
+        default="threshold_met",
+        description=(
+            "threshold_met: 閾値以上の raw サンプルからアンカーを選んだ。"
+            "per_host_peak_fallback: 閾値を満たす行が無かったため、"
+            "digest_context.high_cpu_hosts と同じ「ホスト別ピーク」で代替した"
+        ),
+    )
     rows: list[CorrelationAnchorRow]
+
+
+async def _fetch_peak_cpu_per_host_samples(
+    session: AsyncSession,
+    from_utc: datetime,
+    to_utc: datetime,
+    vcenter_id: uuid.UUID | None,
+    limit: int,
+) -> list[MetricSample]:
+    """
+    ``digest_context`` の ``high_cpu_hosts`` と同じ定義（閾値なし）。
+
+    期間内の各 (vcenter, entity_moid) について値が最大の 1 行を残し、
+    値の降順で ``limit`` 件まで返す。
+    """
+    metric_clauses = [
+        MetricSample.metric_key == METRIC_KEY_CPU_PCT,
+        MetricSample.sampled_at >= from_utc,
+        MetricSample.sampled_at < to_utc,
+    ]
+    if vcenter_id is not None:
+        metric_clauses.append(MetricSample.vcenter_id == vcenter_id)
+
+    cpu_rank = (
+        select(
+            MetricSample.id,
+            func.row_number()
+            .over(
+                partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
+                order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
+            )
+            .label("rn"),
+        )
+        .where(and_(*metric_clauses))
+    ).subquery()
+
+    cpu_q = await session.execute(
+        select(MetricSample)
+        .join(cpu_rank, MetricSample.id == cpu_rank.c.id)
+        .where(cpu_rank.c.rn == 1)
+        .order_by(MetricSample.value.desc())
+        .limit(limit),
+    )
+    return list(cpu_q.scalars().all())
+
+
+def _dedupe_moids_take(samples: list[MetricSample], max_anchors: int) -> list[MetricSample]:
+    """値の高い順に走査し、entity_moid ごとに最初の 1 行だけ採用して最大 ``max_anchors`` 件。"""
+    seen_moids: set[str] = set()
+    anchors: list[MetricSample] = []
+    for s in samples:
+        if s.entity_moid in seen_moids:
+            continue
+        seen_moids.add(s.entity_moid)
+        anchors.append(s)
+        if len(anchors) >= max_anchors:
+            break
+    return anchors
 
 
 async def build_cpu_event_correlation(
@@ -56,8 +122,10 @@ async def build_cpu_event_correlation(
     """
     高 CPU サンプルをアンカーに、同一ホスト名のイベントを時間窓で集計する。
 
-    - メトリクスは ``host.cpu.usage_pct``、値が閾値以上かつ期間内のサンプルを対象とする。
-    - アンカーは ``entity_moid`` ごとに 1 件（値は高い順）に絞り、最大 ``max_anchors`` 件。
+    - まず ``host.cpu.usage_pct`` で値が ``threshold_pct`` 以上のサンプルからアンカーを選ぶ。
+    - **1 件も取れない場合**は ``digest_context.high_cpu_hosts`` と同じ「ホスト別ピーク」で代替する
+      （グラフに変動があっても閾値未満だと空になっていた問題の回避）。
+    - アンカーは ``entity_moid`` ごとに 1 件、最大 ``max_anchors`` 件。
     - イベントは ``entity_name`` がメトリクス行の ``entity_name`` と一致するもののみ（MVP）。
     """
     if from_utc >= to_utc:
@@ -81,15 +149,16 @@ async def build_cpu_event_correlation(
     )
     m_rows = list((await session.execute(m_stmt)).scalars().all())
 
-    seen_moids: set[str] = set()
-    anchors: list[MetricSample] = []
-    for s in m_rows:
-        if s.entity_moid in seen_moids:
-            continue
-        seen_moids.add(s.entity_moid)
-        anchors.append(s)
-        if len(anchors) >= max_anchors:
-            break
+    anchors = _dedupe_moids_take(m_rows, max_anchors)
+    anchor_selection: Literal["threshold_met", "per_host_peak_fallback"] = "threshold_met"
+
+    if not anchors:
+        peak_rows = await _fetch_peak_cpu_per_host_samples(
+            session, from_utc, to_utc, vcenter_id, max_anchors
+        )
+        anchors = [s for s in peak_rows if (s.entity_name or "").strip()][:max_anchors]
+        if anchors:
+            anchor_selection = "per_host_peak_fallback"
 
     delta = timedelta(minutes=window_minutes)
     out_rows: list[CorrelationAnchorRow] = []
@@ -146,5 +215,6 @@ async def build_cpu_event_correlation(
     return CpuEventCorrelationPayload(
         cpu_threshold_pct=threshold_pct,
         window_minutes=window_minutes,
+        anchor_selection=anchor_selection,
         rows=out_rows,
     )
