@@ -22,18 +22,18 @@ function displayMarkdownForDigest(d: DigestRead): string {
 function SelectedDigestDetail({
   selected,
   formatRange,
-  timeZone,
+  formatDigestInstant,
 }: {
   selected: DigestRead
   formatRange: (fromIso: string, toIso: string) => string
-  timeZone: string
+  formatDigestInstant: (iso: string) => string
 }) {
   const bodyMd = displayMarkdownForDigest(selected)
   return (
     <>
       <p className="digests-detail-meta">
         {formatRange(selected.period_start, selected.period_end)} · 作成{' '}
-        {formatIsoInTimeZone(selected.created_at, timeZone)}
+        {formatDigestInstant(selected.created_at)}
       </p>
       {selected.llm_model != null && (
         <p className="digest-llm-meta">LLM 要約あり（{selected.llm_model}）</p>
@@ -104,10 +104,15 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   const canPrev = offset > 0
   const canNext = offset + DIGEST_LIST_PAGE_SIZE < total
 
+  const formatDigestInstant = useCallback(
+    (iso: string) => formatIsoInTimeZone(iso, timeZone, { omitSeconds: true }),
+    [timeZone],
+  )
+
   const formatRange = useCallback(
     (fromIso: string, toIso: string) =>
-      `${formatIsoInTimeZone(fromIso, timeZone)} 〜 ${formatIsoInTimeZone(toIso, timeZone)}`,
-    [timeZone],
+      `${formatDigestInstant(fromIso)} 〜 ${formatDigestInstant(toIso)}`,
+    [formatDigestInstant],
   )
 
   if (loadState === 'loading') {
@@ -158,7 +163,7 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
                       <span className="digests-row-range">{formatRange(d.period_start, d.period_end)}</span>
                       <span className="digests-row-status">{d.status}</span>
                       <span className="digests-row-created">
-                        作成 {formatIsoInTimeZone(d.created_at, timeZone)}
+                        作成 {formatDigestInstant(d.created_at)}
                       </span>
                     </button>
                   </li>
@@ -194,7 +199,7 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
               <SelectedDigestDetail
                 selected={selected}
                 formatRange={formatRange}
-                timeZone={timeZone}
+                formatDigestInstant={formatDigestInstant}
               />
             ) : (
               <p className="hint">左の一覧からダイジェストを選んでください。</p>

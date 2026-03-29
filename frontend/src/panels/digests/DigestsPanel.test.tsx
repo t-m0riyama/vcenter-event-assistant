@@ -116,11 +116,11 @@ describe('DigestsPanel', () => {
     expect(screen.queryByText(/LLM 要約あり/)).toBeNull()
   })
 
-  it('一覧ナビの各行に「作成」と formatIsoInTimeZone で整形した created_at を表示する', async () => {
+  it('一覧ナビの各行に「作成」と秒なしの created_at を表示する', async () => {
     const prevTz = localStorage.getItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
     localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
     const createdAt = '2026-03-28T01:00:00Z'
-    const expectedCreatedLine = `作成 ${formatIsoInTimeZone(createdAt, 'Asia/Tokyo')}`
+    const expectedCreatedLine = `作成 ${formatIsoInTimeZone(createdAt, 'Asia/Tokyo', { omitSeconds: true })}`
 
     try {
       vi.stubGlobal(
@@ -159,6 +159,59 @@ describe('DigestsPanel', () => {
 
       const listNav = screen.getByRole('navigation', { name: 'ダイジェスト一覧' })
       expect(within(listNav).getByText(expectedCreatedLine)).toBeInTheDocument()
+    } finally {
+      if (prevTz === null) {
+        localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
+      } else {
+        localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, prevTz)
+      }
+    }
+  })
+
+  it('一覧ナビの期間表示に秒を含めない', async () => {
+    const prevTz = localStorage.getItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+    const periodStart = '2026-03-27T00:00:00Z'
+    const periodEnd = '2026-03-28T00:00:00Z'
+    const expectedRange = `${formatIsoInTimeZone(periodStart, 'Asia/Tokyo', { omitSeconds: true })} 〜 ${formatIsoInTimeZone(periodEnd, 'Asia/Tokyo', { omitSeconds: true })}`
+
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url.startsWith('/api/digests?')) {
+            return Promise.resolve(
+              jsonResponse({
+                items: [
+                  {
+                    id: 11,
+                    period_start: periodStart,
+                    period_end: periodEnd,
+                    kind: 'daily',
+                    body_markdown: '# T',
+                    status: 'ok',
+                    error_message: null,
+                    llm_model: null,
+                    created_at: '2026-03-28T01:00:00Z',
+                  },
+                ],
+                total: 1,
+              }),
+            )
+          }
+          return Promise.reject(new Error(`unexpected fetch: ${url}`))
+        }),
+      )
+
+      renderDigests()
+
+      await waitFor(() => {
+        expect(screen.getByRole('navigation', { name: 'ダイジェスト一覧' })).toBeInTheDocument()
+      })
+
+      const listNav = screen.getByRole('navigation', { name: 'ダイジェスト一覧' })
+      expect(within(listNav).getByText(expectedRange)).toBeInTheDocument()
     } finally {
       if (prevTz === null) {
         localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
