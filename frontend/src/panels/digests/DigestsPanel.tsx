@@ -6,6 +6,8 @@ import { parseDigestListResponse, type DigestRead } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
+import { downloadTextFile } from '../../utils/downloadTextFile'
+import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
 import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
 
 /** 1 ページあたりのダイジェスト件数（`GET /api/digests` の `limit`） */
@@ -28,6 +30,20 @@ function SelectedDigestDetail({
       <p className="digests-detail-meta">
         {formatRange(selected.period_start, selected.period_end)} · 作成{' '}
         {formatDigestInstant(selected.created_at)}
+      </p>
+      <p className="digests-detail-download">
+        <button
+          type="button"
+          className="btn btn--gray"
+          onClick={() => {
+            downloadTextFile(
+              buildDigestDownloadFilename(selected),
+              getDigestBodyMarkdownForDisplay(selected),
+            )
+          }}
+        >
+          Markdown をダウンロード
+        </button>
       </p>
       {selected.llm_model != null && (
         <p className="digest-llm-meta">LLM 要約あり（{selected.llm_model}）</p>

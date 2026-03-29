@@ -1,10 +1,18 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { DigestRead } from '../../api/schemas'
+import { downloadTextFile } from '../../utils/downloadTextFile'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
+import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
 import { DigestsPanel } from './DigestsPanel'
+
+vi.mock('../../utils/downloadTextFile', () => ({
+  downloadTextFile: vi.fn(),
+}))
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -300,5 +308,57 @@ describe('DigestsPanel', () => {
     await waitFor(() => {
       expect(screen.getByText(/LLM 要約は省略/)).toBeInTheDocument()
     })
+  })
+
+  it('Markdown をダウンロードで downloadTextFile にファイル名と表示用本文を渡す', async () => {
+    vi.mocked(downloadTextFile).mockClear()
+
+    const digestRow: DigestRead = {
+      id: 7,
+      period_start: '2026-03-27T00:00:00Z',
+      period_end: '2026-03-28T00:00:00Z',
+      kind: 'daily',
+      body_markdown: '# T\n\n## LLM 要約\n\n- x',
+      status: 'ok',
+      error_message: null,
+      llm_model: null,
+      created_at: '2026-03-28T01:00:00Z',
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith('/api/digests?')) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [digestRow],
+              total: 1,
+            }),
+          )
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${url}`))
+      }),
+    )
+
+    renderDigests()
+
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'ダイジェスト一覧' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /daily/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'T' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Markdown をダウンロード/i }))
+
+    expect(downloadTextFile).toHaveBeenCalledTimes(1)
+    expect(downloadTextFile).toHaveBeenCalledWith(
+      buildDigestDownloadFilename(digestRow),
+      getDigestBodyMarkdownForDisplay(digestRow),
+    )
   })
 })
