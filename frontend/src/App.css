@@ -937,6 +937,12 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
 }
 
+.digests-row-created {
+  flex: 1 1 100%;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
 .digests-pager {
   display: flex;
   gap: var(--spacing-2);

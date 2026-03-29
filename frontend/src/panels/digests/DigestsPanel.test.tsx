@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
+import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { DigestsPanel } from './DigestsPanel'
 
 function jsonResponse(data: unknown, status = 200) {
@@ -112,6 +114,58 @@ describe('DigestsPanel', () => {
     expect(screen.queryByRole('heading', { level: 2, name: 'LLM 要約' })).toBeNull()
     expect(screen.queryByText('要点A')).toBeNull()
     expect(screen.queryByText(/LLM 要約あり/)).toBeNull()
+  })
+
+  it('一覧ナビの各行に「作成」と formatIsoInTimeZone で整形した created_at を表示する', async () => {
+    const prevTz = localStorage.getItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+    const createdAt = '2026-03-28T01:00:00Z'
+    const expectedCreatedLine = `作成 ${formatIsoInTimeZone(createdAt, 'Asia/Tokyo')}`
+
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url.startsWith('/api/digests?')) {
+            return Promise.resolve(
+              jsonResponse({
+                items: [
+                  {
+                    id: 10,
+                    period_start: '2026-03-27T00:00:00Z',
+                    period_end: '2026-03-28T00:00:00Z',
+                    kind: 'daily',
+                    body_markdown: '# T',
+                    status: 'ok',
+                    error_message: null,
+                    llm_model: null,
+                    created_at: createdAt,
+                  },
+                ],
+                total: 1,
+              }),
+            )
+          }
+          return Promise.reject(new Error(`unexpected fetch: ${url}`))
+        }),
+      )
+
+      renderDigests()
+
+      await waitFor(() => {
+        expect(screen.getByRole('navigation', { name: 'ダイジェスト一覧' })).toBeInTheDocument()
+      })
+
+      const listNav = screen.getByRole('navigation', { name: 'ダイジェスト一覧' })
+      expect(within(listNav).getByText(expectedCreatedLine)).toBeInTheDocument()
+    } finally {
+      if (prevTz === null) {
+        localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
+      } else {
+        localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, prevTz)
+      }
+    }
   })
 
   it('shows error_message when digest has auxiliary error text', async () => {

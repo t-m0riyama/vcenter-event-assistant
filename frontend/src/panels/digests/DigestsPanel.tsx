@@ -157,6 +157,9 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
                       <span className="digests-row-kind">{d.kind}</span>
                       <span className="digests-row-range">{formatRange(d.period_start, d.period_end)}</span>
                       <span className="digests-row-status">{d.status}</span>
+                      <span className="digests-row-created">
+                        作成 {formatIsoInTimeZone(d.created_at, timeZone)}
+                      </span>
                     </button>
                   </li>
                 ))}
