@@ -968,6 +968,12 @@ textarea:focus-visible {
   font-weight: var(--font-weight-semibold);
 }
 
+.digests-row-range {
+  color: var(--color-text-secondary);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .digests-row-status {
   font-size: var(--font-size-caption);
   color: var(--color-text-tertiary);
