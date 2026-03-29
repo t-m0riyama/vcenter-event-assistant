@@ -221,6 +221,45 @@ describe('DigestsPanel', () => {
     }
   })
 
+  it('一覧はスクロール領域にラップされ、詳細パネルに sticky 用クラスが付く', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith('/api/digests?')) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: 99,
+                  period_start: '2026-03-27T00:00:00Z',
+                  period_end: '2026-03-28T00:00:00Z',
+                  kind: 'daily',
+                  body_markdown: '# T',
+                  status: 'ok',
+                  error_message: null,
+                  llm_model: null,
+                  created_at: '2026-03-28T01:00:00Z',
+                },
+              ],
+              total: 1,
+            }),
+          )
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${url}`))
+      }),
+    )
+
+    const { container } = renderDigests()
+
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'ダイジェスト一覧' })).toBeInTheDocument()
+    })
+
+    expect(screen.getByTestId('digests-list-scroll-region')).toBeInTheDocument()
+    expect(container.querySelector('.digests-detail.digests-detail--sticky')).not.toBeNull()
+  })
+
   it('shows error_message when digest has auxiliary error text', async () => {
     vi.stubGlobal(
       'fetch',

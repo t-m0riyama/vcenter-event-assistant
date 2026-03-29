@@ -148,28 +148,30 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
       ) : (
         <div className="digests-layout">
           <div className="digests-list-column">
-            <nav aria-label="ダイジェスト一覧">
-              <ul className="digests-list">
-                {items.map((d) => (
-                  <li key={d.id}>
-                    <button
-                      type="button"
-                      className={selectedId === d.id ? 'digests-row is-selected' : 'digests-row'}
-                      onClick={() => {
-                        setSelectedId(d.id)
-                      }}
-                    >
-                      <span className="digests-row-kind">{d.kind}</span>
-                      <span className="digests-row-range">{formatRange(d.period_start, d.period_end)}</span>
-                      <span className="digests-row-status">{d.status}</span>
-                      <span className="digests-row-created">
-                        作成 {formatDigestInstant(d.created_at)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </nav>
+            <div data-testid="digests-list-scroll-region" className="digests-list-scroll">
+              <nav aria-label="ダイジェスト一覧">
+                <ul className="digests-list">
+                  {items.map((d) => (
+                    <li key={d.id}>
+                      <button
+                        type="button"
+                        className={selectedId === d.id ? 'digests-row is-selected' : 'digests-row'}
+                        onClick={() => {
+                          setSelectedId(d.id)
+                        }}
+                      >
+                        <span className="digests-row-kind">{d.kind}</span>
+                        <span className="digests-row-range">{formatRange(d.period_start, d.period_end)}</span>
+                        <span className="digests-row-status">{d.status}</span>
+                        <span className="digests-row-created">
+                          作成 {formatDigestInstant(d.created_at)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </div>
             <div className="digests-pager">
               <button
                 type="button"
@@ -194,7 +196,7 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
             </div>
           </div>
 
-          <div className="digests-detail">
+          <div className="digests-detail digests-detail--sticky">
             {selected ? (
               <SelectedDigestDetail
                 selected={selected}

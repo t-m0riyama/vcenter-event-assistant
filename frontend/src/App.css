@@ -883,9 +883,41 @@ textarea:focus-visible {
   align-items: start;
 }
 
+/* 一覧は左列内で独立スクロール、詳細は広い画面で sticky */
+.digests-list-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.digests-list-scroll {
+  max-height: min(70vh, 24rem);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.digests-detail--sticky {
+  position: sticky;
+  top: var(--spacing-2);
+  align-self: start;
+  max-height: min(85vh, 40rem);
+  overflow-y: auto;
+}
+
 @media (max-width: 900px) {
   .digests-layout {
     grid-template-columns: 1fr;
+  }
+
+  .digests-list-scroll {
+    max-height: min(50vh, 20rem);
+  }
+
+  .digests-detail--sticky {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 }
 
