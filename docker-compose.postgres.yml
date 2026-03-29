@@ -21,9 +21,14 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://vea:${POSTGRES_PASSWORD:-vea}@postgres:5432/vcenter_event_assistant
+      APP_LOG_FILE: /var/log/vea/app.log
+      UVICORN_LOG_FILE: /var/log/vea/uvicorn.log
+    volumes:
+      - vea_logs:/var/log/vea
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   pg_data:
+  vea_logs:

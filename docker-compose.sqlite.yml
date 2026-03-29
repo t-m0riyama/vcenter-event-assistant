@@ -7,8 +7,13 @@ services:
       - .env
     environment:
       DATABASE_URL: sqlite+aiosqlite:////data/vea.db
+      # ログ専用ボリューム（DB の vea_data とは分離）
+      APP_LOG_FILE: /var/log/vea/app.log
+      UVICORN_LOG_FILE: /var/log/vea/uvicorn.log
     volumes:
       - vea_data:/data
+      - vea_logs:/var/log/vea
 
 volumes:
   vea_data:
+  vea_logs:

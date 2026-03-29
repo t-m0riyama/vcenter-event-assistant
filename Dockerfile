@@ -18,9 +18,13 @@ COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 RUN useradd --create-home --uid 1000 appuser \
     && chown -R appuser:appuser /app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 USER appuser
 RUN uv sync --frozen --no-dev
 
+USER root
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["vcenter-event-assistant"]

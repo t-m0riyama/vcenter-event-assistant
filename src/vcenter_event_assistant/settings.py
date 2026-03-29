@@ -1,9 +1,10 @@
 """Application settings (environment / .env)."""
 
+import logging
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini"]
@@ -37,7 +38,40 @@ class Settings(BaseSettings):
 
     cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
 
+    log_level: str = Field(
+        default="INFO",
+        description="ルート・アプリ・uvicorn ロガーのレベル（`LOG_LEVEL`）。",
+    )
+    app_log_file: str | None = Field(
+        default=None,
+        description="アプリ（`vcenter_event_assistant`）ログのファイルパス。空はファイル出力なし（`APP_LOG_FILE`）。",
+    )
+    uvicorn_log_file: str | None = Field(
+        default=None,
+        description="uvicorn 系ログのファイルパス。空はファイル出力なし（`UVICORN_LOG_FILE`）。",
+    )
+
     scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """`logging` が解釈できるレベル名のみ許可する。"""
+        name = v.strip().upper()
+        if not name or not isinstance(getattr(logging, name, None), int):
+            raise ValueError(f"無効な log_level: {v!r}（例: DEBUG, INFO, WARNING）")
+        return name
+
+    @field_validator("app_log_file", "uvicorn_log_file", mode="before")
+    @classmethod
+    def empty_log_path_to_none(cls, v: object) -> str | None:
+        """空文字・空白のみは None に正規化する。"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return str(v).strip() or None
 
     digest_scheduler_enabled: bool = Field(
         default=False,
