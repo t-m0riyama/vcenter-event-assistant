@@ -37,14 +37,28 @@ def _chat_token_encoding() -> tiktoken.Encoding:
     return tiktoken.get_encoding("cl100k_base")
 
 _CHAT_SYSTEM_PROMPT = (
-    "あなたは vCenter 運用のアシスタントです。入力には、指定期間に集約したイベントの JSON と、"
-    "任意で期間メトリクス（`period_metrics`）が含まれる場合があります。"
-    "`period_metrics` は時間バケット内の算術平均であり、瞬間値の列挙ではありません。"
-    "バケット幅により細かい変動は間引かれている点に留意してください。\n"
+    "あなたは vCenter 運用のアシスタントです。入力 JSON の構造を次のように解釈してください。\n"
+    "\n"
+    "【digest_context】"
+    " 集計期間は from_utc〜to_utc（他ブロックと同じ）。"
+    " top_notable_event_groups には種別ごとに occurred_at_first / occurred_at_last などの時刻フィールドがある"
+    "（全件の発生時刻リストではないが、時刻情報が無いと誤解しないこと）。"
+    " top_event_types は種別ごとの件数サマリ。total_events は期間内の合計です。\n"
+    "\n"
+    "【period_metrics】（キーがある場合のみ）"
+    " 同じ期間のメトリクスをホスト等ごとに時間バケット平均したもの。"
+    " bucket_start_utc はバケット開始時刻。digest_context のイベントとは別集計であり、"
+    "イベント 1 件と CPU 値 1 点を同一レコードで結合したデータではない。\n"
+    "\n"
+    "【相関について】"
+    " 「高負荷の瞬間にどのイベントが起きたか」を厳密に証明する結合情報は通常含まれない。"
+    " ただし occurred_at_* と period_metrics のバケットを、同一期間内の粗い対照として言及することはできる。"
+    " 近接や傾向から因果を断定しない。\n"
     "\n"
     "【回答の原則】\n"
     "- 事実・数値は、与えられた JSON（および会話内で明示された内容）に根ざして答える。推測で新しい事実を加えない。\n"
     "- JSON に無い情報は「不明」「入力に含まれていません」と述べる。\n"
+    "- top_notable_event_groups に時刻フィールドがあるのに「イベントに時刻がない」と述べない。\n"
     "- 日本語で簡潔に答える。不要に長い Markdown やコードフェンスは避ける。\n"
     "- ホスト名・イベント種別・件数などを引用するときは、JSON の値と矛盾させない。\n"
 )
@@ -157,10 +171,11 @@ def _fit_chat_payload_to_token_budget(
 def _merged_context_user_block(ctx_json: str) -> str:
     """マージ済み JSON（`digest_context` ± `period_metrics`）のユーザーブロック。"""
     return (
-        "以下は指定期間の vCenter 集約 JSON です。"
-        "キー `digest_context` にはイベント集約が含まれます（チャットではホスト別 CPU/メモリのピーク一覧は含めません）。"
-        "キー `period_metrics` が含まれる場合は、選択されたカテゴリのメトリクスを時間バケット平均したものです。"
-        "これを根拠として後続の会話に答えてください。\n\n"
+        "以下は同一指定期間の vCenter 集約 JSON です。"
+        " `digest_context` はイベントの件数・種別サマリと、要注意グループ（occurred_at_first / occurred_at_last 等を含む）。"
+        " チャットではホスト別 CPU/メモリのピーク一覧は省いています。"
+        " `period_metrics` がある場合はメトリクスのバケット平均（digest と別クエリ。行単位の結合ではない）。"
+        " システムプロンプトの【digest_context】【period_metrics】の説明に従って解釈してください。\n\n"
         f"```json\n{ctx_json}\n```"
     )
 
