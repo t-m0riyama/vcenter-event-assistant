@@ -8,6 +8,7 @@ import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
+import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
@@ -18,7 +19,7 @@ const MetricsPanel = lazy(async () => {
   return { default: m.MetricsPanel }
 })
 
-type Tab = 'summary' | 'events' | 'metrics' | 'digests' | 'settings'
+type Tab = 'summary' | 'events' | 'metrics' | 'digests' | 'chat' | 'settings'
 
 type SettingsSubTab = 'general' | 'vcenters' | 'score_rules' | 'event_type_guides'
 
@@ -51,7 +52,7 @@ export default function App() {
             )}
 
             <nav className="tabs">
-              {(['summary', 'events', 'metrics', 'digests', 'settings'] as const).map((t) => (
+              {(['summary', 'events', 'metrics', 'digests', 'chat', 'settings'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -65,6 +66,7 @@ export default function App() {
                   {t === 'events' && 'イベント'}
                   {t === 'metrics' && 'グラフ'}
                   {t === 'digests' && 'ダイジェスト'}
+                  {t === 'chat' && 'チャット'}
                   {t === 'settings' && '設定'}
                 </button>
               ))}
@@ -130,6 +132,7 @@ export default function App() {
                 </Suspense>
               )}
               {tab === 'digests' && <DigestsPanel onError={setErr} />}
+              {tab === 'chat' && <ChatPanel onError={setErr} />}
               {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
               {tab === 'settings' && settingsSubTab === 'score_rules' && (
                 <ScoreRulesPanel onError={setErr} />

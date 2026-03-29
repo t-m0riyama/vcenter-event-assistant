@@ -336,3 +336,21 @@ export type DigestListResponse = z.infer<typeof digestListResponseSchema>
 export function parseDigestListResponse(raw: unknown): DigestListResponse {
   return digestListResponseSchema.parse(raw)
 }
+
+export const chatMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+})
+
+export type ChatMessage = z.infer<typeof chatMessageSchema>
+
+export const chatResponseSchema = z.object({
+  assistant_content: z.string(),
+  error: z.string().nullable(),
+})
+
+export type ChatResponse = z.infer<typeof chatResponseSchema>
+
+export function parseChatResponse(raw: unknown): ChatResponse {
+  return chatResponseSchema.parse(raw)
+}
