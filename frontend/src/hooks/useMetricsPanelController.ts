@@ -383,7 +383,11 @@ export function useMetricsPanelController(
       if (t > maxT) maxT = t
     }
     const spanMs = maxT - minT
-    return { omitMonthDay: spanMs <= CHART_TIME_SPAN_OMIT_MONTH_DAY_MS }
+    // 年省略判定の「今」は表示系列の終端に固定し、ツールチップ／軸／再レンダー間で Date.now() 揺れを防ぐ
+    return {
+      omitMonthDay: spanMs <= CHART_TIME_SPAN_OMIT_MONTH_DAY_MS,
+      nowMs: maxT,
+    }
   }, [chartData])
 
   const vcenterLabelForChart = useMemo(() => {
@@ -433,10 +437,7 @@ export function useMetricsPanelController(
   )
 
   const formatTooltipLabel = useCallback(
-    (value: unknown) =>
-      formatChartTooltipLabel(value, timeZone, {
-        nowMs: chartAxisTickFormatOptions.nowMs,
-      }),
+    (value: unknown) => formatChartTooltipLabel(value, timeZone, chartAxisTickFormatOptions),
     [timeZone, chartAxisTickFormatOptions],
   )
 
