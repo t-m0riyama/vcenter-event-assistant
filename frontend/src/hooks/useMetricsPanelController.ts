@@ -6,6 +6,7 @@ import { toErrorMessage } from '../utils/errors'
 import {
   parseApiUtcInstantMs,
   formatChartAxisTick,
+  formatChartTooltipLabel,
   type FormatChartAxisTickOptions,
 } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
@@ -402,6 +403,14 @@ export function useMetricsPanelController(
     [timeZone, chartAxisTickFormatOptions],
   )
 
+  const formatTooltipLabel = useCallback(
+    (value: unknown) =>
+      formatChartTooltipLabel(value, timeZone, {
+        nowMs: chartAxisTickFormatOptions.nowMs,
+      }),
+    [timeZone, chartAxisTickFormatOptions],
+  )
+
   const formatYAxisTickMetric = useCallback(
     (value: number) => formatChartYAxisTick(value, 'metric', metricKey),
     [metricKey],
@@ -504,6 +513,7 @@ export function useMetricsPanelController(
     eventSeriesLegendName,
     chartAxisTickFormatOptions,
     formatAxisTimeLabel,
+    formatTooltipLabel,
     formatYAxisTickMetric,
     formatYAxisTickCount,
     vcenterExportLabel,

@@ -197,3 +197,18 @@ export function formatChartAxisTick(
   }
   return formatIsoInTimeZone(new Date(ms).toISOString(), timeZone, { omitSeconds: true })
 }
+
+/** ツールチップ用の `formatChartAxisTick` オプション（日付省略のみ常にオフ）。 */
+export type FormatChartTooltipLabelOptions = Pick<FormatChartAxisTickOptions, 'nowMs'>
+
+/**
+ * メトリクスグラフの Recharts Tooltip 用ラベル。
+ * X 軸が短いレンジで `omitMonthDay` により時刻のみでも、ツールチップでは常に月日を含める。
+ */
+export function formatChartTooltipLabel(
+  value: unknown,
+  timeZone: string,
+  options?: FormatChartTooltipLabelOptions,
+): string {
+  return formatChartAxisTick(value, timeZone, { ...options, omitMonthDay: false })
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   extractTickAxisValue,
   formatChartAxisTick,
+  formatChartTooltipLabel,
   formatIsoInTimeZone,
   parseApiUtcInstantMs,
 } from './formatIsoInTimeZone'
@@ -127,5 +128,15 @@ describe('formatChartAxisTick', () => {
     const ms = new Date('2025-06-15T03:00:00.000Z').getTime()
     const s = formatChartAxisTick(ms, 'UTC', { omitMonthDay: false, nowMs })
     expect(s).toMatch(/2025/)
+  })
+})
+
+describe('formatChartTooltipLabel', () => {
+  it('短いレンジ相当でも X 軸の omitMonthDay 時刻のみと違い日付（スラッシュ）を含む', () => {
+    const ms = new Date('2026-06-15T10:30:00.000+09:00').getTime()
+    expect(formatChartAxisTick(ms, 'Asia/Tokyo', { omitMonthDay: true })).not.toMatch(/\//)
+    const tip = formatChartTooltipLabel(ms, 'Asia/Tokyo')
+    expect(tip).toMatch(/\//)
+    expect(tip).toMatch(/:/)
   })
 })

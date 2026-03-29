@@ -74,6 +74,7 @@ export function MetricsPanel({
     eventSeriesLegendName,
     chartAxisTickFormatOptions,
     formatAxisTimeLabel,
+    formatTooltipLabel,
     formatYAxisTickMetric,
     formatYAxisTickCount,
     vcenterExportLabel,
@@ -114,6 +115,26 @@ export function MetricsPanel({
       bottom: xAxisBottomMarginForWidth(chartWrapWidthPx),
     }),
     [metricsChartMargin, chartWrapWidthPx],
+  )
+
+  const metricsTooltipContentStyle = useMemo(
+    () =>
+      ({
+        backgroundColor: 'var(--color-background-elevated)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-control)',
+        padding: 'var(--spacing-2) var(--spacing-3)',
+      }) as const,
+    [],
+  )
+
+  const metricsTooltipLabelStyle = useMemo(
+    () =>
+      ({
+        color: 'var(--color-text-primary)',
+        fontWeight: 'var(--font-weight-semibold)',
+      }) as const,
+    [],
   )
 
   const metricsXAxisTick = useCallback(
@@ -357,8 +378,10 @@ export function MetricsPanel({
                 }
               />
               <Tooltip
-                labelFormatter={formatAxisTimeLabel}
+                labelFormatter={formatTooltipLabel}
                 formatter={tooltipFormatter}
+                contentStyle={metricsTooltipContentStyle}
+                labelStyle={metricsTooltipLabelStyle}
               />
               <Legend
                 verticalAlign="top"
