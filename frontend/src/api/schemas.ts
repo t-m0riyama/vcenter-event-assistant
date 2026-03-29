@@ -344,9 +344,20 @@ export const chatMessageSchema = z.object({
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
+/** チャット LLM 直前のコンテキスト統計（トークン切り詰めの確認用） */
+export const chatLlmContextMetaSchema = z.object({
+  json_truncated: z.boolean(),
+  estimated_input_tokens: z.number(),
+  max_input_tokens: z.number(),
+  message_turns: z.number(),
+})
+
+export type ChatLlmContextMeta = z.infer<typeof chatLlmContextMetaSchema>
+
 export const chatResponseSchema = z.object({
   assistant_content: z.string(),
   error: z.string().nullable(),
+  llm_context: chatLlmContextMetaSchema.nullable().optional(),
 })
 
 export type ChatResponse = z.infer<typeof chatResponseSchema>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from vcenter_event_assistant.api.schemas import ChatLlmContextMeta
 from vcenter_event_assistant.services.correlation_context import CpuEventCorrelationPayload
 from vcenter_event_assistant.settings import get_settings
 
@@ -71,8 +72,8 @@ async def test_post_chat_returns_assistant_content_when_llm_succeeds(
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None]:
-        return ("回答テキスト", None)
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
+        return ("回答テキスト", None, None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",
@@ -84,6 +85,43 @@ async def test_post_chat_returns_assistant_content_when_llm_succeeds(
     data = r.json()
     assert data["assistant_content"] == "回答テキスト"
     assert data["error"] is None
+    assert data.get("llm_context") is None
+
+
+@pytest.mark.asyncio
+async def test_post_chat_returns_llm_context_when_run_period_chat_provides_meta(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    get_settings.cache_clear()
+
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, ChatLlmContextMeta]:
+        return (
+            "回答",
+            None,
+            ChatLlmContextMeta(
+                json_truncated=True,
+                estimated_input_tokens=4000,
+                max_input_tokens=32000,
+                message_turns=1,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat",
+        _fake_run,
+    )
+
+    r = await client.post("/api/chat", json=_chat_body())
+    assert r.status_code == 200
+    data = r.json()
+    ctx = data.get("llm_context")
+    assert ctx is not None
+    assert ctx["json_truncated"] is True
+    assert ctx["estimated_input_tokens"] == 4000
+    assert ctx["max_input_tokens"] == 32000
+    assert ctx["message_turns"] == 1
 
 
 @pytest.mark.asyncio
@@ -94,8 +132,8 @@ async def test_post_chat_returns_error_field_when_llm_returns_error(
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_fail(*a: object, **k: object) -> tuple[str, str | None]:
-        return ("", "何か失敗")
+    async def _fake_fail(*a: object, **k: object) -> tuple[str, str | None, object]:
+        return ("", "何か失敗", None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",
@@ -128,8 +166,8 @@ async def test_post_chat_calls_correlation_builder_when_flag_true(
         _spy,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None]:
-        return ("ok", None)
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
+        return ("ok", None, None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",
@@ -160,8 +198,8 @@ async def test_post_chat_skips_correlation_builder_when_flag_false(
         _boom,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None]:
-        return ("ok", None)
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
+        return ("ok", None, None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",

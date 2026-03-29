@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api'
-import { parseChatResponse, type ChatMessage, type VCenter } from '../../api/schemas'
+import {
+  parseChatResponse,
+  type ChatLlmContextMeta,
+  type ChatMessage,
+  type VCenter,
+} from '../../api/schemas'
 import { asArray } from '../../utils/asArray'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { useTimeZone } from '../../datetime/useTimeZone'
@@ -24,6 +29,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
   const [includeCpuEventCorrelation, setIncludeCpuEventCorrelation] = useState(false)
+  const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -68,6 +74,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       }
       const raw = await apiPost<unknown>('/api/chat', body)
       const out = parseChatResponse(raw)
+      setLastLlmContext(out.llm_context ?? null)
       if (out.error) {
         setMessages((m) => [...m, { role: 'assistant', content: `（${out.error}）` }])
       } else {
@@ -132,6 +139,15 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           </li>
         ))}
       </ul>
+
+      {lastLlmContext != null && (
+        <p className="hint chat-panel__llm-meta" role="status" aria-live="polite">
+          LLM 入力（目安）: 推定 {lastLlmContext.estimated_input_tokens} / {lastLlmContext.max_input_tokens}{' '}
+          トークン
+          {lastLlmContext.json_truncated ? '・JSON 切り詰めあり' : '・JSON 切り詰めなし'}
+          ・会話 {lastLlmContext.message_turns} ターン（トリム後）
+        </p>
+      )}
 
       <div className="chat-panel__composer">
         <label className="chat-panel__composer-label">

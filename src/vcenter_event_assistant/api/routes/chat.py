@@ -57,10 +57,10 @@ async def post_chat(
             max_anchors=20,
         )
 
-    text, err = await run_period_chat(
+    text, err, llm_meta = await run_period_chat(
         settings,
         context=ctx,
         messages=list(body.messages),
         correlation=correlation,
     )
-    return ChatResponse(assistant_content=text, error=err)
+    return ChatResponse(assistant_content=text, error=err, llm_context=llm_meta)

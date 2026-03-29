@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import tiktoken
 
-from vcenter_event_assistant.api.schemas import ChatMessage
+from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
 from vcenter_event_assistant.services.correlation_context import CpuEventCorrelationPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import (
@@ -234,19 +234,20 @@ async def run_period_chat(
     context: DigestContext,
     messages: list[ChatMessage],
     correlation: CpuEventCorrelationPayload | None = None,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, ChatLlmContextMeta | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
 
     ``correlation`` を渡すと ``digest_context`` と ``cpu_event_correlation`` をマージした JSON を入力とする。
 
     Returns:
-        (assistant_text, error_message)。API キーが空のときは (\"\", None)。
-        LLM 失敗時は (\"\", ユーザー向け短文)。
+        (assistant_text, error_message, llm_context_meta)。
+        API キーが空のときは (\"\", None, None)。
+        LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
     key = (settings.llm_api_key or "").strip()
     if not key:
-        return ("", None)
+        return ("", None, None)
 
     payload: dict[str, Any] = {"digest_context": context.model_dump(mode="json")}
     if correlation is not None:
@@ -254,6 +255,12 @@ async def run_period_chat(
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, messages)
     block = _merged_context_user_block(ctx_json)
     est_tokens = _estimate_chat_input_tokens(block, trimmed)
+    meta = ChatLlmContextMeta(
+        json_truncated=json_truncated,
+        estimated_input_tokens=est_tokens,
+        max_input_tokens=settings.llm_chat_max_input_tokens,
+        message_turns=len(trimmed),
+    )
 
     api_messages: list[dict[str, str]] = [
         {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
@@ -280,8 +287,8 @@ async def run_period_chat(
                 text = await _openai_chat_with_messages(client, settings, key, api_messages)
             else:
                 text = await _gemini_chat_generate(client, settings, key, block, trimmed)
-        return (text.strip(), None)
+        return (text.strip(), None, meta)
     except Exception as e:
         _log_chat_llm_failure(settings, e)
         detail = _llm_failure_detail_for_user(e)
-        return ("", f"チャット応答を取得できませんでした（{detail}）")
+        return ("", f"チャット応答を取得できませんでした（{detail}）", meta)

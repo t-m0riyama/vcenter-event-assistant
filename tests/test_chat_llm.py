@@ -38,13 +38,14 @@ async def test_run_period_chat_skips_http_when_no_api_key() -> None:
         database_url="sqlite+aiosqlite:///:memory:",
         llm_api_key=None,
     )
-    out, err = await run_period_chat(
+    out, err, meta = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="要約して")],
     )
     assert out == ""
     assert err is None
+    assert meta is None
 
 
 @pytest.mark.asyncio
@@ -105,9 +106,12 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
         lambda *a, **k: _FakeClient(),
     )
 
-    out, err = await run_period_chat(s, context=_minimal_ctx(), messages=msgs)
+    out, err, meta = await run_period_chat(s, context=_minimal_ctx(), messages=msgs)
     assert err is None
     assert out == "追質問への回答"
+    assert meta is not None
+    assert meta.json_truncated is False
+    assert meta.message_turns == 3
     api_messages = captured["messages"]
     assert isinstance(api_messages, list)
     assert len(api_messages) >= 4
@@ -159,13 +163,15 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
         lambda *a, **k: _FakeClient(),
     )
 
-    out, err = await run_period_chat(
+    out, err, meta = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="hello")],
     )
     assert err is None
     assert out == "Gemini の回答"
+    assert meta is not None
+    assert meta.json_truncated is False
 
 
 @pytest.mark.asyncio
@@ -235,13 +241,15 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
         lambda *a, **k: _FakeClient(),
     )
 
-    out, err = await run_period_chat(
+    out, err, meta = await run_period_chat(
         s,
         context=huge_ctx,
         messages=[ChatMessage(role="user", content="質問")],
     )
     assert err is None
     assert out == "ok"
+    assert meta is not None
+    assert meta.json_truncated is True
     api_messages = captured["messages"]
     assert isinstance(api_messages, list)
     user_block = str(api_messages[1]["content"])
@@ -318,7 +326,7 @@ async def test_run_period_chat_includes_correlation_in_user_block_when_set(
         lambda *a, **k: _FakeClient(),
     )
 
-    out, err = await run_period_chat(
+    out, err, meta = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
@@ -326,6 +334,7 @@ async def test_run_period_chat_includes_correlation_in_user_block_when_set(
     )
     assert err is None
     assert out == "y"
+    assert meta is not None
     user_block = str(captured["messages"][1]["content"])
     assert "cpu_event_correlation" in user_block
     assert "digest_context" in user_block

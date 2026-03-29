@@ -390,11 +390,26 @@ class ChatRequest(BaseModel):
         return self
 
 
+class ChatLlmContextMeta(BaseModel):
+    """チャット LLM 直前のコンテキスト統計（トークン予算・JSON 切り詰めの確認用）。"""
+
+    json_truncated: bool = Field(description="マージ済み JSON がトークン上限のため切り詰められたか")
+    estimated_input_tokens: int = Field(
+        description="tiktoken cl100k_base による入力全体の推定トークン数（Gemini 公式値とは一致しない場合あり）"
+    )
+    max_input_tokens: int = Field(description="設定上の上限（LLM_CHAT_MAX_INPUT_TOKENS）")
+    message_turns: int = Field(description="上限適用後の会話ターン数")
+
+
 class ChatResponse(BaseModel):
     """チャット API の応答。LLM 失敗時は ``assistant_content`` が空で ``error`` に理由。"""
 
     assistant_content: str
     error: str | None = None
+    llm_context: ChatLlmContextMeta | None = Field(
+        default=None,
+        description="LLM を呼んだ直前のコンテキスト統計。API キーが空でスキップしたときは None。",
+    )
 
 
 class DigestRunRequest(BaseModel):
