@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -15,6 +16,14 @@ from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.settings import get_settings
 
 get_settings.cache_clear()
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """`test_digest*` / `test_digests_api*` を高負荷マーカーに付与（既定の addopts で除外）。"""
+    for item in items:
+        name = Path(str(item.path)).name
+        if name.startswith("test_digest") or name == "test_digests_api.py":
+            item.add_marker(pytest.mark.digest_heavy)
 
 
 @pytest.fixture(autouse=True)
