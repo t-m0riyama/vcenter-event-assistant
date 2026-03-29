@@ -210,5 +210,5 @@ export function formatChartTooltipLabel(
   timeZone: string,
   options?: FormatChartTooltipLabelOptions,
 ): string {
-  return formatChartAxisTick(value, timeZone, { ...options, omitMonthDay: false })
+  return formatChartAxisTick(value, timeZone, { ...(options ?? {}), omitMonthDay: false })
 }

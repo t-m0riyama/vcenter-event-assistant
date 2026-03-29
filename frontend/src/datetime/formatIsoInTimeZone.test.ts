@@ -144,6 +144,11 @@ describe('formatChartAxisTick', () => {
 })
 
 describe('formatChartTooltipLabel', () => {
+  it('第3引数を省略しても例外にならず formatChartAxisTick に渡せる', () => {
+    const ms = new Date('2026-06-15T10:30:00.000+09:00').getTime()
+    expect(() => formatChartTooltipLabel(ms, 'Asia/Tokyo')).not.toThrow()
+  })
+
   it('短いレンジ相当でも X 軸の omitMonthDay 時刻のみと違い日付（スラッシュ）を含む', () => {
     const ms = new Date('2026-06-15T10:30:00.000+09:00').getTime()
     expect(formatChartAxisTick(ms, 'Asia/Tokyo', { omitMonthDay: true })).not.toMatch(/\//)
