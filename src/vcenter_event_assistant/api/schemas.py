@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -356,6 +357,13 @@ class DigestRead(BaseModel):
 class DigestListResponse(BaseModel):
     items: list[DigestRead]
     total: int
+
+
+class ChatMessage(BaseModel):
+    """チャット 1 ターン（クライアント送受信・LLM 呼び出しの両方で使用）。"""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=200_000)
 
 
 class DigestRunRequest(BaseModel):
