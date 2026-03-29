@@ -28,7 +28,7 @@ def _minimal_ctx() -> DigestContext:
         vcenter_count=0,
         total_events=0,
         notable_events_count=0,
-        top_notable_events=[],
+        top_notable_event_groups=[],
         top_event_types=[],
         high_cpu_hosts=[],
         high_mem_hosts=[],

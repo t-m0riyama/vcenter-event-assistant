@@ -17,16 +17,16 @@
 | （なし） | | |
 {% endif %}
 
-## 要注意イベント（スコア上位）
+## 要注意イベント（スコア上位・種別集約）
 
-{% for ev in ctx.top_notable_events[:20] %}
-- `{{ ev.event_type }}` score={{ ev.notable_score }} at `{{ ev.occurred_at | fmt_ts }}` entity=`{{ ev.entity_name or "—" }}` — {{ ev.message[:200] }}
+{% for g in ctx.top_notable_event_groups[:20] %}
+- `{{ g.event_type }}` score={{ g.notable_score }}、{{ g.occurrence_count }} 回発生（`{{ g.occurred_at_first | fmt_ts }}` 〜 `{{ g.occurred_at_last | fmt_ts }}`）entity=`{% if g.occurrence_count > 1 and not g.entity_name %}—（複数）{% else %}{{ g.entity_name or "—" }}{% endif %}` — {{ g.message[:200] }}
 {% else %}
 - （該当なし）
 {% endfor %}
-{% if ctx.top_notable_events | length > 20 %}
+{% if ctx.top_notable_event_groups | length > 20 %}
 
-（他 {{ ctx.top_notable_events | length - 20 }} 件は省略）
+（他 {{ ctx.top_notable_event_groups | length - 20 }} 件は省略）
 {% endif %}
 
 ## ホスト CPU 利用率（ピーク上位）

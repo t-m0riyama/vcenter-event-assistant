@@ -12,7 +12,7 @@
 
 ダイジェスト本文は **Jinja2**（`DIGEST_TEMPLATE_*` / 同梱 `digest.md.j2`）。**任意の** `DIGEST_TEMPLATE_WEEKLY_PATH` / `DIGEST_TEMPLATE_MONTHLY_PATH` は、対応する `kind`（`weekly` / `monthly`）の実行時だけ最優先で読み、未設定または空のときは従来どおり `DIGEST_TEMPLATE_PATH` → `DIR`+`FILE` → 同梱へフォールバックする。**解決順**・PATH 指定時のエラー扱い・**次回の API / スケジュール実行から**テンプレ変更が反映されることは `.env.example` のコメントを参照。**集計期間**は DB 上 **UTC の `[from, to)`** で、**暦の切り口**（日／週／月の境界）は **`DIGEST_DISPLAY_TIMEZONE`（IANA）** で解釈する。テンプレ構文エラーやファイル不可のときは `DigestRecord.status=error` で保存され LLM は呼ばれない。
 
-**件数の上限:** 同梱テンプレでは要注意イベントなどを `ctx.top_notable_events[:20]` のように**テンプレ内でスライス**しているが、**`ctx` に載る件数は `digest_context.build_digest_context` 側の定数**（例: 上位イベントはクエリで最大 10 件）で決まる。テンプレートだけ行数を増やしても、集約側の上限を上げない限り **DB から渡る行は増えない**（必要なら `digest_context.py` の定数を変更する）。
+**件数の上限:** 同梱テンプレでは要注意イベントを `ctx.top_notable_event_groups[:20]` のように**テンプレ内でスライス**している（**種別ごとに 1 エントリ**）。`ctx` に載る**グループ数**は `_TOP_NOTABLE_EVENT_GROUPS_LIMIT`（既定 10）、集約前に DB から読む行の上限は `_TOP_NOTABLE_RAW_FETCH_LIMIT`（既定 200）。テンプレだけ行数を増やしても、集約側の定数を上げない限り **表示は増えない**（必要なら `digest_context.py` の定数を変更する）。
 
 ## UI スクリーンショット（`docs/images`）
 

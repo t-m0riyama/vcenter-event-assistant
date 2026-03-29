@@ -11,8 +11,8 @@ import pytest
 from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.services.digest_context import (
     DigestContext,
-    DigestContextEventSnippet,
     DigestEventTypeBucket,
+    DigestNotableEventGroup,
 )
 from vcenter_event_assistant.services.digest_markdown import render_digest_markdown
 from vcenter_event_assistant.settings import Settings
@@ -35,7 +35,7 @@ def _empty_ctx() -> DigestContext:
         vcenter_count=0,
         total_events=0,
         notable_events_count=0,
-        top_notable_events=[],
+        top_notable_event_groups=[],
         top_event_types=[],
         high_cpu_hosts=[],
         high_mem_hosts=[],
@@ -137,16 +137,15 @@ def test_render_digest_markdown_uses_kind_not_title() -> None:
         vcenter_count=1,
         total_events=42,
         notable_events_count=3,
-        top_notable_events=[
-            DigestContextEventSnippet(
-                id=1,
-                vcenter_id=uuid.uuid4(),
-                occurred_at=t0,
+        top_notable_event_groups=[
+            DigestNotableEventGroup(
                 event_type="VmPoweredOnEvent",
-                message="hello",
-                severity="info",
-                entity_name="vm-1",
+                occurrence_count=1,
                 notable_score=10,
+                occurred_at_first=t0,
+                occurred_at_last=t0,
+                entity_name="vm-1",
+                message="hello",
             )
         ],
         top_event_types=[
@@ -175,6 +174,8 @@ def test_render_digest_markdown_uses_kind_not_title() -> None:
     assert "# vCenter ダイジェスト（日次）" in md
     assert "42" in md
     assert "VmPoweredOnEvent" in md
+    assert "1 回発生" in md
+    assert "要注意イベント" in md
     assert "ホスト CPU" in md
     assert "ホストメモリ" in md
 
@@ -188,7 +189,7 @@ def test_invalid_display_timezone_warns_and_falls_back(caplog: pytest.LogCapture
         vcenter_count=0,
         total_events=0,
         notable_events_count=0,
-        top_notable_events=[],
+        top_notable_event_groups=[],
         top_event_types=[],
         high_cpu_hosts=[],
         high_mem_hosts=[],
@@ -215,7 +216,7 @@ def test_render_digest_markdown_uses_digest_template_dir(tmp_path: Path) -> None
         vcenter_count=0,
         total_events=0,
         notable_events_count=0,
-        top_notable_events=[],
+        top_notable_event_groups=[],
         top_event_types=[],
         high_cpu_hosts=[],
         high_mem_hosts=[],
@@ -243,7 +244,7 @@ def test_digest_template_path_missing_file_raises() -> None:
         vcenter_count=0,
         total_events=0,
         notable_events_count=0,
-        top_notable_events=[],
+        top_notable_event_groups=[],
         top_event_types=[],
         high_cpu_hosts=[],
         high_mem_hosts=[],

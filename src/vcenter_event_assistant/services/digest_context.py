@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -17,7 +18,10 @@ from vcenter_event_assistant.services.event_scores import load_event_score_delta
 # ダッシュボードの「要注意イベント数」と同じ閾値（notable_score >= 40）
 _NOTABLE_SCORE_THRESHOLD = 40
 
-_TOP_NOTABLE_EVENTS_LIMIT = 10
+# 要注意: DB から読む行の上限（集約前）。同一種別が多い週次でも種別単位に畳めるよう多めに取る。
+_TOP_NOTABLE_RAW_FETCH_LIMIT = 200
+# 要注意: 種別集約後にテンプレ・LLM に載せるグループ数の上限
+_TOP_NOTABLE_EVENT_GROUPS_LIMIT = 10
 _TOP_EVENT_TYPES_LIMIT = 10
 _TOP_HOST_METRICS_LIMIT = 10
 
@@ -43,6 +47,66 @@ class DigestEventTypeBucket(BaseModel):
     max_notable_score: int
 
 
+class DigestNotableEventGroup(BaseModel):
+    """要注意イベントを event_type 単位に集約した 1 エントリ。"""
+
+    event_type: str
+    occurrence_count: int
+    notable_score: int
+    occurred_at_first: datetime
+    occurred_at_last: datetime
+    entity_name: str | None
+    message: str
+
+
+def group_notable_rows_by_event_type(
+    snippets: list[DigestContextEventSnippet],
+) -> list[DigestNotableEventGroup]:
+    """
+    ``DigestContextEventSnippet`` を ``event_type`` ごとにまとめ、ソート済みリストを返す。
+
+    代表メッセージは ``occurred_at`` が最も新しい行のもの（同時刻は ``id`` 降順で安定化）。
+    ``entity_name`` はグループ内で全行同一のときだけ設定し、異なれば ``None``。
+    """
+    if not snippets:
+        return []
+
+    buckets: dict[str, list[DigestContextEventSnippet]] = defaultdict(list)
+    for s in snippets:
+        buckets[s.event_type].append(s)
+
+    groups: list[DigestNotableEventGroup] = []
+    for event_type, items in buckets.items():
+        occurrence_count = len(items)
+        notable_score = max(x.notable_score for x in items)
+        occurred_at_first = min(x.occurred_at for x in items)
+        occurred_at_last = max(x.occurred_at for x in items)
+        latest = [x for x in items if x.occurred_at == occurred_at_last]
+        representative = max(latest, key=lambda x: x.id)
+        entities = {x.entity_name for x in items}
+        entity_name: str | None
+        if len(entities) == 1:
+            entity_name = next(iter(entities))
+        else:
+            entity_name = None
+        groups.append(
+            DigestNotableEventGroup(
+                event_type=event_type,
+                occurrence_count=occurrence_count,
+                notable_score=notable_score,
+                occurred_at_first=occurred_at_first,
+                occurred_at_last=occurred_at_last,
+                entity_name=entity_name,
+                message=representative.message,
+            )
+        )
+
+    groups.sort(
+        key=lambda g: (-g.notable_score, -g.occurred_at_last.timestamp(), g.event_type),
+    )
+    return groups
+
+
 class DigestContext(BaseModel):
     """``[from_utc, to_utc)`` における集約（UTC 前提）。"""
 
@@ -51,7 +115,7 @@ class DigestContext(BaseModel):
     vcenter_count: int
     total_events: int = Field(description="期間内のイベント総数")
     notable_events_count: int = Field(description="notable_score >= 40 の件数")
-    top_notable_events: list[DigestContextEventSnippet]
+    top_notable_event_groups: list[DigestNotableEventGroup]
     top_event_types: list[DigestEventTypeBucket]
     high_cpu_hosts: list[HighCpuHostRow]
     high_mem_hosts: list[HighMemHostRow]
@@ -92,7 +156,7 @@ async def build_digest_context(
             EventRecord.notable_score >= top_notable_min_score,
         )
         .order_by(EventRecord.notable_score.desc(), EventRecord.occurred_at.desc())
-        .limit(_TOP_NOTABLE_EVENTS_LIMIT)
+        .limit(_TOP_NOTABLE_RAW_FETCH_LIMIT)
     )
     top_rows = list(top_q.scalars().all())
     top_snippets = [
@@ -108,6 +172,8 @@ async def build_digest_context(
         )
         for r in top_rows
     ]
+    grouped = group_notable_rows_by_event_type(top_snippets)
+    top_groups = grouped[:_TOP_NOTABLE_EVENT_GROUPS_LIMIT]
 
     event_cnt = func.count().label("event_cnt")
     type_q = await session.execute(
@@ -229,7 +295,7 @@ async def build_digest_context(
         vcenter_count=int(vc_count.scalar_one() or 0),
         total_events=int(ev_q.scalar_one() or 0),
         notable_events_count=int(notable_q.scalar_one() or 0),
-        top_notable_events=top_snippets,
+        top_notable_event_groups=top_groups,
         top_event_types=top_event_types,
         high_cpu_hosts=high_cpu,
         high_mem_hosts=high_mem,
