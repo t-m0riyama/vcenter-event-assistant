@@ -92,13 +92,13 @@
 | `digest_daily_enabled` | `DIGEST_DAILY_ENABLED` | `False` |
 | `digest_daily_cron` | `DIGEST_DAILY_CRON` | `"0 7 * * *"` |
 | `digest_weekly_enabled` | `DIGEST_WEEKLY_ENABLED` | `False` |
-| `digest_weekly_cron` | `DIGEST_WEEKLY_CRON` | `"0 8 * * 0"` |
+| `digest_weekly_cron` | `DIGEST_WEEKLY_CRON` | `"0 8 * * 0"`（月曜 8:00。APScheduler は 0=月曜…6=日曜） |
 | `digest_monthly_enabled` | `DIGEST_MONTHLY_ENABLED` | `False` |
 | `digest_monthly_cron` | `DIGEST_MONTHLY_CRON` | `"5 0 1 * *"` |
 
 `digest_scheduler_enabled` / `digest_cron` の `Field.description` に**非推奨**と上記マッピングを日本語で明記する。
 
-**APScheduler の曜日:** `CronTrigger.from_crontab` の 5 フィールド目（曜日）が **0=日曜**か **7=日曜**かは実装・環境で差があり得る。実装後、**1 回** `CronTrigger.from_crontab("0 0 * * 0")` 等で期待する発火曜日を確認し、`.env.example` にその結果を書く（例: 「本プロジェクトでは 0=日曜」）。
+**APScheduler の曜日:** `CronTrigger.from_crontab` の 5 フィールド目は **Python weekday 準拠（0=月曜…6=日曜）**。Unix cron の **0/7=日曜とは異なり、7 は無効**。既定の週次例は月曜 `"0 8 * * 0"`、日曜に合わせるなら `"0 8 * * 6"`。時刻は `timezone` 未指定時はローカル TZ で解釈。
 
 ---
 
@@ -314,7 +314,7 @@ git commit -m "feat(scheduler): register weekly and monthly digest cron jobs"
 
 - [ ] **Step 1（任意）:** H1 を `daily` / `weekly` / `monthly` で日本語化（Jinja の `if`）。未実施でも機能上は問題なし。
 
-- [ ] **Step 2:** `.env.example` の Batch digest 節に `DIGEST_DAILY_*` / `DIGEST_WEEKLY_*` / `DIGEST_MONTHLY_*` と、旧変数の非推奨・マッピング、cron 5 フィールド、**曜日 0 の意味**（Task 4 後に確認した結果）を日本語コメントで記載。
+- [ ] **Step 2:** `.env.example` の Batch digest 節に `DIGEST_DAILY_*` / `DIGEST_WEEKLY_*` / `DIGEST_MONTHLY_*` と、旧変数の非推奨・マッピング、cron 5 フィールド、**APScheduler の曜日（0=月曜…6=日曜）**を日本語コメントで記載。
 
 - [ ] **Step 3:** `docs/development.md` に「日次・週次・月次の自動実行は env で ON/OFF と cron」「週次は UTC 日曜始まりの前週」「月次は直前の UTC 暦月」を短く追記。
 
