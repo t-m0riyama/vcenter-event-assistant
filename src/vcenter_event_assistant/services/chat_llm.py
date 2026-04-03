@@ -16,6 +16,7 @@ from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBu
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import _trim_context_json
+from vcenter_event_assistant.services.llm_anonymization import anonymize_chat_for_llm, deanonymize_text
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.services.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm_profile import effective_chat_api_key, resolve_llm_profile
@@ -240,7 +241,20 @@ async def run_period_chat(
         payload["period_metrics"] = period_metrics.model_dump(mode="json")
     if event_time_buckets is not None:
         payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
-    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, messages)
+
+    trimmed_msgs = messages[-_MAX_CHAT_MESSAGES:]
+    reverse_map: dict[str, str] = {}
+    if settings.llm_anonymization_enabled:
+        pl, contents, reverse_map = anonymize_chat_for_llm(
+            payload,
+            [m.content for m in trimmed_msgs],
+        )
+        payload = pl
+        trimmed_msgs = [
+            ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
+        ]
+
+    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
     block = _merged_context_user_block(ctx_json)
     est_tokens = _estimate_chat_input_tokens(block, trimmed)
     meta = ChatLlmContextMeta(
@@ -266,7 +280,8 @@ async def run_period_chat(
         model = build_chat_model(settings, purpose="chat", config=runnable_config)
         lc_messages = _to_langchain_messages(block, trimmed)
         text = await stream_chat_to_text(model, lc_messages, config=runnable_config)
-        return (text.strip(), None, meta)
+        text = deanonymize_text(text.strip(), reverse_map)
+        return (text, None, meta)
     except Exception as e:
         _log_chat_llm_failure(settings, e)
         detail = _llm_failure_detail_for_user(e)
