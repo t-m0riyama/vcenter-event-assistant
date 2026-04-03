@@ -228,3 +228,44 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
     assert err is None
     assert host in out
     assert host not in str(captured.get("human"))
+
+
+@pytest.mark.asyncio
+async def test_augment_digest_anonymizes_extra_vcenter_in_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON に無い登録 vCenter 表示名も ``extra_vcenter_strings`` で LLM 入力から除去する。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_anonymization_enabled=True,
+    )
+    label = "EXTRA-VC-DISPLAY-ONLY"
+    captured: dict[str, object] = {}
+
+    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> str:
+        captured["human"] = lc_messages[1].content  # type: ignore[index]
+        return "## LLM 要約\n- ok"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest_llm.build_chat_model",
+        lambda _s, *, purpose=None, config=None: object(),
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest_llm.stream_chat_to_text",
+        _spy_stream,
+    )
+
+    md = f"# タイトル\n{label} について\n"
+    out, err = await augment_digest_with_llm(
+        s,
+        context=_minimal_ctx(),
+        template_markdown=md,
+        extra_vcenter_strings=[label],
+    )
+    assert err is None
+    assert label in out
+    assert label not in str(captured.get("human"))

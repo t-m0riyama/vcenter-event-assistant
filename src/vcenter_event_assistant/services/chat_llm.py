@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -71,6 +72,9 @@ _CHAT_SYSTEM_PROMPT = (
     "- top_notable_event_groups に時刻フィールドがあるのに「イベントに時刻がない」と述べない。\n"
     "- 日本語で簡潔に答える。不要に長い Markdown やコードフェンスは避ける。\n"
     "- ホスト名・イベント種別・件数などを引用するときは、JSON の値と矛盾させない。\n"
+    "- 応答に `__LM_` で始まる内部識別子（匿名化用プレースホルダ）を出力しない。"
+    " 入力 JSON や会話に現れるホスト名等は、その表記をそのまま引用する。\n"
+    "- ホスト名や識別子に括弧で別名・補足を付けて二重に表現しない（同一ホストを短縮名と FQDN で対照しない）。\n"
 )
 
 
@@ -215,6 +219,7 @@ async def run_period_chat(
     period_metrics: PeriodMetricsPayload | None = None,
     event_time_buckets: EventTimeBucketsPayload | None = None,
     runnable_config: RunnableConfig | None = None,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
@@ -223,6 +228,9 @@ async def run_period_chat(
     チャットでは ``digest_context`` からホスト別 CPU/メモリピーク（``high_cpu_hosts`` / ``high_mem_hosts``）を除く。
 
     ``runnable_config`` は将来 LangSmith 等の callbacks を渡すための拡張点（未使用でもよい）。
+
+    ``extra_vcenter_strings`` に DB 登録済み vCenter の表示名・接続 host 等を渡すと、
+    匿名化有効時に会話本文からもトークン化する（API ルートでは全件読込を渡す）。
 
     Returns:
         (assistant_text, error_message, llm_context_meta)。
@@ -248,6 +256,7 @@ async def run_period_chat(
         pl, contents, reverse_map = anonymize_chat_for_llm(
             payload,
             [m.content for m in trimmed_msgs],
+            extra_vcenter_strings=extra_vcenter_strings,
         )
         payload = pl
         trimmed_msgs = [

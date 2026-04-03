@@ -5,7 +5,10 @@ from __future__ import annotations
 import copy
 import re
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
+
+from vcenter_event_assistant.services.vcenter_labels import first_hostname_label_if_fqdn
 
 # entity_name / user 系で先に登録した原文を message 内で置換する際に使う
 _COLLECT_KEYS: tuple[tuple[str, str], ...] = (
@@ -54,6 +57,21 @@ class LlmAnonymizer:
         self._reverse[tok] = value
         return tok
 
+    def share_token_with(self, category: str, alias: str, canonical: str) -> None:
+        """
+        ``alias`` を ``canonical`` と同一トークンに紐づける（``canonical`` は ``token_for`` 済み）。
+
+        FQDN と第1ラベル（短縮ホスト名）を LLM から同一識別子として扱わせる。
+        ``_reverse`` は更新しない（逆変換の代表は ``canonical``）。
+        """
+        if not alias or not canonical or alias == canonical:
+            return
+        cat_key = category.strip().lower()
+        tok = self._pair_to_token.get((cat_key, canonical))
+        if not tok:
+            return
+        self._pair_to_token[(cat_key, alias)] = tok
+
     @property
     def reverse_map(self) -> dict[str, str]:
         """トークン → 原文（逆変換用）。"""
@@ -61,7 +79,9 @@ class LlmAnonymizer:
 
     def replacements_longest_first(self) -> list[tuple[str, str]]:
         """原文が長い順に (原文, トークン)。message 内の部分置換に用いる。"""
-        pairs: list[tuple[str, str]] = [(orig, tok) for tok, orig in self._reverse.items()]
+        pairs: list[tuple[str, str]] = [
+            (orig, tok) for (_cat, orig), tok in self._pair_to_token.items()
+        ]
         pairs.sort(key=lambda x: len(x[0]), reverse=True)
         return pairs
 
@@ -75,6 +95,36 @@ def deanonymize_text(text: str, reverse_map: dict[str, str]) -> str:
     for tok in toks:
         out = out.replace(tok, reverse_map[tok])
     return out
+
+
+def _append_extra_vcenter_pairs(
+    pairs: list[tuple[str, str]],
+    extra_vcenter_strings: Sequence[str] | None,
+) -> None:
+    """登録 vCenter 由来の文字列を収集リストに追加（``vcenter`` カテゴリ）。"""
+    if not extra_vcenter_strings:
+        return
+    for s in extra_vcenter_strings:
+        if s:
+            pairs.append(("vcenter", s))
+
+
+def _apply_entity_fqdn_short_aliases(a: LlmAnonymizer, pairs: list[tuple[str, str]]) -> None:
+    """
+    ``entity_name`` が FQDN のとき、第1ラベル（短縮ホスト名）を FQDN と同一トークンに紐づける。
+
+    ``pairs`` に対する ``token_for`` 完了後に呼ぶ。別トークンを発行しない。
+    """
+    seen_entity: set[str] = set()
+    for cat, val in pairs:
+        if cat != "entity":
+            continue
+        if val in seen_entity:
+            continue
+        seen_entity.add(val)
+        short = first_hostname_label_if_fqdn(val)
+        if short and short != val:
+            a.share_token_with("entity", short, val)
 
 
 def _collect_entity_user_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
@@ -151,6 +201,7 @@ def anonymize_json_like(obj: Any) -> tuple[Any, dict[str, str]]:
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
+    _apply_entity_fqdn_short_aliases(a, pairs)
     out = _anonymize_node(obj, a)
     return out, a.reverse_map
 
@@ -158,15 +209,22 @@ def anonymize_json_like(obj: Any) -> tuple[Any, dict[str, str]]:
 def anonymize_for_llm(
     context_dict: dict[str, Any],
     template_markdown: str,
+    *,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], str, dict[str, str]]:
     """
     ダイジェスト用: 集約 JSON とテンプレ Markdown を同一 ``LlmAnonymizer`` で匿名化する。
+
+    ``extra_vcenter_strings`` に DB 登録済み vCenter の表示名・接続 host 等を渡すと、
+    JSON に無い文字列も Markdown からトークン化する。
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(context_dict, pairs)
+    _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
+    _apply_entity_fqdn_short_aliases(a, pairs)
     ctx_out = _anonymize_node(context_dict, a)
     md_out = anonymize_plain_text(template_markdown, a)
     return ctx_out, md_out, a.reverse_map
@@ -175,15 +233,21 @@ def anonymize_for_llm(
 def anonymize_chat_for_llm(
     payload: dict[str, Any],
     message_contents: list[str],
+    *,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], list[str], dict[str, str]]:
     """
     チャット用: マージ済みペイロードと会話本文を同一 ``LlmAnonymizer`` で匿名化する。
+
+    ``extra_vcenter_strings`` により登録済み vCenter 名を会話本文からもトークン化する。
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(payload, pairs)
+    _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
+    _apply_entity_fqdn_short_aliases(a, pairs)
     out_payload = _anonymize_node(payload, a)
     out_contents = [anonymize_plain_text(c, a) for c in message_contents]
     return out_payload, out_contents, a.reverse_map
