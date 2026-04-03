@@ -33,6 +33,7 @@ export type EventRow = z.infer<typeof eventRowSchema>
 
 export const summaryHostMetricRowSchema = z.object({
   vcenter_id: z.string(),
+  vcenter_label: z.string(),
   entity_name: z.string(),
   entity_moid: z.string(),
   value: z.number(),

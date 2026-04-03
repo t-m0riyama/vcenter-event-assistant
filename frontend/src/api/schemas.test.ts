@@ -116,11 +116,21 @@ describe('parseSummary', () => {
       events_last_24h: 0,
       notable_events_last_24h: 0,
       top_notable_events: [],
-      high_cpu_hosts: [],
+      high_cpu_hosts: [
+        {
+          vcenter_id: '00000000-0000-0000-0000-000000000001',
+          vcenter_label: 'vc-display',
+          entity_name: 'esxi-1',
+          entity_moid: 'moid-1',
+          value: 90,
+          sampled_at: '2026-01-01T00:00:00Z',
+        },
+      ],
       high_mem_hosts: [],
       top_event_types_24h: [],
     })
     expect(s.vcenter_count).toBe(0)
     expect(s.top_notable_events).toEqual([])
+    expect(s.high_cpu_hosts[0]?.vcenter_label).toBe('vc-display')
   })
 })

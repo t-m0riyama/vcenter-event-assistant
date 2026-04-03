@@ -215,6 +215,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         <table className="table">
           <thead>
             <tr>
+              <th>vCenter</th>
               <th>ホスト</th>
               <th>CPU %</th>
               <th>時刻</th>
@@ -222,7 +223,8 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
           </thead>
           <tbody>
             {highCpuRows.map((h, i) => (
-              <tr key={`${h.entity_name}-${i}`}>
+              <tr key={`${h.vcenter_id}-${h.entity_moid}-${i}`}>
+                <td>{h.vcenter_label}</td>
                 <td>{h.entity_name}</td>
                 <td>{h.value.toFixed(1)}</td>
                 <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
@@ -244,6 +246,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         <table className="table">
           <thead>
             <tr>
+              <th>vCenter</th>
               <th>ホスト</th>
               <th>メモリ %</th>
               <th>時刻</th>
@@ -251,7 +254,8 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
           </thead>
           <tbody>
             {highMemRows.map((h, i) => (
-              <tr key={`${h.entity_name}-mem-${i}`}>
+              <tr key={`${h.vcenter_id}-${h.entity_moid}-mem-${i}`}>
+                <td>{h.vcenter_label}</td>
                 <td>{h.entity_name}</td>
                 <td>{h.value.toFixed(1)}</td>
                 <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>

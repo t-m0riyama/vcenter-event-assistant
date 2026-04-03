@@ -14,6 +14,7 @@ from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
+from vcenter_event_assistant.services.vcenter_labels import load_vcenter_labels_map
 
 # ダッシュボードの「要注意イベント数」と同じ閾値（notable_score >= 40）
 _NOTABLE_SCORE_THRESHOLD = 40
@@ -256,16 +257,6 @@ async def build_digest_context(
         .limit(_TOP_HOST_METRICS_LIMIT)
     )
     cpu_rows = list(cpu_q.scalars().all())
-    high_cpu = [
-        HighCpuHostRow(
-            vcenter_id=str(r.vcenter_id),
-            entity_name=r.entity_name,
-            entity_moid=r.entity_moid,
-            value=r.value,
-            sampled_at=r.sampled_at,
-        )
-        for r in cpu_rows
-    ]
 
     mem_metric_clauses = [
         MetricSample.metric_key == "host.mem.usage_pct",
@@ -296,9 +287,25 @@ async def build_digest_context(
         .limit(_TOP_HOST_METRICS_LIMIT)
     )
     mem_rows = list(mem_q.scalars().all())
+    ids_for_label = {r.vcenter_id for r in cpu_rows} | {r.vcenter_id for r in mem_rows}
+    label_map = await load_vcenter_labels_map(session, ids_for_label)
+
+    high_cpu = [
+        HighCpuHostRow(
+            vcenter_id=str(r.vcenter_id),
+            vcenter_label=label_map[r.vcenter_id],
+            entity_name=r.entity_name,
+            entity_moid=r.entity_moid,
+            value=r.value,
+            sampled_at=r.sampled_at,
+        )
+        for r in cpu_rows
+    ]
+
     high_mem = [
         HighMemHostRow(
             vcenter_id=str(r.vcenter_id),
+            vcenter_label=label_map[r.vcenter_id],
             entity_name=r.entity_name,
             entity_moid=r.entity_moid,
             value=r.value,

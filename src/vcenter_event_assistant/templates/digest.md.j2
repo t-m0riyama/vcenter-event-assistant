@@ -35,7 +35,7 @@
 |---------|--------|---|--------------|
 {% if ctx.high_cpu_hosts %}
 {% for h in ctx.high_cpu_hosts %}
-| `{{ h.vcenter_id[:8] }}…` | `{{ h.entity_name }}` | {{ h.value|round(1) }} | `{{ h.sampled_at | fmt_ts }}` |
+| `{{ h.vcenter_label }}` | `{{ h.entity_name }}` | {{ h.value|round(1) }} | `{{ h.sampled_at | fmt_ts }}` |
 {% endfor %}
 {% else %}
 | | （なし） | | |
@@ -47,7 +47,7 @@
 |---------|--------|---|--------------|
 {% if ctx.high_mem_hosts %}
 {% for h in ctx.high_mem_hosts %}
-| `{{ h.vcenter_id[:8] }}…` | `{{ h.entity_name }}` | {{ h.value|round(1) }} | `{{ h.sampled_at | fmt_ts }}` |
+| `{{ h.vcenter_label }}` | `{{ h.entity_name }}` | {{ h.value|round(1) }} | `{{ h.sampled_at | fmt_ts }}` |
 {% endfor %}
 {% else %}
 | | （なし） | | |

@@ -12,10 +12,11 @@ _COLLECT_KEYS: tuple[tuple[str, str], ...] = (
     ("entity_name", "entity"),
     ("user_name", "user"),
     ("username", "user"),
+    ("vcenter_label", "vcenter"),
 )
 
 _ANONYMIZE_KEYS: frozenset[str] = frozenset(
-    {"entity_name", "message", "user_name", "username"},
+    {"entity_name", "message", "user_name", "username", "vcenter_label"},
 )
 
 # 文字列内 IPv4（簡易）
@@ -126,6 +127,8 @@ def _anonymize_node(obj: Any, a: LlmAnonymizer) -> Any:
                     out[k] = a.token_for("user", v)
                 elif k == "entity_name":
                     out[k] = a.token_for("entity", v)
+                elif k == "vcenter_label":
+                    out[k] = a.token_for("vcenter", v)
                 else:
                     out[k] = copy.deepcopy(v)
             else:

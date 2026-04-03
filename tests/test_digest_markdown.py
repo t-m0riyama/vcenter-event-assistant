@@ -154,6 +154,7 @@ def test_render_digest_markdown_uses_kind_not_title() -> None:
         high_cpu_hosts=[
             HighCpuHostRow(
                 vcenter_id=str(uuid.uuid4()),
+                vcenter_label="ラベルCPU",
                 entity_name="h1",
                 entity_moid="m",
                 value=90.0,
@@ -163,6 +164,7 @@ def test_render_digest_markdown_uses_kind_not_title() -> None:
         high_mem_hosts=[
             HighMemHostRow(
                 vcenter_id=str(uuid.uuid4()),
+                vcenter_label="ラベルMEM",
                 entity_name="h2",
                 entity_moid="m2",
                 value=80.0,
@@ -178,6 +180,8 @@ def test_render_digest_markdown_uses_kind_not_title() -> None:
     assert "要注意イベント" in md
     assert "ホスト CPU" in md
     assert "ホストメモリ" in md
+    assert "ラベルCPU" in md
+    assert "ラベルMEM" in md
 
 
 def test_invalid_display_timezone_warns_and_falls_back(caplog: pytest.LogCaptureFixture) -> None:

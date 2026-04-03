@@ -48,6 +48,7 @@ async def test_high_cpu_hosts_one_row_per_host_uses_peak_value(client: AsyncClie
     same_host_rows = [h for h in hosts if h["entity_moid"] == "host-same"]
     assert len(same_host_rows) == 1
     assert same_host_rows[0]["value"] == 95.0
+    assert same_host_rows[0]["vcenter_label"] == "dash-dedupe"
     # JSON must mark UTC so browsers parse the instant correctly (not as local time).
     assert same_host_rows[0]["sampled_at"].endswith("Z")
 
@@ -128,6 +129,7 @@ async def test_high_mem_hosts_one_row_per_host_uses_peak_value(client: AsyncClie
     same_host_rows = [h for h in hosts if h["entity_moid"] == "host-same-mem"]
     assert len(same_host_rows) == 1
     assert same_host_rows[0]["value"] == 95.0
+    assert same_host_rows[0]["vcenter_label"] == "dash-mem-dedupe"
     assert same_host_rows[0]["sampled_at"].endswith("Z")
 
 

@@ -19,6 +19,7 @@ from vcenter_event_assistant.api.schemas import (
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
+from vcenter_event_assistant.services.vcenter_labels import load_vcenter_labels_map
 from vcenter_event_assistant.services.event_type_guide_attach import (
     attach_type_guides_to_event_reads,
     attach_type_guides_to_event_type_count_rows,
@@ -135,16 +136,6 @@ async def dashboard_summary(
         .limit(10)
     )
     cpu_rows = list(cpu_q.scalars().all())
-    high_cpu = [
-        HighCpuHostRow(
-            vcenter_id=str(r.vcenter_id),
-            entity_name=r.entity_name,
-            entity_moid=r.entity_moid,
-            value=r.value,
-            sampled_at=r.sampled_at,
-        )
-        for r in cpu_rows
-    ]
 
     mem_rank = (
         select(
@@ -170,9 +161,25 @@ async def dashboard_summary(
         .limit(10)
     )
     mem_rows = list(mem_q.scalars().all())
+    ids_for_label = {r.vcenter_id for r in cpu_rows} | {r.vcenter_id for r in mem_rows}
+    label_map = await load_vcenter_labels_map(session, ids_for_label)
+
+    high_cpu = [
+        HighCpuHostRow(
+            vcenter_id=str(r.vcenter_id),
+            vcenter_label=label_map[r.vcenter_id],
+            entity_name=r.entity_name,
+            entity_moid=r.entity_moid,
+            value=r.value,
+            sampled_at=r.sampled_at,
+        )
+        for r in cpu_rows
+    ]
+
     high_mem = [
         HighMemHostRow(
             vcenter_id=str(r.vcenter_id),
+            vcenter_label=label_map[r.vcenter_id],
             entity_name=r.entity_name,
             entity_moid=r.entity_moid,
             value=r.value,
