@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from vcenter_event_assistant.services.llm_anonymization import (
@@ -166,7 +168,15 @@ def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqd
     _pl, out_contents, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
     assert "mini5" not in out_contents[0]
     assert "mini5.moriyama.internal" not in str(_pl)
-    assert deanonymize_text(out_contents[0], rev) == contents[0]
+    tok_in_json = _pl["period_metrics"]["cpu"][0]["entity_name"]
+    m = re.search(r"__LM_ENTITY_\d{3}__", out_contents[0])
+    assert m is not None
+    assert m.group(0) == tok_in_json
+    # 短縮名と FQDN を同一トークンにまとめたため、逆変換の代表は FQDN になる
+    assert (
+        deanonymize_text(out_contents[0], rev)
+        == "mini5.moriyama.internalのCPU使用率が最も高い時間帯を教えて。"
+    )
 
 
 def test_settings_llm_anonymization_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
