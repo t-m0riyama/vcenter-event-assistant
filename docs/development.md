@@ -4,11 +4,11 @@
 
 - `POST /api/chat` … 本文 JSON で `from` / `to`（UTC）、`messages`（`role`: `user` | `assistant`、`content`）。**最後の要素は `user`**。任意で `vcenter_id`（単一 vCenter に絞る）、`top_notable_min_score`（既定 1）。**期間メトリクス（いずれも既定 `false`、追加 DB クエリあり）:** `include_period_metrics_cpu`、`include_period_metrics_memory`、`include_period_metrics_disk_io`、`include_period_metrics_network_io`。オンにしたカテゴリだけ `MetricSample` を期間・`vcenter_id` で読み、時間バケット平均で `period_metrics` として LLM コンテキストにマージする（チャット用の `digest_context` からはホスト別 CPU/メモリのピーク一覧は含めない）。**メトリクストグルが 1 つでもオン**のときは、同じバケット幅で `events` を集計した `event_time_buckets`（件数 0 のバケットは省略）もマージする。バッチダイジェストには含めない。イベント集約は `build_digest_context` と同じ（期間は DB 上 **UTC の `[from, to)`**）。会話履歴はクライアントが送るだけでサーバーは保持しない。応答は `assistant_content` と `error`（LLM 失敗時は前者が空で後者に短文）。**`llm_context`**（省略可）に、LLM 直前の目安として `json_truncated`（JSON をトークン上限で切り詰めたか）、`estimated_input_tokens` / `max_input_tokens`、`message_turns` が入る。サーバーログにも `json_truncated` 等が出る。
 
-環境変数は **ダイジェストと同じ `LLM_*`**（`.env.example` の LLM 節を参照）。`LLM_API_KEY` が空のときは **503**。
+環境変数は **ダイジェスト用 `LLM_DIGEST_*`** と、任意の **チャット上書き `LLM_CHAT_*`**（`.env.example` の LLM 節を参照）。実効チャット API キー（`LLM_CHAT_API_KEY` が非空ならそれ、否则 `LLM_DIGEST_API_KEY`）が空のときは **503**。
 
 ## LLM 実装（バックエンド）
 
-ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は **LangChain** の `ChatOpenAI`（`LLM_PROVIDER=openai_compatible`）または `ChatGoogleGenerativeAI`（`gemini`）を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py) で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`・`langsmith`（トレース用クライアント）。
+ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は **LangChain** の `ChatOpenAI`（`LLM_DIGEST_PROVIDER=openai_compatible`）または `ChatGoogleGenerativeAI`（`gemini`）を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py)（`purpose`: `digest` / `chat`）で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`・`langsmith`（トレース用クライアント）。
 
 **LangSmith:** [`llm_tracing.build_llm_runnable_config`](../src/vcenter_event_assistant/services/llm_tracing.py) が `RunnableConfig`（`tags` / `metadata`、任意で `LangChainTracer`）を組み立て、チャット API とバッチ `run_digest_once` から `run_period_chat` / `augment_digest_with_llm` に渡す。環境変数は `LANGSMITH_TRACING_ENABLED`（既定 `false`）・`LANGSMITH_API_KEY` 等（`.env.example` 参照）。トレースをオンにするとホスト名・イベント本文を含むプロンプトが LangSmith に送られる可能性があるため、本番では運用判断すること。設計は [`docs/superpowers/specs/2026-04-04-langsmith-tracing-design.md`](superpowers/specs/2026-04-04-langsmith-tracing-design.md)。
 
@@ -18,7 +18,7 @@
 - `GET /api/digests/{id}` … 1 件取得
 - `POST /api/digests/run` … 手動生成。JSON 省略時は **`kind` と `DIGEST_DISPLAY_TIMEZONE` に基づく直前期間**（日次=直前暦日、週次=直前週、月次=直前月）を対象。`from_time` / `to_time` を両方指定すると任意期間
 
-環境変数は `.env.example` の「Batch digest」を参照。`LLM_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。Ollama などローカルの OpenAI 互換 API の例は README の「ダイジェスト用 LLM」と `.env.example` を参照する。
+環境変数は `.env.example` の「Batch digest」と LLM 節を参照。`LLM_DIGEST_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。Ollama などローカルの OpenAI 互換 API の例は README の「ダイジェスト用 LLM」と `.env.example` を参照する。
 
 **定期実行:** `DIGEST_DAILY_*` / `DIGEST_WEEKLY_*` / `DIGEST_MONTHLY_*` で種別ごとに有効化と cron（5 フィールド）を指定。`DIGEST_SCHEDULER_ENABLED` / `DIGEST_CRON` は日次向けレガシー名（非推奨）。週次の集計ウィンドウは **`DIGEST_DISPLAY_TIMEZONE` 上で日曜 0:00 始まりの直前に完了した暦週**（7 日）、月次は **その TZ の直前暦月**。手動 `POST /api/digests/run` は任意 `from`/`to` と `kind`、または期間省略で上記と同じ既定窓。
 

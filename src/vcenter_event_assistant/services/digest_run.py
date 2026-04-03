@@ -55,8 +55,8 @@ async def run_digest_once(
         runnable_config=llm_cfg,
     )
 
-    has_key = bool((s.llm_api_key or "").strip())
-    llm_model_val = s.llm_model if has_key and llm_err is None else None
+    has_key = bool((s.llm_digest_api_key or "").strip())
+    llm_model_val = s.llm_digest_model if has_key and llm_err is None else None
 
     row = DigestRecord(
         period_start=from_utc,

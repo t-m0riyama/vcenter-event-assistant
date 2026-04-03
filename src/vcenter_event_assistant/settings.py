@@ -1,6 +1,7 @@
 """Application settings (environment / .env)."""
 
 import logging
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -10,8 +11,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 LlmProvider = Literal["openai_compatible", "gemini"]
 
 
+def _settings_env_file() -> str | None:
+    """pytest 時（`VEA_PYTEST=1`）は `.env` を読まず、開発者の LLM キーがテストに混入しないようにする。"""
+    return None if os.environ.get("VEA_PYTEST") == "1" else ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_settings_env_file(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/vcenter_event_assistant",
@@ -161,35 +171,63 @@ class Settings(BaseSettings):
         ),
     )
 
-    llm_provider: LlmProvider = Field(
+    llm_digest_provider: LlmProvider = Field(
         default="openai_compatible",
         description=(
-            "ダイジェストの LLM。openai_compatible は Chat Completions 互換 API、"
+            "ダイジェストの LLM（`LLM_DIGEST_PROVIDER`）。openai_compatible は Chat Completions 互換 API、"
             "gemini は Google AI Studio（generateContent REST）。"
         ),
     )
-    llm_api_key: str | None = Field(
+    llm_digest_api_key: str | None = Field(
         default=None,
         description=(
             "空のときはテンプレートのみでダイジェストを保存（外部 API を呼ばない）。"
-            "OpenAI または Google AI Studio の API キー。"
+            "OpenAI または Google AI Studio の API キー（`LLM_DIGEST_API_KEY`）。"
         ),
     )
-    llm_base_url: str = Field(
+    llm_digest_base_url: str = Field(
         default="https://api.openai.com/v1",
-        description="llm_provider が openai_compatible のときのみ使用（末尾は /v1 を含む想定）。",
+        description="llm_digest_provider が openai_compatible のときのみ使用（末尾は /v1 を含む想定）（`LLM_DIGEST_BASE_URL`）。",
     )
-    llm_model: str = Field(
+    llm_digest_model: str = Field(
         default="gpt-4o-mini",
-        description="OpenAI 互換時は gpt-4o-mini 等。Gemini 時は gemini-2.0-flash 等（Google AI Studio のモデル ID）。",
+        description="OpenAI 互換時は gpt-4o-mini 等。Gemini 時は gemini-2.0-flash 等（`LLM_DIGEST_MODEL`）。",
     )
-    llm_timeout_seconds: float = Field(
+    llm_digest_timeout_seconds: float = Field(
         default=60.0,
         ge=5.0,
         le=7200.0,
         description=(
             "httpx の読み取りタイムアウト（秒）。ローカル Ollama は長いプロンプトで数分〜かかることがある。"
-            "値を変えたらプロセス再起動が必要（get_settings が lru_cache のため）。"
+            "値を変えたらプロセス再起動が必要（get_settings が lru_cache のため）（`LLM_DIGEST_TIMEOUT_SECONDS`）。"
+        ),
+    )
+    llm_chat_provider: LlmProvider | None = Field(
+        default=None,
+        description=(
+            "チャット用に上書きするプロバイダ（`LLM_CHAT_PROVIDER`）。未設定時は llm_digest_provider を使用。"
+        ),
+    )
+    llm_chat_api_key: str | None = Field(
+        default=None,
+        description=(
+            "チャット用 API キー（`LLM_CHAT_API_KEY`）。空または未設定時は llm_digest_api_key を使用。"
+        ),
+    )
+    llm_chat_base_url: str | None = Field(
+        default=None,
+        description="チャット用ベース URL（`LLM_CHAT_BASE_URL`）。未設定または空時は llm_digest_base_url。",
+    )
+    llm_chat_model: str | None = Field(
+        default=None,
+        description="チャット用モデル ID（`LLM_CHAT_MODEL`）。未設定または空時は llm_digest_model。",
+    )
+    llm_chat_timeout_seconds: float | None = Field(
+        default=None,
+        ge=5.0,
+        le=7200.0,
+        description=(
+            "チャット用タイムアウト秒（`LLM_CHAT_TIMEOUT_SECONDS`）。未設定時は llm_digest_timeout_seconds。"
         ),
     )
     llm_chat_max_input_tokens: int = Field(
@@ -218,6 +256,26 @@ class Settings(BaseSettings):
         default=None,
         description="LangSmith API ベース URL（`LANGSMITH_ENDPOINT`）。空なら SDK 既定。",
     )
+
+    @field_validator("llm_digest_api_key", "llm_chat_api_key", "llm_chat_base_url", "llm_chat_model", mode="before")
+    @classmethod
+    def empty_llm_optional_str_to_none(cls, v: object) -> str | None:
+        """空文字・空白のみは None に正規化する（チャット上書き・ダイジェスト API キー）。"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return str(v).strip() or None
+
+    @field_validator("llm_digest_base_url", mode="before")
+    @classmethod
+    def normalize_llm_digest_base_url(cls, v: object) -> str:
+        """空のときは OpenAI 互換の既定 URL にフォールバックする。"""
+        if v is None:
+            return "https://api.openai.com/v1"
+        s = str(v).strip()
+        return s or "https://api.openai.com/v1"
 
     @field_validator("langsmith_api_key", "langsmith_project", "langsmith_endpoint", mode="before")
     @classmethod

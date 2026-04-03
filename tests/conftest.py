@@ -8,10 +8,13 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+# Settings の `.env` 読み込みを無効化（`src/.../settings.py` の `_settings_env_file` 参照）
+os.environ["VEA_PYTEST"] = "1"
+
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SCHEDULER_ENABLED"] = "false"
 # 開発者の .env に LLM キーがあっても、テストで外部 API を呼ばない
-os.environ["LLM_API_KEY"] = ""
+os.environ["LLM_DIGEST_API_KEY"] = ""
 # .env の APP_LOG_FILE へ書かない（digest_llm の失敗系テストの WARNING が混ざるのを防ぐ）
 os.environ["APP_LOG_FILE"] = ""
 os.environ["UVICORN_LOG_FILE"] = ""

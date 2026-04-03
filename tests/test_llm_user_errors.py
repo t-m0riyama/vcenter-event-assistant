@@ -11,7 +11,7 @@ def test_llm_failure_detail_timeout_uses_japanese_hint() -> None:
 
     d = _llm_failure_detail_for_user(httpx.ReadTimeout(""))
     assert "タイムアウト" in d
-    assert "LLM_TIMEOUT_SECONDS" in d
+    assert "LLM_DIGEST_TIMEOUT_SECONDS" in d
 
 
 def test_is_timeout_like_matches_apitimeout_if_openai_installed() -> None:

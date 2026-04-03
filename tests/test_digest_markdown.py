@@ -21,7 +21,7 @@ from vcenter_event_assistant.settings import Settings
 def _minimal_settings(**kwargs: object) -> Settings:
     return Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key=None,
+        llm_digest_api_key=None,
         **kwargs,
     )
 

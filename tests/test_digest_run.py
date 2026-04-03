@@ -47,7 +47,7 @@ async def test_run_digest_once_persists_without_llm() -> None:
 
     settings = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key=None,
+        llm_digest_api_key=None,
     )
 
     async with session_scope() as session:
@@ -110,7 +110,7 @@ async def test_run_digest_once_template_error_sets_status_error(tmp_path: Path) 
 
     settings = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key=None,
+        llm_digest_api_key=None,
         digest_template_path=str(bad),
     )
 

@@ -35,7 +35,8 @@ def _llm_failure_detail_for_user(exc: BaseException) -> str:
         text = str(exc).strip()
         head = type(exc).__name__ + (f": {text}" if text else "")
         return (
-            f"{head}（応答がタイムアウトしました。LLM_TIMEOUT_SECONDS を延長するか、"
+            f"{head}（応答がタイムアウトしました。LLM_DIGEST_TIMEOUT_SECONDS または "
+            "LLM_CHAT_TIMEOUT_SECONDS を延長するか、"
             "ローカル Ollama ではより軽いモデル・短いプロンプトを検討してください）"
         )
     text = str(exc).strip()

@@ -34,7 +34,7 @@ def _minimal_ctx() -> DigestContext:
 async def test_run_period_chat_skips_http_when_no_api_key() -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key=None,
+        llm_digest_api_key=None,
     )
     out, err, meta = await run_period_chat(
         s,
@@ -52,10 +52,10 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
 ) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-test",
-        llm_provider="openai_compatible",
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-4o-mini",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
     )
     msgs = [
         ChatMessage(role="user", content="最初の質問"),
@@ -64,8 +64,9 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
     ]
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
         assert _settings is s
+        _ = purpose
         _ = config
         return object()
 
@@ -107,14 +108,15 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
 ) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-test",
-        llm_provider="openai_compatible",
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-4o-mini",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
         _ = config
         return object()
 
@@ -150,13 +152,14 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
 async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="gemini-key",
-        llm_provider="gemini",
-        llm_model="gemini-2.0-flash",
+        llm_digest_api_key="gemini-key",
+        llm_digest_provider="gemini",
+        llm_digest_model="gemini-2.0-flash",
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
         _ = config
         return object()
 
@@ -196,10 +199,10 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
     """集約 JSON が推定トークン上限を超えるとき、切り詰めてから API に送る。"""
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-test",
-        llm_provider="openai_compatible",
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-4o-mini",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
         llm_chat_max_input_tokens=2500,
     )
     pad = "x" * 120_000
@@ -219,7 +222,8 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
         _ = config
         return object()
 
@@ -258,10 +262,10 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
 ) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-test",
-        llm_provider="openai_compatible",
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-4o-mini",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
     )
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
@@ -273,7 +277,8 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
         _ = config
         return object()
 
@@ -311,10 +316,10 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
 ) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-test",
-        llm_provider="openai_compatible",
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-4o-mini",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
     )
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
@@ -326,7 +331,8 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
         _ = config
         return object()
 

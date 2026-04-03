@@ -27,8 +27,8 @@
 | キー | 必須 | 値 |
 |------|------|-----|
 | `run_kind` | はい | `period_chat` または `digest` |
-| `llm_provider` | はい | `Settings.llm_provider` |
-| `llm_model` | はい | `Settings.llm_model` |
+| `llm_provider` | はい | 実効プロファイルのプロバイダ（`run_kind == digest` なら `LLM_DIGEST_*` のみ、`period_chat` なら `LLM_CHAT_*` をマージした値。`resolve_llm_profile`） |
+| `llm_model` | はい | 同上の実効モデル ID |
 | `vcenter_id` | いいえ | チャット API で指定された場合のみ（文字列） |
 | `digest_kind` | いいえ | `run_kind == digest` のときのみ（日次・週次・月次などの kind 文字列） |
 

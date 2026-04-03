@@ -15,6 +15,7 @@ from vcenter_event_assistant.services.chat_period_metrics import (
     compute_chat_bucket_seconds,
 )
 from vcenter_event_assistant.services.digest_context import build_digest_context
+from vcenter_event_assistant.services.llm_profile import effective_chat_api_key
 from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.settings import get_settings
 
@@ -27,10 +28,12 @@ async def post_chat(
     session: AsyncSession = Depends(get_session),
 ) -> ChatResponse:
     settings = get_settings()
-    if not (settings.llm_api_key or "").strip():
+    if not effective_chat_api_key(settings):
         raise HTTPException(
             status_code=503,
-            detail="LLM が未設定です。環境変数 LLM_API_KEY を設定してください。",
+            detail=(
+                "LLM が未設定です。環境変数 LLM_DIGEST_API_KEY または LLM_CHAT_API_KEY を設定してください。"
+            ),
         )
 
     ft = to_utc(body.from_time)

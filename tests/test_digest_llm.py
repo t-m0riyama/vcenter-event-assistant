@@ -40,7 +40,7 @@ def _minimal_ctx() -> DigestContext:
 async def test_augment_skips_http_when_no_api_key() -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key=None,
+        llm_digest_api_key=None,
     )
     md = "# t\n"
     out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown=md)
@@ -52,15 +52,16 @@ async def test_augment_skips_http_when_no_api_key() -> None:
 async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-test",
-        llm_provider="openai_compatible",
-        llm_base_url="https://api.openai.com/v1",
-        llm_model="gpt-4o-mini",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
     )
     fake = FakeListChatModel(responses=["## LLM 要約\n- テスト"])
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> FakeListChatModel:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> FakeListChatModel:
         assert _settings is s
+        _ = purpose
         _ = config
         return fake
 
@@ -79,14 +80,15 @@ async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
 async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="gemini-key",
-        llm_provider="gemini",
-        llm_model="gemini-2.0-flash",
+        llm_digest_api_key="gemini-key",
+        llm_digest_provider="gemini",
+        llm_digest_model="gemini-2.0-flash",
     )
     fake = FakeListChatModel(responses=["## LLM 要約\n- G"])
 
-    def _fake_build(_settings: Settings, *, config: object = None) -> FakeListChatModel:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> FakeListChatModel:
         assert _settings is s
+        _ = purpose
         _ = config
         return fake
 
@@ -104,8 +106,8 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
 async def test_augment_returns_template_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-x",
-        llm_provider="openai_compatible",
+        llm_digest_api_key="sk-x",
+        llm_digest_provider="openai_compatible",
     )
 
     async def _boom(*a: object, **k: object) -> str:
@@ -128,8 +130,8 @@ async def test_augment_uses_exception_type_when_str_empty(monkeypatch: pytest.Mo
     """str(e) が空のときは括弧内に例外型名を入れる（「LLM 要約は省略（）」を防ぐ）。"""
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-x",
-        llm_provider="openai_compatible",
+        llm_digest_api_key="sk-x",
+        llm_digest_provider="openai_compatible",
     )
 
     async def _boom(*a: object, **k: object) -> str:
@@ -150,8 +152,8 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
     """httpx.ReadTimeout は str が空になりやすい。タイムアウトである旨を日本語で示す。"""
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        llm_api_key="sk-x",
-        llm_provider="openai_compatible",
+        llm_digest_api_key="sk-x",
+        llm_digest_provider="openai_compatible",
     )
 
     async def _boom(*a: object, **k: object) -> str:
@@ -167,4 +169,4 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
     assert err is not None
     assert "ReadTimeout" in (err or "")
     assert "タイムアウト" in (err or "")
-    assert "LLM_TIMEOUT_SECONDS" in (err or "")
+    assert "LLM_DIGEST_TIMEOUT_SECONDS" in (err or "")

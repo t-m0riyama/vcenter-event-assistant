@@ -11,6 +11,7 @@ from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.llm_factory import build_chat_model
+from vcenter_event_assistant.services.llm_profile import resolve_llm_profile
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.settings import Settings
@@ -52,19 +53,20 @@ _SYSTEM_PROMPT = (
 
 def _log_digest_llm_failure(settings: Settings, exc: BaseException) -> None:
     """運用向け。API キーはログに出さない。"""
-    if settings.llm_provider == "openai_compatible":
-        base = (settings.llm_base_url or "").rstrip("/")
+    prof = resolve_llm_profile(settings, purpose="digest")
+    if prof.provider == "openai_compatible":
+        base = (prof.base_url or "").rstrip("/")
         _logger.warning(
             "digest LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
             base,
-            settings.llm_model,
+            prof.model,
             exc,
             exc_info=True,
         )
     else:
         _logger.warning(
             "digest LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
-            settings.llm_model,
+            prof.model,
             exc,
             exc_info=True,
         )
@@ -101,7 +103,7 @@ async def augment_digest_with_llm(
         (body_markdown, error_message)。API キーが空のときは (template_markdown, None)。
         LLM 失敗時は (template_markdown, 警告文)。
     """
-    key = (settings.llm_api_key or "").strip()
+    key = (settings.llm_digest_api_key or "").strip()
     if not key:
         return (template_markdown, None)
 
@@ -109,14 +111,15 @@ async def augment_digest_with_llm(
     user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{template_markdown}"
 
     try:
+        dprof = resolve_llm_profile(settings, purpose="digest")
         _logger.info(
             "digest LLM リクエスト json_chars=%s user_message_chars=%s timeout_seconds=%s model=%s",
             len(ctx_json),
             len(user_block),
-            settings.llm_timeout_seconds,
-            settings.llm_model,
+            dprof.timeout_seconds,
+            dprof.model,
         )
-        model = build_chat_model(settings, config=runnable_config)
+        model = build_chat_model(settings, purpose="digest", config=runnable_config)
         lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
         summary = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         merged = template_markdown.rstrip() + "\n\n" + summary.strip() + "\n"
