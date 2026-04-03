@@ -16,9 +16,13 @@ def build_chat_model(
     """
     LLM 設定に応じて ChatModel を返す。
 
-    ``config`` は将来 LangSmith 等の callbacks を ``ainvoke`` / ``astream`` に渡すための拡張点。
-    モデル構築時には未使用でもよい。
+    Args:
+        settings: アプリ設定（プロバイダ・モデル・API キー・タイムアウト等）。
+        config: 呼び出し側で ``stream_chat_to_text`` / ``ainvoke`` / ``astream`` に渡す
+            ``RunnableConfig``（callbacks 等）用。モデルコンストラクタにはバインドしない。
+            **本関数内では使用しない**（将来、モデル生成時にメタデータを付けたい場合のシグネチャ互換のため受け取る）。
     """
+    # callbacks は invoke 時に渡す。ここでは ChatModel 生成のみ。
     _ = config
     key = (settings.llm_api_key or "").strip()
     if settings.llm_provider == "openai_compatible":
