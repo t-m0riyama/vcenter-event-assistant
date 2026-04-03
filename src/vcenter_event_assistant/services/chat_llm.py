@@ -15,7 +15,8 @@ from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
 from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
-from vcenter_event_assistant.services.digest_llm import _llm_failure_detail_for_user, _trim_context_json
+from vcenter_event_assistant.services.digest_llm import _trim_context_json
+from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.services.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.settings import Settings

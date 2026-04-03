@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
 
-import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
+from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.settings import Settings
 
 _logger = logging.getLogger(__name__)
@@ -49,41 +48,6 @@ _SYSTEM_PROMPT = (
     "数値・事実は入力（JSON および本文に書かれた内容）を正とし、推測で情報を追加しない。"
     "不明なことは書かない。"
 )
-
-
-def _is_timeout_like(exc: BaseException) -> bool:
-    """OpenAI SDK / httpx / asyncio いずれのタイムアウトも拾う。"""
-    if isinstance(exc, httpx.TimeoutException):
-        return True
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
-        return True
-    if "timeout" in type(exc).__name__.lower():
-        return True
-    try:
-        from openai import APITimeoutError
-    except ImportError:
-        return False
-    return isinstance(exc, APITimeoutError)
-
-
-def _llm_failure_detail_for_user(exc: BaseException) -> str:
-    """
-    ユーザー向け `error_message` 用。
-
-    - タイムアウトは `str` が空になりやすいため、日本語で「応答がタイムアウト」と明示する。
-    - その他で `str(exc)` が空や空白のみのときは例外型名を返す（「省略（）」を防ぐ）。
-    """
-    if _is_timeout_like(exc):
-        text = str(exc).strip()
-        head = type(exc).__name__ + (f": {text}" if text else "")
-        return (
-            f"{head}（応答がタイムアウトしました。LLM_TIMEOUT_SECONDS を延長するか、"
-            "ローカル Ollama ではより軽いモデル・短いプロンプトを検討してください）"
-        )
-    text = str(exc).strip()
-    if text:
-        return text
-    return type(exc).__name__
 
 
 def _log_digest_llm_failure(settings: Settings, exc: BaseException) -> None:
