@@ -134,6 +134,11 @@ class HighCpuHostRow(BaseModel):
     """Dashboard summary row: ``sampled_at`` is normalized to UTC so JSON uses ``Z`` (JS parses as UTC)."""
 
     vcenter_id: str
+    vcenter_label: str = Field(
+        description=(
+            "表示用（登録時の表示名 VCenter.name。空のときは vcenter_id 短縮。接続 host は使わない）"
+        )
+    )
     entity_name: str
     entity_moid: str
     value: float
@@ -153,6 +158,11 @@ class HighMemHostRow(BaseModel):
     """Dashboard summary row for peak host memory usage (same shape as CPU row; separate schema type)."""
 
     vcenter_id: str
+    vcenter_label: str = Field(
+        description=(
+            "表示用（登録時の表示名 VCenter.name。空のときは vcenter_id 短縮。接続 host は使わない）"
+        )
+    )
     entity_name: str
     entity_moid: str
     value: float

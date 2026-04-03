@@ -92,6 +92,22 @@ def test_anonymize_plain_text_uses_shared_anonymizer() -> None:
     assert deanonymize_text(s, a.reverse_map) == "HOST-A and HOST-A"
 
 
+def test_anonymize_json_like_replaces_vcenter_label() -> None:
+    raw = {
+        "high_cpu_hosts": [
+            {
+                "vcenter_label": "MyVC-Display",
+                "entity_name": "h",
+                "vcenter_id": "00000000-0000-0000-0000-000000000001",
+            }
+        ]
+    }
+    out, rev = anonymize_json_like(raw)
+    assert "MyVC-Display" not in str(out)
+    lbl = out["high_cpu_hosts"][0]["vcenter_label"]
+    assert deanonymize_text(lbl, rev) == "MyVC-Display"
+
+
 def test_anonymize_for_llm_shared_mapping_between_json_and_markdown() -> None:
     ctx = {"rows": [{"entity_name": "secret-esxi"}]}
     md = "ホスト secret-esxi のメモ"

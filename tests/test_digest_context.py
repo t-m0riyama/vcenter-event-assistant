@@ -77,6 +77,7 @@ async def test_build_digest_context_counts_and_top_rows() -> None:
     assert len(ctx.high_cpu_hosts) == 1
     assert ctx.high_cpu_hosts[0].entity_name == "esxi-1"
     assert abs(ctx.high_cpu_hosts[0].value - 88.5) < 0.01
+    assert ctx.high_cpu_hosts[0].vcenter_label == "ctx-vc"
 
 
 @pytest.mark.asyncio
@@ -204,6 +205,7 @@ async def test_build_digest_context_filters_by_vcenter_id() -> None:
     assert len(ctx.high_cpu_hosts) == 1
     assert ctx.high_cpu_hosts[0].entity_name == "esxi-a"
     assert abs(ctx.high_cpu_hosts[0].value - 50.0) < 0.01
+    assert ctx.high_cpu_hosts[0].vcenter_label == "vc-a"
 
 
 @pytest.mark.asyncio
