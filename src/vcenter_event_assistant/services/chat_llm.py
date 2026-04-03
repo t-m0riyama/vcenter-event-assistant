@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -215,6 +216,7 @@ async def run_period_chat(
     period_metrics: PeriodMetricsPayload | None = None,
     event_time_buckets: EventTimeBucketsPayload | None = None,
     runnable_config: RunnableConfig | None = None,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
@@ -223,6 +225,9 @@ async def run_period_chat(
     チャットでは ``digest_context`` からホスト別 CPU/メモリピーク（``high_cpu_hosts`` / ``high_mem_hosts``）を除く。
 
     ``runnable_config`` は将来 LangSmith 等の callbacks を渡すための拡張点（未使用でもよい）。
+
+    ``extra_vcenter_strings`` に DB 登録済み vCenter の表示名・接続 host 等を渡すと、
+    匿名化有効時に会話本文からもトークン化する（API ルートでは全件読込を渡す）。
 
     Returns:
         (assistant_text, error_message, llm_context_meta)。
@@ -248,6 +253,7 @@ async def run_period_chat(
         pl, contents, reverse_map = anonymize_chat_for_llm(
             payload,
             [m.content for m in trimmed_msgs],
+            extra_vcenter_strings=extra_vcenter_strings,
         )
         payload = pl
         trimmed_msgs = [

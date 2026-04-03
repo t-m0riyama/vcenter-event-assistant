@@ -435,6 +435,58 @@ async def test_run_period_chat_anonymizes_entity_names_sent_to_llm(
 
 
 @pytest.mark.asyncio
+async def test_run_period_chat_anonymizes_extra_vcenter_strings_in_user_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """集約 JSON に無い登録 vCenter 名も ``extra_vcenter_strings`` で会話から除去する。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_anonymization_enabled=True,
+    )
+    display = "REG-VCENTER-DISPLAY-ONLY"
+    short_label = "vc-short-label"
+    captured: dict[str, object] = {}
+
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
+        _ = config
+        return object()
+
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "ok"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
+    )
+
+    await run_period_chat(
+        s,
+        context=_minimal_ctx(),
+        messages=[
+            ChatMessage(
+                role="user",
+                content=f"{display} と {short_label} の状態",
+            ),
+        ],
+        extra_vcenter_strings=[display, "vc.full.example.com", short_label],
+    )
+    lc = captured["lc_messages"]
+    joined = str(lc)
+    assert display not in joined
+    assert short_label not in joined
+
+
+@pytest.mark.asyncio
 async def test_run_period_chat_respects_llm_anonymization_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

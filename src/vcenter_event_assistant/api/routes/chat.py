@@ -16,6 +16,7 @@ from vcenter_event_assistant.services.chat_period_metrics import (
 )
 from vcenter_event_assistant.services.digest_context import build_digest_context
 from vcenter_event_assistant.services.llm_profile import effective_chat_api_key
+from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
 from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.settings import get_settings
 
@@ -88,6 +89,7 @@ async def post_chat(
         run_kind="period_chat",
         vcenter_id=str(body.vcenter_id) if body.vcenter_id is not None else None,
     )
+    vc_anon = await load_all_vcenter_anonymization_strings(session)
     text, err, llm_meta = await run_period_chat(
         settings,
         context=ctx,
@@ -95,5 +97,6 @@ async def post_chat(
         period_metrics=period_metrics,
         event_time_buckets=event_time_buckets,
         runnable_config=llm_cfg,
+        extra_vcenter_strings=vc_anon,
     )
     return ChatResponse(assistant_content=text, error=err, llm_context=llm_meta)

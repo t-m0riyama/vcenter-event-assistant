@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -94,11 +95,15 @@ async def augment_digest_with_llm(
     context: DigestContext,
     template_markdown: str,
     runnable_config: RunnableConfig | None = None,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[str, str | None]:
     """
     テンプレートに LLM 要約を追記した本文を返す。
 
     ``runnable_config`` は将来 LangSmith 等の callbacks を渡すための拡張点（未使用でもよい）。
+
+    ``extra_vcenter_strings`` に DB 登録済み vCenter の表示名・接続 host 等を渡すと、
+    匿名化有効時にテンプレート本文からもトークン化する（``run_digest_once`` は全件読込を渡す）。
 
     Returns:
         (body_markdown, error_message)。API キーが空のときは (template_markdown, None)。
@@ -112,7 +117,11 @@ async def augment_digest_with_llm(
     md_for_llm = template_markdown
     reverse_map: dict[str, str] = {}
     if settings.llm_anonymization_enabled:
-        ctx_dict, md_for_llm, reverse_map = anonymize_for_llm(ctx_dict, template_markdown)
+        ctx_dict, md_for_llm, reverse_map = anonymize_for_llm(
+            ctx_dict,
+            template_markdown,
+            extra_vcenter_strings=extra_vcenter_strings,
+        )
 
     ctx_json = _trim_context_json(ctx_dict)
     user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{md_for_llm}"

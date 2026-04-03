@@ -117,6 +117,34 @@ def test_anonymize_for_llm_shared_mapping_between_json_and_markdown() -> None:
     assert deanonymize_text(md2, rev) == md
 
 
+def test_anonymize_for_llm_extra_vcenter_strings_tokenize_markdown() -> None:
+    """JSON に無い登録 vCenter 文字列も Markdown から除去できる。"""
+    ctx: dict = {"digest_context": {"total_events": 0}}
+    md = "接続先 vcenter01.example.com と短縮 vc01 のメモ"
+    extra = ["vcenter01.example.com", "vc01"]
+    ctx2, md2, rev = anonymize_for_llm(ctx, md, extra_vcenter_strings=extra)
+    assert "vcenter01.example.com" not in md2
+    assert "vc01" not in md2
+    assert deanonymize_text(md2, rev) == md
+
+
+def test_anonymize_chat_for_llm_extra_vcenter_strings_in_messages() -> None:
+    from vcenter_event_assistant.services.llm_anonymization import anonymize_chat_for_llm
+
+    payload = {"digest_context": {"total_events": 0}}
+    contents = ["MyDisplay と vcenter02.lab.local を確認"]
+    extra = ["MyDisplay", "vcenter02.lab.local", "vcenter02"]
+    _pl, out_contents, rev = anonymize_chat_for_llm(
+        payload,
+        contents,
+        extra_vcenter_strings=extra,
+    )
+    assert "MyDisplay" not in out_contents[0]
+    assert "vcenter02.lab.local" not in out_contents[0]
+    assert "vcenter02" not in out_contents[0]
+    assert deanonymize_text(out_contents[0], rev) == contents[0]
+
+
 def test_settings_llm_anonymization_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     """``LLM_ANONYMIZATION_ENABLED`` でオンオフできること。"""
     from vcenter_event_assistant.settings import Settings

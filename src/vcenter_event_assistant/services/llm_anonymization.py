@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import re
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 
 # entity_name / user 系で先に登録した原文を message 内で置換する際に使う
@@ -75,6 +76,18 @@ def deanonymize_text(text: str, reverse_map: dict[str, str]) -> str:
     for tok in toks:
         out = out.replace(tok, reverse_map[tok])
     return out
+
+
+def _append_extra_vcenter_pairs(
+    pairs: list[tuple[str, str]],
+    extra_vcenter_strings: Sequence[str] | None,
+) -> None:
+    """登録 vCenter 由来の文字列を収集リストに追加（``vcenter`` カテゴリ）。"""
+    if not extra_vcenter_strings:
+        return
+    for s in extra_vcenter_strings:
+        if s:
+            pairs.append(("vcenter", s))
 
 
 def _collect_entity_user_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
@@ -158,12 +171,18 @@ def anonymize_json_like(obj: Any) -> tuple[Any, dict[str, str]]:
 def anonymize_for_llm(
     context_dict: dict[str, Any],
     template_markdown: str,
+    *,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], str, dict[str, str]]:
     """
     ダイジェスト用: 集約 JSON とテンプレ Markdown を同一 ``LlmAnonymizer`` で匿名化する。
+
+    ``extra_vcenter_strings`` に DB 登録済み vCenter の表示名・接続 host 等を渡すと、
+    JSON に無い文字列も Markdown からトークン化する。
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(context_dict, pairs)
+    _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
@@ -175,12 +194,17 @@ def anonymize_for_llm(
 def anonymize_chat_for_llm(
     payload: dict[str, Any],
     message_contents: list[str],
+    *,
+    extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], list[str], dict[str, str]]:
     """
     チャット用: マージ済みペイロードと会話本文を同一 ``LlmAnonymizer`` で匿名化する。
+
+    ``extra_vcenter_strings`` により登録済み vCenter 名を会話本文からもトークン化する。
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(payload, pairs)
+    _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
