@@ -11,7 +11,11 @@ from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
 from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
-from vcenter_event_assistant.services.digest_context import DigestContext, DigestEventTypeBucket
+from vcenter_event_assistant.services.digest_context import (
+    DigestContext,
+    DigestEventTypeBucket,
+    DigestNotableEventGroup,
+)
 from vcenter_event_assistant.settings import Settings
 
 
@@ -362,3 +366,134 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
     user_block = str(lc[1].content)
     assert "event_time_buckets" in user_block
     assert "digest_context" in user_block
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_anonymizes_entity_names_sent_to_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """匿名化オン時、コンテキスト JSON に含まれる entity 名が LLM 入力ブロックに出ないこと。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_anonymization_enabled=True,
+    )
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    secret = "SECRET-ESXI-01.example.com"
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t0,
+        vcenter_count=1,
+        total_events=1,
+        notable_events_count=1,
+        top_notable_event_groups=[
+            DigestNotableEventGroup(
+                event_type="vim.event.Event",
+                occurrence_count=1,
+                notable_score=50,
+                occurred_at_first=t0,
+                occurred_at_last=t0,
+                entity_name=secret,
+                message="ping",
+            )
+        ],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
+        _ = config
+        return object()
+
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "ok"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
+    )
+
+    await run_period_chat(
+        s,
+        context=ctx,
+        messages=[ChatMessage(role="user", content="状況は")],
+    )
+    lc = captured["lc_messages"]
+    user_block = str(lc[1].content)
+    assert secret not in user_block
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_respects_llm_anonymization_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """匿名化オフ時は実名が LLM 入力に残る（従来挙動）。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_anonymization_enabled=False,
+    )
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    secret = "PLAIN-HOST-01"
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t0,
+        vcenter_count=1,
+        total_events=1,
+        notable_events_count=1,
+        top_notable_event_groups=[
+            DigestNotableEventGroup(
+                event_type="vim.event.Event",
+                occurrence_count=1,
+                notable_score=50,
+                occurred_at_first=t0,
+                occurred_at_last=t0,
+                entity_name=secret,
+                message="ping",
+            )
+        ],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
+        _ = config
+        return object()
+
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "ok"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
+    )
+
+    await run_period_chat(
+        s,
+        context=ctx,
+        messages=[ChatMessage(role="user", content="状況は")],
+    )
+    lc = captured["lc_messages"]
+    assert secret in str(lc[1].content)

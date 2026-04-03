@@ -12,6 +12,8 @@
 
 **LangSmith:** [`llm_tracing.build_llm_runnable_config`](../src/vcenter_event_assistant/services/llm_tracing.py) が `RunnableConfig`（`tags` / `metadata`、任意で `LangChainTracer`）を組み立て、チャット API とバッチ `run_digest_once` から `run_period_chat` / `augment_digest_with_llm` に渡す。環境変数は `LANGSMITH_TRACING_ENABLED`（既定 `false`）・`LANGSMITH_API_KEY` 等（`.env.example` 参照）。トレースをオンにするとホスト名・イベント本文を含むプロンプトが LangSmith に送られる可能性があるため、本番では運用判断すること。設計は [`docs/superpowers/specs/2026-04-04-langsmith-tracing-design.md`](superpowers/specs/2026-04-04-langsmith-tracing-design.md)。
 
+**LLM 入力の匿名化:** 環境変数 `LLM_ANONYMIZATION_ENABLED`（[`Settings`](../src/vcenter_event_assistant/settings.py) の `llm_anonymization_enabled`、既定 `true`）がオンのとき、[`llm_anonymization`](../src/vcenter_event_assistant/services/llm_anonymization.py) がチャット・ダイジェストの LLM 呼び出し直前にホスト名・IP・エンティティ名などをトークン化する。チャットの応答本文とダイジェストの LLM 要約はサーバ側で逆変換してから返す／テンプレに連結するため、API 応答と保存 Markdown に実名が載る挙動は従来どおりである。外部 LLM プロバイダへ送るペイロードだけがマスクされる。検証で実名をそのまま送りたい場合は `false` にする。
+
 ## バッチダイジェスト API（実験的）
 
 - `GET /api/digests` … 保存済みダイジェスト一覧（`limit` / `offset`）

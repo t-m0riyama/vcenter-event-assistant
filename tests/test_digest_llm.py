@@ -8,7 +8,7 @@ import httpx
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from vcenter_event_assistant.services.digest_context import DigestContext
+from vcenter_event_assistant.services.digest_context import DigestContext, DigestNotableEventGroup
 from vcenter_event_assistant.services.digest_llm import _SYSTEM_PROMPT, augment_digest_with_llm
 from vcenter_event_assistant.settings import Settings
 
@@ -170,3 +170,61 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
     assert "ReadTimeout" in (err or "")
     assert "タイムアウト" in (err or "")
     assert "LLM_DIGEST_TIMEOUT_SECONDS" in (err or "")
+
+
+@pytest.mark.asyncio
+async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """匿名化オン時、LLM に渡す HumanMessage に実ホスト名が含まれず、結合後の本文はテンプレ原文を保持する。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_anonymization_enabled=True,
+    )
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    host = "DIGEST-HOST-SECRET-01"
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t0,
+        vcenter_count=1,
+        total_events=1,
+        notable_events_count=0,
+        top_notable_event_groups=[
+            DigestNotableEventGroup(
+                event_type="x",
+                occurrence_count=1,
+                notable_score=10,
+                occurred_at_first=t0,
+                occurred_at_last=t0,
+                entity_name=host,
+                message="m",
+            )
+        ],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    captured: dict[str, object] = {}
+
+    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> str:
+        captured["human"] = lc_messages[1].content  # type: ignore[index]
+        return "## LLM 要約\n- 補足"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest_llm.build_chat_model",
+        lambda _s, *, purpose=None, config=None: object(),
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest_llm.stream_chat_to_text",
+        _spy_stream,
+    )
+
+    md = f"# タイトル\nホスト {host} のメモ\n"
+    out, err = await augment_digest_with_llm(s, context=ctx, template_markdown=md)
+    assert err is None
+    assert host in out
+    assert host not in str(captured.get("human"))

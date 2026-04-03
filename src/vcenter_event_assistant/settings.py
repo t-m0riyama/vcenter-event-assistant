@@ -239,6 +239,13 @@ class Settings(BaseSettings):
             "Gemini 公式のトークン数と一致しない場合がある（`LLM_CHAT_MAX_INPUT_TOKENS`）。"
         ),
     )
+    llm_anonymization_enabled: bool = Field(
+        default=True,
+        description=(
+            "LLM 入力（チャット・ダイジェスト）の識別子をトークン化してから外部 API に送る（`LLM_ANONYMIZATION_ENABLED`）。"
+            "false で無効化する（開発・検証用）。"
+        ),
+    )
 
     langsmith_tracing_enabled: bool = Field(
         default=False,

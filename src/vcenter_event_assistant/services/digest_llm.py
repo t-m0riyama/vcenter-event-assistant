@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.services.digest_context import DigestContext
+from vcenter_event_assistant.services.llm_anonymization import anonymize_for_llm, deanonymize_text
 from vcenter_event_assistant.services.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm_profile import resolve_llm_profile
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
@@ -107,8 +108,14 @@ async def augment_digest_with_llm(
     if not key:
         return (template_markdown, None)
 
-    ctx_json = _trim_context_json(context.model_dump(mode="json"))
-    user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{template_markdown}"
+    ctx_dict: dict[str, Any] = context.model_dump(mode="json")
+    md_for_llm = template_markdown
+    reverse_map: dict[str, str] = {}
+    if settings.llm_anonymization_enabled:
+        ctx_dict, md_for_llm, reverse_map = anonymize_for_llm(ctx_dict, template_markdown)
+
+    ctx_json = _trim_context_json(ctx_dict)
+    user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{md_for_llm}"
 
     try:
         dprof = resolve_llm_profile(settings, purpose="digest")
@@ -122,7 +129,8 @@ async def augment_digest_with_llm(
         model = build_chat_model(settings, purpose="digest", config=runnable_config)
         lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
         summary = await stream_chat_to_text(model, lc_messages, config=runnable_config)
-        merged = template_markdown.rstrip() + "\n\n" + summary.strip() + "\n"
+        summary = deanonymize_text(summary.strip(), reverse_map)
+        merged = template_markdown.rstrip() + "\n\n" + summary + "\n"
         return (merged, None)
     except Exception as e:
         _log_digest_llm_failure(settings, e)
