@@ -8,6 +8,8 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
+from vcenter_event_assistant.services.vcenter_labels import first_hostname_label_if_fqdn
+
 # entity_name / user 系で先に登録した原文を message 内で置換する際に使う
 _COLLECT_KEYS: tuple[tuple[str, str], ...] = (
     ("entity_name", "entity"),
@@ -90,6 +92,25 @@ def _append_extra_vcenter_pairs(
             pairs.append(("vcenter", s))
 
 
+def _append_entity_first_labels_for_fqdn(pairs: list[tuple[str, str]]) -> None:
+    """
+    ``entity_name`` が FQDN のとき、第1ラベル（短縮ホスト名）を ``entity`` として追加登録する。
+
+    ユーザがドメインなしの短縮名だけ入力した場合も ``anonymize_plain_text`` で置換できるようにする。
+    """
+    seen = set(pairs)
+    for cat, val in list(pairs):
+        if cat != "entity":
+            continue
+        short = first_hostname_label_if_fqdn(val)
+        if not short or short == val:
+            continue
+        key = ("entity", short)
+        if key not in seen:
+            pairs.append(key)
+            seen.add(key)
+
+
 def _collect_entity_user_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
     """ツリー内の entity / user フィールドを先に列挙する。"""
     if isinstance(obj, dict):
@@ -161,6 +182,7 @@ def anonymize_json_like(obj: Any) -> tuple[Any, dict[str, str]]:
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(obj, pairs)
+    _append_entity_first_labels_for_fqdn(pairs)
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
@@ -182,6 +204,7 @@ def anonymize_for_llm(
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(context_dict, pairs)
+    _append_entity_first_labels_for_fqdn(pairs)
     _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:
@@ -204,6 +227,7 @@ def anonymize_chat_for_llm(
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(payload, pairs)
+    _append_entity_first_labels_for_fqdn(pairs)
     _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:

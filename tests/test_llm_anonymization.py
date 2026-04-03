@@ -145,6 +145,30 @@ def test_anonymize_chat_for_llm_extra_vcenter_strings_in_messages() -> None:
     assert deanonymize_text(out_contents[0], rev) == contents[0]
 
 
+def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqdn() -> None:
+    """period_metrics の entity_name が FQDN のとき、第1ラベル（短縮名）も会話からトークン化する。"""
+    from vcenter_event_assistant.services.llm_anonymization import anonymize_chat_for_llm
+
+    payload = {
+        "digest_context": {"total_events": 0},
+        "period_metrics": {
+            "cpu": [
+                {
+                    "entity_name": "mini5.moriyama.internal",
+                    "entity_moid": "host-123",
+                    "metric_key": "host.cpu.usage_pct",
+                    "series": [],
+                }
+            ]
+        },
+    }
+    contents = ["mini5のCPU使用率が最も高い時間帯を教えて。"]
+    _pl, out_contents, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
+    assert "mini5" not in out_contents[0]
+    assert "mini5.moriyama.internal" not in str(_pl)
+    assert deanonymize_text(out_contents[0], rev) == contents[0]
+
+
 def test_settings_llm_anonymization_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     """``LLM_ANONYMIZATION_ENABLED`` でオンオフできること。"""
     from vcenter_event_assistant.settings import Settings

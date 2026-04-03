@@ -32,6 +32,15 @@ def _first_label_if_fqdn(host: str) -> str | None:
     return first
 
 
+def first_hostname_label_if_fqdn(host: str) -> str | None:
+    """
+    ``entity_name`` 等のホスト文字列が FQDN 形式のとき、先頭ラベル（短縮名）のみを返す。
+
+    LLM 匿名化で FQDN と短縮名を同一エンティティとして別表記登録するために使う。
+    """
+    return _first_label_if_fqdn(host)
+
+
 def vcenter_strings_for_anonymization(name: str, host: str) -> list[str]:
     """
     LLM 匿名化で ``vcenter`` カテゴリに登録する文字列（安定順・重複なし）。
