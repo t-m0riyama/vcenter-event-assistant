@@ -6,6 +6,10 @@
 
 環境変数は **ダイジェストと同じ `LLM_*`**（`.env.example` の LLM 節を参照）。`LLM_API_KEY` が空のときは **503**。
 
+## LLM 実装（バックエンド）
+
+ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は **LangChain** の `ChatOpenAI`（`LLM_PROVIDER=openai_compatible`）または `ChatGoogleGenerativeAI`（`gemini`）を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py) で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`。将来の観測（例: LangSmith）用に、`runnable_config` で `RunnableConfig`（callbacks 等）を渡せる拡張点がある。
+
 ## バッチダイジェスト API（実験的）
 
 - `GET /api/digests` … 保存済みダイジェスト一覧（`limit` / `offset`）

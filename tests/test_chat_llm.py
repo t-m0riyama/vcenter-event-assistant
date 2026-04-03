@@ -1,14 +1,15 @@
-"""chat_llm.run_period_chat のモック HTTP テスト。"""
+"""chat_llm.run_period_chat のテスト（LangChain モック）。"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from vcenter_event_assistant.api.schemas import ChatMessage
-from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
 from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext, DigestEventTypeBucket
 from vcenter_event_assistant.settings import Settings
@@ -63,44 +64,22 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
     ]
     captured: dict[str, object] = {}
 
-    class _StreamOk:
-        status_code = 200
+    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+        assert _settings is s
+        _ = config
+        return object()
 
-        async def aread(self) -> bytes:
-            return b""
-
-        async def aiter_lines(self) -> object:
-            yield 'data: {"choices":[{"delta":{"content":"追質問への回答"}}]}'
-            yield "data: [DONE]"
-
-    class _StreamCm:
-        def __init__(self, resp: _StreamOk) -> None:
-            self._resp = resp
-
-        async def __aenter__(self) -> _StreamOk:
-            return self._resp
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            assert method == "POST"
-            assert "chat/completions" in url
-            body = kwargs.get("json") or {}
-            captured["messages"] = body.get("messages") or []
-            assert body.get("stream") is True
-            return _StreamCm(_StreamOk())
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "追質問への回答"
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
     )
 
     out, err, meta = await run_period_chat(s, context=_minimal_ctx(), messages=msgs)
@@ -109,14 +88,17 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
     assert meta is not None
     assert meta.json_truncated is False
     assert meta.message_turns == 3
-    api_messages = captured["messages"]
-    assert isinstance(api_messages, list)
-    assert len(api_messages) >= 4
-    assert api_messages[0] == {"role": "system", "content": _CHAT_SYSTEM_PROMPT}
-    assert api_messages[1]["role"] == "user"
-    assert "```json" in str(api_messages[1]["content"])
-    assert api_messages[-1]["role"] == "user"
-    assert api_messages[-1]["content"] == "追質問"
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    assert len(lc) >= 4
+    assert isinstance(lc[0], SystemMessage)
+    assert lc[0].content == _CHAT_SYSTEM_PROMPT
+    assert isinstance(lc[1], HumanMessage)
+    assert "```json" in str(lc[1].content)
+    assert isinstance(lc[-1], HumanMessage)
+    assert lc[-1].content == "追質問"
+    assert isinstance(lc[-2], AIMessage)
+    assert lc[-2].content == "仮の答え"
 
 
 @pytest.mark.asyncio
@@ -127,37 +109,23 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
         llm_provider="gemini",
         llm_model="gemini-2.0-flash",
     )
+    captured: dict[str, object] = {}
 
-    class _FakeResponse:
-        status_code = 200
+    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+        _ = config
+        return object()
 
-        def json(self) -> dict:
-            return {
-                "candidates": [
-                    {"content": {"parts": [{"text": "Gemini の回答"}]}},
-                ],
-            }
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        async def post(self, url: str, **kwargs: object) -> _FakeResponse:
-            assert "generateContent" in url
-            body = kwargs.get("json") or {}
-            assert "systemInstruction" in body
-            assert "contents" in body
-            contents = body["contents"]
-            assert contents[0]["role"] == "user"
-            assert "```json" in contents[0]["parts"][0]["text"]
-            return _FakeResponse()
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "Gemini の回答"
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
     )
 
     out, err, meta = await run_period_chat(
@@ -169,6 +137,11 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
     assert out == "Gemini の回答"
     assert meta is not None
     assert meta.json_truncated is False
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    assert isinstance(lc[0], SystemMessage)
+    assert isinstance(lc[1], HumanMessage)
+    assert "```json" in str(lc[1].content)
 
 
 @pytest.mark.asyncio
@@ -201,41 +174,21 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
     )
     captured: dict[str, object] = {}
 
-    class _StreamOk:
-        status_code = 200
+    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+        _ = config
+        return object()
 
-        async def aread(self) -> bytes:
-            return b""
-
-        async def aiter_lines(self) -> object:
-            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
-            yield "data: [DONE]"
-
-    class _StreamCm:
-        def __init__(self, resp: _StreamOk) -> None:
-            self._resp = resp
-
-        async def __aenter__(self) -> _StreamOk:
-            return self._resp
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            body = kwargs.get("json") or {}
-            captured["messages"] = body.get("messages") or []
-            return _StreamCm(_StreamOk())
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "ok"
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
     )
 
     out, err, meta = await run_period_chat(
@@ -247,9 +200,9 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
     assert out == "ok"
     assert meta is not None
     assert meta.json_truncated is True
-    api_messages = captured["messages"]
-    assert isinstance(api_messages, list)
-    user_block = str(api_messages[1]["content"])
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    user_block = str(lc[1].content)
     assert "…（JSON 長のため切り詰め）" in user_block
     assert len(user_block) < len(pad)
 
@@ -275,41 +228,21 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
     )
     captured: dict[str, object] = {}
 
-    class _StreamOk:
-        status_code = 200
+    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+        _ = config
+        return object()
 
-        async def aread(self) -> bytes:
-            return b""
-
-        async def aiter_lines(self) -> object:
-            yield 'data: {"choices":[{"delta":{"content":"y"}}]}'
-            yield "data: [DONE]"
-
-    class _StreamCm:
-        def __init__(self, resp: _StreamOk) -> None:
-            self._resp = resp
-
-        async def __aenter__(self) -> _StreamOk:
-            return self._resp
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            body = kwargs.get("json") or {}
-            captured["messages"] = body.get("messages") or []
-            return _StreamCm(_StreamOk())
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "y"
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
     )
 
     out, err, meta = await run_period_chat(
@@ -321,7 +254,8 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
     assert err is None
     assert out == "y"
     assert meta is not None
-    user_block = str(captured["messages"][1]["content"])
+    lc = captured["lc_messages"]
+    user_block = str(lc[1].content)
     assert "period_metrics" in user_block
     assert "digest_context" in user_block
 
@@ -347,41 +281,21 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
     )
     captured: dict[str, object] = {}
 
-    class _StreamOk:
-        status_code = 200
+    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+        _ = config
+        return object()
 
-        async def aread(self) -> bytes:
-            return b""
-
-        async def aiter_lines(self) -> object:
-            yield 'data: {"choices":[{"delta":{"content":"z"}}]}'
-            yield "data: [DONE]"
-
-    class _StreamCm:
-        def __init__(self, resp: _StreamOk) -> None:
-            self._resp = resp
-
-        async def __aenter__(self) -> _StreamOk:
-            return self._resp
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            body = kwargs.get("json") or {}
-            captured["messages"] = body.get("messages") or []
-            return _StreamCm(_StreamOk())
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+        captured["lc_messages"] = messages
+        return "z"
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
     )
 
     out, err, meta = await run_period_chat(
@@ -393,6 +307,7 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
     assert err is None
     assert out == "z"
     assert meta is not None
-    user_block = str(captured["messages"][1]["content"])
+    lc = captured["lc_messages"]
+    user_block = str(lc[1].content)
     assert "event_time_buckets" in user_block
     assert "digest_context" in user_block
