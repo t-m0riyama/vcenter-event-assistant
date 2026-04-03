@@ -1,6 +1,7 @@
 """Application settings (environment / .env)."""
 
 import logging
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -10,8 +11,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 LlmProvider = Literal["openai_compatible", "gemini"]
 
 
+def _settings_env_file() -> str | None:
+    """pytest 時（`VEA_PYTEST=1`）は `.env` を読まず、開発者の LLM キーがテストに混入しないようにする。"""
+    return None if os.environ.get("VEA_PYTEST") == "1" else ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_settings_env_file(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/vcenter_event_assistant",
