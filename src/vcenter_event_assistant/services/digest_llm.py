@@ -1,14 +1,19 @@
-"""ダイジェスト用 LLM 呼び出し（OpenAI 互換または Google Gemini REST）。"""
+"""ダイジェスト用 LLM 呼び出し（LangChain: OpenAI 互換または Google Gemini）。"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
 
 import httpx
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.services.digest_context import DigestContext
+from vcenter_event_assistant.services.llm_factory import build_chat_model
+from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
 _logger = logging.getLogger(__name__)
@@ -46,15 +51,29 @@ _SYSTEM_PROMPT = (
 )
 
 
+def _is_timeout_like(exc: BaseException) -> bool:
+    """OpenAI SDK / httpx / asyncio いずれのタイムアウトも拾う。"""
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    if "timeout" in type(exc).__name__.lower():
+        return True
+    try:
+        from openai import APITimeoutError
+    except ImportError:
+        return False
+    return isinstance(exc, APITimeoutError)
+
+
 def _llm_failure_detail_for_user(exc: BaseException) -> str:
     """
     ユーザー向け `error_message` 用。
 
-    - httpx のタイムアウトは `ReadTimeout('')` のように `str` が空になりやすいため、
-      日本語で「応答がタイムアウト」と明示する。
+    - タイムアウトは `str` が空になりやすいため、日本語で「応答がタイムアウト」と明示する。
     - その他で `str(exc)` が空や空白のみのときは例外型名を返す（「省略（）」を防ぐ）。
     """
-    if isinstance(exc, httpx.TimeoutException):
+    if _is_timeout_like(exc):
         text = str(exc).strip()
         head = type(exc).__name__ + (f": {text}" if text else "")
         return (
@@ -107,9 +126,12 @@ async def augment_digest_with_llm(
     *,
     context: DigestContext,
     template_markdown: str,
+    runnable_config: RunnableConfig | None = None,
 ) -> tuple[str, str | None]:
     """
     テンプレートに LLM 要約を追記した本文を返す。
+
+    ``runnable_config`` は将来 LangSmith 等の callbacks を渡すための拡張点（未使用でもよい）。
 
     Returns:
         (body_markdown, error_message)。API キーが空のときは (template_markdown, None)。
@@ -130,104 +152,12 @@ async def augment_digest_with_llm(
             settings.llm_timeout_seconds,
             settings.llm_model,
         )
-        timeout = httpx.Timeout(settings.llm_timeout_seconds)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if settings.llm_provider == "openai_compatible":
-                summary = await _openai_chat_completion(client, settings, key, user_block)
-            else:
-                summary = await _gemini_generate_content(client, settings, key, user_block)
+        model = build_chat_model(settings, config=runnable_config)
+        lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
+        summary = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         merged = template_markdown.rstrip() + "\n\n" + summary.strip() + "\n"
         return (merged, None)
     except Exception as e:
         _log_digest_llm_failure(settings, e)
         detail = _llm_failure_detail_for_user(e)
         return (template_markdown, f"LLM 要約は省略（{detail}）")
-
-
-async def _collect_openai_chat_stream_text(response: httpx.Response) -> str:
-    """
-    OpenAI 互換の ``stream: true`` 応答（SSE ``data: {...}``）から assistant 本文を連結する。
-
-    Ollama は非ストリーミングの長い生成をサーバー側で打ち切り（例: 約 2 分で 500）ことがあるため、
-    ストリーミングで受けてトークン間の待ちを避ける。
-    """
-    parts: list[str] = []
-    async for line in response.aiter_lines():
-        line = line.strip()
-        if not line or line.startswith(":"):
-            continue
-        if not line.startswith("data:"):
-            continue
-        payload = line[5:].lstrip()
-        if payload == "[DONE]":
-            break
-        try:
-            data = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
-        for choice in data.get("choices") or []:
-            delta = choice.get("delta") or {}
-            c = delta.get("content")
-            if c is not None:
-                parts.append(str(c))
-    return "".join(parts)
-
-
-async def _openai_chat_completion(
-    client: httpx.AsyncClient,
-    settings: Settings,
-    api_key: str,
-    user_block: str,
-) -> str:
-    base = settings.llm_base_url.rstrip("/")
-    url = f"{base}/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    body: dict[str, Any] = {
-        "model": settings.llm_model,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_block},
-        ],
-        "stream": True,
-    }
-    async with client.stream("POST", url, headers=headers, json=body) as response:
-        if response.status_code >= 400:
-            err_body = (await response.aread()).decode("utf-8", errors="replace")[:2000]
-            raise RuntimeError(f"HTTP {response.status_code}: {err_body}")
-        summary = await _collect_openai_chat_stream_text(response)
-    if not summary.strip():
-        raise ValueError("OpenAI 互換ストリーミング応答に assistant 本文がありません（choices[].delta.content が空）")
-    return summary
-
-
-async def _gemini_generate_content(
-    client: httpx.AsyncClient,
-    settings: Settings,
-    api_key: str,
-    user_block: str,
-) -> str:
-    model = settings.llm_model.strip()
-    # クエリ ?key= は httpx の INFO ログに URL ごと出るため、x-goog-api-key ヘッダーで送る。
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/"
-        f"models/{model}:generateContent"
-    )
-    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
-    body: dict[str, Any] = {
-        "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": [{"text": user_block}]}],
-    }
-    r = await client.post(url, headers=headers, json=body)
-    if r.status_code >= 400:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:2000]}")
-    data = r.json()
-    try:
-        cands = data.get("candidates") or []
-        if not cands:
-            raise ValueError(f"Gemini candidates が空: {data!r}")
-        parts = cands[0].get("content", {}).get("parts") or []
-        if not parts:
-            raise ValueError(f"Gemini parts が空: {data!r}")
-        return str(parts[0]["text"])
-    except (KeyError, IndexError, TypeError) as e:
-        raise ValueError(f"Gemini レスポンスの解析に失敗: {data!r}") from e

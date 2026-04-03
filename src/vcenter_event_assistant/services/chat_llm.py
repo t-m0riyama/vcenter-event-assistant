@@ -1,4 +1,4 @@
-"""期間集約コンテキストを用いたチャット用 LLM 呼び出し（OpenAI 互換または Google Gemini REST）。"""
+"""期間集約コンテキストを用いたチャット用 LLM 呼び出し（LangChain: OpenAI 互換または Gemini）。"""
 
 from __future__ import annotations
 
@@ -7,18 +7,17 @@ import logging
 from functools import lru_cache
 from typing import Any
 
-import httpx
 import tiktoken
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
 from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
-from vcenter_event_assistant.services.digest_llm import (
-    _collect_openai_chat_stream_text,
-    _llm_failure_detail_for_user,
-    _trim_context_json,
-)
+from vcenter_event_assistant.services.digest_llm import _llm_failure_detail_for_user, _trim_context_json
+from vcenter_event_assistant.services.llm_factory import build_chat_model
+from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
 _logger = logging.getLogger(__name__)
@@ -34,7 +33,7 @@ _CHAT_MESSAGE_OVERHEAD_TOKENS_PER_TURN = 4
 
 @lru_cache(maxsize=1)
 def _chat_token_encoding() -> tiktoken.Encoding:
-    """チャット入力のトークン目安（Gemini 公式のカウントとは一致しない場合がある）。"""
+    """チャット入力のトークン目安（Gemini 公式のトークン数と一致しない場合がある）。"""
     return tiktoken.get_encoding("cl100k_base")
 
 _CHAT_SYSTEM_PROMPT = (
@@ -190,67 +189,18 @@ def _merged_context_user_block(ctx_json: str) -> str:
     )
 
 
-async def _openai_chat_with_messages(
-    client: httpx.AsyncClient,
-    settings: Settings,
-    api_key: str,
-    messages: list[dict[str, str]],
-) -> str:
-    base = settings.llm_base_url.rstrip("/")
-    url = f"{base}/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    body: dict[str, Any] = {
-        "model": settings.llm_model,
-        "messages": messages,
-        "stream": True,
-    }
-    async with client.stream("POST", url, headers=headers, json=body) as response:
-        if response.status_code >= 400:
-            err_body = (await response.aread()).decode("utf-8", errors="replace")[:2000]
-            raise RuntimeError(f"HTTP {response.status_code}: {err_body}")
-        text = await _collect_openai_chat_stream_text(response)
-    if not text.strip():
-        raise ValueError("OpenAI 互換ストリーミング応答に assistant 本文がありません（choices[].delta.content が空）")
-    return text
-
-
-async def _gemini_chat_generate(
-    client: httpx.AsyncClient,
-    settings: Settings,
-    api_key: str,
-    context_block: str,
-    messages: list[ChatMessage],
-) -> str:
-    model = settings.llm_model.strip()
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/"
-        f"models/{model}:generateContent"
-    )
-    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
-    contents: list[dict[str, Any]] = [
-        {"role": "user", "parts": [{"text": context_block}]},
+def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseMessage]:
+    """システム・コンテキスト JSON ブロック・会話履歴を LangChain メッセージ列に変換する。"""
+    out: list[BaseMessage] = [
+        SystemMessage(content=_CHAT_SYSTEM_PROMPT),
+        HumanMessage(content=block),
     ]
-    for m in messages:
-        grole = "user" if m.role == "user" else "model"
-        contents.append({"role": grole, "parts": [{"text": m.content}]})
-    body: dict[str, Any] = {
-        "systemInstruction": {"parts": [{"text": _CHAT_SYSTEM_PROMPT}]},
-        "contents": contents,
-    }
-    r = await client.post(url, headers=headers, json=body)
-    if r.status_code >= 400:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:2000]}")
-    data = r.json()
-    try:
-        cands = data.get("candidates") or []
-        if not cands:
-            raise ValueError(f"Gemini candidates が空: {data!r}")
-        parts = cands[0].get("content", {}).get("parts") or []
-        if not parts:
-            raise ValueError(f"Gemini parts が空: {data!r}")
-        return str(parts[0]["text"])
-    except (KeyError, IndexError, TypeError) as e:
-        raise ValueError(f"Gemini レスポンスの解析に失敗: {data!r}") from e
+    for m in trimmed:
+        if m.role == "user":
+            out.append(HumanMessage(content=m.content))
+        else:
+            out.append(AIMessage(content=m.content))
+    return out
 
 
 async def run_period_chat(
@@ -260,12 +210,15 @@ async def run_period_chat(
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None = None,
     event_time_buckets: EventTimeBucketsPayload | None = None,
+    runnable_config: RunnableConfig | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
 
     ``period_metrics`` / ``event_time_buckets`` を渡すと ``digest_context`` とマージした JSON を入力とする。
     チャットでは ``digest_context`` からホスト別 CPU/メモリピーク（``high_cpu_hosts`` / ``high_mem_hosts``）を除く。
+
+    ``runnable_config`` は将来 LangSmith 等の callbacks を渡すための拡張点（未使用でもよい）。
 
     Returns:
         (assistant_text, error_message, llm_context_meta)。
@@ -294,13 +247,6 @@ async def run_period_chat(
         message_turns=len(trimmed),
     )
 
-    api_messages: list[dict[str, str]] = [
-        {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
-        {"role": "user", "content": block},
-    ]
-    for m in trimmed:
-        api_messages.append({"role": m.role, "content": m.content})
-
     try:
         _logger.info(
             "chat LLM リクエスト est_input_tokens=%s json_chars=%s json_truncated=%s message_turns=%s "
@@ -313,12 +259,9 @@ async def run_period_chat(
             settings.llm_model,
             settings.llm_chat_max_input_tokens,
         )
-        timeout = httpx.Timeout(settings.llm_timeout_seconds)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if settings.llm_provider == "openai_compatible":
-                text = await _openai_chat_with_messages(client, settings, key, api_messages)
-            else:
-                text = await _gemini_chat_generate(client, settings, key, block, trimmed)
+        model = build_chat_model(settings, config=runnable_config)
+        lc_messages = _to_langchain_messages(block, trimmed)
+        text = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         return (text.strip(), None, meta)
     except Exception as e:
         _log_chat_llm_failure(settings, e)

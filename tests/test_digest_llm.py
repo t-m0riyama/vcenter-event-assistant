@@ -1,4 +1,4 @@
-"""digest_llm.augment_digest_with_llm のモック HTTP テスト。"""
+"""digest_llm.augment_digest_with_llm のテスト（LangChain モック）。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import _SYSTEM_PROMPT, augment_digest_with_llm
@@ -56,43 +57,16 @@ async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         llm_base_url="https://api.openai.com/v1",
         llm_model="gpt-4o-mini",
     )
+    fake = FakeListChatModel(responses=["## LLM 要約\n- テスト"])
 
-    class _StreamOk:
-        status_code = 200
-
-        async def aread(self) -> bytes:
-            return b""
-
-        async def aiter_lines(self) -> object:
-            yield 'data: {"choices":[{"delta":{"content":"## LLM 要約\\n- テスト"}}]}'
-            yield "data: [DONE]"
-
-    class _StreamCm:
-        def __init__(self, resp: _StreamOk) -> None:
-            self._resp = resp
-
-        async def __aenter__(self) -> _StreamOk:
-            return self._resp
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            assert "chat/completions" in url
-            body = kwargs.get("json") or {}
-            assert body.get("stream") is True
-            return _StreamCm(_StreamOk())
+    def _fake_build(_settings: Settings, *, config: object = None) -> FakeListChatModel:
+        assert _settings is s
+        _ = config
+        return fake
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.digest_llm.build_chat_model",
+        _fake_build,
     )
 
     out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# base")
@@ -109,32 +83,16 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         llm_provider="gemini",
         llm_model="gemini-2.0-flash",
     )
+    fake = FakeListChatModel(responses=["## LLM 要約\n- G"])
 
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        async def post(self, url: str, **kwargs: object) -> httpx.Response:
-            assert "generativelanguage.googleapis.com" in url
-            assert "generateContent" in url
-            assert "?key=" not in url
-            hdrs = kwargs.get("headers") or {}
-            assert hdrs.get("x-goog-api-key") == "gemini-key"
-            return httpx.Response(
-                200,
-                json={
-                    "candidates": [
-                        {"content": {"parts": [{"text": "## LLM 要約\n- G"}]}}
-                    ]
-                },
-            )
+    def _fake_build(_settings: Settings, *, config: object = None) -> FakeListChatModel:
+        assert _settings is s
+        _ = config
+        return fake
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.digest_llm.build_chat_model",
+        _fake_build,
     )
 
     out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# x")
@@ -150,36 +108,12 @@ async def test_augment_returns_template_on_http_error(monkeypatch: pytest.Monkey
         llm_provider="openai_compatible",
     )
 
-    class _StreamErr:
-        status_code = 500
-
-        async def aread(self) -> bytes:
-            return b"err"
-
-        async def aiter_lines(self) -> object:
-            if False:
-                yield
-
-    class _StreamCm:
-        async def __aenter__(self) -> _StreamErr:
-            return _StreamErr()
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            return _StreamCm()
+    async def _boom(*a: object, **k: object) -> str:
+        raise RuntimeError("HTTP 500: err")
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.digest_llm.stream_chat_to_text",
+        _boom,
     )
 
     out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# only")
@@ -198,26 +132,12 @@ async def test_augment_uses_exception_type_when_str_empty(monkeypatch: pytest.Mo
         llm_provider="openai_compatible",
     )
 
-    class _StreamCm:
-        async def __aenter__(self) -> None:
-            raise ConnectionError()
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            return _StreamCm()
+    async def _boom(*a: object, **k: object) -> str:
+        raise ConnectionError()
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.digest_llm.stream_chat_to_text",
+        _boom,
     )
 
     out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# only")
@@ -234,37 +154,12 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
         llm_provider="openai_compatible",
     )
 
-    class _StreamTimeout:
-        status_code = 200
-
-        async def aread(self) -> bytes:
-            return b""
-
-        async def aiter_lines(self) -> object:
-            raise httpx.ReadTimeout("")
-            if False:
-                yield ""
-
-    class _StreamCm:
-        async def __aenter__(self) -> _StreamTimeout:
-            return _StreamTimeout()
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-    class _FakeClient:
-        async def __aenter__(self) -> "_FakeClient":
-            return self
-
-        async def __aexit__(self, *a: object) -> None:
-            return None
-
-        def stream(self, method: str, url: str, **kwargs: object) -> _StreamCm:
-            return _StreamCm()
+    async def _boom(*a: object, **k: object) -> str:
+        raise httpx.ReadTimeout("")
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest_llm.httpx.AsyncClient",
-        lambda *a, **k: _FakeClient(),
+        "vcenter_event_assistant.services.digest_llm.stream_chat_to_text",
+        _boom,
     )
 
     out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# only")
