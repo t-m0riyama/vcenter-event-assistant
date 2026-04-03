@@ -18,6 +18,7 @@ from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import _trim_context_json
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.services.llm_factory import build_chat_model
+from vcenter_event_assistant.services.llm_profile import effective_chat_api_key, resolve_llm_profile
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
@@ -74,19 +75,20 @@ _CHAT_SYSTEM_PROMPT = (
 
 def _log_chat_llm_failure(settings: Settings, exc: BaseException) -> None:
     """運用向け。API キーはログに出さない。"""
-    if settings.llm_provider == "openai_compatible":
-        base = (settings.llm_base_url or "").rstrip("/")
+    prof = resolve_llm_profile(settings, purpose="chat")
+    if prof.provider == "openai_compatible":
+        base = (prof.base_url or "").rstrip("/")
         _logger.warning(
             "chat LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
             base,
-            settings.llm_model,
+            prof.model,
             exc,
             exc_info=True,
         )
     else:
         _logger.warning(
             "chat LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
-            settings.llm_model,
+            prof.model,
             exc,
             exc_info=True,
         )
@@ -226,7 +228,7 @@ async def run_period_chat(
         API キーが空のときは (\"\", None, None)。
         LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
-    key = (settings.llm_api_key or "").strip()
+    key = effective_chat_api_key(settings)
     if not key:
         return ("", None, None)
 
@@ -249,6 +251,7 @@ async def run_period_chat(
     )
 
     try:
+        cprof = resolve_llm_profile(settings, purpose="chat")
         _logger.info(
             "chat LLM リクエスト est_input_tokens=%s json_chars=%s json_truncated=%s message_turns=%s "
             "timeout_seconds=%s model=%s max_input_tokens=%s",
@@ -256,11 +259,11 @@ async def run_period_chat(
             len(ctx_json),
             json_truncated,
             len(trimmed),
-            settings.llm_timeout_seconds,
-            settings.llm_model,
+            cprof.timeout_seconds,
+            cprof.model,
             settings.llm_chat_max_input_tokens,
         )
-        model = build_chat_model(settings, config=runnable_config)
+        model = build_chat_model(settings, purpose="chat", config=runnable_config)
         lc_messages = _to_langchain_messages(block, trimmed)
         text = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         return (text.strip(), None, meta)

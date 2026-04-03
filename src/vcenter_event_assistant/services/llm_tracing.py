@@ -8,6 +8,7 @@ from langchain_core.tracers.langchain import LangChainTracer
 from langchain_core.runnables import RunnableConfig
 from langsmith import Client
 
+from vcenter_event_assistant.services.llm_profile import resolve_llm_profile
 from vcenter_event_assistant.settings import Settings
 
 RunKind = Literal["period_chat", "digest"]
@@ -27,10 +28,12 @@ def build_llm_runnable_config(
     ``LangChainTracer`` を ``callbacks`` に載せる。それ以外は tags / metadata のみ。
     """
     tags: list[str] = ["vea", run_kind]
+    llm_purpose = "digest" if run_kind == "digest" else "chat"
+    prof = resolve_llm_profile(settings, purpose=llm_purpose)
     metadata: dict[str, str | bool] = {
         "run_kind": run_kind,
-        "llm_provider": str(settings.llm_provider),
-        "llm_model": settings.llm_model,
+        "llm_provider": str(prof.provider),
+        "llm_model": prof.model,
     }
     if vcenter_id is not None:
         metadata["vcenter_id"] = vcenter_id

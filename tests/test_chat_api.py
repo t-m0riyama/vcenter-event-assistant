@@ -32,7 +32,7 @@ async def test_post_chat_returns_503_when_llm_key_missing(client: AsyncClient) -
 
 @pytest.mark.asyncio
 async def test_post_chat_returns_400_when_window_inverted(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
     r = await client.post(
         "/api/chat",
@@ -51,7 +51,7 @@ async def test_post_chat_returns_422_when_last_message_not_user(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
     r = await client.post(
         "/api/chat",
@@ -72,7 +72,7 @@ async def test_post_chat_returns_assistant_content_when_llm_succeeds(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
     async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
@@ -96,7 +96,7 @@ async def test_post_chat_returns_llm_context_when_run_period_chat_provides_meta(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
     async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, ChatLlmContextMeta]:
@@ -132,7 +132,7 @@ async def test_post_chat_returns_error_field_when_llm_returns_error(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
     async def _fake_fail(*a: object, **k: object) -> tuple[str, str | None, object]:
@@ -155,7 +155,7 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
     calls: list[int] = []
@@ -214,7 +214,7 @@ async def test_post_chat_skips_period_metrics_builder_when_all_toggles_false(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
     async def _boom(*a: object, **k: object) -> PeriodMetricsPayload:
