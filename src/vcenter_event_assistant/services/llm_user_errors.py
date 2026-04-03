@@ -13,6 +13,8 @@ def _is_timeout_like(exc: BaseException) -> bool:
         return True
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         return True
+    # SDK やプロバイダごとに例外型が異なるため、型名に "timeout" を含むものを補助的に拾う。
+    # 誤検知の可能性はあるが、ユーザー向け文言はタイムアウト寄りの案内に留める。
     if "timeout" in type(exc).__name__.lower():
         return True
     try:
