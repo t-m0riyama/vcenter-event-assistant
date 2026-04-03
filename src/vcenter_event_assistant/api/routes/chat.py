@@ -15,6 +15,7 @@ from vcenter_event_assistant.services.chat_period_metrics import (
     compute_chat_bucket_seconds,
 )
 from vcenter_event_assistant.services.digest_context import build_digest_context
+from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.settings import get_settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -79,11 +80,17 @@ async def post_chat(
             bucket_sec=bucket_sec,
         )
 
+    llm_cfg = build_llm_runnable_config(
+        settings,
+        run_kind="period_chat",
+        vcenter_id=str(body.vcenter_id) if body.vcenter_id is not None else None,
+    )
     text, err, llm_meta = await run_period_chat(
         settings,
         context=ctx,
         messages=list(body.messages),
         period_metrics=period_metrics,
         event_time_buckets=event_time_buckets,
+        runnable_config=llm_cfg,
     )
     return ChatResponse(assistant_content=text, error=err, llm_context=llm_meta)
