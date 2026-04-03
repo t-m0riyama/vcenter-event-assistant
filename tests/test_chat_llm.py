@@ -102,6 +102,51 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
 
 
 @pytest.mark.asyncio
+async def test_run_period_chat_passes_runnable_config_to_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_api_key="sk-test",
+        llm_provider="openai_compatible",
+        llm_base_url="https://api.openai.com/v1",
+        llm_model="gpt-4o-mini",
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_build(_settings: Settings, *, config: object = None) -> object:
+        _ = config
+        return object()
+
+    async def _spy_stream(
+        model: object,
+        messages: object,
+        *,
+        config: object = None,
+    ) -> str:
+        captured["config"] = config
+        return "ok"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream,
+    )
+
+    cfg = {"metadata": {"x": 1}}
+    await run_period_chat(
+        s,
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="ping")],
+        runnable_config=cfg,
+    )
+    assert captured.get("config") == cfg
+
+
+@pytest.mark.asyncio
 async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",

@@ -19,6 +19,7 @@ dependencies = [
     "langchain-core>=1.2.25",
     "langchain-google-genai>=4.2.1",
     "langchain-openai>=1.1.12",
+    "langsmith>=0.7.25",
     "pydantic-settings>=2.13.1",
     "pyvmomi>=9.0.0.0",
     "sqlalchemy[asyncio]>=2.0.48",

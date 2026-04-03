@@ -202,6 +202,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    langsmith_tracing_enabled: bool = Field(
+        default=False,
+        description="LangSmith へ LLM トレースを送る（`LANGSMITH_TRACING_ENABLED`）。既定は無効。",
+    )
+    langsmith_api_key: str | None = Field(
+        default=None,
+        description="LangSmith API キー（`LANGSMITH_API_KEY`）。空ならトレース用コールバックは付与しない。",
+    )
+    langsmith_project: str | None = Field(
+        default=None,
+        description="LangSmith プロジェクト名（`LANGSMITH_PROJECT`）。空ならクライアント既定。",
+    )
+    langsmith_endpoint: str | None = Field(
+        default=None,
+        description="LangSmith API ベース URL（`LANGSMITH_ENDPOINT`）。空なら SDK 既定。",
+    )
+
+    @field_validator("langsmith_api_key", "langsmith_project", "langsmith_endpoint", mode="before")
+    @classmethod
+    def empty_langsmith_str_to_none(cls, v: object) -> str | None:
+        """空文字・空白のみは None に正規化する。"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return str(v).strip() or None
+
     @property
     def effective_digest_daily_enabled(self) -> bool:
         """日次ダイジェストジョブを登録するか（新フラグとレガシーの OR）。"""

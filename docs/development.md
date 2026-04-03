@@ -8,7 +8,9 @@
 
 ## LLM 実装（バックエンド）
 
-ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は **LangChain** の `ChatOpenAI`（`LLM_PROVIDER=openai_compatible`）または `ChatGoogleGenerativeAI`（`gemini`）を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py) で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`。将来の観測（例: LangSmith）用に、`runnable_config` で `RunnableConfig`（callbacks 等）を渡せる拡張点がある。
+ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は **LangChain** の `ChatOpenAI`（`LLM_PROVIDER=openai_compatible`）または `ChatGoogleGenerativeAI`（`gemini`）を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py) で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`・`langsmith`（トレース用クライアント）。
+
+**LangSmith:** [`llm_tracing.build_llm_runnable_config`](../src/vcenter_event_assistant/services/llm_tracing.py) が `RunnableConfig`（`tags` / `metadata`、任意で `LangChainTracer`）を組み立て、チャット API とバッチ `run_digest_once` から `run_period_chat` / `augment_digest_with_llm` に渡す。環境変数は `LANGSMITH_TRACING_ENABLED`（既定 `false`）・`LANGSMITH_API_KEY` 等（`.env.example` 参照）。トレースをオンにするとホスト名・イベント本文を含むプロンプトが LangSmith に送られる可能性があるため、本番では運用判断すること。設計は [`docs/superpowers/specs/2026-04-04-langsmith-tracing-design.md`](superpowers/specs/2026-04-04-langsmith-tracing-design.md)。
 
 ## バッチダイジェスト API（実験的）
 

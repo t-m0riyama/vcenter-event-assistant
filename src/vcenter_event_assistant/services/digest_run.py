@@ -10,6 +10,7 @@ from vcenter_event_assistant.db.models import DigestRecord
 from vcenter_event_assistant.services.digest_context import build_digest_context
 from vcenter_event_assistant.services.digest_llm import augment_digest_with_llm
 from vcenter_event_assistant.services.digest_markdown import render_digest_markdown
+from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.settings import Settings, get_settings
 
 
@@ -46,7 +47,13 @@ async def run_digest_once(
         await session.refresh(row)
         return row
 
-    body, llm_err = await augment_digest_with_llm(s, context=ctx, template_markdown=md)
+    llm_cfg = build_llm_runnable_config(s, run_kind="digest", digest_kind=kind)
+    body, llm_err = await augment_digest_with_llm(
+        s,
+        context=ctx,
+        template_markdown=md,
+        runnable_config=llm_cfg,
+    )
 
     has_key = bool((s.llm_api_key or "").strip())
     llm_model_val = s.llm_model if has_key and llm_err is None else None
