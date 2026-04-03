@@ -34,6 +34,12 @@ def _minimal_ctx() -> DigestContext:
     )
 
 
+def test_chat_system_prompt_forbids_internal_lm_tokens_in_answer() -> None:
+    """応答に内部匿名化トークン（__LM_*）を出さず、括弧で別名を足さない旨が含まれる。"""
+    assert "__LM_" in _CHAT_SYSTEM_PROMPT
+    assert "括弧" in _CHAT_SYSTEM_PROMPT
+
+
 @pytest.mark.asyncio
 async def test_run_period_chat_skips_http_when_no_api_key() -> None:
     s = Settings(
