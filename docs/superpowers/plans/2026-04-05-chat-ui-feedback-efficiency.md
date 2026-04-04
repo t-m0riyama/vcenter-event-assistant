@@ -1,20 +1,29 @@
 # チャット UI 送信中フィードバック・操作効率 実装計画
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **TDD は省略不可:** 振る舞いを変える本番コードは、**対応する失敗テスト（Red）を先に用意し、FAIL を確認してから**最小実装へ進む。テストだけ後追いで「合わせる」ことは本計画では認めない。併用推奨: superpowers:test-driven-development。
 
 **Goal:** チャットパネルに送信中の視覚・ARIA フィードバック（B）と、Enter 送信・会話クリア・最新回答コピー（C）を追加する。
 
 **Architecture（振る舞い優先・具体 DOM はサードパーティ方針で選択）:** 会話データは既存の `messages: ChatMessage[]` のまま。送信中の仮 UI は **`loading` に連動したリスト末尾のプレースホルダ**（`li` 自前でも、UI プリミティブでも可）。最下部付近でのみ新着追従するスクロールは **自前 `useLayoutEffect` + [chatMessagesListScroll.ts](frontend/src/panels/chat/chatMessagesListScroll.ts) でも、専用フック／ライブラリでも可**。キーボード送信は **Enter / Shift+Enter、IME 中は送信しない**。会話クリアは **`window.confirm` でも、Radix 等の AlertDialog でも可**（後者は依存とスタイル調整が必要）。コピーは `navigator.clipboard.writeText` を基本とする。
 
-**Tech Stack（ベース）:** React 19、TypeScript、Vite、Vitest、`@testing-library/react`、既存 [ChatPanel.tsx](frontend/src/panels/chat/ChatPanel.tsx)、スタイル [App.css](frontend/src/App.css)。**B・C・次ステップ A で追加する npm は「実装方式の再検討（B+C+A・サードパーティ）」で束として決める。** 既存の `react-markdown` / `remark-gfm` はフェーズ A で活用前提。
+**Tech Stack（ベース）:** React 19、TypeScript、Vite、Vitest、`@testing-library/react`、既存 [ChatPanel.tsx](frontend/src/panels/chat/ChatPanel.tsx)、スタイル [App.css](frontend/src/App.css)。**B・C（Task 1〜5）では会話バブルはプレーン表示のまま。** **フェーズ A** でチャットに GFM（`react-markdown` + `remark-gfm`）を適用する。**B・C・A で追加する npm のうち未導入分は「実装方式の再検討（B+C+A・サードパーティ）」で束として決める。**
 
-**TDD（必須）:** 各タスクは **Red → Green → Refactor** の順。サードパーティを挟んでも **ユーザー向け振る舞い**はテストで固定する（モックは境界に寄せる）。
+## TDD ポリシー（必須）
+
+- **順序:** 各 Task（および **フェーズ A**）で振る舞いを変えるときは **Red → Green → Refactor**。先に **失敗するテスト**を書き、`vitest` で FAIL を確認してから最小実装で Green にする。
+- **禁止:** 本番コード（`ChatPanel.tsx` 等）だけ先に完成させ、後からテストを都合よく足す・直すだけにすること。
+- **境界:** `fetch` / `window.confirm` / `clipboard` 等はモックでよい。**ユーザーから観測可能な結果**（DOM、ARIA、`scrollTop`、POST の有無・本文）はテストで固定する。
+- **Task 2:** 新機能追加は行わない。全テスト PASS ならコミット不要。FAIL がある場合は **テスト期待の更新または新規 `it` を先に**置き、実装変更は最小限にとどめる。
+- **完了条件:** 当該 Task（またはフェーズ A の各ステップ）のコミット時点で、関連スイートおよび `cd frontend && npm run test` が Green。必要に応じて `npm run lint`。
 
 **前提（2026-04 更新）:**
 
 1. **B+C の途中実装は採用しない**（例: `feat/chat-ui-feedback-efficiency` 上の変更は **マージせず破棄**し、`main` を基準に再実装する。Git の削除・ブランチ整理は実装担当が実行）。
-2. **フェーズ A（Markdown）は本ファイルの Task 範囲外**だが、**依存パッケージの選定は B+C と同じロードマップで先に決め**、A 専用の実装計画へ写す。
-3. `main` 直コミットは避け、新規 feature ブランチで作業する。
+2. **フェーズ A（Markdown・GFM 含む）は本ファイルの Task 1〜5 の範囲外**だが、**チャットでの GFM 対応はフェーズ A の必須項目**として下記「フェーズ A（Markdown・GFM）」に従う。sanitize / コードハイライト等の追加 npm は同ロードマップで選定し、別計画へ写してもよい。
+3. **フェーズ A の実装も上記 TDD ポリシーに従う**（テスト先行を省略しない）。
+4. `main` 直コミットは避け、新規 feature ブランチで作業する。
 
 ---
 
@@ -25,6 +34,7 @@
 | [frontend/src/panels/chat/ChatPanel.tsx](frontend/src/panels/chat/ChatPanel.tsx) | `loading` 時プレースホルダ行、`aria-busy`、キーボード送信、クリア・コピー UI とハンドラ、`useLayoutEffect` 依存拡張 |
 | [frontend/src/panels/chat/ChatPanel.test.tsx](frontend/src/panels/chat/ChatPanel.test.tsx) | 上記の振る舞いの結合テスト（TDD の主戦場） |
 | [frontend/src/App.css](frontend/src/App.css) | プレースホルダ行・ツールバーボタン用の最小スタイル（既存トークンに合わせる） |
+| （フェーズ A 想定）`frontend/src/panels/chat/ChatMarkdownContent.tsx` 等 | `react-markdown` + `remark-gfm` をバブル用に閉じる薄いラッパ（**Task 1〜5 完了後**） |
 
 **分割の判断:** キーボード判定を `chatComposerKeydown.ts` などに切り出すのは **100 行未満で済むなら ChatPanel 内に留めてよい**。切り出す場合は **純関数のみ**とし、[chatMessagesListScroll.test.ts](frontend/src/panels/chat/chatMessagesListScroll.test.ts) と同様に単体テストファイルを追加する（その場合も **先にテスト**）。
 
@@ -416,6 +426,28 @@ git commit -m "feat(chat): copy latest assistant reply to clipboard"
 
 ---
 
+## フェーズ A（Markdown・GFM）
+
+**位置づけ:** 本ファイルの **Task 1〜5**（B+C）**完了後**に実施。Task 1〜5 の間は会話バブル **プレーンテキストのまま**とする。
+
+**必須成果:** **チャット**のユーザー／アシスタント本文に **GitHub Flavored Markdown（GFM）** を適用する。既存依存の **`react-markdown`** と **`remark-gfm`** を使い、[DigestsPanel.tsx](frontend/src/panels/digests/DigestsPanel.tsx) と同様に `remarkPlugins={[remarkGfm]}` を渡す。表・タスクリスト・打ち消し線等をバブル内で解釈できること。
+
+**スタイル:** 見出し・表・`pre`/`code` をダイジェストと揃えるなら [App.css](frontend/src/App.css) の `.digest-markdown` をチャット側でも共有する（`.chat-panel__bubble` 内の `white-space` は Markdown ブロック向けに調整）。
+
+**TDD（必須）:** 例として、モックの `assistant_content` が GFM 表（`|列|…`）のとき **`role="table"`** やヘッダセルが現れることを検証する `it` を **[ChatPanel.test.tsx](frontend/src/panels/chat/ChatPanel.test.tsx)** に **先に**追加し、プレーンテキスト実装のまま **FAIL** を確認してから、`ReactMarkdown` 導入で **Green** にする。
+
+**推奨構成:** 薄いラッパ（例: `frontend/src/panels/chat/ChatMarkdownContent.tsx`）に `ReactMarkdown` + `remarkGfm` を閉じ、[ChatPanel.tsx](frontend/src/panels/chat/ChatPanel.tsx) の `.chat-panel__bubble` 内で利用。
+
+**拡張（同一ロードマップ）:** XSS 対策の **`rehype-sanitize`**、コードフェンスの **`rehype-highlight` / `lowlight`** は下記「A（次ステップ・Markdown）で使えるモジュール」と束の選定に従い、GFM 導入と同じフェーズまたは直後のタスクで TDD により追加する。
+
+### フェーズ A チェックリスト（例）
+
+- [ ] **A-Red:** GFM 表（等）を検証する結合テストを追加し、現状のプレーンテキスト実装で FAIL を確認する
+- [ ] **A-Green:** `react-markdown` + `remark-gfm` をバブルに組み込み、テストを PASS にする
+- [ ] **A-Refactor:** ラッパ分割・CSS 整理。`npm run test` / `npm run lint` を維持する
+
+---
+
 ## 仕様カバレッジ（セルフレビュー）
 
 | 要件 | タスク |
@@ -426,7 +458,10 @@ git commit -m "feat(chat): copy latest assistant reply to clipboard"
 | Enter / Shift+Enter | Task 3 |
 | 会話クリア + 確認 | Task 4 |
 | 最新アシスタント回答のコピー | Task 5 |
-| Markdown（A） | 対象外 |
+| チャットでの GFM（表・タスクリスト等） | **フェーズ A**（Task 1〜5 の外） |
+| XSS・コードハイライト（sanitize / highlight） | **フェーズ A 拡張**（モジュール表・束に従う） |
+
+**注:** Task 1〜5 および **フェーズ A** はいずれも **「TDD ポリシー（必須）」** 節に従う。
 
 ---
 
@@ -460,7 +495,7 @@ git commit -m "feat(chat): copy latest assistant reply to clipboard"
 
 | 手段 | 候補 | 備考 |
 |------|------|------|
-| GitHub Flavored Markdown | **`remark-gfm`（済）** | 表・タスクリスト等 |
+| GitHub Flavored Markdown | **`remark-gfm`（依存は既存）** | **ダイジェストは [DigestsPanel](frontend/src/panels/digests/DigestsPanel.tsx) で適用済み。チャット会話バブルへの GFM は本ファイルの「フェーズ A（Markdown・GFM）」節で必須実装**（表・タスクリスト等） |
 | XSS 対策 | **`rehype-sanitize`**（推奨） | `react-markdown` の `urlTransform` だけでは不足しがち。**許可タグ・スキーマを設計ドキュメント化** |
 | コードハイライト | **`rehype-highlight`**、**`@shikijs/rehype`** | Shiki はバンドル大・品質高。後から差し替え可能 |
 | 数式 | **`remark-math` + `rehype-katex`** | 運用で数式が要る場合のみ |
@@ -482,8 +517,9 @@ git commit -m "feat(chat): copy latest assistant reply to clipboard"
 
 1. 上記 **S0〜S3 のどれで行くか**（または S0 から段階導入）を決める。
 2. **A 用に `rehype-sanitize` のスキーマ**（許可タグ・属性）を短文で決め、ダイジェスト表示と共通化する方針を書く。
-3. 本ファイルの **Task 1〜5** は引き続き **受け入れ条件**として有効。実装手順のコード例は、選んだ束に合わせて **エージェント向けに差し替えてよい**（例: Textarea を `react-textarea-autosize` に）。
-4. Git: **途中 B+C ブランチを破棄**し、`main` から新ブランチで再開する。
+3. 本ファイルの **Task 1〜5** は引き続き **受け入れ条件**として有効。実装手順のコード例は、選んだ束に合わせて **エージェント向けに差し替えてよい**（例: Textarea を `react-textarea-autosize` に）。**TDD 順序（テスト先行）はスキップしない。**
+4. Task 1〜5 完了後、**「フェーズ A（Markdown・GFM）」** 節に従いチャットへ GFM を入れる（**TDD 必須**）。
+5. Git: **途中 B+C ブランチを破棄**し、`main` から新ブランチで再開する。
 
 ## 実行時の引き渡し
 
@@ -492,5 +528,7 @@ git commit -m "feat(chat): copy latest assistant reply to clipboard"
 **1. Subagent-Driven (recommended)** — タスクごとに新しいサブエージェントを起動し、タスク間でレビューする。REQUIRED SUB-SKILL: superpowers:subagent-driven-development
 
 **2. Inline Execution** — 同一セッションで executing-plans に沿ってチェックポイント付き実行。REQUIRED SUB-SKILL: superpowers:executing-plans
+
+**TDD:** **「TDD ポリシー（必須）」** 節に従い、**Red 先行を省略しない**。推奨: superpowers:test-driven-development
 
 **Which approach?**
