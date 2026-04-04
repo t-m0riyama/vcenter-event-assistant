@@ -1100,6 +1100,8 @@ textarea:focus-visible {
 }
 
 .chat-panel__messages {
+  /* メッセージ行の offsetTop がリスト内座標になるよう（スクロール位置計算と一致させる） */
+  position: relative;
   list-style: none;
   margin: 0 0 var(--spacing-4);
   padding: 0;

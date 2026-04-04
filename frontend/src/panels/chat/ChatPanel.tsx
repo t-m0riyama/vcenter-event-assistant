@@ -17,12 +17,17 @@ import {
   type ZonedRangeParts,
 } from '../../datetime/zonedRangeParts'
 import { toErrorMessage } from '../../utils/errors'
+import {
+  CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
+  computeScrollTopToShowChildAtListTop,
+} from './chatMessagesListScroll'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
 
 /**
- * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ新着メッセージ後に末尾へスクロールする。
+ * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
+ * アシスタント応答後はそのメッセージ先頭が見える位置へ、ユーザーのみ末尾のときはリスト最下端へ寄せる。
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
@@ -52,9 +57,25 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   }, [])
 
   useLayoutEffect(() => {
-    const el = messagesListRef.current
-    if (!el || !stickToBottomRef.current) return
-    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+    const list = messagesListRef.current
+    if (!list || !stickToBottomRef.current) return
+
+    const last = messages.at(-1)
+    if (last?.role === 'assistant') {
+      const item = list.querySelector('li.chat-panel__msg--assistant:last-of-type')
+      if (item instanceof HTMLElement) {
+        // `.chat-panel__messages` は `position: relative` により `li` の offsetTop がリスト内座標になる
+        list.scrollTop = computeScrollTopToShowChildAtListTop({
+          childOffsetTop: item.offsetTop,
+          scrollHeight: list.scrollHeight,
+          clientHeight: list.clientHeight,
+          marginPx: CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
+        })
+        return
+      }
+    }
+
+    list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
   }, [messages])
 
   useEffect(() => {

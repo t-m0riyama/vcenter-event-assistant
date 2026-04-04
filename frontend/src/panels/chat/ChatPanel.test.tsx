@@ -1,8 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import {
+  CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
+  computeScrollTopToShowChildAtListTop,
+} from './chatMessagesListScroll'
 import { ChatPanel } from './ChatPanel'
 
 function jsonResponse(data: unknown, status = 200) {
@@ -146,7 +150,18 @@ describe('ChatPanel', () => {
   })
 
   describe('メッセージリストの追従スクロール', () => {
-    it('最下部付近にいるとき LLM 応答後に最下端へスクロールする', async () => {
+    beforeAll(() => {
+      const style = document.createElement('style')
+      style.dataset.testChatScroll = '1'
+      style.textContent = `.chat-panel__messages { position: relative; }`
+      document.head.appendChild(style)
+    })
+
+    afterAll(() => {
+      document.querySelector('style[data-test-chat-scroll="1"]')?.remove()
+    })
+
+    it('最下部付近にいるとき LLM 応答後に最新アシスタント先頭付近までスクロールする', async () => {
       let bumpScrollHeight: ((h: number) => void) | null = null
 
       const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -187,7 +202,17 @@ describe('ChatPanel', () => {
         expect(screen.getByText('モック回答')).toBeInTheDocument()
       })
 
-      expect(getScrollTop()).toBe(1000)
+      const lastAssistant = screen.getByText('モック回答').closest('li')
+      expect(lastAssistant).toBeInstanceOf(HTMLElement)
+      const childTop = (lastAssistant as HTMLElement).offsetTop
+      expect(getScrollTop()).toBe(
+        computeScrollTopToShowChildAtListTop({
+          childOffsetTop: childTop,
+          scrollHeight: 1200,
+          clientHeight: 200,
+          marginPx: CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
+        }),
+      )
     })
 
     it('上にスクロールして履歴を見ているときは LLM 応答後もスクロール位置を変えない', async () => {
@@ -242,7 +267,16 @@ describe('ChatPanel', () => {
 
       expect(getScrollTop()).toBe(0)
       const maxScroll = 1200 - 200
+      const lastAssistant = screen.getByText('下の返答').closest('li')
+      expect(lastAssistant).toBeInstanceOf(HTMLElement)
+      const alignTop = computeScrollTopToShowChildAtListTop({
+        childOffsetTop: (lastAssistant as HTMLElement).offsetTop,
+        scrollHeight: 1200,
+        clientHeight: 200,
+        marginPx: CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
+      })
       expect(assignedScrollTops).not.toContain(maxScroll)
+      expect(assignedScrollTops).not.toContain(alignTop)
     })
   })
 })
