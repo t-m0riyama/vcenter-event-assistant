@@ -115,6 +115,243 @@ describe('ChatPanel', () => {
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('アシスタント応答の GFM テーブルを描画する', async () => {
+    const tableMd = '|列A|列B|\n|---|---|\n|1|2|'
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: tableMd, error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '表を出して' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('columnheader', { name: '列A' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument()
+  })
+
+  it('最新の回答をコピーでクリップボードに最終アシスタント本文が入る', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText },
+    })
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: '最終回答', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(screen.getByText('最終回答')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '最新の回答をコピー' }))
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('最終回答')
+    })
+  })
+
+  it('Enter キーで送信される', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: 'ok', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: 'enter で送る' } })
+    fireEvent.keyDown(ta, { key: 'Enter', code: 'Enter', shiftKey: false })
+
+    await waitFor(() => {
+      expect(screen.getByText('ok')).toBeInTheDocument()
+    })
+  })
+
+  it('IME 確定中は Enter で送信しない', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: 'no', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: '変換中' } })
+    fireEvent.compositionStart(ta)
+
+    const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    Object.defineProperty(evt, 'isComposing', { value: true })
+    ta.dispatchEvent(evt)
+
+    const posts = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
+    )
+    expect(posts.length).toBe(0)
+
+    fireEvent.compositionEnd(ta)
+  })
+
+  it('Shift+Enter では送信せず改行だけされる', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void init
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: 'line1' } })
+    fireEvent.keyDown(ta, { key: 'Enter', code: 'Enter', shiftKey: true })
+
+    await waitFor(() => {
+      expect(ta).toHaveValue('line1\n')
+    })
+
+    const posts = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
+    )
+    expect(posts.length).toBe(0)
+  })
+
+  it('会話をクリアで確認後にメッセージが空になる', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: 'a', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(screen.getByText('a')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '会話をクリア' }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(screen.queryByText('a')).not.toBeInTheDocument()
+    expect(screen.queryByText('q')).not.toBeInTheDocument()
+
+    confirmSpy.mockRestore()
+  })
+
+  it('送信中は会話リストにプレースホルダが表示され ul に aria-busy が付く', async () => {
+    let resolveChat!: (r: Response) => void
+    const chatPromise = new Promise<Response>((res) => {
+      resolveChat = res
+    })
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return chatPromise
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '保留テスト' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('応答を生成しています…')).toBeInTheDocument()
+    })
+    expect(messagesListElement()).toHaveAttribute('aria-busy', 'true')
+
+    resolveChat(jsonResponse({ assistant_content: '完了', error: null }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('応答を生成しています…')).not.toBeInTheDocument()
+    })
+    expect(messagesListElement()).toHaveAttribute('aria-busy', 'false')
+  })
+
   it('CPU 使用率のチェックをオンにすると POST 本文に include_period_metrics_cpu が含まれる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

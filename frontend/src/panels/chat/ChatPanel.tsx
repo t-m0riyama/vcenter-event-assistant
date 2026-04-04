@@ -21,6 +21,7 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import { ChatMarkdownContent } from './ChatMarkdownContent'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
@@ -28,6 +29,7 @@ const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
 /**
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
  * アシスタント応答後はそのメッセージ先頭が見える位置へ、ユーザーのみ末尾のときはリスト最下端へ寄せる。
+ * 送信中はリスト末尾にプレースホルダ行を出し、`aria-busy` で状態を示す。
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
@@ -60,6 +62,11 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     const list = messagesListRef.current
     if (!list || !stickToBottomRef.current) return
 
+    if (loading) {
+      list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
+      return
+    }
+
     const last = messages.at(-1)
     if (last?.role === 'assistant') {
       const item = list.querySelector('li.chat-panel__msg--assistant:last-of-type')
@@ -76,7 +83,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     }
 
     list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
-  }, [messages])
+  }, [messages, loading])
 
   useEffect(() => {
     void (async () => {
@@ -148,6 +155,26 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
   ])
+
+  const copyLatestAssistantReply = useCallback(async () => {
+    let text = ''
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i]
+      if (m.role === 'assistant') {
+        text = m.content
+        break
+      }
+    }
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    }
+  }, [messages, onError])
+
+  const canCopyLatestAssistantReply =
+    messages.length > 0 && !loading && messages.at(-1)?.role === 'assistant'
 
   return (
     <div className="panel chat-panel">
@@ -230,14 +257,23 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         ref={messagesListRef}
         className="chat-panel__messages"
         aria-label="会話"
+        aria-busy={loading ? 'true' : 'false'}
         onScroll={syncStickToBottomFromScroll}
       >
         {messages.map((m, i) => (
           <li key={`${i}-${m.role}`} className={`chat-panel__msg chat-panel__msg--${m.role}`}>
             <span className="chat-panel__role">{m.role === 'user' ? 'あなた' : 'アシスタント'}</span>
-            <div className="chat-panel__bubble">{m.content}</div>
+            <div className="chat-panel__bubble">
+              <ChatMarkdownContent markdown={m.content} />
+            </div>
           </li>
         ))}
+        {loading && (
+          <li className="chat-panel__msg chat-panel__msg--pending">
+            <span className="chat-panel__role">アシスタント</span>
+            <div className="chat-panel__bubble chat-panel__bubble--pending">応答を生成しています…</div>
+          </li>
+        )}
       </ul>
 
       {lastLlmContext != null && (
@@ -249,22 +285,56 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         </p>
       )}
 
-      <div className="chat-panel__composer">
-        <label className="chat-panel__composer-label">
-          メッセージ
-          <textarea
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value)
-            }}
-            rows={3}
-            disabled={loading}
-            placeholder="質問を入力…"
-          />
-        </label>
-        <button type="button" className="btn" disabled={loading} onClick={() => void send()}>
-          {loading ? '送信中…' : '送信'}
+      <div className="chat-panel__composer-stack">
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={loading || messages.length === 0}
+          onClick={() => {
+            if (!window.confirm('会話をすべて削除しますか？')) return
+            setMessages([])
+            setLastLlmContext(null)
+          }}
+        >
+          会話をクリア
         </button>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={!canCopyLatestAssistantReply}
+          onClick={() => void copyLatestAssistantReply()}
+        >
+          最新の回答をコピー
+        </button>
+        <div className="chat-panel__composer">
+          <label className="chat-panel__composer-label">
+            メッセージ
+            <textarea
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+              }}
+              onKeyDown={(e) => {
+                // IME 確定中は Enter を横取りしない
+                if (e.nativeEvent.isComposing) return
+                if (e.key !== 'Enter') return
+                if (e.shiftKey) {
+                  e.preventDefault()
+                  setDraft((d) => `${d}\n`)
+                  return
+                }
+                e.preventDefault()
+                void send()
+              }}
+              rows={3}
+              disabled={loading}
+              placeholder="質問を入力…"
+            />
+          </label>
+          <button type="button" className="btn" disabled={loading} onClick={() => void send()}>
+            {loading ? '送信中…' : '送信'}
+          </button>
+        </div>
       </div>
     </div>
   )

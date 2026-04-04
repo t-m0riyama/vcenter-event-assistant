@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { apiGet } from '../../api'
+import { rehypePlugins, remarkPlugins } from '../../markdown/gfmSanitizedMarkdownPlugins'
 import { parseDigestListResponse, type DigestRead } from '../../api/schemas'
 import { formatIsoDateOnlyInTimeZone, formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
@@ -60,7 +60,9 @@ function SelectedDigestDetail({
       )}
       {bodyMd.trim() ? (
         <div className="digest-markdown">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{bodyMd}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
+            {bodyMd}
+          </ReactMarkdown>
         </div>
       ) : (
         <p className="hint">（本文なし）</p>
