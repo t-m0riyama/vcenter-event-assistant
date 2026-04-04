@@ -210,6 +210,40 @@ describe('ChatPanel', () => {
     })
   })
 
+  it('IME 確定中は Enter で送信しない', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: 'no', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: '変換中' } })
+    fireEvent.compositionStart(ta)
+
+    const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    Object.defineProperty(evt, 'isComposing', { value: true })
+    ta.dispatchEvent(evt)
+
+    const posts = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
+    )
+    expect(posts.length).toBe(0)
+
+    fireEvent.compositionEnd(ta)
+  })
+
   it('Shift+Enter では送信せず改行だけされる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       void init
