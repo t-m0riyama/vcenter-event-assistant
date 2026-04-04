@@ -1173,6 +1173,12 @@ textarea:focus-visible {
   color: var(--color-on-primary);
 }
 
+/* インライン SVG のベースライン下の余白を抑え、flex 内で縮まないようにする */
+.chat-panel__icon-svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 /* Markdown ブロック（表・リスト等）向け。プレーン改行は GFM の段落ルールに従う */
 .chat-panel__markdown {
   white-space: normal;

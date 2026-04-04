@@ -486,7 +486,9 @@ describe('ChatPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('応答を生成しています…')).toBeInTheDocument()
     })
-    expect(screen.getByRole('button', { name: '送信中' })).toBeDisabled()
+    const sendBtn = screen.getByRole('button', { name: '送信中' })
+    expect(sendBtn).toBeDisabled()
+    expect(sendBtn).toHaveAttribute('aria-busy', 'true')
     expect(messagesListElement()).toHaveAttribute('aria-busy', 'true')
 
     resolveChat(jsonResponse({ assistant_content: '完了', error: null }))
@@ -495,6 +497,8 @@ describe('ChatPanel', () => {
       expect(screen.queryByText('応答を生成しています…')).not.toBeInTheDocument()
     })
     expect(messagesListElement()).toHaveAttribute('aria-busy', 'false')
+    const sendAfter = screen.getByRole('button', { name: '送信' })
+    expect(sendAfter.getAttribute('aria-busy')).not.toBe('true')
   })
 
   it('CPU 使用率のチェックをオンにすると POST 本文に include_period_metrics_cpu が含まれる', async () => {

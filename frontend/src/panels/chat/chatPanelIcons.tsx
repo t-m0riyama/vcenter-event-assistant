@@ -29,12 +29,13 @@ export function ChatCopyAnswerSvg(): ReactElement {
 
 /**
  * メッセージ送信用の装飾 SVG（`currentColor`）。
+ * 形状は Material「send」系の三角形＋折り返しを 24×24 座標で取り、ボタン内で縮小表示する。
  */
 export function ChatSendSvg(): ReactElement {
   return (
     <svg
       className="chat-panel__icon-svg"
-      viewBox="0 0 16 16"
+      viewBox="0 0 24 24"
       width={20}
       height={20}
       fill="currentColor"
@@ -42,8 +43,7 @@ export function ChatSendSvg(): ReactElement {
       aria-hidden
       focusable={false}
     >
-      {/* 紙飛行機（送信メタファー） */}
-      <path d="M1.5 8 14 2.25 9.75 8 14 13.75 1.5 8z" />
+      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
     </svg>
   )
 }

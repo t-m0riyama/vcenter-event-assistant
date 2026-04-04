@@ -337,6 +337,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
             type="button"
             className="btn btn--filled chat-panel__icon-btn chat-panel__send-btn"
             disabled={loading}
+            aria-busy={loading}
             aria-label={loading ? '送信中' : '送信'}
             title={loading ? '送信中' : '送信'}
             onClick={() => void send()}
