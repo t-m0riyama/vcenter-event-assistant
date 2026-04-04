@@ -115,6 +115,47 @@ describe('ChatPanel', () => {
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('送信中は会話リストにプレースホルダが表示され ul に aria-busy が付く', async () => {
+    let resolveChat!: (r: Response) => void
+    const chatPromise = new Promise<Response>((res) => {
+      resolveChat = res
+    })
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return chatPromise
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '保留テスト' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('応答を生成しています…')).toBeInTheDocument()
+    })
+    expect(messagesListElement()).toHaveAttribute('aria-busy', 'true')
+
+    resolveChat(jsonResponse({ assistant_content: '完了', error: null }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('応答を生成しています…')).not.toBeInTheDocument()
+    })
+    expect(messagesListElement()).toHaveAttribute('aria-busy', 'false')
+  })
+
   it('CPU 使用率のチェックをオンにすると POST 本文に include_period_metrics_cpu が含まれる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

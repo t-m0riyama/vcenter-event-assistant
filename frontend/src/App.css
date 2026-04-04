@@ -1127,6 +1127,15 @@ textarea:focus-visible {
   background: var(--color-background-secondary);
 }
 
+.chat-panel__msg--pending {
+  align-items: flex-end;
+}
+
+.chat-panel__bubble--pending {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
 .chat-panel__role {
   font-size: var(--font-size-footnote);
   color: var(--color-text-secondary);

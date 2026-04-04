@@ -28,6 +28,7 @@ const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
 /**
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
  * アシスタント応答後はそのメッセージ先頭が見える位置へ、ユーザーのみ末尾のときはリスト最下端へ寄せる。
+ * 送信中はリスト末尾にプレースホルダ行を出し、`aria-busy` で状態を示す。
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
@@ -60,6 +61,11 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     const list = messagesListRef.current
     if (!list || !stickToBottomRef.current) return
 
+    if (loading) {
+      list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
+      return
+    }
+
     const last = messages.at(-1)
     if (last?.role === 'assistant') {
       const item = list.querySelector('li.chat-panel__msg--assistant:last-of-type')
@@ -76,7 +82,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     }
 
     list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
-  }, [messages])
+  }, [messages, loading])
 
   useEffect(() => {
     void (async () => {
@@ -230,6 +236,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         ref={messagesListRef}
         className="chat-panel__messages"
         aria-label="会話"
+        aria-busy={loading ? 'true' : 'false'}
         onScroll={syncStickToBottomFromScroll}
       >
         {messages.map((m, i) => (
@@ -238,6 +245,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
             <div className="chat-panel__bubble">{m.content}</div>
           </li>
         ))}
+        {loading && (
+          <li className="chat-panel__msg chat-panel__msg--pending">
+            <span className="chat-panel__role">アシスタント</span>
+            <div className="chat-panel__bubble chat-panel__bubble--pending">応答を生成しています…</div>
+          </li>
+        )}
       </ul>
 
       {lastLlmContext != null && (
