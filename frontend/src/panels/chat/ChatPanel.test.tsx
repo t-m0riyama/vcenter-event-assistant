@@ -175,7 +175,8 @@ describe('ChatPanel', () => {
     const kids = composer ? Array.from(composer.children) : []
     expect(kids.length).toBe(2)
     expect(kids[0].className).toMatch(/chat-panel__composer-field/)
-    expect(kids[1].textContent).toMatch(/送信/)
+    expect(kids[1]).toBeInstanceOf(HTMLButtonElement)
+    expect((kids[1] as HTMLButtonElement).getAttribute('aria-label')).toBe('送信')
   })
 
   it('App.css でコンポーザーが横並び（flex-direction: row）になる', () => {
@@ -217,7 +218,7 @@ describe('ChatPanel', () => {
     )
   })
 
-  it('最新の回答をコピーでクリップボードに最終アシスタント本文が入る', async () => {
+  it('回答をコピーでクリップボードに該当アシスタント本文が入る', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', {
       ...navigator,
@@ -250,10 +251,79 @@ describe('ChatPanel', () => {
     })
 
     const conversation = screen.getByRole('list', { name: '会話' })
-    fireEvent.click(within(conversation).getByRole('button', { name: '最新の回答をコピー' }))
+    fireEvent.click(within(conversation).getByRole('button', { name: '回答をコピー' }))
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('最終回答')
+    })
+  })
+
+  it('アシスタントが2件のときそれぞれの回答をコピーできる', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText },
+    })
+
+    let postCount = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        postCount += 1
+        const body = JSON.parse(String(init.body)) as { messages?: { role: string; content: string }[] }
+        const lastUser = [...(body.messages ?? [])].reverse().find((m) => m.role === 'user')
+        if (postCount === 1) {
+          expect(lastUser?.content).toBe('一問目')
+          return Promise.resolve(jsonResponse({ assistant_content: '回答A', error: null }))
+        }
+        expect(lastUser?.content).toBe('二問目')
+        return Promise.resolve(jsonResponse({ assistant_content: '回答B', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: '一問目' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(screen.getByText('回答A')).toBeInTheDocument()
+    })
+
+    fireEvent.change(ta, { target: { value: '二問目' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(screen.getByText('回答B')).toBeInTheDocument()
+    })
+
+    const conversation = screen.getByRole('list', { name: '会話' })
+    const copyButtons = within(conversation).getAllByRole('button', { name: '回答をコピー' })
+    expect(copyButtons.length).toBe(2)
+
+    const firstAssistantLi = screen.getByText('回答A').closest('li')
+    expect(firstAssistantLi).toBeInstanceOf(HTMLElement)
+    fireEvent.click(
+      within(firstAssistantLi as HTMLElement).getByRole('button', { name: '回答をコピー' }),
+    )
+    await waitFor(() => {
+      expect(writeText).toHaveBeenLastCalledWith('回答A')
+    })
+
+    const secondAssistantLi = screen.getByText('回答B').closest('li')
+    expect(secondAssistantLi).toBeInstanceOf(HTMLElement)
+    fireEvent.click(
+      within(secondAssistantLi as HTMLElement).getByRole('button', { name: '回答をコピー' }),
+    )
+    await waitFor(() => {
+      expect(writeText).toHaveBeenLastCalledWith('回答B')
     })
   })
 
@@ -416,6 +486,7 @@ describe('ChatPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('応答を生成しています…')).toBeInTheDocument()
     })
+    expect(screen.getByRole('button', { name: '送信中' })).toBeDisabled()
     expect(messagesListElement()).toHaveAttribute('aria-busy', 'true')
 
     resolveChat(jsonResponse({ assistant_content: '完了', error: null }))
