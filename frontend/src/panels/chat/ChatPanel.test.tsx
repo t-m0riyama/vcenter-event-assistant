@@ -1,6 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import '../../App.css'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import {
@@ -28,6 +33,12 @@ function messagesListElement(): HTMLElement {
   const el = document.querySelector('ul.chat-panel__messages')
   if (!el) throw new Error('ul.chat-panel__messages が見つかりません')
   return el as HTMLElement
+}
+
+/** チャットコンポーザー周りのスタイルが意図どおりか（happy-dom の getComputedStyle が弱いためソースを検査する） */
+function readAppCss(): string {
+  const dir = path.dirname(fileURLToPath(import.meta.url))
+  return readFileSync(path.join(dir, '../../App.css'), 'utf8')
 }
 
 /**
@@ -144,6 +155,68 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument()
   })
 
+  it('コンポーザーは入力欄ラッパーが先・送信ボタンが後の子要素順になる', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { container } = renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const composer = container.querySelector('.chat-panel__composer')
+    expect(composer).toBeInstanceOf(HTMLElement)
+    const kids = composer ? Array.from(composer.children) : []
+    expect(kids.length).toBe(2)
+    expect(kids[0].className).toMatch(/chat-panel__composer-field/)
+    expect(kids[1].textContent).toMatch(/送信/)
+  })
+
+  it('App.css でコンポーザーが横並び（flex-direction: row）になる', () => {
+    const css = readAppCss()
+    expect(css).toMatch(/\.chat-panel__composer\s*\{[^}]*flex-direction:\s*row/s)
+  })
+
+  it('App.css の狭い画面メディアクエリ内でコンポーザーが縦積みになる', () => {
+    const css = readAppCss()
+    const mediaStart = css.indexOf('@media (max-width: 768px)')
+    expect(mediaStart).toBeGreaterThanOrEqual(0)
+    expect(css.slice(mediaStart)).toMatch(/\.chat-panel__composer[\s\S]*?flex-direction:\s*column/)
+  })
+
+  it('App.css でコンポーザー内 textarea の上限幅が 560px より広い', () => {
+    const css = readAppCss()
+    expect(css).toMatch(/\.chat-panel__composer\s+textarea\s*\{[^}]*max-width:\s*min\(\s*100%\s*,\s*960px\s*\)/s)
+  })
+
+  it('メッセージ入力 textarea は .chat-panel__composer-field 内にある', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { container } = renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const field = container.querySelector('.chat-panel__composer-field')
+    expect(field).toBeInstanceOf(HTMLElement)
+    expect(field?.querySelector('textarea[placeholder="質問を入力…"]')).toBeInstanceOf(
+      HTMLTextAreaElement,
+    )
+  })
+
   it('最新の回答をコピーでクリップボードに最終アシスタント本文が入る', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', {
@@ -176,7 +249,8 @@ describe('ChatPanel', () => {
       expect(screen.getByText('最終回答')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: '最新の回答をコピー' }))
+    const conversation = screen.getByRole('list', { name: '会話' })
+    fireEvent.click(within(conversation).getByRole('button', { name: '最新の回答をコピー' }))
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('最終回答')

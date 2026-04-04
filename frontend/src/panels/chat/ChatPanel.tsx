@@ -266,6 +266,18 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
             <div className="chat-panel__bubble">
               <ChatMarkdownContent markdown={m.content} />
             </div>
+            {i === messages.length - 1 && m.role === 'assistant' && (
+              <div className="chat-panel__msg-actions">
+                <button
+                  type="button"
+                  className="btn btn--gray"
+                  disabled={!canCopyLatestAssistantReply}
+                  onClick={() => void copyLatestAssistantReply()}
+                >
+                  最新の回答をコピー
+                </button>
+              </div>
+            )}
           </li>
         ))}
         {loading && (
@@ -298,39 +310,33 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         >
           会話をクリア
         </button>
-        <button
-          type="button"
-          className="btn btn--gray"
-          disabled={!canCopyLatestAssistantReply}
-          onClick={() => void copyLatestAssistantReply()}
-        >
-          最新の回答をコピー
-        </button>
         <div className="chat-panel__composer">
-          <label className="chat-panel__composer-label">
-            メッセージ
-            <textarea
-              value={draft}
-              onChange={(e) => {
-                setDraft(e.target.value)
-              }}
-              onKeyDown={(e) => {
-                // IME 確定中は Enter を横取りしない
-                if (e.nativeEvent.isComposing) return
-                if (e.key !== 'Enter') return
-                if (e.shiftKey) {
+          <div className="chat-panel__composer-field">
+            <label className="chat-panel__composer-label">
+              メッセージ
+              <textarea
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value)
+                }}
+                onKeyDown={(e) => {
+                  // IME 確定中は Enter を横取りしない
+                  if (e.nativeEvent.isComposing) return
+                  if (e.key !== 'Enter') return
+                  if (e.shiftKey) {
+                    e.preventDefault()
+                    setDraft((d) => `${d}\n`)
+                    return
+                  }
                   e.preventDefault()
-                  setDraft((d) => `${d}\n`)
-                  return
-                }
-                e.preventDefault()
-                void send()
-              }}
-              rows={3}
-              disabled={loading}
-              placeholder="質問を入力…"
-            />
-          </label>
+                  void send()
+                }}
+                rows={3}
+                disabled={loading}
+                placeholder="質問を入力…"
+              />
+            </label>
+          </div>
           <button type="button" className="btn" disabled={loading} onClick={() => void send()}>
             {loading ? '送信中…' : '送信'}
           </button>

@@ -1150,6 +1150,14 @@ textarea:focus-visible {
   border: 1px solid var(--color-border);
 }
 
+.chat-panel__msg-actions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: min(100%, 560px);
+  margin-top: var(--spacing-1);
+}
+
 /* Markdown ブロック（表・リスト等）向け。プレーン改行は GFM の段落ルールに従う */
 .chat-panel__markdown {
   white-space: normal;
@@ -1172,19 +1180,48 @@ textarea:focus-visible {
 
 .chat-panel__composer {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-end;
   gap: var(--spacing-2);
-  align-items: flex-start;
+  width: 100%;
+  max-width: min(100%, 960px);
+}
+
+.chat-panel__composer-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-panel__composer-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  width: 100%;
 }
 
 .chat-panel__composer textarea {
-  width: min(100%, 560px);
+  width: 100%;
+  max-width: min(100%, 960px);
   box-sizing: border-box;
   font: inherit;
+}
+
+.chat-panel__composer .btn {
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
   .app {
     padding: var(--spacing-3) var(--spacing-3) var(--spacing-8);
+  }
+
+  .chat-panel__composer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chat-panel__composer .btn {
+    align-self: stretch;
+    width: 100%;
   }
 }
