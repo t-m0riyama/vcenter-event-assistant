@@ -87,13 +87,15 @@
   border-radius: var(--radius-control) var(--radius-control) 0 0;
 }
 
-.tabs button .tab-button__inner {
+.tabs button .tab-button__inner,
+.settings-subtabs button .tab-button__inner {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2);
 }
 
-.tabs button .tab-button__icon {
+.tabs button .tab-button__icon,
+.settings-subtabs button .tab-button__icon {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
@@ -125,6 +127,9 @@
 }
 
 .settings-subtabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 40px;
   padding: 0 var(--spacing-3);
   border: none;
