@@ -10,7 +10,8 @@ export const DEFAULT_CHAT_SAMPLE_PROMPTS: readonly ChatSamplePromptRow[] = [
   {
     id: 'default-sample-power-events',
     label: '電源・可用性',
-    text: '仮想マシンやホストの電源操作・可用性に関するイベントの傾向を説明してください。',
+    text:
+      'この期間に集約されたイベントのうち、電源操作や可用性に関連しそうなものの傾向を説明してください。',
   },
   {
     id: 'default-sample-alerts',
