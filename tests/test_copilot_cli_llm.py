@@ -48,6 +48,75 @@ def test_format_copilot_chat_prompt_includes_block_and_turns() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_copilot_cli_session_auth_omits_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLI セッション認証時は SubprocessConfig に github_token を渡さない。"""
+    from copilot.client import SubprocessConfig as RealSubprocessConfig
+
+    captured: dict[str, object] = {}
+
+    def _spy(*_a: object, **kw: object) -> object:
+        captured.update(kw)
+        return RealSubprocessConfig(**kw)
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.copilot_cli_llm.SubprocessConfig",
+        _spy,
+    )
+
+    class _FakeSession:
+        class _Data:
+            content = "ok"
+
+        type_name = "assistant.message"
+
+        def __init__(self) -> None:
+            self.data = _FakeSession._Data()
+
+        async def send_and_wait(self, *_a: object, **_k: object) -> _FakeSession:
+            return self
+
+        async def disconnect(self) -> None:
+            return None
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+        async def create_session(self, **_kwargs: object) -> _FakeSession:
+            return _FakeSession()
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.copilot_cli_llm.CopilotClient",
+        lambda *_a, **_k: _FakeClient(),
+    )
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key=None,
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_chat_provider="copilot_cli",  # type: ignore[arg-type]
+        llm_chat_model="claude-haiku-4.5",
+        llm_copilot_cli_session_auth=True,
+    )
+    out = await run_copilot_cli_chat_completion(
+        s,
+        system_prompt="sys",
+        block="{}",
+        messages=[ChatMessage(role="user", content="hi")],
+    )
+    assert out == "ok"
+    assert captured.get("github_token") is None
+    assert captured.get("use_logged_in_user") is True
+
+
+@pytest.mark.asyncio
 async def test_run_copilot_cli_disconnects_when_send_and_wait_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

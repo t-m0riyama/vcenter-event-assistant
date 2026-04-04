@@ -59,9 +59,15 @@ async def run_copilot_cli_chat_completion(
     prof = resolve_llm_profile(settings, purpose="chat")
     if prof.provider != "copilot_cli":
         raise ValueError("run_copilot_cli_chat_completion は copilot_cli のときのみ呼び出してください")
-    token = prof.api_key.strip()
-    if not token:
-        raise ValueError("Copilot CLI 用の認証（GitHub トークン）が空です")
+
+    use_cli_session = settings.llm_copilot_cli_session_auth
+    if not use_cli_session:
+        token = prof.api_key.strip()
+        if not token:
+            raise ValueError(
+                "Copilot CLI 用の認証（GitHub トークン）が空です。"
+                " PAT が使えないモデルでは LLM_COPILOT_CLI_SESSION_AUTH=true と gh auth login を検討してください。"
+            )
 
     def deny_permission(_request: object, _invocation: dict[str, str]) -> PermissionRequestResult:
         return PermissionRequestResult(
@@ -69,10 +75,18 @@ async def run_copilot_cli_chat_completion(
             feedback="vcenter-event-assistant: サーバ API 経由ではツール権限を付与しません",
         )
 
-    cfg = SubprocessConfig(
-        github_token=token,
-        cli_path=settings.llm_copilot_cli_path,
-    )
+    # PAT を渡すと一部モデル・エンドポイントで 400 になる。CLI ログインのみ使うときはトークンを渡さない。
+    if use_cli_session:
+        cfg = SubprocessConfig(
+            github_token=None,
+            cli_path=settings.llm_copilot_cli_path,
+            use_logged_in_user=True,
+        )
+    else:
+        cfg = SubprocessConfig(
+            github_token=prof.api_key.strip(),
+            cli_path=settings.llm_copilot_cli_path,
+        )
     prompt = format_copilot_chat_prompt(block, messages)
     system_message: SystemMessageAppendConfig = {"mode": "append", "content": system_prompt}
 

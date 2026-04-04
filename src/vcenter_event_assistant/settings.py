@@ -246,6 +246,14 @@ class Settings(BaseSettings):
             "空なら SDK 既定（PATH の copilot または同梱バイナリ）。"
         ),
     )
+    llm_copilot_cli_session_auth: bool = Field(
+        default=False,
+        description=(
+            "copilot_cli のとき True なら SDK に GitHub PAT を渡さず、"
+            "ローカルの gh / Copilot CLI のログインセッションのみを使う（`LLM_COPILOT_CLI_SESSION_AUTH`）。"
+            "一部モデル・エンドポイントは PAT を拒否するため、その場合は True にする。"
+        ),
+    )
     llm_anonymization_enabled: bool = Field(
         default=True,
         description=(

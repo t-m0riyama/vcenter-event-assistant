@@ -39,6 +39,13 @@ def _llm_failure_detail_for_user(exc: BaseException) -> str:
             "LLM_CHAT_TIMEOUT_SECONDS を延長するか、"
             "ローカル Ollama ではより軽いモデル・短いプロンプトを検討してください）"
         )
+    raw = str(exc)
+    if "Personal Access Tokens are not supported" in raw or "third-party user token" in raw:
+        return (
+            "このモデル／エンドポイントでは GitHub PAT を SDK に渡せません。"
+            "環境変数 LLM_COPILOT_CLI_SESSION_AUTH=true にし、LLM_CHAT_API_KEY を空にするか外し、"
+            "ターミナルで gh auth login（または Copilot CLI のログイン）を済ませてから再試行してください。"
+        )
     text = str(exc).strip()
     if text:
         return text

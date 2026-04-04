@@ -21,7 +21,10 @@ from vcenter_event_assistant.services.llm_anonymization import anonymize_chat_fo
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.services.copilot_cli_llm import run_copilot_cli_chat_completion
 from vcenter_event_assistant.services.llm_factory import build_chat_model
-from vcenter_event_assistant.services.llm_profile import effective_chat_api_key, resolve_llm_profile
+from vcenter_event_assistant.services.llm_profile import (
+    is_chat_llm_configured,
+    resolve_llm_profile,
+)
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
@@ -242,11 +245,10 @@ async def run_period_chat(
 
     Returns:
         (assistant_text, error_message, llm_context_meta)。
-        API キーが空のときは (\"\", None, None)。
+        チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は (\"\", None, None)。
         LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
-    key = effective_chat_api_key(settings)
-    if not key:
+    if not is_chat_llm_configured(settings):
         return ("", None, None)
 
     digest_obj = context.model_dump(mode="json")
