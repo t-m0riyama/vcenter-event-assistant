@@ -12,6 +12,7 @@ import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
+import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import './App.css'
 
 const MetricsPanel = lazy(async () => {
@@ -19,7 +20,7 @@ const MetricsPanel = lazy(async () => {
   return { default: m.MetricsPanel }
 })
 
-type Tab = 'summary' | 'events' | 'metrics' | 'digests' | 'chat' | 'settings'
+type Tab = MainTabId
 
 type SettingsSubTab = 'general' | 'vcenters' | 'score_rules' | 'event_type_guides'
 
@@ -62,12 +63,17 @@ export default function App() {
                     setErr(null)
                   }}
                 >
-                  {t === 'summary' && '概要'}
-                  {t === 'events' && 'イベント'}
-                  {t === 'metrics' && 'グラフ'}
-                  {t === 'digests' && 'ダイジェスト'}
-                  {t === 'chat' && 'チャット'}
-                  {t === 'settings' && '設定'}
+                  <span className="tab-button__inner">
+                    <MainTabIcon tabId={t} />
+                    <span className="tab-button__label">
+                      {t === 'summary' && '概要'}
+                      {t === 'events' && 'イベント'}
+                      {t === 'metrics' && 'グラフ'}
+                      {t === 'digests' && 'ダイジェスト'}
+                      {t === 'chat' && 'チャット'}
+                      {t === 'settings' && '設定'}
+                    </span>
+                  </span>
                 </button>
               ))}
             </nav>
