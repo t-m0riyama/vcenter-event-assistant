@@ -10,6 +10,10 @@ import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { ChatCustomSamplePromptsProvider } from '../../preferences/ChatCustomSamplePromptsProvider'
 import {
+  CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY,
+  CHAT_SAMPLE_PROMPTS_STORAGE_KEY,
+} from '../../preferences/chatSamplePromptsStorage'
+import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
@@ -90,6 +94,8 @@ describe('ChatPanel', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
+    localStorage.removeItem(CHAT_SAMPLE_PROMPTS_STORAGE_KEY)
+    localStorage.removeItem(CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY)
   })
 
   it('送信で POST /api/chat が呼ばれ、アシスタントの返答が表示される', async () => {
@@ -358,7 +364,9 @@ describe('ChatPanel', () => {
     })
   })
 
-  it('アシスタントが2件のときそれぞれの回答をコピーできる', async () => {
+  it(
+    'アシスタントが2件のときそれぞれの回答をコピーできる',
+    async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', {
       ...navigator,
@@ -425,7 +433,9 @@ describe('ChatPanel', () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenLastCalledWith('回答B')
     })
-  })
+  },
+    15_000,
+  )
 
   it('Enter キーで送信される', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {

@@ -1,7 +1,10 @@
 import type { ChatSamplePromptRow } from './chatSamplePromptTypes'
 
-/** チャットパネルに出す既定サンプル（コード同梱・読み取り専用）。 */
-export const DEFAULT_CHAT_SAMPLE_PROMPTS: readonly ChatSamplePromptRow[] = [
+/**
+ * 初回・移行時に localStorage へシードする既定サンプル（コード同梱）。
+ * 保存後はユーザーが編集・削除可能。
+ */
+export const INITIAL_CHAT_SAMPLE_PROMPTS: readonly ChatSamplePromptRow[] = [
   {
     id: 'default-sample-period-summary',
     label: '期間の要約',

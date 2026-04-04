@@ -2,11 +2,12 @@ import { createContext } from 'react'
 
 import type { ChatSamplePromptRow } from '../panels/chat/chatSamplePromptTypes'
 
-/** チャット用カスタムサンプル質問の Context 値。 */
+/** チャットサンプル質問の Context 値（localStorage と同期する全行）。 */
 export type ChatCustomSamplePromptsContextValue = {
-  readonly customSamplePrompts: readonly ChatSamplePromptRow[]
-  readonly setCustomSamplePrompts: (rows: readonly ChatSamplePromptRow[]) => void
-  /** チャットチップ用: 既定＋カスタムのうち label・text が非空の行のみ。 */
+  /** 保存済みの全サンプル行（既定由来の行も含む）。 */
+  readonly chatSamplePrompts: readonly ChatSamplePromptRow[]
+  readonly setChatSamplePrompts: (rows: readonly ChatSamplePromptRow[]) => void
+  /** チャットチップ用: label・text がともに非空（trim 後）の行のみ。 */
   readonly visibleChatSamplePrompts: readonly ChatSamplePromptRow[]
 }
 

@@ -180,7 +180,7 @@ export default function App() {
                 <VCentersPanel onError={setErr} />
               )}
               {tab === 'settings' && settingsSubTab === 'chat_samples' && (
-                <ChatCustomSamplePromptsPanel />
+                <ChatCustomSamplePromptsPanel onError={setErr} />
               )}
             </main>
           </div>
