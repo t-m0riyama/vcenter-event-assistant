@@ -182,7 +182,7 @@ describe('ChatPanel', () => {
   })
 
   it('Shift+Enter では送信せず改行だけされる', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
         return Promise.resolve(jsonResponse([]))
