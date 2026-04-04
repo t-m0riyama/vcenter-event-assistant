@@ -155,6 +155,26 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsNetworkIo,
   ])
 
+  const copyLatestAssistantReply = useCallback(async () => {
+    let text = ''
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i]
+      if (m.role === 'assistant') {
+        text = m.content
+        break
+      }
+    }
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    }
+  }, [messages, onError])
+
+  const canCopyLatestAssistantReply =
+    messages.length > 0 && !loading && messages.at(-1)?.role === 'assistant'
+
   return (
     <div className="panel chat-panel">
       <p className="hint">
@@ -274,6 +294,14 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           }}
         >
           会話をクリア
+        </button>
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={!canCopyLatestAssistantReply}
+          onClick={() => void copyLatestAssistantReply()}
+        >
+          最新の回答をコピー
         </button>
         <div className="chat-panel__composer">
           <label className="chat-panel__composer-label">

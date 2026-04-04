@@ -115,6 +115,45 @@ describe('ChatPanel', () => {
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('最新の回答をコピーでクリップボードに最終アシスタント本文が入る', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText },
+    })
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: '最終回答', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(screen.getByText('最終回答')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '最新の回答をコピー' }))
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('最終回答')
+    })
+  })
+
   it('Enter キーで送信される', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
