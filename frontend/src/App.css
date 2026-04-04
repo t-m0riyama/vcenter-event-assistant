@@ -1133,24 +1133,12 @@ textarea:focus-visible {
 }
 
 .chat-panel__bubble {
+  white-space: pre-wrap;
   word-break: break-word;
   max-width: min(100%, 560px);
   padding: var(--spacing-2) var(--spacing-3);
   border-radius: var(--radius-control);
   border: 1px solid var(--color-border);
-}
-
-/* GFM 描画時はブロック要素の折り返しに任せ、親の pre-wrap は使わない */
-.chat-panel__markdown {
-  white-space: normal;
-}
-
-.chat-panel__markdown > :first-child {
-  margin-top: 0;
-}
-
-.chat-panel__markdown > :last-child {
-  margin-bottom: 0;
 }
 
 .chat-panel__composer {
