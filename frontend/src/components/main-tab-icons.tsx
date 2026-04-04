@@ -77,17 +77,11 @@ export function MainTabIcon({ tabId }: { readonly tabId: MainTabId }): ReactElem
         </TabSvgIcon>
       )
     case 'settings':
+      /* 外周が凹凸する 6 歯の歯車輪郭（計画の「円周に短い歯」）＋中心穴 */
       return (
         <TabSvgIcon>
+          <path d="M8 2.2 10.1 4.4 13 5.1 12.2 8 13 10.9 10.1 11.6 8 13.8 5.9 11.6 3 10.9 3.8 8 3 5.1 5.9 4.4z" />
           <circle cx="8" cy="8" r="2.25" />
-          <line x1="8" y1="1.5" x2="8" y2="3.75" />
-          <line x1="8" y1="12.25" x2="8" y2="14.5" />
-          <line x1="1.5" y1="8" x2="3.75" y2="8" />
-          <line x1="12.25" y1="8" x2="14.5" y2="8" />
-          <line x1="3.05" y1="3.05" x2="4.65" y2="4.65" />
-          <line x1="11.35" y1="11.35" x2="12.95" y2="12.95" />
-          <line x1="3.05" y1="12.95" x2="4.65" y2="11.35" />
-          <line x1="11.35" y1="4.65" x2="12.95" y2="3.05" />
         </TabSvgIcon>
       )
     default: {
