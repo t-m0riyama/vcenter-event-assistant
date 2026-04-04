@@ -16,4 +16,14 @@ describe('ChatMarkdownContent', () => {
     render(<ChatMarkdownContent markdown="これは通常の段落です。" />)
     expect(screen.getByText('これは通常の段落です。')).toBeInTheDocument()
   })
+
+  it('フェンス付きコードにシンタックスハイライト用のクラスが付く', () => {
+    const { container } = render(
+      <ChatMarkdownContent markdown={'```ts\nconst x = 1\n```'} />,
+    )
+    const code = container.querySelector('pre code')
+    expect(code).toBeTruthy()
+    expect(code?.className).toMatch(/\bhljs\b/)
+    expect(code?.querySelector('span.hljs-keyword')).toBeTruthy()
+  })
 })
