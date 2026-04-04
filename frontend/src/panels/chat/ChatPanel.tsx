@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../../api'
 import {
   parseChatResponse,
@@ -18,6 +18,12 @@ import {
 } from '../../datetime/zonedRangeParts'
 import { toErrorMessage } from '../../utils/errors'
 
+/** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
+const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
+
+/**
+ * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ新着メッセージ後に末尾へスクロールする。
+ */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
@@ -33,6 +39,23 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
+
+  const messagesListRef = useRef<HTMLUListElement>(null)
+  /** 最下部付近にいるときだけ `messages` 更新後に末尾へスクロールする */
+  const stickToBottomRef = useRef(true)
+
+  const syncStickToBottomFromScroll = useCallback(() => {
+    const el = messagesListRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom <= CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = messagesListRef.current
+    if (!el || !stickToBottomRef.current) return
+    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+  }, [messages])
 
   useEffect(() => {
     void (async () => {
@@ -182,7 +205,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         </label>
       </section>
 
-      <ul className="chat-panel__messages" aria-label="会話">
+      <ul
+        ref={messagesListRef}
+        className="chat-panel__messages"
+        aria-label="会話"
+        onScroll={syncStickToBottomFromScroll}
+      >
         {messages.map((m, i) => (
           <li key={`${i}-${m.role}`} className={`chat-panel__msg chat-panel__msg--${m.role}`}>
             <span className="chat-panel__role">{m.role === 'user' ? 'あなた' : 'アシスタント'}</span>
