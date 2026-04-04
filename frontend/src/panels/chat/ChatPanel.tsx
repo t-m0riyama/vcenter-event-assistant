@@ -21,6 +21,7 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import { ChatMarkdownContent } from './ChatMarkdownContent'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
@@ -262,7 +263,9 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         {messages.map((m, i) => (
           <li key={`${i}-${m.role}`} className={`chat-panel__msg chat-panel__msg--${m.role}`}>
             <span className="chat-panel__role">{m.role === 'user' ? 'あなた' : 'アシスタント'}</span>
-            <div className="chat-panel__bubble">{m.content}</div>
+            <div className="chat-panel__bubble">
+              <ChatMarkdownContent markdown={m.content} />
+            </div>
           </li>
         ))}
         {loading && (

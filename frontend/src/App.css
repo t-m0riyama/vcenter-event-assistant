@@ -1134,6 +1134,7 @@ textarea:focus-visible {
 .chat-panel__bubble--pending {
   color: var(--color-text-secondary);
   font-style: italic;
+  white-space: normal;
 }
 
 .chat-panel__role {
@@ -1142,12 +1143,24 @@ textarea:focus-visible {
 }
 
 .chat-panel__bubble {
-  white-space: pre-wrap;
   word-break: break-word;
   max-width: min(100%, 560px);
   padding: var(--spacing-2) var(--spacing-3);
   border-radius: var(--radius-control);
   border: 1px solid var(--color-border);
+}
+
+/* Markdown ブロック（表・リスト等）向け。プレーン改行は GFM の段落ルールに従う */
+.chat-panel__markdown {
+  white-space: normal;
+}
+
+.chat-panel__markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-panel__markdown > :last-child {
+  margin-bottom: 0;
 }
 
 .chat-panel__composer-stack {
