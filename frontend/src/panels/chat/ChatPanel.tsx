@@ -262,34 +262,48 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         </p>
       )}
 
-      <div className="chat-panel__composer">
-        <label className="chat-panel__composer-label">
-          メッセージ
-          <textarea
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value)
-            }}
-            onKeyDown={(e) => {
-              // IME 確定中は Enter を横取りしない
-              if (e.nativeEvent.isComposing) return
-              if (e.key !== 'Enter') return
-              if (e.shiftKey) {
-                e.preventDefault()
-                setDraft((d) => `${d}\n`)
-                return
-              }
-              e.preventDefault()
-              void send()
-            }}
-            rows={3}
-            disabled={loading}
-            placeholder="質問を入力…"
-          />
-        </label>
-        <button type="button" className="btn" disabled={loading} onClick={() => void send()}>
-          {loading ? '送信中…' : '送信'}
+      <div className="chat-panel__composer-stack">
+        <button
+          type="button"
+          className="btn btn--gray"
+          disabled={loading || messages.length === 0}
+          onClick={() => {
+            if (!window.confirm('会話をすべて削除しますか？')) return
+            setMessages([])
+            setLastLlmContext(null)
+          }}
+        >
+          会話をクリア
         </button>
+        <div className="chat-panel__composer">
+          <label className="chat-panel__composer-label">
+            メッセージ
+            <textarea
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+              }}
+              onKeyDown={(e) => {
+                // IME 確定中は Enter を横取りしない
+                if (e.nativeEvent.isComposing) return
+                if (e.key !== 'Enter') return
+                if (e.shiftKey) {
+                  e.preventDefault()
+                  setDraft((d) => `${d}\n`)
+                  return
+                }
+                e.preventDefault()
+                void send()
+              }}
+              rows={3}
+              disabled={loading}
+              placeholder="質問を入力…"
+            />
+          </label>
+          <button type="button" className="btn" disabled={loading} onClick={() => void send()}>
+            {loading ? '送信中…' : '送信'}
+          </button>
+        </div>
       </div>
     </div>
   )

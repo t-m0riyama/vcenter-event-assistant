@@ -1150,6 +1150,13 @@ textarea:focus-visible {
   border: 1px solid var(--color-border);
 }
 
+.chat-panel__composer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  align-items: flex-start;
+}
+
 .chat-panel__composer {
   display: flex;
   flex-direction: column;

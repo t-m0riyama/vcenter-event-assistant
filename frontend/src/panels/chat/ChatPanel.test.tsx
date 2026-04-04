@@ -171,6 +171,43 @@ describe('ChatPanel', () => {
     expect(posts.length).toBe(0)
   })
 
+  it('会話をクリアで確認後にメッセージが空になる', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: 'a', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(screen.getByText('a')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '会話をクリア' }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(screen.queryByText('a')).not.toBeInTheDocument()
+    expect(screen.queryByText('q')).not.toBeInTheDocument()
+
+    confirmSpy.mockRestore()
+  })
+
   it('送信中は会話リストにプレースホルダが表示され ul に aria-busy が付く', async () => {
     let resolveChat!: (r: Response) => void
     const chatPromise = new Promise<Response>((res) => {
