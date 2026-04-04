@@ -9,7 +9,9 @@
 
 ## LLM 実装（バックエンド）
 
-ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は **LangChain** の `ChatOpenAI`（`LLM_DIGEST_PROVIDER=openai_compatible`）または `ChatGoogleGenerativeAI`（`gemini`）を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py)（`purpose`: `digest` / `chat`）で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`・`langsmith`（トレース用クライアント）。
+ダイジェスト要約（`augment_digest_with_llm`）と期間チャット（`run_period_chat`）は、実効プロバイダが `openai_compatible` または `gemini` のとき **LangChain** の `ChatOpenAI` または `ChatGoogleGenerativeAI` を [`llm_factory`](../src/vcenter_event_assistant/services/llm_factory.py)（`purpose`: `digest` / `chat`）で組み立て、応答本文は `astream` でチャンク連結する。依存は `langchain-core`・`langchain-openai`・`langchain-google-genai`・`langsmith`（トレース用クライアント）。
+
+**GitHub Copilot CLI（チャット専用）:** `LLM_CHAT_PROVIDER=copilot_cli` のとき、チャットは LangChain を経由せず [`copilot_cli_llm`](../src/vcenter_event_assistant/services/copilot_cli_llm.py) が **github-copilot-sdk** 経由で Copilot CLI と通信する。`LLM_DIGEST_PROVIDER` に `copilot_cli` は指定できない（ダイジェストは従来どおり `openai_compatible` / `gemini`）。`LLM_CHAT_API_KEY` には GitHub トークンを設定する。同一マシンに Copilot CLI のインストールと認証が必要であり、本番コンテナでは運用が難しい場合がある。サーバ API 経由ではツール権限を付与しない（SDK の権限ハンドラで拒否）。この経路では **LangSmith の `RunnableConfig` は渡さない**（OpenAI/Gemini チャットとトレース挙動が一致しない場合がある）。`.env.example` の Copilot 節を参照する。
 
 **LangSmith:** [`llm_tracing.build_llm_runnable_config`](../src/vcenter_event_assistant/services/llm_tracing.py) が `RunnableConfig`（`tags` / `metadata`、任意で `LangChainTracer`）を組み立て、チャット API とバッチ `run_digest_once` から `run_period_chat` / `augment_digest_with_llm` に渡す。環境変数は `LANGSMITH_TRACING_ENABLED`（既定 `false`）・`LANGSMITH_API_KEY` 等（`.env.example` 参照）。トレースをオンにするとホスト名・イベント本文を含むプロンプトが LangSmith に送られる可能性があるため、本番では運用判断すること。設計は [`docs/superpowers/specs/2026-04-04-langsmith-tracing-design.md`](superpowers/specs/2026-04-04-langsmith-tracing-design.md)。
 

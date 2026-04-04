@@ -9,6 +9,23 @@ import pytest
 from vcenter_event_assistant.settings import Settings
 
 
+def test_build_chat_model_rejects_copilot_cli() -> None:
+    """copilot_cli は LangChain では構築しない。"""
+    from vcenter_event_assistant.services import llm_factory
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="k",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="m",
+        llm_digest_timeout_seconds=30.0,
+        llm_chat_provider="copilot_cli",  # type: ignore[arg-type]
+    )
+    with pytest.raises(ValueError, match="copilot_cli"):
+        llm_factory.build_chat_model(s, purpose="chat")
+
+
 @pytest.mark.parametrize(
     ("provider", "patch_target", "model_cls_name"),
     [

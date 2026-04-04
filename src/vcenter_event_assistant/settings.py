@@ -3,12 +3,12 @@
 import logging
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LlmProvider = Literal["openai_compatible", "gemini"]
+LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
 
 
 def _settings_env_file() -> str | None:
@@ -239,6 +239,13 @@ class Settings(BaseSettings):
             "Gemini 公式のトークン数と一致しない場合がある（`LLM_CHAT_MAX_INPUT_TOKENS`）。"
         ),
     )
+    llm_copilot_cli_path: str | None = Field(
+        default=None,
+        description=(
+            "チャットが copilot_cli のとき任意。Copilot CLI 実行ファイルのパス（`LLM_COPILOT_CLI_PATH`）。"
+            "空なら SDK 既定（PATH の copilot または同梱バイナリ）。"
+        ),
+    )
     llm_anonymization_enabled: bool = Field(
         default=True,
         description=(
@@ -294,6 +301,27 @@ class Settings(BaseSettings):
             s = v.strip()
             return s or None
         return str(v).strip() or None
+
+    @field_validator("llm_copilot_cli_path", mode="before")
+    @classmethod
+    def empty_copilot_cli_path_to_none(cls, v: object) -> str | None:
+        """空文字・空白のみは None に正規化する。"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return str(v).strip() or None
+
+    @model_validator(mode="after")
+    def reject_copilot_cli_for_digest_llm(self) -> Self:
+        """ダイジェスト LLM は Copilot CLI 未対応（チャット専用）。"""
+        if self.llm_digest_provider == "copilot_cli":
+            raise ValueError(
+                "LLM_DIGEST_PROVIDER に copilot_cli は指定できません（チャット専用）。"
+                "ダイジェストは openai_compatible または gemini を使用してください。"
+            )
+        return self
 
     @property
     def effective_digest_daily_enabled(self) -> bool:

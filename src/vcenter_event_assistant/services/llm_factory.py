@@ -32,6 +32,11 @@ def build_chat_model(
     _ = config
     p = resolve_llm_profile(settings, purpose=purpose)
     key = p.api_key
+    if p.provider == "copilot_cli":
+        raise ValueError(
+            "copilot_cli は LangChain ChatModel では使用できません。"
+            "チャットは chat_llm の Copilot 専用分岐を使用してください。"
+        )
     if p.provider == "openai_compatible":
         from langchain_openai import ChatOpenAI
 
