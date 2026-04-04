@@ -22,12 +22,20 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import {
+  clearChatPanelSnapshot,
+  readChatPanelSnapshot,
+  writeChatPanelSnapshot,
+} from '../../preferences/chatPanelStorage'
 import { appendSelectedChatSampleTextsToDraft } from './appendSelectedChatSampleTextsToDraft'
 import { ChatCopyAnswerSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
+
+/** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
+const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
 
 /**
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
@@ -52,6 +60,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [selectedSampleIds, setSelectedSampleIds] = useState(() => new Set<string>())
+  /** `localStorage` からの初回復元が終わるまで永続化 `write` しない */
+  const [storageHydrated, setStorageHydrated] = useState(false)
+  /** `draft` の debounce 反映値（永続化スナップショットの `draft` に使う） */
+  const [debouncedDraft, setDebouncedDraft] = useState('')
+  /** 「会話をクリア」直後のみ、空状態での `write` をスキップしてキー削除を維持する */
+  const skipNextPersistRef = useRef(false)
 
   const messagesListRef = useRef<HTMLUListElement>(null)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -103,6 +117,59 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     })()
   }, [onError])
 
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedDraft(draft)
+    }, CHAT_DRAFT_PERSIST_DEBOUNCE_MS)
+    return () => window.clearTimeout(id)
+  }, [draft])
+
+  useEffect(() => {
+    const snap = readChatPanelSnapshot()
+    if (snap) {
+      setRangeParts(snap.rangeParts)
+      setVcenterId(snap.vcenterId)
+      setMessages(snap.messages)
+      setDraft(snap.draft)
+      setDebouncedDraft(snap.draft)
+      setIncludePeriodMetricsCpu(snap.includePeriodMetricsCpu)
+      setIncludePeriodMetricsMemory(snap.includePeriodMetricsMemory)
+      setIncludePeriodMetricsDiskIo(snap.includePeriodMetricsDiskIo)
+      setIncludePeriodMetricsNetworkIo(snap.includePeriodMetricsNetworkIo)
+    }
+    setStorageHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!storageHydrated) {
+      return
+    }
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false
+      return
+    }
+    writeChatPanelSnapshot({
+      messages,
+      rangeParts,
+      vcenterId,
+      includePeriodMetricsCpu,
+      includePeriodMetricsMemory,
+      includePeriodMetricsDiskIo,
+      includePeriodMetricsNetworkIo,
+      draft: debouncedDraft,
+    })
+  }, [
+    storageHydrated,
+    messages,
+    rangeParts,
+    vcenterId,
+    includePeriodMetricsCpu,
+    includePeriodMetricsMemory,
+    includePeriodMetricsDiskIo,
+    includePeriodMetricsNetworkIo,
+    debouncedDraft,
+  ])
+
   const send = useCallback(async () => {
     const text = draft.trim()
     if (!text) return
@@ -122,6 +189,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
     setDraft('')
+    setDebouncedDraft('')
     setLoading(true)
     try {
       const body: Record<string, unknown> = {
@@ -328,6 +396,8 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           disabled={loading || messages.length === 0}
           onClick={() => {
             if (!window.confirm('会話をすべて削除しますか？')) return
+            skipNextPersistRef.current = true
+            clearChatPanelSnapshot()
             setMessages([])
             setLastLlmContext(null)
           }}
