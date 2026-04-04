@@ -21,6 +21,7 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import { ChatCopyAnswerSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
@@ -156,25 +157,18 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsNetworkIo,
   ])
 
-  const copyLatestAssistantReply = useCallback(async () => {
-    let text = ''
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i]
-      if (m.role === 'assistant') {
-        text = m.content
-        break
+  const copyAssistantMessageContent = useCallback(
+    async (content: string) => {
+      const text = content.trim()
+      if (!text) return
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch (e) {
+        onError(toErrorMessage(e))
       }
-    }
-    if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch (e) {
-      onError(toErrorMessage(e))
-    }
-  }, [messages, onError])
-
-  const canCopyLatestAssistantReply =
-    messages.length > 0 && !loading && messages.at(-1)?.role === 'assistant'
+    },
+    [onError],
+  )
 
   return (
     <div className="panel chat-panel">
@@ -266,6 +260,20 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
             <div className="chat-panel__bubble">
               <ChatMarkdownContent markdown={m.content} />
             </div>
+            {m.role === 'assistant' && (
+              <div className="chat-panel__msg-actions">
+                <button
+                  type="button"
+                  className="btn btn--gray chat-panel__icon-btn chat-panel__copy-answer-btn"
+                  aria-label="回答をコピー"
+                  title="回答をコピー"
+                  disabled={!m.content.trim()}
+                  onClick={() => void copyAssistantMessageContent(m.content)}
+                >
+                  <ChatCopyAnswerSvg />
+                </button>
+              </div>
+            )}
           </li>
         ))}
         {loading && (
@@ -298,41 +306,43 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         >
           会話をクリア
         </button>
-        <button
-          type="button"
-          className="btn btn--gray"
-          disabled={!canCopyLatestAssistantReply}
-          onClick={() => void copyLatestAssistantReply()}
-        >
-          最新の回答をコピー
-        </button>
         <div className="chat-panel__composer">
-          <label className="chat-panel__composer-label">
-            メッセージ
-            <textarea
-              value={draft}
-              onChange={(e) => {
-                setDraft(e.target.value)
-              }}
-              onKeyDown={(e) => {
-                // IME 確定中は Enter を横取りしない
-                if (e.nativeEvent.isComposing) return
-                if (e.key !== 'Enter') return
-                if (e.shiftKey) {
+          <div className="chat-panel__composer-field">
+            <label className="chat-panel__composer-label">
+              メッセージ
+              <textarea
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value)
+                }}
+                onKeyDown={(e) => {
+                  // IME 確定中は Enter を横取りしない
+                  if (e.nativeEvent.isComposing) return
+                  if (e.key !== 'Enter') return
+                  if (e.shiftKey) {
+                    e.preventDefault()
+                    setDraft((d) => `${d}\n`)
+                    return
+                  }
                   e.preventDefault()
-                  setDraft((d) => `${d}\n`)
-                  return
-                }
-                e.preventDefault()
-                void send()
-              }}
-              rows={3}
-              disabled={loading}
-              placeholder="質問を入力…"
-            />
-          </label>
-          <button type="button" className="btn" disabled={loading} onClick={() => void send()}>
-            {loading ? '送信中…' : '送信'}
+                  void send()
+                }}
+                rows={3}
+                disabled={loading}
+                placeholder="質問を入力…"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            className="btn btn--filled chat-panel__icon-btn chat-panel__send-btn"
+            disabled={loading}
+            aria-busy={loading}
+            aria-label={loading ? '送信中' : '送信'}
+            title={loading ? '送信中' : '送信'}
+            onClick={() => void send()}
+          >
+            <ChatSendSvg />
           </button>
         </div>
       </div>
