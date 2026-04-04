@@ -4,6 +4,7 @@
 
 **運用方針**
 
+- **チャットに限らない**。ダイジェスト、メトリクス、インフラなど、どの領域の TODO も追記対象とする。
 - **トピックごとに `## 見出し`** を分ける（例: 下記「チャット話題ガード」）。項目が増えたら、そのセクション内で `###` により区分してよい。
 - チェックリストは `- [ ]` / `- [x]` で統一する。
 
@@ -11,7 +12,7 @@
 
 ## チャット話題ガード（オフトピック連続・クールダウン）のフォローアップ
 
-MVP はプロセス内メモリ（`[MemoryChatTopicGuardStore](../src/vcenter_event_assistant/services/chat_topic_guard_store.py)`）・`[classify_chat_user_message](../src/vcenter_event_assistant/services/chat_topic_classify.py)`・`[post_chat` のガード](../src/vcenter_event_assistant/api/routes/chat.py)・フロントの `chat_session_id` / 429 処理まで実装済み。以下は**未実装または任意**。
+MVP はプロセス内メモリ（[MemoryChatTopicGuardStore](../src/vcenter_event_assistant/services/chat_topic_guard_store.py)）・[classify_chat_user_message](../src/vcenter_event_assistant/services/chat_topic_classify.py)・[post_chat のガード](../src/vcenter_event_assistant/api/routes/chat.py)・フロントの `chat_session_id` / 429 処理まで実装済み。以下は**未実装または任意**。
 
 ### インフラ・一貫性（マルチワーカー）
 
