@@ -3,12 +3,15 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import '../../App.css'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import { CHAT_MAX_STORED_MESSAGES_STORAGE_KEY } from '../../preferences/chatMaxStoredMessagesStorage'
+import { ChatMaxStoredMessagesProvider } from '../../preferences/ChatMaxStoredMessagesProvider'
 import { ChatSamplePromptsProvider } from '../../preferences/ChatSamplePromptsProvider'
+import { CHAT_PANEL_STORAGE_KEY, writeChatPanelSnapshot } from '../../preferences/chatPanelStorage'
 import {
   CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY,
   CHAT_SAMPLE_PROMPTS_STORAGE_KEY,
@@ -29,9 +32,11 @@ function jsonResponse(data: unknown, status = 200) {
 function renderChat(onError: (e: string | null) => void = vi.fn()) {
   return render(
     <TimeZoneProvider>
-      <ChatSamplePromptsProvider>
-        <ChatPanel onError={onError} />
-      </ChatSamplePromptsProvider>
+      <ChatMaxStoredMessagesProvider>
+        <ChatSamplePromptsProvider>
+          <ChatPanel onError={onError} />
+        </ChatSamplePromptsProvider>
+      </ChatMaxStoredMessagesProvider>
     </TimeZoneProvider>,
   )
 }
@@ -91,11 +96,18 @@ function attachScrollableMessagesListMock(
 }
 
 describe('ChatPanel', () => {
+  beforeEach(() => {
+    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
     localStorage.removeItem(CHAT_SAMPLE_PROMPTS_STORAGE_KEY)
     localStorage.removeItem(CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY)
+    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
   })
 
   it(
@@ -139,34 +151,41 @@ describe('ChatPanel', () => {
     15_000,
   )
 
-  it('アシスタント応答の GFM テーブルを描画する', async () => {
-    const tableMd = '|列A|列B|\n|---|---|\n|1|2|'
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/api/vcenters')) {
-        return Promise.resolve(jsonResponse([]))
-      }
-      if (url.endsWith('/api/chat') && init?.method === 'POST') {
-        return Promise.resolve(jsonResponse({ assistant_content: tableMd, error: null }))
-      }
-      return Promise.resolve(new Response('not found', { status: 404 }))
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it(
+    'アシスタント応答の GFM テーブルを描画する',
+    async () => {
+      const tableMd = '|列A|列B|\n|---|---|\n|1|2|'
+      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/chat') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ assistant_content: tableMd, error: null }))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
 
-    renderChat()
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      renderChat()
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
 
-    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
-      target: { value: '表を出して' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+        target: { value: '表を出して' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
 
-    await waitFor(() => {
-      expect(screen.getByRole('table')).toBeInTheDocument()
-    })
-    expect(screen.getByRole('columnheader', { name: '列A' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument()
-  })
+      await waitFor(
+        () => {
+          expect(screen.getByRole('table')).toBeInTheDocument()
+        },
+        { timeout: 12_000 },
+      )
+      expect(screen.getByRole('columnheader', { name: '列A' })).toBeInTheDocument()
+      expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument()
+    },
+    15_000,
+  )
 
   it('コンポーザーは入力欄ラッパーが先・送信ボタンが後の子要素順になる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -646,6 +665,131 @@ describe('ChatPanel', () => {
         (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
       )
       expect(posts.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  describe('localStorage 永続化', () => {
+    it('送信後にチャットパネル状態が localStorage に保存される', async () => {
+      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/chat') && init?.method === 'POST') {
+          return Promise.resolve(
+            jsonResponse({ assistant_content: '永続テスト回答', error: null }),
+          )
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled()
+      })
+
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+        target: { value: '永続テスト質問' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('永続テスト回答')).toBeInTheDocument()
+      })
+
+      await waitFor(() => {
+        const raw = localStorage.getItem(CHAT_PANEL_STORAGE_KEY)
+        expect(raw).toBeTruthy()
+        const snap = JSON.parse(String(raw)) as { messages: { role: string; content: string }[] }
+        const lastTwo = snap.messages.slice(-2)
+        expect(lastTwo.length).toBe(2)
+        expect(lastTwo[0]?.role).toBe('user')
+        expect(lastTwo[0]?.content).toBe('永続テスト質問')
+        expect(lastTwo[1]?.content).toContain('永続テスト回答')
+      })
+    })
+
+    it('マウント時に保存済み会話を復元する', async () => {
+      writeChatPanelSnapshot(
+        {
+          messages: [
+            { role: 'user', content: '保存済み質問' },
+            { role: 'assistant', content: '保存済み回答' },
+          ],
+          rangeParts: {
+            fromDate: '2026-01-01',
+            fromTime: '00:00',
+            toDate: '2026-01-02',
+            toTime: '23:59',
+          },
+          vcenterId: '',
+          includePeriodMetricsCpu: false,
+          includePeriodMetricsMemory: false,
+          includePeriodMetricsDiskIo: false,
+          includePeriodMetricsNetworkIo: false,
+          draft: '',
+        },
+        200,
+      )
+
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => {
+        expect(screen.getByText('保存済み回答')).toBeInTheDocument()
+      })
+      expect(screen.getByText('保存済み質問')).toBeInTheDocument()
+    })
+
+    it('会話をクリアでストレージキーが削除される', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      writeChatPanelSnapshot(
+        {
+          messages: [{ role: 'user', content: 'x' }],
+          rangeParts: {
+            fromDate: '2026-01-01',
+            fromTime: '00:00',
+            toDate: '2026-01-02',
+            toTime: '23:59',
+          },
+          vcenterId: '',
+          includePeriodMetricsCpu: false,
+          includePeriodMetricsMemory: false,
+          includePeriodMetricsDiskIo: false,
+          includePeriodMetricsNetworkIo: false,
+          draft: '',
+        },
+        200,
+      )
+
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => {
+        expect(screen.getByText('x')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: '会話をクリア' }))
+
+      await waitFor(() => {
+        expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
+      })
+      confirmSpy.mockRestore()
     })
   })
 

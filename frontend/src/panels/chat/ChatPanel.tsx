@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../../api'
+import { readStoredChatMaxStoredMessages } from '../../preferences/chatMaxStoredMessagesStorage'
+import { useChatMaxStoredMessages } from '../../preferences/useChatMaxStoredMessages'
 import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
 import {
   parseChatResponse,
@@ -22,12 +24,22 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import {
+  CHAT_LLM_CONTEXT_MAX_MESSAGES,
+  clearChatPanelSnapshot,
+  readChatPanelSnapshot,
+  trimChatMessagesToMax,
+  writeChatPanelSnapshot,
+} from '../../preferences/chatPanelStorage'
 import { appendSelectedChatSampleTextsToDraft } from './appendSelectedChatSampleTextsToDraft'
 import { ChatCopyAnswerSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
+
+/** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
+const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
 
 /**
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
@@ -37,6 +49,7 @@ const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
+  const { chatMaxStoredMessages } = useChatMaxStoredMessages()
   const { visibleChatSamplePrompts } = useChatSamplePrompts()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
@@ -52,6 +65,16 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [selectedSampleIds, setSelectedSampleIds] = useState(() => new Set<string>())
+  /** `localStorage` からの初回復元が終わるまで永続化 `write` しない */
+  const [storageHydrated, setStorageHydrated] = useState(false)
+  /** `draft` の debounce 反映値（永続化スナップショットの `draft` に使う） */
+  const [debouncedDraft, setDebouncedDraft] = useState('')
+  /** 「会話をクリア」直後のみ、空状態での `write` をスキップしてキー削除を維持する */
+  const skipNextPersistRef = useRef(false)
+  /** `localStorage` 書き込み失敗を連続で `onError` しないためのフラグ（成功時にリセット） */
+  const storageWriteErrorReportedRef = useRef(false)
+  /** 初回マウントでは `chatMaxStoredMessages` 変更によるトリムをスキップ（ハイドレートと競合させない） */
+  const skipMaxTrimOnMountRef = useRef(true)
 
   const messagesListRef = useRef<HTMLUListElement>(null)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -103,6 +126,79 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     })()
   }, [onError])
 
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedDraft(draft)
+    }, CHAT_DRAFT_PERSIST_DEBOUNCE_MS)
+    return () => window.clearTimeout(id)
+  }, [draft])
+
+  useEffect(() => {
+    const max = readStoredChatMaxStoredMessages()
+    const snap = readChatPanelSnapshot(max)
+    if (snap) {
+      setRangeParts(snap.rangeParts)
+      setVcenterId(snap.vcenterId)
+      setMessages(snap.messages)
+      setDraft(snap.draft)
+      setDebouncedDraft(snap.draft)
+      setIncludePeriodMetricsCpu(snap.includePeriodMetricsCpu)
+      setIncludePeriodMetricsMemory(snap.includePeriodMetricsMemory)
+      setIncludePeriodMetricsDiskIo(snap.includePeriodMetricsDiskIo)
+      setIncludePeriodMetricsNetworkIo(snap.includePeriodMetricsNetworkIo)
+    }
+    setStorageHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (skipMaxTrimOnMountRef.current) {
+      skipMaxTrimOnMountRef.current = false
+      return
+    }
+    setMessages((m) => trimChatMessagesToMax(m, chatMaxStoredMessages))
+  }, [chatMaxStoredMessages])
+
+  useEffect(() => {
+    if (!storageHydrated) {
+      return
+    }
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false
+      return
+    }
+    const ok = writeChatPanelSnapshot(
+      {
+        messages,
+        rangeParts,
+        vcenterId,
+        includePeriodMetricsCpu,
+        includePeriodMetricsMemory,
+        includePeriodMetricsDiskIo,
+        includePeriodMetricsNetworkIo,
+        draft: debouncedDraft,
+      },
+      chatMaxStoredMessages,
+    )
+    if (ok) {
+      storageWriteErrorReportedRef.current = false
+    } else if (!storageWriteErrorReportedRef.current) {
+      storageWriteErrorReportedRef.current = true
+      onError('ブラウザの保存領域が不足しているため、会話の保存に失敗しました。')
+    }
+  }, [
+    storageHydrated,
+    messages,
+    rangeParts,
+    vcenterId,
+    includePeriodMetricsCpu,
+    includePeriodMetricsMemory,
+    includePeriodMetricsDiskIo,
+    includePeriodMetricsNetworkIo,
+    debouncedDraft,
+    onError,
+    chatMaxStoredMessages,
+  ])
+
   const send = useCallback(async () => {
     const text = draft.trim()
     if (!text) return
@@ -119,15 +215,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     }
 
     onError(null)
-    const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: text }]
+    const nextMessages = trimChatMessagesToMax(
+      [...messages, { role: 'user', content: text }],
+      chatMaxStoredMessages,
+    )
     setMessages(nextMessages)
     setDraft('')
+    setDebouncedDraft('')
     setLoading(true)
     try {
       const body: Record<string, unknown> = {
         from: resolved.from,
         to: resolved.to,
-        messages: nextMessages,
+        messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES),
         include_period_metrics_cpu: includePeriodMetricsCpu,
         include_period_metrics_memory: includePeriodMetricsMemory,
         include_period_metrics_disk_io: includePeriodMetricsDiskIo,
@@ -140,9 +240,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       const out = parseChatResponse(raw)
       setLastLlmContext(out.llm_context ?? null)
       if (out.error) {
-        setMessages((m) => [...m, { role: 'assistant', content: `（${out.error}）` }])
+        setMessages((m) =>
+          trimChatMessagesToMax(
+            [...m, { role: 'assistant', content: `（${out.error}）` }],
+            chatMaxStoredMessages,
+          ),
+        )
       } else {
-        setMessages((m) => [...m, { role: 'assistant', content: out.assistant_content }])
+        setMessages((m) =>
+          trimChatMessagesToMax(
+            [...m, { role: 'assistant', content: out.assistant_content }],
+            chatMaxStoredMessages,
+          ),
+        )
       }
     } catch (e) {
       onError(toErrorMessage(e))
@@ -161,6 +271,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsMemory,
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
+    chatMaxStoredMessages,
   ])
 
   const toggleSampleSelection = useCallback((id: string) => {
@@ -328,6 +439,8 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           disabled={loading || messages.length === 0}
           onClick={() => {
             if (!window.confirm('会話をすべて削除しますか？')) return
+            skipNextPersistRef.current = true
+            clearChatPanelSnapshot()
             setMessages([])
             setLastLlmContext(null)
           }}
