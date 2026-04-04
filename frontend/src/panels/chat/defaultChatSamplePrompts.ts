@@ -1,0 +1,37 @@
+import type { ChatSamplePromptRow } from './chatSamplePromptTypes'
+
+/**
+ * 初回・移行時に localStorage へシードする既定サンプル（コード同梱）。
+ * 保存後はユーザーが編集・削除可能。
+ */
+export const INITIAL_CHAT_SAMPLE_PROMPTS: readonly ChatSamplePromptRow[] = [
+  {
+    id: 'default-sample-period-summary',
+    label: '期間の要約',
+    text: 'この期間のイベントと傾向を、重要度が高い順に要約してください。',
+  },
+  {
+    id: 'default-sample-power-events',
+    label: '電源・可用性',
+    text:
+      'この期間に集約されたイベントのうち、電源操作や可用性に関連しそうなものの傾向を説明してください。',
+  },
+  {
+    id: 'default-sample-alerts',
+    label: '警告・エラー',
+    text: '警告やエラーに分類されそうなイベントがあれば列挙し、時系列での変化も述べてください。',
+  },
+  {
+    id: 'default-sample-metrics-hint',
+    label: 'メトリクス併用',
+    text:
+      '期間メトリクス（CPU・メモリ等）をコンテキストに含めたうえで、負荷やボトルネックの兆候が読み取れるか整理してください。',
+  },
+]
+
+/**
+ * リセット・ストレージ初期化用に、`INITIAL_CHAT_SAMPLE_PROMPTS` のミュータブルなコピーを返す。
+ */
+export function getInitialChatSamplePromptsSnapshot(): ChatSamplePromptRow[] {
+  return INITIAL_CHAT_SAMPLE_PROMPTS.map((r) => ({ id: r.id, label: r.label, text: r.text }))
+}

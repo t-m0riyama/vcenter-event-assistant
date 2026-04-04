@@ -5,7 +5,12 @@ import { TabButtonSvgIcon } from './tab-svg-icon'
 /**
  * 設定タブ内サブナビの識別子。`App` の `settingsSubTab` と共有する。
  */
-export type SettingsSubTabId = 'general' | 'vcenters' | 'score_rules' | 'event_type_guides'
+export type SettingsSubTabId =
+  | 'general'
+  | 'vcenters'
+  | 'score_rules'
+  | 'event_type_guides'
+  | 'chat_samples'
 
 /**
  * 設定サブタブ用の装飾アイコン（`currentColor`・スクリーンリーダーからは隠す）。
@@ -49,6 +54,13 @@ export function SettingsSubTabIcon({ tabId }: { readonly tabId: SettingsSubTabId
           <line x1="8" y1="3.5" x2="8" y2="12.5" />
           <rect x="2.5" y="3.5" width="5" height="9" rx="0.75" />
           <rect x="8.5" y="3.5" width="5" height="9" rx="0.75" />
+        </TabButtonSvgIcon>
+      )
+    case 'chat_samples':
+      return (
+        <TabButtonSvgIcon>
+          <rect x="2.5" y="3.5" width="10" height="7" rx="1.5" />
+          <path d="M5 12.5 6.5 10.5H4a1.5 1.5 0 0 1-1.5-1.5" />
         </TabButtonSvgIcon>
       )
     default: {

@@ -2,8 +2,10 @@ import { lazy, Suspense, useState } from 'react'
 import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
 import { AutoRefreshPreferencesProvider } from './preferences/AutoRefreshPreferencesProvider'
+import { ChatSamplePromptsProvider } from './preferences/ChatSamplePromptsProvider'
 import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
+import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
@@ -36,6 +38,7 @@ export default function App() {
       <TimeZoneProvider>
         <AutoRefreshPreferencesProvider>
         <SummaryTopNotableMinScoreProvider>
+          <ChatSamplePromptsProvider>
           <div className="app">
             <header className="header">
               <h1>vCenter Event Assistant</h1>
@@ -138,6 +141,20 @@ export default function App() {
                       <span className="tab-button__label">イベント種別ガイド</span>
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    className={settingsSubTab === 'chat_samples' ? 'active' : undefined}
+                    aria-selected={settingsSubTab === 'chat_samples'}
+                    onClick={() => {
+                      setSettingsSubTab('chat_samples')
+                      setErr(null)
+                    }}
+                  >
+                    <span className="tab-button__inner">
+                      <SettingsSubTabIcon tabId="chat_samples" />
+                      <span className="tab-button__label">チャットサンプル</span>
+                    </span>
+                  </button>
                 </nav>
               )}
               {tab === 'summary' && <SummaryPanel onError={setErr} />}
@@ -162,8 +179,12 @@ export default function App() {
               {tab === 'settings' && settingsSubTab === 'vcenters' && (
                 <VCentersPanel onError={setErr} />
               )}
+              {tab === 'settings' && settingsSubTab === 'chat_samples' && (
+                <ChatSamplePromptsPanel onError={setErr} />
+              )}
             </main>
           </div>
+          </ChatSamplePromptsProvider>
         </SummaryTopNotableMinScoreProvider>
         </AutoRefreshPreferencesProvider>
       </TimeZoneProvider>
