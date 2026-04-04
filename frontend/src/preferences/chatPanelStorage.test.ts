@@ -61,7 +61,7 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
 
   it('write 後に read で同一内容が得られる', () => {
     const snap = minimalSnapshot({ draft: '下書き', vcenterId: 'vc-1' })
-    writeChatPanelSnapshot(snap)
+    expect(writeChatPanelSnapshot(snap)).toBe(true)
     expect(readChatPanelSnapshot()).toEqual(snap)
   })
 
@@ -82,22 +82,41 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
       role: 'user' as const,
       content: `m${i}`,
     }))
-    writeChatPanelSnapshot(minimalSnapshot({ messages: many }))
+    expect(writeChatPanelSnapshot(minimalSnapshot({ messages: many }))).toBe(true)
     const got = readChatPanelSnapshot()
     expect(got?.messages).toHaveLength(200)
     expect(got?.messages[0]?.content).toBe('m1')
   })
 
+  it('read は messages を最大件数にトリムする（ストレージに 200 件超があっても）', () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({
+      role: 'user' as const,
+      content: `m${i}`,
+    }))
+    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot({ messages: many })))
+    const got = readChatPanelSnapshot()
+    expect(got?.messages).toHaveLength(200)
+    expect(got?.messages[0]?.content).toBe('m50')
+  })
+
+  it('setItem が失敗したとき write は false を返す', () => {
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+    expect(writeChatPanelSnapshot(minimalSnapshot())).toBe(false)
+    spy.mockRestore()
+  })
+
   it('clearChatPanelSnapshot でキーが消える', () => {
-    writeChatPanelSnapshot(minimalSnapshot())
+    expect(writeChatPanelSnapshot(minimalSnapshot())).toBe(true)
     clearChatPanelSnapshot()
     expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
-  it('localStorage が無い環境では read は null・write/clear は no-op', () => {
+  it('localStorage が無い環境では read は null・write は false・clear は no-op', () => {
     vi.stubGlobal('localStorage', undefined)
     expect(readChatPanelSnapshot()).toBeNull()
-    expect(() => writeChatPanelSnapshot(minimalSnapshot())).not.toThrow()
+    expect(writeChatPanelSnapshot(minimalSnapshot())).toBe(false)
     expect(() => clearChatPanelSnapshot()).not.toThrow()
     vi.unstubAllGlobals()
   })

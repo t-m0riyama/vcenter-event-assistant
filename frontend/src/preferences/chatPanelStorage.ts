@@ -13,7 +13,7 @@ export const DEFAULT_CHAT_MAX_STORED_MESSAGES = 200
 
 /**
  * バックエンド `chat_llm._MAX_CHAT_MESSAGES` と同値。LLM に渡る会話は直近この件数まで。
- * POST 本文は現状サーバー側でもトリムするが、帯域明示用にフロントでも参照可能にする。
+ * フロントの `POST /api/chat` 本文の `messages` もこの件数に収め、帯域とサーバー側トリムと揃える。
  */
 export const CHAT_LLM_CONTEXT_MAX_MESSAGES = 20
 
@@ -80,19 +80,29 @@ export function readChatPanelSnapshot(): ChatPanelSnapshot | null {
     localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     return null
   }
-  return out.data
+  return {
+    ...out.data,
+    messages: trimChatMessagesToMax(out.data.messages, DEFAULT_CHAT_MAX_STORED_MESSAGES),
+  }
 }
 
 /**
  * チャットパネル状態を保存する。`messages` は既定上限でトリムしてから検証・保存する。
+ *
+ * @returns 保存に成功したとき `true`。`localStorage` が無い・`setItem` が失敗したとき `false`。
  */
-export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot): void {
+export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot): boolean {
   if (typeof localStorage === 'undefined') {
-    return
+    return false
   }
-  const trimmed = trimSnapshotMessages(snapshot)
-  const v = chatPanelSnapshotSchema.parse(trimmed)
-  localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(v))
+  try {
+    const trimmed = trimSnapshotMessages(snapshot)
+    const v = chatPanelSnapshotSchema.parse(trimmed)
+    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(v))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

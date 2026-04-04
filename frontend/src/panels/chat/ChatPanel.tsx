@@ -23,8 +23,11 @@ import {
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
 import {
+  CHAT_LLM_CONTEXT_MAX_MESSAGES,
   clearChatPanelSnapshot,
+  DEFAULT_CHAT_MAX_STORED_MESSAGES,
   readChatPanelSnapshot,
+  trimChatMessagesToMax,
   writeChatPanelSnapshot,
 } from '../../preferences/chatPanelStorage'
 import { appendSelectedChatSampleTextsToDraft } from './appendSelectedChatSampleTextsToDraft'
@@ -66,6 +69,8 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [debouncedDraft, setDebouncedDraft] = useState('')
   /** 「会話をクリア」直後のみ、空状態での `write` をスキップしてキー削除を維持する */
   const skipNextPersistRef = useRef(false)
+  /** `localStorage` 書き込み失敗を連続で `onError` しないためのフラグ（成功時にリセット） */
+  const storageWriteErrorReportedRef = useRef(false)
 
   const messagesListRef = useRef<HTMLUListElement>(null)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -148,7 +153,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       skipNextPersistRef.current = false
       return
     }
-    writeChatPanelSnapshot({
+    const ok = writeChatPanelSnapshot({
       messages,
       rangeParts,
       vcenterId,
@@ -158,6 +163,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       includePeriodMetricsNetworkIo,
       draft: debouncedDraft,
     })
+    if (ok) {
+      storageWriteErrorReportedRef.current = false
+    } else if (!storageWriteErrorReportedRef.current) {
+      storageWriteErrorReportedRef.current = true
+      onError('ブラウザの保存領域が不足しているため、会話の保存に失敗しました。')
+    }
   }, [
     storageHydrated,
     messages,
@@ -168,6 +179,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
     debouncedDraft,
+    onError,
   ])
 
   const send = useCallback(async () => {
@@ -186,7 +198,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     }
 
     onError(null)
-    const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: text }]
+    const nextMessages = trimChatMessagesToMax(
+      [...messages, { role: 'user', content: text }],
+      DEFAULT_CHAT_MAX_STORED_MESSAGES,
+    )
     setMessages(nextMessages)
     setDraft('')
     setDebouncedDraft('')
@@ -195,7 +210,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       const body: Record<string, unknown> = {
         from: resolved.from,
         to: resolved.to,
-        messages: nextMessages,
+        messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES),
         include_period_metrics_cpu: includePeriodMetricsCpu,
         include_period_metrics_memory: includePeriodMetricsMemory,
         include_period_metrics_disk_io: includePeriodMetricsDiskIo,
@@ -208,9 +223,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       const out = parseChatResponse(raw)
       setLastLlmContext(out.llm_context ?? null)
       if (out.error) {
-        setMessages((m) => [...m, { role: 'assistant', content: `（${out.error}）` }])
+        setMessages((m) =>
+          trimChatMessagesToMax(
+            [...m, { role: 'assistant', content: `（${out.error}）` }],
+            DEFAULT_CHAT_MAX_STORED_MESSAGES,
+          ),
+        )
       } else {
-        setMessages((m) => [...m, { role: 'assistant', content: out.assistant_content }])
+        setMessages((m) =>
+          trimChatMessagesToMax(
+            [...m, { role: 'assistant', content: out.assistant_content }],
+            DEFAULT_CHAT_MAX_STORED_MESSAGES,
+          ),
+        )
       }
     } catch (e) {
       onError(toErrorMessage(e))
