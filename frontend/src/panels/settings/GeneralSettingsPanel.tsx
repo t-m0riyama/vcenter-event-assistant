@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { TimeZoneSelect } from '../../datetime/TimeZoneProvider'
+import {
+  CHAT_MAX_STORED_MESSAGES_MAX,
+  CHAT_MAX_STORED_MESSAGES_MIN,
+} from '../../preferences/chatMaxStoredMessagesStorage'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
+import { useChatMaxStoredMessages } from '../../preferences/useChatMaxStoredMessages'
 import { useSummaryTopNotableMinScore } from '../../preferences/useSummaryTopNotableMinScore'
 import type { ThemePreference } from '../../theme/themeStorage'
 import { useTheme } from '../../theme/useTheme'
@@ -24,6 +29,7 @@ function ThemeAppearanceSelect() {
 }
 
 export function GeneralSettingsPanel() {
+  const { chatMaxStoredMessages, setChatMaxStoredMessages } = useChatMaxStoredMessages()
   const { topNotableMinScore, setTopNotableMinScore } = useSummaryTopNotableMinScore()
   const {
     autoRefreshEnabled,
@@ -38,6 +44,8 @@ export function GeneralSettingsPanel() {
   const [notableScoreDraft, setNotableScoreDraft] = useState<string | null>(null)
   /** 更新間隔（分）の入力ドラフト。 */
   const [intervalDraft, setIntervalDraft] = useState<string | null>(null)
+  /** チャット最大保持件数の入力ドラフト。 */
+  const [chatMaxDraft, setChatMaxDraft] = useState<string | null>(null)
 
   const notableScoreDisplay =
     notableScoreDraft !== null ? notableScoreDraft : String(topNotableMinScore)
@@ -45,8 +53,48 @@ export function GeneralSettingsPanel() {
   const intervalMinutesDisplay =
     intervalDraft !== null ? intervalDraft : String(autoRefreshIntervalMinutes)
 
+  const chatMaxDisplay =
+    chatMaxDraft !== null ? chatMaxDraft : String(chatMaxStoredMessages)
+
   return (
     <div className="panel">
+      <div className="general-settings-field">
+        <p className="hint">
+          チャットタブで保持する会話メッセージの最大件数です。超えた分は古いものから欠落します（FIFO）。0
+          は会話を保持しません（送信は可能）。0〜1000。選択はこのブラウザに保存されます。
+        </p>
+        <label className="tz-select">
+          チャットの最大保持件数
+          <input
+            type="number"
+            min={CHAT_MAX_STORED_MESSAGES_MIN}
+            max={CHAT_MAX_STORED_MESSAGES_MAX}
+            step={1}
+            value={chatMaxDisplay}
+            onFocus={() => {
+              setChatMaxDraft(String(chatMaxStoredMessages))
+            }}
+            onChange={(e) => {
+              setChatMaxDraft(e.target.value)
+            }}
+            onBlur={(e) => {
+              const raw = e.currentTarget.value.trim()
+              if (raw === '') {
+                setChatMaxDraft(null)
+                return
+              }
+              const n = Number.parseInt(raw, 10)
+              if (Number.isNaN(n)) {
+                setChatMaxDraft(null)
+                return
+              }
+              setChatMaxStoredMessages(n)
+              setChatMaxDraft(null)
+            }}
+            aria-label="チャットの最大保持件数"
+          />
+        </label>
+      </div>
       <div className="general-settings-field">
         <p className="hint">
           ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。

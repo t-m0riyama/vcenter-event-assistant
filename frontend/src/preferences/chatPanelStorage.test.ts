@@ -56,24 +56,24 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
   })
 
   it('未設定なら null', () => {
-    expect(readChatPanelSnapshot()).toBeNull()
+    expect(readChatPanelSnapshot(200)).toBeNull()
   })
 
   it('write 後に read で同一内容が得られる', () => {
     const snap = minimalSnapshot({ draft: '下書き', vcenterId: 'vc-1' })
-    expect(writeChatPanelSnapshot(snap)).toBe(true)
-    expect(readChatPanelSnapshot()).toEqual(snap)
+    expect(writeChatPanelSnapshot(snap, 200)).toBe(true)
+    expect(readChatPanelSnapshot(200)).toEqual(snap)
   })
 
   it('不正 JSON なら null にしキーを削除する', () => {
     localStorage.setItem(CHAT_PANEL_STORAGE_KEY, '{broken')
-    expect(readChatPanelSnapshot()).toBeNull()
+    expect(readChatPanelSnapshot(200)).toBeNull()
     expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it('Zod に通らないオブジェクトなら null にしキーを削除する', () => {
     localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify({ foo: 1 }))
-    expect(readChatPanelSnapshot()).toBeNull()
+    expect(readChatPanelSnapshot(200)).toBeNull()
     expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
@@ -82,10 +82,15 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
       role: 'user' as const,
       content: `m${i}`,
     }))
-    expect(writeChatPanelSnapshot(minimalSnapshot({ messages: many }))).toBe(true)
-    const got = readChatPanelSnapshot()
+    expect(writeChatPanelSnapshot(minimalSnapshot({ messages: many }), 200)).toBe(true)
+    const got = readChatPanelSnapshot(200)
     expect(got?.messages).toHaveLength(200)
     expect(got?.messages[0]?.content).toBe('m1')
+  })
+
+  it('maxStoredMessages が 0 のとき read の messages は空', () => {
+    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot()))
+    expect(readChatPanelSnapshot(0)?.messages).toEqual([])
   })
 
   it('read は messages を最大件数にトリムする（ストレージに 200 件超があっても）', () => {
@@ -94,7 +99,7 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
       content: `m${i}`,
     }))
     localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot({ messages: many })))
-    const got = readChatPanelSnapshot()
+    const got = readChatPanelSnapshot(200)
     expect(got?.messages).toHaveLength(200)
     expect(got?.messages[0]?.content).toBe('m50')
   })
@@ -103,20 +108,20 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
     const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError')
     })
-    expect(writeChatPanelSnapshot(minimalSnapshot())).toBe(false)
+    expect(writeChatPanelSnapshot(minimalSnapshot(), 200)).toBe(false)
     spy.mockRestore()
   })
 
   it('clearChatPanelSnapshot でキーが消える', () => {
-    expect(writeChatPanelSnapshot(minimalSnapshot())).toBe(true)
+    expect(writeChatPanelSnapshot(minimalSnapshot(), 200)).toBe(true)
     clearChatPanelSnapshot()
     expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it('localStorage が無い環境では read は null・write は false・clear は no-op', () => {
     vi.stubGlobal('localStorage', undefined)
-    expect(readChatPanelSnapshot()).toBeNull()
-    expect(writeChatPanelSnapshot(minimalSnapshot())).toBe(false)
+    expect(readChatPanelSnapshot(200)).toBeNull()
+    expect(writeChatPanelSnapshot(minimalSnapshot(), 200)).toBe(false)
     expect(() => clearChatPanelSnapshot()).not.toThrow()
     vi.unstubAllGlobals()
   })

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../../api'
+import { readStoredChatMaxStoredMessages } from '../../preferences/chatMaxStoredMessagesStorage'
+import { useChatMaxStoredMessages } from '../../preferences/useChatMaxStoredMessages'
 import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
 import {
   parseChatResponse,
@@ -25,7 +27,6 @@ import {
 import {
   CHAT_LLM_CONTEXT_MAX_MESSAGES,
   clearChatPanelSnapshot,
-  DEFAULT_CHAT_MAX_STORED_MESSAGES,
   readChatPanelSnapshot,
   trimChatMessagesToMax,
   writeChatPanelSnapshot,
@@ -48,6 +49,7 @@ const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
+  const { chatMaxStoredMessages } = useChatMaxStoredMessages()
   const { visibleChatSamplePrompts } = useChatSamplePrompts()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
@@ -71,6 +73,8 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const skipNextPersistRef = useRef(false)
   /** `localStorage` 書き込み失敗を連続で `onError` しないためのフラグ（成功時にリセット） */
   const storageWriteErrorReportedRef = useRef(false)
+  /** 初回マウントでは `chatMaxStoredMessages` 変更によるトリムをスキップ（ハイドレートと競合させない） */
+  const skipMaxTrimOnMountRef = useRef(true)
 
   const messagesListRef = useRef<HTMLUListElement>(null)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -130,7 +134,8 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   }, [draft])
 
   useEffect(() => {
-    const snap = readChatPanelSnapshot()
+    const max = readStoredChatMaxStoredMessages()
+    const snap = readChatPanelSnapshot(max)
     if (snap) {
       setRangeParts(snap.rangeParts)
       setVcenterId(snap.vcenterId)
@@ -146,6 +151,14 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   }, [])
 
   useEffect(() => {
+    if (skipMaxTrimOnMountRef.current) {
+      skipMaxTrimOnMountRef.current = false
+      return
+    }
+    setMessages((m) => trimChatMessagesToMax(m, chatMaxStoredMessages))
+  }, [chatMaxStoredMessages])
+
+  useEffect(() => {
     if (!storageHydrated) {
       return
     }
@@ -153,16 +166,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       skipNextPersistRef.current = false
       return
     }
-    const ok = writeChatPanelSnapshot({
-      messages,
-      rangeParts,
-      vcenterId,
-      includePeriodMetricsCpu,
-      includePeriodMetricsMemory,
-      includePeriodMetricsDiskIo,
-      includePeriodMetricsNetworkIo,
-      draft: debouncedDraft,
-    })
+    const ok = writeChatPanelSnapshot(
+      {
+        messages,
+        rangeParts,
+        vcenterId,
+        includePeriodMetricsCpu,
+        includePeriodMetricsMemory,
+        includePeriodMetricsDiskIo,
+        includePeriodMetricsNetworkIo,
+        draft: debouncedDraft,
+      },
+      chatMaxStoredMessages,
+    )
     if (ok) {
       storageWriteErrorReportedRef.current = false
     } else if (!storageWriteErrorReportedRef.current) {
@@ -180,6 +196,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsNetworkIo,
     debouncedDraft,
     onError,
+    chatMaxStoredMessages,
   ])
 
   const send = useCallback(async () => {
@@ -200,7 +217,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     onError(null)
     const nextMessages = trimChatMessagesToMax(
       [...messages, { role: 'user', content: text }],
-      DEFAULT_CHAT_MAX_STORED_MESSAGES,
+      chatMaxStoredMessages,
     )
     setMessages(nextMessages)
     setDraft('')
@@ -226,14 +243,14 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         setMessages((m) =>
           trimChatMessagesToMax(
             [...m, { role: 'assistant', content: `（${out.error}）` }],
-            DEFAULT_CHAT_MAX_STORED_MESSAGES,
+            chatMaxStoredMessages,
           ),
         )
       } else {
         setMessages((m) =>
           trimChatMessagesToMax(
             [...m, { role: 'assistant', content: out.assistant_content }],
-            DEFAULT_CHAT_MAX_STORED_MESSAGES,
+            chatMaxStoredMessages,
           ),
         )
       }
@@ -254,6 +271,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsMemory,
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
+    chatMaxStoredMessages,
   ])
 
   const toggleSampleSelection = useCallback((id: string) => {

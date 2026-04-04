@@ -3,6 +3,7 @@
 ## 期間コンテキスト付きチャット
 
 - `POST /api/chat` … 本文 JSON で `from` / `to`（UTC）、`messages`（`role`: `user` | `assistant`、`content`）。**最後の要素は `user`**。任意で `vcenter_id`（単一 vCenter に絞る）、`top_notable_min_score`（既定 1）。**期間メトリクス（いずれも既定 `false`、追加 DB クエリあり）:** `include_period_metrics_cpu`、`include_period_metrics_memory`、`include_period_metrics_disk_io`、`include_period_metrics_network_io`。オンにしたカテゴリだけ `MetricSample` を期間・`vcenter_id` で読み、時間バケット平均で `period_metrics` として LLM コンテキストにマージする（チャット用の `digest_context` からはホスト別 CPU/メモリのピーク一覧は含めない）。**メトリクストグルが 1 つでもオン**のときは、同じバケット幅で `events` を集計した `event_time_buckets`（件数 0 のバケットは省略）もマージする。バッチダイジェストには含めない。イベント集約は `build_digest_context` と同じ（期間は DB 上 **UTC の `[from, to)`**）。会話履歴はクライアントが送るだけでサーバーは保持しない。フロントのチャットパネルは **`localStorage`**（キー `vea.chat_panel.v1`）に会話・集計期間・vCenter・期間メトリクス ON/OFF・下書きを保存しリロード後に復元する（会話メッセージは表示・保存とも既定で最大 200 件、超過分は先頭から欠落）。**同一ブラウザ内の表示**でもこの上限を適用する。`POST /api/chat` の `messages` はフロントで直近 **20 件**に収めて送り、サーバー側 LLM 入力のトリム（`_MAX_CHAT_MESSAGES`）と帯域を揃える。応答は `assistant_content` と `error`（LLM 失敗時は前者が空で後者に短文）。**`llm_context`**（省略可）に、LLM 直前の目安として `json_truncated`（JSON をトークン上限で切り詰めたか）、`estimated_input_tokens` / `max_input_tokens`、`message_turns` が入る。サーバーログにも `json_truncated` 等が出る。
+- 上記の **会話の最大保持件数**（`vea.chat_panel.v1` のメッセージ配列のトリム）は、設定の「一般」で **0〜1000**（既定 200）にでき、値は **`vea.chat_max_stored_messages.v1`** に保存する（0 は常に空表示・空保存）。
 
 環境変数は **ダイジェスト用 `LLM_DIGEST_*`** と、任意の **チャット上書き `LLM_CHAT_*`**（`.env.example` の LLM 節を参照）。実効チャット API キー（`LLM_CHAT_API_KEY` が非空ならそれ、否则 `LLM_DIGEST_API_KEY`）が空のときは **503**。
 

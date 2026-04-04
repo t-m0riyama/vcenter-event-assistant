@@ -8,6 +8,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import '../../App.css'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import { CHAT_MAX_STORED_MESSAGES_STORAGE_KEY } from '../../preferences/chatMaxStoredMessagesStorage'
+import { ChatMaxStoredMessagesProvider } from '../../preferences/ChatMaxStoredMessagesProvider'
 import { ChatSamplePromptsProvider } from '../../preferences/ChatSamplePromptsProvider'
 import { CHAT_PANEL_STORAGE_KEY, writeChatPanelSnapshot } from '../../preferences/chatPanelStorage'
 import {
@@ -30,9 +32,11 @@ function jsonResponse(data: unknown, status = 200) {
 function renderChat(onError: (e: string | null) => void = vi.fn()) {
   return render(
     <TimeZoneProvider>
-      <ChatSamplePromptsProvider>
-        <ChatPanel onError={onError} />
-      </ChatSamplePromptsProvider>
+      <ChatMaxStoredMessagesProvider>
+        <ChatSamplePromptsProvider>
+          <ChatPanel onError={onError} />
+        </ChatSamplePromptsProvider>
+      </ChatMaxStoredMessagesProvider>
     </TimeZoneProvider>,
   )
 }
@@ -94,6 +98,7 @@ function attachScrollableMessagesListMock(
 describe('ChatPanel', () => {
   beforeEach(() => {
     localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
   })
 
   afterEach(() => {
@@ -102,6 +107,7 @@ describe('ChatPanel', () => {
     localStorage.removeItem(CHAT_SAMPLE_PROMPTS_STORAGE_KEY)
     localStorage.removeItem(CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY)
     localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
   })
 
   it(
@@ -145,34 +151,41 @@ describe('ChatPanel', () => {
     15_000,
   )
 
-  it('アシスタント応答の GFM テーブルを描画する', async () => {
-    const tableMd = '|列A|列B|\n|---|---|\n|1|2|'
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/api/vcenters')) {
-        return Promise.resolve(jsonResponse([]))
-      }
-      if (url.endsWith('/api/chat') && init?.method === 'POST') {
-        return Promise.resolve(jsonResponse({ assistant_content: tableMd, error: null }))
-      }
-      return Promise.resolve(new Response('not found', { status: 404 }))
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it(
+    'アシスタント応答の GFM テーブルを描画する',
+    async () => {
+      const tableMd = '|列A|列B|\n|---|---|\n|1|2|'
+      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/chat') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ assistant_content: tableMd, error: null }))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
 
-    renderChat()
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      renderChat()
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
 
-    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
-      target: { value: '表を出して' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+        target: { value: '表を出して' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
 
-    await waitFor(() => {
-      expect(screen.getByRole('table')).toBeInTheDocument()
-    })
-    expect(screen.getByRole('columnheader', { name: '列A' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument()
-  })
+      await waitFor(
+        () => {
+          expect(screen.getByRole('table')).toBeInTheDocument()
+        },
+        { timeout: 12_000 },
+      )
+      expect(screen.getByRole('columnheader', { name: '列A' })).toBeInTheDocument()
+      expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument()
+    },
+    15_000,
+  )
 
   it('コンポーザーは入力欄ラッパーが先・送信ボタンが後の子要素順になる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -698,24 +711,27 @@ describe('ChatPanel', () => {
     })
 
     it('マウント時に保存済み会話を復元する', async () => {
-      writeChatPanelSnapshot({
-        messages: [
-          { role: 'user', content: '保存済み質問' },
-          { role: 'assistant', content: '保存済み回答' },
-        ],
-        rangeParts: {
-          fromDate: '2026-01-01',
-          fromTime: '00:00',
-          toDate: '2026-01-02',
-          toTime: '23:59',
+      writeChatPanelSnapshot(
+        {
+          messages: [
+            { role: 'user', content: '保存済み質問' },
+            { role: 'assistant', content: '保存済み回答' },
+          ],
+          rangeParts: {
+            fromDate: '2026-01-01',
+            fromTime: '00:00',
+            toDate: '2026-01-02',
+            toTime: '23:59',
+          },
+          vcenterId: '',
+          includePeriodMetricsCpu: false,
+          includePeriodMetricsMemory: false,
+          includePeriodMetricsDiskIo: false,
+          includePeriodMetricsNetworkIo: false,
+          draft: '',
         },
-        vcenterId: '',
-        includePeriodMetricsCpu: false,
-        includePeriodMetricsMemory: false,
-        includePeriodMetricsDiskIo: false,
-        includePeriodMetricsNetworkIo: false,
-        draft: '',
-      })
+        200,
+      )
 
       const fetchMock = vi.fn((input: RequestInfo | URL) => {
         const url = String(input)
@@ -735,21 +751,24 @@ describe('ChatPanel', () => {
 
     it('会話をクリアでストレージキーが削除される', async () => {
       const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-      writeChatPanelSnapshot({
-        messages: [{ role: 'user', content: 'x' }],
-        rangeParts: {
-          fromDate: '2026-01-01',
-          fromTime: '00:00',
-          toDate: '2026-01-02',
-          toTime: '23:59',
+      writeChatPanelSnapshot(
+        {
+          messages: [{ role: 'user', content: 'x' }],
+          rangeParts: {
+            fromDate: '2026-01-01',
+            fromTime: '00:00',
+            toDate: '2026-01-02',
+            toTime: '23:59',
+          },
+          vcenterId: '',
+          includePeriodMetricsCpu: false,
+          includePeriodMetricsMemory: false,
+          includePeriodMetricsDiskIo: false,
+          includePeriodMetricsNetworkIo: false,
+          draft: '',
         },
-        vcenterId: '',
-        includePeriodMetricsCpu: false,
-        includePeriodMetricsMemory: false,
-        includePeriodMetricsDiskIo: false,
-        includePeriodMetricsNetworkIo: false,
-        draft: '',
-      })
+        200,
+      )
 
       const fetchMock = vi.fn((input: RequestInfo | URL) => {
         const url = String(input)

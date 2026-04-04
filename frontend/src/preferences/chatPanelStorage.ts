@@ -5,11 +5,7 @@ import { chatMessageSchema, type ChatMessage } from '../api/schemas'
 /** チャットパネル状態を保存する localStorage キー。 */
 export const CHAT_PANEL_STORAGE_KEY = 'vea.chat_panel.v1'
 
-/**
- * ブラウザに保持する会話メッセージの既定上限（`ChatMessage` 配列の長さ）。
- * 超えた分は先頭から欠落（FIFO）。ユーザー設定で上書きする拡張は別タスク。
- */
-export const DEFAULT_CHAT_MAX_STORED_MESSAGES = 200
+export { DEFAULT_CHAT_MAX_STORED_MESSAGES } from './chatMaxStoredMessagesStorage'
 
 /**
  * バックエンド `chat_llm._MAX_CHAT_MESSAGES` と同値。LLM に渡る会話は直近この件数まで。
@@ -44,23 +40,28 @@ export function trimChatMessagesToMax(
   messages: readonly ChatMessage[],
   max: number,
 ): ChatMessage[] {
+  if (max <= 0) {
+    return []
+  }
   if (messages.length <= max) {
     return [...messages]
   }
   return messages.slice(-max)
 }
 
-function trimSnapshotMessages(snapshot: ChatPanelSnapshot): ChatPanelSnapshot {
+function trimSnapshotMessages(snapshot: ChatPanelSnapshot, maxStoredMessages: number): ChatPanelSnapshot {
   return {
     ...snapshot,
-    messages: trimChatMessagesToMax(snapshot.messages, DEFAULT_CHAT_MAX_STORED_MESSAGES),
+    messages: trimChatMessagesToMax(snapshot.messages, maxStoredMessages),
   }
 }
 
 /**
  * 保存済みチャットパネル状態を読む。未設定・不正時は `null`（不正キーは削除する）。
+ *
+ * @param maxStoredMessages 会話メッセージの最大件数（ユーザー設定 0〜1000。0 は常に空配列）。
  */
-export function readChatPanelSnapshot(): ChatPanelSnapshot | null {
+export function readChatPanelSnapshot(maxStoredMessages: number): ChatPanelSnapshot | null {
   if (typeof localStorage === 'undefined') {
     return null
   }
@@ -82,21 +83,21 @@ export function readChatPanelSnapshot(): ChatPanelSnapshot | null {
   }
   return {
     ...out.data,
-    messages: trimChatMessagesToMax(out.data.messages, DEFAULT_CHAT_MAX_STORED_MESSAGES),
+    messages: trimChatMessagesToMax(out.data.messages, maxStoredMessages),
   }
 }
 
 /**
- * チャットパネル状態を保存する。`messages` は既定上限でトリムしてから検証・保存する。
+ * チャットパネル状態を保存する。`messages` は `maxStoredMessages` でトリムしてから検証・保存する。
  *
  * @returns 保存に成功したとき `true`。`localStorage` が無い・`setItem` が失敗したとき `false`。
  */
-export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot): boolean {
+export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot, maxStoredMessages: number): boolean {
   if (typeof localStorage === 'undefined') {
     return false
   }
   try {
-    const trimmed = trimSnapshotMessages(snapshot)
+    const trimmed = trimSnapshotMessages(snapshot, maxStoredMessages)
     const v = chatPanelSnapshotSchema.parse(trimmed)
     localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(v))
     return true

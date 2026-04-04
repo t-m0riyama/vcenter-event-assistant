@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
 import { AutoRefreshPreferencesProvider } from './preferences/AutoRefreshPreferencesProvider'
+import { ChatMaxStoredMessagesProvider } from './preferences/ChatMaxStoredMessagesProvider'
 import { ChatSamplePromptsProvider } from './preferences/ChatSamplePromptsProvider'
 import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
@@ -38,6 +39,7 @@ export default function App() {
       <TimeZoneProvider>
         <AutoRefreshPreferencesProvider>
         <SummaryTopNotableMinScoreProvider>
+          <ChatMaxStoredMessagesProvider>
           <ChatSamplePromptsProvider>
           <div className="app">
             <header className="header">
@@ -185,6 +187,7 @@ export default function App() {
             </main>
           </div>
           </ChatSamplePromptsProvider>
+          </ChatMaxStoredMessagesProvider>
         </SummaryTopNotableMinScoreProvider>
         </AutoRefreshPreferencesProvider>
       </TimeZoneProvider>
