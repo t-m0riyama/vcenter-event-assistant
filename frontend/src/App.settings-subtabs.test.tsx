@@ -28,8 +28,14 @@ function settingsSubNav(): HTMLElement {
   return el as HTMLElement
 }
 
-/** 設定パネル内の4サブタブ（TDD 受け入れ条件） */
-const SETTINGS_SUBTAB_LABELS = ['一般', 'vCenter', 'スコアルール', 'イベント種別ガイド'] as const
+/** 設定パネル内のサブタブ（TDD 受け入れ条件） */
+const SETTINGS_SUBTAB_LABELS = [
+  '一般',
+  'vCenter',
+  'スコアルール',
+  'イベント種別ガイド',
+  'チャットサンプル',
+] as const
 
 describe('App 設定サブタブ', () => {
   afterEach(() => {

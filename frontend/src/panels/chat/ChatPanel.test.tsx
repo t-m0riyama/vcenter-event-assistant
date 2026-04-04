@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import '../../App.css'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import { ChatCustomSamplePromptsProvider } from '../../preferences/ChatCustomSamplePromptsProvider'
 import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
@@ -24,7 +25,9 @@ function jsonResponse(data: unknown, status = 200) {
 function renderChat(onError: (e: string | null) => void = vi.fn()) {
   return render(
     <TimeZoneProvider>
-      <ChatPanel onError={onError} />
+      <ChatCustomSamplePromptsProvider>
+        <ChatPanel onError={onError} />
+      </ChatCustomSamplePromptsProvider>
     </TimeZoneProvider>,
   )
 }
@@ -216,6 +219,103 @@ describe('ChatPanel', () => {
     expect(field?.querySelector('textarea[placeholder="質問を入力…"]')).toBeInstanceOf(
       HTMLTextAreaElement,
     )
+  })
+
+  it('サンプルを複数選択して下書きに挿入すると定義順で \\n\\n 連結される', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'サンプル「メトリクス併用」' }))
+    fireEvent.click(screen.getByRole('button', { name: 'サンプル「期間の要約」' }))
+    fireEvent.click(screen.getByRole('button', { name: '下書きに挿入' }))
+
+    const ta = screen.getByPlaceholderText('質問を入力…') as HTMLTextAreaElement
+    expect(ta.value).toContain('この期間のイベントと傾向を')
+    expect(ta.value).toContain('期間メトリクス（CPU・メモリ等）')
+    expect(ta.value.indexOf('この期間のイベントと傾向を')).toBeLessThan(
+      ta.value.indexOf('期間メトリクス（CPU・メモリ等）'),
+    )
+
+    expect(screen.getByRole('button', { name: 'サンプル「期間の要約」' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  it('サンプル挿入は既存下書きの末尾に追記する', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: '既存' } })
+    fireEvent.click(screen.getByRole('button', { name: 'サンプル「期間の要約」' }))
+    fireEvent.click(screen.getByRole('button', { name: '下書きに挿入' }))
+
+    const ta = screen.getByPlaceholderText('質問を入力…') as HTMLTextAreaElement
+    expect(ta.value.startsWith('既存')).toBe(true)
+    expect(ta.value).toContain('この期間のイベントと傾向を')
+  })
+
+  it('送信中はサンプルトグルと下書きに挿入が無効になる', async () => {
+    let releasePost: (() => void) | undefined
+    const postPromise = new Promise<Response>((resolve) => {
+      releasePost = () => {
+        resolve(jsonResponse({ assistant_content: '遅延回答', error: null }))
+      }
+    })
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return postPromise
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('応答を生成しています…')).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('button', { name: '下書きに挿入' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'サンプル「期間の要約」' })).toBeDisabled()
+
+    releasePost?.()
+    await waitFor(() => {
+      expect(screen.getByText('遅延回答')).toBeInTheDocument()
+    })
   })
 
   it('回答をコピーでクリップボードに該当アシスタント本文が入る', async () => {

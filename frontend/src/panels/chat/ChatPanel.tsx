@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../../api'
+import { useChatCustomSamplePrompts } from '../../preferences/useChatCustomSamplePrompts'
 import {
   parseChatResponse,
   type ChatLlmContextMeta,
@@ -21,6 +22,7 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import { appendSelectedChatSampleTextsToDraft } from './appendSelectedChatSampleTextsToDraft'
 import { ChatCopyAnswerSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 
@@ -31,9 +33,11 @@ const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
  * アシスタント応答後はそのメッセージ先頭が見える位置へ、ユーザーのみ末尾のときはリスト最下端へ寄せる。
  * 送信中はリスト末尾にプレースホルダ行を出し、`aria-busy` で状態を示す。
+ * サンプル質問はトグル複数選択後「下書きに挿入」で textarea に反映する（`ChatCustomSamplePromptsProvider` 必須）。
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
+  const { visibleChatSamplePrompts } = useChatCustomSamplePrompts()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
   )
@@ -47,8 +51,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
+  const [selectedSampleIds, setSelectedSampleIds] = useState(() => new Set<string>())
 
   const messagesListRef = useRef<HTMLUListElement>(null)
+  const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
   /** 最下部付近にいるときだけ `messages` 更新後に末尾へスクロールする */
   const stickToBottomRef = useRef(true)
 
@@ -156,6 +162,28 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
   ])
+
+  const toggleSampleSelection = useCallback((id: string) => {
+    setSelectedSampleIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const insertSelectedSamplesIntoDraft = useCallback(() => {
+    setDraft((d) =>
+      appendSelectedChatSampleTextsToDraft(d, visibleChatSamplePrompts, selectedSampleIds),
+    )
+    setSelectedSampleIds(new Set())
+    queueMicrotask(() => {
+      draftTextareaRef.current?.focus()
+    })
+  }, [visibleChatSamplePrompts, selectedSampleIds])
 
   const copyAssistantMessageContent = useCallback(
     async (content: string) => {
@@ -306,11 +334,41 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         >
           会話をクリア
         </button>
+        <div
+          className="chat-panel__sample-prompts"
+          role="group"
+          aria-label="サンプルの質問"
+        >
+          {visibleChatSamplePrompts.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="btn btn--gray chat-panel__sample-toggle"
+              aria-pressed={selectedSampleIds.has(row.id)}
+              aria-label={`サンプル「${row.label}」`}
+              disabled={loading}
+              onClick={() => {
+                toggleSampleSelection(row.id)
+              }}
+            >
+              {row.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="btn btn--filled"
+            disabled={loading || selectedSampleIds.size === 0}
+            onClick={insertSelectedSamplesIntoDraft}
+          >
+            下書きに挿入
+          </button>
+        </div>
         <div className="chat-panel__composer">
           <div className="chat-panel__composer-field">
             <label className="chat-panel__composer-label">
               メッセージ
               <textarea
+                ref={draftTextareaRef}
                 value={draft}
                 onChange={(e) => {
                   setDraft(e.target.value)
