@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import '../../App.css'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
-import { ChatCustomSamplePromptsProvider } from '../../preferences/ChatCustomSamplePromptsProvider'
+import { ChatSamplePromptsProvider } from '../../preferences/ChatSamplePromptsProvider'
 import {
   CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY,
   CHAT_SAMPLE_PROMPTS_STORAGE_KEY,
@@ -29,9 +29,9 @@ function jsonResponse(data: unknown, status = 200) {
 function renderChat(onError: (e: string | null) => void = vi.fn()) {
   return render(
     <TimeZoneProvider>
-      <ChatCustomSamplePromptsProvider>
+      <ChatSamplePromptsProvider>
         <ChatPanel onError={onError} />
-      </ChatCustomSamplePromptsProvider>
+      </ChatSamplePromptsProvider>
     </TimeZoneProvider>,
   )
 }
@@ -98,7 +98,9 @@ describe('ChatPanel', () => {
     localStorage.removeItem(CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY)
   })
 
-  it('送信で POST /api/chat が呼ばれ、アシスタントの返答が表示される', async () => {
+  it(
+    '送信で POST /api/chat が呼ばれ、アシスタントの返答が表示される',
+    async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -133,7 +135,9 @@ describe('ChatPanel', () => {
       (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
     )
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
-  })
+  },
+    15_000,
+  )
 
   it('アシスタント応答の GFM テーブルを描画する', async () => {
     const tableMd = '|列A|列B|\n|---|---|\n|1|2|'

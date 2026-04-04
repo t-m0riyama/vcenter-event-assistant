@@ -4,14 +4,14 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 
 import type { ChatSamplePromptRow } from '../panels/chat/chatSamplePromptTypes'
-import { ChatCustomSamplePromptsContext } from './chatCustomSamplePromptsContext'
+import { ChatSamplePromptsContext } from './chatSamplePromptsContext'
 import { readStoredChatSamplePrompts, writeStoredChatSamplePrompts } from './chatSamplePromptsStorage'
 
 function resolveInitial(): ChatSamplePromptRow[] {
   return readStoredChatSamplePrompts()
 }
 
-export function ChatCustomSamplePromptsProvider({ children }: { readonly children: ReactNode }) {
+export function ChatSamplePromptsProvider({ children }: { readonly children: ReactNode }) {
   const [chatSamplePrompts, setChatSamplePromptsState] = useState(resolveInitial)
 
   const setChatSamplePrompts = useCallback((rows: readonly ChatSamplePromptRow[]) => {
@@ -35,6 +35,6 @@ export function ChatCustomSamplePromptsProvider({ children }: { readonly childre
   )
 
   return (
-    <ChatCustomSamplePromptsContext.Provider value={value}>{children}</ChatCustomSamplePromptsContext.Provider>
+    <ChatSamplePromptsContext.Provider value={value}>{children}</ChatSamplePromptsContext.Provider>
   )
 }

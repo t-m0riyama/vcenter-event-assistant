@@ -1213,6 +1213,10 @@ textarea:focus-visible {
 }
 
 .chat-custom-samples-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
   margin-bottom: var(--spacing-2);
 }
 

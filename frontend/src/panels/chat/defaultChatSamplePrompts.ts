@@ -28,3 +28,10 @@ export const INITIAL_CHAT_SAMPLE_PROMPTS: readonly ChatSamplePromptRow[] = [
       '期間メトリクス（CPU・メモリ等）をコンテキストに含めたうえで、負荷やボトルネックの兆候が読み取れるか整理してください。',
   },
 ]
+
+/**
+ * リセット・ストレージ初期化用に、`INITIAL_CHAT_SAMPLE_PROMPTS` のミュータブルなコピーを返す。
+ */
+export function getInitialChatSamplePromptsSnapshot(): ChatSamplePromptRow[] {
+  return INITIAL_CHAT_SAMPLE_PROMPTS.map((r) => ({ id: r.id, label: r.label, text: r.text }))
+}

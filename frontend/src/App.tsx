@@ -2,10 +2,10 @@ import { lazy, Suspense, useState } from 'react'
 import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
 import { AutoRefreshPreferencesProvider } from './preferences/AutoRefreshPreferencesProvider'
-import { ChatCustomSamplePromptsProvider } from './preferences/ChatCustomSamplePromptsProvider'
+import { ChatSamplePromptsProvider } from './preferences/ChatSamplePromptsProvider'
 import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
-import { ChatCustomSamplePromptsPanel } from './panels/settings/ChatCustomSamplePromptsPanel'
+import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
@@ -38,7 +38,7 @@ export default function App() {
       <TimeZoneProvider>
         <AutoRefreshPreferencesProvider>
         <SummaryTopNotableMinScoreProvider>
-          <ChatCustomSamplePromptsProvider>
+          <ChatSamplePromptsProvider>
           <div className="app">
             <header className="header">
               <h1>vCenter Event Assistant</h1>
@@ -180,11 +180,11 @@ export default function App() {
                 <VCentersPanel onError={setErr} />
               )}
               {tab === 'settings' && settingsSubTab === 'chat_samples' && (
-                <ChatCustomSamplePromptsPanel onError={setErr} />
+                <ChatSamplePromptsPanel onError={setErr} />
               )}
             </main>
           </div>
-          </ChatCustomSamplePromptsProvider>
+          </ChatSamplePromptsProvider>
         </SummaryTopNotableMinScoreProvider>
         </AutoRefreshPreferencesProvider>
       </TimeZoneProvider>

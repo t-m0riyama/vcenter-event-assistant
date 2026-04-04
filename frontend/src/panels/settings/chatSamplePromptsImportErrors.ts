@@ -12,9 +12,28 @@ export function formatChatSamplePromptsFileParseError(err: unknown): string {
     return describeChatSamplePromptsZodIssues(err.issues)
   }
   if (err instanceof Error) {
+    const fromMessage = tryParseZodIssuesJson(err.message)
+    if (fromMessage.length > 0) {
+      return describeChatSamplePromptsZodIssues(fromMessage)
+    }
     return err.message
   }
   return String(err)
+}
+
+/**
+ * Zod 4 では `ZodError` の `message` が JSON 配列（issues）になることがある。`instanceof` が効かない境界でも拾う。
+ */
+function tryParseZodIssuesJson(message: string): ZodIssue[] {
+  const t = message.trim()
+  if (!t.startsWith('[')) return []
+  try {
+    const parsed = JSON.parse(t) as unknown
+    if (!Array.isArray(parsed) || parsed.length === 0) return []
+    return parsed as ZodIssue[]
+  } catch {
+    return []
+  }
 }
 
 function pathKey(issue: ZodIssue): string {

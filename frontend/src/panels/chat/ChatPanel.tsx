@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../../api'
-import { useChatCustomSamplePrompts } from '../../preferences/useChatCustomSamplePrompts'
+import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
 import {
   parseChatResponse,
   type ChatLlmContextMeta,
@@ -33,11 +33,11 @@ const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
  * アシスタント応答後はそのメッセージ先頭が見える位置へ、ユーザーのみ末尾のときはリスト最下端へ寄せる。
  * 送信中はリスト末尾にプレースホルダ行を出し、`aria-busy` で状態を示す。
- * サンプル質問はトグル複数選択後「下書きに挿入」で textarea に反映する（`ChatCustomSamplePromptsProvider` 必須）。
+ * サンプル質問はトグル複数選択後「下書きに挿入」で textarea に反映する（`ChatSamplePromptsProvider` 必須）。
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
-  const { visibleChatSamplePrompts } = useChatCustomSamplePrompts()
+  const { visibleChatSamplePrompts } = useChatSamplePrompts()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
   )

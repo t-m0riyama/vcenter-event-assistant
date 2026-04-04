@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import type { ChatSamplePromptRow } from '../panels/chat/chatSamplePromptTypes'
-import { INITIAL_CHAT_SAMPLE_PROMPTS } from '../panels/chat/defaultChatSamplePrompts'
+import { getInitialChatSamplePromptsSnapshot } from '../panels/chat/defaultChatSamplePrompts'
 
 /** チャットサンプル一覧（既定含む）を保存する localStorage キー。 */
 export const CHAT_SAMPLE_PROMPTS_STORAGE_KEY = 'vea.chat_sample_prompts.v1'
@@ -21,7 +21,7 @@ const rowSchema = z.object({
 const arraySchema = z.array(rowSchema)
 
 function seedFromInitialAndLegacy(legacyRows: readonly ChatSamplePromptRow[]): ChatSamplePromptRow[] {
-  const initial = INITIAL_CHAT_SAMPLE_PROMPTS.map((r) => ({ id: r.id, label: r.label, text: r.text }))
+  const initial = getInitialChatSamplePromptsSnapshot()
   const seen = new Set(initial.map((r) => r.id))
   const merged = [...initial]
   for (const row of legacyRows) {

@@ -4,9 +4,10 @@
 import { useCallback, useRef, useState } from 'react'
 
 import type { ChatSamplePromptRow } from '../chat/chatSamplePromptTypes'
+import { getInitialChatSamplePromptsSnapshot } from '../chat/defaultChatSamplePrompts'
 import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
-import { useChatCustomSamplePrompts } from '../../preferences/useChatCustomSamplePrompts'
+import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
 import {
   buildChatSamplePromptsExportPayload,
   chatSamplePromptsFileSchema,
@@ -25,8 +26,8 @@ function confirmDestructiveChatSampleImport(deleteNotInImport: boolean, sampleCo
   return confirm('ファイルに含まれない id のサンプルは削除されます。よろしいですか？')
 }
 
-export function ChatCustomSamplePromptsPanel({ onError }: { onError: (e: string | null) => void }) {
-  const { chatSamplePrompts, setChatSamplePrompts } = useChatCustomSamplePrompts()
+export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null) => void }) {
+  const { chatSamplePrompts, setChatSamplePrompts } = useChatSamplePrompts()
   const [overwriteExisting, setOverwriteExisting] = useState(true)
   const [deleteSamplesNotInImport, setDeleteSamplesNotInImport] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -55,6 +56,18 @@ export function ChatCustomSamplePromptsPanel({ onError }: { onError: (e: string 
     },
     [chatSamplePrompts, setChatSamplePrompts],
   )
+
+  const resetToInitialSamples = useCallback(() => {
+    if (
+      !confirm(
+        '編集内容と追加したサンプルはすべて失われ、コード同梱の既定サンプルに置き換わります。よろしいですか？',
+      )
+    ) {
+      return
+    }
+    onError(null)
+    setChatSamplePrompts(getInitialChatSamplePromptsSnapshot())
+  }, [onError, setChatSamplePrompts])
 
   const exportToFile = () => {
     onError(null)
@@ -158,9 +171,15 @@ export function ChatCustomSamplePromptsPanel({ onError }: { onError: (e: string 
       </div>
 
       <h2>一覧</h2>
+      <p className="hint">
+        「既定に戻す」は一覧をアプリ同梱の初期サンプルだけに置き換えます（編集・追加行は失われます）。
+      </p>
       <div className="chat-custom-samples-actions">
         <button type="button" className="btn btn--gray" onClick={addRow}>
           サンプルを追加
+        </button>
+        <button type="button" className="btn btn--gray" onClick={resetToInitialSamples}>
+          既定に戻す
         </button>
       </div>
       <ul className="chat-custom-samples-list">
