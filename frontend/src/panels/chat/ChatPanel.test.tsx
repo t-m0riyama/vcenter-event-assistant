@@ -115,6 +115,62 @@ describe('ChatPanel', () => {
     expect(chatPosts.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('Enter キーで送信される', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ assistant_content: 'ok', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: 'enter で送る' } })
+    fireEvent.keyDown(ta, { key: 'Enter', code: 'Enter', shiftKey: false })
+
+    await waitFor(() => {
+      expect(screen.getByText('ok')).toBeInTheDocument()
+    })
+  })
+
+  it('Shift+Enter では送信せず改行だけされる', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const ta = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(ta, { target: { value: 'line1' } })
+    fireEvent.keyDown(ta, { key: 'Enter', code: 'Enter', shiftKey: true })
+
+    await waitFor(() => {
+      expect(ta).toHaveValue('line1\n')
+    })
+
+    const posts = fetchMock.mock.calls.filter(
+      (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
+    )
+    expect(posts.length).toBe(0)
+  })
+
   it('送信中は会話リストにプレースホルダが表示され ul に aria-busy が付く', async () => {
     let resolveChat!: (r: Response) => void
     const chatPromise = new Promise<Response>((res) => {

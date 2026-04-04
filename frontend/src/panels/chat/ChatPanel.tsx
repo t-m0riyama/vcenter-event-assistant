@@ -270,6 +270,18 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
             onChange={(e) => {
               setDraft(e.target.value)
             }}
+            onKeyDown={(e) => {
+              // IME 確定中は Enter を横取りしない
+              if (e.nativeEvent.isComposing) return
+              if (e.key !== 'Enter') return
+              if (e.shiftKey) {
+                e.preventDefault()
+                setDraft((d) => `${d}\n`)
+                return
+              }
+              e.preventDefault()
+              void send()
+            }}
             rows={3}
             disabled={loading}
             placeholder="質問を入力…"
