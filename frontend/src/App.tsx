@@ -12,6 +12,8 @@ import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
+import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
+import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
 import './App.css'
 
 const MetricsPanel = lazy(async () => {
@@ -19,9 +21,9 @@ const MetricsPanel = lazy(async () => {
   return { default: m.MetricsPanel }
 })
 
-type Tab = 'summary' | 'events' | 'metrics' | 'digests' | 'chat' | 'settings'
+type Tab = MainTabId
 
-type SettingsSubTab = 'general' | 'vcenters' | 'score_rules' | 'event_type_guides'
+type SettingsSubTab = SettingsSubTabId
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
@@ -62,12 +64,17 @@ export default function App() {
                     setErr(null)
                   }}
                 >
-                  {t === 'summary' && '概要'}
-                  {t === 'events' && 'イベント'}
-                  {t === 'metrics' && 'グラフ'}
-                  {t === 'digests' && 'ダイジェスト'}
-                  {t === 'chat' && 'チャット'}
-                  {t === 'settings' && '設定'}
+                  <span className="tab-button__inner">
+                    <MainTabIcon tabId={t} />
+                    <span className="tab-button__label">
+                      {t === 'summary' && '概要'}
+                      {t === 'events' && 'イベント'}
+                      {t === 'metrics' && 'グラフ'}
+                      {t === 'digests' && 'ダイジェスト'}
+                      {t === 'chat' && 'チャット'}
+                      {t === 'settings' && '設定'}
+                    </span>
+                  </span>
                 </button>
               ))}
             </nav>
@@ -84,7 +91,10 @@ export default function App() {
                       setErr(null)
                     }}
                   >
-                    一般
+                    <span className="tab-button__inner">
+                      <SettingsSubTabIcon tabId="general" />
+                      <span className="tab-button__label">一般</span>
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -95,7 +105,10 @@ export default function App() {
                       setErr(null)
                     }}
                   >
-                    vCenter
+                    <span className="tab-button__inner">
+                      <SettingsSubTabIcon tabId="vcenters" />
+                      <span className="tab-button__label">vCenter</span>
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -106,7 +119,10 @@ export default function App() {
                       setErr(null)
                     }}
                   >
-                    スコアルール
+                    <span className="tab-button__inner">
+                      <SettingsSubTabIcon tabId="score_rules" />
+                      <span className="tab-button__label">スコアルール</span>
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -117,7 +133,10 @@ export default function App() {
                       setErr(null)
                     }}
                   >
-                    イベント種別ガイド
+                    <span className="tab-button__inner">
+                      <SettingsSubTabIcon tabId="event_type_guides" />
+                      <span className="tab-button__label">イベント種別ガイド</span>
+                    </span>
                   </button>
                 </nav>
               )}

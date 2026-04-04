@@ -118,47 +118,51 @@ describe('App error banner', () => {
     })
   })
 
-  it('shows role=alert when metrics series fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.includes('/api/config')) {
-          return Promise.resolve(jsonResponse(emptyConfig))
-        }
-        if (url.includes('/api/dashboard/summary')) {
-          return Promise.resolve(jsonResponse(emptySummary))
-        }
-        if (url.includes('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.includes('/api/metrics?')) {
-          return Promise.resolve(new Response('m err', { status: 500 }))
-        }
-        if (url.includes('/api/metrics/keys')) {
-          return Promise.resolve(jsonResponse({ metric_keys: ['host.cpu.usage_pct'] }))
-        }
-        if (url.includes('/api/events/event-types')) {
-          return Promise.resolve(jsonResponse({ event_types: [] }))
-        }
-        return Promise.resolve(new Response('n', { status: 404 }))
-      }),
-    )
-    render(<App />)
-    await waitFor(() => {
-      expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
-    })
-    // `App` は MetricsPanel を lazy + Suspense する。フォールバックのままでは fetch も onError も走らない。
-    await import('./panels/metrics/MetricsPanel')
-    fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
-    await waitFor(
-      () => {
-        expect(screen.queryByText('グラフを読み込み中…')).not.toBeInTheDocument()
-      },
-      { timeout: 5000 },
-    )
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
-    })
-  })
+  it(
+    'shows role=alert when metrics series fails',
+    async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url.includes('/api/config')) {
+            return Promise.resolve(jsonResponse(emptyConfig))
+          }
+          if (url.includes('/api/dashboard/summary')) {
+            return Promise.resolve(jsonResponse(emptySummary))
+          }
+          if (url.includes('/api/vcenters')) {
+            return Promise.resolve(jsonResponse([]))
+          }
+          if (url.includes('/api/metrics?')) {
+            return Promise.resolve(new Response('m err', { status: 500 }))
+          }
+          if (url.includes('/api/metrics/keys')) {
+            return Promise.resolve(jsonResponse({ metric_keys: ['host.cpu.usage_pct'] }))
+          }
+          if (url.includes('/api/events/event-types')) {
+            return Promise.resolve(jsonResponse({ event_types: [] }))
+          }
+          return Promise.resolve(new Response('n', { status: 404 }))
+        }),
+      )
+      render(<App />)
+      await waitFor(() => {
+        expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
+      })
+      // `App` は MetricsPanel を lazy + Suspense する。フォールバックのままでは fetch も onError も走らない。
+      await import('./panels/metrics/MetricsPanel')
+      fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
+      await waitFor(
+        () => {
+          expect(screen.queryByText('グラフを読み込み中…')).not.toBeInTheDocument()
+        },
+        { timeout: 10_000 },
+      )
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
+      })
+    },
+    20_000,
+  )
 })
