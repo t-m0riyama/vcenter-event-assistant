@@ -75,8 +75,8 @@ async def test_post_chat_returns_assistant_content_when_llm_succeeds(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
-        return ("回答テキスト", None, None)
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+        return ("回答テキスト", None, None, 1500, 15.5)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",
@@ -99,7 +99,7 @@ async def test_post_chat_returns_llm_context_when_run_period_chat_provides_meta(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, ChatLlmContextMeta]:
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, ChatLlmContextMeta, int | None, float | None]:
         return (
             "回答",
             None,
@@ -109,6 +109,8 @@ async def test_post_chat_returns_llm_context_when_run_period_chat_provides_meta(
                 max_input_tokens=32000,
                 message_turns=1,
             ),
+            120,
+            20.0,
         )
 
     monkeypatch.setattr(
@@ -135,8 +137,8 @@ async def test_post_chat_returns_error_field_when_llm_returns_error(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_fail(*a: object, **k: object) -> tuple[str, str | None, object]:
-        return ("", "何か失敗", None)
+    async def _fake_fail(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+        return ("", "何か失敗", None, None, None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",
@@ -190,8 +192,8 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
         _spy_buckets,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
-        return ("ok", None, None)
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+        return ("ok", None, None, None, None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",
@@ -232,8 +234,8 @@ async def test_post_chat_skips_period_metrics_builder_when_all_toggles_false(
         _boom_buckets,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object]:
-        return ("ok", None, None)
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+        return ("ok", None, None, None, None)
 
     monkeypatch.setattr(
         "vcenter_event_assistant.api.routes.chat.run_period_chat",

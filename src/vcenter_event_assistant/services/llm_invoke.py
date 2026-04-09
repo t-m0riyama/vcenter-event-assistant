@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+import tiktoken
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
@@ -12,19 +14,42 @@ async def stream_chat_to_text(
     messages: list[BaseMessage],
     *,
     config: RunnableConfig | None = None,
-) -> str:
+) -> tuple[str, int | None, float | None]:
     """
-    ``astream`` でチャンクを連結し、assistant 本文を返す。
+    ``astream`` でチャンクを連結し、assistant 本文と (latency_ms, token_per_sec) を返す。
 
     Ollama 等の長い生成では非ストリーミングが打ち切られることがあるためストリーミングを使う。
     一部プロバイダでは ``content`` が文字列ではなくテキストブロックの配列になるため、
     ``str(content)`` は使わず ``text`` で抽出する。
     """
     parts: list[str] = []
+    start_time = time.perf_counter()
+    first_token_time = None
+
     async for chunk in model.astream(messages, config=config):
         if chunk.content:
+            if first_token_time is None:
+                first_token_time = time.perf_counter()
             parts.append(str(chunk.text))
+
+    end_time = time.perf_counter()
     text = "".join(parts).strip()
     if not text:
         raise ValueError("LLM ストリーミング応答に assistant 本文がありません（内容が空）")
-    return text
+
+    latency_ms = None
+    if first_token_time is not None:
+        latency_ms = int((first_token_time - start_time) * 1000)
+
+    token_per_sec = None
+    if first_token_time is not None and end_time > first_token_time:
+        duration_sec = end_time - first_token_time
+        try:
+            enc = tiktoken.get_encoding("cl100k_base")
+            out_tokens = len(enc.encode(text))
+            if duration_sec > 0:
+                token_per_sec = round(out_tokens / duration_sec, 1)
+        except Exception:
+            pass
+
+    return text, latency_ms, token_per_sec

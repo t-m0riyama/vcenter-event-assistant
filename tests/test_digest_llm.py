@@ -110,7 +110,7 @@ async def test_augment_returns_template_on_http_error(monkeypatch: pytest.Monkey
         llm_digest_provider="openai_compatible",
     )
 
-    async def _boom(*a: object, **k: object) -> str:
+    async def _boom(*a: object, **k: object) -> tuple[str, int | None, float | None]:
         raise RuntimeError("HTTP 500: err")
 
     monkeypatch.setattr(
@@ -134,7 +134,7 @@ async def test_augment_uses_exception_type_when_str_empty(monkeypatch: pytest.Mo
         llm_digest_provider="openai_compatible",
     )
 
-    async def _boom(*a: object, **k: object) -> str:
+    async def _boom(*a: object, **k: object) -> tuple[str, int | None, float | None]:
         raise ConnectionError()
 
     monkeypatch.setattr(
@@ -156,7 +156,7 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
         llm_digest_provider="openai_compatible",
     )
 
-    async def _boom(*a: object, **k: object) -> str:
+    async def _boom(*a: object, **k: object) -> tuple[str, int | None, float | None]:
         raise httpx.ReadTimeout("")
 
     monkeypatch.setattr(
@@ -210,9 +210,9 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
     )
     captured: dict[str, object] = {}
 
-    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> str:
+    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["human"] = lc_messages[1].content  # type: ignore[index]
-        return "## LLM 要約\n- 補足"
+        return "## LLM 要約\n- 補足", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.digest_llm.build_chat_model",
@@ -246,9 +246,9 @@ async def test_augment_digest_anonymizes_extra_vcenter_in_template(
     label = "EXTRA-VC-DISPLAY-ONLY"
     captured: dict[str, object] = {}
 
-    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> str:
+    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["human"] = lc_messages[1].content  # type: ignore[index]
-        return "## LLM 要約\n- ok"
+        return "## LLM 要約\n- ok", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.digest_llm.build_chat_model",

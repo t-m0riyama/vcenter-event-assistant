@@ -430,6 +430,18 @@ class ChatResponse(BaseModel):
         default=None,
         description="LLM を呼んだ直前のコンテキスト統計。API キーが空でスキップしたときは None。",
     )
+    created_at: datetime | None = Field(
+        default=None,
+        description="応答時刻",
+    )
+    latency_ms: int | None = Field(
+        default=None,
+        description="最初の一文字が生成されるまでの時間(ms)",
+    )
+    token_per_sec: float | None = Field(
+        default=None,
+        description="トークン生成速度",
+    )
 
 
 class DigestRunRequest(BaseModel):

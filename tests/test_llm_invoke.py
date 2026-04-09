@@ -23,9 +23,9 @@ async def test_stream_chat_to_text_joins_plain_text_from_content_blocks() -> Non
             for c in chunks:
                 yield c
 
-    out = await stream_chat_to_text(
+    text, lat, tps = await stream_chat_to_text(
         _FakeStreamModel(),  # type: ignore[arg-type]
         [HumanMessage("hi")],
     )
-    assert out == "あい"
-    assert "[" not in out
+    assert text == "あい"
+    assert "[" not in text

@@ -341,6 +341,9 @@ export function parseDigestListResponse(raw: unknown): DigestListResponse {
 export const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  created_at: z.string().optional(),
+  latency_ms: z.number().nullable().optional(),
+  token_per_sec: z.number().nullable().optional(),
 })
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
@@ -359,6 +362,9 @@ export const chatResponseSchema = z.object({
   assistant_content: z.string(),
   error: z.string().nullable(),
   llm_context: chatLlmContextMetaSchema.nullable().optional(),
+  created_at: z.string().optional(),
+  latency_ms: z.number().nullable().optional(),
+  token_per_sec: z.number().nullable().optional(),
 })
 
 export type ChatResponse = z.infer<typeof chatResponseSchema>

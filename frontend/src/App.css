@@ -1142,6 +1142,14 @@ textarea:focus-visible {
   color: var(--color-text-secondary);
 }
 
+.chat-panel__msg-meta {
+  color: var(--color-text-secondary);
+}
+
+.chat-panel__metrics {
+  opacity: 0.8;
+}
+
 .chat-panel__bubble {
   word-break: break-word;
   max-width: min(100%, 560px);
