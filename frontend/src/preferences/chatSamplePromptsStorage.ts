@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { ChatSamplePromptRow } from '../panels/chat/chatSamplePromptTypes'
 import { getInitialChatSamplePromptsSnapshot } from '../panels/chat/defaultChatSamplePrompts'
 
-/** チャットサンプル一覧（既定含む）を保存する localStorage キー。 */
+/** プロンプトテンプレート一覧（既定含む）を保存する localStorage キー。 */
 export const CHAT_SAMPLE_PROMPTS_STORAGE_KEY = 'vea.chat_sample_prompts.v1'
 
 /**
@@ -59,7 +59,7 @@ function removeLegacyKey(): void {
 }
 
 /**
- * 保存済みチャットサンプル一覧を読む。未設定時は INITIAL をシードして保存する。
+ * 保存済みプロンプトテンプレート一覧を読む。未設定時は INITIAL をシードして保存する。
  * 旧キー（カスタムのみ）のみある場合は INITIAL とマージして新キーへ移行する。
  */
 export function readStoredChatSamplePrompts(): ChatSamplePromptRow[] {
@@ -103,7 +103,7 @@ function writeStoredChatSamplePromptsInternal(rows: readonly ChatSamplePromptRow
 }
 
 /**
- * チャットサンプル一覧を保存する（Zod で検証してから JSON 化）。
+ * プロンプトテンプレート一覧を保存する（Zod で検証してから JSON 化）。
  */
 export function writeStoredChatSamplePrompts(rows: readonly ChatSamplePromptRow[]): void {
   writeStoredChatSamplePromptsInternal(rows)

@@ -14,6 +14,17 @@ def test_llm_failure_detail_timeout_uses_japanese_hint() -> None:
     assert "LLM_DIGEST_TIMEOUT_SECONDS" in d
 
 
+def test_llm_failure_detail_github_pat_not_supported_hint() -> None:
+    from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
+
+    exc = Exception(
+        'Session error: ... 400 "checking third-party user token: bad request: '
+        'Personal Access Tokens are not supported for this endpoint"'
+    )
+    d = _llm_failure_detail_for_user(exc)
+    assert "LLM_COPILOT_CLI_SESSION_AUTH" in d
+
+
 def test_is_timeout_like_matches_apitimeout_if_openai_installed() -> None:
     from vcenter_event_assistant.services.llm_user_errors import _is_timeout_like
 

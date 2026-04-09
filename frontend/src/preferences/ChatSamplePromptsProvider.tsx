@@ -1,5 +1,5 @@
 /**
- * チャットサンプル一覧を localStorage と同期し、チャット表示用のフィルタ済み一覧を提供する。
+ * プロンプトテンプレート一覧を localStorage と同期し、チャット表示用のフィルタ済み一覧を提供する。
  */
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 

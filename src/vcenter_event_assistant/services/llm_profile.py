@@ -21,6 +21,33 @@ class ResolvedLlmProfile:
     timeout_seconds: float
 
 
+def is_digest_llm_configured(settings: Settings) -> bool:
+    """
+    ダイジェスト LLM が呼べる設定か。
+    """
+    if (settings.llm_digest_api_key or "").strip():
+        return True
+    prof = resolve_llm_profile(settings, purpose="digest")
+    return bool(
+        prof.provider == "copilot_cli" and settings.llm_copilot_cli_session_auth,
+    )
+
+
+def is_chat_llm_configured(settings: Settings) -> bool:
+    """
+    チャット LLM が呼べる設定か。
+
+    通常は ``effective_chat_api_key`` が非空。copilot_cli かつ
+    ``llm_copilot_cli_session_auth`` のときはキーなしでも True（CLI 側ログイン前提）。
+    """
+    if effective_chat_api_key(settings):
+        return True
+    prof = resolve_llm_profile(settings, purpose="chat")
+    return bool(
+        prof.provider == "copilot_cli" and settings.llm_copilot_cli_session_auth,
+    )
+
+
 def effective_chat_api_key(settings: Settings) -> str:
     """
     チャット API で用いる実効 API キー（strip 済み）。

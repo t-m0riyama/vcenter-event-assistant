@@ -19,8 +19,12 @@ from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import _trim_context_json
 from vcenter_event_assistant.services.llm_anonymization import anonymize_chat_for_llm, deanonymize_text
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
+from vcenter_event_assistant.services.copilot_cli_llm import run_copilot_cli_chat_completion
 from vcenter_event_assistant.services.llm_factory import build_chat_model
-from vcenter_event_assistant.services.llm_profile import effective_chat_api_key, resolve_llm_profile
+from vcenter_event_assistant.services.llm_profile import (
+    is_chat_llm_configured,
+    resolve_llm_profile,
+)
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
@@ -86,6 +90,13 @@ def _log_chat_llm_failure(settings: Settings, exc: BaseException) -> None:
         _logger.warning(
             "chat LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
             base,
+            prof.model,
+            exc,
+            exc_info=True,
+        )
+    elif prof.provider == "copilot_cli":
+        _logger.warning(
+            "chat LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
             prof.model,
             exc,
             exc_info=True,
@@ -234,11 +245,10 @@ async def run_period_chat(
 
     Returns:
         (assistant_text, error_message, llm_context_meta)。
-        API キーが空のときは (\"\", None, None)。
+        チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は (\"\", None, None)。
         LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
-    key = effective_chat_api_key(settings)
-    if not key:
+    if not is_chat_llm_configured(settings):
         return ("", None, None)
 
     digest_obj = context.model_dump(mode="json")
@@ -286,9 +296,17 @@ async def run_period_chat(
             cprof.model,
             settings.llm_chat_max_input_tokens,
         )
-        model = build_chat_model(settings, purpose="chat", config=runnable_config)
-        lc_messages = _to_langchain_messages(block, trimmed)
-        text = await stream_chat_to_text(model, lc_messages, config=runnable_config)
+        if cprof.provider == "copilot_cli":
+            text = await run_copilot_cli_chat_completion(
+                settings,
+                system_prompt=_CHAT_SYSTEM_PROMPT,
+                block=block,
+                messages=trimmed,
+            )
+        else:
+            model = build_chat_model(settings, purpose="chat", config=runnable_config)
+            lc_messages = _to_langchain_messages(block, trimmed)
+            text = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         text = deanonymize_text(text.strip(), reverse_map)
         return (text, None, meta)
     except Exception as e:

@@ -15,7 +15,7 @@ from vcenter_event_assistant.services.chat_period_metrics import (
     compute_chat_bucket_seconds,
 )
 from vcenter_event_assistant.services.digest_context import build_digest_context
-from vcenter_event_assistant.services.llm_profile import effective_chat_api_key
+from vcenter_event_assistant.services.llm_profile import is_chat_llm_configured
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
 from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.settings import get_settings
@@ -29,11 +29,12 @@ async def post_chat(
     session: AsyncSession = Depends(get_session),
 ) -> ChatResponse:
     settings = get_settings()
-    if not effective_chat_api_key(settings):
+    if not is_chat_llm_configured(settings):
         raise HTTPException(
             status_code=503,
             detail=(
-                "LLM が未設定です。環境変数 LLM_DIGEST_API_KEY または LLM_CHAT_API_KEY を設定してください。"
+                "LLM が未設定です。環境変数 LLM_DIGEST_API_KEY または LLM_CHAT_API_KEY を設定するか、"
+                "Copilot CLI チャットで LLM_COPILOT_CLI_SESSION_AUTH=true（gh auth login 済み）にしてください。"
             ),
         )
 
