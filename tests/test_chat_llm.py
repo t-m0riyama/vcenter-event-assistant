@@ -46,7 +46,7 @@ async def test_run_period_chat_skips_http_when_no_api_key() -> None:
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key=None,
     )
-    out, err, meta = await run_period_chat(
+    out, err, meta, _, _ = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="要約して")],
@@ -80,9 +80,9 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "追質問への回答"
+        return "追質問への回答", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -93,7 +93,7 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
         _spy_stream_fixed,
     )
 
-    out, err, meta = await run_period_chat(s, context=_minimal_ctx(), messages=msgs)
+    out, err, meta, _, _ = await run_period_chat(s, context=_minimal_ctx(), messages=msgs)
     assert err is None
     assert out == "追質問への回答"
     assert meta is not None
@@ -135,9 +135,9 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
         messages: object,
         *,
         config: object = None,
-    ) -> str:
+    ) -> tuple[str, int | None, float | None]:
         captured["config"] = config
-        return "ok"
+        return "ok", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -173,9 +173,9 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "Gemini の回答"
+        return "Gemini の回答", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -186,7 +186,7 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
         _spy_stream_fixed,
     )
 
-    out, err, meta = await run_period_chat(
+    out, err, meta, _, _ = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="hello")],
@@ -237,9 +237,9 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "ok"
+        return "ok", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -250,7 +250,7 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
         _spy_stream_fixed,
     )
 
-    out, err, meta = await run_period_chat(
+    out, err, meta, _, _ = await run_period_chat(
         s,
         context=huge_ctx,
         messages=[ChatMessage(role="user", content="質問")],
@@ -292,9 +292,9 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "y"
+        return "y", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -305,7 +305,7 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
         _spy_stream_fixed,
     )
 
-    out, err, meta = await run_period_chat(
+    out, err, meta, _, _ = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
@@ -346,9 +346,9 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "z"
+        return "z", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -359,7 +359,7 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
         _spy_stream_fixed,
     )
 
-    out, err, meta = await run_period_chat(
+    out, err, meta, _, _ = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
@@ -417,9 +417,9 @@ async def test_run_period_chat_anonymizes_entity_names_sent_to_llm(
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "ok"
+        return "ok", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -462,9 +462,9 @@ async def test_run_period_chat_anonymizes_extra_vcenter_strings_in_user_message(
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "ok"
+        return "ok", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",
@@ -535,9 +535,9 @@ async def test_run_period_chat_respects_llm_anonymization_disabled(
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> str:
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
-        return "ok"
+        return "ok", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat_llm.build_chat_model",

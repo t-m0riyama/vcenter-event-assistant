@@ -151,7 +151,7 @@ async def augment_digest_with_llm(
         else:
             model = build_chat_model(settings, purpose="digest", config=runnable_config)
             lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
-            summary = await stream_chat_to_text(model, lc_messages, config=runnable_config)
+            summary, _, _ = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         summary = deanonymize_text(summary.strip(), reverse_map)
         merged = template_markdown.rstrip() + "\n\n" + summary + "\n"
         return (merged, None)

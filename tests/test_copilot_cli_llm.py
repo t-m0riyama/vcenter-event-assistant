@@ -203,7 +203,7 @@ async def test_run_period_chat_copilot_cli_calls_completion_and_returns_text(
         raising=True,
     )
 
-    out, err, meta = await run_period_chat(
+    out, err, meta, _, _ = await run_period_chat(
         s,
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="質問")],

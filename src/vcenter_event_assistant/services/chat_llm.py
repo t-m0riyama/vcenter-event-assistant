@@ -222,6 +222,8 @@ def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseM
     return out
 
 
+import time
+
 async def run_period_chat(
     settings: Settings,
     *,
@@ -231,7 +233,7 @@ async def run_period_chat(
     event_time_buckets: EventTimeBucketsPayload | None = None,
     runnable_config: RunnableConfig | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
-) -> tuple[str, str | None, ChatLlmContextMeta | None]:
+) -> tuple[str, str | None, ChatLlmContextMeta | None, int | None, float | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
 
@@ -244,12 +246,12 @@ async def run_period_chat(
     匿名化有効時に会話本文からもトークン化する（API ルートでは全件読込を渡す）。
 
     Returns:
-        (assistant_text, error_message, llm_context_meta)。
-        チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は (\"\", None, None)。
+        (assistant_text, error_message, llm_context_meta, latency_ms, token_per_sec)。
+        チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は (\"\", None, None, None, None)。
         LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
     if not is_chat_llm_configured(settings):
-        return ("", None, None)
+        return ("", None, None, None, None)
 
     digest_obj = context.model_dump(mode="json")
     digest_obj.pop("high_cpu_hosts", None)
@@ -297,19 +299,31 @@ async def run_period_chat(
             settings.llm_chat_max_input_tokens,
         )
         if cprof.provider == "copilot_cli":
+            start_time = time.perf_counter()
             text = await run_copilot_cli_chat_completion(
                 settings,
                 system_prompt=_CHAT_SYSTEM_PROMPT,
                 block=block,
                 messages=trimmed,
             )
+            end_time = time.perf_counter()
+            latency_ms = int((end_time - start_time) * 1000)
+            token_per_sec = None
+            duration_sec = end_time - start_time
+            if duration_sec > 0:
+                try:
+                    import tiktoken
+                    enc = tiktoken.get_encoding("cl100k_base")
+                    token_per_sec = round(len(enc.encode(text)) / duration_sec, 1)
+                except Exception:
+                    pass
         else:
             model = build_chat_model(settings, purpose="chat", config=runnable_config)
             lc_messages = _to_langchain_messages(block, trimmed)
-            text = await stream_chat_to_text(model, lc_messages, config=runnable_config)
+            text, latency_ms, token_per_sec = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         text = deanonymize_text(text.strip(), reverse_map)
-        return (text, None, meta)
+        return (text, None, meta, latency_ms, token_per_sec)
     except Exception as e:
         _log_chat_llm_failure(settings, e)
         detail = _llm_failure_detail_for_user(e)
-        return ("", f"チャット応答を取得できませんでした（{detail}）", meta)
+        return ("", f"チャット応答を取得できませんでした（{detail}）", meta, None, None)

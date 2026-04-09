@@ -13,6 +13,7 @@ import { asArray } from '../../utils/asArray'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { resolveEventApiRange } from '../../datetime/graphRange'
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import {
   METRICS_DEFAULT_ROLLING_DURATION_MS,
   presetRelativeRangeWallPartsWithUtcFallback,
@@ -216,7 +217,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
 
     onError(null)
     const nextMessages = trimChatMessagesToMax(
-      [...messages, { role: 'user', content: text }],
+      [...messages, { role: 'user', content: text, created_at: new Date().toISOString() }],
       chatMaxStoredMessages,
     )
     setMessages(nextMessages)
@@ -242,14 +243,32 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       if (out.error) {
         setMessages((m) =>
           trimChatMessagesToMax(
-            [...m, { role: 'assistant', content: `（${out.error}）` }],
+            [
+              ...m,
+              {
+                role: 'assistant',
+                content: `（${out.error}）`,
+                created_at: out.created_at,
+                latency_ms: out.latency_ms ?? undefined,
+                token_per_sec: out.token_per_sec ?? undefined,
+              },
+            ],
             chatMaxStoredMessages,
           ),
         )
       } else {
         setMessages((m) =>
           trimChatMessagesToMax(
-            [...m, { role: 'assistant', content: out.assistant_content }],
+            [
+              ...m,
+              {
+                role: 'assistant',
+                content: out.assistant_content,
+                created_at: out.created_at,
+                latency_ms: out.latency_ms ?? undefined,
+                token_per_sec: out.token_per_sec ?? undefined,
+              },
+            ],
             chatMaxStoredMessages,
           ),
         )
@@ -395,7 +414,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       >
         {messages.map((m, i) => (
           <li key={`${i}-${m.role}`} className={`chat-panel__msg chat-panel__msg--${m.role}`}>
-            <span className="chat-panel__role">{m.role === 'user' ? 'あなた' : 'アシスタント'}</span>
+            <span className="chat-panel__role">
+              {m.role === 'user' ? 'あなた' : 'アシスタント'}
+              {m.created_at && (
+                <span className="chat-panel__msg-meta">
+                  {' '}- {formatIsoInTimeZone(m.created_at, timeZone)}
+                  {m.latency_ms != null && (
+                    <span className="chat-panel__metrics">
+                      {' '}（{m.token_per_sec != null ? `${m.token_per_sec.toFixed(1)} tokens/sec | ` : ''}latency {(m.latency_ms / 1000).toFixed(1)}s）
+                    </span>
+                  )}
+                </span>
+              )}
+            </span>
             <div className="chat-panel__bubble">
               <ChatMarkdownContent markdown={m.content} />
             </div>

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,7 +93,7 @@ async def post_chat(
         vcenter_id=str(body.vcenter_id) if body.vcenter_id is not None else None,
     )
     vc_anon = await load_all_vcenter_anonymization_strings(session)
-    text, err, llm_meta = await run_period_chat(
+    text, err, llm_meta, latency_ms, token_per_sec = await run_period_chat(
         settings,
         context=ctx,
         messages=list(body.messages),
@@ -100,4 +102,11 @@ async def post_chat(
         runnable_config=llm_cfg,
         extra_vcenter_strings=vc_anon,
     )
-    return ChatResponse(assistant_content=text, error=err, llm_context=llm_meta)
+    return ChatResponse(
+        assistant_content=text,
+        error=err,
+        llm_context=llm_meta,
+        created_at=datetime.now(timezone.utc),
+        latency_ms=latency_ms,
+        token_per_sec=token_per_sec,
+    )
