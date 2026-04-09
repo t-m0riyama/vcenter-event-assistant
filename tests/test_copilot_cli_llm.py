@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
 
 from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat_llm import run_period_chat
