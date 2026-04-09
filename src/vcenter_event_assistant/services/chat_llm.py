@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any
@@ -222,7 +223,6 @@ def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseM
     return out
 
 
-import time
 
 async def run_period_chat(
     settings: Settings,
