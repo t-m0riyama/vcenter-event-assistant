@@ -113,7 +113,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
 
   return (
     <div className="panel">
-      <h2>チャットサンプル</h2>
+      <h2>プロンプトテンプレート</h2>
       <p className="hint">
         チャットタブの「サンプルの質問」チップに並ぶ行を編集します。保存先はこのブラウザの
         localStorage です。既定の行もここから編集・削除できます。
@@ -158,7 +158,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
           type="file"
           accept="application/json,.json"
           className="hidden-file-input"
-          aria-label="チャットサンプル JSON を選択"
+          aria-label="プロンプトテンプレート JSON を選択"
           onChange={(ev) => void onImportFileChange(ev)}
         />
         <button

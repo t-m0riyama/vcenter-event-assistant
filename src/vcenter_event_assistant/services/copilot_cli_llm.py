@@ -9,7 +9,7 @@ from copilot.client import SubprocessConfig
 from copilot.session import PermissionRequestResult, SystemMessageAppendConfig
 
 from vcenter_event_assistant.api.schemas import ChatMessage
-from vcenter_event_assistant.services.llm_profile import resolve_llm_profile
+from vcenter_event_assistant.services.llm_profile import LlmPurpose, resolve_llm_profile
 
 if TYPE_CHECKING:
     from vcenter_event_assistant.settings import Settings
@@ -44,21 +44,16 @@ def _extract_assistant_text(ev: object | None) -> str:
     return str(content).strip()
 
 
-async def run_copilot_cli_chat_completion(
+async def _run_copilot_cli_completion_base(
     settings: Settings,
     *,
+    purpose: LlmPurpose,
     system_prompt: str,
-    block: str,
-    messages: list[ChatMessage],
+    prompt: str,
 ) -> str:
-    """
-    Copilot CLI セッションを 1 回生成し、単一プロンプトで応答本文を返す。
-
-    呼び出し側は ``resolve_llm_profile(..., purpose=\"chat\")`` が ``copilot_cli`` であることを保証すること。
-    """
-    prof = resolve_llm_profile(settings, purpose="chat")
+    prof = resolve_llm_profile(settings, purpose=purpose)
     if prof.provider != "copilot_cli":
-        raise ValueError("run_copilot_cli_chat_completion は copilot_cli のときのみ呼び出してください")
+        raise ValueError(f"_run_copilot_cli_completion_base は copilot_cli のときのみ呼び出してください（現在: {prof.provider}）")
 
     use_cli_session = settings.llm_copilot_cli_session_auth
     if not use_cli_session:
@@ -87,7 +82,6 @@ async def run_copilot_cli_chat_completion(
             github_token=prof.api_key.strip(),
             cli_path=settings.llm_copilot_cli_path,
         )
-    prompt = format_copilot_chat_prompt(block, messages)
     system_message: SystemMessageAppendConfig = {"mode": "append", "content": system_prompt}
 
     async with CopilotClient(cfg) as client:
@@ -107,3 +101,41 @@ async def run_copilot_cli_chat_completion(
         if not text:
             raise ValueError("Copilot CLI から応答本文を取得できませんでした")
         return text
+
+
+async def run_copilot_cli_chat_completion(
+    settings: Settings,
+    *,
+    system_prompt: str,
+    block: str,
+    messages: list[ChatMessage],
+) -> str:
+    """
+    Copilot CLI セッションを 1 回生成し、単一プロンプトで応答本文を返す。
+
+    呼び出し側は ``resolve_llm_profile(..., purpose=\"chat\")`` が ``copilot_cli`` であることを保証すること。
+    """
+    prompt = format_copilot_chat_prompt(block, messages)
+    return await _run_copilot_cli_completion_base(
+        settings,
+        purpose="chat",
+        system_prompt=system_prompt,
+        prompt=prompt,
+    )
+
+
+async def run_copilot_cli_digest_completion(
+    settings: Settings,
+    *,
+    system_prompt: str,
+    user_block: str,
+) -> str:
+    """
+    Copilot CLI セッションを 1 回生成し、単一プロンプトで応答本文を返す。ダイジェスト用。
+    """
+    return await _run_copilot_cli_completion_base(
+        settings,
+        purpose="digest",
+        system_prompt=system_prompt,
+        prompt=user_block,
+    )

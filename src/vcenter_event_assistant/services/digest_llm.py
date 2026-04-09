@@ -13,7 +13,7 @@ from langchain_core.runnables import RunnableConfig
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.llm_anonymization import anonymize_for_llm, deanonymize_text
 from vcenter_event_assistant.services.llm_factory import build_chat_model
-from vcenter_event_assistant.services.llm_profile import resolve_llm_profile
+from vcenter_event_assistant.services.llm_profile import is_digest_llm_configured, resolve_llm_profile
 from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.settings import Settings
@@ -65,6 +65,13 @@ def _log_digest_llm_failure(settings: Settings, exc: BaseException) -> None:
             exc,
             exc_info=True,
         )
+    elif prof.provider == "copilot_cli":
+        _logger.warning(
+            "digest LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
+            prof.model,
+            exc,
+            exc_info=True,
+        )
     else:
         _logger.warning(
             "digest LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
@@ -109,8 +116,7 @@ async def augment_digest_with_llm(
         (body_markdown, error_message)。API キーが空のときは (template_markdown, None)。
         LLM 失敗時は (template_markdown, 警告文)。
     """
-    key = (settings.llm_digest_api_key or "").strip()
-    if not key:
+    if not is_digest_llm_configured(settings):
         return (template_markdown, None)
 
     ctx_dict: dict[str, Any] = context.model_dump(mode="json")
@@ -135,9 +141,17 @@ async def augment_digest_with_llm(
             dprof.timeout_seconds,
             dprof.model,
         )
-        model = build_chat_model(settings, purpose="digest", config=runnable_config)
-        lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
-        summary = await stream_chat_to_text(model, lc_messages, config=runnable_config)
+        if dprof.provider == "copilot_cli":
+            from vcenter_event_assistant.services.copilot_cli_llm import run_copilot_cli_digest_completion
+            summary = await run_copilot_cli_digest_completion(
+                settings,
+                system_prompt=_SYSTEM_PROMPT,
+                user_block=user_block,
+            )
+        else:
+            model = build_chat_model(settings, purpose="digest", config=runnable_config)
+            lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
+            summary = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         summary = deanonymize_text(summary.strip(), reverse_map)
         merged = template_markdown.rstrip() + "\n\n" + summary + "\n"
         return (merged, None)

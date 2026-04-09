@@ -21,6 +21,18 @@ class ResolvedLlmProfile:
     timeout_seconds: float
 
 
+def is_digest_llm_configured(settings: Settings) -> bool:
+    """
+    ダイジェスト LLM が呼べる設定か。
+    """
+    if (settings.llm_digest_api_key or "").strip():
+        return True
+    prof = resolve_llm_profile(settings, purpose="digest")
+    return bool(
+        prof.provider == "copilot_cli" and settings.llm_copilot_cli_session_auth,
+    )
+
+
 def is_chat_llm_configured(settings: Settings) -> bool:
     """
     チャット LLM が呼べる設定か。

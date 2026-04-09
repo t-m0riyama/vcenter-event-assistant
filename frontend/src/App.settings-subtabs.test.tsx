@@ -34,7 +34,7 @@ const SETTINGS_SUBTAB_LABELS = [
   'vCenter',
   'スコアルール',
   'イベント種別ガイド',
-  'チャットサンプル',
+  'チャット',
 ] as const
 
 describe('App 設定サブタブ', () => {

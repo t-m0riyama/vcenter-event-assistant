@@ -321,15 +321,7 @@ class Settings(BaseSettings):
             return s or None
         return str(v).strip() or None
 
-    @model_validator(mode="after")
-    def reject_copilot_cli_for_digest_llm(self) -> Self:
-        """ダイジェスト LLM は Copilot CLI 未対応（チャット専用）。"""
-        if self.llm_digest_provider == "copilot_cli":
-            raise ValueError(
-                "LLM_DIGEST_PROVIDER に copilot_cli は指定できません（チャット専用）。"
-                "ダイジェストは openai_compatible または gemini を使用してください。"
-            )
-        return self
+
 
     @property
     def effective_digest_daily_enabled(self) -> bool:
