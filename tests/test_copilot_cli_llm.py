@@ -165,14 +165,14 @@ async def test_run_copilot_cli_disconnects_when_send_and_wait_raises(
     disconnect_mock.assert_awaited_once()
 
 
-def test_settings_rejects_copilot_cli_for_digest_provider() -> None:
-    """ダイジェスト用 LLM に copilot_cli は指定不可（チャット専用）。"""
-    with pytest.raises(ValidationError):
-        Settings(
-            database_url="sqlite+aiosqlite:///:memory:",
-            llm_digest_provider="copilot_cli",  # type: ignore[arg-type]
-            llm_digest_api_key="ghp_test",
-        )
+def test_settings_allows_copilot_cli_for_digest_provider() -> None:
+    """ダイジェスト用 LLM に copilot_cli を指定できるようになった。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_provider="copilot_cli",
+        llm_digest_api_key="ghp_test",
+    )
+    assert s.llm_digest_provider == "copilot_cli"
 
 
 @pytest.mark.asyncio
