@@ -16,6 +16,60 @@
   color: var(--color-text-secondary);
 }
 
+.help-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  padding: 2px var(--spacing-2);
+  font-size: var(--font-size-caption2);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  margin-left: auto;
+  align-self: flex-start;
+}
+
+.help-toggle-button:hover {
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+.help-section {
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+  overflow: hidden;
+  animation: slideDown 0.2s ease-out;
+}
+
+.help-section h2 {
+  font-size: var(--font-size-subhead);
+  margin: 0 0 var(--spacing-2);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-primary);
+}
+
+.help-text {
+  font-size: var(--font-size-footnote);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .panel .tz-select {
   display: flex;
   flex-direction: column;

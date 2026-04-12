@@ -17,7 +17,23 @@ import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
+import { HelpIcon } from './components/help-icon'
 import './App.css'
+
+const HELP_CONTENT: Record<string, string> = {
+  summary:
+    '【概要】\nシステムの稼働状況と最新の主要イベントを表示します。\n- 各種統計（イベント数、スコア別集計など）を確認できます。\n- スコアの高い「要注目イベント」を抽出して一覧表示します。',
+  events:
+    '【イベント一覧】\n取得したすべてのイベントを時系列で表示します。\n- 各種フィルタ（時間、vCenter、スコア、キーワード）で絞り込みが可能です。\n- 行を選択すると詳細を表示し、コメントを残すことができます。',
+  metrics:
+    '【グラフ】\nパフォーマンスメトリクスを可視化します。\n- ESXi ホストや仮想マシンの統計推移を確認できます。\n- 表示期間やリフレッシュ間隔を調整可能です。',
+  digests:
+    '【ダイジェスト】\nAI によるイベント要約を表示します。\n- 大量のイベントから要点を把握するのに便利です。\n- 指定した期間のサマリーを生成できます。',
+  chat:
+    '【チャット】\nAI アシスタントと対話しながらイベント解析や調査が行えます。\n- 「最近の重要なエラーは？」などの質問が可能です。\n- サンプルプロンプトを活用して効率的に調査できます。',
+  settings:
+    '【設定】\nアプリケーションの動作環境を構成します。\n- 一般: リフレッシュ間隔やタイムゾーンの設定\n- vCenter: 接続先サーバーの管理\n- スコアルール: イベントの重要度判定ロジックの定義',
+}
 
 const MetricsPanel = lazy(async () => {
   const m = await import('./panels/metrics/MetricsPanel')
@@ -32,6 +48,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
   const [err, setErr] = useState<string | null>(null)
+  const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setErr)
 
   return (
@@ -43,7 +60,18 @@ export default function App() {
               <ChatSamplePromptsProvider>
                 <div className="app">
                   <header className="header">
-                    <h1>vCenter Event Assistant</h1>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <h1>vCenter Event Assistant</h1>
+                      <button
+                        type="button"
+                        className="help-toggle-button"
+                        onClick={() => setShowHelp(!showHelp)}
+                        aria-label="使い方を表示"
+                      >
+                        <HelpIcon />
+                        <span>使い方を表示</span>
+                      </button>
+                    </div>
                     {retention && (
                       <p className="retention-hint">
                         データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
@@ -58,6 +86,16 @@ export default function App() {
                     </div>
                   )}
 
+                  {showHelp && (
+                    <section className="help-section">
+                      <h2>
+                        <HelpIcon />
+                        <span>使い方ガイド</span>
+                      </h2>
+                      <p className="help-text">{HELP_CONTENT[tab]}</p>
+                    </section>
+                  )}
+
                   <nav className="tabs">
                     {(['summary', 'events', 'metrics', 'digests', 'chat', 'settings'] as const).map((t) => (
                       <button
@@ -66,6 +104,7 @@ export default function App() {
                         className={tab === t ? 'active' : undefined}
                         onClick={() => {
                           setTab(t)
+                          setShowHelp(false)
                           setErr(null)
                         }}
                       >
@@ -93,6 +132,7 @@ export default function App() {
                           aria-selected={settingsSubTab === 'general'}
                           onClick={() => {
                             setSettingsSubTab('general')
+                            setShowHelp(false)
                             setErr(null)
                           }}
                         >
