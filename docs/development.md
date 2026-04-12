@@ -1,5 +1,33 @@
 # 開発者向けメモ
 
+## 基本的な開発操作
+
+### データベースマイグレーション（Alembic）
+
+スキーマは起動時の `create_all` でも作成される。明示的にマイグレーションする場合は次を実行する。
+
+```bash
+export DATABASE_URL=sqlite+aiosqlite:///./data/vea.db   # または PostgreSQL URL
+uv run alembic upgrade head
+```
+
+新しいリビジョンを作成する場合（モデル変更後）は次を実行する。
+
+```bash
+uv run alembic revision --autogenerate -m "describe_change"
+```
+
+### 開発・テストコマンド
+
+```bash
+uv run ruff check src tests
+uv run pytest -q
+```
+
+UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は本ドキュメントの「UI スクリーンショット」セクションを参照）。一方、**Playwright E2E**（`frontend` で `npm run e2e`）は **テスト専用プロセスを新規起動**して実施する（既定は別ポート `9323`）。
+
+---
+
 ## 期間コンテキスト付きチャット
 
 - `POST /api/chat` … 本文 JSON で `from` / `to`（UTC）、`messages`（`role`: `user` | `assistant`、`content`）。**最後の要素は `user`**。任意で `vcenter_id`（単一 vCenter に絞る）、`top_notable_min_score`（既定 1）。**期間メトリクス（いずれも既定 `false`、追加 DB クエリあり）:** `include_period_metrics_cpu`、`include_period_metrics_memory`、`include_period_metrics_disk_io`、`include_period_metrics_network_io`。オンにしたカテゴリだけ `MetricSample` を期間・`vcenter_id` で読み、時間バケット平均で `period_metrics` として LLM コンテキストにマージする（チャット用の `digest_context` からはホスト別 CPU/メモリのピーク一覧は含めない）。**メトリクストグルが 1 つでもオン**のときは、同じバケット幅で `events` を集計した `event_time_buckets`（件数 0 のバケットは省略）もマージする。バッチダイジェストには含めない。イベント集約は `build_digest_context` と同じ（期間は DB 上 **UTC の `[from, to)`**）。会話履歴はクライアントが送るだけでサーバーは保持しない。フロントのチャットパネルは **`localStorage`**（キー `vea.chat_panel.v1`）に会話・集計期間・vCenter・期間メトリクス ON/OFF・下書きを保存しリロード後に復元する（会話メッセージは表示・保存とも既定で最大 200 件、超過分は先頭から欠落）。**同一ブラウザ内の表示**でもこの上限を適用する。`POST /api/chat` の `messages` はフロントで直近 **20 件**に収めて送り、サーバー側 LLM 入力のトリム（`_MAX_CHAT_MESSAGES`）と帯域を揃える。応答は `assistant_content` と `error`（LLM 失敗時は前者が空で後者に短文）。**`llm_context`**（省略可）に、LLM 直前の目安として `json_truncated`（JSON をトークン上限で切り詰めたか）、`estimated_input_tokens` / `max_input_tokens`、`message_turns` が入る。サーバーログにも `json_truncated` 等が出る。
