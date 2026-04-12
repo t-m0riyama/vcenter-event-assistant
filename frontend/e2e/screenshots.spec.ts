@@ -117,4 +117,45 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
     path: path.join(screenshotOutputDir, 'settings-event-type-guides-list.png'),
     fullPage: false,
   })
+
+  // チャット画面（ダミー履歴を注入）
+  await page.evaluate(() => {
+    const key = 'vea.chat_panel.v1'
+    const dummyData = {
+      messages: [
+        {
+          role: 'user',
+          content: '最近のイベントの傾向を教えてください。',
+          created_at: new Date(Date.now() - 3600000).toISOString(),
+        },
+        {
+          role: 'assistant',
+          content:
+            '過去24時間で、`vim.event.ScreenshotDemoEvent` が 10 件発生しています。主な原因はシステムのメンテナンスによる一時的な負荷上昇です。詳細は「イベント」タブでフィルタリングして確認することをお勧めします。',
+          created_at: new Date(Date.now() - 3590000).toISOString(),
+          latency_ms: 1200,
+          token_per_sec: 45.5,
+        },
+      ],
+      rangeParts: {
+        fromDate: '2026-04-12',
+        fromTime: '07:00',
+        toDate: '2026-04-13',
+        toTime: '07:00',
+      },
+      vcenterId: '',
+      includePeriodMetricsCpu: true,
+      includePeriodMetricsMemory: false,
+      includePeriodMetricsDiskIo: false,
+      includePeriodMetricsNetworkIo: false,
+      draft: '',
+    }
+    localStorage.setItem(key, JSON.stringify(dummyData))
+  })
+  await page.locator('nav.tabs').getByRole('button', { name: 'チャット' }).click()
+  await expect(page.getByText('最近のイベントの傾向を教えてください。')).toBeVisible()
+  await page.screenshot({
+    path: path.join(screenshotOutputDir, 'chat.png'),
+    fullPage: false,
+  })
 })
