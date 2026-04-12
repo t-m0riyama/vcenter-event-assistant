@@ -17,6 +17,19 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     is_enabled: true,
   })
 
+  // 編集中の vCenter ID（null なら編集モードでない）
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  // 編集フォームの値
+  const [editForm, setEditForm] = useState({
+    name: '',
+    host: '',
+    port: 443,
+    username: '',
+    password: '',
+    is_enabled: true,
+  })
+
   const load = useCallback(async () => {
     onError(null)
     try {
@@ -73,6 +86,45 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     try {
       const r = await apiGet<Record<string, unknown>>(`/api/vcenters/${id}/test`)
       alert(JSON.stringify(r, null, 2))
+    } catch (e) {
+      onError(toErrorMessage(e))
+    }
+  }
+
+  const startEdit = (v: VCenter) => {
+    setEditingId(v.id)
+    setEditForm({
+      name: v.name,
+      host: v.host,
+      port: v.port,
+      username: v.username,
+      password: '', // パスワードは API レスポンスに含まれない
+      is_enabled: v.is_enabled,
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    onError(null)
+    try {
+      // パスワードが空の場合はリクエストから除外（既存値を保持）
+      const body: Record<string, unknown> = {
+        name: editForm.name,
+        host: editForm.host,
+        port: editForm.port,
+        username: editForm.username,
+        is_enabled: editForm.is_enabled,
+      }
+      if (editForm.password) {
+        body.password = editForm.password
+      }
+      await apiPatch(`/api/vcenters/${editingId}`, body)
+      setEditingId(null)
+      await load()
     } catch (e) {
       onError(toErrorMessage(e))
     }
@@ -139,34 +191,101 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
             <th>名前</th>
             <th>ホスト</th>
             <th>有効</th>
+            <th>ユーザー</th>
             <th />
           </tr>
         </thead>
         <tbody>
-          {list.map((v) => (
-            <tr key={v.id}>
-              <td>{v.name}</td>
-              <td>
-                {v.host}:{v.port}
-              </td>
-              <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
-              <td className="actions">
-                <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
-                  接続テスト
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--gray"
-                  onClick={() => void toggleEnabled(v)}
-                >
-                  {v.is_enabled ? '無効' : '有効'}
-                </button>
-                <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
-                  削除
-                </button>
-              </td>
-            </tr>
-          ))}
+          {list.map((v) =>
+            editingId === v.id ? (
+              <tr key={v.id}>
+                <td>
+                  <input
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    aria-label="表示名"
+                  />
+                </td>
+                <td>
+                  <input
+                    value={editForm.host}
+                    onChange={(e) => setEditForm({ ...editForm, host: e.target.value })}
+                    aria-label="ホスト"
+                    style={{ display: 'inline', width: '60%', marginRight: '4px' }}
+                  />
+                  :
+                  <input
+                    type="number"
+                    value={editForm.port}
+                    onChange={(e) => setEditForm({ ...editForm, port: Number(e.target.value) })}
+                    aria-label="ポート"
+                    style={{ display: 'inline', width: '30%', marginLeft: '4px' }}
+                  />
+                </td>
+                <td>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={editForm.is_enabled}
+                      onChange={(e) => setEditForm({ ...editForm, is_enabled: e.target.checked })}
+                    />
+                  </label>
+                </td>
+                <td>
+                  <input
+                    value={editForm.username}
+                    onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                    aria-label="ユーザー"
+                    placeholder="ユーザー名"
+                    style={{ marginBottom: '4px', width: '100%', boxSizing: 'border-box' }}
+                  />
+                  <input
+                    type="password"
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    aria-label="パスワード"
+                    placeholder="パスワード（変更しない場合は空欄）"
+                    style={{ width: '100%', boxSizing: 'border-box' }}
+                  />
+                </td>
+                <td className="actions">
+                  <button type="button" className="btn btn--filled" onClick={() => void saveEdit()}>
+                    保存
+                  </button>
+                  <button type="button" className="btn btn--gray" onClick={cancelEdit}>
+                    キャンセル
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              <tr key={v.id}>
+                <td>{v.name}</td>
+                <td>
+                  {v.host}:{v.port}
+                </td>
+                <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
+                <td>{v.username}</td>
+                <td className="actions">
+                  <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
+                    接続テスト
+                  </button>
+                  <button type="button" className="btn btn--gray" onClick={() => startEdit(v)}>
+                    編集
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--gray"
+                    onClick={() => void toggleEnabled(v)}
+                  >
+                    {v.is_enabled ? '無効' : '有効'}
+                  </button>
+                  <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
+                    削除
+                  </button>
+                </td>
+              </tr>
+            ),
+          )}
         </tbody>
       </table>
     </div>

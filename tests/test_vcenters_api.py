@@ -36,3 +36,39 @@ async def test_vcenter_crud(client: AsyncClient) -> None:
 
     d = await client.delete(f"/api/vcenters/{vid}")
     assert d.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_vcenter_patch_multiple_fields(client: AsyncClient) -> None:
+    """PATCH で name/host/port/username/password を一括更新できる。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "before",
+            "host": "old.example.local",
+            "port": 443,
+            "username": "admin",
+            "password": "secret",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = r.json()["id"]
+
+    p = await client.patch(
+        f"/api/vcenters/{vid}",
+        json={
+            "name": "after",
+            "host": "new.example.local",
+            "port": 8443,
+            "username": "newadmin",
+            "password": "newsecret",
+        },
+    )
+    assert p.status_code == 200
+    body = p.json()
+    assert body["name"] == "after"
+    assert body["host"] == "new.example.local"
+    assert body["port"] == 8443
+    assert body["username"] == "newadmin"
+    assert "password" not in body
