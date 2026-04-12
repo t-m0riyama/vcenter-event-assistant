@@ -1,6 +1,5 @@
-# 簡易ヘルプ機能 タスク一覧
-
-| Task 1: 失敗するテストの作成 (TDD) | [x] | App.help.test.tsx の作成・失敗確認済 |
-| Task 2: ヘルプアイコンとスタイルの作成 | [x] | HelpIcon, App.css 修正完了 |
-| Task 3: App.tsx へのロジック実装 | [x] | ステート, トグル, 文言追加完了 (TDDパス) |
-| Task 4: 動作確認とリファクタリング | [x] | 全タブ全サブタブ遷移での動作確認完了 |
+| Task | Status | Notes |
+| :--- | :--- | :--- |
+| Task 1: docs/getting-started.md の作成 | done | README から前提、セットアップ、起動、セキュリティを移動 |
+| Task 2: docs/development.md の更新 | done | README からマイグレーション、開発コマンドを移動 |
+| Task 3: README.md のリファクタリング | done | 章の削除とリンクの更新 |

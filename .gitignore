@@ -165,3 +165,4 @@ docker-compose.yml
 
 # Antigravity Superpowers
 .agent/
+docs/plans/task.md
