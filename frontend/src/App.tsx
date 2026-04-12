@@ -147,6 +147,7 @@ export default function App() {
                           aria-selected={settingsSubTab === 'vcenters'}
                           onClick={() => {
                             setSettingsSubTab('vcenters')
+                            setShowHelp(false)
                             setErr(null)
                           }}
                         >
@@ -161,6 +162,7 @@ export default function App() {
                           aria-selected={settingsSubTab === 'score_rules'}
                           onClick={() => {
                             setSettingsSubTab('score_rules')
+                            setShowHelp(false)
                             setErr(null)
                           }}
                         >
@@ -175,6 +177,7 @@ export default function App() {
                           aria-selected={settingsSubTab === 'event_type_guides'}
                           onClick={() => {
                             setSettingsSubTab('event_type_guides')
+                            setShowHelp(false)
                             setErr(null)
                           }}
                         >
@@ -189,6 +192,7 @@ export default function App() {
                           aria-selected={settingsSubTab === 'chat_samples'}
                           onClick={() => {
                             setSettingsSubTab('chat_samples')
+                            setShowHelp(false)
                             setErr(null)
                           }}
                         >
