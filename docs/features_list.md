@@ -394,5 +394,6 @@ Internet
 - **アーキテクチャ**: [docs/architecture.md](architecture.md)
 - **フロントエンド詳細**: [docs/frontend.md](frontend.md)
 - **開発者向けガイド**: [docs/development.md](development.md)
+- **チャット機能詳細**: [docs/chat.md](chat.md)
 - **現状実装ベースのプラン**: [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](plans/2026-03-21-vcenter-event-assistant-as-built.md)
 
