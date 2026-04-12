@@ -2,7 +2,7 @@ import type { ZodIssue } from 'zod'
 import { ZodError } from 'zod'
 
 /**
- * プロンプトテンプレート JSON の読み取り・検証エラーを、画面向けの短文にまとめる。
+ * プロンプトスニペット JSON の読み取り・検証エラーを、画面向けの短文にまとめる。
  */
 export function formatChatSamplePromptsFileParseError(err: unknown): string {
   if (err instanceof SyntaxError) {
@@ -50,7 +50,7 @@ function describeChatSamplePromptsZodIssues(issues: readonly ZodIssue[]): string
   const issueCode = String(first.code)
 
   if (pathStr.includes('format') || issueCode === 'invalid_value' || issueCode === 'invalid_literal') {
-    return '想定したプロンプトテンプレートファイルではありません。format が "vea-chat-sample-prompts" である必要があります。'
+    return '想定したプロンプトスニペットファイルではありません。format が "vea-chat-sample-prompts" である必要があります。'
   }
 
   if (pathStr.includes('version')) {
