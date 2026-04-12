@@ -23,7 +23,7 @@
 ```mermaid
 flowchart TB
   Browser[ブラウザ]
-  Proxy[リバースプロキシ（任意）]
+  Proxy[リバースプロキシ（オプション）]
   subgraph fe [フロントエンド]
     FE[React_SPA]
   end
@@ -32,14 +32,14 @@ flowchart TB
     Sched[APScheduler]
   end
   VC[vCenter]
-  LLM[LLM_API（任意、ベータ）]
+  LLM[LLM_API（オプション）]
 
   Browser --> Proxy
   Proxy --> FE
   FE -->|HTTP_API| BE
   Sched -->|定期実行で収集| VC
   BE -->|API操作や手動収集| VC
-  BE -.->|ダイジェスト要約| LLM
+  BE -.->|ダイジェスト要約、チャット| LLM
 ```
 
 ## データフロー（内部）
