@@ -1,7 +1,22 @@
+/**
+ * @vitest-environment happy-dom
+ */
 import { render, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
+
+// 強制的な localStorage モック
+const storage: Record<string, string> = {}
+const localStorageMock = {
+  getItem: vi.fn((key: string) => storage[key] || null),
+  setItem: vi.fn((key: string, value: string) => { storage[key] = value }),
+  clear: vi.fn(() => { for (const key in storage) delete storage[key] }),
+  removeItem: vi.fn((key: string) => { delete storage[key] }),
+  length: 0,
+  key: vi.fn((index: number) => Object.keys(storage)[index] || null),
+}
+vi.stubGlobal('localStorage', localStorageMock)
 
 const emptyConfig = {
   event_retention_days: 7,
