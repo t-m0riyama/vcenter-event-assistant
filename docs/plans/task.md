@@ -1,8 +1,6 @@
-# vCenter 編集機能 — Task Tracker
+# 簡易ヘルプ機能 タスク一覧
 
-| # | Task | Status |
-|---|------|--------|
-| 1 | バックエンド PATCH テストの拡充（全フィールド更新） | done |
-| 2 | VCentersPanel にインライン編集 UI を追加する | done |
-| 3 | フロントエンドビルド・lint 確認 | done |
-| 4 | 手動動作確認 | done |
+| Task 1: 失敗するテストの作成 (TDD) | [x] | App.help.test.tsx の作成・失敗確認済 |
+| Task 2: ヘルプアイコンとスタイルの作成 | [x] | HelpIcon, App.css 修正完了 |
+| Task 3: App.tsx へのロジック実装 | [x] | ステート, トグル, 文言追加完了 (TDDパス) |
+| Task 4: 動作確認とリファクタリング | [x] | 全タブ全サブタブ遷移での動作確認完了 |
