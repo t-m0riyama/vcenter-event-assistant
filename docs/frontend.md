@@ -60,6 +60,12 @@ vCenter の接続情報を登録・編集・管理します。
 
 ![設定のスコアルール](images/settings-score-rules.png)
 
+### 設定（チャット）
+
+チャットパネルの下部に表示する、よく使う質問のスニペット（サンプルプロンプト）を設定・編集できます。
+
+![設定のチャットタブ](images/settings-chat.png)
+
 ### その他の画面・キャプチャの更新
 
 全タブの一覧と PNG の再取得手順は **[開発者向けメモ（`docs/development.md`）](development.md)** を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。

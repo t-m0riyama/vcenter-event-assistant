@@ -118,6 +118,13 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
     fullPage: false,
   })
 
+  await page.locator('nav.settings-subtabs').getByRole('button', { name: 'チャット' }).click()
+  await expect(page.getByRole('heading', { name: 'プロンプトスニペット' })).toBeVisible()
+  await page.screenshot({
+    path: path.join(screenshotOutputDir, 'settings-chat.png'),
+    fullPage: false,
+  })
+
   // チャット画面（ダミー履歴を注入）
   await page.evaluate(() => {
     const key = 'vea.chat_panel.v1'
