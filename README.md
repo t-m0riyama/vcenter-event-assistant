@@ -67,6 +67,7 @@ flowchart TB
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
 - **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
 - **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
+- **チャット機能の活用**: [docs/chat.md](docs/chat.md)
 - **設計・モジュール対応・改善タスク**（現状実装ベース）: [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md)
 
 ## ライセンス
