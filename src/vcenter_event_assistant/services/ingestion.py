@@ -31,6 +31,7 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
         # advance window slightly to reduce duplicates at boundary
         since = since - timedelta(seconds=1)
 
+    settings = get_settings()
     normalized, max_ts = await asyncio.to_thread(
         fetch_events_blocking,
         host=vcenter.host,
@@ -38,6 +39,7 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
         username=vcenter.username,
         password=vcenter.password,
         since=since,
+        proxy_url=settings.vcenter_http_proxy,
     )
 
     deltas = await load_event_score_delta_map(session)
@@ -93,12 +95,14 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
 
 async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) -> int:
     """Sample host metrics and store rows."""
+    settings = get_settings()
     rows = await asyncio.to_thread(
         sample_hosts_blocking,
         host=vcenter.host,
         port=vcenter.port,
         username=vcenter.username,
         password=vcenter.password,
+        proxy_url=settings.vcenter_http_proxy,
     )
 
     inserted = 0

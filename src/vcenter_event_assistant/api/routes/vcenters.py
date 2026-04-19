@@ -13,6 +13,7 @@ from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect, read_connection_info
 from vcenter_event_assistant.db.models import VCenter
+from vcenter_event_assistant.settings import get_settings
 
 router = APIRouter(prefix="/vcenters", tags=["vcenters"])
 
@@ -96,8 +97,13 @@ async def test_vcenter(
     if vc is None:
         raise HTTPException(status_code=404, detail="vCenter not found")
 
+    settings = get_settings()
+
     def _run():
-        si = connect_vcenter(host=vc.host, port=vc.port, username=vc.username, password=vc.password)
+        si = connect_vcenter(
+            host=vc.host, port=vc.port, username=vc.username, password=vc.password,
+            proxy_url=settings.vcenter_http_proxy,
+        )
         try:
             return read_connection_info(si)
         finally:
