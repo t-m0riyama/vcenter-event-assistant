@@ -24,12 +24,13 @@ def fetch_events_blocking(
     password: str,
     since: datetime | None,
     max_pages: int = 100,
+    proxy_url: str | None = None,
 ) -> tuple[list[dict[str, Any]], datetime | None]:
     """
     Pull events from vCenter since ``since`` (inclusive window start).
     Returns normalized dicts and the max ``occurred_at`` in the batch.
     """
-    si = connect_vcenter(host=host, port=port, username=username, password=password)
+    si = connect_vcenter(host=host, port=port, username=username, password=password, proxy_url=proxy_url)
     try:
         content = si.RetrieveContent()
         em = content.eventManager
