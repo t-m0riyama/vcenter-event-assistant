@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     )
 
     cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
+    vcenter_http_proxy: str | None = Field(
+        default=None,
+        description=(
+            "vCenter 接続用 HTTP プロキシの URL（`VCENTER_HTTP_PROXY`）。"
+            "例: http://proxy.example.com:8080。未設定でプロキシなし。"
+        ),
+    )
 
     log_level: str = Field(
         default="INFO",
@@ -75,6 +82,17 @@ class Settings(BaseSettings):
     @field_validator("app_log_file", "uvicorn_log_file", mode="before")
     @classmethod
     def empty_log_path_to_none(cls, v: object) -> str | None:
+        """空文字・空白のみは None に正規化する。"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return str(v).strip() or None
+
+    @field_validator("vcenter_http_proxy", mode="before")
+    @classmethod
+    def empty_vcenter_proxy_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
         if v is None:
             return None
