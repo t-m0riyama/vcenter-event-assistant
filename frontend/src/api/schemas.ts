@@ -372,3 +372,15 @@ export type ChatResponse = z.infer<typeof chatResponseSchema>
 export function parseChatResponse(raw: unknown): ChatResponse {
   return chatResponseSchema.parse(raw)
 }
+
+export const chatPreviewResponseSchema = z.object({
+  context_block: z.string(),
+  conversation: z.array(chatMessageSchema),
+  llm_context: chatLlmContextMetaSchema.nullable().optional(),
+})
+
+export type ChatPreviewResponse = z.infer<typeof chatPreviewResponseSchema>
+
+export function parseChatPreviewResponse(raw: unknown): ChatPreviewResponse {
+  return chatPreviewResponseSchema.parse(raw)
+}

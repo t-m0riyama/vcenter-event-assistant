@@ -221,7 +221,51 @@ def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseM
         else:
             out.append(AIMessage(content=m.content))
     return out
+def build_chat_preview(
+    settings: Settings,
+    *,
+    context: DigestContext,
+    messages: list[ChatMessage],
+    period_metrics: PeriodMetricsPayload | None = None,
+    event_time_buckets: EventTimeBucketsPayload | None = None,
+    extra_vcenter_strings: Sequence[str] | None = None,
+) -> tuple[str, list[ChatMessage], ChatLlmContextMeta | None]:
+    """
+    LLM API を呼び出さずに、送出するコンテキストブロックと会話履歴を準備する。
+    Returns:
+        (context_block_string, trimmed_messages, llm_context_meta)
+    """
+    digest_obj = context.model_dump(mode="json")
+    digest_obj.pop("high_cpu_hosts", None)
+    digest_obj.pop("high_mem_hosts", None)
+    payload: dict[str, Any] = {"digest_context": digest_obj}
+    if period_metrics is not None:
+        payload["period_metrics"] = period_metrics.model_dump(mode="json")
+    if event_time_buckets is not None:
+        payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
 
+    trimmed_msgs = messages[-_MAX_CHAT_MESSAGES:]
+    if settings.llm_anonymization_enabled:
+        pl, contents, _ = anonymize_chat_for_llm(
+            payload,
+            [m.content for m in trimmed_msgs],
+            extra_vcenter_strings=extra_vcenter_strings,
+        )
+        payload = pl
+        trimmed_msgs = [
+            ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
+        ]
+
+    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
+    block = _merged_context_user_block(ctx_json)
+    est_tokens = _estimate_chat_input_tokens(block, trimmed)
+    meta = ChatLlmContextMeta(
+        json_truncated=json_truncated,
+        estimated_input_tokens=est_tokens,
+        max_input_tokens=settings.llm_chat_max_input_tokens,
+        message_turns=len(trimmed),
+    )
+    return block, trimmed, meta
 
 
 async def run_period_chat(

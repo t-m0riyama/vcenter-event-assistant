@@ -205,10 +205,12 @@ describe('ChatPanel', () => {
     const composer = container.querySelector('.chat-panel__composer')
     expect(composer).toBeInstanceOf(HTMLElement)
     const kids = composer ? Array.from(composer.children) : []
-    expect(kids.length).toBe(2)
+    expect(kids.length).toBe(3)
     expect(kids[0].className).toMatch(/chat-panel__composer-field/)
     expect(kids[1]).toBeInstanceOf(HTMLButtonElement)
-    expect((kids[1] as HTMLButtonElement).getAttribute('aria-label')).toBe('送信')
+    expect((kids[1] as HTMLButtonElement).getAttribute('aria-label')).toBe('プレビュー')
+    expect(kids[2]).toBeInstanceOf(HTMLButtonElement)
+    expect((kids[2] as HTMLButtonElement).getAttribute('aria-label')).toBe('送信')
   })
 
   it('App.css でコンポーザーが横並び（flex-direction: row）になる', () => {

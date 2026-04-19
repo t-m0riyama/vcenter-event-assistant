@@ -5,8 +5,10 @@ import { useChatMaxStoredMessages } from '../../preferences/useChatMaxStoredMess
 import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
 import {
   parseChatResponse,
+  parseChatPreviewResponse,
   type ChatLlmContextMeta,
   type ChatMessage,
+  type ChatPreviewResponse,
   type VCenter,
 } from '../../api/schemas'
 import { asArray } from '../../utils/asArray'
@@ -33,8 +35,9 @@ import {
   writeChatPanelSnapshot,
 } from '../../preferences/chatPanelStorage'
 import { appendSelectedChatSampleTextsToDraft } from './appendSelectedChatSampleTextsToDraft'
-import { ChatCopyAnswerSvg, ChatSendSvg } from './chatPanelIcons'
+import { ChatCopyAnswerSvg, ChatPreviewSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
+import { ChatPromptPreviewModal } from './ChatPromptPreviewModal'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
@@ -60,6 +63,8 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewData, setPreviewData] = useState<ChatPreviewResponse | null>(null)
   const [includePeriodMetricsCpu, setIncludePeriodMetricsCpu] = useState(false)
   const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
@@ -278,6 +283,63 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       setMessages((m) => m.slice(0, -1))
     } finally {
       setLoading(false)
+    }
+  }, [
+    draft,
+    messages,
+    onError,
+    rangeParts,
+    timeZone,
+    vcenterId,
+    includePeriodMetricsCpu,
+    includePeriodMetricsMemory,
+    includePeriodMetricsDiskIo,
+    includePeriodMetricsNetworkIo,
+    chatMaxStoredMessages,
+  ])
+
+  const previewPrompt = useCallback(async () => {
+    const text = draft.trim()
+    if (!text) return
+
+    const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(rangeParts)
+    const resolved = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
+    if (!resolved.ok) {
+      onError(resolved.message)
+      return
+    }
+    if (!resolved.from || !resolved.to) {
+      onError('期間の開始と終了を指定してください。')
+      return
+    }
+
+    onError(null)
+    const nextMessages = trimChatMessagesToMax(
+      [...messages, { role: 'user', content: text }],
+      chatMaxStoredMessages,
+    )
+    
+    setPreviewing(true)
+    try {
+      const body: Record<string, unknown> = {
+        from: resolved.from,
+        to: resolved.to,
+        messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES),
+        include_period_metrics_cpu: includePeriodMetricsCpu,
+        include_period_metrics_memory: includePeriodMetricsMemory,
+        include_period_metrics_disk_io: includePeriodMetricsDiskIo,
+        include_period_metrics_network_io: includePeriodMetricsNetworkIo,
+      }
+      if (vcenterId) {
+        body.vcenter_id = vcenterId
+      }
+      const raw = await apiPost<unknown>('/api/chat/preview', body)
+      const out = parseChatPreviewResponse(raw)
+      setPreviewData(out)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    } finally {
+      setPreviewing(false)
     }
   }, [
     draft,
@@ -537,8 +599,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           </div>
           <button
             type="button"
+            className="btn btn--gray chat-panel__icon-btn chat-panel__preview-btn"
+            disabled={loading || previewing}
+            aria-busy={previewing}
+            aria-label={previewing ? 'プレビューを生成中' : 'プレビュー'}
+            title={previewing ? 'プレビューを生成中' : 'プレビュー'}
+            onClick={() => void previewPrompt()}
+          >
+            <ChatPreviewSvg />
+          </button>
+          <button
+            type="button"
             className="btn btn--filled chat-panel__icon-btn chat-panel__send-btn"
-            disabled={loading}
+            disabled={loading || previewing}
             aria-busy={loading}
             aria-label={loading ? '送信中' : '送信'}
             title={loading ? '送信中' : '送信'}
@@ -548,6 +621,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           </button>
         </div>
       </div>
+      {previewData && (
+        <ChatPromptPreviewModal
+          preview={previewData}
+          onClose={() => setPreviewData(null)}
+        />
+      )}
     </div>
   )
 }

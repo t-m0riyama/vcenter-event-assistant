@@ -9,14 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import ChatRequest, ChatResponse
-from vcenter_event_assistant.services.chat_event_time_buckets import build_chat_event_time_buckets
-from vcenter_event_assistant.services.chat_llm import run_period_chat
+from vcenter_event_assistant.api.schemas import ChatPreviewResponse, ChatRequest, ChatResponse
+from vcenter_event_assistant.services.chat_event_time_buckets import build_chat_event_time_buckets, EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat_llm import build_chat_preview, run_period_chat
 from vcenter_event_assistant.services.chat_period_metrics import (
     build_chat_period_metrics,
     compute_chat_bucket_seconds,
+    PeriodMetricsPayload,
 )
-from vcenter_event_assistant.services.digest_context import build_digest_context
+from vcenter_event_assistant.services.digest_context import build_digest_context, DigestContext
 from vcenter_event_assistant.services.llm_profile import is_chat_llm_configured
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
 from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
@@ -25,21 +26,10 @@ from vcenter_event_assistant.settings import get_settings
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", response_model=ChatResponse)
-async def post_chat(
+async def _build_chat_context_payloads(
+    session: AsyncSession,
     body: ChatRequest,
-    session: AsyncSession = Depends(get_session),
-) -> ChatResponse:
-    settings = get_settings()
-    if not is_chat_llm_configured(settings):
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "LLM が未設定です。環境変数 LLM_DIGEST_API_KEY または LLM_CHAT_API_KEY を設定するか、"
-                "Copilot CLI チャットで LLM_COPILOT_CLI_SESSION_AUTH=true（gh auth login 済み）にしてください。"
-            ),
-        )
-
+) -> tuple[DigestContext, PeriodMetricsPayload | None, EventTimeBucketsPayload | None]:
     ft = to_utc(body.from_time)
     tt = to_utc(body.to_time)
     if ft >= tt:
@@ -86,6 +76,25 @@ async def post_chat(
             vcenter_id=body.vcenter_id,
             bucket_sec=bucket_sec,
         )
+    return ctx, period_metrics, event_time_buckets
+
+
+@router.post("", response_model=ChatResponse)
+async def post_chat(
+    body: ChatRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ChatResponse:
+    settings = get_settings()
+    if not is_chat_llm_configured(settings):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "LLM が未設定です。環境変数 LLM_DIGEST_API_KEY または LLM_CHAT_API_KEY を設定するか、"
+                "Copilot CLI チャットで LLM_COPILOT_CLI_SESSION_AUTH=true（gh auth login 済み）にしてください。"
+            ),
+        )
+
+    ctx, period_metrics, event_time_buckets = await _build_chat_context_payloads(session, body)
 
     llm_cfg = build_llm_runnable_config(
         settings,
@@ -109,4 +118,28 @@ async def post_chat(
         created_at=datetime.now(timezone.utc),
         latency_ms=latency_ms,
         token_per_sec=token_per_sec,
+    )
+
+
+@router.post("/preview", response_model=ChatPreviewResponse)
+async def post_chat_preview(
+    body: ChatRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ChatPreviewResponse:
+    settings = get_settings()
+    ctx, period_metrics, event_time_buckets = await _build_chat_context_payloads(session, body)
+
+    vc_anon = await load_all_vcenter_anonymization_strings(session)
+    block, trimmed, meta = build_chat_preview(
+        settings,
+        context=ctx,
+        messages=list(body.messages),
+        period_metrics=period_metrics,
+        event_time_buckets=event_time_buckets,
+        extra_vcenter_strings=vc_anon,
+    )
+    return ChatPreviewResponse(
+        context_block=block,
+        conversation=trimmed,
+        llm_context=meta,
     )

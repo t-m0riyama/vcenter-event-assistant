@@ -444,6 +444,14 @@ class ChatResponse(BaseModel):
     )
 
 
+class ChatPreviewResponse(BaseModel):
+    """チャット用プロンプトのプレビュー応答。"""
+    
+    context_block: str
+    conversation: list[ChatMessage]
+    llm_context: ChatLlmContextMeta | None
+
+
 class DigestRunRequest(BaseModel):
     """手動ダイジェスト実行。``from_time`` / ``to_time`` を省略すると ``DIGEST_DISPLAY_TIMEZONE`` に基づく直前期間を対象とする（日次=直前暦日、週次=直前週、月次=直前月）。"""
 

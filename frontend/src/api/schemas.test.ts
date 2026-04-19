@@ -4,6 +4,7 @@ import {
   normalizeEventListPayload,
   parseDigestListResponse,
   parseSummary,
+  parseChatPreviewResponse,
 } from './schemas'
 
 describe('eventRowSchema', () => {
@@ -132,5 +133,30 @@ describe('parseSummary', () => {
     expect(s.vcenter_count).toBe(0)
     expect(s.top_notable_events).toEqual([])
     expect(s.high_cpu_hosts[0]?.vcenter_label).toBe('vc-display')
+  })
+})
+
+describe('parseChatPreviewResponse', () => {
+  it('parses valid chat preview response', () => {
+    const raw = {
+      context_block: 'This is the context block',
+      conversation: [
+        { role: 'user', content: 'hello' }
+      ],
+      llm_context: {
+        json_truncated: false,
+        estimated_input_tokens: 10,
+        max_input_tokens: 1000,
+        message_turns: 1
+      }
+    }
+    const parsed = parseChatPreviewResponse(raw)
+    expect(parsed.context_block).toBe('This is the context block')
+    expect(parsed.conversation[0]?.role).toBe('user')
+    expect(parsed.llm_context?.estimated_input_tokens).toBe(10)
+  })
+
+  it('rejects invalid chat preview response without context block', () => {
+    expect(() => parseChatPreviewResponse({ conversation: [] })).toThrow()
   })
 })
