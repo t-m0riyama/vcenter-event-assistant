@@ -11,8 +11,10 @@ import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
+import { AlertRulesPanel } from './panels/settings/AlertRulesPanel'
 import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
+import { AlertHistoryPanel } from './panels/alerts/AlertHistoryPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
@@ -29,6 +31,8 @@ const HELP_CONTENT: Record<string, string> = {
     '【グラフ】\nパフォーマンスメトリクスを可視化します。\n- ESXi ホストや仮想マシンの統計推移を確認できます。\n- 表示期間やリフレッシュ間隔を調整可能です。',
   digests:
     '【ダイジェスト】\nAI によるイベント要約を表示します。\n- 大量のイベントから要点を把握するのに便利です。\n- 指定した期間のサマリーを生成できます。',
+  alerts:
+    '【通知履歴】\nアラートの通知状況を確認できます。\n- 発火および回復のタイミング、通知の成否を一覧表示します。',
   chat:
     '【チャット】\nAI アシスタントと対話しながらイベント解析や調査が行えます。\n- 「最近の重要なエラーは？」などの質問が可能です。\n- サンプルプロンプトを活用して効率的に調査できます。',
   settings:
@@ -97,7 +101,7 @@ export default function App() {
                   )}
 
                   <nav className="tabs">
-                    {(['summary', 'events', 'metrics', 'digests', 'chat', 'settings'] as const).map((t) => (
+                    {(['summary', 'events', 'metrics', 'digests', 'alerts', 'chat', 'settings'] as const).map((t) => (
                       <button
                         key={t}
                         type="button"
@@ -115,6 +119,7 @@ export default function App() {
                             {t === 'events' && 'イベント'}
                             {t === 'metrics' && 'グラフ'}
                             {t === 'digests' && 'ダイジェスト'}
+                            {t === 'alerts' && '通知履歴'}
                             {t === 'chat' && 'チャット'}
                             {t === 'settings' && '設定'}
                           </span>
@@ -188,6 +193,21 @@ export default function App() {
                         </button>
                         <button
                           type="button"
+                          className={settingsSubTab === 'alerts' ? 'active' : undefined}
+                          aria-selected={settingsSubTab === 'alerts'}
+                          onClick={() => {
+                            setSettingsSubTab('alerts')
+                            setShowHelp(false)
+                            setErr(null)
+                          }}
+                        >
+                          <span className="tab-button__inner">
+                            <SettingsSubTabIcon tabId="alerts" />
+                            <span className="tab-button__label">アラート</span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
                           className={settingsSubTab === 'chat_samples' ? 'active' : undefined}
                           aria-selected={settingsSubTab === 'chat_samples'}
                           onClick={() => {
@@ -214,6 +234,7 @@ export default function App() {
                       </Suspense>
                     )}
                     {tab === 'digests' && <DigestsPanel onError={setErr} />}
+                    {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
                     {tab === 'chat' && <ChatPanel onError={setErr} />}
                     {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
                     {tab === 'settings' && settingsSubTab === 'score_rules' && (
@@ -227,6 +248,9 @@ export default function App() {
                     )}
                     {tab === 'settings' && settingsSubTab === 'chat_samples' && (
                       <ChatSamplePromptsPanel onError={setErr} />
+                    )}
+                    {tab === 'settings' && settingsSubTab === 'alerts' && (
+                      <AlertRulesPanel onError={setErr} />
                     )}
                   </main>
                 </div>

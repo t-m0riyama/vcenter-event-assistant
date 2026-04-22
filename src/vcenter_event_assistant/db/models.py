@@ -130,3 +130,56 @@ class DigestRecord(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+
+class AlertRule(Base):
+    """アラートルール定義。"""
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    rule_type: Mapped[str] = mapped_column(String(64), index=True)  # "event_score" or "metric_threshold"
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    states: Mapped[list["AlertState"]] = relationship(back_populates="rule", cascade="all, delete-orphan")
+    history: Mapped[list["AlertHistory"]] = relationship(back_populates="rule", cascade="all, delete-orphan")
+
+
+class AlertState(Base):
+    """現在のアラート発火状態。"""
+
+    __tablename__ = "alert_states"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
+    state: Mapped[str] = mapped_column(String(32), index=True)  # "firing" or "resolved"
+    context_key: Mapped[str] = mapped_column(String(512), index=True)
+    fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    rule: Mapped["AlertRule"] = relationship(back_populates="states")
+
+
+class AlertHistory(Base):
+    """通知履歴。"""
+
+    __tablename__ = "alert_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    context_key: Mapped[str] = mapped_column(String(512), index=True)
+    notified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    channel: Mapped[str] = mapped_column(String(64))  # "email"
+    success: Mapped[bool] = mapped_column(Boolean)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    rule: Mapped["AlertRule"] = relationship(back_populates="history")
