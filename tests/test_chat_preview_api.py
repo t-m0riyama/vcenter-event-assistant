@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import pytest
 from httpx import AsyncClient
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta
-from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.settings import get_settings
 
 
