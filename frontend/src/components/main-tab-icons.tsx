@@ -5,7 +5,7 @@ import { TabButtonSvgIcon } from './tab-svg-icon'
 /**
  * アプリ上部メインタブ（概要〜設定）の識別子。タブ用インライン SVG と `App` のタブ状態で共有する。
  */
-export type MainTabId = 'summary' | 'events' | 'metrics' | 'digests' | 'chat' | 'settings'
+export type MainTabId = 'summary' | 'events' | 'metrics' | 'digests' | 'alerts' | 'chat' | 'settings'
 
 /**
  * メインタブ用の装飾アイコン（`currentColor` でテーマに追従。スクリーンリーダーからは隠す）。
@@ -44,6 +44,13 @@ export function MainTabIcon({ tabId }: { readonly tabId: MainTabId }): ReactElem
           <line x1="5.5" y1="5.5" x2="10.5" y2="5.5" />
           <line x1="5.5" y1="8" x2="10.5" y2="8" />
           <line x1="5.5" y1="10.5" x2="9" y2="10.5" />
+        </TabButtonSvgIcon>
+      )
+    case 'alerts':
+      return (
+        <TabButtonSvgIcon>
+          <path d="M8 2a3 3 0 0 0-3 3v3.5c0 .3-.1.6-.3.8L3.5 11h9l-1.2-1.7c-.2-.2-.3-.5-.3-.8V5a3 3 0 0 0-3-3z" />
+          <path d="M6 12a2 2 0 0 0 4 0H6z" />
         </TabButtonSvgIcon>
       )
     case 'chat':

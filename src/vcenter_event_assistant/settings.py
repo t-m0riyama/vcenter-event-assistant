@@ -70,6 +70,18 @@ class Settings(BaseSettings):
 
     scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
 
+    # --- SMTP / Alert Notifications ---
+    smtp_host: str | None = Field(default=None, description="SMTP server host (e.g., smtp.gmail.com).")
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = Field(default=None)
+    smtp_password: str | None = Field(default=None)
+    smtp_use_tls: bool = Field(default=True)
+    alert_email_from: str = Field(default="noreply@example.com")
+    alert_email_to: str | None = Field(default=None, description="Global recipient for alerts (comma-separated).")
+    alert_eval_interval_seconds: int = Field(default=60, ge=10, description="Alert evaluation job interval.")
+    alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
+    alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
@@ -93,6 +105,25 @@ class Settings(BaseSettings):
     @field_validator("vcenter_http_proxy", mode="before")
     @classmethod
     def empty_vcenter_proxy_to_none(cls, v: object) -> str | None:
+        """空文字・空白のみは None に正規化する。"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return str(v).strip() or None
+
+    @field_validator(
+        "smtp_host",
+        "smtp_username",
+        "smtp_password",
+        "alert_email_to",
+        "alert_template_firing_path",
+        "alert_template_resolved_path",
+        mode="before",
+    )
+    @classmethod
+    def empty_alert_settings_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
         if v is None:
             return None

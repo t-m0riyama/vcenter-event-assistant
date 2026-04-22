@@ -26,6 +26,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_events,
     purge_old_metrics,
 )
+from vcenter_event_assistant.services.alert_eval import AlertEvaluator
 from vcenter_event_assistant.settings import Settings, get_settings
 
 if TYPE_CHECKING:
@@ -173,8 +174,16 @@ def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
         except Exception:
             logger.exception("purge failed")
 
+    async def evaluate_alerts() -> None:
+        try:
+            evaluator = AlertEvaluator()
+            await evaluator.evaluate_all()
+        except Exception:
+            logger.exception("alert evaluation job failed")
+
     scheduler.add_job(poll_events, "interval", seconds=settings.event_poll_interval_seconds, id="poll_events")
     scheduler.add_job(poll_perf, "interval", seconds=settings.perf_sample_interval_seconds, id="poll_perf")
+    scheduler.add_job(evaluate_alerts, "interval", seconds=settings.alert_eval_interval_seconds, id="evaluate_alerts")
     scheduler.add_job(purge, "interval", hours=6, id="purge_metrics")
     add_digest_cron_jobs(scheduler, settings)
     scheduler.start()

@@ -473,3 +473,52 @@ class DigestRunRequest(BaseModel):
         if self.from_time is not None and self.to_time is not None and self.from_time >= self.to_time:
             raise ValueError("from_time は to_time より前である必要があります")
         return self
+
+class AlertRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    rule_type: Literal["event_score", "metric_threshold"]
+    is_enabled: bool = True
+    config: dict = Field(default_factory=dict)
+
+
+class AlertRuleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    is_enabled: bool | None = None
+    config: dict | None = None
+
+
+class AlertRuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    rule_type: str
+    is_enabled: bool
+    config: dict
+    created_at: datetime
+
+
+class AlertHistoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    rule_id: int
+    rule_name: str | None = None
+    state: str
+    context_key: str
+    notified_at: datetime
+    channel: str
+    success: bool
+    error_message: str | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_rule_name(cls, v: object) -> object:
+        if hasattr(v, "rule") and v.rule:
+            v.rule_name = v.rule.name
+        return v
+
+
+class AlertHistoryListResponse(BaseModel):
+    items: list[AlertHistoryRead]
+    total: int
