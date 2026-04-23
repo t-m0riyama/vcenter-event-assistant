@@ -99,6 +99,7 @@ export const vcenterSchema = z
     id: z.string(),
     name: z.string(),
     host: z.string(),
+    protocol: z.enum(['https', 'http']).default('https'),
     port: z.number(),
     username: z.string(),
     is_enabled: z.boolean(),

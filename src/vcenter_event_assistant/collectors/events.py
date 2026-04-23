@@ -19,6 +19,7 @@ def _ensure_aware(dt: datetime) -> datetime:
 def fetch_events_blocking(
     *,
     host: str,
+    protocol: str = "https",
     port: int,
     username: str,
     password: str,
@@ -30,7 +31,14 @@ def fetch_events_blocking(
     Pull events from vCenter since ``since`` (inclusive window start).
     Returns normalized dicts and the max ``occurred_at`` in the batch.
     """
-    si = connect_vcenter(host=host, port=port, username=username, password=password, proxy_url=proxy_url)
+    si = connect_vcenter(
+        host=host,
+        protocol=protocol,
+        port=port,
+        username=username,
+        password=password,
+        proxy_url=proxy_url,
+    )
     try:
         content = si.RetrieveContent()
         em = content.eventManager

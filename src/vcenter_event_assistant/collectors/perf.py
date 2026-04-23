@@ -62,13 +62,21 @@ def _host_metrics(host) -> list[dict[str, Any]]:
 def sample_hosts_blocking(
     *,
     host: str,
+    protocol: str = "https",
     port: int,
     username: str,
     password: str,
     proxy_url: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return flattened metric sample dicts for all hosts and datastores."""
-    si = connect_vcenter(host=host, port=port, username=username, password=password, proxy_url=proxy_url)
+    si = connect_vcenter(
+        host=host,
+        protocol=protocol,
+        port=port,
+        username=username,
+        password=password,
+        proxy_url=proxy_url,
+    )
     try:
         rows: list[dict[str, Any]] = []
         for h in _iter_hosts(si):

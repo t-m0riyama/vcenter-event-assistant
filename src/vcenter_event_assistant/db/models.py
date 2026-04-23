@@ -15,6 +15,7 @@ class VCenter(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     host: Mapped[str] = mapped_column(String(512))
+    protocol: Mapped[str] = mapped_column(String(16), default="https")
     port: Mapped[int] = mapped_column(Integer, default=443)
     username: Mapped[str] = mapped_column(String(512))
     password: Mapped[str] = mapped_column(String(2048))

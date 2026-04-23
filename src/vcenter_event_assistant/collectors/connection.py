@@ -34,19 +34,22 @@ def parse_proxy_url(url: str | None) -> tuple[str | None, int | None]:
 def connect_vcenter(
     *,
     host: str,
+    protocol: str = "https",
     port: int,
     username: str,
     password: str,
     proxy_url: str | None = None,
 ):
     """Establish a vCenter session. Caller must Disconnect(si)."""
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if protocol not in {"https", "http"}:
+        raise ValueError("protocol must be 'https' or 'http'")
     proxy_host, proxy_port = parse_proxy_url(proxy_url)
-    kwargs: dict = dict(
-        host=host, user=username, pwd=password, port=port, sslContext=ctx,
-    )
+    kwargs: dict = dict(host=host, user=username, pwd=password, port=port, protocol=protocol)
+    if protocol == "https":
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        kwargs["sslContext"] = ctx
     if proxy_host is not None:
         kwargs["httpProxyHost"] = proxy_host
         kwargs["httpProxyPort"] = proxy_port

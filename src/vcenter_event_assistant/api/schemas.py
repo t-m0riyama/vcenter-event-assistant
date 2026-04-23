@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class VCenterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     host: str = Field(min_length=1, max_length=512)
+    protocol: Literal["https", "http"] = "https"
     port: int = Field(default=443, ge=1, le=65535)
     username: str = Field(min_length=1, max_length=512)
     password: str = Field(min_length=1, max_length=2048)
@@ -21,6 +22,7 @@ class VCenterCreate(BaseModel):
 class VCenterUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     host: str | None = Field(default=None, min_length=1, max_length=512)
+    protocol: Literal["https", "http"] | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     username: str | None = Field(default=None, min_length=1, max_length=512)
     password: str | None = Field(default=None, min_length=1, max_length=2048)
@@ -33,6 +35,7 @@ class VCenterRead(BaseModel):
     id: uuid.UUID
     name: str
     host: str
+    protocol: Literal["https", "http"]
     port: int
     username: str
     is_enabled: bool

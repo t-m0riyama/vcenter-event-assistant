@@ -5,12 +5,23 @@ import { vcenterSchema, type VCenter } from '../../api/schemas'
 import { toErrorMessage } from '../../utils/errors'
 
 const vcenterListSchema = z.array(vcenterSchema)
+type VCenterProtocol = VCenter['protocol']
+type VCenterFormState = {
+  name: string
+  host: string
+  protocol: VCenterProtocol
+  port: number
+  username: string
+  password: string
+  is_enabled: boolean
+}
 
 export function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<VCenter[]>([])
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<VCenterFormState>({
     name: '',
     host: '',
+    protocol: 'https',
     port: 443,
     username: '',
     password: '',
@@ -21,9 +32,10 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
   const [editingId, setEditingId] = useState<string | null>(null)
 
   // 編集フォームの値
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<VCenterFormState>({
     name: '',
     host: '',
+    protocol: 'https',
     port: 443,
     username: '',
     password: '',
@@ -49,7 +61,15 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     onError(null)
     try {
       await apiPost('/api/vcenters', form)
-      setForm({ name: '', host: '', port: 443, username: '', password: '', is_enabled: true })
+      setForm({
+        name: '',
+        host: '',
+        protocol: 'https',
+        port: 443,
+        username: '',
+        password: '',
+        is_enabled: true,
+      })
       await load()
     } catch (e) {
       onError(toErrorMessage(e))
@@ -96,6 +116,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     setEditForm({
       name: v.name,
       host: v.host,
+      protocol: v.protocol,
       port: v.port,
       username: v.username,
       password: '', // パスワードは API レスポンスに含まれない
@@ -115,6 +136,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
       const body: Record<string, unknown> = {
         name: editForm.name,
         host: editForm.host,
+        protocol: editForm.protocol,
         port: editForm.port,
         username: editForm.username,
         is_enabled: editForm.is_enabled,
@@ -147,6 +169,18 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
             value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })}
           />
+        </label>
+        <label>
+          プロトコル
+          <select
+            value={form.protocol}
+            onChange={(e) =>
+              setForm({ ...form, protocol: e.target.value === 'http' ? 'http' : 'https' })
+            }
+          >
+            <option value="https">HTTPS</option>
+            <option value="http">HTTP</option>
+          </select>
         </label>
         <label>
           ポート
@@ -207,11 +241,25 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                   />
                 </td>
                 <td>
+                  <select
+                    value={editForm.protocol}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        protocol: e.target.value === 'http' ? 'http' : 'https',
+                      })
+                    }
+                    aria-label="プロトコル"
+                    style={{ display: 'inline', width: '34%', marginRight: '4px' }}
+                  >
+                    <option value="https">HTTPS</option>
+                    <option value="http">HTTP</option>
+                  </select>
                   <input
                     value={editForm.host}
                     onChange={(e) => setEditForm({ ...editForm, host: e.target.value })}
                     aria-label="ホスト"
-                    style={{ display: 'inline', width: '60%', marginRight: '4px' }}
+                    style={{ display: 'inline', width: '40%', marginRight: '4px' }}
                   />
                   :
                   <input
@@ -219,7 +267,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                     value={editForm.port}
                     onChange={(e) => setEditForm({ ...editForm, port: Number(e.target.value) })}
                     aria-label="ポート"
-                    style={{ display: 'inline', width: '30%', marginLeft: '4px' }}
+                    style={{ display: 'inline', width: '22%', marginLeft: '4px' }}
                   />
                 </td>
                 <td>
@@ -261,7 +309,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
               <tr key={v.id}>
                 <td>{v.name}</td>
                 <td>
-                  {v.host}:{v.port}
+                  {v.protocol}://{v.host}:{v.port}
                 </td>
                 <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
                 <td>{v.username}</td>

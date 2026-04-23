@@ -35,6 +35,7 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
     normalized, max_ts = await asyncio.to_thread(
         fetch_events_blocking,
         host=vcenter.host,
+        protocol=vcenter.protocol,
         port=vcenter.port,
         username=vcenter.username,
         password=vcenter.password,
@@ -99,6 +100,7 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
     rows = await asyncio.to_thread(
         sample_hosts_blocking,
         host=vcenter.host,
+        protocol=vcenter.protocol,
         port=vcenter.port,
         username=vcenter.username,
         password=vcenter.password,

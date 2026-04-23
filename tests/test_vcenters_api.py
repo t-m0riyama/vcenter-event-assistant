@@ -11,6 +11,7 @@ async def test_vcenter_crud(client: AsyncClient) -> None:
         json={
             "name": "lab",
             "host": "vcenter.example.local",
+            "protocol": "https",
             "port": 443,
             "username": "admin",
             "password": "secret",
@@ -20,6 +21,7 @@ async def test_vcenter_crud(client: AsyncClient) -> None:
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "lab"
+    assert body["protocol"] == "https"
     assert "password" not in body
 
     list_r = await client.get("/api/vcenters")
@@ -46,6 +48,7 @@ async def test_vcenter_patch_multiple_fields(client: AsyncClient) -> None:
         json={
             "name": "before",
             "host": "old.example.local",
+            "protocol": "https",
             "port": 443,
             "username": "admin",
             "password": "secret",
@@ -60,6 +63,7 @@ async def test_vcenter_patch_multiple_fields(client: AsyncClient) -> None:
         json={
             "name": "after",
             "host": "new.example.local",
+            "protocol": "http",
             "port": 8443,
             "username": "newadmin",
             "password": "newsecret",
@@ -69,6 +73,24 @@ async def test_vcenter_patch_multiple_fields(client: AsyncClient) -> None:
     body = p.json()
     assert body["name"] == "after"
     assert body["host"] == "new.example.local"
+    assert body["protocol"] == "http"
     assert body["port"] == 8443
     assert body["username"] == "newadmin"
     assert "password" not in body
+
+
+@pytest.mark.asyncio
+async def test_vcenter_create_defaults_protocol_to_https(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "default-protocol",
+            "host": "default.example.local",
+            "port": 443,
+            "username": "admin",
+            "password": "secret",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["protocol"] == "https"

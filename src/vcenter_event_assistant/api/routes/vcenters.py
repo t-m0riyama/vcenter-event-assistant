@@ -34,6 +34,7 @@ async def create_vcenter(
     vc = VCenter(
         name=body.name,
         host=body.host,
+        protocol=body.protocol,
         port=body.port,
         username=body.username,
         password=body.password,
@@ -101,7 +102,7 @@ async def test_vcenter(
 
     def _run():
         si = connect_vcenter(
-            host=vc.host, port=vc.port, username=vc.username, password=vc.password,
+            host=vc.host, protocol=vc.protocol, port=vc.port, username=vc.username, password=vc.password,
             proxy_url=settings.vcenter_http_proxy,
         )
         try:
@@ -112,7 +113,10 @@ async def test_vcenter(
     try:
         info = await asyncio.to_thread(_run)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Connection failed: {exc!s}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Connection failed ({vc.protocol}://{vc.host}:{vc.port}): {exc!s}",
+        ) from exc
 
     return {
         "ok": True,
