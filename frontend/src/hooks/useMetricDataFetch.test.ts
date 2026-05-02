@@ -1,7 +1,6 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useMetricDataFetch } from './useMetricDataFetch'
-import * as api from '../api'
 
 vi.mock('../api', () => ({
   apiGet: vi.fn(() => Promise.resolve([])),

@@ -48,7 +48,6 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
   >(null)
   const [eventSeriesLoading, setEventSeriesLoading] = useState(false)
 
-  const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
   const metricKeyRef = useRef(metricKey)
   metricKeyRef.current = metricKey
 

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LegendPayload } from 'recharts'
 import { apiGet } from '../api'
-import type { VCenter } from '../api/schemas'
 import { asArray } from '../utils/asArray'
-import { toErrorMessage } from '../utils/errors'
 import {
   parseApiUtcInstantMs,
   formatChartAxisTick,
