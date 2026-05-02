@@ -1,4 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
+import './MetricsPanel.css'
+
 import type { ReactNode } from 'react'
 import {
   CartesianGrid,

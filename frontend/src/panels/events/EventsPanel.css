@@ -1,0 +1,131 @@
+.event-comment-cell {
+  max-width: 280px;
+  min-width: 160px;
+}
+
+.event-comment-cell--readonly {
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 6rem;
+  overflow: auto;
+}
+
+.event-comment-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  align-items: flex-start;
+}
+
+.event-comment-preview {
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 4.5rem;
+  overflow: auto;
+}
+
+.event-comment-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: 100%;
+}
+
+.event-comment-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.event-comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.event-type-guide-cell {
+  max-width: 200px;
+  min-width: 6rem;
+  /** ポップアップがセル幅に引きずられて極端に狭くならないよう、子は別幅指定 */
+  overflow: visible;
+}
+
+.event-type-guide-cell__wrap {
+  position: relative;
+}
+
+/** ホバー／キーボードフォーカスで表示（スクリーンリーダーは details 側を優先し、こちらは aria-hidden） */
+.event-type-guide-popover {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 40;
+  margin-top: var(--spacing-1);
+  /** 親ラッパーは「表示」幅に縮むため % に頼らず rem で確保する */
+  width: max-content;
+  min-width: 22rem;
+  max-width: min(40rem, 94vw);
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--spacing-2);
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: var(--shadow-panel);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    visibility 0.12s ease;
+}
+
+.event-type-guide-cell__wrap:hover .event-type-guide-popover,
+.event-type-guide-cell__wrap:focus-within .event-type-guide-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-type-guide-popover {
+    transition: none;
+  }
+}
+
+.event-type-guide-details summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-semibold);
+}
+
+.event-type-guide-dl {
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+}
+
+.event-type-guide-dl dt {
+  font-size: var(--font-size-caption2);
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-2);
+}
+
+.event-type-guide-dl dt:first-child {
+  margin-top: 0;
+}
+
+.event-type-guide-dl dd {
+  margin: var(--spacing-1) 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/** 種別ガイドで「対処が必要」とマークされたイベント行 */
+tr.event-row--action-required {
+  background: color-mix(in srgb, var(--color-error) 10%, var(--color-background-elevated));
+  box-shadow: inset 3px 0 0 var(--color-error-border);
+}

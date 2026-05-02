@@ -5,7 +5,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
@@ -26,12 +26,8 @@ def _normalize_empty_to_none(v: object) -> str | None:
     return str(v).strip() or None
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=_settings_env_file(),
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+class DatabaseSettingsMixin(BaseModel):
+    """Database and data retention settings."""
 
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/vcenter_event_assistant",
@@ -56,14 +52,9 @@ class Settings(BaseSettings):
         description="Delete metric samples older than this many days (sampled_at).",
     )
 
-    cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
-    vcenter_http_proxy: str | None = Field(
-        default=None,
-        description=(
-            "vCenter 接続用 HTTP プロキシの URL（`VCENTER_HTTP_PROXY`）。"
-            "例: http://proxy.example.com:8080。未設定でプロキシなし。"
-        ),
-    )
+
+class AppLogSettingsMixin(BaseModel):
+    """Logging and scheduler execution settings."""
 
     log_level: str = Field(
         default="INFO",
@@ -78,19 +69,16 @@ class Settings(BaseSettings):
         description="uvicorn 系ログのファイルパス。空はファイル出力なし（`UVICORN_LOG_FILE`）。",
     )
 
-    scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
+    cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
+    vcenter_http_proxy: str | None = Field(
+        default=None,
+        description=(
+            "vCenter 接続用 HTTP プロキシの URL（`VCENTER_HTTP_PROXY`）。"
+            "例: http://proxy.example.com:8080。未設定でプロキシなし。"
+        ),
+    )
 
-    # --- SMTP / Alert Notifications ---
-    smtp_host: str | None = Field(default=None, description="SMTP server host (e.g., smtp.gmail.com).")
-    smtp_port: int = Field(default=587, ge=1, le=65535)
-    smtp_username: str | None = Field(default=None)
-    smtp_password: str | None = Field(default=None)
-    smtp_use_tls: bool = Field(default=True)
-    alert_email_from: str = Field(default="noreply@example.com")
-    alert_email_to: str | None = Field(default=None, description="Global recipient for alerts (comma-separated).")
-    alert_eval_interval_seconds: int = Field(default=60, ge=10, description="Alert evaluation job interval.")
-    alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
-    alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
+    scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
 
     @field_validator("log_level")
     @classmethod
@@ -104,14 +92,27 @@ class Settings(BaseSettings):
     @field_validator("app_log_file", "uvicorn_log_file", mode="before")
     @classmethod
     def empty_log_path_to_none(cls, v: object) -> str | None:
-        """空文字・空白のみは None に正規化する。"""
         return _normalize_empty_to_none(v)
 
     @field_validator("vcenter_http_proxy", mode="before")
     @classmethod
     def empty_vcenter_proxy_to_none(cls, v: object) -> str | None:
-        """空文字・空白のみは None に正規化する。"""
         return _normalize_empty_to_none(v)
+
+
+class AlertSettingsMixin(BaseModel):
+    """SMTP and Alert Notifications settings."""
+
+    smtp_host: str | None = Field(default=None, description="SMTP server host (e.g., smtp.gmail.com).")
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = Field(default=None)
+    smtp_password: str | None = Field(default=None)
+    smtp_use_tls: bool = Field(default=True)
+    alert_email_from: str = Field(default="noreply@example.com")
+    alert_email_to: str | None = Field(default=None, description="Global recipient for alerts (comma-separated).")
+    alert_eval_interval_seconds: int = Field(default=60, ge=10, description="Alert evaluation job interval.")
+    alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
+    alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
 
     @field_validator(
         "smtp_host",
@@ -124,8 +125,11 @@ class Settings(BaseSettings):
     )
     @classmethod
     def empty_alert_settings_to_none(cls, v: object) -> str | None:
-        """空文字・空白のみは None に正規化する。"""
         return _normalize_empty_to_none(v)
+
+
+class DigestSettingsMixin(BaseModel):
+    """Event Digest scheduler and template settings."""
 
     digest_scheduler_enabled: bool = Field(
         default=False,
@@ -173,166 +177,62 @@ class Settings(BaseSettings):
         description="月次ダイジェストの cron（`DIGEST_MONTHLY_CRON`）。例: 毎月 1 日 00:05 UTC。",
     )
 
-    digest_template_path: str | None = Field(
-        default=None,
-        description=(
-            "非空のとき最優先でこのファイルを Jinja2 テンプレとして読む（UTF-8）。"
-            "存在しない・読めない場合はエラーとし、DIGEST_TEMPLATE_DIR にはフォールバックしない。"
-            "相対パスはプロセスのカレントディレクトリ基準。"
-        ),
-    )
-    digest_template_dir: str | None = Field(
-        default=None,
-        description=(
-            "DIGEST_TEMPLATE_PATH が空のとき、DIGEST_TEMPLATE_FILE と結合してテンプレパスを構成する。"
-            "ファイルが存在しない場合はエラー（同梱テンプレにはフォールバックしない）。"
-        ),
-    )
-    digest_template_file: str = Field(
-        default="digest.md.j2",
-        description="digest_template_dir と併用するファイル名。",
-    )
-    digest_template_weekly_path: str | None = Field(
-        default=None,
-        description=(
-            "任意。非空かつダイジェストの kind が weekly のとき、このファイルを "
-            "DIGEST_TEMPLATE_PATH / DIGEST_TEMPLATE_DIR より優先して読む（UTF-8）。"
-            "ファイルが存在しない場合はエラー。空のときは通常のテンプレ解決にフォールバック。"
-        ),
-    )
-    digest_template_monthly_path: str | None = Field(
-        default=None,
-        description=(
-            "任意。非空かつ kind が monthly のとき、同様に最優先で読む。"
-            "ファイルが存在しない場合はエラー。空のときは通常解決にフォールバック。"
-        ),
-    )
+    digest_template_path: str | None = Field(default=None)
+    digest_template_dir: str | None = Field(default=None)
+    digest_template_file: str = Field(default="digest.md.j2")
+    digest_template_weekly_path: str | None = Field(default=None)
+    digest_template_monthly_path: str | None = Field(default=None)
     digest_display_timezone: str = Field(
         default="UTC",
-        description=(
-            "ダイジェスト本文の日時表示および日次・週次・月次の集計ウィンドウの暦境界に用いる IANA タイムゾーン名（例: Asia/Tokyo）。"
-            "無効な名前は UTC にフォールバックし警告ログを出す。"
-        ),
+        description="ダイジェスト集計ウィンドウの暦境界および日時表示に用いる IANA TZ 名。",
     )
 
-    llm_digest_provider: LlmProvider = Field(
-        default="openai_compatible",
-        description=(
-            "ダイジェストの LLM（`LLM_DIGEST_PROVIDER`）。openai_compatible は Chat Completions 互換 API、"
-            "gemini は Google AI Studio（generateContent REST）。"
-        ),
-    )
-    llm_digest_api_key: str | None = Field(
-        default=None,
-        description=(
-            "空のときはテンプレートのみでダイジェストを保存（外部 API を呼ばない）。"
-            "OpenAI または Google AI Studio の API キー（`LLM_DIGEST_API_KEY`）。"
-        ),
-    )
-    llm_digest_base_url: str = Field(
-        default="https://api.openai.com/v1",
-        description="llm_digest_provider が openai_compatible のときのみ使用（末尾は /v1 を含む想定）（`LLM_DIGEST_BASE_URL`）。",
-    )
-    llm_digest_model: str = Field(
-        default="gpt-4o-mini",
-        description="OpenAI 互換時は gpt-4o-mini 等。Gemini 時は gemini-2.0-flash 等（`LLM_DIGEST_MODEL`）。",
-    )
-    llm_digest_timeout_seconds: float = Field(
-        default=60.0,
-        ge=5.0,
-        le=7200.0,
-        description=(
-            "httpx の読み取りタイムアウト（秒）。ローカル Ollama は長いプロンプトで数分〜かかることがある。"
-            "値を変えたらプロセス再起動が必要（get_settings が lru_cache のため）（`LLM_DIGEST_TIMEOUT_SECONDS`）。"
-        ),
-    )
-    llm_chat_provider: LlmProvider | None = Field(
-        default=None,
-        description=(
-            "チャット用に上書きするプロバイダ（`LLM_CHAT_PROVIDER`）。未設定時は llm_digest_provider を使用。"
-        ),
-    )
-    llm_chat_api_key: str | None = Field(
-        default=None,
-        description=(
-            "チャット用 API キー（`LLM_CHAT_API_KEY`）。空または未設定時は llm_digest_api_key を使用。"
-        ),
-    )
-    llm_chat_base_url: str | None = Field(
-        default=None,
-        description="チャット用ベース URL（`LLM_CHAT_BASE_URL`）。未設定または空時は llm_digest_base_url。",
-    )
-    llm_chat_model: str | None = Field(
-        default=None,
-        description="チャット用モデル ID（`LLM_CHAT_MODEL`）。未設定または空時は llm_digest_model。",
-    )
-    llm_chat_timeout_seconds: float | None = Field(
-        default=None,
-        ge=5.0,
-        le=7200.0,
-        description=(
-            "チャット用タイムアウト秒（`LLM_CHAT_TIMEOUT_SECONDS`）。未設定時は llm_digest_timeout_seconds。"
-        ),
-    )
-    llm_chat_max_input_tokens: int = Field(
-        default=32_000,
-        ge=512,
-        le=256_000,
-        description=(
-            "チャット LLM の入力全体の目安トークン上限（tiktoken cl100k_base で推定。"
-            "Gemini 公式のトークン数と一致しない場合がある（`LLM_CHAT_MAX_INPUT_TOKENS`）。"
-        ),
-    )
-    llm_copilot_cli_path: str | None = Field(
-        default=None,
-        description=(
-            "チャットが copilot_cli のとき任意。Copilot CLI 実行ファイルのパス（`LLM_COPILOT_CLI_PATH`）。"
-            "空なら SDK 既定（PATH の copilot または同梱バイナリ）。"
-        ),
-    )
-    llm_copilot_cli_session_auth: bool = Field(
-        default=False,
-        description=(
-            "copilot_cli のとき True なら SDK に GitHub PAT を渡さず、"
-            "ローカルの gh / Copilot CLI のログインセッションのみを使う（`LLM_COPILOT_CLI_SESSION_AUTH`）。"
-            "一部モデル・エンドポイントは PAT を拒否するため、その場合は True にする。"
-        ),
-    )
-    llm_anonymization_enabled: bool = Field(
-        default=True,
-        description=(
-            "LLM 入力（チャット・ダイジェスト）の識別子をトークン化してから外部 API に送る（`LLM_ANONYMIZATION_ENABLED`）。"
-            "false で無効化する（開発・検証用）。"
-        ),
-    )
+    @property
+    def effective_digest_daily_enabled(self) -> bool:
+        return self.digest_daily_enabled or self.digest_scheduler_enabled
 
-    langsmith_tracing_enabled: bool = Field(
-        default=False,
-        description="LangSmith へ LLM トレースを送る（`LANGSMITH_TRACING_ENABLED`）。既定は無効。",
-    )
-    langsmith_api_key: str | None = Field(
-        default=None,
-        description="LangSmith API キー（`LANGSMITH_API_KEY`）。空ならトレース用コールバックは付与しない。",
-    )
-    langsmith_project: str | None = Field(
-        default=None,
-        description="LangSmith プロジェクト名（`LANGSMITH_PROJECT`）。空ならクライアント既定。",
-    )
-    langsmith_endpoint: str | None = Field(
-        default=None,
-        description="LangSmith API ベース URL（`LANGSMITH_ENDPOINT`）。空なら SDK 既定。",
-    )
+    @property
+    def effective_digest_daily_cron(self) -> str:
+        if self.digest_daily_enabled:
+            return self.digest_daily_cron
+        if self.digest_scheduler_enabled:
+            return self.digest_cron
+        return self.digest_daily_cron
+
+
+class LlmSettingsMixin(BaseModel):
+    """LLM (Chat/Digest) and LangSmith settings."""
+
+    llm_digest_provider: LlmProvider = Field(default="openai_compatible")
+    llm_digest_api_key: str | None = Field(default=None)
+    llm_digest_base_url: str = Field(default="https://api.openai.com/v1")
+    llm_digest_model: str = Field(default="gpt-4o-mini")
+    llm_digest_timeout_seconds: float = Field(default=60.0, ge=5.0, le=7200.0)
+
+    llm_chat_provider: LlmProvider | None = Field(default=None)
+    llm_chat_api_key: str | None = Field(default=None)
+    llm_chat_base_url: str | None = Field(default=None)
+    llm_chat_model: str | None = Field(default=None)
+    llm_chat_timeout_seconds: float | None = Field(default=None, ge=5.0, le=7200.0)
+    llm_chat_max_input_tokens: int = Field(default=32_000, ge=512, le=256_000)
+
+    llm_copilot_cli_path: str | None = Field(default=None)
+    llm_copilot_cli_session_auth: bool = Field(default=False)
+    llm_anonymization_enabled: bool = Field(default=True)
+
+    langsmith_tracing_enabled: bool = Field(default=False)
+    langsmith_api_key: str | None = Field(default=None)
+    langsmith_project: str | None = Field(default=None)
+    langsmith_endpoint: str | None = Field(default=None)
 
     @field_validator("llm_digest_api_key", "llm_chat_api_key", "llm_chat_base_url", "llm_chat_model", mode="before")
     @classmethod
     def empty_llm_optional_str_to_none(cls, v: object) -> str | None:
-        """空文字・空白のみは None に正規化する（チャット上書き・ダイジェスト API キー）。"""
         return _normalize_empty_to_none(v)
 
     @field_validator("llm_digest_base_url", mode="before")
     @classmethod
     def normalize_llm_digest_base_url(cls, v: object) -> str:
-        """空のときは OpenAI 互換の既定 URL にフォールバックする。"""
         if v is None:
             return "https://api.openai.com/v1"
         s = str(v).strip()
@@ -341,28 +241,29 @@ class Settings(BaseSettings):
     @field_validator("langsmith_api_key", "langsmith_project", "langsmith_endpoint", mode="before")
     @classmethod
     def empty_langsmith_str_to_none(cls, v: object) -> str | None:
-        """空文字・空白のみは None に正規化する。"""
         return _normalize_empty_to_none(v)
 
     @field_validator("llm_copilot_cli_path", mode="before")
     @classmethod
     def empty_copilot_cli_path_to_none(cls, v: object) -> str | None:
-        """空文字・空白のみは None に正規化する。"""
         return _normalize_empty_to_none(v)
 
-    @property
-    def effective_digest_daily_enabled(self) -> bool:
-        """日次ダイジェストジョブを登録するか（新フラグとレガシーの OR）。"""
-        return self.digest_daily_enabled or self.digest_scheduler_enabled
 
-    @property
-    def effective_digest_daily_cron(self) -> str:
-        """日次ジョブ用の実効 cron（新 `digest_daily_enabled` 優先、なければレガシー `digest_cron`）。"""
-        if self.digest_daily_enabled:
-            return self.digest_daily_cron
-        if self.digest_scheduler_enabled:
-            return self.digest_cron
-        return self.digest_daily_cron
+class Settings(
+    BaseSettings,
+    DatabaseSettingsMixin,
+    AppLogSettingsMixin,
+    AlertSettingsMixin,
+    DigestSettingsMixin,
+    LlmSettingsMixin,
+):
+    """Monolithic application settings composed of specialized mixins."""
+
+    model_config = SettingsConfigDict(
+        env_file=_settings_env_file(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache

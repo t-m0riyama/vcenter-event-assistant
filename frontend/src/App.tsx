@@ -1,10 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
-import { TimeZoneProvider } from './datetime/TimeZoneProvider'
 import { useAppConfig } from './hooks/useAppConfig'
-import { AutoRefreshPreferencesProvider } from './preferences/AutoRefreshPreferencesProvider'
-import { ChatMaxStoredMessagesProvider } from './preferences/ChatMaxStoredMessagesProvider'
-import { ChatSamplePromptsProvider } from './preferences/ChatSamplePromptsProvider'
-import { SummaryTopNotableMinScoreProvider } from './preferences/SummaryTopNotableMinScoreProvider'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
@@ -16,10 +11,10 @@ import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { AlertHistoryPanel } from './panels/alerts/AlertHistoryPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
-import { ThemeProvider } from './theme/ThemeProvider'
 import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
 import { HelpIcon } from './components/help-icon'
+import { AppProviders } from './components/AppProviders'
 import './App.css'
 
 const HELP_CONTENT: Record<string, string> = {
@@ -56,209 +51,201 @@ export default function App() {
   const { retention } = useAppConfig(setErr)
 
   return (
-    <ThemeProvider>
-      <TimeZoneProvider>
-        <AutoRefreshPreferencesProvider>
-          <SummaryTopNotableMinScoreProvider>
-            <ChatMaxStoredMessagesProvider>
-              <ChatSamplePromptsProvider>
-                <div className="app">
-                  <header className="header">
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <h1>vCenter Event Assistant</h1>
-                      <button
-                        type="button"
-                        className="help-toggle-button"
-                        onClick={() => setShowHelp(!showHelp)}
-                        aria-label="使い方を表示"
-                      >
-                        <HelpIcon />
-                        <span>使い方を表示</span>
-                      </button>
-                    </div>
-                    {retention && (
-                      <p className="retention-hint">
-                        データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
-                        {retention.metric_retention_days} 日（サーバー設定）
-                      </p>
-                    )}
-                  </header>
+    <AppProviders>
+      <div className="app">
+        <header className="header">
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <h1>vCenter Event Assistant</h1>
+            <button
+              type="button"
+              className="help-toggle-button"
+              onClick={() => setShowHelp(!showHelp)}
+              aria-label="使い方を表示"
+            >
+              <HelpIcon />
+              <span>使い方を表示</span>
+            </button>
+          </div>
+          {retention && (
+            <p className="retention-hint">
+              データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
+              {retention.metric_retention_days} 日（サーバー設定）
+            </p>
+          )}
+        </header>
 
-                  {err && (
-                    <div className="error-banner" role="alert">
-                      {err}
-                    </div>
-                  )}
+        {err && (
+          <div className="error-banner" role="alert">
+            {err}
+          </div>
+        )}
 
-                  {showHelp && (
-                    <section className="help-section">
-                      <h2>
-                        <HelpIcon />
-                        <span>使い方ガイド</span>
-                      </h2>
-                      <p className="help-text">{HELP_CONTENT[tab]}</p>
-                    </section>
-                  )}
+        {showHelp && (
+          <section className="help-section">
+            <h2>
+              <HelpIcon />
+              <span>使い方ガイド</span>
+            </h2>
+            <p className="help-text">{HELP_CONTENT[tab]}</p>
+          </section>
+        )}
 
-                  <nav className="tabs">
-                    {(['summary', 'events', 'metrics', 'digests', 'alerts', 'chat', 'settings'] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        className={tab === t ? 'active' : undefined}
-                        onClick={() => {
-                          setTab(t)
-                          setShowHelp(false)
-                          setErr(null)
-                        }}
-                      >
-                        <span className="tab-button__inner">
-                          <MainTabIcon tabId={t} />
-                          <span className="tab-button__label">
-                            {t === 'summary' && '概要'}
-                            {t === 'events' && 'イベント'}
-                            {t === 'metrics' && 'グラフ'}
-                            {t === 'digests' && 'ダイジェスト'}
-                            {t === 'alerts' && '通知履歴'}
-                            {t === 'chat' && 'チャット'}
-                            {t === 'settings' && '設定'}
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </nav>
+        <nav className="tabs">
+          {(['summary', 'events', 'metrics', 'digests', 'alerts', 'chat', 'settings'] as const).map(
+            (t) => (
+              <button
+                key={t}
+                type="button"
+                className={tab === t ? 'active' : undefined}
+                onClick={() => {
+                  setTab(t)
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <MainTabIcon tabId={t} />
+                  <span className="tab-button__label">
+                    {t === 'summary' && '概要'}
+                    {t === 'events' && 'イベント'}
+                    {t === 'metrics' && 'グラフ'}
+                    {t === 'digests' && 'ダイジェスト'}
+                    {t === 'alerts' && '通知履歴'}
+                    {t === 'chat' && 'チャット'}
+                    {t === 'settings' && '設定'}
+                  </span>
+                </span>
+              </button>
+            ),
+          )}
+        </nav>
 
-                  <main className="main">
-                    {tab === 'settings' && (
-                      <nav className="settings-subtabs" aria-label="設定">
-                        <button
-                          type="button"
-                          className={settingsSubTab === 'general' ? 'active' : undefined}
-                          aria-selected={settingsSubTab === 'general'}
-                          onClick={() => {
-                            setSettingsSubTab('general')
-                            setShowHelp(false)
-                            setErr(null)
-                          }}
-                        >
-                          <span className="tab-button__inner">
-                            <SettingsSubTabIcon tabId="general" />
-                            <span className="tab-button__label">一般</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className={settingsSubTab === 'vcenters' ? 'active' : undefined}
-                          aria-selected={settingsSubTab === 'vcenters'}
-                          onClick={() => {
-                            setSettingsSubTab('vcenters')
-                            setShowHelp(false)
-                            setErr(null)
-                          }}
-                        >
-                          <span className="tab-button__inner">
-                            <SettingsSubTabIcon tabId="vcenters" />
-                            <span className="tab-button__label">vCenter</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className={settingsSubTab === 'score_rules' ? 'active' : undefined}
-                          aria-selected={settingsSubTab === 'score_rules'}
-                          onClick={() => {
-                            setSettingsSubTab('score_rules')
-                            setShowHelp(false)
-                            setErr(null)
-                          }}
-                        >
-                          <span className="tab-button__inner">
-                            <SettingsSubTabIcon tabId="score_rules" />
-                            <span className="tab-button__label">スコアルール</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className={settingsSubTab === 'event_type_guides' ? 'active' : undefined}
-                          aria-selected={settingsSubTab === 'event_type_guides'}
-                          onClick={() => {
-                            setSettingsSubTab('event_type_guides')
-                            setShowHelp(false)
-                            setErr(null)
-                          }}
-                        >
-                          <span className="tab-button__inner">
-                            <SettingsSubTabIcon tabId="event_type_guides" />
-                            <span className="tab-button__label">イベント種別ガイド</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className={settingsSubTab === 'alerts' ? 'active' : undefined}
-                          aria-selected={settingsSubTab === 'alerts'}
-                          onClick={() => {
-                            setSettingsSubTab('alerts')
-                            setShowHelp(false)
-                            setErr(null)
-                          }}
-                        >
-                          <span className="tab-button__inner">
-                            <SettingsSubTabIcon tabId="alerts" />
-                            <span className="tab-button__label">アラート</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className={settingsSubTab === 'chat_samples' ? 'active' : undefined}
-                          aria-selected={settingsSubTab === 'chat_samples'}
-                          onClick={() => {
-                            setSettingsSubTab('chat_samples')
-                            setShowHelp(false)
-                            setErr(null)
-                          }}
-                        >
-                          <span className="tab-button__inner">
-                            <SettingsSubTabIcon tabId="chat_samples" />
-                            <span className="tab-button__label">チャット</span>
-                          </span>
-                        </button>
-                      </nav>
-                    )}
-                    {tab === 'summary' && <SummaryPanel onError={setErr} />}
-                    {tab === 'events' && <EventsPanel onError={setErr} />}
-                    {tab === 'metrics' && (
-                      <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
-                        <MetricsPanel
-                          onError={setErr}
-                          perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
-                        />
-                      </Suspense>
-                    )}
-                    {tab === 'digests' && <DigestsPanel onError={setErr} />}
-                    {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
-                    {tab === 'chat' && <ChatPanel onError={setErr} />}
-                    {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
-                    {tab === 'settings' && settingsSubTab === 'score_rules' && (
-                      <ScoreRulesPanel onError={setErr} />
-                    )}
-                    {tab === 'settings' && settingsSubTab === 'event_type_guides' && (
-                      <EventTypeGuidesPanel onError={setErr} />
-                    )}
-                    {tab === 'settings' && settingsSubTab === 'vcenters' && (
-                      <VCentersPanel onError={setErr} />
-                    )}
-                    {tab === 'settings' && settingsSubTab === 'chat_samples' && (
-                      <ChatSamplePromptsPanel onError={setErr} />
-                    )}
-                    {tab === 'settings' && settingsSubTab === 'alerts' && (
-                      <AlertRulesPanel onError={setErr} />
-                    )}
-                  </main>
-                </div>
-              </ChatSamplePromptsProvider>
-            </ChatMaxStoredMessagesProvider>
-          </SummaryTopNotableMinScoreProvider>
-        </AutoRefreshPreferencesProvider>
-      </TimeZoneProvider>
-    </ThemeProvider>
+        <main className="main">
+          {tab === 'settings' && (
+            <nav className="settings-subtabs" aria-label="設定">
+              <button
+                type="button"
+                className={settingsSubTab === 'general' ? 'active' : undefined}
+                aria-selected={settingsSubTab === 'general'}
+                onClick={() => {
+                  setSettingsSubTab('general')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <SettingsSubTabIcon tabId="general" />
+                  <span className="tab-button__label">一般</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={settingsSubTab === 'vcenters' ? 'active' : undefined}
+                aria-selected={settingsSubTab === 'vcenters'}
+                onClick={() => {
+                  setSettingsSubTab('vcenters')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <SettingsSubTabIcon tabId="vcenters" />
+                  <span className="tab-button__label">vCenter</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={settingsSubTab === 'score_rules' ? 'active' : undefined}
+                aria-selected={settingsSubTab === 'score_rules'}
+                onClick={() => {
+                  setSettingsSubTab('score_rules')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <SettingsSubTabIcon tabId="score_rules" />
+                  <span className="tab-button__label">スコアルール</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={settingsSubTab === 'event_type_guides' ? 'active' : undefined}
+                aria-selected={settingsSubTab === 'event_type_guides'}
+                onClick={() => {
+                  setSettingsSubTab('event_type_guides')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <SettingsSubTabIcon tabId="event_type_guides" />
+                  <span className="tab-button__label">イベント種別ガイド</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={settingsSubTab === 'alerts' ? 'active' : undefined}
+                aria-selected={settingsSubTab === 'alerts'}
+                onClick={() => {
+                  setSettingsSubTab('alerts')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <SettingsSubTabIcon tabId="alerts" />
+                  <span className="tab-button__label">アラート</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={settingsSubTab === 'chat_samples' ? 'active' : undefined}
+                aria-selected={settingsSubTab === 'chat_samples'}
+                onClick={() => {
+                  setSettingsSubTab('chat_samples')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              >
+                <span className="tab-button__inner">
+                  <SettingsSubTabIcon tabId="chat_samples" />
+                  <span className="tab-button__label">チャット</span>
+                </span>
+              </button>
+            </nav>
+          )}
+          {tab === 'summary' && <SummaryPanel onError={setErr} />}
+          {tab === 'events' && <EventsPanel onError={setErr} />}
+          {tab === 'metrics' && (
+            <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
+              <MetricsPanel
+                onError={setErr}
+                perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+              />
+            </Suspense>
+          )}
+          {tab === 'digests' && <DigestsPanel onError={setErr} />}
+          {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
+          {tab === 'chat' && <ChatPanel onError={setErr} />}
+          {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
+          {tab === 'settings' && settingsSubTab === 'score_rules' && (
+            <ScoreRulesPanel onError={setErr} />
+          )}
+          {tab === 'settings' && settingsSubTab === 'event_type_guides' && (
+            <EventTypeGuidesPanel onError={setErr} />
+          )}
+          {tab === 'settings' && settingsSubTab === 'vcenters' && (
+            <VCentersPanel onError={setErr} />
+          )}
+          {tab === 'settings' && settingsSubTab === 'chat_samples' && (
+            <ChatSamplePromptsPanel onError={setErr} />
+          )}
+          {tab === 'settings' && settingsSubTab === 'alerts' && (
+            <AlertRulesPanel onError={setErr} />
+          )}
+        </main>
+      </div>
+    </AppProviders>
   )
 }

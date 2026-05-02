@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import './ChatPanel.css'
+
 import { apiGet, apiPost } from '../../api'
 import { readStoredChatMaxStoredMessages } from '../../preferences/chatMaxStoredMessagesStorage'
 import { useChatMaxStoredMessages } from '../../preferences/useChatMaxStoredMessages'
