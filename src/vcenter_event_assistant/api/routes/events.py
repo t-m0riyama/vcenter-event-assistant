@@ -21,6 +21,7 @@ from vcenter_event_assistant.api.schemas import (
     EventUserCommentPatch,
 )
 from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.services.event_repository import get_event_rate_series
 from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
 from vcenter_event_assistant.settings import get_settings
 
@@ -42,13 +43,6 @@ def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -
     """Substring match, case-insensitive; works on SQLite and PostgreSQL via ``ilike`` + escape."""
     hay = func.coalesce(column, literal(""))
     return hay.ilike(f"%{_escape_like_metachars(needle)}%", escape="\\")
-
-
-def _epoch_seconds_expr(dialect_name: str):
-    """Portable UTC epoch seconds (integer) from ``occurred_at`` for bucketing."""
-    if dialect_name == "postgresql":
-        return cast(func.floor(func.extract("epoch", EventRecord.occurred_at)), Integer)
-    return cast(func.strftime("%s", EventRecord.occurred_at), Integer)
 
 
 @router.get("/event-types", response_model=EventTypesResponse)
@@ -87,39 +81,16 @@ async def event_rate_series(
 
     b = bucket_seconds if bucket_seconds is not None else get_settings().perf_sample_interval_seconds
 
-    conditions: list[ColumnElement[bool]] = [
-        EventRecord.event_type == event_type.strip(),
-        EventRecord.occurred_at >= ft,
-        EventRecord.occurred_at <= tt,
-    ]
-    if vcenter_id is not None:
-        conditions.append(EventRecord.vcenter_id == vcenter_id)
-
-    bind = session.get_bind()
-    dialect_name = bind.dialect.name if bind is not None else "sqlite"
-    epoch_sec = _epoch_seconds_expr(dialect_name)
-    bucket_epoch = epoch_sec - func.mod(epoch_sec, literal(b))
-
-    q = (
-        select(bucket_epoch.label("bucket_epoch"), func.count().label("cnt"))
-        .where(*conditions)
-        .group_by(bucket_epoch)
+    buckets_data = await get_event_rate_series(
+        session=session,
+        event_type=event_type,
+        from_time=ft,
+        to_time=tt,
+        bucket_seconds=b,
+        vcenter_id=vcenter_id,
     )
-    res = await session.execute(q)
-    count_by_epoch: dict[int, int] = {}
-    for row in res.all():
-        be = int(row.bucket_epoch)
-        count_by_epoch[be] = int(row.cnt)
-
-    from_ts = int(ft.timestamp())
-    to_ts = int(tt.timestamp())
-    first = (from_ts // b) * b
-    last = (to_ts // b) * b
-    buckets: list[EventRateBucket] = []
-    for s in range(first, last + b, b):
-        dt = datetime.fromtimestamp(s, tz=timezone.utc)
-        buckets.append(EventRateBucket(bucket_start=dt, count=count_by_epoch.get(s, 0)))
-
+    
+    buckets = [EventRateBucket(**b_data) for b_data in buckets_data]
     return EventRateSeriesResponse(bucket_seconds=b, buckets=buckets)
 
 
