@@ -31,18 +31,10 @@ import {
   legendDataKeyToString,
   toggleHiddenSeriesDataKey,
 } from '../metrics/metricsChartSeriesVisibility'
-import {
-  normalizeMetricSeriesResponse,
-  type MetricPoint,
-} from '../metrics/normalizeMetricSeriesResponse'
 import type { MetricCsvExportOptions } from '../metrics/metricCsv'
-import {
-  fetchMetricKeysForVcenter,
-  pickMetricKeyAfterFetch,
-} from '../metrics/fetchMetricKeys'
-import { mergeMetricKeyOptions } from '../metrics/knownMetricKeys'
 import { formatChartYAxisTick } from '../metrics/chartYAxisFormat'
 import { useChartThemeColors } from '../theme/useChartThemeColors'
+import { useMetricDataFetch } from './useMetricDataFetch'
 
 /** 系列 `tMs` の幅がこれ以下なら X 軸は月日を省略し時刻のみ */
 const CHART_TIME_SPAN_OMIT_MONTH_DAY_MS = 2 * 86400000
@@ -57,22 +49,11 @@ export function useMetricsPanelController(
   const [rollingDurationMs, setRollingDurationMs] = useState(
     METRICS_DEFAULT_ROLLING_DURATION_MS,
   )
-  const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [vcenterId, setVcenterId] = useState('')
-  const [metricKeys, setMetricKeys] = useState<string[]>(() => mergeMetricKeyOptions([]))
-  const [metricKey, setMetricKey] = useState(
-    () => mergeMetricKeyOptions([])[0] ?? '',
-  )
-  const [points, setPoints] = useState<MetricPoint[]>([])
-  const [metricTotal, setMetricTotal] = useState<number | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [metricKey, setMetricKey] = useState('')
   const [chartResetKey, setChartResetKey] = useState(0)
   const [chartEventType, setChartEventType] = useState('')
   const [eventTypeOptions, setEventTypeOptions] = useState<string[]>([])
-  const [eventRateBuckets, setEventRateBuckets] = useState<
-    Array<{ bucket_start: string; count: number }> | null
-  >(null)
-  const [eventSeriesLoading, setEventSeriesLoading] = useState(false)
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(
       METRICS_DEFAULT_ROLLING_DURATION_MS,
@@ -84,16 +65,47 @@ export function useMetricsPanelController(
     [rangeParts],
   )
   const prevTimeZoneRef = useRef<string | null>(null)
-  const prevVcenterForKeysRef = useRef<string | undefined>(undefined)
   const lastSeriesFetchRef = useRef<{
     vcenterId: string
     metricKey: string
     rangeKey: string
   } | null>(null)
-  const metricKeyRef = useRef(metricKey)
   const chartWrapRef = useRef<HTMLDivElement>(null)
   const chartColors = useChartThemeColors()
-  metricKeyRef.current = metricKey
+
+  const {
+    vcenters,
+    metricKeys,
+    points,
+    metricTotal,
+    loading,
+    eventRateBuckets,
+    eventSeriesLoading,
+    loadMetricKeys,
+    loadSeries,
+  } = useMetricDataFetch({
+    vcenterId,
+    metricKey,
+    rangeFromInput,
+    rangeToInput,
+    timeZone,
+    perfBucketSeconds,
+    chartEventType,
+    onError,
+  })
+
+  // Initialize vcenterId and metricKey if not set
+  useEffect(() => {
+    if (!vcenterId && vcenters.length > 0) {
+      setVcenterId(vcenters[0].id)
+    }
+  }, [vcenters, vcenterId])
+
+  useEffect(() => {
+    if (!metricKey && metricKeys.length > 0) {
+      setMetricKey(metricKeys[0])
+    }
+  }, [metricKeys, metricKey])
 
   const onGraphRangeFieldsChange = useCallback((next: ZonedRangeParts) => {
     setGraphRangeFollowMode('manual')
@@ -122,98 +134,18 @@ export function useMetricsPanelController(
   }, [timeZone, graphRangeFollowMode, rollingDurationMs])
 
   useEffect(() => {
-    void apiGet<unknown>('/api/vcenters')
-      .then((v) => {
-        const arr = asArray<VCenter>(v)
-        setVcenters(arr)
-        setVcenterId((prev) => prev || arr[0]?.id || '')
-      })
-      .catch((e) => onError(toErrorMessage(e)))
-  }, [onError])
-
-  useEffect(() => {
     const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
     void apiGet<{ event_types?: unknown }>(`/api/events/event-types${q}`)
       .then((d) => setEventTypeOptions(asArray<string>(d.event_types)))
       .catch(() => setEventTypeOptions([]))
   }, [vcenterId])
 
-  const loadMetricKeys = useCallback(async (): Promise<string> => {
-    try {
-      const keys = await fetchMetricKeysForVcenter(vcenterId)
-      const prev = metricKeyRef.current
-      const nextKey = pickMetricKeyAfterFetch(prev, keys)
-      setMetricKeys(keys)
-      setMetricKey(nextKey)
-      return nextKey
-    } catch (e) {
-      onError(toErrorMessage(e))
-      const keys = mergeMetricKeyOptions([])
-      const prev = metricKeyRef.current
-      const nextKey = pickMetricKeyAfterFetch(prev, keys)
-      setMetricKeys(keys)
-      setMetricKey(nextKey)
-      return nextKey
-    }
-  }, [vcenterId, onError])
-
-  const load = useCallback(
-    async (overrideKey?: string, options?: { silent?: boolean }): Promise<boolean> => {
-      const silent = options?.silent === true
-      const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
-      if (graphRange.mode === 'invalid') {
-        onError(graphRange.message)
-        setPoints([])
-        setMetricTotal(null)
-        setLoading(false)
-        return false
-      }
-      const key = (overrideKey ?? metricKey).trim()
-      if (!key) {
-        onError(null)
-        setPoints([])
-        setMetricTotal(null)
-        setLoading(false)
-        return false
-      }
-      if (!silent) {
-        setLoading(true)
-      }
-      onError(null)
-      try {
-        const limit = graphRange.mode === 'range' ? '10000' : '500'
-        const q = new URLSearchParams({ metric_key: key, limit })
-        if (vcenterId) q.set('vcenter_id', vcenterId)
-        if (graphRange.mode === 'range') {
-          q.set('from', graphRange.from)
-          q.set('to', graphRange.to)
-        }
-        const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
-        const normalized = normalizeMetricSeriesResponse(data)
-        setPoints(normalized.points)
-        setMetricTotal(normalized.total)
-        return true
-      } catch (e) {
-        onError(toErrorMessage(e))
-        return false
-      } finally {
-        setLoading(false)
-      }
-    },
-    [vcenterId, metricKey, onError, rangeFromInput, rangeToInput, timeZone],
-  )
-
-  const graphRangeForOverlay = useMemo(
-    () => resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone),
-    [rangeFromInput, rangeToInput, timeZone],
-  )
-
   useEffect(() => {
     void (async () => {
       let key = metricKey
-      if (prevVcenterForKeysRef.current !== vcenterId) {
-        prevVcenterForKeysRef.current = vcenterId
+      if (lastSeriesFetchRef.current?.vcenterId !== vcenterId) {
         key = await loadMetricKeys()
+        setMetricKey(key)
       }
       const rangeKey = `${rangeParts.fromDate}|${rangeParts.fromTime}|${rangeParts.toDate}|${rangeParts.toTime}`
       const sig = { vcenterId, metricKey: key, rangeKey }
@@ -226,84 +158,15 @@ export function useMetricsPanelController(
       ) {
         return
       }
-      const ok = await load(key)
+      const ok = await loadSeries(key)
       if (ok) lastSeriesFetchRef.current = sig
     })()
-  }, [vcenterId, metricKey, load, loadMetricKeys, rangeParts])
+  }, [vcenterId, metricKey, loadSeries, loadMetricKeys, rangeParts])
 
-  useEffect(() => {
-    const et = chartEventType.trim()
-    if (!et || points.length === 0) {
-      setEventRateBuckets(null)
-      setEventSeriesLoading(false)
-      return
-    }
-    if (graphRangeForOverlay.mode === 'invalid') {
-      setEventRateBuckets(null)
-      setEventSeriesLoading(false)
-      return
-    }
-    let cancelled = false
-    setEventSeriesLoading(true)
-    void (async () => {
-      let from: string
-      let to: string
-      if (graphRangeForOverlay.mode === 'range') {
-        from = graphRangeForOverlay.from
-        to = graphRangeForOverlay.to
-      } else {
-        let minTs = Infinity
-        let maxTs = -Infinity
-        for (const p of points) {
-          const t = parseApiUtcInstantMs(p.sampled_at)
-          if (Number.isFinite(t)) {
-            if (t < minTs) minTs = t
-            if (t > maxTs) maxTs = t
-          }
-        }
-        if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
-          if (!cancelled) {
-            setEventRateBuckets(null)
-            setEventSeriesLoading(false)
-          }
-          return
-        }
-        from = new Date(minTs).toISOString()
-        to = new Date(maxTs).toISOString()
-      }
-      const fromMs = parseApiUtcInstantMs(from)
-      const toMs = parseApiUtcInstantMs(to)
-      if (fromMs >= toMs) {
-        to = new Date(fromMs + Math.max(perfBucketSeconds, 60) * 1000).toISOString()
-      }
-      try {
-        const q = new URLSearchParams({
-          event_type: et,
-          from,
-          to,
-          bucket_seconds: String(perfBucketSeconds),
-        })
-        if (vcenterId) q.set('vcenter_id', vcenterId)
-        const data = await apiGet<{
-          buckets?: Array<{ bucket_start: string; count: number }>
-        }>(`/api/events/rate-series?${q.toString()}`)
-        if (!cancelled) {
-          setEventRateBuckets(Array.isArray(data.buckets) ? data.buckets : [])
-          onError(null)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setEventRateBuckets(null)
-          onError(toErrorMessage(e))
-        }
-      } finally {
-        if (!cancelled) setEventSeriesLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [points, chartEventType, vcenterId, perfBucketSeconds, onError, graphRangeForOverlay])
+  const graphRangeForOverlay = useMemo(
+    () => resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone),
+    [rangeFromInput, rangeToInput, timeZone],
+  )
 
   const countByEpochSec = useMemo(() => {
     const m = new Map<number, number>()
@@ -482,11 +345,11 @@ export function useMetricsPanelController(
       )
       return
     }
-    void load(metricKey, { silent: true })
+    void loadSeries(metricKey, { silent: true })
   }, [
     graphRangeFollowMode,
     invalidateSeriesCache,
-    load,
+    loadSeries,
     metricKey,
     rollingDurationMs,
     timeZone,
@@ -500,8 +363,8 @@ export function useMetricsPanelController(
       )
       return
     }
-    void load(metricKey)
-  }, [graphRangeFollowMode, invalidateSeriesCache, load, metricKey, rollingDurationMs, timeZone])
+    void loadSeries(metricKey)
+  }, [graphRangeFollowMode, invalidateSeriesCache, loadSeries, metricKey, rollingDurationMs, timeZone])
 
   return {
     timeZone,
@@ -526,7 +389,7 @@ export function useMetricsPanelController(
     chartWrapRef,
     chartColors,
     invalidateSeriesCache,
-    load,
+    loadSeries,
     runMetricsAutoRefresh,
     reloadMetricsSeries,
     loadMetricKeys,
