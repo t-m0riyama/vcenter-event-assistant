@@ -98,6 +98,14 @@ def create_app() -> FastAPI:
         async def spa_fallback(full_path: str):
             if full_path.startswith("api") or full_path in ("docs", "openapi.json", "redoc"):
                 raise HTTPException(status_code=404, detail="Not found")
+            
+            target_path = (FRONTEND_DIST / full_path).resolve()
+            try:
+                if target_path.is_relative_to(FRONTEND_DIST.resolve()) and target_path.is_file():
+                    return FileResponse(target_path)
+            except ValueError:
+                pass  # Fallback to index.html if resolution fails or is not relative
+            
             return FileResponse(FRONTEND_DIST / "index.html")
 
     return app
