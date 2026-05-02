@@ -55,7 +55,6 @@ _SYSTEM_PROMPT = (
 
 
 
-
 def _trim_context_json(payload: dict[str, Any], *, max_chars: int | None = None) -> str:
     """
     集約 JSON を文字数上限で切り詰める。
