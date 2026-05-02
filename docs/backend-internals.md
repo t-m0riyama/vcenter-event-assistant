@@ -2,13 +2,6 @@
 
 本書は [`docs/backend.md`](backend.md) の補完として、**開発者がAPI改修に入るための内部地図**を提供する。第1版は **API層**（`api/routes` / `api/deps` / `api/schemas`）を中心に、責務・依存方向・典型フロー・変更時の注意点を整理する。
 
-## 0. この文書の位置づけ
-
-- [`docs/backend.md`](backend.md): バックエンド全体の入口（最短把握）
-- [`docs/development.md`](development.md): 開発者向け手順（テスト、ツール、LLM詳細など）
-- [`docs/backend-operations.md`](backend-operations.md): 運用（監視、障害対応、変更管理）
-- 本書: **実装の読み方（層構造と依存境界）**
-
 ## 1. アプリ起動とHTTPレイヤの骨格（最小）
 
 実装の起点は [`src/vcenter_event_assistant/main.py`](../src/vcenter_event_assistant/main.py) の `create_app()` である。

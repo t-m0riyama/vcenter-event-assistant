@@ -2,6 +2,13 @@
 
 本ドキュメントは、vCenter Event Assistant のバックエンドを **最短で把握して運用・改修に着手することを目的** としています。対象読者は、開発者と運用担当者の両方です。
 
+## 0. この文書の位置づけ
+
+- [`docs/backend.md`](backend.md): バックエンド全体の把握（本ドキュメント）
+- [`docs/development.md`](development.md): 開発者向け手順（テスト、ツール、LLM詳細など）
+- [`docs/backend-operations.md`](backend-operations.md): 運用（監視、障害対応、変更管理）
+- [`docs/backend-internals.md`](backend-internals.md): 開発者向けの詳細解説（機能を追加・変更するためのガイドなど）
+
 ## 1. 役割と構成
 
 バックエンドは FastAPI を中心に、次を担います。
@@ -149,10 +156,3 @@ uv run vcenter-event-assistant
 - 開発者向けメモ: `docs/development.md`
 - チャット機能: `docs/chat.md`
 - 現状実装の整理: `docs/plans/2026-03-21-vcenter-event-assistant-as-built.md`
-
-## 8. 今後の拡張
-
-本書は最小版です。詳細は段階的に次へ分離します。
-
-- `docs/backend-internals.md`（内部実装の詳細。まずはAPI層から拡張）
-- `docs/backend-operations.md`（運用・障害対応の詳細）
