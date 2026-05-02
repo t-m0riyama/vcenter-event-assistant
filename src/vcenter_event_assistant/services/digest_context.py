@@ -15,6 +15,10 @@ from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 from vcenter_event_assistant.services.vcenter_labels import load_vcenter_labels_map
+from vcenter_event_assistant.services.metric_ranking import (
+    metric_samples_to_high_host_rows,
+    query_top_metric_hosts,
+)
 
 # ダッシュボードの「要注意イベント数」と同じ閾値（notable_score >= 40）
 _NOTABLE_SCORE_THRESHOLD = 40
@@ -228,91 +232,14 @@ async def build_digest_context(
         for et, cnt in type_rows
     ]
 
-    metric_clauses = [
-        MetricSample.metric_key == "host.cpu.usage_pct",
-        MetricSample.sampled_at >= from_utc,
-        MetricSample.sampled_at < to_utc,
-    ]
-    if vcenter_id is not None:
-        metric_clauses.append(MetricSample.vcenter_id == vcenter_id)
+    cpu_rows = await query_top_metric_hosts(session, "host.cpu.usage_pct", from_utc, to_utc, vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT)
+    mem_rows = await query_top_metric_hosts(session, "host.mem.usage_pct", from_utc, to_utc, vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT)
 
-    cpu_rank = (
-        select(
-            MetricSample.id,
-            func.row_number()
-            .over(
-                partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
-                order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
-            )
-            .label("rn"),
-        )
-        .where(*metric_clauses)
-    ).subquery()
-
-    cpu_q = await session.execute(
-        select(MetricSample)
-        .join(cpu_rank, MetricSample.id == cpu_rank.c.id)
-        .where(cpu_rank.c.rn == 1)
-        .order_by(MetricSample.value.desc())
-        .limit(_TOP_HOST_METRICS_LIMIT)
-    )
-    cpu_rows = list(cpu_q.scalars().all())
-
-    mem_metric_clauses = [
-        MetricSample.metric_key == "host.mem.usage_pct",
-        MetricSample.sampled_at >= from_utc,
-        MetricSample.sampled_at < to_utc,
-    ]
-    if vcenter_id is not None:
-        mem_metric_clauses.append(MetricSample.vcenter_id == vcenter_id)
-
-    mem_rank = (
-        select(
-            MetricSample.id,
-            func.row_number()
-            .over(
-                partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
-                order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
-            )
-            .label("rn"),
-        )
-        .where(*mem_metric_clauses)
-    ).subquery()
-
-    mem_q = await session.execute(
-        select(MetricSample)
-        .join(mem_rank, MetricSample.id == mem_rank.c.id)
-        .where(mem_rank.c.rn == 1)
-        .order_by(MetricSample.value.desc())
-        .limit(_TOP_HOST_METRICS_LIMIT)
-    )
-    mem_rows = list(mem_q.scalars().all())
     ids_for_label = {r.vcenter_id for r in cpu_rows} | {r.vcenter_id for r in mem_rows}
     label_map = await load_vcenter_labels_map(session, ids_for_label)
 
-    high_cpu = [
-        HighCpuHostRow(
-            vcenter_id=str(r.vcenter_id),
-            vcenter_label=label_map[r.vcenter_id],
-            entity_name=r.entity_name,
-            entity_moid=r.entity_moid,
-            value=r.value,
-            sampled_at=r.sampled_at,
-        )
-        for r in cpu_rows
-    ]
-
-    high_mem = [
-        HighMemHostRow(
-            vcenter_id=str(r.vcenter_id),
-            vcenter_label=label_map[r.vcenter_id],
-            entity_name=r.entity_name,
-            entity_moid=r.entity_moid,
-            value=r.value,
-            sampled_at=r.sampled_at,
-        )
-        for r in mem_rows
-    ]
+    high_cpu = metric_samples_to_high_host_rows(cpu_rows, label_map, row_class=HighCpuHostRow)
+    high_mem = metric_samples_to_high_host_rows(mem_rows, label_map, row_class=HighMemHostRow)
 
     return DigestContext(
         from_utc=from_utc,
