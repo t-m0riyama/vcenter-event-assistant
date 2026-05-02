@@ -27,7 +27,7 @@ from vcenter_event_assistant.services.llm_profile import (
     resolve_llm_profile,
 )
 from vcenter_event_assistant.services.llm_invoke import log_llm_failure, stream_chat_to_text
-from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings import Settings, get_settings
 
 _logger = logging.getLogger(__name__)
 
@@ -234,8 +234,31 @@ def _prepare_chat_payload(
     return payload, trimmed_msgs, reverse_map
 
 
+def _build_chat_context_and_meta(
+    context: DigestContext,
+    messages: list[ChatMessage],
+    period_metrics: PeriodMetricsPayload | None,
+    event_time_buckets: EventTimeBucketsPayload | None,
+    extra_vcenter_strings: Sequence[str] | None,
+) -> tuple[str, list[ChatMessage], ChatLlmContextMeta, dict[str, str]]:
+    settings = get_settings()
+    payload, trimmed_msgs, reverse_map = _prepare_chat_payload(
+        settings, context, messages,
+        period_metrics, event_time_buckets, extra_vcenter_strings,
+    )
+    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
+    block = _merged_context_user_block(ctx_json)
+    est_tokens = _estimate_chat_input_tokens(block, trimmed)
+    meta = ChatLlmContextMeta(
+        json_truncated=json_truncated,
+        estimated_input_tokens=est_tokens,
+        max_input_tokens=settings.llm_chat_max_input_tokens,
+        message_turns=len(trimmed),
+    )
+    return block, trimmed, meta, reverse_map
+
+
 def build_chat_preview(
-    settings: Settings,
     *,
     context: DigestContext,
     messages: list[ChatMessage],
@@ -248,25 +271,13 @@ def build_chat_preview(
     Returns:
         (context_block_string, trimmed_messages, llm_context_meta)
     """
-    payload, trimmed_msgs, _ = _prepare_chat_payload(
-        settings, context, messages,
-        period_metrics, event_time_buckets, extra_vcenter_strings,
-    )
-
-    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
-    block = _merged_context_user_block(ctx_json)
-    est_tokens = _estimate_chat_input_tokens(block, trimmed)
-    meta = ChatLlmContextMeta(
-        json_truncated=json_truncated,
-        estimated_input_tokens=est_tokens,
-        max_input_tokens=settings.llm_chat_max_input_tokens,
-        message_turns=len(trimmed),
+    block, trimmed, meta, _ = _build_chat_context_and_meta(
+        context, messages, period_metrics, event_time_buckets, extra_vcenter_strings
     )
     return block, trimmed, meta
 
 
 async def run_period_chat(
-    settings: Settings,
     *,
     context: DigestContext,
     messages: list[ChatMessage],
@@ -288,25 +299,15 @@ async def run_period_chat(
 
     Returns:
         (assistant_text, error_message, llm_context_meta, latency_ms, token_per_sec)。
-        チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は (\"\", None, None, None, None)。
+        チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は ("", None, None, None, None)。
         LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
+    settings = get_settings()
     if not is_chat_llm_configured(settings):
         return ("", None, None, None, None)
 
-    payload, trimmed_msgs, reverse_map = _prepare_chat_payload(
-        settings, context, messages,
-        period_metrics, event_time_buckets, extra_vcenter_strings,
-    )
-
-    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
-    block = _merged_context_user_block(ctx_json)
-    est_tokens = _estimate_chat_input_tokens(block, trimmed)
-    meta = ChatLlmContextMeta(
-        json_truncated=json_truncated,
-        estimated_input_tokens=est_tokens,
-        max_input_tokens=settings.llm_chat_max_input_tokens,
-        message_turns=len(trimmed),
+    block, trimmed, meta, reverse_map = _build_chat_context_and_meta(
+        context, messages, period_metrics, event_time_buckets, extra_vcenter_strings
     )
 
     try:
@@ -314,10 +315,10 @@ async def run_period_chat(
         _logger.info(
             "chat LLM リクエスト est_input_tokens=%s json_chars=%s json_truncated=%s message_turns=%s "
             "timeout_seconds=%s model=%s max_input_tokens=%s",
-            est_tokens,
-            len(ctx_json),
-            json_truncated,
-            len(trimmed),
+            meta.estimated_input_tokens,
+            len(block),
+            meta.json_truncated,
+            meta.message_turns,
             cprof.timeout_seconds,
             cprof.model,
             settings.llm_chat_max_input_tokens,

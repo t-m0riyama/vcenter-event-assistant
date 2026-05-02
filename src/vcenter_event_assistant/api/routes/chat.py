@@ -103,7 +103,6 @@ async def post_chat(
     )
     vc_anon = await load_all_vcenter_anonymization_strings(session)
     text, err, llm_meta, latency_ms, token_per_sec = await run_period_chat(
-        settings,
         context=ctx,
         messages=list(body.messages),
         period_metrics=period_metrics,
@@ -131,7 +130,6 @@ async def post_chat_preview(
 
     vc_anon = await load_all_vcenter_anonymization_strings(session)
     block, trimmed, meta = build_chat_preview(
-        settings,
         context=ctx,
         messages=list(body.messages),
         period_metrics=period_metrics,

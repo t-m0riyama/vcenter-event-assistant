@@ -1,6 +1,6 @@
-# Task Tracker - Frontend Refactoring (Data-driven Tabs)
+# Backend Refactoring Task Tracker
 
-| Task | Status | Description |
+| Task ID | Task Description | Status |
 | :--- | :--- | :--- |
-| Task 1: メインタブのデータ駆動化 | done | `App.tsx` のメインタブナビゲーションをデータ駆動化する |
-| Task 2: 設定サブタブのデータ駆動化 | done | `App.tsx` の設定サブタブナビゲーションをデータ駆動化する |
+| 1 | `ingest` ルーターの分離 (`main.py` からの抽出) | completed |
+| 2 | `chat_llm.py` の重複ロジック抽出と settings 引き回しの排除 | completed |
