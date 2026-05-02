@@ -26,7 +26,7 @@ from vcenter_event_assistant.services.llm_profile import (
     is_chat_llm_configured,
     resolve_llm_profile,
 )
-from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
+from vcenter_event_assistant.services.llm_invoke import log_llm_failure, stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
 _logger = logging.getLogger(__name__)
@@ -83,32 +83,7 @@ _CHAT_SYSTEM_PROMPT = (
 )
 
 
-def _log_chat_llm_failure(settings: Settings, exc: BaseException) -> None:
-    """運用向け。API キーはログに出さない。"""
-    prof = resolve_llm_profile(settings, purpose="chat")
-    if prof.provider == "openai_compatible":
-        base = (prof.base_url or "").rstrip("/")
-        _logger.warning(
-            "chat LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
-            base,
-            prof.model,
-            exc,
-            exc_info=True,
-        )
-    elif prof.provider == "copilot_cli":
-        _logger.warning(
-            "chat LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
-            prof.model,
-            exc,
-            exc_info=True,
-        )
-    else:
-        _logger.warning(
-            "chat LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
-            prof.model,
-            exc,
-            exc_info=True,
-        )
+
 
 
 def _trim_json_raw(raw: str, max_chars: int) -> str:
@@ -221,6 +196,44 @@ def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseM
         else:
             out.append(AIMessage(content=m.content))
     return out
+def _prepare_chat_payload(
+    settings: Settings,
+    context: DigestContext,
+    messages: list[ChatMessage],
+    period_metrics: PeriodMetricsPayload | None,
+    event_time_buckets: EventTimeBucketsPayload | None,
+    extra_vcenter_strings: Sequence[str] | None,
+) -> tuple[dict[str, Any], list[ChatMessage], dict[str, str]]:
+    """digest_context から high_cpu/mem を除外 → payload 構築 → 匿名化。
+
+    Returns:
+        (payload, trimmed_messages, reverse_map)
+    """
+    digest_obj = context.model_dump(mode="json")
+    digest_obj.pop("high_cpu_hosts", None)
+    digest_obj.pop("high_mem_hosts", None)
+    payload: dict[str, Any] = {"digest_context": digest_obj}
+    if period_metrics is not None:
+        payload["period_metrics"] = period_metrics.model_dump(mode="json")
+    if event_time_buckets is not None:
+        payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
+
+    trimmed_msgs = messages[-_MAX_CHAT_MESSAGES:]
+    reverse_map: dict[str, str] = {}
+    if settings.llm_anonymization_enabled:
+        pl, contents, reverse_map = anonymize_chat_for_llm(
+            payload,
+            [m.content for m in trimmed_msgs],
+            extra_vcenter_strings=extra_vcenter_strings,
+        )
+        payload = pl
+        trimmed_msgs = [
+            ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
+        ]
+
+    return payload, trimmed_msgs, reverse_map
+
+
 def build_chat_preview(
     settings: Settings,
     *,
@@ -235,26 +248,10 @@ def build_chat_preview(
     Returns:
         (context_block_string, trimmed_messages, llm_context_meta)
     """
-    digest_obj = context.model_dump(mode="json")
-    digest_obj.pop("high_cpu_hosts", None)
-    digest_obj.pop("high_mem_hosts", None)
-    payload: dict[str, Any] = {"digest_context": digest_obj}
-    if period_metrics is not None:
-        payload["period_metrics"] = period_metrics.model_dump(mode="json")
-    if event_time_buckets is not None:
-        payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
-
-    trimmed_msgs = messages[-_MAX_CHAT_MESSAGES:]
-    if settings.llm_anonymization_enabled:
-        pl, contents, _ = anonymize_chat_for_llm(
-            payload,
-            [m.content for m in trimmed_msgs],
-            extra_vcenter_strings=extra_vcenter_strings,
-        )
-        payload = pl
-        trimmed_msgs = [
-            ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
-        ]
+    payload, trimmed_msgs, _ = _prepare_chat_payload(
+        settings, context, messages,
+        period_metrics, event_time_buckets, extra_vcenter_strings,
+    )
 
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
     block = _merged_context_user_block(ctx_json)
@@ -297,27 +294,10 @@ async def run_period_chat(
     if not is_chat_llm_configured(settings):
         return ("", None, None, None, None)
 
-    digest_obj = context.model_dump(mode="json")
-    digest_obj.pop("high_cpu_hosts", None)
-    digest_obj.pop("high_mem_hosts", None)
-    payload: dict[str, Any] = {"digest_context": digest_obj}
-    if period_metrics is not None:
-        payload["period_metrics"] = period_metrics.model_dump(mode="json")
-    if event_time_buckets is not None:
-        payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
-
-    trimmed_msgs = messages[-_MAX_CHAT_MESSAGES:]
-    reverse_map: dict[str, str] = {}
-    if settings.llm_anonymization_enabled:
-        pl, contents, reverse_map = anonymize_chat_for_llm(
-            payload,
-            [m.content for m in trimmed_msgs],
-            extra_vcenter_strings=extra_vcenter_strings,
-        )
-        payload = pl
-        trimmed_msgs = [
-            ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
-        ]
+    payload, trimmed_msgs, reverse_map = _prepare_chat_payload(
+        settings, context, messages,
+        period_metrics, event_time_buckets, extra_vcenter_strings,
+    )
 
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
     block = _merged_context_user_block(ctx_json)
@@ -368,6 +348,6 @@ async def run_period_chat(
         text = deanonymize_text(text.strip(), reverse_map)
         return (text, None, meta, latency_ms, token_per_sec)
     except Exception as e:
-        _log_chat_llm_failure(settings, e)
+        log_llm_failure(settings, "chat", e)
         detail = _llm_failure_detail_for_user(e)
         return ("", f"チャット応答を取得できませんでした（{detail}）", meta, None, None)

@@ -2,11 +2,42 @@
 
 from __future__ import annotations
 
+import logging
 import time
 import tiktoken
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
+
+from vcenter_event_assistant.services.llm_profile import resolve_llm_profile
+from vcenter_event_assistant.settings import Settings
+
+_logger = logging.getLogger(__name__)
+
+
+def log_llm_failure(
+    settings: Settings,
+    purpose: str,
+    exc: BaseException,
+) -> None:
+    """LLM 呼び出し失敗の運用ログ（API キーは出力しない）。"""
+    prof = resolve_llm_profile(settings, purpose=purpose)
+    if prof.provider == "openai_compatible":
+        base = (prof.base_url or "").rstrip("/")
+        _logger.warning(
+            "%s LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
+            purpose, base, prof.model, exc, exc_info=True,
+        )
+    elif prof.provider == "copilot_cli":
+        _logger.warning(
+            "%s LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
+            purpose, prof.model, exc, exc_info=True,
+        )
+    else:
+        _logger.warning(
+            "%s LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
+            purpose, prof.model, exc, exc_info=True,
+        )
 
 
 async def stream_chat_to_text(

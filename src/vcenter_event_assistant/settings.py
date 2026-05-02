@@ -16,6 +16,16 @@ def _settings_env_file() -> str | None:
     return None if os.environ.get("VEA_PYTEST") == "1" else ".env"
 
 
+def _normalize_empty_to_none(v: object) -> str | None:
+    """空文字・空白のみは None に正規化する（複数の field_validator 共通）。"""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        s = v.strip()
+        return s or None
+    return str(v).strip() or None
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=_settings_env_file(),
@@ -95,23 +105,13 @@ class Settings(BaseSettings):
     @classmethod
     def empty_log_path_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip()
-            return s or None
-        return str(v).strip() or None
+        return _normalize_empty_to_none(v)
 
     @field_validator("vcenter_http_proxy", mode="before")
     @classmethod
     def empty_vcenter_proxy_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip()
-            return s or None
-        return str(v).strip() or None
+        return _normalize_empty_to_none(v)
 
     @field_validator(
         "smtp_host",
@@ -125,12 +125,7 @@ class Settings(BaseSettings):
     @classmethod
     def empty_alert_settings_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip()
-            return s or None
-        return str(v).strip() or None
+        return _normalize_empty_to_none(v)
 
     digest_scheduler_enabled: bool = Field(
         default=False,
@@ -332,12 +327,7 @@ class Settings(BaseSettings):
     @classmethod
     def empty_llm_optional_str_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する（チャット上書き・ダイジェスト API キー）。"""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip()
-            return s or None
-        return str(v).strip() or None
+        return _normalize_empty_to_none(v)
 
     @field_validator("llm_digest_base_url", mode="before")
     @classmethod
@@ -352,25 +342,13 @@ class Settings(BaseSettings):
     @classmethod
     def empty_langsmith_str_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip()
-            return s or None
-        return str(v).strip() or None
+        return _normalize_empty_to_none(v)
 
     @field_validator("llm_copilot_cli_path", mode="before")
     @classmethod
     def empty_copilot_cli_path_to_none(cls, v: object) -> str | None:
         """空文字・空白のみは None に正規化する。"""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip()
-            return s or None
-        return str(v).strip() or None
-
-
+        return _normalize_empty_to_none(v)
 
     @property
     def effective_digest_daily_enabled(self) -> bool:

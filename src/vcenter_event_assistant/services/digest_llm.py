@@ -14,7 +14,7 @@ from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.llm_anonymization import anonymize_for_llm, deanonymize_text
 from vcenter_event_assistant.services.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm_profile import is_digest_llm_configured, resolve_llm_profile
-from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
+from vcenter_event_assistant.services.llm_invoke import log_llm_failure, stream_chat_to_text
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.settings import Settings
 
@@ -53,32 +53,6 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _log_digest_llm_failure(settings: Settings, exc: BaseException) -> None:
-    """運用向け。API キーはログに出さない。"""
-    prof = resolve_llm_profile(settings, purpose="digest")
-    if prof.provider == "openai_compatible":
-        base = (prof.base_url or "").rstrip("/")
-        _logger.warning(
-            "digest LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
-            base,
-            prof.model,
-            exc,
-            exc_info=True,
-        )
-    elif prof.provider == "copilot_cli":
-        _logger.warning(
-            "digest LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
-            prof.model,
-            exc,
-            exc_info=True,
-        )
-    else:
-        _logger.warning(
-            "digest LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
-            prof.model,
-            exc,
-            exc_info=True,
-        )
 
 
 def _trim_context_json(payload: dict[str, Any], *, max_chars: int | None = None) -> str:
@@ -156,6 +130,6 @@ async def augment_digest_with_llm(
         merged = template_markdown.rstrip() + "\n\n" + summary + "\n"
         return (merged, None)
     except Exception as e:
-        _log_digest_llm_failure(settings, e)
+        log_llm_failure(settings, "digest", e)
         detail = _llm_failure_detail_for_user(e)
         return (template_markdown, f"LLM 要約は省略（{detail}）")
