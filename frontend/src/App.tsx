@@ -54,6 +54,17 @@ const MAIN_TABS: TabConfig[] = [
   { id: 'settings', label: '設定' },
 ]
 
+type SubTabConfig = { id: SettingsSubTab; label: string }
+
+const SETTINGS_SUBTABS: SubTabConfig[] = [
+  { id: 'general', label: '一般' },
+  { id: 'vcenters', label: 'vCenter' },
+  { id: 'score_rules', label: 'スコアルール' },
+  { id: 'event_type_guides', label: 'イベント種別ガイド' },
+  { id: 'alerts', label: 'アラート' },
+  { id: 'chat_samples', label: 'チャット' },
+]
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
@@ -124,96 +135,24 @@ export default function App() {
         <main className="main">
           {tab === 'settings' && (
             <nav className="settings-subtabs" aria-label="設定">
-              <button
-                type="button"
-                className={settingsSubTab === 'general' ? 'active' : undefined}
-                aria-selected={settingsSubTab === 'general'}
-                onClick={() => {
-                  setSettingsSubTab('general')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <SettingsSubTabIcon tabId="general" />
-                  <span className="tab-button__label">一般</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={settingsSubTab === 'vcenters' ? 'active' : undefined}
-                aria-selected={settingsSubTab === 'vcenters'}
-                onClick={() => {
-                  setSettingsSubTab('vcenters')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <SettingsSubTabIcon tabId="vcenters" />
-                  <span className="tab-button__label">vCenter</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={settingsSubTab === 'score_rules' ? 'active' : undefined}
-                aria-selected={settingsSubTab === 'score_rules'}
-                onClick={() => {
-                  setSettingsSubTab('score_rules')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <SettingsSubTabIcon tabId="score_rules" />
-                  <span className="tab-button__label">スコアルール</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={settingsSubTab === 'event_type_guides' ? 'active' : undefined}
-                aria-selected={settingsSubTab === 'event_type_guides'}
-                onClick={() => {
-                  setSettingsSubTab('event_type_guides')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <SettingsSubTabIcon tabId="event_type_guides" />
-                  <span className="tab-button__label">イベント種別ガイド</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={settingsSubTab === 'alerts' ? 'active' : undefined}
-                aria-selected={settingsSubTab === 'alerts'}
-                onClick={() => {
-                  setSettingsSubTab('alerts')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <SettingsSubTabIcon tabId="alerts" />
-                  <span className="tab-button__label">アラート</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={settingsSubTab === 'chat_samples' ? 'active' : undefined}
-                aria-selected={settingsSubTab === 'chat_samples'}
-                onClick={() => {
-                  setSettingsSubTab('chat_samples')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <SettingsSubTabIcon tabId="chat_samples" />
-                  <span className="tab-button__label">チャット</span>
-                </span>
-              </button>
+              {SETTINGS_SUBTABS.map((sub) => (
+                <button
+                  key={sub.id}
+                  type="button"
+                  className={settingsSubTab === sub.id ? 'active' : undefined}
+                  aria-selected={settingsSubTab === sub.id}
+                  onClick={() => {
+                    setSettingsSubTab(sub.id)
+                    setShowHelp(false)
+                    setErr(null)
+                  }}
+                >
+                  <span className="tab-button__inner">
+                    <SettingsSubTabIcon tabId={sub.id} />
+                    <span className="tab-button__label">{sub.label}</span>
+                  </span>
+                </button>
+              ))}
             </nav>
           )}
           {tab === 'summary' && <SummaryPanel onError={setErr} />}
