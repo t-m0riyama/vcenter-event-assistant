@@ -65,6 +65,7 @@ flowchart TB
 ## ドキュメント
 
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
+- **バックエンドガイド**（API・設定・運用）: [docs/backend.md](docs/backend.md)
 - **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
 - **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
 - **チャット機能の活用**: [docs/chat.md](docs/chat.md)
