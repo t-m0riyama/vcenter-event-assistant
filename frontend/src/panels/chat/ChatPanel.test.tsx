@@ -48,9 +48,9 @@ function messagesListElement(): HTMLElement {
 }
 
 /** チャットコンポーザー周りのスタイルが意図どおりか（happy-dom の getComputedStyle が弱いためソースを検査する） */
-function readAppCss(): string {
+function readChatPanelCss(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
-  return readFileSync(path.join(dir, '../../App.css'), 'utf8')
+  return readFileSync(path.join(dir, './ChatPanel.css'), 'utf8')
 }
 
 /**
@@ -213,20 +213,20 @@ describe('ChatPanel', () => {
     expect((kids[2] as HTMLButtonElement).getAttribute('aria-label')).toBe('送信')
   })
 
-  it('App.css でコンポーザーが横並び（flex-direction: row）になる', () => {
-    const css = readAppCss()
+  it('ChatPanel.css でコンポーザーが横並び（flex-direction: row）になる', () => {
+    const css = readChatPanelCss()
     expect(css).toMatch(/\.chat-panel__composer\s*\{[^}]*flex-direction:\s*row/s)
   })
 
-  it('App.css の狭い画面メディアクエリ内でコンポーザーが縦積みになる', () => {
-    const css = readAppCss()
+  it('ChatPanel.css の狭い画面メディアクエリ内でコンポーザーが縦積みになる', () => {
+    const css = readChatPanelCss()
     const mediaStart = css.indexOf('@media (max-width: 768px)')
     expect(mediaStart).toBeGreaterThanOrEqual(0)
     expect(css.slice(mediaStart)).toMatch(/\.chat-panel__composer[\s\S]*?flex-direction:\s*column/)
   })
 
-  it('App.css でコンポーザー内 textarea の上限幅が 560px より広い', () => {
-    const css = readAppCss()
+  it('ChatPanel.css でコンポーザー内 textarea の上限幅が 560px より広い', () => {
+    const css = readChatPanelCss()
     expect(css).toMatch(/\.chat-panel__composer\s+textarea\s*\{[^}]*max-width:\s*min\(\s*100%\s*,\s*960px\s*\)/s)
   })
 
