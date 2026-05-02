@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from 'react'
+import './EventsPanel.css'
+
 import type { EventRow } from '../../api/schemas'
 import {
   formatIsoInTimeZone,

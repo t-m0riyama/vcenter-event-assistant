@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import './EventTypeGuidesPanel.css'
+
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
 import {
   buildEventTypeGuidesExportPayload,

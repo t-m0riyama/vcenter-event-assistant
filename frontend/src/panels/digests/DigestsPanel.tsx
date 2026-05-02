@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import './DigestsPanel.css'
+
 import ReactMarkdown from 'react-markdown'
 import { apiGet } from '../../api'
 import { rehypePlugins, remarkPlugins } from '../../markdown/gfmSanitizedMarkdownPlugins'

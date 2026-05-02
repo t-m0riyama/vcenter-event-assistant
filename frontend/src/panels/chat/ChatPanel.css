@@ -1,0 +1,211 @@
+.chat-panel__section {
+  margin-bottom: var(--spacing-4);
+}
+
+.chat-panel__messages {
+  /* メッセージ行の offsetTop がリスト内座標になるよう（スクロール位置計算と一致させる） */
+  position: relative;
+  list-style: none;
+  margin: 0 0 var(--spacing-4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+}
+
+.chat-panel__msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  align-items: flex-start;
+}
+
+.chat-panel__msg--assistant {
+  align-items: flex-end;
+}
+
+.chat-panel__msg--assistant .chat-panel__bubble {
+  background: var(--color-background-secondary);
+}
+
+.chat-panel__msg--pending {
+  align-items: flex-end;
+}
+
+.chat-panel__bubble--pending {
+  color: var(--color-text-secondary);
+  font-style: italic;
+  white-space: normal;
+}
+
+.chat-panel__role {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
+.chat-panel__msg-meta {
+  color: var(--color-text-secondary);
+}
+
+.chat-panel__metrics {
+  opacity: 0.8;
+}
+
+.chat-panel__bubble {
+  word-break: break-word;
+  max-width: min(100%, 560px);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+}
+
+.chat-panel__msg-actions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: min(100%, 560px);
+  margin-top: var(--spacing-1);
+}
+
+.chat-panel__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.chat-panel__icon-btn.chat-panel__send-btn {
+  /* 送信はプライマリ色上でアイコンを白に */
+  color: var(--color-on-primary);
+}
+
+/* インライン SVG のベースライン下の余白を抑え、flex 内で縮まないようにする */
+.chat-panel__icon-svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Markdown ブロック（表・リスト等）向け。プレーン改行は GFM の段落ルールに従う */
+.chat-panel__markdown {
+  white-space: normal;
+}
+
+.chat-panel__markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-panel__markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-panel__composer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  align-items: flex-start;
+}
+
+.chat-panel__sample-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  max-width: min(100%, 960px);
+}
+
+.chat-panel__sample-toggle[aria-pressed='true'] {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.chat-custom-samples-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-bottom: var(--spacing-2);
+}
+
+.chat-custom-samples-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.chat-custom-samples-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.chat-custom-samples-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.chat-custom-samples-field input,
+.chat-custom-samples-field textarea {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.chat-panel__composer {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--spacing-2);
+  width: 100%;
+  max-width: min(100%, 960px);
+}
+
+.chat-panel__composer-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-panel__composer-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  width: 100%;
+}
+
+.chat-panel__composer textarea {
+  width: 100%;
+  max-width: min(100%, 960px);
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.chat-panel__composer .btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .chat-panel__composer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chat-panel__composer .btn {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .chat-panel__sample-prompts .btn {
+    align-self: stretch;
+  }
+}

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import './ScoreRulesPanel.css'
+
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
 import {
   buildScoreRulesExportPayload,
