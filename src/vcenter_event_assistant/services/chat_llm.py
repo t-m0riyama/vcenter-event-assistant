@@ -26,7 +26,7 @@ from vcenter_event_assistant.services.llm_profile import (
     is_chat_llm_configured,
     resolve_llm_profile,
 )
-from vcenter_event_assistant.services.llm_invoke import stream_chat_to_text
+from vcenter_event_assistant.services.llm_invoke import log_llm_failure, stream_chat_to_text
 from vcenter_event_assistant.settings import Settings
 
 _logger = logging.getLogger(__name__)
@@ -83,32 +83,7 @@ _CHAT_SYSTEM_PROMPT = (
 )
 
 
-def _log_chat_llm_failure(settings: Settings, exc: BaseException) -> None:
-    """運用向け。API キーはログに出さない。"""
-    prof = resolve_llm_profile(settings, purpose="chat")
-    if prof.provider == "openai_compatible":
-        base = (prof.base_url or "").rstrip("/")
-        _logger.warning(
-            "chat LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
-            base,
-            prof.model,
-            exc,
-            exc_info=True,
-        )
-    elif prof.provider == "copilot_cli":
-        _logger.warning(
-            "chat LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
-            prof.model,
-            exc,
-            exc_info=True,
-        )
-    else:
-        _logger.warning(
-            "chat LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
-            prof.model,
-            exc,
-            exc_info=True,
-        )
+
 
 
 def _trim_json_raw(raw: str, max_chars: int) -> str:
@@ -373,6 +348,6 @@ async def run_period_chat(
         text = deanonymize_text(text.strip(), reverse_map)
         return (text, None, meta, latency_ms, token_per_sec)
     except Exception as e:
-        _log_chat_llm_failure(settings, e)
+        log_llm_failure(settings, "chat", e)
         detail = _llm_failure_detail_for_user(e)
         return ("", f"チャット応答を取得できませんでした（{detail}）", meta, None, None)
