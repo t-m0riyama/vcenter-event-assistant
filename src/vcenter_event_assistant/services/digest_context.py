@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.db.models import EventRecord, VCenter
-from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.vcenter_labels import load_vcenter_labels_map
 from vcenter_event_assistant.services.metric_ranking import (
     metric_samples_to_high_host_rows,
