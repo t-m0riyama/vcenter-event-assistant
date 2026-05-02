@@ -125,7 +125,6 @@ async def post_chat_preview(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
 ) -> ChatPreviewResponse:
-    settings = get_settings()
     ctx, period_metrics, event_time_buckets = await _build_chat_context_payloads(session, body)
 
     vc_anon = await load_all_vcenter_anonymization_strings(session)
