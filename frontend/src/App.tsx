@@ -40,8 +40,19 @@ const MetricsPanel = lazy(async () => {
 })
 
 type Tab = MainTabId
-
 type SettingsSubTab = SettingsSubTabId
+
+type TabConfig = { id: Tab; label: string }
+
+const MAIN_TABS: TabConfig[] = [
+  { id: 'summary', label: '概要' },
+  { id: 'events', label: 'イベント' },
+  { id: 'metrics', label: 'グラフ' },
+  { id: 'digests', label: 'ダイジェスト' },
+  { id: 'alerts', label: '通知履歴' },
+  { id: 'chat', label: 'チャット' },
+  { id: 'settings', label: '設定' },
+]
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
@@ -91,33 +102,23 @@ export default function App() {
         )}
 
         <nav className="tabs">
-          {(['summary', 'events', 'metrics', 'digests', 'alerts', 'chat', 'settings'] as const).map(
-            (t) => (
-              <button
-                key={t}
-                type="button"
-                className={tab === t ? 'active' : undefined}
-                onClick={() => {
-                  setTab(t)
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              >
-                <span className="tab-button__inner">
-                  <MainTabIcon tabId={t} />
-                  <span className="tab-button__label">
-                    {t === 'summary' && '概要'}
-                    {t === 'events' && 'イベント'}
-                    {t === 'metrics' && 'グラフ'}
-                    {t === 'digests' && 'ダイジェスト'}
-                    {t === 'alerts' && '通知履歴'}
-                    {t === 'chat' && 'チャット'}
-                    {t === 'settings' && '設定'}
-                  </span>
-                </span>
-              </button>
-            ),
-          )}
+          {MAIN_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={tab === t.id ? 'active' : undefined}
+              onClick={() => {
+                setTab(t.id)
+                setShowHelp(false)
+                setErr(null)
+              }}
+            >
+              <span className="tab-button__inner">
+                <MainTabIcon tabId={t.id} />
+                <span className="tab-button__label">{t.label}</span>
+              </span>
+            </button>
+          ))}
         </nav>
 
         <main className="main">
