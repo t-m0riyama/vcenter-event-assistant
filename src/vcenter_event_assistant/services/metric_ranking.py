@@ -4,16 +4,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
-
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import MetricSample
 from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
-
-if TYPE_CHECKING:
-    from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 
 
 async def query_top_metric_hosts(
@@ -67,7 +62,7 @@ def metric_samples_to_high_host_rows(
     label_map: dict[uuid.UUID, str],
     *,
     row_class: type[HighCpuHostRow] | type[HighMemHostRow],
-) -> list[Any]:
+) -> list[HighCpuHostRow] | list[HighMemHostRow]:
     """Convert MetricSample rows to HighCpuHostRow or HighMemHostRow."""
     return [
         row_class(

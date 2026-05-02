@@ -232,8 +232,14 @@ async def build_digest_context(
         for et, cnt in type_rows
     ]
 
-    cpu_rows = await query_top_metric_hosts(session, "host.cpu.usage_pct", from_utc, to_utc, vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT)
-    mem_rows = await query_top_metric_hosts(session, "host.mem.usage_pct", from_utc, to_utc, vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT)
+    cpu_rows = await query_top_metric_hosts(
+        session, "host.cpu.usage_pct", from_utc, to_utc,
+        vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT,
+    )
+    mem_rows = await query_top_metric_hosts(
+        session, "host.mem.usage_pct", from_utc, to_utc,
+        vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT,
+    )
 
     ids_for_label = {r.vcenter_id for r in cpu_rows} | {r.vcenter_id for r in mem_rows}
     label_map = await load_vcenter_labels_map(session, ids_for_label)

@@ -350,8 +350,6 @@ class Settings(BaseSettings):
         """空文字・空白のみは None に正規化する。"""
         return _normalize_empty_to_none(v)
 
-
-
     @property
     def effective_digest_daily_enabled(self) -> bool:
         """日次ダイジェストジョブを登録するか（新フラグとレガシーの OR）。"""
