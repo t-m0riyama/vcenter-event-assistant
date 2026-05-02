@@ -9,6 +9,23 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+def _normalize_to_utc(v: object) -> datetime:
+    """datetime / ISO-8601 文字列を UTC に正規化する（複数の field_validator 共通）。"""
+    if isinstance(v, datetime):
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+    if isinstance(v, str):
+        s = v.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    raise TypeError("expected datetime or ISO-8601 string")
+
+
 class VCenterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     host: str = Field(min_length=1, max_length=512)
@@ -73,11 +90,7 @@ class EventRead(BaseModel):
     @field_validator("occurred_at", mode="before")
     @classmethod
     def occurred_at_to_utc(cls, v: object) -> datetime:
-        if not isinstance(v, datetime):
-            raise TypeError("occurred_at must be a datetime")
-        if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+        return _normalize_to_utc(v)
 
 
 class EventUserCommentPatch(BaseModel):
@@ -113,11 +126,7 @@ class MetricPoint(BaseModel):
     @field_validator("sampled_at", mode="before")
     @classmethod
     def sampled_at_to_utc(cls, v: object) -> datetime:
-        if not isinstance(v, datetime):
-            raise TypeError("sampled_at must be a datetime")
-        if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+        return _normalize_to_utc(v)
 
 
 class MetricSeriesResponse(BaseModel):
@@ -150,11 +159,7 @@ class HighCpuHostRow(BaseModel):
     @field_validator("sampled_at", mode="before")
     @classmethod
     def sampled_at_to_utc(cls, v: object) -> datetime:
-        if not isinstance(v, datetime):
-            raise TypeError("sampled_at must be a datetime")
-        if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+        return _normalize_to_utc(v)
 
 
 class HighMemHostRow(BaseModel):
@@ -174,11 +179,7 @@ class HighMemHostRow(BaseModel):
     @field_validator("sampled_at", mode="before")
     @classmethod
     def sampled_at_to_utc(cls, v: object) -> datetime:
-        if not isinstance(v, datetime):
-            raise TypeError("sampled_at must be a datetime")
-        if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
+        return _normalize_to_utc(v)
 
 
 class EventTypeCountRow(BaseModel):
@@ -352,19 +353,7 @@ class DigestRead(BaseModel):
         """
         ORM からは ``datetime`` が来る想定だが、ドライバ差で ISO 文字列になる場合も UTC に正規化する。
         """
-        if isinstance(v, datetime):
-            if v.tzinfo is None:
-                return v.replace(tzinfo=timezone.utc)
-            return v.astimezone(timezone.utc)
-        if isinstance(v, str):
-            s = v.strip()
-            if s.endswith("Z"):
-                s = s[:-1] + "+00:00"
-            dt = datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                return dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
-        raise TypeError("expected datetime or ISO-8601 string")
+        return _normalize_to_utc(v)
 
 
 class DigestListResponse(BaseModel):
