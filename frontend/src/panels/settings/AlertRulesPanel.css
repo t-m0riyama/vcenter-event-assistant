@@ -49,3 +49,24 @@
   border: 1px solid var(--color-border);
   background: var(--color-background);
 }
+
+.editable-row {
+  cursor: pointer;
+}
+
+.expanded-row td {
+  border-bottom: none;
+}
+
+.edit-row td {
+  background: var(--color-background-subtle, #f7f7fb);
+  border-top: none;
+}
+
+.edit-row .form-grid {
+  margin-top: 0.4rem;
+}
+
+.edit-row-hint {
+  margin: 0.55rem 0 0;
+}

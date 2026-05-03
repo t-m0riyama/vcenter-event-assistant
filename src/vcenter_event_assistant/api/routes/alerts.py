@@ -13,6 +13,22 @@ from vcenter_event_assistant.db.models import AlertRule, AlertHistory
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
+
+def _is_alert_rule_name_unique_violation(exc: IntegrityError) -> bool:
+    orig = getattr(exc, "orig", None)
+    diag = getattr(orig, "diag", None)
+    constraint_name = getattr(diag, "constraint_name", None)
+    if isinstance(constraint_name, str) and constraint_name:
+        lowered = constraint_name.lower()
+        if "alert" in lowered and "name" in lowered:
+            return True
+
+    parts = [str(exc)]
+    if orig is not None:
+        parts.append(str(orig))
+    message = " ".join(parts).lower()
+    return "unique" in message and "alert_rules" in message and "name" in message
+
 @router.get("/rules", response_model=list[AlertRuleRead])
 async def list_alert_rules(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(AlertRule).order_by(AlertRule.name.asc()))
@@ -21,7 +37,7 @@ async def list_alert_rules(session: AsyncSession = Depends(get_session)):
 @router.post("/rules", response_model=AlertRuleRead, status_code=status.HTTP_201_CREATED)
 async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depends(get_session)):
     # 同名のルールがないかチェック
-    res = await session.execute(select(AlertRule).where(AlertRule.name == body.name))
+    res = await session.execute(select(AlertRule.id).where(AlertRule.name == body.name))
     if res.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Alert rule with this name already exists")
     
@@ -33,7 +49,12 @@ async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depen
         config=body.config,
     )
     session.add(rule)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if _is_alert_rule_name_unique_violation(exc):
+            raise HTTPException(status_code=409, detail="Alert rule with this name already exists") from exc
+        raise
     await session.refresh(rule)
     return rule
 
@@ -42,10 +63,13 @@ async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSe
     rule = await session.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Alert rule not found")
+
+    previous_name = rule.name
+    name_changed = body.name is not None and body.name != previous_name
     
     if body.name is not None:
         existing = await session.execute(
-            select(AlertRule).where(AlertRule.name == body.name, AlertRule.id != rule_id)
+            select(AlertRule.id).where(AlertRule.name == body.name, AlertRule.id != rule_id)
         )
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Alert rule with this name already exists")
@@ -60,7 +84,7 @@ async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSe
     try:
         await session.flush()
     except IntegrityError as exc:
-        if body.name is not None:
+        if name_changed and _is_alert_rule_name_unique_violation(exc):
             raise HTTPException(status_code=409, detail="Alert rule with this name already exists") from exc
         raise
     await session.refresh(rule)
