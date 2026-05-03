@@ -36,3 +36,37 @@
 .disabled-row td {
   color: var(--color-text-secondary);
 }
+
+.alert-rules-panel .col-level {
+  white-space: nowrap;
+}
+
+.alert-level-select {
+  min-width: 7.5rem;
+  font-size: var(--font-size-footnote);
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.editable-row {
+  cursor: pointer;
+}
+
+.expanded-row td {
+  border-bottom: none;
+}
+
+.edit-row td {
+  background: var(--color-background-subtle, #f7f7fb);
+  border-top: none;
+}
+
+.edit-row .form-grid {
+  margin-top: 0.4rem;
+}
+
+.edit-row-hint {
+  margin: 0.55rem 0 0;
+}

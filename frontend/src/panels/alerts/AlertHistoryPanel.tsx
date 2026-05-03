@@ -4,10 +4,19 @@ import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import './AlertHistoryPanel.css'
 
+type AlertLevel = 'critical' | 'error' | 'warning'
+
+const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
+  critical: 'クリティカル',
+  error: 'エラー',
+  warning: '警告',
+}
+
 interface AlertHistory {
   id: number
   rule_id: number
   rule_name: string | null
+  alert_level: AlertLevel
   state: string
   context_key: string
   notified_at: string
@@ -21,6 +30,9 @@ interface HistoryResponse {
   total: number
 }
 
+/**
+ * メール通知の履歴一覧（ルール名・レベル・発火/回復・結果）を表示するパネル。
+ */
 export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void }) {
   const { timeZone } = useTimeZone()
   const [history, setHistory] = useState<AlertHistory[]>([])
@@ -65,6 +77,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
               <tr>
                 <th>日時</th>
                 <th>ルール名</th>
+                <th>レベル</th>
                 <th>状態</th>
                 <th>対象</th>
                 <th>結果</th>
@@ -75,6 +88,11 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                 <tr key={h.id}>
                   <td className="col-time">{formatIsoInTimeZone(h.notified_at, timeZone)}</td>
                   <td className="col-rule">{h.rule_name || `Rule #${h.rule_id}`}</td>
+                  <td className="col-level">
+                    <span className={`level-badge level-badge--${h.alert_level}`}>
+                      {ALERT_LEVEL_LABELS[h.alert_level] ?? h.alert_level}
+                    </span>
+                  </td>
                   <td className="col-state">
                     <span className={`state-badge ${h.state}`}>
                       {h.state === 'firing' ? '発火中' : '回復済み'}

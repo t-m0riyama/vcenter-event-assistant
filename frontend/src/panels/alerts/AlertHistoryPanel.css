@@ -74,3 +74,29 @@
   font-size: var(--font-size-caption2);
   color: var(--color-text-secondary);
 }
+
+.level-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 10px;
+  font-size: var(--font-size-caption2);
+  font-weight: var(--font-weight-semibold);
+  border: 1px solid var(--color-border);
+}
+
+.level-badge--critical {
+  background: color-mix(in srgb, var(--color-error, #ff453a) 18%, transparent);
+  color: var(--color-error, #ff453a);
+  border-color: color-mix(in srgb, var(--color-error, #ff453a) 35%, transparent);
+}
+
+.level-badge--error {
+  background: color-mix(in srgb, var(--color-warning, #ff9f0a) 20%, transparent);
+  color: var(--color-warning, #ff9f0a);
+  border-color: color-mix(in srgb, var(--color-warning, #ff9f0a) 35%, transparent);
+}
+
+.level-badge--warning {
+  background: var(--color-gray-100, #f2f2f7);
+  color: var(--color-text-secondary);
+}

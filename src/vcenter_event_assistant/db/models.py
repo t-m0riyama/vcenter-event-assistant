@@ -141,6 +141,8 @@ class AlertRule(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     rule_type: Mapped[str] = mapped_column(String(64), index=True)  # "event_score" or "metric_threshold"
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # critical / error / warning（運用上の重大度）
+    alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -173,6 +175,8 @@ class AlertHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
+    # 通知送信時点のレベル（ルール変更後も履歴上の重大度を保つ）
+    alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)
     state: Mapped[str] = mapped_column(String(32), index=True)
     context_key: Mapped[str] = mapped_column(String(512), index=True)
     notified_at: Mapped[datetime] = mapped_column(

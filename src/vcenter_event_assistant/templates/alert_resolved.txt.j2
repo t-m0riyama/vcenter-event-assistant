@@ -1,7 +1,8 @@
-[RESOLVED] {{ rule_name }} - {{ context_key }}
+[RESOLVED][{{ alert_level }}] {{ rule_name }} - {{ context_key }}
 
 Alert has been RESOLVED.
 
+Level: {{ alert_level_label }} ({{ alert_level }})
 Rule: {{ rule_name }}
 Resource: {{ context_key }}
 Fired At: {{ fired_at.isoformat() }}

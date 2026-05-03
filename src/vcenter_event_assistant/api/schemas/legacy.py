@@ -389,12 +389,14 @@ class AlertRuleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     rule_type: Literal["event_score", "metric_threshold"]
     is_enabled: bool = True
+    alert_level: Literal["critical", "error", "warning"]
     config: dict = Field(default_factory=dict)
 
 
 class AlertRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     is_enabled: bool | None = None
+    alert_level: Literal["critical", "error", "warning"] | None = None
     config: dict | None = None
 
 
@@ -405,6 +407,7 @@ class AlertRuleRead(BaseModel):
     name: str
     rule_type: str
     is_enabled: bool
+    alert_level: Literal["critical", "error", "warning"]
     config: dict
     created_at: datetime
 
@@ -415,6 +418,7 @@ class AlertHistoryRead(BaseModel):
     id: int
     rule_id: int
     rule_name: str | None = None
+    alert_level: Literal["critical", "error", "warning"]
     state: str
     context_key: str
     notified_at: datetime
