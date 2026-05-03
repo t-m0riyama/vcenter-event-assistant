@@ -29,12 +29,17 @@
   margin-top: var(--spacing-4);
 }
 
-.disabled-row {
-  opacity: 0.6;
-}
-
 .disabled-row td {
   color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-background-elevated) 86%, var(--color-border) 14%);
+}
+
+.disabled-row td:first-child {
+  border-left: 3px solid var(--color-border);
+}
+
+.alert-rules-panel .disabled-row:hover td {
+  background: color-mix(in srgb, var(--color-background-elevated) 78%, var(--color-border) 22%);
 }
 
 .alert-rules-panel .col-level {
@@ -51,7 +56,20 @@
 }
 
 .editable-row {
-  cursor: pointer;
+  background: var(--color-background-elevated);
+}
+
+.alert-rules-panel .editable-row td {
+  background: var(--color-background-elevated);
+  transition: background-color 0.18s ease;
+}
+
+.alert-rules-panel .editable-row:hover td {
+  background: color-mix(in srgb, var(--color-border) 35%, var(--color-background-elevated));
+}
+
+.alert-rules-panel .disabled-row.editable-row:hover td {
+  background: color-mix(in srgb, var(--color-background-elevated) 78%, var(--color-border) 22%);
 }
 
 .expanded-row td {
@@ -59,8 +77,21 @@
 }
 
 .edit-row td {
-  background: var(--color-background-subtle, #f7f7fb);
+  background: var(--color-background);
   border-top: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.edit-row .form-grid,
+.edit-row .form-actions {
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--spacing-3);
+}
+
+.edit-row .form-actions {
+  margin-top: var(--spacing-3);
 }
 
 .edit-row .form-grid {

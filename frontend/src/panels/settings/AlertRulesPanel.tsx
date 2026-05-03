@@ -271,13 +271,25 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
               const draft = drafts[r.id] ?? makeDraftFromRule(r)
               const expanded = expandedId === r.id
               const changed = isDraftChanged(r, draft)
+              const editRowId = `alert-rule-edit-row-${r.id}`
               return (
                 <Fragment key={r.id}>
                   <tr
                     className={`${r.is_enabled ? '' : 'disabled-row'} editable-row ${expanded ? 'expanded-row' : ''}`}
-                    onClick={() => handleExpandRow(r)}
                   >
-                    <td>{r.name}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--gray"
+                        aria-expanded={expanded}
+                        aria-controls={editRowId}
+                        aria-label={expanded ? `${r.name} の編集を閉じる` : `${r.name} の編集を開く`}
+                        onClick={() => handleExpandRow(r)}
+                      >
+                        {expanded ? '▾' : '▸'}
+                      </button>{' '}
+                      {r.name}
+                    </td>
                     <td>{r.rule_type === 'event_score' ? 'イベント' : 'メトリクス'}</td>
                     <td>
                       {r.rule_type === 'event_score' ? (
@@ -286,7 +298,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                         <span>{r.config.metric_key} ≥ {r.config.threshold}</span>
                       )}
                     </td>
-                    <td className="col-level" onClick={(e) => e.stopPropagation()}>
+                    <td className="col-level">
                       <select
                         className="alert-level-select"
                         value={r.alert_level}
@@ -298,17 +310,22 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                         <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
                       </select>
                     </td>
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td>
                       <label className="check">
-                        <input type="checkbox" checked={r.is_enabled} onChange={() => handleToggle(r)} />
+                        <input
+                          type="checkbox"
+                          checked={r.is_enabled}
+                          onChange={() => handleToggle(r)}
+                          aria-label={`${r.name} を${r.is_enabled ? '無効化' : '有効化'}`}
+                        />
                       </label>
                     </td>
-                    <td className="actions" onClick={(e) => e.stopPropagation()}>
+                    <td className="actions">
                       <button type="button" className="btn btn--gray" onClick={() => handleDelete(r.id)}>削除</button>
                     </td>
                   </tr>
                   {expanded ? (
-                    <tr className="edit-row">
+                    <tr id={editRowId} className="edit-row">
                       <td colSpan={6}>
                         <div className="form-grid">
                           <label>
