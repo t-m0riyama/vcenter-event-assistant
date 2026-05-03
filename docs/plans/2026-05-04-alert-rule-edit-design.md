@@ -29,14 +29,14 @@
 flowchart LR
   rowCollapsed["行（折りたたみ）<br/>名前 / タイプ / 条件 / レベル▼ / 有効☑ / 削除"]
   rowExpanded["行（展開）<br/>名前 入力 / 閾値 入力 / メトリクスキー or クールダウン分 / 保存 / キャンセル"]
-  rowCollapsed -- "クリックで展開" --> rowExpanded
+  rowCollapsed -- "トグルで展開" --> rowExpanded
   rowExpanded -- "保存→PATCH→fetchRules" --> rowCollapsed
   rowExpanded -- "キャンセル→draft破棄" --> rowCollapsed
 ```
 
-- 行は `<details>` でラップし、`<summary>` クリックで展開。
+- 行はテーブル構造のままにし、名前セル内のトグルボタン（シェブロン）で展開。
 - 「レベル」「有効」「削除」は **サマリ側に残す**（即時操作・展開不要）。
-- 「編集」ボタンは置かず、サマリ全体クリック＝展開で統一（EventTypeGuides と同じ振る舞い）。
+- 行全体クリックは使わず、トグル操作に限定して誤タップを防ぐ。
 - `draft: Record<number, EditDraft>` を保持し、未保存変更があるときだけ「保存」を活性化。`rule.id` ごとに独立。
 - 保存成功で `fetchRules()` し、`draft[id]` を破棄。
 - 展開領域に「タイプは変更できません。条件タイプを変える場合は削除して再作成してください。」のヒント文を 1 行表示。
