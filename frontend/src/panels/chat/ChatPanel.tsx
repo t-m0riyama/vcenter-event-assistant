@@ -36,7 +36,7 @@ import {
   trimChatMessagesToMax,
   writeChatPanelSnapshot,
 } from '../../preferences/chatPanelStorage'
-import { appendSelectedChatSampleTextsToDraft } from './appendSelectedChatSampleTextsToDraft'
+import { appendChatSampleTextToDraft } from './appendChatSampleTextToDraft'
 import { ChatCopyAnswerSvg, ChatPreviewSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 import { ChatPromptPreviewModal } from './ChatPromptPreviewModal'
@@ -51,7 +51,7 @@ const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
  * アシスタント応答後はそのメッセージ先頭が見える位置へ、ユーザーのみ末尾のときはリスト最下端へ寄せる。
  * 送信中はリスト末尾にプレースホルダ行を出し、`aria-busy` で状態を示す。
- * サンプル質問はトグル複数選択後「下書きに挿入」で textarea に反映する（`ChatSamplePromptsProvider` 必須）。
+ * サンプル質問はチップをクリックすると textarea 末尾へ即時追記する（送信はしない。`ChatSamplePromptsProvider` 必須）。
  */
 export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
@@ -72,7 +72,6 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
-  const [selectedSampleIds, setSelectedSampleIds] = useState(() => new Set<string>())
   /** `localStorage` からの初回復元が終わるまで永続化 `write` しない */
   const [storageHydrated, setStorageHydrated] = useState(false)
   /** `draft` の debounce 反映値（永続化スナップショットの `draft` に使う） */
@@ -357,28 +356,6 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     chatMaxStoredMessages,
   ])
 
-  const toggleSampleSelection = useCallback((id: string) => {
-    setSelectedSampleIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
-
-  const insertSelectedSamplesIntoDraft = useCallback(() => {
-    setDraft((d) =>
-      appendSelectedChatSampleTextsToDraft(d, visibleChatSamplePrompts, selectedSampleIds),
-    )
-    setSelectedSampleIds(new Set())
-    queueMicrotask(() => {
-      draftTextareaRef.current?.focus()
-    })
-  }, [visibleChatSamplePrompts, selectedSampleIds])
-
   const copyAssistantMessageContent = useCallback(
     async (content: string) => {
       const text = content.trim()
@@ -552,24 +529,15 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
               key={row.id}
               type="button"
               className="btn btn--gray chat-panel__sample-toggle"
-              aria-pressed={selectedSampleIds.has(row.id)}
               aria-label={`サンプル「${row.label}」`}
               disabled={loading}
               onClick={() => {
-                toggleSampleSelection(row.id)
+                setDraft((d) => appendChatSampleTextToDraft(d, row.text))
               }}
             >
               {row.label}
             </button>
           ))}
-          <button
-            type="button"
-            className="btn btn--filled"
-            disabled={loading || selectedSampleIds.size === 0}
-            onClick={insertSelectedSamplesIntoDraft}
-          >
-            下書きに挿入
-          </button>
         </div>
         <div className="chat-panel__composer">
           <div className="chat-panel__composer-field">

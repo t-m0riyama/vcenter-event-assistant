@@ -118,11 +118,6 @@
   max-width: min(100%, 960px);
 }
 
-.chat-panel__sample-toggle[aria-pressed='true'] {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
 .chat-custom-samples-actions {
   display: flex;
   flex-wrap: wrap;
