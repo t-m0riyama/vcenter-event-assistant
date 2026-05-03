@@ -252,7 +252,7 @@ describe('ChatPanel', () => {
     )
   })
 
-  it('サンプルを複数選択して下書きに挿入すると定義順で \\n\\n 連結される', async () => {
+  it('サンプルをクリックするたび下書きへ即時追記され、クリック順が反映される', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -269,18 +269,12 @@ describe('ChatPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'サンプル「メトリクス併用」' }))
     fireEvent.click(screen.getByRole('button', { name: 'サンプル「期間の要約」' }))
-    fireEvent.click(screen.getByRole('button', { name: '下書きに挿入' }))
 
     const ta = screen.getByPlaceholderText('質問を入力…') as HTMLTextAreaElement
     expect(ta.value).toContain('この期間のイベントと傾向を')
     expect(ta.value).toContain('期間メトリクス（CPU・メモリ等）')
-    expect(ta.value.indexOf('この期間のイベントと傾向を')).toBeLessThan(
-      ta.value.indexOf('期間メトリクス（CPU・メモリ等）'),
-    )
-
-    expect(screen.getByRole('button', { name: 'サンプル「期間の要約」' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
+    expect(ta.value.indexOf('期間メトリクス（CPU・メモリ等）')).toBeLessThan(
+      ta.value.indexOf('この期間のイベントと傾向を'),
     )
   })
 
@@ -301,14 +295,13 @@ describe('ChatPanel', () => {
 
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: '既存' } })
     fireEvent.click(screen.getByRole('button', { name: 'サンプル「期間の要約」' }))
-    fireEvent.click(screen.getByRole('button', { name: '下書きに挿入' }))
 
     const ta = screen.getByPlaceholderText('質問を入力…') as HTMLTextAreaElement
     expect(ta.value.startsWith('既存')).toBe(true)
     expect(ta.value).toContain('この期間のイベントと傾向を')
   })
 
-  it('送信中はサンプルトグルと下書きに挿入が無効になる', async () => {
+  it('送信中はサンプルチップが無効になる', async () => {
     let releasePost: (() => void) | undefined
     const postPromise = new Promise<Response>((resolve) => {
       releasePost = () => {
@@ -340,7 +333,6 @@ describe('ChatPanel', () => {
       expect(screen.getByText('応答を生成しています…')).toBeInTheDocument()
     })
 
-    expect(screen.getByRole('button', { name: '下書きに挿入' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'サンプル「期間の要約」' })).toBeDisabled()
 
     releasePost?.()
