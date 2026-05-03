@@ -1,6 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, desc, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.deps import get_session
@@ -28,7 +29,8 @@ async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depen
         name=body.name,
         rule_type=body.rule_type,
         is_enabled=body.is_enabled,
-        config=body.config
+        alert_level=body.alert_level,
+        config=body.config,
     )
     session.add(rule)
     await session.flush()
@@ -42,13 +44,25 @@ async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSe
         raise HTTPException(status_code=404, detail="Alert rule not found")
     
     if body.name is not None:
+        existing = await session.execute(
+            select(AlertRule).where(AlertRule.name == body.name, AlertRule.id != rule_id)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Alert rule with this name already exists")
         rule.name = body.name
     if body.is_enabled is not None:
         rule.is_enabled = body.is_enabled
     if body.config is not None:
         rule.config = body.config
-    
-    await session.flush()
+    if body.alert_level is not None:
+        rule.alert_level = body.alert_level
+
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if body.name is not None:
+            raise HTTPException(status_code=409, detail="Alert rule with this name already exists") from exc
+        raise
     await session.refresh(rule)
     return rule
 

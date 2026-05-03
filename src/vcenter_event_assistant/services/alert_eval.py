@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, desc
 from vcenter_event_assistant.db.models import AlertRule, AlertState, AlertHistory, EventRecord, MetricSample
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.alert_levels import alert_level_label_ja
 from vcenter_event_assistant.services.notification.renderer import NotificationRenderer
 from vcenter_event_assistant.services.notification.email_channel import EmailChannel
 
@@ -146,13 +147,16 @@ class AlertEvaluator:
         if resolved_at and resolved_at.tzinfo is None:
             resolved_at = resolved_at.replace(tzinfo=timezone.utc)
 
+        level = getattr(rule, "alert_level", None) or "warning"
         context = {
             "rule_name": rule.name,
             "state": state.state,
             "context_key": state.context_key,
             "fired_at": fired_at,
             "resolved_at": resolved_at,
-            **extra_context
+            "alert_level": level,
+            "alert_level_label": alert_level_label_ja(level),
+            **extra_context,
         }
         
         subject, body = self.renderer.render(rule, state, context)
@@ -170,11 +174,12 @@ class AlertEvaluator:
         async with session_scope() as session:
             history = AlertHistory(
                 rule_id=rule.id,
+                alert_level=level,
                 state=state.state,
                 context_key=state.context_key,
                 notified_at=datetime.now(timezone.utc),
                 channel="email",
                 success=success,
-                error_message=error_msg
+                error_message=error_msg,
             )
             session.add(history)

@@ -74,6 +74,8 @@
 - `GET/POST/PATCH/DELETE /api/alerts/rules`
 - `GET /api/alerts/history`
 
+アラートルールは `alert_level`（`critical` / `error` / `warning`）を持ち、メール通知の件名・本文および `alert_history` の各行に、通知時点のレベルが記録される。既存 DB はマイグレーションで `warning` を既定とする。イベント行の `severity`（VMware 由来）とは別の運用重大度である。
+
 ### 2.5 収集・ダイジェスト・チャット
 
 - `POST /api/ingest/run`  

@@ -20,11 +20,13 @@ def test_render_firing_alert():
     }
     
     subject, body = renderer.render(rule, state, context)
-    
+
     assert "[FIRING]" in subject
+    assert "[warning]" in subject
     assert "High CPU" in subject
     assert "High CPU" in body
     assert "FIRING" in body.upper()
+    assert "警告" in body
     assert "host-123" in body
     assert "95%" in body
 
@@ -47,8 +49,10 @@ def test_render_resolved_alert():
     }
     
     subject, body = renderer.render(rule, state, context)
-    
+
     assert "[RESOLVED]" in subject
+    assert "[warning]" in subject
     assert "High CPU" in subject
     assert "RESOLVED" in body.upper()
+    assert "警告" in body
     assert "Usage is now 20%" in body

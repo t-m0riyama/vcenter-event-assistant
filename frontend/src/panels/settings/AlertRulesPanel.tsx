@@ -2,11 +2,20 @@ import { useEffect, useState, useCallback } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../api'
 import './AlertRulesPanel.css'
 
+type AlertLevel = 'critical' | 'error' | 'warning'
+
+const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
+  critical: 'クリティカル',
+  error: 'エラー',
+  warning: '警告',
+}
+
 interface AlertRule {
   id: number
   name: string
   rule_type: 'event_score' | 'metric_threshold'
   is_enabled: boolean
+  alert_level: AlertLevel
   config: {
     threshold?: number
     metric_key?: string
@@ -15,12 +24,16 @@ interface AlertRule {
   created_at: string
 }
 
+/**
+ * アラートルールの一覧・新規作成・レベル変更（PATCH）・有効切替・削除を行う設定パネル。
+ */
 export function AlertRulesPanel({ onError }: { onError: (msg: string) => void }) {
   const [rules, setRules] = useState<AlertRule[]>([])
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<'event_score' | 'metric_threshold'>('event_score')
+  const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
   const [newThreshold, setNewThreshold] = useState(60)
   const [newMetricKey, setNewMetricKey] = useState('cpu.usage.average')
 
@@ -49,10 +62,21 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       await apiPost('/api/alerts/rules', {
         name: newName,
         rule_type: newType,
-        config
+        alert_level: newAlertLevel,
+        config,
       })
       setNewName('')
       setIsAdding(false)
+      fetchRules()
+    } catch (e) {
+      onError(String(e))
+    }
+  }
+
+  const handleLevelChange = async (rule: AlertRule, level: AlertLevel) => {
+    if (rule.alert_level === level) return
+    try {
+      await apiPatch(`/api/alerts/rules/${rule.id}`, { alert_level: level })
       fetchRules()
     } catch (e) {
       onError(String(e))
@@ -112,7 +136,19 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                 <option value="metric_threshold">メトリクス閾値</option>
               </select>
             </label>
-            
+            <label>
+              レベル
+              <select
+                value={newAlertLevel}
+                onChange={(e) => setNewAlertLevel(e.target.value as AlertLevel)}
+                title="クリティカル: すぐ対処 / エラー: 対処必須 / 警告: 検討"
+              >
+                <option value="critical">{ALERT_LEVEL_LABELS.critical}</option>
+                <option value="error">{ALERT_LEVEL_LABELS.error}</option>
+                <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
+              </select>
+            </label>
+
             {newType === 'metric_threshold' && (
               <label>
                 メトリクスキー
@@ -149,6 +185,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
             <th>名前</th>
             <th>タイプ</th>
             <th>条件</th>
+            <th>レベル</th>
             <th>有効</th>
             <th />
           </tr>
@@ -156,7 +193,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         <tbody>
           {rules.length === 0 ? (
             <tr>
-              <td colSpan={5} className="hint">ルールが設定されていません。</td>
+              <td colSpan={6} className="hint">ルールが設定されていません。</td>
             </tr>
           ) : (
             rules.map((r) => (
@@ -169,6 +206,18 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                   ) : (
                     <span>{r.config.metric_key} ≥ {r.config.threshold}</span>
                   )}
+                </td>
+                <td className="col-level">
+                  <select
+                    className="alert-level-select"
+                    value={r.alert_level}
+                    onChange={(e) => void handleLevelChange(r, e.target.value as AlertLevel)}
+                    aria-label={`${r.name} のアラートレベル`}
+                  >
+                    <option value="critical">{ALERT_LEVEL_LABELS.critical}</option>
+                    <option value="error">{ALERT_LEVEL_LABELS.error}</option>
+                    <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
+                  </select>
                 </td>
                 <td>
                   <label className="check">

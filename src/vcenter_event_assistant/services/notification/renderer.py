@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, PackageLoader, select_autoescape
+from vcenter_event_assistant.alert_levels import alert_level_label_ja
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.settings import get_settings
 
@@ -32,6 +33,11 @@ class NotificationRenderer:
         (件名, 本文) のタプルを返す。
         """
         settings = get_settings()
+
+        merged: dict = {**context}
+        level = getattr(rule, "alert_level", None) or merged.get("alert_level") or "warning"
+        merged.setdefault("alert_level", level)
+        merged.setdefault("alert_level_label", alert_level_label_ja(str(merged["alert_level"])))
         
         if state.state == "firing":
             custom_path = settings.alert_template_firing_path
@@ -50,7 +56,7 @@ class NotificationRenderer:
             # 同梱テンプレートを使用
             template = self.pkg_env.get_template(default_file)
 
-        rendered = template.render(**context)
+        rendered = template.render(**merged)
         
         # 1行目を件名、2行目以降を本文とする
         lines = rendered.strip().splitlines()
