@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **実装時は superpowers:test-driven-development を遵守する**（本節「TDD」参照）。
 
+> **追記 (2026-05-03):** チャットのスニペット UI は **クリックで下書きへ即時追記** に変更され、複数トグル選択と「下書きに挿入」は廃止。純関数は [`appendChatSampleTextToDraft`](../../frontend/src/panels/chat/appendChatSampleTextToDraft.ts) に置き換え。仕様は [`../specs/2026-05-03-chat-snippet-click-to-insert-design.md`](../specs/2026-05-03-chat-snippet-click-to-insert-design.md) を参照。
+
 **Goal:** チャットパネルで **複数のサンプル質問をトグル選択**し、「下書きに挿入」で **定義順・`\n\n` 区切り**で textarea に反映する（送信はしない）。既存下書きは **末尾追記**。その後、**設定の新サブタブ**から **カスタムサンプルを CRUD** し **localStorage** に保存、チャットのチップ一覧に **既定＋カスタム**で表示する。
 
-**Architecture:** 挿入ロジックは **純関数**（[`appendSelectedChatSampleTextsToDraft`](../../frontend/src/panels/chat/appendSelectedChatSampleTextsToDraft.ts)）に切り出し単体テストする。既定文は定数モジュール。フェーズ2では **カスタム配列だけ**を Zod で検証して localStorage へ保存し、[`ChatCustomSamplePromptsProvider`](../../frontend/src/preferences/ChatCustomSamplePromptsProvider.tsx)（新規）が [`SummaryTopNotableMinScoreProvider`](../../frontend/src/preferences/SummaryTopNotableMinScoreProvider.tsx) と同様に **状態＋永続化**を提供する。[`ChatPanel`](../../frontend/src/panels/chat/ChatPanel.tsx) は hook で **表示用プロンプト一覧**（既定＋カスタムのうち **label・text が非空**の行のみ）を受け取り、トグル＋挿入ボタンを描画する。
+**Architecture（当初）:** 挿入ロジックは **純関数**に切り出し単体テストする（2026-05-03 以降は [`appendChatSampleTextToDraft`](../../frontend/src/panels/chat/appendChatSampleTextToDraft.ts)）。既定文は定数モジュール。フェーズ2では **カスタム配列だけ**を Zod で検証して localStorage へ保存し、[`ChatCustomSamplePromptsProvider`](../../frontend/src/preferences/ChatCustomSamplePromptsProvider.tsx)（新規）が [`SummaryTopNotableMinScoreProvider`](../../frontend/src/preferences/SummaryTopNotableMinScoreProvider.tsx) と同様に **状態＋永続化**を提供する。[`ChatPanel`](../../frontend/src/panels/chat/ChatPanel.tsx) は hook で **表示用プロンプト一覧**（既定＋カスタムのうち **label・text が非空**の行のみ）を受け取り、チップを描画する（挿入 UI の詳細は上記追記参照）。
 
 **Tech Stack:** React 19、TypeScript、Vite、Vitest、Testing Library、Zod 4、localStorage（キーは `vea.` プレフィックス）。
 
@@ -30,8 +32,8 @@
 
 | 操作 | パス |
 |------|------|
-| 新規 | [`frontend/src/panels/chat/appendSelectedChatSampleTextsToDraft.ts`](../../frontend/src/panels/chat/appendSelectedChatSampleTextsToDraft.ts)（純関数） |
-| 新規 | [`frontend/src/panels/chat/appendSelectedChatSampleTextsToDraft.test.ts`](../../frontend/src/panels/chat/appendSelectedChatSampleTextsToDraft.test.ts) |
+| 新規（2026-05-03 リネーム） | [`frontend/src/panels/chat/appendChatSampleTextToDraft.ts`](../../frontend/src/panels/chat/appendChatSampleTextToDraft.ts)（純関数） |
+| 新規（2026-05-03 リネーム） | [`frontend/src/panels/chat/appendChatSampleTextToDraft.test.ts`](../../frontend/src/panels/chat/appendChatSampleTextToDraft.test.ts) |
 | 新規 | [`frontend/src/panels/chat/chatSamplePromptTypes.ts`](../../frontend/src/panels/chat/chatSamplePromptTypes.ts)（共有型） |
 | 新規 | [`frontend/src/panels/chat/defaultChatSamplePrompts.ts`](../../frontend/src/panels/chat/defaultChatSamplePrompts.ts)（既定 4 件程度） |
 | 変更 | [`frontend/src/panels/chat/ChatPanel.tsx`](../../frontend/src/panels/chat/ChatPanel.tsx)（トグル・挿入・`useChatCustomSamplePrompts`） |
