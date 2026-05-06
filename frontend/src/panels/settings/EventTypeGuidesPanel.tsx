@@ -188,7 +188,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   return (
     <div className="panel">
       <p className="hint">
-        イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに、一般的な意味・想定される原因・対処方法を登録します。「対処が必要」をオンにすると、概要・イベント一覧で該当行を強調します。
+        イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに、一般的な意味・想定される原因・対処方法をサーバーに保存します。「対処が必要」をオンにすると、概要・イベント一覧で該当行を強調します。
       </p>
 
       <h2>エクスポート・インポート</h2>

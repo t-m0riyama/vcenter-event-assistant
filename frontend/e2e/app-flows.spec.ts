@@ -27,7 +27,7 @@ test.describe('設定の全サブタブ', () => {
     await page.getByRole('button', { name: 'スコアルール' }).click()
     await expect(
       page.getByText(
-        'イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。',
+        'イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値をサーバーに保存します。',
       ),
     ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'エクスポート・インポート' })).toBeVisible()

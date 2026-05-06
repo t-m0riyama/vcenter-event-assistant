@@ -113,13 +113,9 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
 
   return (
     <div className="panel">
-      <h2>プロンプトスニペット</h2>
       <p className="hint">
         チャットタブの「サンプルの質問」チップに並ぶ行を編集します。保存先はこのブラウザの
         localStorage です。既定の行もここから編集・削除できます。
-      </p>
-      <p className="hint">
-        ラベルと本文の両方に文字が入っている行だけがチャットのチップに表示されます。
       </p>
 
       <h2>エクスポート・インポート</h2>
@@ -171,6 +167,9 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
       </div>
 
       <h2>一覧</h2>
+      <p className="hint">
+        ラベルと本文の両方に文字が入っている行だけがチャットのチップに表示されます。
+      </p>
       <p className="hint">
         「既定に戻す」は一覧をアプリ同梱の初期サンプルだけに置き換えます（編集・追加行は失われます）。
       </p>

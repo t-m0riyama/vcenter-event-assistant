@@ -254,7 +254,9 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   return (
     <div className="panel alert-rules-panel">
       <div className="alert-rules-panel-header">
-        <h2>アラートルール設定</h2>
+        <p className="hint">
+          イベントスコアやメトリクスに基づくアラート判定ルールをサーバーに保存します。判定対象になるのは有効化したルールだけです。
+        </p>
         <button type="button" className="btn btn--filled" onClick={() => setIsAdding(true)}>
           新規ルール追加
         </button>
