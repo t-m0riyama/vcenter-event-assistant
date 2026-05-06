@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelineColumn, IncidentTimelinePayload
 from vcenter_event_assistant.services.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import (
@@ -378,6 +379,62 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
     lc = captured["lc_messages"]
     user_block = str(lc[1].content)
     assert "event_time_buckets" in user_block
+    assert "digest_context" in user_block
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_includes_incident_timeline_in_user_block_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+    )
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    timeline = IncidentTimelinePayload(
+        columns=[
+            IncidentTimelineColumn(
+                timestamp_utc=t0,
+                visible_items=[],
+                hidden_count=0,
+            )
+        ]
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+        _ = purpose
+        _ = config
+        return object()
+
+    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+        captured["lc_messages"] = messages
+        return "incident", None, None
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.build_chat_model",
+        _fake_build,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_llm.stream_chat_to_text",
+        _spy_stream_fixed,
+    )
+
+    monkeypatch.setattr("vcenter_event_assistant.services.chat_llm.get_settings", lambda: s)
+    out, err, meta, _, _ = await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="q")],
+        incident_timeline=timeline,
+    )
+    assert err is None
+    assert out == "incident"
+    assert meta is not None
+    lc = captured["lc_messages"]
+    user_block = str(lc[1].content)
+    assert "incident_timeline" in user_block
     assert "digest_context" in user_block
 
 

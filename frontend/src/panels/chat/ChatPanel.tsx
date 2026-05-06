@@ -40,6 +40,7 @@ import { appendChatSampleTextToDraft } from './appendChatSampleTextToDraft'
 import { ChatCopyAnswerSvg, ChatPreviewSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 import { ChatPromptPreviewModal } from './ChatPromptPreviewModal'
+import { IncidentTimelinePanel } from './IncidentTimelinePanel'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
@@ -445,6 +446,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           ネットワーク IO
         </label>
       </section>
+
+      {previewData?.incident_timeline && (
+        <IncidentTimelinePanel timeline={previewData.incident_timeline} />
+      )}
 
       <ul
         ref={messagesListRef}

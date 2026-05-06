@@ -917,4 +917,51 @@ describe('ChatPanel', () => {
       expect(assignedScrollTops).not.toContain(alignTop)
     })
   })
+
+  it('プレビュー取得後にインシデント統合タイムラインを表示する', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat/preview') && init?.method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            context_block: 'ctx',
+            conversation: [{ role: 'user', content: '質問' }],
+            incident_timeline: {
+              columns: [
+                {
+                  timestamp_utc: '2026-05-07T00:00:00Z',
+                  items: [
+                    { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'イベント' },
+                    { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'アラート' },
+                  ],
+                  visible_items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'アラート' }],
+                  hidden_count: 1,
+                },
+              ],
+            },
+          }),
+        )
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '質問' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
+    })
+    expect(screen.getByText('アラート')).toHaveClass('incident-timeline__item--alert')
+  })
 })
