@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './DigestsPanel.css'
 
 import ReactMarkdown from 'react-markdown'
@@ -16,6 +16,9 @@ import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDispl
 export const DIGEST_LIST_PAGE_SIZE = 50
 
 type LoadState = 'loading' | 'ready' | 'error'
+type DigestKindFilter = 'all' | 'daily' | 'weekly' | 'monthly'
+
+const DIGEST_KIND_FILTERS: readonly DigestKindFilter[] = ['all', 'daily', 'weekly', 'monthly']
 
 function SelectedDigestDetail({
   selected,
@@ -81,10 +84,14 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   const [items, setItems] = useState<DigestRead[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [selectedKind, setSelectedKind] = useState<DigestKindFilter>('all')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [loadState, setLoadState] = useState<LoadState>('loading')
+  const latestRequestIdRef = useRef(0)
 
   const load = useCallback(async () => {
+    const requestId = latestRequestIdRef.current + 1
+    latestRequestIdRef.current = requestId
     onError(null)
     setLoadState('loading')
     try {
@@ -92,18 +99,21 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
         limit: String(DIGEST_LIST_PAGE_SIZE),
         offset: String(offset),
       })
+      if (selectedKind !== 'all') q.set('kind', selectedKind)
       const raw = await apiGet<unknown>(`/api/digests?${q.toString()}`)
       const parsed = parseDigestListResponse(raw)
+      if (requestId !== latestRequestIdRef.current) return
       setItems(parsed.items)
       setTotal(parsed.total)
       setLoadState('ready')
     } catch (e) {
+      if (requestId !== latestRequestIdRef.current) return
       setItems([])
       setTotal(0)
       setLoadState('error')
       onError(toErrorMessage(e))
     }
-  }, [offset, onError])
+  }, [offset, onError, selectedKind])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount / offset 変更時の一覧再取得
@@ -117,6 +127,10 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
 
   const canPrev = offset > 0
   const canNext = offset + DIGEST_LIST_PAGE_SIZE < total
+  const emptyMessage =
+    selectedKind === 'all'
+      ? '保存済みのダイジェストはありません。'
+      : `${selectedKind} の保存済みダイジェストはありません。`
 
   const formatDigestInstant = useCallback(
     (iso: string) => formatIsoInTimeZone(iso, timeZone, { omitSeconds: true }),
@@ -160,10 +174,27 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
           一覧を更新
         </button>
       </div>
+      <div className="digests-kind-filter" role="group" aria-label="ダイジェスト種別">
+        {DIGEST_KIND_FILTERS.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className={selectedKind === kind ? 'btn btn--gray is-active' : 'btn btn--gray'}
+            aria-pressed={selectedKind === kind}
+            onClick={() => {
+              setSelectedKind(kind)
+              setOffset(0)
+              setSelectedId(null)
+            }}
+          >
+            {kind}
+          </button>
+        ))}
+      </div>
       <p className="digests-count-hint">全 {total} 件</p>
 
       {items.length === 0 ? (
-        <p className="hint">保存済みのダイジェストはありません。</p>
+        <p className="hint">{emptyMessage}</p>
       ) : (
         <div className="digests-layout">
           <div className="digests-list-column">

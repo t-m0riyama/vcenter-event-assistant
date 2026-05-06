@@ -116,3 +116,63 @@ async def test_post_run_explicit_window_normalizes_kind_for_weekly_template(
         assert "BRANCH_WEEKLY_ONLY" in data["body_markdown"]
     finally:
         get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_list_digests_filters_by_kind_and_updates_total(client: AsyncClient) -> None:
+    for digest_kind in ("daily", "weekly", "monthly", "weekly"):
+        r = await client.post(
+            "/api/digests/run",
+            json={
+                "kind": digest_kind,
+                "from_time": "2026-03-10T00:00:00Z",
+                "to_time": "2026-03-11T00:00:00Z",
+            },
+        )
+        assert r.status_code == 200
+
+    r_all = await client.get("/api/digests")
+    assert r_all.status_code == 200
+    assert r_all.json()["total"] == 4
+
+    r_weekly = await client.get("/api/digests", params={"kind": "weekly"})
+    assert r_weekly.status_code == 200
+    weekly_data = r_weekly.json()
+    assert weekly_data["total"] == 2
+    assert len(weekly_data["items"]) == 2
+    assert {item["kind"] for item in weekly_data["items"]} == {"weekly"}
+
+
+@pytest.mark.asyncio
+async def test_list_digests_kind_filter_pagination_keeps_total(client: AsyncClient) -> None:
+    for digest_kind in ("weekly", "daily", "weekly", "monthly"):
+        r = await client.post(
+            "/api/digests/run",
+            json={
+                "kind": digest_kind,
+                "from_time": "2026-03-10T00:00:00Z",
+                "to_time": "2026-03-11T00:00:00Z",
+            },
+        )
+        assert r.status_code == 200
+
+    r_page0 = await client.get("/api/digests", params={"kind": "weekly", "limit": 1, "offset": 0})
+    r_page1 = await client.get("/api/digests", params={"kind": "weekly", "limit": 1, "offset": 1})
+
+    assert r_page0.status_code == 200
+    assert r_page1.status_code == 200
+    data0 = r_page0.json()
+    data1 = r_page1.json()
+    assert data0["total"] == 2
+    assert data1["total"] == 2
+    assert len(data0["items"]) == 1
+    assert len(data1["items"]) == 1
+    assert data0["items"][0]["kind"] == "weekly"
+    assert data1["items"][0]["kind"] == "weekly"
+    assert data0["items"][0]["id"] != data1["items"][0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_list_digests_rejects_invalid_kind_query(client: AsyncClient) -> None:
+    r = await client.get("/api/digests", params={"kind": "yearly"})
+    assert r.status_code == 422

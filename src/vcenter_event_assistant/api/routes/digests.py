@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -44,12 +44,16 @@ async def list_digests(
     session: AsyncSession = Depends(get_session),
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    kind: Annotated[Literal["daily", "weekly", "monthly"] | None, Query()] = None,
 ) -> DigestListResponse:
-    count_q = select(func.count()).select_from(DigestRecord)
+    where_clauses = [DigestRecord.kind == kind] if kind is not None else []
+
+    count_q = select(func.count()).select_from(DigestRecord).where(*where_clauses)
     total = int((await session.execute(count_q)).scalar_one() or 0)
 
     q = (
         select(DigestRecord)
+        .where(*where_clauses)
         .order_by(DigestRecord.created_at.desc(), DigestRecord.id.desc())
         .offset(offset)
         .limit(limit)
