@@ -1,5 +1,19 @@
-import { Fragment, useEffect, useState, useCallback } from 'react'
+import { Fragment, useEffect, useState, useCallback, useRef } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../api'
+import {
+  alertRuleRowSchema,
+  alertRulesFileSchema,
+  alertRulesImportResponseSchema,
+  buildAlertRulesExportPayload,
+  type AlertRuleRow,
+  type AlertRulesFile,
+} from '../../api/schemas'
+import { downloadJsonFile } from '../../utils/downloadJsonFile'
+import { toErrorMessage } from '../../utils/errors'
+import {
+  formatAlertRulesFileParseError,
+  formatAlertRulesImportApiError,
+} from './alertRulesImportErrors'
 import './AlertRulesPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -10,18 +24,12 @@ const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
   warning: '警告',
 }
 
-interface AlertRule {
-  id: number
-  name: string
-  rule_type: 'event_score' | 'metric_threshold'
-  is_enabled: boolean
-  alert_level: AlertLevel
+type AlertRule = AlertRuleRow & {
   config: {
     threshold?: number
     metric_key?: string
     cooldown_minutes?: number
   }
-  created_at: string
 }
 
 interface EditDraft {
@@ -45,13 +53,28 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newMetricKey, setNewMetricKey] = useState('cpu.usage.average')
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [drafts, setDrafts] = useState<Record<number, EditDraft>>({})
+  const [overwriteExisting, setOverwriteExisting] = useState(true)
+  const [deleteRulesNotInImport, setDeleteRulesNotInImport] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const confirmDestructiveImport = (ruleCount: number): boolean => {
+    if (!deleteRulesNotInImport) return true
+    if (ruleCount === 0) {
+      return confirm(
+        'このファイルにはルールが含まれていません。既存のアラートルールをすべて削除します。よろしいですか？',
+      )
+    }
+    return confirm('ファイルに含まれないアラートルールは削除されます。よろしいですか？')
+  }
 
   const fetchRules = useCallback(async () => {
     try {
-      const data = await apiGet<AlertRule[]>('/api/alerts/rules')
-      setRules(data)
+      onError('')
+      const data = await apiGet<unknown>('/api/alerts/rules')
+      const parsed = alertRuleRowSchema.array().parse(data)
+      setRules(parsed as AlertRule[])
     } catch (e) {
-      onError(String(e))
+      onError(toErrorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -78,7 +101,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       setIsAdding(false)
       fetchRules()
     } catch (e) {
-      onError(String(e))
+      onError(toErrorMessage(e))
     }
   }
 
@@ -88,7 +111,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       await apiPatch(`/api/alerts/rules/${rule.id}`, { alert_level: level })
       fetchRules()
     } catch (e) {
-      onError(String(e))
+      onError(toErrorMessage(e))
     }
   }
 
@@ -99,7 +122,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       })
       fetchRules()
     } catch (e) {
-      onError(String(e))
+      onError(toErrorMessage(e))
     }
   }
 
@@ -109,7 +132,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       await apiDelete(`/api/alerts/rules/${id}`)
       fetchRules()
     } catch (e) {
-      onError(String(e))
+      onError(toErrorMessage(e))
     }
   }
 
@@ -171,7 +194,58 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       handleCancelEdit(rule.id)
       fetchRules()
     } catch (e) {
-      onError(String(e))
+      onError(toErrorMessage(e))
+    }
+  }
+
+  const exportToFile = () => {
+    onError('')
+    try {
+      const payload = buildAlertRulesExportPayload(rules)
+      const name = `vea-alert-rules-${new Date().toISOString().slice(0, 10)}.json`
+      downloadJsonFile(name, payload)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    }
+  }
+
+  const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    let parsedFile: AlertRulesFile
+    try {
+      const text = await file.text()
+      const json: unknown = JSON.parse(text)
+      parsedFile = alertRulesFileSchema.parse(json)
+    } catch (err) {
+      onError(formatAlertRulesFileParseError(err))
+      return
+    }
+
+    if (!confirmDestructiveImport(parsedFile.rules.length)) {
+      return
+    }
+
+    onError('')
+    try {
+      const raw = await apiPost<unknown>('/api/alerts/rules/import', {
+        overwrite_existing: overwriteExisting,
+        delete_rules_not_in_import: deleteRulesNotInImport,
+        rules: parsedFile.rules,
+      })
+      try {
+        alertRulesImportResponseSchema.parse(raw)
+      } catch {
+        onError(
+          'サーバーからの応答を解釈できませんでした。アプリを最新版に更新するか、しばらくしてから再度お試しください。',
+        )
+        return
+      }
+      await fetchRules()
+    } catch (err) {
+      onError(formatAlertRulesImportApiError(err))
     }
   }
 
@@ -183,6 +257,53 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         <h2>アラートルール設定</h2>
         <button type="button" className="btn btn--filled" onClick={() => setIsAdding(true)}>
           新規ルール追加
+        </button>
+      </div>
+      <h2>エクスポート・インポート</h2>
+      <p className="hint">
+        アラートルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。
+      </p>
+      <fieldset className="score-rules-import-options">
+        <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
+        <div className="form-grid score-rules-import-options__grid">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={overwriteExisting}
+              onChange={(event) => setOverwriteExisting(event.target.checked)}
+              aria-label="既存の同一ルール名を上書き"
+            />
+            既存の同一ルール名を上書き
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={deleteRulesNotInImport}
+              onChange={(event) => setDeleteRulesNotInImport(event.target.checked)}
+              aria-label="ファイルに含まれないアラートルールを削除"
+            />
+            ファイルに含まれないアラートルールを削除
+          </label>
+        </div>
+      </fieldset>
+      <div className="score-rules-file-actions">
+        <button type="button" className="btn btn--gray" onClick={exportToFile}>
+          ファイルにエクスポート
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden-file-input"
+          aria-label="アラートルール JSON を選択"
+          onChange={(event) => void onImportFileChange(event)}
+        />
+        <button
+          type="button"
+          className="btn btn--filled"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          ファイルからインポート
         </button>
       </div>
 
