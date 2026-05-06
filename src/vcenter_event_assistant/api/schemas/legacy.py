@@ -412,6 +412,20 @@ class AlertRuleRead(BaseModel):
     created_at: datetime
 
 
+class AlertRulesImportRequest(BaseModel):
+    """一括インポート。``rules`` 内の ``name`` は重複不可。"""
+
+    overwrite_existing: bool = True
+    delete_rules_not_in_import: bool = False
+    rules: list[AlertRuleCreate]
+
+
+class AlertRulesImportResponse(BaseModel):
+    """インポート適用後のアラートルール件数。"""
+
+    rules_count: int
+
+
 class AlertHistoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,13 +1,13 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, desc, func
+from sqlalchemy import delete, select, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import (
     AlertRuleRead, AlertRuleCreate, AlertRuleUpdate,
-    AlertHistoryListResponse
+    AlertHistoryListResponse, AlertRulesImportRequest, AlertRulesImportResponse
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory
 
@@ -97,6 +97,51 @@ async def delete_alert_rule(rule_id: int, session: AsyncSession = Depends(get_se
         raise HTTPException(status_code=404, detail="Alert rule not found")
     await session.delete(rule)
     await session.flush()
+
+
+@router.post("/rules/import", response_model=AlertRulesImportResponse)
+async def import_alert_rules(
+    body: AlertRulesImportRequest,
+    session: AsyncSession = Depends(get_session),
+) -> AlertRulesImportResponse:
+    names_in_file = [rule.name for rule in body.rules]
+    if len(names_in_file) != len(set(names_in_file)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="duplicate name in rules",
+        )
+
+    for imported_rule in body.rules:
+        res = await session.execute(select(AlertRule).where(AlertRule.name == imported_rule.name))
+        existing = res.scalar_one_or_none()
+        if existing is None:
+            session.add(
+                AlertRule(
+                    name=imported_rule.name,
+                    rule_type=imported_rule.rule_type,
+                    is_enabled=imported_rule.is_enabled,
+                    alert_level=imported_rule.alert_level,
+                    config=imported_rule.config,
+                ),
+            )
+        elif body.overwrite_existing:
+            existing.rule_type = imported_rule.rule_type
+            existing.is_enabled = imported_rule.is_enabled
+            existing.alert_level = imported_rule.alert_level
+            existing.config = imported_rule.config
+
+    if body.delete_rules_not_in_import:
+        names = set(names_in_file)
+        if not names:
+            await session.execute(delete(AlertRule))
+        else:
+            await session.execute(delete(AlertRule).where(~AlertRule.name.in_(sorted(names))))
+
+    await session.flush()
+
+    count_res = await session.execute(select(AlertRule.id))
+    rules_count = len(list(count_res.scalars().all()))
+    return AlertRulesImportResponse(rules_count=rules_count)
 
 @router.get("/history", response_model=AlertHistoryListResponse)
 async def list_alert_history(

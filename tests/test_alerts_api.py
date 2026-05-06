@@ -185,3 +185,156 @@ async def test_alerts_history_list(client: AsyncClient):
     assert "items" in data
     assert "total" in data
     assert isinstance(data["items"], list)
+
+
+@pytest.mark.asyncio
+async def test_alert_rules_import_duplicate_name_returns_400(client: AsyncClient):
+    resp = await client.post(
+        "/api/alerts/rules/import",
+        json={
+            "overwrite_existing": True,
+            "delete_rules_not_in_import": False,
+            "rules": [
+                {
+                    "name": "Dup Rule",
+                    "rule_type": "event_score",
+                    "alert_level": "warning",
+                    "config": {"threshold": 1},
+                },
+                {
+                    "name": "Dup Rule",
+                    "rule_type": "metric_threshold",
+                    "alert_level": "error",
+                    "config": {"threshold": 90},
+                },
+            ],
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "duplicate name in rules"
+
+
+@pytest.mark.asyncio
+async def test_alert_rules_import_overwrite_existing_updates_fields(client: AsyncClient):
+    created = await client.post(
+        "/api/alerts/rules",
+        json={
+            "name": "Overwrite Target",
+            "rule_type": "event_score",
+            "alert_level": "warning",
+            "config": {"threshold": 1},
+        },
+    )
+    assert created.status_code == 201
+
+    imp = await client.post(
+        "/api/alerts/rules/import",
+        json={
+            "overwrite_existing": True,
+            "delete_rules_not_in_import": False,
+            "rules": [
+                {
+                    "name": "Overwrite Target",
+                    "rule_type": "metric_threshold",
+                    "alert_level": "critical",
+                    "config": {"threshold": 95, "window_minutes": 5},
+                },
+            ],
+        },
+    )
+    assert imp.status_code == 200
+    assert imp.json()["rules_count"] == 1
+
+    listed = await client.get("/api/alerts/rules")
+    assert listed.status_code == 200
+    by_name = {item["name"]: item for item in listed.json()}
+    target = by_name["Overwrite Target"]
+    assert target["rule_type"] == "metric_threshold"
+    assert target["alert_level"] == "critical"
+    assert target["config"] == {"threshold": 95, "window_minutes": 5}
+
+
+@pytest.mark.asyncio
+async def test_alert_rules_import_delete_not_in_file_removes_orphans(client: AsyncClient):
+    first = await client.post(
+        "/api/alerts/rules",
+        json={
+            "name": "Orphan Rule",
+            "rule_type": "event_score",
+            "alert_level": "warning",
+            "config": {"threshold": 1},
+        },
+    )
+    assert first.status_code == 201
+    second = await client.post(
+        "/api/alerts/rules",
+        json={
+            "name": "Keep Rule",
+            "rule_type": "event_score",
+            "alert_level": "error",
+            "config": {"threshold": 2},
+        },
+    )
+    assert second.status_code == 201
+
+    imp = await client.post(
+        "/api/alerts/rules/import",
+        json={
+            "overwrite_existing": True,
+            "delete_rules_not_in_import": True,
+            "rules": [
+                {
+                    "name": "Keep Rule",
+                    "rule_type": "metric_threshold",
+                    "alert_level": "critical",
+                    "config": {"threshold": 99},
+                },
+            ],
+        },
+    )
+    assert imp.status_code == 200
+    assert imp.json()["rules_count"] == 1
+
+    listed = await client.get("/api/alerts/rules")
+    assert listed.status_code == 200
+    names = [item["name"] for item in listed.json()]
+    assert names == ["Keep Rule"]
+
+
+@pytest.mark.asyncio
+async def test_alert_rules_import_delete_all_when_empty_rules(client: AsyncClient):
+    first = await client.post(
+        "/api/alerts/rules",
+        json={
+            "name": "Delete All A",
+            "rule_type": "event_score",
+            "alert_level": "warning",
+            "config": {"threshold": 1},
+        },
+    )
+    assert first.status_code == 201
+    second = await client.post(
+        "/api/alerts/rules",
+        json={
+            "name": "Delete All B",
+            "rule_type": "metric_threshold",
+            "alert_level": "error",
+            "config": {"threshold": 90},
+        },
+    )
+    assert second.status_code == 201
+
+    imp = await client.post(
+        "/api/alerts/rules/import",
+        json={
+            "overwrite_existing": True,
+            "delete_rules_not_in_import": True,
+            "rules": [],
+        },
+    )
+    assert imp.status_code == 200
+    assert imp.json()["rules_count"] == 0
+
+    listed = await client.get("/api/alerts/rules")
+    assert listed.status_code == 200
+    assert listed.json() == []
