@@ -456,10 +456,34 @@ export function parseChatResponse(raw: unknown): ChatResponse {
   return chatResponseSchema.parse(raw)
 }
 
+export const incidentTimelineEntrySchema = z.object({
+  timestamp_utc: z.string(),
+  kind: z.enum(['alert', 'event', 'metric']),
+  title: z.string(),
+})
+
+export type IncidentTimelineEntry = z.infer<typeof incidentTimelineEntrySchema>
+
+export const incidentTimelineColumnSchema = z.object({
+  timestamp_utc: z.string(),
+  items: z.array(incidentTimelineEntrySchema).optional().default([]),
+  visible_items: z.array(incidentTimelineEntrySchema),
+  hidden_count: z.number().int().min(0),
+})
+
+export type IncidentTimelineColumn = z.infer<typeof incidentTimelineColumnSchema>
+
+export const incidentTimelineSchema = z.object({
+  columns: z.array(incidentTimelineColumnSchema),
+})
+
+export type IncidentTimeline = z.infer<typeof incidentTimelineSchema>
+
 export const chatPreviewResponseSchema = z.object({
   context_block: z.string(),
   conversation: z.array(chatMessageSchema),
   llm_context: chatLlmContextMetaSchema.nullable().optional(),
+  incident_timeline: incidentTimelineSchema.optional(),
 })
 
 export type ChatPreviewResponse = z.infer<typeof chatPreviewResponseSchema>

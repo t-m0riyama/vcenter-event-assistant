@@ -159,4 +159,27 @@ describe('parseChatPreviewResponse', () => {
   it('rejects invalid chat preview response without context block', () => {
     expect(() => parseChatPreviewResponse({ conversation: [] })).toThrow()
   })
+
+  it('parses incident timeline in chat preview response', () => {
+    const raw = {
+      context_block: 'ctx',
+      conversation: [{ role: 'user', content: 'hello' }],
+      incident_timeline: {
+        columns: [
+          {
+            timestamp_utc: '2026-05-07T00:00:00Z',
+            items: [
+              { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' },
+              { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'A1' },
+            ],
+            visible_items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'A1' }],
+            hidden_count: 1,
+          },
+        ],
+      },
+    }
+    const parsed = parseChatPreviewResponse(raw)
+    expect(parsed.incident_timeline?.columns).toHaveLength(1)
+    expect(parsed.incident_timeline?.columns[0]?.hidden_count).toBe(1)
+  })
 })

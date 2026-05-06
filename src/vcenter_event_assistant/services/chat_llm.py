@@ -15,6 +15,7 @@ from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
 from vcenter_event_assistant.services.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelinePayload
 from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_llm import _trim_context_json
@@ -202,6 +203,7 @@ def _prepare_chat_payload(
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None,
     event_time_buckets: EventTimeBucketsPayload | None,
+    incident_timeline: IncidentTimelinePayload | None,
     extra_vcenter_strings: Sequence[str] | None,
 ) -> tuple[dict[str, Any], list[ChatMessage], dict[str, str]]:
     """digest_context から high_cpu/mem を除外 → payload 構築 → 匿名化。
@@ -217,6 +219,8 @@ def _prepare_chat_payload(
         payload["period_metrics"] = period_metrics.model_dump(mode="json")
     if event_time_buckets is not None:
         payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
+    if incident_timeline is not None:
+        payload["incident_timeline"] = incident_timeline.model_dump(mode="json")
 
     trimmed_msgs = messages[-_MAX_CHAT_MESSAGES:]
     reverse_map: dict[str, str] = {}
@@ -239,12 +243,13 @@ def _build_chat_context_and_meta(
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None,
     event_time_buckets: EventTimeBucketsPayload | None,
+    incident_timeline: IncidentTimelinePayload | None,
     extra_vcenter_strings: Sequence[str] | None,
 ) -> tuple[str, list[ChatMessage], ChatLlmContextMeta, dict[str, str]]:
     settings = get_settings()
     payload, trimmed_msgs, reverse_map = _prepare_chat_payload(
         settings, context, messages,
-        period_metrics, event_time_buckets, extra_vcenter_strings,
+        period_metrics, event_time_buckets, incident_timeline, extra_vcenter_strings,
     )
     ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
     block = _merged_context_user_block(ctx_json)
@@ -264,6 +269,7 @@ def build_chat_preview(
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None = None,
     event_time_buckets: EventTimeBucketsPayload | None = None,
+    incident_timeline: IncidentTimelinePayload | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[str, list[ChatMessage], ChatLlmContextMeta | None]:
     """
@@ -272,7 +278,7 @@ def build_chat_preview(
         (context_block_string, trimmed_messages, llm_context_meta)
     """
     block, trimmed, meta, _ = _build_chat_context_and_meta(
-        context, messages, period_metrics, event_time_buckets, extra_vcenter_strings
+        context, messages, period_metrics, event_time_buckets, incident_timeline, extra_vcenter_strings
     )
     return block, trimmed, meta
 
@@ -283,6 +289,7 @@ async def run_period_chat(
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None = None,
     event_time_buckets: EventTimeBucketsPayload | None = None,
+    incident_timeline: IncidentTimelinePayload | None = None,
     runnable_config: RunnableConfig | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None, int | None, float | None]:
@@ -307,7 +314,7 @@ async def run_period_chat(
         return ("", None, None, None, None)
 
     block, trimmed, meta, reverse_map = _build_chat_context_and_meta(
-        context, messages, period_metrics, event_time_buckets, extra_vcenter_strings
+        context, messages, period_metrics, event_time_buckets, incident_timeline, extra_vcenter_strings
     )
 
     try:
