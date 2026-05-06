@@ -157,8 +157,8 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
   return (
     <div className="panel">
       <p className="hint">
-        イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。最終スコアは 0〜100
-        に収まります。既存の取り込み済みイベントにも、ルールの保存・変更・削除時に再計算が反映されます。
+        イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値をサーバーに保存します。最終スコアは
+        0〜100 に収まり、ルールの保存・変更・削除は既存の取り込み済みイベントの再計算にも反映されます。
       </p>
       <h2>エクスポート・インポート</h2>
       <p className="hint">

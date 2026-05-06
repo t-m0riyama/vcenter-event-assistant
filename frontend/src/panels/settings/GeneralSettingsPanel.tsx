@@ -58,6 +58,10 @@ export function GeneralSettingsPanel() {
 
   return (
     <div className="panel">
+      <p className="hint">
+        表示・チャット保持件数・自動更新など、このブラウザで使う基本設定を管理します。変更内容は
+        localStorage に保存され、同じブラウザで次回以降も適用されます。
+      </p>
       <div className="general-settings-field">
         <p className="hint">
           チャットタブで保持する会話メッセージの最大件数です。超えた分は古いものから欠落します（FIFO）。0
