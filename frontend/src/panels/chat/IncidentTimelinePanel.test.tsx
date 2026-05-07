@@ -88,6 +88,23 @@ describe('IncidentTimelinePanel', () => {
     expect(screen.getByRole('button', { name: '+3件' })).toBeInTheDocument()
   })
 
+  it('サマリーモードでフィルタ適用時は +N件 を過大表示しない', () => {
+    const timeline: IncidentTimeline = {
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          items: [],
+          visible_items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E' }],
+          hidden_count: 99,
+        },
+      ],
+    }
+    render(<IncidentTimelinePanel timeline={timeline} />)
+
+    fireEvent.change(screen.getByLabelText('ソース'), { target: { value: 'event' } })
+    expect(screen.queryByRole('button', { name: '+99件' })).not.toBeInTheDocument()
+  })
+
   it('ソース(kind)フィルタで表示項目を絞り込める', () => {
     const timeline: IncidentTimeline = {
       columns: [
@@ -148,5 +165,41 @@ describe('IncidentTimelinePanel', () => {
     const timelineList = screen.getByRole('list', { name: 'インシデント統合タイムライン' })
     expect(timelineList).toHaveClass('incident-timeline--horizontal')
     expect(timelineList.parentElement).toHaveClass('incident-timeline__scroll')
+  })
+
+  it('短期間バケットは HH:mm-HH:mm で表示する', () => {
+    const timeline: IncidentTimeline = {
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          bucket_start_utc: '2026-05-07T00:00:00Z',
+          bucket_end_utc: '2026-05-07T06:00:00Z',
+          items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'A' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+      ],
+    }
+    render(<IncidentTimelinePanel timeline={timeline} />)
+
+    expect(screen.getByText('00:00-06:00')).toBeInTheDocument()
+  })
+
+  it('長期間バケットは MM/DD HH:mm-HH:mm で表示する', () => {
+    const timeline: IncidentTimeline = {
+      columns: [
+        {
+          timestamp_utc: '2026-05-01T00:00:00Z',
+          bucket_start_utc: '2026-05-01T00:00:00Z',
+          bucket_end_utc: '2026-05-03T12:00:00Z',
+          items: [{ timestamp_utc: '2026-05-01T00:00:00Z', kind: 'alert', title: 'A' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+      ],
+    }
+    render(<IncidentTimelinePanel timeline={timeline} />)
+
+    expect(screen.getByText('05/01 00:00-12:00')).toBeInTheDocument()
   })
 })

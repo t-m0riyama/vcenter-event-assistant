@@ -431,6 +431,27 @@ export const chatMessageSchema = z.object({
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
+const metricThresholdPercentSchema = z.number().min(0).max(100)
+const metricThresholdNullablePercentSchema = metricThresholdPercentSchema.nullable().optional()
+
+export const chatRequestSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  messages: z.array(chatMessageSchema).min(1),
+  vcenter_id: z.string().uuid().optional(),
+  top_notable_min_score: z.number().int().min(0).max(100).optional(),
+  include_period_metrics_cpu: z.boolean().optional(),
+  include_period_metrics_memory: z.boolean().optional(),
+  include_period_metrics_disk_io: z.boolean().optional(),
+  include_period_metrics_network_io: z.boolean().optional(),
+  metric_threshold_cpu_pct: metricThresholdNullablePercentSchema,
+  metric_threshold_memory_pct: metricThresholdNullablePercentSchema,
+  metric_threshold_disk_pct: metricThresholdNullablePercentSchema,
+  metric_threshold_network_pct: metricThresholdNullablePercentSchema,
+})
+
+export type ChatRequest = z.infer<typeof chatRequestSchema>
+
 /** チャット LLM 直前のコンテキスト統計（トークン切り詰めの確認用） */
 export const chatLlmContextMetaSchema = z.object({
   json_truncated: z.boolean(),
@@ -466,6 +487,8 @@ export type IncidentTimelineEntry = z.infer<typeof incidentTimelineEntrySchema>
 
 export const incidentTimelineColumnSchema = z.object({
   timestamp_utc: z.string(),
+  bucket_start_utc: z.string().optional(),
+  bucket_end_utc: z.string().optional(),
   items: z.array(incidentTimelineEntrySchema).optional().default([]),
   visible_items: z.array(incidentTimelineEntrySchema),
   hidden_count: z.number().int().min(0),

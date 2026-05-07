@@ -10,6 +10,7 @@ const KIND_PRIORITY: Record<IncidentTimelineEntry['kind'], number> = {
 const DEFAULT_VISIBLE_ITEMS = 10
 type SourceFilter = 'all' | IncidentTimelineEntry['kind']
 type ImportanceFilter = 'all' | 'high' | 'medium' | 'low'
+const SHORT_RANGE_MAX_MS = 24 * 60 * 60 * 1000
 
 const KIND_TO_IMPORTANCE: Record<IncidentTimelineEntry['kind'], Exclude<ImportanceFilter, 'all'>> = {
   alert: 'high',
@@ -26,6 +27,53 @@ function sortTimelineItems(items: readonly IncidentTimelineEntry[]): IncidentTim
       return a.idx - b.idx
     })
     .map((x) => x.item)
+}
+
+function formatTwoDigits(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function formatUtcClock(iso: string): string | null {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  const hh = formatTwoDigits(date.getUTCHours())
+  const mm = formatTwoDigits(date.getUTCMinutes())
+  return `${hh}:${mm}`
+}
+
+function formatUtcDateClock(iso: string): string | null {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  const month = formatTwoDigits(date.getUTCMonth() + 1)
+  const day = formatTwoDigits(date.getUTCDate())
+  const hh = formatTwoDigits(date.getUTCHours())
+  const mm = formatTwoDigits(date.getUTCMinutes())
+  return `${month}/${day} ${hh}:${mm}`
+}
+
+function formatTimelineHeader(column: IncidentTimeline['columns'][number]): string {
+  if (!column.bucket_start_utc || !column.bucket_end_utc) {
+    return column.timestamp_utc
+  }
+  const start = new Date(column.bucket_start_utc)
+  const end = new Date(column.bucket_end_utc)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return column.timestamp_utc
+  }
+  const durationMs = end.getTime() - start.getTime()
+  const startClock = formatUtcClock(column.bucket_start_utc)
+  const endClock = formatUtcClock(column.bucket_end_utc)
+  if (!startClock || !endClock) {
+    return column.timestamp_utc
+  }
+  if (durationMs > 0 && durationMs <= SHORT_RANGE_MAX_MS) {
+    return `${startClock}-${endClock}`
+  }
+  const startDateClock = formatUtcDateClock(column.bucket_start_utc)
+  if (!startDateClock) {
+    return column.timestamp_utc
+  }
+  return `${startDateClock}-${endClock}`
 }
 
 /** インシデント統合タイムラインを時刻列ごとに表示する。 */
@@ -86,6 +134,7 @@ export function IncidentTimelinePanel({ timeline }: { timeline: IncidentTimeline
             >
               {orderedColumns.map((column) => {
                 const isUsingServerSummary = column.items.length === 0
+                const isFilterActive = sourceFilter !== 'all' || importanceFilter !== 'all'
                 const allItems = isUsingServerSummary ? column.visible_items : column.items
                 const filteredItems = allItems.filter((item) => {
                   const sourceMatched = sourceFilter === 'all' || item.kind === sourceFilter
@@ -96,9 +145,10 @@ export function IncidentTimelinePanel({ timeline }: { timeline: IncidentTimeline
                 const sortedItems = sortTimelineItems(filteredItems)
                 const isExpanded = expandedTimestamps.has(column.timestamp_utc)
                 const filteredHiddenCount = Math.max(0, sortedItems.length - DEFAULT_VISIBLE_ITEMS)
-                const hiddenCount = isUsingServerSummary
-                  ? Math.max(column.hidden_count, filteredHiddenCount)
-                  : filteredHiddenCount
+                const hiddenCount =
+                  isUsingServerSummary && !isFilterActive
+                    ? Math.max(column.hidden_count, filteredHiddenCount)
+                    : filteredHiddenCount
                 const shownItems = isExpanded ? sortedItems : sortedItems.slice(0, DEFAULT_VISIBLE_ITEMS)
                 return (
                   <li
@@ -106,7 +156,7 @@ export function IncidentTimelinePanel({ timeline }: { timeline: IncidentTimeline
                     className="incident-timeline__column"
                     aria-label={`${column.timestamp_utc} のタイムライン`}
                   >
-                    <p className="incident-timeline__timestamp">{column.timestamp_utc}</p>
+                    <p className="incident-timeline__timestamp">{formatTimelineHeader(column)}</p>
                     <div className="incident-timeline__items">
                       {shownItems.map((item, idx) => (
                         <span
