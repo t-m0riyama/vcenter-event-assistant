@@ -79,56 +79,61 @@ export function IncidentTimelinePanel({ timeline }: { timeline: IncidentTimeline
               </select>
             </label>
           </div>
-          <ul className="incident-timeline" aria-label="インシデント統合タイムライン">
-            {orderedColumns.map((column) => {
-              const isUsingServerSummary = column.items.length === 0
-              const allItems = isUsingServerSummary ? column.visible_items : column.items
-              const filteredItems = allItems.filter((item) => {
-                const sourceMatched = sourceFilter === 'all' || item.kind === sourceFilter
-                const importanceMatched =
-                  importanceFilter === 'all' || KIND_TO_IMPORTANCE[item.kind] === importanceFilter
-                return sourceMatched && importanceMatched
-              })
-              const sortedItems = sortTimelineItems(filteredItems)
-              const isExpanded = expandedTimestamps.has(column.timestamp_utc)
-              const filteredHiddenCount = Math.max(0, sortedItems.length - DEFAULT_VISIBLE_ITEMS)
-              const hiddenCount = isUsingServerSummary
-                ? Math.max(column.hidden_count, filteredHiddenCount)
-                : filteredHiddenCount
-              const shownItems = isExpanded ? sortedItems : sortedItems.slice(0, DEFAULT_VISIBLE_ITEMS)
-              return (
-                <li
-                  key={column.timestamp_utc}
-                  className="incident-timeline__column"
-                  aria-label={`${column.timestamp_utc} のタイムライン`}
-                >
-                  <p className="incident-timeline__timestamp">{column.timestamp_utc}</p>
-                  <div className="incident-timeline__items">
-                    {shownItems.map((item, idx) => (
-                      <span
-                        key={`${item.timestamp_utc}-${item.kind}-${item.title}-${idx}`}
-                        data-testid="incident-timeline-item"
-                        className={`incident-timeline__item incident-timeline__item--${item.kind}`}
+          <div className="incident-timeline__scroll">
+            <ul
+              className="incident-timeline incident-timeline--horizontal"
+              aria-label="インシデント統合タイムライン"
+            >
+              {orderedColumns.map((column) => {
+                const isUsingServerSummary = column.items.length === 0
+                const allItems = isUsingServerSummary ? column.visible_items : column.items
+                const filteredItems = allItems.filter((item) => {
+                  const sourceMatched = sourceFilter === 'all' || item.kind === sourceFilter
+                  const importanceMatched =
+                    importanceFilter === 'all' || KIND_TO_IMPORTANCE[item.kind] === importanceFilter
+                  return sourceMatched && importanceMatched
+                })
+                const sortedItems = sortTimelineItems(filteredItems)
+                const isExpanded = expandedTimestamps.has(column.timestamp_utc)
+                const filteredHiddenCount = Math.max(0, sortedItems.length - DEFAULT_VISIBLE_ITEMS)
+                const hiddenCount = isUsingServerSummary
+                  ? Math.max(column.hidden_count, filteredHiddenCount)
+                  : filteredHiddenCount
+                const shownItems = isExpanded ? sortedItems : sortedItems.slice(0, DEFAULT_VISIBLE_ITEMS)
+                return (
+                  <li
+                    key={column.timestamp_utc}
+                    className="incident-timeline__column"
+                    aria-label={`${column.timestamp_utc} のタイムライン`}
+                  >
+                    <p className="incident-timeline__timestamp">{column.timestamp_utc}</p>
+                    <div className="incident-timeline__items">
+                      {shownItems.map((item, idx) => (
+                        <span
+                          key={`${item.timestamp_utc}-${item.kind}-${item.title}-${idx}`}
+                          data-testid="incident-timeline-item"
+                          className={`incident-timeline__item incident-timeline__item--${item.kind}`}
+                        >
+                          {item.title}
+                        </span>
+                      ))}
+                    </div>
+                    {!isExpanded && hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn--gray incident-timeline__expand-btn"
+                        onClick={() => {
+                          setExpandedTimestamps((prev) => new Set(prev).add(column.timestamp_utc))
+                        }}
                       >
-                        {item.title}
-                      </span>
-                    ))}
-                  </div>
-                  {!isExpanded && hiddenCount > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn--gray incident-timeline__expand-btn"
-                      onClick={() => {
-                        setExpandedTimestamps((prev) => new Set(prev).add(column.timestamp_utc))
-                      }}
-                    >
-                      +{hiddenCount}件
-                    </button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+                        +{hiddenCount}件
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         </>
       )}
     </section>
