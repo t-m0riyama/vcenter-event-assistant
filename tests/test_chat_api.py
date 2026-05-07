@@ -74,6 +74,72 @@ async def test_post_chat_returns_422_when_last_message_not_user(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("threshold_key", "invalid_value"),
+    [
+        ("metric_threshold_cpu_pct", -1),
+        ("metric_threshold_memory_pct", 101),
+        ("metric_threshold_disk_pct", -0.1),
+        ("metric_threshold_network_pct", 100.1),
+    ],
+)
+async def test_post_chat_returns_422_when_metric_threshold_out_of_range(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    threshold_key: str,
+    invalid_value: float,
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+        _ = a
+        _ = k
+        return ("ok", None, None, None, None)
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat",
+        _fake_run,
+    )
+
+    r = await client.post(
+        "/api/chat",
+        json=_chat_body(**{threshold_key: invalid_value}),
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_chat_accepts_metric_thresholds_in_range(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+
+    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+        _ = a
+        _ = k
+        return ("ok", None, None, None, None)
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat",
+        _fake_run,
+    )
+
+    r = await client.post(
+        "/api/chat",
+        json=_chat_body(
+            metric_threshold_cpu_pct=0,
+            metric_threshold_memory_pct=25.5,
+            metric_threshold_disk_pct=80,
+            metric_threshold_network_pct=100,
+        ),
+    )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_post_chat_returns_assistant_content_when_llm_succeeds(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
