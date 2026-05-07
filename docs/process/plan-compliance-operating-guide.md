@@ -25,6 +25,37 @@
 - 合意前の仕様変更実装を禁止する。
 - 要件に紐づかない変更はPRに含めない。
 - `未対応` と記載した要件は次アクションを必須記載にする。
+- 要件完了判定前に、高速エラー検知ゲートを必須実施する（総合テストの代替ではなく早期検知用）。
+- Python コマンド実行と Python テスト実行は `uv run` を必須とする（`python` / `pytest` の直接実行を禁止）。
+- 実行コンテキストは `working_directory` に依存しない。コマンド引数で worktree 絶対パスを明示する。
+  - 例: `git -C "<worktree-abs-path>" ...`
+  - 例: `npm --prefix "<worktree-abs-path>/frontend" ...`
+  - 例: `uv run pytest "<worktree-abs-path>/tests/..." ...`
+
+## 高速エラー検知ゲート（恒久ルール）
+各要件の完了判定前に、少なくとも次を同じ作業コンテキスト（同一 branch / toplevel / pwd）で実施する。
+
+1. 作業コンテキスト確認  
+   - `git branch --show-current`  
+   - `git rev-parse --show-toplevel`  
+   - `pwd`
+   - 必要に応じて `git -C "<worktree-abs-path>" branch --show-current` で対象 worktree を再確認
+2. Python要件では import 実体確認（`uv run` 必須）  
+   - `uv run python -c "import vcenter_event_assistant; print(vcenter_event_assistant.__file__)"`
+3. 静的/構文レベルの早期検知  
+   - Python: `uv run pytest --collect-only <task関連テスト>` または同等の import 検証  
+4. 要件個別テスト + 関連統合テストの最小セット実行  
+   - どちらか片方のみ成功は「部分成功」とみなし、次タスクへ進まない。
+
+## 部分成功の禁止（恒久ルール）
+- 要件内のテストが「一部成功・一部失敗」の状態を許容しない。
+- 部分成功（部分的失敗）が発生した場合、失敗原因を解消するまで次工程に進んではならない。
+- 例外運用は、ユーザが明示的に承認した場合に限り許容する。
+- 例外運用時は、次を記録する。
+  - 承認者（ユーザ）
+  - 承認日時
+  - 失敗しているテストと影響範囲
+  - 次工程での追加検証とロールバック方針
 
 ## 役割分担
 - 実装者: 要件ID付与、マッピング更新、テスト証跡記録
