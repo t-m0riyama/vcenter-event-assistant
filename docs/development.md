@@ -1,5 +1,16 @@
 # 開発者向けメモ
 
+## プラン準拠運用テンプレート
+
+プランとの差分を防ぎたい場合は、以下の運用ガイドとテンプレートを利用する。
+
+- 運用ガイド: [docs/process/plan-compliance-operating-guide.md](process/plan-compliance-operating-guide.md)
+- チェックリスト: [docs/process/plan-compliance-checklist.md](process/plan-compliance-checklist.md)
+- 要件ID-テスト証跡マッピング: [docs/process/plan-to-test-mapping-template.md](process/plan-to-test-mapping-template.md)
+- PR本文テンプレ（Plan Compliance）: [docs/process/pr-plan-compliance-section-template.md](process/pr-plan-compliance-section-template.md)
+- 変更申請テンプレ: [docs/process/plan-change-request-template.md](process/plan-change-request-template.md)
+- 通し記入例: [docs/process/examples/incident-timeline-plan-compliance-example.md](process/examples/incident-timeline-plan-compliance-example.md)
+
 ## 基本的な開発操作
 
 ### データベースマイグレーション（Alembic）

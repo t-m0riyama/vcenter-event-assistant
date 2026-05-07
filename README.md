@@ -68,6 +68,7 @@ flowchart TB
 - **バックエンドガイド**（API・設定・運用）: [docs/backend.md](docs/backend.md)
 - **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
 - **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
+- **プラン準拠運用テンプレート**（チェックリスト・変更申請・PR照合・記入例）: [docs/process/plan-compliance-operating-guide.md](docs/process/plan-compliance-operating-guide.md)
 - **チャット機能の活用**: [docs/chat.md](docs/chat.md)
 - **設計・モジュール対応・改善タスク**（現状実装ベース）: [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md)
 
