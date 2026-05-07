@@ -68,6 +68,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [loading, setLoading] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewData, setPreviewData] = useState<ChatPreviewResponse | null>(null)
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false)
   const [includePeriodMetricsCpu, setIncludePeriodMetricsCpu] = useState(false)
   const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
@@ -338,6 +339,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       const raw = await apiPost<unknown>('/api/chat/preview', body)
       const out = parseChatPreviewResponse(raw)
       setPreviewData(out)
+      setIsPreviewModalOpen(true)
     } catch (e) {
       onError(toErrorMessage(e))
     } finally {
@@ -596,10 +598,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           </button>
         </div>
       </div>
-      {previewData && (
+      {previewData && isPreviewModalOpen && (
         <ChatPromptPreviewModal
           preview={previewData}
-          onClose={() => setPreviewData(null)}
+          onClose={() => setIsPreviewModalOpen(false)}
         />
       )}
     </div>

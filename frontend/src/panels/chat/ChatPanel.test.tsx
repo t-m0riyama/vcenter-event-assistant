@@ -964,4 +964,56 @@ describe('ChatPanel', () => {
     })
     expect(screen.getByText('アラート')).toHaveClass('incident-timeline__item--alert')
   })
+
+  it('モーダルを閉じてもタイムラインは保持される', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat/preview') && init?.method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            context_block: 'ctx',
+            conversation: [{ role: 'user', content: '質問' }],
+            incident_timeline: {
+              columns: [
+                {
+                  timestamp_utc: '2026-05-07T00:00:00Z',
+                  items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: '重大アラート' }],
+                  visible_items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: '重大アラート' }],
+                  hidden_count: 0,
+                },
+              ],
+            },
+          }),
+        )
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '質問' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
+      expect(screen.getByText('プロンプトプレビュー')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByLabelText('閉じる'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('プロンプトプレビュー')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
+    expect(screen.getByText('重大アラート')).toBeInTheDocument()
+  })
 })
