@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { render, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
@@ -37,8 +37,17 @@ function tabNav(): HTMLElement {
   return el as HTMLElement
 }
 
-/** メイン6タブ: ラベルと装飾 SVG（計画どおり TDD の受け入れ条件） */
-const MAIN_TAB_LABELS = ['概要', 'イベント', 'グラフ', 'ダイジェスト', 'チャット', '設定'] as const
+/** メインタブ: ラベルと装飾 SVG（計画どおり TDD の受け入れ条件） */
+const MAIN_TAB_LABELS = [
+  '概要',
+  'イベント',
+  'グラフ',
+  'ダイジェスト',
+  '通知履歴',
+  'チャット',
+  'タイムライン',
+  '設定',
+] as const
 
 describe('App メインタブ', () => {
   afterEach(() => {
@@ -69,5 +78,50 @@ describe('App メインタブ', () => {
     expect(svgs.length).toBe(1)
     expect(svgs[0]).toHaveAttribute('aria-hidden', 'true')
     expect(svgs[0]).toHaveAttribute('focusable', 'false')
+  })
+
+  it('タイムラインタブを押すと TimelinePanel が表示される', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(emptyConfig))
+        }
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/dashboard/summary')) {
+          return Promise.resolve(
+            jsonResponse({
+              vcenter_count: 0,
+              events_last_24h: 0,
+              notable_events_last_24h: 0,
+              top_notable_events: [],
+              high_cpu_hosts: [],
+              high_mem_hosts: [],
+              top_event_types_24h: [],
+            }),
+          )
+        }
+        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ columns: [] }))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      }),
+    )
+
+    render(<App />)
+    await waitFor(() => {
+      expect(within(tabNav()).getByRole('button', { name: 'タイムライン' })).toBeInTheDocument()
+    })
+
+    within(tabNav()).getByRole('button', { name: 'タイムライン' }).click()
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。'),
+      ).toBeInTheDocument()
+    })
   })
 })

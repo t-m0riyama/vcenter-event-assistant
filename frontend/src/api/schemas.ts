@@ -433,10 +433,14 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>
 
 const metricThresholdPercentSchema = z.number().min(0).max(100)
 const metricThresholdNullablePercentSchema = metricThresholdPercentSchema.nullable().optional()
+const isoUtcDateTimeSchema = z
+  .string()
+  .datetime({ offset: true })
+  .refine((value) => value.endsWith('Z'), 'UTC日時は末尾 Z の ISO 8601 形式で指定してください')
 
 export const chatRequestSchema = z.object({
-  from: z.string(),
-  to: z.string(),
+  from: isoUtcDateTimeSchema,
+  to: isoUtcDateTimeSchema,
   messages: z.array(chatMessageSchema).min(1),
   vcenter_id: z.string().uuid().optional(),
   top_notable_min_score: z.number().int().min(0).max(100).optional(),
@@ -478,21 +482,31 @@ export function parseChatResponse(raw: unknown): ChatResponse {
 }
 
 export const incidentTimelineEntrySchema = z.object({
-  timestamp_utc: z.string(),
+  timestamp_utc: isoUtcDateTimeSchema,
   kind: z.enum(['alert', 'event', 'metric']),
   title: z.string(),
 })
 
 export type IncidentTimelineEntry = z.infer<typeof incidentTimelineEntrySchema>
 
-export const incidentTimelineColumnSchema = z.object({
-  timestamp_utc: z.string(),
-  bucket_start_utc: z.string().optional(),
-  bucket_end_utc: z.string().optional(),
-  items: z.array(incidentTimelineEntrySchema).optional().default([]),
-  visible_items: z.array(incidentTimelineEntrySchema),
-  hidden_count: z.number().int().min(0),
-})
+export const incidentTimelineColumnSchema = z
+  .object({
+    timestamp_utc: isoUtcDateTimeSchema,
+    bucket_start_utc: isoUtcDateTimeSchema.optional(),
+    bucket_end_utc: isoUtcDateTimeSchema.optional(),
+    items: z.array(incidentTimelineEntrySchema).optional().default([]),
+    visible_items: z.array(incidentTimelineEntrySchema).optional(),
+    hidden_count: z.number().int().min(0).optional(),
+  })
+  .transform((column) => {
+    const visibleItems = column.visible_items ?? column.items
+    const hiddenCount = column.hidden_count ?? Math.max(column.items.length - visibleItems.length, 0)
+    return {
+      ...column,
+      visible_items: visibleItems,
+      hidden_count: hiddenCount,
+    }
+  })
 
 export type IncidentTimelineColumn = z.infer<typeof incidentTimelineColumnSchema>
 
@@ -502,11 +516,35 @@ export const incidentTimelineSchema = z.object({
 
 export type IncidentTimeline = z.infer<typeof incidentTimelineSchema>
 
+export const incidentTimelineBuildRequestSchema = z
+  .object({
+    from: isoUtcDateTimeSchema,
+    to: isoUtcDateTimeSchema,
+    vcenter_id: z.string().uuid().optional(),
+    top_notable_min_score: z.number().int().min(0).max(100).optional(),
+    include_period_metrics_cpu: z.boolean().optional(),
+    include_period_metrics_memory: z.boolean().optional(),
+    include_period_metrics_disk_io: z.boolean().optional(),
+    include_period_metrics_network_io: z.boolean().optional(),
+    metric_threshold_cpu_pct: metricThresholdNullablePercentSchema,
+    metric_threshold_memory_pct: metricThresholdNullablePercentSchema,
+    metric_threshold_disk_pct: metricThresholdNullablePercentSchema,
+    metric_threshold_network_pct: metricThresholdNullablePercentSchema,
+    alert_top_n: z.number().int().min(1).max(20).optional(),
+  })
+  .strict()
+
+export type IncidentTimelineBuildRequest = z.infer<typeof incidentTimelineBuildRequestSchema>
+
+export function parseIncidentTimelineResponse(raw: unknown): IncidentTimeline {
+  return incidentTimelineSchema.parse(raw)
+}
+
 export const chatPreviewResponseSchema = z.object({
   context_block: z.string(),
   conversation: z.array(chatMessageSchema),
   llm_context: chatLlmContextMetaSchema.nullable().optional(),
-  incident_timeline: incidentTimelineSchema.optional(),
+  incident_timeline: incidentTimelineSchema.nullable().optional(),
 })
 
 export type ChatPreviewResponse = z.infer<typeof chatPreviewResponseSchema>

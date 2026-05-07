@@ -93,6 +93,29 @@ def test_build_chat_incident_timeline_rejects_invalid_visible_items_limit() -> N
         build_chat_incident_timeline(entries, max_visible_items_per_timestamp=0)
 
 
+def test_build_chat_incident_timeline_rejects_invalid_bucket_seconds() -> None:
+    """bucket_seconds が 1 未満なら ValueError。"""
+    at = _ts()
+    entries = [IncidentTimelineEntry(timestamp_utc=at, kind="event", title="e1")]
+
+    with pytest.raises(ValueError):
+        build_chat_incident_timeline(entries, bucket_seconds=0)
+
+
+def test_build_chat_incident_timeline_sets_bucket_range_when_bucket_seconds_given() -> None:
+    """bucket_seconds があると各列に開始/終了時刻を付与する。"""
+    at = _ts()
+    out = build_chat_incident_timeline(
+        [IncidentTimelineEntry(timestamp_utc=at, kind="event", title="e1")],
+        bucket_seconds=300,
+    )
+
+    assert len(out.columns) == 1
+    col = out.columns[0]
+    assert col.bucket_start_utc == at
+    assert col.bucket_end_utc == at + timedelta(seconds=300)
+
+
 def test_build_chat_incident_timeline_groups_same_instant_across_timezones() -> None:
     """aware timezone と UTC の同一瞬間は同一列に入る。"""
     utc_ts = datetime(2026, 5, 7, 10, 0, 0, tzinfo=timezone.utc)
@@ -119,6 +142,8 @@ def test_build_chat_incident_timeline_groups_same_instant_across_timezones() -> 
     assert len(out.columns) == 1
     assert out.columns[0].timestamp_utc == utc_ts
     assert [i.title for i in out.columns[0].visible_items] == ["aware", "utc"]
+    assert all(i.timestamp_utc.tzinfo == timezone.utc for i in out.columns[0].items)
+    assert all(i.timestamp_utc == utc_ts for i in out.columns[0].items)
 
 
 def test_build_chat_incident_timeline_treats_naive_datetime_as_utc() -> None:

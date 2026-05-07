@@ -46,6 +46,38 @@ class ChatRequest(BaseModel):
             raise ValueError("最後のメッセージは user である必要があります")
         return self
 
+
+class IncidentTimelineBuildRequest(BaseModel):
+    """インシデントタイムライン構築用リクエスト。messages は受け付けない。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
+    vcenter_id: uuid.UUID | None = None
+    top_notable_min_score: int = Field(default=1, ge=0, le=100)
+    alert_top_n: int = Field(default=3, ge=1, le=20)
+    include_period_metrics_cpu: bool = Field(
+        default=False,
+        description="真のとき期間内 CPU 使用率をバケット平均で LLM コンテキストに含める（追加 DB クエリ）",
+    )
+    include_period_metrics_memory: bool = Field(
+        default=False,
+        description="真のとき期間内メモリ使用率をバケット平均で含める",
+    )
+    include_period_metrics_disk_io: bool = Field(
+        default=False,
+        description="真のとき期間内ディスク IO 系メトリクスをバケット平均で含める",
+    )
+    include_period_metrics_network_io: bool = Field(
+        default=False,
+        description="真のとき期間内ネットワーク IO 系メトリクスをバケット平均で含める",
+    )
+    metric_threshold_cpu_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_memory_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
+
 class ChatLlmContextMeta(BaseModel):
     """チャット LLM 直前のコンテキスト統計（トークン予算・JSON 切り詰めの確認用）。"""
     json_truncated: bool = Field(description="マージ済み JSON がトークン上限のため切り詰められたか")

@@ -49,6 +49,22 @@ function messagesListElement(): HTMLElement {
   return el as HTMLElement
 }
 
+function readPeriodContextPayloadFields(body: Record<string, unknown>) {
+  return {
+    from: body.from,
+    to: body.to,
+    vcenter_id: body.vcenter_id,
+    include_period_metrics_cpu: body.include_period_metrics_cpu,
+    include_period_metrics_memory: body.include_period_metrics_memory,
+    include_period_metrics_disk_io: body.include_period_metrics_disk_io,
+    include_period_metrics_network_io: body.include_period_metrics_network_io,
+    metric_threshold_cpu_pct: body.metric_threshold_cpu_pct,
+    metric_threshold_memory_pct: body.metric_threshold_memory_pct,
+    metric_threshold_disk_pct: body.metric_threshold_disk_pct,
+    metric_threshold_network_pct: body.metric_threshold_network_pct,
+  }
+}
+
 /** チャットコンポーザー周りのスタイルが意図どおりか（happy-dom の getComputedStyle が弱いためソースを検査する） */
 function readChatPanelCss(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
@@ -732,6 +748,81 @@ describe(
     })
   })
 
+  it('送信とプレビューで期間コンテキスト本文のフィールド構成が一致する', async () => {
+    let chatPayload: Record<string, unknown> | null = null
+    let previewPayload: Record<string, unknown> | null = null
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(
+          jsonResponse([{ id: 'vc-1', name: 'vCenter 1' }]),
+        )
+      }
+      if (url.endsWith('/api/chat/preview') && init?.method === 'POST') {
+        previewPayload = JSON.parse(String(init.body)) as Record<string, unknown>
+        return Promise.resolve(
+          jsonResponse({
+            context_block: 'ctx',
+            conversation: [{ role: 'user', content: '質問' }],
+          }),
+        )
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        chatPayload = JSON.parse(String(init.body)) as Record<string, unknown>
+        return Promise.resolve(jsonResponse({ assistant_content: 'ok', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByLabelText('対象 vCenter'), { target: { value: 'vc-1' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /^CPU 使用率$/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^ネットワーク IO$/ }))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'CPU 閾値（%）' }), {
+      target: { value: '91' },
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Memory 閾値（%）' }), {
+      target: { value: '77' },
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Disk 閾値（%）' }), {
+      target: { value: '66' },
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Network 閾値（%）' }), {
+      target: { value: '55' },
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '質問' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(chatPayload).not.toBeNull()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '質問' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
+    await waitFor(() => {
+      expect(previewPayload).not.toBeNull()
+    })
+
+    expect(chatPayload).not.toBeNull()
+    expect(previewPayload).not.toBeNull()
+    if (!chatPayload || !previewPayload) {
+      throw new Error('送信またはプレビューの本文が取得できませんでした')
+    }
+    expect(readPeriodContextPayloadFields(chatPayload)).toEqual(
+      readPeriodContextPayloadFields(previewPayload),
+    )
+  })
+
   it('閾値の空入力や範囲外入力は API 本文へ反映しない', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -1041,7 +1132,7 @@ describe(
     })
   })
 
-  it('プレビュー取得後にインシデント統合タイムラインを表示する', async () => {
+  it('プレビュー取得後もインシデント統合タイムラインをインライン表示しない', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -1083,12 +1174,13 @@ describe(
     fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
 
     await waitFor(() => {
-      expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
+      expect(screen.getByText('プロンプトプレビュー')).toBeInTheDocument()
     })
-    expect(screen.getByText('アラート')).toHaveClass('incident-timeline__item--alert')
+    expect(screen.queryByText('インシデント統合タイムライン')).not.toBeInTheDocument()
+    expect(screen.queryByText('アラート')).not.toBeInTheDocument()
   })
 
-  it('モーダルを閉じてもタイムラインは保持される', async () => {
+  it('モーダルを閉じるとプレビューだけ閉じ、タイムラインは引き続きインライン表示されない', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -1127,7 +1219,6 @@ describe(
     fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
 
     await waitFor(() => {
-      expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
       expect(screen.getByText('プロンプトプレビュー')).toBeInTheDocument()
     })
 
@@ -1136,8 +1227,8 @@ describe(
     await waitFor(() => {
       expect(screen.queryByText('プロンプトプレビュー')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-    expect(screen.getByText('重大アラート')).toBeInTheDocument()
+    expect(screen.queryByText('インシデント統合タイムライン')).not.toBeInTheDocument()
+    expect(screen.queryByText('重大アラート')).not.toBeInTheDocument()
   })
   },
 )
