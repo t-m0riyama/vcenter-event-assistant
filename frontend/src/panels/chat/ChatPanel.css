@@ -199,8 +199,19 @@
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
   gap: var(--spacing-2);
+}
+
+.incident-timeline__scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--spacing-1);
+}
+
+.incident-timeline--horizontal {
+  flex-direction: row;
+  align-items: stretch;
+  min-width: max-content;
 }
 
 .incident-timeline__column {
@@ -208,6 +219,8 @@
   border-radius: var(--radius-control);
   padding: var(--spacing-2);
   background: var(--color-background-secondary);
+  min-width: 260px;
+  max-width: 360px;
 }
 
 .incident-timeline__timestamp {
@@ -260,5 +273,10 @@
 
   .chat-panel__sample-prompts .btn {
     align-self: stretch;
+  }
+
+  .incident-timeline__column {
+    min-width: 220px;
+    max-width: none;
   }
 }

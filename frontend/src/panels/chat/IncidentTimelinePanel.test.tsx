@@ -131,4 +131,22 @@ describe('IncidentTimelinePanel', () => {
     const chips = screen.getAllByTestId('incident-timeline-item')
     expect(chips.map((el) => el.textContent)).toEqual(['A'])
   })
+
+  it('タイムラインは横軸表示のためスクロールコンテナ内に配置される', () => {
+    const timeline: IncidentTimeline = {
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'A' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+      ],
+    }
+    render(<IncidentTimelinePanel timeline={timeline} />)
+
+    const timelineList = screen.getByRole('list', { name: 'インシデント統合タイムライン' })
+    expect(timelineList).toHaveClass('incident-timeline--horizontal')
+    expect(timelineList.parentElement).toHaveClass('incident-timeline__scroll')
+  })
 })
