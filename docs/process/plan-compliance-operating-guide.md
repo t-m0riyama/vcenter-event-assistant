@@ -13,6 +13,8 @@
 - `docs/process/pr-plan-compliance-section-template.md`
 - `docs/process/plan-change-request-template.md`
 - `docs/process/examples/incident-timeline-plan-compliance-example.md`
+- `docs/superpowers/plan-authoring.md`（Superpowers の実装計画を書くときの Git / ブランチ方針・挿入位置）
+- `docs/process/snippets/git-branch-policy-for-plans.md`（プラン本文へ貼る Git 方針スニペット）
 
 ## 導入ステップ
 1. 着手時に `plan-compliance-checklist.md` をコピーして案件用チェックシートを作成する。
