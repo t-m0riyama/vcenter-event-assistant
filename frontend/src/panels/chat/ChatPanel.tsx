@@ -47,6 +47,14 @@ const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
 
 /** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
+const DEFAULT_METRIC_THRESHOLD_CPU_PCT = 80
+const DEFAULT_METRIC_THRESHOLD_MEMORY_PCT = 85
+const DEFAULT_METRIC_THRESHOLD_DISK_PCT = 75
+const DEFAULT_METRIC_THRESHOLD_NETWORK_PCT = 75
+
+function isValidMetricThresholdPercent(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 100
+}
 
 /**
  * 期間集約コンテキスト付きの LLM チャットパネル。会話リストは最下部付近にいるときだけ追従し、
@@ -73,6 +81,26 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
   const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
+  const [metricThresholdCpuPct, setMetricThresholdCpuPct] = useState(DEFAULT_METRIC_THRESHOLD_CPU_PCT)
+  const [metricThresholdCpuInput, setMetricThresholdCpuInput] = useState(
+    String(DEFAULT_METRIC_THRESHOLD_CPU_PCT),
+  )
+  const [metricThresholdMemoryPct, setMetricThresholdMemoryPct] = useState(
+    DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
+  )
+  const [metricThresholdMemoryInput, setMetricThresholdMemoryInput] = useState(
+    String(DEFAULT_METRIC_THRESHOLD_MEMORY_PCT),
+  )
+  const [metricThresholdDiskPct, setMetricThresholdDiskPct] = useState(DEFAULT_METRIC_THRESHOLD_DISK_PCT)
+  const [metricThresholdDiskInput, setMetricThresholdDiskInput] = useState(
+    String(DEFAULT_METRIC_THRESHOLD_DISK_PCT),
+  )
+  const [metricThresholdNetworkPct, setMetricThresholdNetworkPct] = useState(
+    DEFAULT_METRIC_THRESHOLD_NETWORK_PCT,
+  )
+  const [metricThresholdNetworkInput, setMetricThresholdNetworkInput] = useState(
+    String(DEFAULT_METRIC_THRESHOLD_NETWORK_PCT),
+  )
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   /** `localStorage` からの初回復元が終わるまで永続化 `write` しない */
   const [storageHydrated, setStorageHydrated] = useState(false)
@@ -241,6 +269,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         include_period_metrics_memory: includePeriodMetricsMemory,
         include_period_metrics_disk_io: includePeriodMetricsDiskIo,
         include_period_metrics_network_io: includePeriodMetricsNetworkIo,
+        metric_threshold_cpu_pct: metricThresholdCpuPct,
+        metric_threshold_memory_pct: metricThresholdMemoryPct,
+        metric_threshold_disk_pct: metricThresholdDiskPct,
+        metric_threshold_network_pct: metricThresholdNetworkPct,
       }
       if (vcenterId) {
         body.vcenter_id = vcenterId
@@ -298,6 +330,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsMemory,
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
+    metricThresholdCpuPct,
+    metricThresholdMemoryPct,
+    metricThresholdDiskPct,
+    metricThresholdNetworkPct,
     chatMaxStoredMessages,
   ])
 
@@ -332,6 +368,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         include_period_metrics_memory: includePeriodMetricsMemory,
         include_period_metrics_disk_io: includePeriodMetricsDiskIo,
         include_period_metrics_network_io: includePeriodMetricsNetworkIo,
+        metric_threshold_cpu_pct: metricThresholdCpuPct,
+        metric_threshold_memory_pct: metricThresholdMemoryPct,
+        metric_threshold_disk_pct: metricThresholdDiskPct,
+        metric_threshold_network_pct: metricThresholdNetworkPct,
       }
       if (vcenterId) {
         body.vcenter_id = vcenterId
@@ -356,6 +396,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     includePeriodMetricsMemory,
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
+    metricThresholdCpuPct,
+    metricThresholdMemoryPct,
+    metricThresholdDiskPct,
+    metricThresholdNetworkPct,
     chatMaxStoredMessages,
   ])
 
@@ -370,6 +414,25 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       }
     },
     [onError],
+  )
+
+  const handleMetricThresholdInputChange = useCallback(
+    (
+      rawValue: string,
+      setInput: (value: string) => void,
+      setValue: (value: number) => void,
+    ) => {
+      setInput(rawValue)
+      if (rawValue.trim() === '') {
+        return
+      }
+      const parsed = Number(rawValue)
+      if (!isValidMetricThresholdPercent(parsed)) {
+        return
+      }
+      setValue(parsed)
+    },
+    [],
   )
 
   return (
@@ -447,6 +510,88 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           />
           ネットワーク IO
         </label>
+      </section>
+
+      <section className="chat-panel__section" aria-label="メトリクス閾値">
+        <p className="hint chat-panel__metrics-hint">インシデント判定に使う閾値（%）</p>
+        <div className="chat-panel__threshold-grid">
+          <label className="chat-panel__threshold-field">
+            CPU 閾値（%）
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={metricThresholdCpuInput}
+              onChange={(e) =>
+                handleMetricThresholdInputChange(
+                  e.target.value,
+                  setMetricThresholdCpuInput,
+                  setMetricThresholdCpuPct,
+                )
+              }
+              onBlur={() => setMetricThresholdCpuInput(String(metricThresholdCpuPct))}
+              disabled={loading}
+            />
+          </label>
+          <label className="chat-panel__threshold-field">
+            Memory 閾値（%）
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={metricThresholdMemoryInput}
+              onChange={(e) =>
+                handleMetricThresholdInputChange(
+                  e.target.value,
+                  setMetricThresholdMemoryInput,
+                  setMetricThresholdMemoryPct,
+                )
+              }
+              onBlur={() => setMetricThresholdMemoryInput(String(metricThresholdMemoryPct))}
+              disabled={loading}
+            />
+          </label>
+          <label className="chat-panel__threshold-field">
+            Disk 閾値（%）
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={metricThresholdDiskInput}
+              onChange={(e) =>
+                handleMetricThresholdInputChange(
+                  e.target.value,
+                  setMetricThresholdDiskInput,
+                  setMetricThresholdDiskPct,
+                )
+              }
+              onBlur={() => setMetricThresholdDiskInput(String(metricThresholdDiskPct))}
+              disabled={loading}
+            />
+          </label>
+          <label className="chat-panel__threshold-field">
+            Network 閾値（%）
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={metricThresholdNetworkInput}
+              onChange={(e) =>
+                handleMetricThresholdInputChange(
+                  e.target.value,
+                  setMetricThresholdNetworkInput,
+                  setMetricThresholdNetworkPct,
+                )
+              }
+              onBlur={() => setMetricThresholdNetworkInput(String(metricThresholdNetworkPct))}
+              disabled={loading}
+            />
+          </label>
+        </div>
       </section>
 
       {previewData?.incident_timeline && (

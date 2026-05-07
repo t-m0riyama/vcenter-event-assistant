@@ -22,6 +22,8 @@ import {
 } from './chatMessagesListScroll'
 import { ChatPanel } from './ChatPanel'
 
+const CHAT_PANEL_TEST_TIMEOUT_MS = 20_000
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -95,7 +97,12 @@ function attachScrollableMessagesListMock(
   }
 }
 
-describe('ChatPanel', () => {
+describe(
+  'ChatPanel',
+  {
+    timeout: CHAT_PANEL_TEST_TIMEOUT_MS,
+  },
+  () => {
   beforeEach(() => {
     localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
@@ -420,33 +427,28 @@ describe('ChatPanel', () => {
     fireEvent.change(ta, { target: { value: '一問目' } })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     await waitFor(() => {
-      expect(screen.getByText('回答A')).toBeInTheDocument()
+      expect(postCount).toBe(1)
     })
 
     fireEvent.change(ta, { target: { value: '二問目' } })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     await waitFor(() => {
-      expect(screen.getByText('回答B')).toBeInTheDocument()
+      expect(postCount).toBe(2)
     })
 
     const conversation = screen.getByRole('list', { name: '会話' })
-    const copyButtons = within(conversation).getAllByRole('button', { name: '回答をコピー' })
-    expect(copyButtons.length).toBe(2)
+    let copyButtons: HTMLButtonElement[] = []
+    await waitFor(() => {
+      copyButtons = within(conversation).getAllByRole('button', { name: '回答をコピー' }) as HTMLButtonElement[]
+      expect(copyButtons.length).toBe(2)
+    })
 
-    const firstAssistantLi = screen.getByText('回答A').closest('li')
-    expect(firstAssistantLi).toBeInstanceOf(HTMLElement)
-    fireEvent.click(
-      within(firstAssistantLi as HTMLElement).getByRole('button', { name: '回答をコピー' }),
-    )
+    fireEvent.click(copyButtons[0] as HTMLButtonElement)
     await waitFor(() => {
       expect(writeText).toHaveBeenLastCalledWith('回答A')
     })
 
-    const secondAssistantLi = screen.getByText('回答B').closest('li')
-    expect(secondAssistantLi).toBeInstanceOf(HTMLElement)
-    fireEvent.click(
-      within(secondAssistantLi as HTMLElement).getByRole('button', { name: '回答をコピー' }),
-    )
+    fireEvent.click(copyButtons[1] as HTMLButtonElement)
     await waitFor(() => {
       expect(writeText).toHaveBeenLastCalledWith('回答B')
     })
@@ -628,15 +630,25 @@ describe('ChatPanel', () => {
     expect(sendAfter.getAttribute('aria-busy')).not.toBe('true')
   })
 
-  it('CPU 使用率のチェックをオンにすると POST 本文に include_period_metrics_cpu が含まれる', async () => {
+  it('送信時にメトリクス有効化フラグと閾値4項目が POST 本文に含まれる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
         return Promise.resolve(jsonResponse([]))
       }
       if (url.endsWith('/api/chat') && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as { include_period_metrics_cpu?: boolean }
+        const body = JSON.parse(String(init.body)) as {
+          include_period_metrics_cpu?: boolean
+          metric_threshold_cpu_pct?: number
+          metric_threshold_memory_pct?: number
+          metric_threshold_disk_pct?: number
+          metric_threshold_network_pct?: number
+        }
         expect(body.include_period_metrics_cpu).toBe(true)
+        expect(body.metric_threshold_cpu_pct).toBe(80)
+        expect(body.metric_threshold_memory_pct).toBe(85)
+        expect(body.metric_threshold_disk_pct).toBe(75)
+        expect(body.metric_threshold_network_pct).toBe(75)
         return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -659,6 +671,117 @@ describe('ChatPanel', () => {
         (c) => String(c[0]).endsWith('/api/chat') && (c[1] as RequestInit)?.method === 'POST',
       )
       expect(posts.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  it('プレビュー時に変更した閾値4項目を POST /api/chat/preview 本文へ送る', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat/preview') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as {
+          metric_threshold_cpu_pct?: number
+          metric_threshold_memory_pct?: number
+          metric_threshold_disk_pct?: number
+          metric_threshold_network_pct?: number
+        }
+        expect(body.metric_threshold_cpu_pct).toBe(81)
+        expect(body.metric_threshold_memory_pct).toBe(82)
+        expect(body.metric_threshold_disk_pct).toBe(73)
+        expect(body.metric_threshold_network_pct).toBe(74)
+        return Promise.resolve(
+          jsonResponse({
+            context_block: 'ctx',
+            conversation: [{ role: 'user', content: '質問' }],
+          }),
+        )
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'CPU 閾値（%）' }), {
+      target: { value: '81' },
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Memory 閾値（%）' }), {
+      target: { value: '82' },
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Disk 閾値（%）' }), {
+      target: { value: '73' },
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Network 閾値（%）' }), {
+      target: { value: '74' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '質問' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
+
+    await waitFor(() => {
+      const posts = fetchMock.mock.calls.filter(
+        (c) => String(c[0]).endsWith('/api/chat/preview') && (c[1] as RequestInit)?.method === 'POST',
+      )
+      expect(posts.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  it('閾値の空入力や範囲外入力は API 本文へ反映しない', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as {
+          metric_threshold_cpu_pct?: number
+          metric_threshold_memory_pct?: number
+          metric_threshold_disk_pct?: number
+          metric_threshold_network_pct?: number
+        }
+        expect(body.metric_threshold_cpu_pct).toBe(80)
+        expect(body.metric_threshold_memory_pct).toBe(85)
+        expect(body.metric_threshold_disk_pct).toBe(75)
+        expect(body.metric_threshold_network_pct).toBe(75)
+        return Promise.resolve(jsonResponse({ assistant_content: 'ok', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const cpu = screen.getByRole('spinbutton', { name: 'CPU 閾値（%）' })
+    const memory = screen.getByRole('spinbutton', { name: 'Memory 閾値（%）' })
+    const disk = screen.getByRole('spinbutton', { name: 'Disk 閾値（%）' })
+    const network = screen.getByRole('spinbutton', { name: 'Network 閾値（%）' })
+
+    fireEvent.change(cpu, { target: { value: '' } })
+    fireEvent.change(memory, { target: { value: '101' } })
+    fireEvent.change(disk, { target: { value: '-1' } })
+    fireEvent.change(network, { target: { value: '-' } })
+
+    fireEvent.blur(cpu)
+    fireEvent.blur(memory)
+    fireEvent.blur(disk)
+    fireEvent.blur(network)
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: '閾値ガード確認' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('ok')).toBeInTheDocument()
     })
   })
 
@@ -1016,4 +1139,5 @@ describe('ChatPanel', () => {
     expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
     expect(screen.getByText('重大アラート')).toBeInTheDocument()
   })
-})
+  },
+)

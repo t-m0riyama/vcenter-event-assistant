@@ -323,5 +323,5 @@ async def test_post_chat_preview_cpu_toggle_only_keeps_cpu_metrics_in_timeline(
     entries = captured["entries"]
     assert isinstance(entries, list)
     metric_titles = [entry.title for entry in entries if entry.kind == "metric"]
-    assert any(title.startswith("host.cpu.usage_pct:") for title in metric_titles)
-    assert not any(title.startswith("host.mem.usage_pct:") for title in metric_titles)
+    assert any(title.startswith("esxi-01 host.cpu.usage_pct:") for title in metric_titles)
+    assert not any(title.startswith("esxi-01 host.mem.usage_pct:") for title in metric_titles)

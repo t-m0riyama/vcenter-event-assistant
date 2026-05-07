@@ -35,6 +35,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="真のとき期間内ネットワーク IO 系メトリクスをバケット平均で含める",
     )
+    metric_threshold_cpu_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_memory_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
 
     @model_validator(mode="after")
     def last_message_is_user(self) -> ChatRequest:

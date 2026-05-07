@@ -5,6 +5,7 @@ import {
   parseDigestListResponse,
   parseSummary,
   parseChatPreviewResponse,
+  chatRequestSchema,
 } from './schemas'
 
 describe('eventRowSchema', () => {
@@ -168,6 +169,8 @@ describe('parseChatPreviewResponse', () => {
         columns: [
           {
             timestamp_utc: '2026-05-07T00:00:00Z',
+            bucket_start_utc: '2026-05-07T00:00:00Z',
+            bucket_end_utc: '2026-05-07T01:00:00Z',
             items: [
               { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' },
               { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'A1' },
@@ -181,5 +184,59 @@ describe('parseChatPreviewResponse', () => {
     const parsed = parseChatPreviewResponse(raw)
     expect(parsed.incident_timeline?.columns).toHaveLength(1)
     expect(parsed.incident_timeline?.columns[0]?.hidden_count).toBe(1)
+    expect(parsed.incident_timeline?.columns[0]?.bucket_start_utc).toBe('2026-05-07T00:00:00Z')
+  })
+})
+
+describe('chatRequestSchema', () => {
+  it('任意閾値4項目に 0〜100 を受け入れる', () => {
+    const parsed = chatRequestSchema.parse({
+      from: '2026-05-07T00:00:00Z',
+      to: '2026-05-08T00:00:00Z',
+      messages: [{ role: 'user', content: '状況を教えて' }],
+      metric_threshold_cpu_pct: 80,
+      metric_threshold_memory_pct: 75,
+      metric_threshold_disk_pct: 70,
+      metric_threshold_network_pct: 65,
+    })
+    expect(parsed.metric_threshold_cpu_pct).toBe(80)
+    expect(parsed.metric_threshold_memory_pct).toBe(75)
+    expect(parsed.metric_threshold_disk_pct).toBe(70)
+    expect(parsed.metric_threshold_network_pct).toBe(65)
+  })
+
+  it('任意閾値4項目に null を受け入れる', () => {
+    const parsed = chatRequestSchema.parse({
+      from: '2026-05-07T00:00:00Z',
+      to: '2026-05-08T00:00:00Z',
+      messages: [{ role: 'user', content: '状況を教えて' }],
+      metric_threshold_cpu_pct: null,
+      metric_threshold_memory_pct: null,
+      metric_threshold_disk_pct: null,
+      metric_threshold_network_pct: null,
+    })
+    expect(parsed.metric_threshold_cpu_pct).toBeNull()
+    expect(parsed.metric_threshold_memory_pct).toBeNull()
+    expect(parsed.metric_threshold_disk_pct).toBeNull()
+    expect(parsed.metric_threshold_network_pct).toBeNull()
+  })
+
+  it('任意閾値が 0 未満または 100 超のとき拒否する', () => {
+    expect(() =>
+      chatRequestSchema.parse({
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+        messages: [{ role: 'user', content: '状況を教えて' }],
+        metric_threshold_cpu_pct: -1,
+      }),
+    ).toThrow()
+    expect(() =>
+      chatRequestSchema.parse({
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+        messages: [{ role: 'user', content: '状況を教えて' }],
+        metric_threshold_network_pct: 101,
+      }),
+    ).toThrow()
   })
 })

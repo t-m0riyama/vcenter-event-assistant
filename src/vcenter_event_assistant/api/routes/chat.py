@@ -22,6 +22,7 @@ from vcenter_event_assistant.services.chat_period_metrics import (
     compute_chat_bucket_seconds,
     PeriodMetricsPayload,
 )
+from vcenter_event_assistant.services.chat_timeline_metric_filter import build_timeline_metric_entries
 from vcenter_event_assistant.services.digest_context import build_digest_context, DigestContext
 from vcenter_event_assistant.services.llm_profile import is_chat_llm_configured
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
@@ -129,15 +130,15 @@ async def _build_chat_context_payloads(
             *((timeline_period_metrics.disk or []) if body.include_period_metrics_disk_io else []),
             *((timeline_period_metrics.network or []) if body.include_period_metrics_network_io else []),
         ]
-        for series in selected_metric_series:
-            for point in series.series:
-                timeline_entries.append(
-                    IncidentTimelineEntry(
-                        timestamp_utc=point.bucket_start_utc,
-                        kind="metric",
-                        title=f"{series.metric_key}: avg={point.avg:.2f}",
-                    )
-                )
+        timeline_entries.extend(
+            build_timeline_metric_entries(
+                selected_metric_series,
+                threshold_cpu_pct=body.metric_threshold_cpu_pct,
+                threshold_memory_pct=body.metric_threshold_memory_pct,
+                threshold_disk_pct=body.metric_threshold_disk_pct,
+                threshold_network_pct=body.metric_threshold_network_pct,
+            )
+        )
     else:
         for row in ctx.high_cpu_hosts:
             timeline_entries.append(
