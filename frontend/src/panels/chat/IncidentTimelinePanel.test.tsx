@@ -185,6 +185,33 @@ describe('IncidentTimelinePanel', () => {
     expect(screen.getByText('00:00-06:00')).toBeInTheDocument()
   })
 
+  it('表示対象が複数日に跨ると短期間バケットでも開始時刻に日付を付ける', () => {
+    const timeline: IncidentTimeline = {
+      columns: [
+        {
+          timestamp_utc: '2026-05-08T17:38:00Z',
+          bucket_start_utc: '2026-05-08T17:38:00Z',
+          bucket_end_utc: '2026-05-08T18:38:00Z',
+          items: [{ timestamp_utc: '2026-05-08T17:38:00Z', kind: 'alert', title: 'A' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+        {
+          timestamp_utc: '2026-05-07T16:42:00Z',
+          bucket_start_utc: '2026-05-07T16:42:00Z',
+          bucket_end_utc: '2026-05-07T17:42:00Z',
+          items: [{ timestamp_utc: '2026-05-07T16:42:00Z', kind: 'event', title: 'E' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+      ],
+    }
+    render(<IncidentTimelinePanel timeline={timeline} />)
+
+    expect(screen.getByText('05/08 17:38-18:38')).toBeInTheDocument()
+    expect(screen.getByText('05/07 16:42-17:42')).toBeInTheDocument()
+  })
+
   it('長期間バケットは MM/DD HH:mm-HH:mm で表示する', () => {
     const timeline: IncidentTimeline = {
       columns: [
@@ -201,5 +228,48 @@ describe('IncidentTimelinePanel', () => {
     render(<IncidentTimelinePanel timeline={timeline} />)
 
     expect(screen.getByText('05/01 00:00-12:00')).toBeInTheDocument()
+  })
+
+  it('sortOrder で時刻列の左右順を切り替える（asc=古→新, desc=新→古）', () => {
+    const timeline: IncidentTimeline = {
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: 'middle' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+        {
+          timestamp_utc: '2026-05-06T00:00:00Z',
+          items: [{ timestamp_utc: '2026-05-06T00:00:00Z', kind: 'event', title: 'oldest' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+        {
+          timestamp_utc: '2026-05-08T00:00:00Z',
+          items: [{ timestamp_utc: '2026-05-08T00:00:00Z', kind: 'metric', title: 'newest' }],
+          visible_items: [],
+          hidden_count: 0,
+        },
+      ],
+    }
+
+    const { rerender } = render(<IncidentTimelinePanel timeline={timeline} sortOrder="asc" />)
+    expect(
+      screen.getAllByRole('listitem').map((item) => item.getAttribute('aria-label')),
+    ).toEqual([
+      '2026-05-06T00:00:00Z のタイムライン',
+      '2026-05-07T00:00:00Z のタイムライン',
+      '2026-05-08T00:00:00Z のタイムライン',
+    ])
+
+    rerender(<IncidentTimelinePanel timeline={timeline} sortOrder="desc" />)
+    expect(
+      screen.getAllByRole('listitem').map((item) => item.getAttribute('aria-label')),
+    ).toEqual([
+      '2026-05-08T00:00:00Z のタイムライン',
+      '2026-05-07T00:00:00Z のタイムライン',
+      '2026-05-06T00:00:00Z のタイムライン',
+    ])
   })
 })

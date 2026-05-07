@@ -199,3 +199,64 @@ async def test_build_chat_event_time_buckets_filters_by_vcenter_id() -> None:
     assert len(out.buckets) == 1
     assert out.buckets[0].total == 1
     assert out.buckets[0].by_type == {"E1": 1}
+
+
+@pytest.mark.asyncio
+async def test_build_chat_event_time_buckets_alert_top_n_and_other_per_bucket() -> None:
+    """バケット内アラートは score→count→event_type で上位Nを返し、残りを other に合算する。"""
+    vid = uuid.uuid4()
+    from_utc = datetime(2026, 3, 22, 10, 0, 0, tzinfo=timezone.utc)
+    to_utc = from_utc + timedelta(hours=1)
+
+    async with session_scope() as session:
+        session.add(
+            VCenter(
+                id=vid,
+                name="vc",
+                host="h",
+                port=443,
+                username="u",
+                password="p",
+                is_enabled=True,
+            )
+        )
+        seed = [
+            ("Alert-A", 90),
+            ("Alert-A", 30),
+            ("Alert-B", 90),
+            ("Alert-B", 90),
+            ("Alert-C", 80),
+            ("Alert-D", 80),
+            ("Alert-D", 80),
+            ("Alert-E", 50),
+        ]
+        for i, (event_type, notable_score) in enumerate(seed):
+            session.add(
+                EventRecord(
+                    vcenter_id=vid,
+                    occurred_at=from_utc + timedelta(minutes=i),
+                    event_type=event_type,
+                    message="",
+                    vmware_key=1000 + i,
+                    notable_score=notable_score,
+                )
+            )
+
+    async with session_scope() as session:
+        out = await build_chat_event_time_buckets(
+            session,
+            from_utc,
+            to_utc,
+            vcenter_id=None,
+            bucket_sec=3600,
+            max_types_per_bucket=10,
+            alert_top_n_per_bucket=3,
+        )
+
+    assert len(out.buckets) == 1
+    row = out.buckets[0]
+    # max_notable_score desc -> count desc -> event_type asc
+    assert [x.event_type for x in row.alert_top_types] == ["Alert-A", "Alert-B", "Alert-D"]
+    assert [x.max_notable_score for x in row.alert_top_types] == [90, 90, 80]
+    assert [x.count for x in row.alert_top_types] == [2, 2, 2]
+    assert row.alert_other_count == 2

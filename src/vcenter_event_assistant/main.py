@@ -24,6 +24,9 @@ from vcenter_event_assistant.api.routes.metrics import router as metrics_router
 from vcenter_event_assistant.api.routes.vcenters import router as vcenters_router
 from vcenter_event_assistant.api.routes.alerts import router as alerts_router
 from vcenter_event_assistant.api.routes.ingest import router as ingest_router
+from vcenter_event_assistant.api.routes.incident_timeline import (
+    router as incident_timeline_router,
+)
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
@@ -84,6 +87,7 @@ def create_app() -> FastAPI:
     api.include_router(dashboard_router)
     api.include_router(digests_router)
     api.include_router(chat_router)
+    api.include_router(incident_timeline_router)
     api.include_router(alerts_router)
     api.include_router(ingest_router)
 

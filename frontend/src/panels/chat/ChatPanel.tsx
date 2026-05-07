@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import './ChatPanel.css'
 
 import { apiGet, apiPost } from '../../api'
+import { buildIncidentTimelineBuildRequestPayload } from '../../api/buildIncidentTimelineBuildRequestPayload'
 import { readStoredChatMaxStoredMessages } from '../../preferences/chatMaxStoredMessagesStorage'
 import { useChatMaxStoredMessages } from '../../preferences/useChatMaxStoredMessages'
 import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
@@ -40,7 +41,6 @@ import { appendChatSampleTextToDraft } from './appendChatSampleTextToDraft'
 import { ChatCopyAnswerSvg, ChatPreviewSvg, ChatSendSvg } from './chatPanelIcons'
 import { ChatMarkdownContent } from './ChatMarkdownContent'
 import { ChatPromptPreviewModal } from './ChatPromptPreviewModal'
-import { IncidentTimelinePanel } from './IncidentTimelinePanel'
 
 /** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
 const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
@@ -262,20 +262,21 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     setLoading(true)
     try {
       const body: Record<string, unknown> = {
-        from: resolved.from,
-        to: resolved.to,
+        ...buildIncidentTimelineBuildRequestPayload({
+          resolvedRange: { from: resolved.from, to: resolved.to },
+          options: {
+            vcenterId,
+            includePeriodMetricsCpu,
+            includePeriodMetricsMemory,
+            includePeriodMetricsDiskIo,
+            includePeriodMetricsNetworkIo,
+            metricThresholdCpuPct,
+            metricThresholdMemoryPct,
+            metricThresholdDiskPct,
+            metricThresholdNetworkPct,
+          },
+        }),
         messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES),
-        include_period_metrics_cpu: includePeriodMetricsCpu,
-        include_period_metrics_memory: includePeriodMetricsMemory,
-        include_period_metrics_disk_io: includePeriodMetricsDiskIo,
-        include_period_metrics_network_io: includePeriodMetricsNetworkIo,
-        metric_threshold_cpu_pct: metricThresholdCpuPct,
-        metric_threshold_memory_pct: metricThresholdMemoryPct,
-        metric_threshold_disk_pct: metricThresholdDiskPct,
-        metric_threshold_network_pct: metricThresholdNetworkPct,
-      }
-      if (vcenterId) {
-        body.vcenter_id = vcenterId
       }
       const raw = await apiPost<unknown>('/api/chat', body)
       const out = parseChatResponse(raw)
@@ -361,20 +362,21 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     setPreviewing(true)
     try {
       const body: Record<string, unknown> = {
-        from: resolved.from,
-        to: resolved.to,
+        ...buildIncidentTimelineBuildRequestPayload({
+          resolvedRange: { from: resolved.from, to: resolved.to },
+          options: {
+            vcenterId,
+            includePeriodMetricsCpu,
+            includePeriodMetricsMemory,
+            includePeriodMetricsDiskIo,
+            includePeriodMetricsNetworkIo,
+            metricThresholdCpuPct,
+            metricThresholdMemoryPct,
+            metricThresholdDiskPct,
+            metricThresholdNetworkPct,
+          },
+        }),
         messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES),
-        include_period_metrics_cpu: includePeriodMetricsCpu,
-        include_period_metrics_memory: includePeriodMetricsMemory,
-        include_period_metrics_disk_io: includePeriodMetricsDiskIo,
-        include_period_metrics_network_io: includePeriodMetricsNetworkIo,
-        metric_threshold_cpu_pct: metricThresholdCpuPct,
-        metric_threshold_memory_pct: metricThresholdMemoryPct,
-        metric_threshold_disk_pct: metricThresholdDiskPct,
-        metric_threshold_network_pct: metricThresholdNetworkPct,
-      }
-      if (vcenterId) {
-        body.vcenter_id = vcenterId
       }
       const raw = await apiPost<unknown>('/api/chat/preview', body)
       const out = parseChatPreviewResponse(raw)
@@ -593,10 +595,6 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
           </label>
         </div>
       </section>
-
-      {previewData?.incident_timeline && (
-        <IncidentTimelinePanel timeline={previewData.incident_timeline} />
-      )}
 
       <ul
         ref={messagesListRef}

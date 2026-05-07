@@ -155,20 +155,20 @@ async def test_post_chat_preview_builds_incident_timeline_and_passes_to_preview_
         )
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.chat.build_digest_context",
+        "vcenter_event_assistant.services.chat_context_payloads.build_digest_context",
         _fake_digest_context,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.chat.build_chat_event_time_buckets",
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets",
         _fake_event_buckets,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.chat.build_chat_period_metrics",
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics",
         _fake_period_metrics,
     )
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.chat.build_chat_incident_timeline",
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_incident_timeline",
         _fake_timeline,
     )
 
@@ -302,10 +302,10 @@ async def test_post_chat_preview_cpu_toggle_only_keeps_cpu_metrics_in_timeline(
             ),
         )
 
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_digest_context", _fake_digest_context)
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_chat_event_time_buckets", _fake_event_buckets)
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_chat_period_metrics", _fake_period_metrics)
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_chat_incident_timeline", _fake_timeline)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat_context_payloads.build_digest_context", _fake_digest_context)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets", _fake_event_buckets)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics", _fake_period_metrics)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat_context_payloads.build_chat_incident_timeline", _fake_timeline)
     monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_chat_preview", _fake_build)
 
     resp = await client.post(

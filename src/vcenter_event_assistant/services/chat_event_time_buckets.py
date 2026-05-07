@@ -26,6 +26,16 @@ class EventTimeBucketRow(BaseModel):
     bucket_start_utc: datetime
     total: int = Field(ge=0)
     by_type: dict[str, int] = Field(default_factory=dict)
+    alert_top_types: list["AlertTypeBucketRow"] = Field(default_factory=list)
+    alert_other_count: int = Field(default=0, ge=0)
+
+
+class AlertTypeBucketRow(BaseModel):
+    """1 バケット内のアラート集約（event_type 単位）。"""
+
+    event_type: str
+    count: int = Field(ge=0)
+    max_notable_score: int
 
 
 class EventTimeBucketsPayload(BaseModel):
@@ -45,6 +55,7 @@ async def build_chat_event_time_buckets(
     vcenter_id: uuid.UUID | None,
     bucket_sec: int,
     max_types_per_bucket: int = 10,
+    alert_top_n_per_bucket: int = 3,
 ) -> EventTimeBucketsPayload:
     """
     ``occurred_at`` を ``bucket_sec`` 幅のバケットに集計する。
@@ -56,6 +67,8 @@ async def build_chat_event_time_buckets(
         raise ValueError("bucket_sec must be >= 1")
     if max_types_per_bucket < 1:
         raise ValueError("max_types_per_bucket must be >= 1")
+    if alert_top_n_per_bucket < 1:
+        raise ValueError("alert_top_n_per_bucket must be >= 1")
 
     from_utc = _as_utc(from_utc)
     to_utc = _as_utc(to_utc)
@@ -74,6 +87,9 @@ async def build_chat_event_time_buckets(
     rows = list(result.scalars().all())
 
     counts_by_bidx: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    alert_stats_by_bidx: dict[int, dict[str, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"count": 0, "max_notable_score": 0})
+    )
     for r in rows:
         occurred = _as_utc(r.occurred_at)
         offset_sec = (occurred - from_utc).total_seconds()
@@ -81,6 +97,11 @@ async def build_chat_event_time_buckets(
             continue
         bidx = int(offset_sec // bucket_sec)
         counts_by_bidx[bidx][r.event_type] += 1
+        current = alert_stats_by_bidx[bidx][r.event_type]
+        current["count"] += 1
+        score = int(r.notable_score or 0)
+        if score > current["max_notable_score"]:
+            current["max_notable_score"] = score
 
     bucket_minutes = max(1, bucket_sec // 60)
     out_rows: list[EventTimeBucketRow] = []
@@ -94,12 +115,35 @@ async def build_chat_event_time_buckets(
         rest_sum = sum(v for _, v in rest)
         if rest_sum:
             by_type["_other"] = rest_sum
+
+        raw_alerts = alert_stats_by_bidx[bidx]
+        ranked_alerts = sorted(
+            raw_alerts.items(),
+            key=lambda x: (
+                -int(x[1]["max_notable_score"]),
+                -int(x[1]["count"]),
+                x[0],
+            ),
+        )
+        top_alerts = ranked_alerts[:alert_top_n_per_bucket]
+        rest_alerts = ranked_alerts[alert_top_n_per_bucket:]
+        alert_top_types = [
+            AlertTypeBucketRow(
+                event_type=event_type,
+                count=int(stat["count"]),
+                max_notable_score=int(stat["max_notable_score"]),
+            )
+            for event_type, stat in top_alerts
+        ]
+        alert_other_count = sum(int(stat["count"]) for _, stat in rest_alerts)
         bucket_start = from_utc + timedelta(seconds=bidx * bucket_sec)
         out_rows.append(
             EventTimeBucketRow(
                 bucket_start_utc=bucket_start,
                 total=total,
                 by_type=by_type,
+                alert_top_types=alert_top_types,
+                alert_other_count=alert_other_count,
             ),
         )
 

@@ -6,6 +6,8 @@ import {
   parseSummary,
   parseChatPreviewResponse,
   chatRequestSchema,
+  incidentTimelineBuildRequestSchema,
+  parseIncidentTimelineResponse,
 } from './schemas'
 
 describe('eventRowSchema', () => {
@@ -186,6 +188,36 @@ describe('parseChatPreviewResponse', () => {
     expect(parsed.incident_timeline?.columns[0]?.hidden_count).toBe(1)
     expect(parsed.incident_timeline?.columns[0]?.bucket_start_utc).toBe('2026-05-07T00:00:00Z')
   })
+
+  it('旧ペイロードで visible_items と hidden_count が無くても解釈できる', () => {
+    const raw = {
+      context_block: 'ctx',
+      conversation: [{ role: 'user', content: 'hello' }],
+      incident_timeline: {
+        columns: [
+          {
+            timestamp_utc: '2026-05-07T00:00:00Z',
+            items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' }],
+          },
+        ],
+      },
+    }
+    const parsed = parseChatPreviewResponse(raw)
+    expect(parsed.incident_timeline?.columns[0]?.visible_items).toEqual([
+      { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' },
+    ])
+    expect(parsed.incident_timeline?.columns[0]?.hidden_count).toBe(0)
+  })
+
+  it('incident_timeline が null でも解釈できる', () => {
+    const raw = {
+      context_block: 'ctx',
+      conversation: [{ role: 'user', content: 'hello' }],
+      incident_timeline: null,
+    }
+    const parsed = parseChatPreviewResponse(raw)
+    expect(parsed.incident_timeline).toBeNull()
+  })
 })
 
 describe('chatRequestSchema', () => {
@@ -236,6 +268,144 @@ describe('chatRequestSchema', () => {
         to: '2026-05-08T00:00:00Z',
         messages: [{ role: 'user', content: '状況を教えて' }],
         metric_threshold_network_pct: 101,
+      }),
+    ).toThrow()
+  })
+
+  it('from/to が ISO UTC 形式でないとき拒否する', () => {
+    expect(() =>
+      chatRequestSchema.parse({
+        from: '2026-05-07 00:00:00',
+        to: '2026-05-08T00:00:00Z',
+        messages: [{ role: 'user', content: '状況を教えて' }],
+      }),
+    ).toThrow()
+    expect(() =>
+      chatRequestSchema.parse({
+        from: '2026-05-07T00:00:00+09:00',
+        to: '2026-05-08T00:00:00Z',
+        messages: [{ role: 'user', content: '状況を教えて' }],
+      }),
+    ).toThrow()
+  })
+})
+
+describe('parseIncidentTimelineResponse', () => {
+  it('parses incident timeline response payload for /api/incident-timeline', () => {
+    const parsed = parseIncidentTimelineResponse({
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' }],
+          visible_items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' }],
+          hidden_count: 0,
+        },
+      ],
+    })
+    expect(parsed.columns).toHaveLength(1)
+    expect(parsed.columns[0]?.visible_items[0]?.kind).toBe('event')
+  })
+
+  it('旧レスポンスで visible_items と hidden_count がなくても補完する', () => {
+    const parsed = parseIncidentTimelineResponse({
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' }],
+        },
+      ],
+    })
+    expect(parsed.columns[0]?.visible_items).toEqual([
+      { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' },
+    ])
+    expect(parsed.columns[0]?.hidden_count).toBe(0)
+  })
+
+  it('timestamp_utc が不正な列を拒否する', () => {
+    expect(() =>
+      parseIncidentTimelineResponse({
+        columns: [{ timestamp_utc: '2026-05-07 00:00:00', items: [] }],
+      }),
+    ).toThrow()
+  })
+})
+
+describe('incidentTimelineBuildRequestSchema', () => {
+  it('accepts timeline build payload without messages', () => {
+    const parsed = incidentTimelineBuildRequestSchema.parse({
+      from: '2026-05-07T00:00:00Z',
+      to: '2026-05-08T00:00:00Z',
+      top_notable_min_score: 1,
+      include_period_metrics_cpu: true,
+      include_period_metrics_memory: false,
+      include_period_metrics_disk_io: false,
+      include_period_metrics_network_io: true,
+      metric_threshold_cpu_pct: 80,
+      metric_threshold_memory_pct: null,
+      metric_threshold_disk_pct: 70,
+      metric_threshold_network_pct: null,
+    })
+    expect(parsed.from).toBe('2026-05-07T00:00:00Z')
+    expect(parsed.metric_threshold_cpu_pct).toBe(80)
+  })
+
+  it('rejects messages field for timeline build payload', () => {
+    expect(() =>
+      incidentTimelineBuildRequestSchema.parse({
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+        messages: [{ role: 'user', content: 'should not be accepted' }],
+      }),
+    ).toThrow()
+  })
+
+  it('from/to が ISO UTC 形式でないとき拒否する', () => {
+    expect(() =>
+      incidentTimelineBuildRequestSchema.parse({
+        from: '2026-05-07 00:00:00',
+        to: '2026-05-08T00:00:00Z',
+      }),
+    ).toThrow()
+    expect(() =>
+      incidentTimelineBuildRequestSchema.parse({
+        from: '2026-05-07T00:00:00+09:00',
+        to: '2026-05-08T00:00:00Z',
+      }),
+    ).toThrow()
+  })
+
+  it('alert_top_n を 1〜20 の範囲で受理する', () => {
+    const parsed = incidentTimelineBuildRequestSchema.parse({
+      from: '2026-05-07T00:00:00Z',
+      to: '2026-05-08T00:00:00Z',
+      alert_top_n: 5,
+    })
+    expect(parsed.alert_top_n).toBe(5)
+  })
+
+  it('alert_top_n が 1 未満や 20 超のとき拒否する', () => {
+    expect(() =>
+      incidentTimelineBuildRequestSchema.parse({
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+        alert_top_n: 0,
+      }),
+    ).toThrow()
+    expect(() =>
+      incidentTimelineBuildRequestSchema.parse({
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+        alert_top_n: 21,
+      }),
+    ).toThrow()
+  })
+
+  it('alert_top_n が整数でないとき拒否する', () => {
+    expect(() =>
+      incidentTimelineBuildRequestSchema.parse({
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+        alert_top_n: 1.5,
       }),
     ).toThrow()
   })

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { IncidentTimeline, IncidentTimelineEntry } from '../../api/schemas'
+import './IncidentTimelinePanel.css'
 
 const KIND_PRIORITY: Record<IncidentTimelineEntry['kind'], number> = {
   alert: 0,
@@ -10,6 +11,7 @@ const KIND_PRIORITY: Record<IncidentTimelineEntry['kind'], number> = {
 const DEFAULT_VISIBLE_ITEMS = 10
 type SourceFilter = 'all' | IncidentTimelineEntry['kind']
 type ImportanceFilter = 'all' | 'high' | 'medium' | 'low'
+type TimelineSortOrder = 'asc' | 'desc'
 const SHORT_RANGE_MAX_MS = 24 * 60 * 60 * 1000
 
 const KIND_TO_IMPORTANCE: Record<IncidentTimelineEntry['kind'], Exclude<ImportanceFilter, 'all'>> = {
@@ -51,7 +53,19 @@ function formatUtcDateClock(iso: string): string | null {
   return `${month}/${day} ${hh}:${mm}`
 }
 
-function formatTimelineHeader(column: IncidentTimeline['columns'][number]): string {
+function extractUtcDateKey(iso: string): string | null {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  const year = date.getUTCFullYear()
+  const month = formatTwoDigits(date.getUTCMonth() + 1)
+  const day = formatTwoDigits(date.getUTCDate())
+  return `${year}-${month}-${day}`
+}
+
+function formatTimelineHeader(
+  column: IncidentTimeline['columns'][number],
+  options: { includeStartDateInHeader: boolean },
+): string {
   if (!column.bucket_start_utc || !column.bucket_end_utc) {
     return column.timestamp_utc
   }
@@ -66,7 +80,8 @@ function formatTimelineHeader(column: IncidentTimeline['columns'][number]): stri
   if (!startClock || !endClock) {
     return column.timestamp_utc
   }
-  if (durationMs > 0 && durationMs <= SHORT_RANGE_MAX_MS) {
+  const shouldIncludeStartDate = options.includeStartDateInHeader || durationMs > SHORT_RANGE_MAX_MS
+  if (!shouldIncludeStartDate) {
     return `${startClock}-${endClock}`
   }
   const startDateClock = formatUtcDateClock(column.bucket_start_utc)
@@ -77,27 +92,48 @@ function formatTimelineHeader(column: IncidentTimeline['columns'][number]): stri
 }
 
 /** インシデント統合タイムラインを時刻列ごとに表示する。 */
-export function IncidentTimelinePanel({ timeline }: { timeline: IncidentTimeline }) {
+export function IncidentTimelinePanel({
+  timeline,
+  sortOrder = 'desc',
+}: {
+  timeline: IncidentTimeline
+  sortOrder?: TimelineSortOrder
+}) {
   const [expandedTimestamps, setExpandedTimestamps] = useState<Set<string>>(() => new Set())
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [importanceFilter, setImportanceFilter] = useState<ImportanceFilter>('all')
 
   const orderedColumns = useMemo(
-    () =>
-      [...timeline.columns].sort((a, b) =>
-        a.timestamp_utc < b.timestamp_utc ? 1 : a.timestamp_utc > b.timestamp_utc ? -1 : 0,
-      ),
-    [timeline.columns],
+    () => [...timeline.columns].sort((a, b) => {
+      const cmp = a.timestamp_utc < b.timestamp_utc ? -1 : a.timestamp_utc > b.timestamp_utc ? 1 : 0
+      return sortOrder === 'asc' ? cmp : -cmp
+    }),
+    [sortOrder, timeline.columns],
   )
 
+  const includeStartDateInHeader = useMemo(() => {
+    const dateKeys = new Set<string>()
+    for (const column of orderedColumns) {
+      const source = column.bucket_start_utc ?? column.timestamp_utc
+      const key = extractUtcDateKey(source)
+      if (key) {
+        dateKeys.add(key)
+      }
+      if (dateKeys.size > 1) {
+        return true
+      }
+    }
+    return false
+  }, [orderedColumns])
+
   return (
-    <section className="chat-panel__section" aria-label="インシデント統合タイムライン">
-      <h3 className="chat-panel__timeline-title">インシデント統合タイムライン</h3>
+    <section className="timeline-section" aria-label="インシデント統合タイムライン">
+      <h3 className="timeline-section__title">インシデント統合タイムライン</h3>
       {orderedColumns.length === 0 ? (
         <p className="hint">表示対象のタイムラインはありません。</p>
       ) : (
         <>
-          <div className="chat-panel__timeline-filters">
+          <div className="timeline-section__filters">
             <label>
               ソース
               <select
@@ -156,7 +192,9 @@ export function IncidentTimelinePanel({ timeline }: { timeline: IncidentTimeline
                     className="incident-timeline__column"
                     aria-label={`${column.timestamp_utc} のタイムライン`}
                   >
-                    <p className="incident-timeline__timestamp">{formatTimelineHeader(column)}</p>
+                    <p className="incident-timeline__timestamp">
+                      {formatTimelineHeader(column, { includeStartDateInHeader })}
+                    </p>
                     <div className="incident-timeline__items">
                       {shownItems.map((item, idx) => (
                         <span

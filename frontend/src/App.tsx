@@ -11,6 +11,7 @@ import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { AlertHistoryPanel } from './panels/alerts/AlertHistoryPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
+import { TimelinePanel } from './panels/timeline/TimelinePanel'
 import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
 import { HelpIcon } from './components/help-icon'
@@ -30,6 +31,8 @@ const HELP_CONTENT: Record<string, string> = {
     '【通知履歴】\nアラートの通知状況を確認できます。\n- 発火および回復のタイミング、通知の成否を一覧表示します。',
   chat:
     '【チャット】\nAI アシスタントと対話しながらイベント解析や調査が行えます。\n- 「最近の重要なエラーは？」などの質問が可能です。\n- サンプルプロンプトを活用して効率的に調査できます。',
+  timeline:
+    '【タイムライン】\n指定期間のイベントとアラートを統合したインシデント時系列を生成します。\n- vCenter やメトリクス条件を指定して、調査に必要な情報を集約できます。\n- 表示された項目から異常の流れを時系列で確認できます。',
   settings:
     '【設定】\nアプリケーションの動作環境を構成します。\n- 一般: リフレッシュ間隔やタイムゾーンの設定\n- vCenter: 接続先サーバーの管理\n- スコアルール: イベントの重要度判定ロジックの定義',
 }
@@ -51,6 +54,7 @@ const MAIN_TABS: TabConfig[] = [
   { id: 'digests', label: 'ダイジェスト' },
   { id: 'alerts', label: '通知履歴' },
   { id: 'chat', label: 'チャット' },
+  { id: 'timeline', label: 'タイムライン' },
   { id: 'settings', label: '設定' },
 ]
 
@@ -168,6 +172,7 @@ export default function App() {
           {tab === 'digests' && <DigestsPanel onError={setErr} />}
           {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
           {tab === 'chat' && <ChatPanel onError={setErr} />}
+          {tab === 'timeline' && <TimelinePanel onError={setErr} />}
           {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
           {tab === 'settings' && settingsSubTab === 'score_rules' && (
             <ScoreRulesPanel onError={setErr} />
