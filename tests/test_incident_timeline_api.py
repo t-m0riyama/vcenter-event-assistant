@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import re
@@ -10,6 +11,8 @@ import pytest
 from httpx import AsyncClient
 from vcenter_event_assistant.api.routes import incident_timeline as incident_timeline_route
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
+from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
+from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.chat_period_metrics import (
     PeriodMetricBucketPoint,
     PeriodMetricHostSeries,
@@ -34,6 +37,16 @@ def _manual_snapshot_request_body(**overrides: object) -> dict:
         "to": "2026-03-23T00:00:00Z",
         "timestamp_utc": "2026-03-22T01:23:45Z",
         "operator_note": "初動調査のため手動スナップショットを保存",
+        "build_request_payload": {
+            "from": "2026-03-22T00:00:00Z",
+            "to": "2026-03-23T00:00:00Z",
+            "vcenter_id": "550e8400-e29b-41d4-a716-446655440000",
+            "include_period_metrics_cpu": True,
+            "include_period_metrics_memory": True,
+            "metric_threshold_cpu_pct": 90,
+            "metric_threshold_memory_pct": 88,
+            "alert_top_n": 11,
+        },
     }
     base.update(overrides)
     return base
@@ -395,15 +408,47 @@ async def test_post_incident_timeline_returns_400_when_from_after_to(
 async def test_post_manual_snapshot_creates_snapshot_when_operator_note_present(
     client: AsyncClient,
 ) -> None:
+    request_body = _manual_snapshot_request_body()
     r = await client.post(
         "/api/incident-timeline/snapshots/manual",
-        json=_manual_snapshot_request_body(),
+        json=request_body,
     )
     assert r.status_code == 201
     data = r.json()
     assert isinstance(data.get("snapshot_id"), str)
     assert data.get("operator_note") == "初動調査のため手動スナップショットを保存"
     assert data.get("timestamp_utc") == "2026-03-22T01:23:45Z"
+    assert isinstance(data.get("build_request_payload"), dict)
+    build_request = IncidentTimelineBuildRequest.model_validate(data["build_request_payload"])
+    assert build_request.from_time == datetime.fromisoformat(request_body["from"].replace("Z", "+00:00"))
+    assert build_request.to_time == datetime.fromisoformat(request_body["to"].replace("Z", "+00:00"))
+    assert build_request.alert_top_n == 11
+    assert build_request.include_period_metrics_cpu is True
+
+
+@pytest.mark.asyncio
+async def test_post_manual_snapshot_persists_build_request_payload(
+    client: AsyncClient,
+) -> None:
+    request_body = _manual_snapshot_request_body()
+
+    r = await client.post(
+        "/api/incident-timeline/snapshots/manual",
+        json=request_body,
+    )
+    assert r.status_code == 201
+    snapshot_id = uuid.UUID(r.json()["snapshot_id"])
+
+    async with session_scope() as session:
+        snapshot = await session.get(IncidentTimelineManualSnapshot, snapshot_id)
+        assert snapshot is not None
+        build_request = IncidentTimelineBuildRequest.model_validate(snapshot.build_request_payload)
+        assert build_request.from_time == datetime.fromisoformat(request_body["from"].replace("Z", "+00:00"))
+        assert build_request.to_time == datetime.fromisoformat(request_body["to"].replace("Z", "+00:00"))
+        assert build_request.alert_top_n == 11
+        assert build_request.metric_threshold_cpu_pct == 90
+        assert "timestamp_utc" not in snapshot.build_request_payload
+        assert "operator_note" not in snapshot.build_request_payload
 
 
 @pytest.mark.asyncio
@@ -476,4 +521,13 @@ async def test_get_manual_snapshots_returns_paginated_list_with_limit_offset(
     assert data["total"] >= 2
     assert isinstance(data["items"], list)
     assert len(data["items"]) == 1
-    assert {"snapshot_id", "operator_note", "timestamp_utc"} <= set(data["items"][0].keys())
+    assert {"snapshot_id", "from", "to", "operator_note", "timestamp_utc", "build_request_payload"} <= set(data["items"][0].keys())
+    assert isinstance(data["items"][0]["timestamp_utc"], str)
+    assert data["items"][0]["timestamp_utc"].endswith("Z")
+    assert isinstance(data["items"][0]["from"], str)
+    assert isinstance(data["items"][0]["to"], str)
+    assert data["items"][0]["from"].endswith("Z")
+    assert data["items"][0]["to"].endswith("Z")
+    build_request = IncidentTimelineBuildRequest.model_validate(data["items"][0]["build_request_payload"])
+    assert build_request.from_time == datetime.fromisoformat(data["items"][0]["from"].replace("Z", "+00:00"))
+    assert build_request.to_time == datetime.fromisoformat(data["items"][0]["to"].replace("Z", "+00:00"))

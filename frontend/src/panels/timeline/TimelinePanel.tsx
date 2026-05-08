@@ -77,6 +77,7 @@ export function TimelinePanel({
   const [manualSnapshotAuditItems, setManualSnapshotAuditItems] = useState<
     IncidentTimelineManualSnapshotListItem[]
   >([])
+  const [selectedManualSnapshotId, setSelectedManualSnapshotId] = useState<string | null>(null)
 
   const [includePeriodMetricsCpu, setIncludePeriodMetricsCpu] = useState(false)
   const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
@@ -117,7 +118,26 @@ export function TimelinePanel({
     const listRaw = await apiGet<unknown>('/api/incident-timeline/snapshots/manual?limit=20&offset=0')
     const list = incidentTimelineManualSnapshotListResponseSchema.parse(listRaw)
     setManualSnapshotAuditItems(list.items)
+    setSelectedManualSnapshotId((current) => {
+      if (list.items.length === 0) {
+        return null
+      }
+      if (current && list.items.some((item) => item.snapshot_id === current)) {
+        return current
+      }
+      return list.items[0]?.snapshot_id ?? null
+    })
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        await fetchManualSnapshotAuditItems()
+      } catch (e) {
+        onError(toErrorMessage(e))
+      }
+    })()
+  }, [fetchManualSnapshotAuditItems, onError])
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') {
@@ -176,13 +196,13 @@ export function TimelinePanel({
       onError('期間の開始と終了を指定してください。')
       return
     }
-
+    const from = resolved.from
+    const to = resolved.to
     onError(null)
     setLoading(true)
-    setManualSnapshotAuditItems([])
     try {
       const payload = buildIncidentTimelineBuildRequestPayload({
-        resolvedRange: { from: resolved.from, to: resolved.to },
+        resolvedRange: { from, to },
         options: {
           vcenterId,
           includePeriodMetricsCpu,
@@ -222,6 +242,20 @@ export function TimelinePanel({
     fetchManualSnapshotAuditItems,
   ])
 
+  const loadTimelineFromSnapshot = useCallback(async (snapshot: IncidentTimelineManualSnapshotListItem) => {
+    onError(null)
+    setLoading(true)
+    try {
+      const raw = await apiPost<unknown>('/api/incident-timeline', snapshot.build_request_payload)
+      const out = parseIncidentTimelineResponse(raw)
+      setTimeline(out)
+    } catch (e) {
+      onError(toErrorMessage(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [onError])
+
   const saveManualSnapshot = useCallback(async () => {
     if (operatorNote.trim() === '') {
       return
@@ -235,11 +269,27 @@ export function TimelinePanel({
     onError(null)
     setSavingSnapshot(true)
     try {
+      const buildRequestPayload = buildIncidentTimelineBuildRequestPayload({
+        resolvedRange: { from: resolved.from, to: resolved.to },
+        options: {
+          vcenterId,
+          includePeriodMetricsCpu,
+          includePeriodMetricsMemory,
+          includePeriodMetricsDiskIo,
+          includePeriodMetricsNetworkIo,
+          metricThresholdCpuPct,
+          metricThresholdMemoryPct,
+          metricThresholdDiskPct,
+          metricThresholdNetworkPct,
+          alertTopN,
+        },
+      })
       const payload = incidentTimelineManualSnapshotCreateRequestSchema.parse({
         from: resolved.from,
         to: resolved.to,
         timestamp_utc: new Date().toISOString(),
         operator_note: operatorNote.trim(),
+        build_request_payload: buildRequestPayload,
       })
       const raw = await apiPost<unknown>('/api/incident-timeline/snapshots/manual', payload)
       incidentTimelineManualSnapshotCreateResponseSchema.parse(raw)
@@ -474,22 +524,51 @@ export function TimelinePanel({
         </section>
       ) : null}
 
-      {timeline ? (
-        <section className="timeline-panel__section" aria-label="手動スナップショット監査ビュー">
-          <h3>手動スナップショット監査ビュー</h3>
-          {manualSnapshotAuditItems.length === 0 ? (
-            <p className="hint">保存済みスナップショットはまだありません。</p>
-          ) : (
+      <section className="timeline-panel__section" aria-label="手動スナップショット監査ビュー">
+        <h3>手動スナップショット監査ビュー</h3>
+        {manualSnapshotAuditItems.length === 0 ? (
+          <p className="hint">保存済みスナップショットはまだありません。</p>
+        ) : (
+          <>
             <ul>
               {manualSnapshotAuditItems.map((item) => (
                 <li key={item.snapshot_id}>
-                  <strong>{item.operator_note}</strong> ({item.timestamp_utc})
+                  <button
+                    type="button"
+                    className="btn btn--gray"
+                    onClick={() => {
+                      setSelectedManualSnapshotId(item.snapshot_id)
+                      void loadTimelineFromSnapshot(item)
+                    }}
+                    aria-pressed={selectedManualSnapshotId === item.snapshot_id}
+                  >
+                    {item.operator_note}
+                  </button>{' '}
+                  <span>({item.timestamp_utc})</span>
                 </li>
               ))}
             </ul>
-          )}
-        </section>
-      ) : null}
+            {selectedManualSnapshotId ? (
+              <section aria-label="選択中スナップショット">
+                <h4>選択中スナップショット</h4>
+                {(() => {
+                  const selected = manualSnapshotAuditItems.find(
+                    (item) => item.snapshot_id === selectedManualSnapshotId,
+                  )
+                  if (!selected) {
+                    return <p className="hint">選択中のスナップショットは見つかりません。</p>
+                  }
+                  return (
+                    <p>
+                      <strong>{selected.operator_note}</strong> ({selected.timestamp_utc})
+                    </p>
+                  )
+                })()}
+              </section>
+            ) : null}
+          </>
+        )}
+      </section>
 
       {timeline ? (
         <IncidentTimelinePanel timeline={timeline} sortOrder={sortOrder} />

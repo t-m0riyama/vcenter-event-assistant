@@ -200,6 +200,7 @@ class IncidentTimelineManualSnapshot(Base):
     to_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     timestamp_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     operator_note: Mapped[str] = mapped_column(Text, nullable=False)
+    build_request_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

@@ -88,6 +88,7 @@ class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
     to_time: datetime = Field(alias="to")
     timestamp_utc: datetime
     operator_note: str = Field(min_length=1, max_length=10_000)
+    build_request_payload: IncidentTimelineBuildRequest | None = None
 
     @model_validator(mode="after")
     def validate_time_range(self) -> IncidentTimelineManualSnapshotCreateRequest:
@@ -106,14 +107,19 @@ class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
     snapshot_id: str
     operator_note: str
     timestamp_utc: datetime
+    build_request_payload: IncidentTimelineBuildRequest
 
 
 class IncidentTimelineManualSnapshotListItem(BaseModel):
     """手動スナップショット一覧の1件。"""
+    model_config = ConfigDict(populate_by_name=True)
 
     snapshot_id: str
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
     operator_note: str
     timestamp_utc: datetime
+    build_request_payload: IncidentTimelineBuildRequest
 
 
 class IncidentTimelineManualSnapshotListResponse(BaseModel):
