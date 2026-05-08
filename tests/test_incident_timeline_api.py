@@ -9,7 +9,11 @@ import pytest
 from httpx import AsyncClient
 from vcenter_event_assistant.api.routes import incident_timeline as incident_timeline_route
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
-from vcenter_event_assistant.services.chat_period_metrics import PeriodMetricsPayload
+from vcenter_event_assistant.services.chat_period_metrics import (
+    PeriodMetricBucketPoint,
+    PeriodMetricHostSeries,
+    PeriodMetricsPayload,
+)
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelinePayload
 
@@ -47,11 +51,14 @@ async def test_post_incident_timeline_returns_incident_timeline_payload(
         assert isinstance(column["hidden_count"], int)
         assert column["hidden_count"] >= 0
         for item in column["items"]:
-            assert set(item.keys()) == {"timestamp_utc", "kind", "title"}
+            assert {"timestamp_utc", "kind", "title"} <= set(item.keys())
             assert isinstance(item["timestamp_utc"], str)
             assert item["kind"] in {"alert", "event", "metric"}
             assert isinstance(item["title"], str)
             assert item["title"]
+            if "trigger_id" in item and item["trigger_id"] is not None:
+                assert isinstance(item["trigger_id"], str)
+                assert item["trigger_id"]
 
 
 @pytest.mark.asyncio
@@ -185,6 +192,99 @@ async def test_post_incident_timeline_emits_alert_entries_per_bucket(
         "vim.event.HostConnectionLostEvent (2件, max score=90)",
         "その他アラート (1件)",
     ]
+
+
+@pytest.mark.asyncio
+async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """自動トリガー3種が alert として返ることを固定化する RED テスト。"""
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 3, 22, 2, 0, tzinfo=timezone.utc)
+    expected_triggers = {"critical_burst", "multi_signal_overlap", "sustained_breach"}
+
+    async def _fake_digest_context(*a: object, **k: object) -> DigestContext:
+        _ = a
+        _ = k
+        return DigestContext(
+            from_utc=t0,
+            to_utc=t2,
+            vcenter_count=1,
+            total_events=14,
+            notable_events_count=14,
+            top_notable_event_groups=[],
+            top_event_types=[],
+            high_cpu_hosts=[],
+            high_mem_hosts=[],
+        )
+
+    cpu_series = [
+        PeriodMetricBucketPoint(
+            bucket_start_utc=t0.replace(hour=idx),
+            avg=value,
+            n=1,
+        )
+        for idx, value in enumerate([96.0, 93.0, 92.0])
+    ]
+
+    async def _fake_period_metrics(*a: object, **k: object) -> PeriodMetricsPayload:
+        _ = a
+        _ = k
+        return PeriodMetricsPayload(
+            bucket_minutes=60,
+            from_utc=t0,
+            to_utc=t2,
+            cpu=[
+                PeriodMetricHostSeries(
+                    entity_name="esxi-01",
+                    entity_moid="host-1",
+                    metric_key="host.cpu.usage_pct",
+                    series=cpu_series,
+                )
+            ],
+        )
+
+    async def _fake_event_buckets(*a: object, **k: object) -> SimpleNamespace:
+        _ = a
+        _ = k
+        return SimpleNamespace(
+            buckets=[
+                SimpleNamespace(
+                    bucket_start_utc=t0,
+                    total=14,
+                    alert_top_types=[],
+                    alert_other_count=0,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_context_payloads.build_digest_context",
+        _fake_digest_context,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics",
+        _fake_period_metrics,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets",
+        _fake_event_buckets,
+    )
+
+    r = await client.post(
+        "/api/incident-timeline",
+        json=_request_body(include_period_metrics_cpu=True),
+    )
+    assert r.status_code == 200
+    emitted_triggers = {
+        item["trigger_id"]
+        for column in r.json()["columns"]
+        for item in column["items"]
+        if item["kind"] == "alert"
+        and item.get("trigger_id") is not None
+    }
+    assert emitted_triggers == expected_triggers
 
 
 @pytest.mark.asyncio
