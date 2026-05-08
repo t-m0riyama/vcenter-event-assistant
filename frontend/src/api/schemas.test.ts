@@ -306,6 +306,23 @@ describe('parseIncidentTimelineResponse', () => {
     expect(parsed.columns[0]?.visible_items[0]?.kind).toBe('event')
   })
 
+  it('timestamp_utc に +00:00 形式が含まれても解釈できる', () => {
+    const parsed = parseIncidentTimelineResponse({
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00+00:00',
+          bucket_start_utc: '2026-05-07T00:00:00+00:00',
+          bucket_end_utc: '2026-05-07T01:00:00+00:00',
+          items: [
+            { timestamp_utc: '2026-05-07T00:00:00+00:00', kind: 'event', title: 'E1' },
+          ],
+        },
+      ],
+    })
+    expect(parsed.columns[0]?.timestamp_utc).toBe('2026-05-07T00:00:00+00:00')
+    expect(parsed.columns[0]?.items[0]?.timestamp_utc).toBe('2026-05-07T00:00:00+00:00')
+  })
+
   it('旧レスポンスで visible_items と hidden_count がなくても補完する', () => {
     const parsed = parseIncidentTimelineResponse({
       columns: [
@@ -319,6 +336,21 @@ describe('parseIncidentTimelineResponse', () => {
       { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' },
     ])
     expect(parsed.columns[0]?.hidden_count).toBe(0)
+  })
+
+  it('bucket_start_utc と bucket_end_utc が null でも解釈できる', () => {
+    const parsed = parseIncidentTimelineResponse({
+      columns: [
+        {
+          timestamp_utc: '2026-05-07T00:00:00Z',
+          bucket_start_utc: null,
+          bucket_end_utc: null,
+          items: [{ timestamp_utc: '2026-05-07T00:00:00Z', kind: 'event', title: 'E1' }],
+        },
+      ],
+    })
+    expect(parsed.columns[0]?.bucket_start_utc).toBeNull()
+    expect(parsed.columns[0]?.bucket_end_utc).toBeNull()
   })
 
   it('timestamp_utc が不正な列を拒否する', () => {
@@ -347,6 +379,15 @@ describe('incidentTimelineBuildRequestSchema', () => {
     })
     expect(parsed.from).toBe('2026-05-07T00:00:00Z')
     expect(parsed.metric_threshold_cpu_pct).toBe(80)
+  })
+
+  it('vcenter_id が null でも受理する（旧保存データ互換）', () => {
+    const parsed = incidentTimelineBuildRequestSchema.parse({
+      from: '2026-05-07T00:00:00Z',
+      to: '2026-05-08T00:00:00Z',
+      vcenter_id: null,
+    })
+    expect(parsed.vcenter_id).toBeNull()
   })
 
   it('rejects messages field for timeline build payload', () => {
