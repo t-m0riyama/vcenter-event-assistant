@@ -540,6 +540,50 @@ export function parseIncidentTimelineResponse(raw: unknown): IncidentTimeline {
   return incidentTimelineSchema.parse(raw)
 }
 
+export const incidentTimelineManualSnapshotCreateRequestSchema = z
+  .object({
+    from: isoUtcDateTimeSchema,
+    to: isoUtcDateTimeSchema,
+    timestamp_utc: isoUtcDateTimeSchema,
+    operator_note: z.string().min(1).max(10_000),
+  })
+  .strict()
+
+export type IncidentTimelineManualSnapshotCreateRequest = z.infer<
+  typeof incidentTimelineManualSnapshotCreateRequestSchema
+>
+
+export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
+  snapshot_id: z.string().min(1),
+  operator_note: z.string(),
+  timestamp_utc: isoUtcDateTimeSchema,
+})
+
+export type IncidentTimelineManualSnapshotCreateResponse = z.infer<
+  typeof incidentTimelineManualSnapshotCreateResponseSchema
+>
+
+export const incidentTimelineManualSnapshotListItemSchema = z.object({
+  snapshot_id: z.string().min(1),
+  operator_note: z.string(),
+  timestamp_utc: isoUtcDateTimeSchema,
+})
+
+export type IncidentTimelineManualSnapshotListItem = z.infer<
+  typeof incidentTimelineManualSnapshotListItemSchema
+>
+
+export const incidentTimelineManualSnapshotListResponseSchema = z.object({
+  items: z.array(incidentTimelineManualSnapshotListItemSchema),
+  total: z.number().int().min(0),
+  limit: z.number().int().min(1),
+  offset: z.number().int().min(0),
+})
+
+export type IncidentTimelineManualSnapshotListResponse = z.infer<
+  typeof incidentTimelineManualSnapshotListResponseSchema
+>
+
 export const chatPreviewResponseSchema = z.object({
   context_block: z.string(),
   conversation: z.array(chatMessageSchema),

@@ -71,6 +71,7 @@ const SETTINGS_SUBTABS: SubTabConfig[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
+  const [timelineInitialVcenterId, setTimelineInitialVcenterId] = useState<string>('')
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
   const [err, setErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
@@ -166,13 +167,21 @@ export default function App() {
               <MetricsPanel
                 onError={setErr}
                 perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+                onNavigateToTimeline={({ vcenterId }) => {
+                  setTimelineInitialVcenterId(vcenterId)
+                  setTab('timeline')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
               />
             </Suspense>
           )}
           {tab === 'digests' && <DigestsPanel onError={setErr} />}
           {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
           {tab === 'chat' && <ChatPanel onError={setErr} />}
-          {tab === 'timeline' && <TimelinePanel onError={setErr} />}
+          {tab === 'timeline' && (
+            <TimelinePanel onError={setErr} initialVcenterId={timelineInitialVcenterId} />
+          )}
           {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
           {tab === 'settings' && settingsSubTab === 'score_rules' && (
             <ScoreRulesPanel onError={setErr} />

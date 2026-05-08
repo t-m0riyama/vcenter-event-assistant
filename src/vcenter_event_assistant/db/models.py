@@ -188,3 +188,19 @@ class AlertHistory(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     rule: Mapped["AlertRule"] = relationship(back_populates="history")
+
+
+class IncidentTimelineManualSnapshot(Base):
+    """手動保存したインシデントタイムラインスナップショット。"""
+
+    __tablename__ = "incident_timeline_manual_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    from_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    to_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    timestamp_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    operator_note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )

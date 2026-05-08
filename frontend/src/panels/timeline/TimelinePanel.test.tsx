@@ -165,6 +165,35 @@ describe(
       expect(screen.getByRole('button', { name: '表示順: 降順' })).toBeInTheDocument()
     })
 
+    it('alert_top_n を localStorage から復元して送信本文に反映する', async () => {
+      localStorage.setItem('vea.timeline.alert_top_n', '12')
+      const timelinePayloadRef: { current: Record<string, unknown> | null } = { current: null }
+      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
+          timelinePayloadRef.current = JSON.parse(String(init.body)) as Record<string, unknown>
+          return Promise.resolve(jsonResponse({ columns: [] }))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderTimeline()
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled()
+      })
+      expect(screen.getByRole('spinbutton', { name: 'アラート上位件数' })).toHaveValue(12)
+
+      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
+      await waitFor(() => {
+        expect(timelinePayloadRef.current).not.toBeNull()
+      })
+      expect(timelinePayloadRef.current?.alert_top_n).toBe(12)
+    })
+
     it('成功時にインシデント統合タイムラインを描画する', async () => {
       const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
@@ -274,6 +303,127 @@ describe(
         expect(screen.getByRole('button', { name: 'タイムラインを生成' })).toBeEnabled()
       })
       expect(screen.queryByRole('button', { name: 'タイムライン生成中' })).not.toBeInTheDocument()
+    })
+
+    it('手動スナップショット保存は operator_note 必須で、入力後に保存 API を呼ぶ', async () => {
+      const snapshotPayloadRef: { current: Record<string, unknown> | null } = { current: null }
+      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ columns: [] }))
+        }
+        if (url.endsWith('/api/incident-timeline/snapshots/manual') && init?.method === 'POST') {
+          snapshotPayloadRef.current = JSON.parse(String(init.body)) as Record<string, unknown>
+          return Promise.resolve(
+            jsonResponse(
+              {
+                snapshot_id: '00000000-0000-0000-0000-000000000001',
+                operator_note: String(snapshotPayloadRef.current.operator_note ?? ''),
+                timestamp_utc: '2026-03-22T01:23:45Z',
+              },
+              201,
+            ),
+          )
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderTimeline()
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
+      await waitFor(() => {
+        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
+      })
+
+      const saveButton = screen.getByRole('button', { name: 'スナップショットを保存' })
+      const noteInput = screen.getByLabelText('運用メモ（必須）')
+      expect(saveButton).toBeDisabled()
+
+      fireEvent.change(noteInput, { target: { value: 'エスカレーション前の手動保存' } })
+      expect(saveButton).toBeEnabled()
+
+      fireEvent.click(saveButton)
+      await waitFor(() => {
+        expect(snapshotPayloadRef.current).not.toBeNull()
+      })
+      expect(snapshotPayloadRef.current?.operator_note).toBe('エスカレーション前の手動保存')
+    })
+
+    it('手動保存後に監査ビューを表示し、一覧 API の結果を描画する', async () => {
+      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ columns: [] }))
+        }
+        if (url.endsWith('/api/incident-timeline/snapshots/manual') && init?.method === 'POST') {
+          return Promise.resolve(
+            jsonResponse(
+              {
+                snapshot_id: '00000000-0000-0000-0000-000000000123',
+                operator_note: '監査表示テスト',
+                timestamp_utc: '2026-03-22T01:23:45Z',
+              },
+              201,
+            ),
+          )
+        }
+        if (
+          url.includes('/api/incident-timeline/snapshots/manual?') &&
+          init?.method !== 'POST'
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  snapshot_id: '00000000-0000-0000-0000-000000000123',
+                  operator_note: '監査表示テスト',
+                  timestamp_utc: '2026-03-22T01:23:45Z',
+                },
+              ],
+              total: 1,
+              limit: 20,
+              offset: 0,
+            }),
+          )
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderTimeline()
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
+      await waitFor(() => {
+        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
+      })
+
+      fireEvent.change(screen.getByLabelText('運用メモ（必須）'), {
+        target: { value: '監査表示テスト' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'スナップショットを保存' }))
+
+      await waitFor(() => {
+        expect(
+          fetchMock.mock.calls.some(([input]) =>
+            String(input).includes('/api/incident-timeline/snapshots/manual?'),
+          ),
+        ).toBe(true)
+      })
+      expect(screen.getByText('手動スナップショット監査ビュー')).toBeInTheDocument()
+      expect(screen.getByText('監査表示テスト')).toBeInTheDocument()
     })
   },
 )

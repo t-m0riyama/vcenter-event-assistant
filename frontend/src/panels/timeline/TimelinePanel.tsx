@@ -3,7 +3,15 @@ import './TimelinePanel.css'
 
 import { apiGet, apiPost } from '../../api'
 import { buildIncidentTimelineBuildRequestPayload } from '../../api/buildIncidentTimelineBuildRequestPayload'
-import { parseIncidentTimelineResponse, type IncidentTimeline, type VCenter } from '../../api/schemas'
+import {
+  incidentTimelineManualSnapshotCreateRequestSchema,
+  incidentTimelineManualSnapshotCreateResponseSchema,
+  incidentTimelineManualSnapshotListResponseSchema,
+  parseIncidentTimelineResponse,
+  type IncidentTimelineManualSnapshotListItem,
+  type IncidentTimeline,
+  type VCenter,
+} from '../../api/schemas'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { resolveEventApiRange } from '../../datetime/graphRange'
 import {
@@ -23,13 +31,39 @@ const DEFAULT_METRIC_THRESHOLD_DISK_PCT = 75
 const DEFAULT_METRIC_THRESHOLD_NETWORK_PCT = 75
 const DEFAULT_ALERT_TOP_N = 7
 const TIMELINE_SORT_ORDER_STORAGE_KEY = 'vea.timeline.sort_order'
+const ALERT_TOP_N_STORAGE_KEY = 'vea.timeline.alert_top_n'
 type TimelineSortOrder = 'asc' | 'desc'
 
 function isValidMetricThresholdPercent(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 100
 }
 
-export function TimelinePanel({ onError }: { onError: (e: string | null) => void }) {
+function parseAlertTopN(rawValue: string | null): number | null {
+  if (rawValue == null || rawValue.trim() === '') {
+    return null
+  }
+  const parsed = Number(rawValue)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 20) {
+    return null
+  }
+  return parsed
+}
+
+function getInitialAlertTopN(): number {
+  if (typeof localStorage === 'undefined') {
+    return DEFAULT_ALERT_TOP_N
+  }
+  const parsed = parseAlertTopN(localStorage.getItem(ALERT_TOP_N_STORAGE_KEY))
+  return parsed ?? DEFAULT_ALERT_TOP_N
+}
+
+export function TimelinePanel({
+  onError,
+  initialVcenterId,
+}: {
+  onError: (e: string | null) => void
+  initialVcenterId?: string
+}) {
   const { timeZone } = useTimeZone()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
@@ -38,6 +72,11 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [timeline, setTimeline] = useState<IncidentTimeline | null>(null)
   const [loading, setLoading] = useState(false)
+  const [savingSnapshot, setSavingSnapshot] = useState(false)
+  const [operatorNote, setOperatorNote] = useState('')
+  const [manualSnapshotAuditItems, setManualSnapshotAuditItems] = useState<
+    IncidentTimelineManualSnapshotListItem[]
+  >([])
 
   const [includePeriodMetricsCpu, setIncludePeriodMetricsCpu] = useState(false)
   const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
@@ -64,8 +103,8 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
   const [metricThresholdNetworkInput, setMetricThresholdNetworkInput] = useState(
     String(DEFAULT_METRIC_THRESHOLD_NETWORK_PCT),
   )
-  const [alertTopN, setAlertTopN] = useState(DEFAULT_ALERT_TOP_N)
-  const [alertTopNInput, setAlertTopNInput] = useState(String(DEFAULT_ALERT_TOP_N))
+  const [alertTopN, setAlertTopN] = useState(getInitialAlertTopN)
+  const [alertTopNInput, setAlertTopNInput] = useState(() => String(getInitialAlertTopN()))
   const [sortOrder, setSortOrder] = useState<TimelineSortOrder>(() => {
     if (typeof localStorage === 'undefined') {
       return 'desc'
@@ -74,12 +113,25 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
     return raw === 'asc' ? 'asc' : 'desc'
   })
 
+  const fetchManualSnapshotAuditItems = useCallback(async () => {
+    const listRaw = await apiGet<unknown>('/api/incident-timeline/snapshots/manual?limit=20&offset=0')
+    const list = incidentTimelineManualSnapshotListResponseSchema.parse(listRaw)
+    setManualSnapshotAuditItems(list.items)
+  }, [])
+
   useEffect(() => {
     if (typeof localStorage === 'undefined') {
       return
     }
     localStorage.setItem(TIMELINE_SORT_ORDER_STORAGE_KEY, sortOrder)
   }, [sortOrder])
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') {
+      return
+    }
+    localStorage.setItem(ALERT_TOP_N_STORAGE_KEY, String(alertTopN))
+  }, [alertTopN])
 
   useEffect(() => {
     void (async () => {
@@ -91,6 +143,12 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
       }
     })()
   }, [onError])
+
+  useEffect(() => {
+    if (typeof initialVcenterId === 'string') {
+      setVcenterId(initialVcenterId)
+    }
+  }, [initialVcenterId])
 
   const handleMetricThresholdInputChange = useCallback(
     (
@@ -121,6 +179,7 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
 
     onError(null)
     setLoading(true)
+    setManualSnapshotAuditItems([])
     try {
       const payload = buildIncidentTimelineBuildRequestPayload({
         resolvedRange: { from: resolved.from, to: resolved.to },
@@ -140,6 +199,7 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
       const raw = await apiPost<unknown>('/api/incident-timeline', payload)
       const out = parseIncidentTimelineResponse(raw)
       setTimeline(out)
+      await fetchManualSnapshotAuditItems()
     } catch (e) {
       onError(toErrorMessage(e))
     } finally {
@@ -159,7 +219,38 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
     rangeParts,
     timeZone,
     vcenterId,
+    fetchManualSnapshotAuditItems,
   ])
+
+  const saveManualSnapshot = useCallback(async () => {
+    if (operatorNote.trim() === '') {
+      return
+    }
+    const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(rangeParts)
+    const resolved = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
+    if (!resolved.ok || !resolved.from || !resolved.to) {
+      onError(resolved.ok ? '期間の開始と終了を指定してください。' : resolved.message)
+      return
+    }
+    onError(null)
+    setSavingSnapshot(true)
+    try {
+      const payload = incidentTimelineManualSnapshotCreateRequestSchema.parse({
+        from: resolved.from,
+        to: resolved.to,
+        timestamp_utc: new Date().toISOString(),
+        operator_note: operatorNote.trim(),
+      })
+      const raw = await apiPost<unknown>('/api/incident-timeline/snapshots/manual', payload)
+      incidentTimelineManualSnapshotCreateResponseSchema.parse(raw)
+      await fetchManualSnapshotAuditItems()
+      setOperatorNote('')
+    } catch (e) {
+      onError(toErrorMessage(e))
+    } finally {
+      setSavingSnapshot(false)
+    }
+  }, [fetchManualSnapshotAuditItems, onError, operatorNote, rangeParts, timeZone])
 
   return (
     <div className="panel timeline-panel">
@@ -325,8 +416,8 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
               if (rawValue.trim() === '') {
                 return
               }
-              const parsed = Number(rawValue)
-              if (!Number.isInteger(parsed) || parsed < 1 || parsed > 20) {
+              const parsed = parseAlertTopN(rawValue)
+              if (parsed == null) {
                 return
               }
               setAlertTopN(parsed)
@@ -358,6 +449,47 @@ export function TimelinePanel({ onError }: { onError: (e: string | null) => void
           {loading ? 'タイムライン生成中' : 'タイムラインを生成'}
         </button>
       </div>
+
+      {timeline ? (
+        <section className="timeline-panel__section" aria-label="手動スナップショット保存">
+          <label className="timeline-panel__threshold-field">
+            運用メモ（必須）
+            <input
+              type="text"
+              value={operatorNote}
+              onChange={(e) => setOperatorNote(e.target.value)}
+              disabled={loading || savingSnapshot}
+            />
+          </label>
+          <div className="timeline-panel__actions">
+            <button
+              type="button"
+              className="btn btn--gray"
+              onClick={() => void saveManualSnapshot()}
+              disabled={loading || savingSnapshot || operatorNote.trim() === ''}
+            >
+              スナップショットを保存
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {timeline ? (
+        <section className="timeline-panel__section" aria-label="手動スナップショット監査ビュー">
+          <h3>手動スナップショット監査ビュー</h3>
+          {manualSnapshotAuditItems.length === 0 ? (
+            <p className="hint">保存済みスナップショットはまだありません。</p>
+          ) : (
+            <ul>
+              {manualSnapshotAuditItems.map((item) => (
+                <li key={item.snapshot_id}>
+                  <strong>{item.operator_note}</strong> ({item.timestamp_utc})
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {timeline ? (
         <IncidentTimelinePanel timeline={timeline} sortOrder={sortOrder} />

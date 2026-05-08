@@ -31,6 +31,7 @@ def _normalize_entry_timestamp(entry: IncidentTimelineEntry) -> IncidentTimeline
         timestamp_utc=normalized_ts,
         kind=entry.kind,
         title=entry.title,
+        trigger_id=entry.trigger_id,
     )
 
 
@@ -40,6 +41,7 @@ class IncidentTimelineEntry(BaseModel):
     timestamp_utc: datetime
     kind: IncidentTimelineKind
     title: str = Field(min_length=1)
+    trigger_id: str | None = None
 
 
 class IncidentTimelineColumn(BaseModel):
