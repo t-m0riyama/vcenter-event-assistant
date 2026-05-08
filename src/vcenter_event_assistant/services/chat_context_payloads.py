@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import inspect
 
 from fastapi import HTTPException
@@ -38,6 +39,97 @@ class ChatContextPayloads:
     period_metrics: PeriodMetricsPayload | None
     event_time_buckets: EventTimeBucketsPayload | None
     incident_timeline: IncidentTimelinePayload
+
+
+def _build_auto_trigger_alert_entries(
+    *,
+    period_metrics: PeriodMetricsPayload | None,
+    event_time_buckets: EventTimeBucketsPayload | None,
+) -> list[IncidentTimelineEntry]:
+    """自動トリガー由来の alert エントリを生成する。"""
+
+    entries: list[IncidentTimelineEntry] = []
+    if event_time_buckets is None or not event_time_buckets.buckets:
+        return entries
+
+    busiest_bucket = max(
+        event_time_buckets.buckets,
+        key=lambda row: int(getattr(row, "total", 0) or 0),
+        default=None,
+    )
+    critical_burst_timestamp: datetime | None = None
+    has_critical_burst = bool(
+        busiest_bucket is not None and int(getattr(busiest_bucket, "total", 0) or 0) >= 10
+    )
+    if has_critical_burst and busiest_bucket is not None:
+        critical_burst_timestamp = busiest_bucket.bucket_start_utc
+    has_sustained_breach = False
+    sustained_breach_timestamp: datetime | None = None
+
+    if period_metrics is not None and period_metrics.cpu:
+        bucket_interval = timedelta(minutes=period_metrics.bucket_minutes)
+        for host in period_metrics.cpu:
+            points = sorted(
+                (point for point in host.series if point.avg is not None),
+                key=lambda point: point.bucket_start_utc,
+            )
+            consecutive = 0
+            previous_timestamp: datetime | None = None
+            for point in points:
+                current_timestamp = point.bucket_start_utc
+                if (
+                    previous_timestamp is None
+                    or current_timestamp - previous_timestamp != bucket_interval
+                ):
+                    consecutive = 0
+                previous_timestamp = current_timestamp
+
+                if float(point.avg) >= 90:
+                    consecutive += 1
+                    if consecutive >= 3:
+                        has_sustained_breach = True
+                        candidate_timestamp = current_timestamp
+                        if (
+                            sustained_breach_timestamp is None
+                            or candidate_timestamp < sustained_breach_timestamp
+                        ):
+                            sustained_breach_timestamp = candidate_timestamp
+                        break
+                else:
+                    consecutive = 0
+
+    default_trigger_timestamp = event_time_buckets.buckets[0].bucket_start_utc
+    critical_timestamp = critical_burst_timestamp or default_trigger_timestamp
+    sustained_timestamp = sustained_breach_timestamp or default_trigger_timestamp
+
+    if has_critical_burst:
+        entries.append(
+            IncidentTimelineEntry(
+                timestamp_utc=critical_timestamp,
+                kind="alert",
+                title="自動トリガー: Critical burst",
+                trigger_id="critical_burst",
+            )
+        )
+    if has_sustained_breach:
+        entries.append(
+            IncidentTimelineEntry(
+                timestamp_utc=sustained_timestamp,
+                kind="alert",
+                title="自動トリガー: Sustained breach",
+                trigger_id="sustained_breach",
+            )
+        )
+    if has_critical_burst and has_sustained_breach:
+        entries.append(
+            IncidentTimelineEntry(
+                timestamp_utc=max(critical_timestamp, sustained_timestamp),
+                kind="alert",
+                title="自動トリガー: Multi-signal overlap",
+                trigger_id="multi_signal_overlap",
+            )
+        )
+    return entries
 
 
 async def build_chat_context_payloads(
@@ -141,6 +233,12 @@ async def _build_context_payloads_common(
                         title=f"その他アラート ({alert_other_count}件)",
                     )
                 )
+        timeline_entries.extend(
+            _build_auto_trigger_alert_entries(
+                period_metrics=timeline_period_metrics,
+                event_time_buckets=timeline_event_time_buckets,
+            )
+        )
     else:
         for g in ctx.top_notable_event_groups:
             timeline_entries.append(

@@ -78,6 +78,58 @@ class IncidentTimelineBuildRequest(BaseModel):
     metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
 
+
+class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
+    """手動スナップショット保存リクエスト。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
+    timestamp_utc: datetime
+    operator_note: str = Field(min_length=1, max_length=10_000)
+    build_request_payload: IncidentTimelineBuildRequest | None = None
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> IncidentTimelineManualSnapshotCreateRequest:
+        if self.from_time >= self.to_time:
+            raise ValueError("from は to より前である必要があります")
+        note = self.operator_note.strip()
+        if note == "":
+            raise ValueError("operator_note は空白のみを許可しません")
+        self.operator_note = note
+        return self
+
+
+class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
+    """手動スナップショット保存レスポンス。"""
+
+    snapshot_id: str
+    operator_note: str
+    timestamp_utc: datetime
+    build_request_payload: IncidentTimelineBuildRequest
+
+
+class IncidentTimelineManualSnapshotListItem(BaseModel):
+    """手動スナップショット一覧の1件。"""
+    model_config = ConfigDict(populate_by_name=True)
+
+    snapshot_id: str
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
+    operator_note: str
+    timestamp_utc: datetime
+    build_request_payload: IncidentTimelineBuildRequest
+
+
+class IncidentTimelineManualSnapshotListResponse(BaseModel):
+    """手動スナップショット一覧レスポンス。"""
+
+    items: list[IncidentTimelineManualSnapshotListItem]
+    total: int
+    limit: int
+    offset: int
+
 class ChatLlmContextMeta(BaseModel):
     """チャット LLM 直前のコンテキスト統計（トークン予算・JSON 切り詰めの確認用）。"""
     json_truncated: bool = Field(description="マージ済み JSON がトークン上限のため切り詰められたか")
