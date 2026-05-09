@@ -336,6 +336,99 @@ async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
 
 
 @pytest.mark.asyncio
+async def test_post_incident_timeline_persists_auto_trigger_snapshots(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 3, 22, 2, 0, tzinfo=timezone.utc)
+    t3 = datetime(2026, 3, 22, 3, 0, tzinfo=timezone.utc)
+
+    async def _fake_digest_context(*a: object, **k: object) -> DigestContext:
+        _ = a
+        _ = k
+        return DigestContext(
+            from_utc=t0,
+            to_utc=t2,
+            vcenter_count=1,
+            total_events=14,
+            notable_events_count=14,
+            top_notable_event_groups=[],
+            top_event_types=[],
+            high_cpu_hosts=[],
+            high_mem_hosts=[],
+        )
+
+    cpu_series = [
+        PeriodMetricBucketPoint(bucket_start_utc=t0.replace(hour=idx), avg=value, n=1)
+        for idx, value in enumerate([96.0, 93.0, 92.0])
+    ]
+
+    async def _fake_period_metrics(*a: object, **k: object) -> PeriodMetricsPayload:
+        _ = a
+        _ = k
+        return PeriodMetricsPayload(
+            bucket_minutes=60,
+            from_utc=t0,
+            to_utc=t3,
+            cpu=[
+                PeriodMetricHostSeries(
+                    entity_name="esxi-01",
+                    entity_moid="host-1",
+                    metric_key="host.cpu.usage_pct",
+                    series=cpu_series,
+                )
+            ],
+        )
+
+    async def _fake_event_buckets(*a: object, **k: object) -> SimpleNamespace:
+        _ = a
+        _ = k
+        return SimpleNamespace(
+            buckets=[
+                SimpleNamespace(
+                    bucket_start_utc=t0,
+                    total=14,
+                    alert_top_types=[],
+                    alert_other_count=0,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_context_payloads.build_digest_context",
+        _fake_digest_context,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics",
+        _fake_period_metrics,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets",
+        _fake_event_buckets,
+    )
+
+    r = await client.post(
+        "/api/incident-timeline",
+        json=_request_body(include_period_metrics_cpu=True),
+    )
+    assert r.status_code == 200
+
+    list_r = await client.get(
+        "/api/incident-timeline/snapshots/manual",
+        params={"limit": 20, "offset": 0},
+    )
+    assert list_r.status_code == 200
+    items = list_r.json()["items"]
+    auto_items = [item for item in items if item.get("snapshot_kind") == "auto"]
+    assert len(auto_items) >= 3
+    trigger_ids = {item.get("trigger_id") for item in auto_items}
+    assert {"critical_burst", "sustained_breach", "multi_signal_overlap"} <= trigger_ids
+    assert all("build_request_payload" in item for item in auto_items)
+    assert all(item.get("trigger_evidence") is not None for item in auto_items)
+
+
+@pytest.mark.asyncio
 async def test_post_incident_timeline_rejects_messages_field(
     client: AsyncClient,
 ) -> None:
@@ -419,6 +512,8 @@ async def test_post_manual_snapshot_creates_snapshot_when_operator_note_present(
     assert data.get("operator_note") == "初動調査のため手動スナップショットを保存"
     assert data.get("timestamp_utc") == "2026-03-22T01:23:45Z"
     assert isinstance(data.get("build_request_payload"), dict)
+    assert data.get("snapshot_kind") == "manual"
+    assert data.get("trigger_id") is None
     build_request = IncidentTimelineBuildRequest.model_validate(data["build_request_payload"])
     assert build_request.from_time == datetime.fromisoformat(request_body["from"].replace("Z", "+00:00"))
     assert build_request.to_time == datetime.fromisoformat(request_body["to"].replace("Z", "+00:00"))
@@ -521,7 +616,17 @@ async def test_get_manual_snapshots_returns_paginated_list_with_limit_offset(
     assert data["total"] >= 2
     assert isinstance(data["items"], list)
     assert len(data["items"]) == 1
-    assert {"snapshot_id", "from", "to", "operator_note", "timestamp_utc", "build_request_payload"} <= set(data["items"][0].keys())
+    assert {
+        "snapshot_id",
+        "from",
+        "to",
+        "operator_note",
+        "timestamp_utc",
+        "build_request_payload",
+        "snapshot_kind",
+        "trigger_id",
+        "trigger_evidence",
+    } <= set(data["items"][0].keys())
     assert isinstance(data["items"][0]["timestamp_utc"], str)
     assert data["items"][0]["timestamp_utc"].endswith("Z")
     assert isinstance(data["items"][0]["from"], str)

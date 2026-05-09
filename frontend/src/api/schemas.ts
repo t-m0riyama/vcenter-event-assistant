@@ -465,6 +465,15 @@ export const chatLlmContextMetaSchema = z.object({
 
 export type ChatLlmContextMeta = z.infer<typeof chatLlmContextMetaSchema>
 
+/** 監査説明に用いるトリガー根拠の最小情報（backend TriggerEvidence と整合） */
+export const triggerEvidenceSchema = z.object({
+  trigger_type: z.string().min(1).max(128),
+  summary: z.string().min(1).max(4000),
+  source_id: z.string().nullable().optional(),
+})
+
+export type TriggerEvidence = z.infer<typeof triggerEvidenceSchema>
+
 export const chatResponseSchema = z.object({
   assistant_content: z.string(),
   error: z.string().nullable(),
@@ -472,6 +481,7 @@ export const chatResponseSchema = z.object({
   created_at: z.string().optional(),
   latency_ms: z.number().nullable().optional(),
   token_per_sec: z.number().nullable().optional(),
+  trigger_evidence: triggerEvidenceSchema.nullable().optional(),
 })
 
 export type ChatResponse = z.infer<typeof chatResponseSchema>
@@ -558,6 +568,8 @@ export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
   operator_note: z.string(),
   timestamp_utc: isoOffsetDateTimeSchema,
   build_request_payload: incidentTimelineBuildRequestSchema,
+  snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
+  trigger_id: z.string().optional().nullable(),
 })
 
 export type IncidentTimelineManualSnapshotCreateResponse = z.infer<
@@ -571,6 +583,9 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   operator_note: z.string(),
   timestamp_utc: isoOffsetDateTimeSchema,
   build_request_payload: incidentTimelineBuildRequestSchema,
+  snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
+  trigger_id: z.string().optional().nullable(),
+  trigger_evidence: z.record(z.string(), z.unknown()).optional().nullable(),
 })
 
 export type IncidentTimelineManualSnapshotListItem = z.infer<
