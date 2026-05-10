@@ -4,9 +4,11 @@ import {
   normalizeEventListPayload,
   parseDigestListResponse,
   parseSummary,
+  parseChatResponse,
   parseChatPreviewResponse,
   chatRequestSchema,
   incidentTimelineBuildRequestSchema,
+  incidentTimelineManualSnapshotListItemSchema,
   parseIncidentTimelineResponse,
 } from './schemas'
 
@@ -217,6 +219,53 @@ describe('parseChatPreviewResponse', () => {
     }
     const parsed = parseChatPreviewResponse(raw)
     expect(parsed.incident_timeline).toBeNull()
+  })
+})
+
+describe('parseChatResponse', () => {
+  it('trigger_evidence オブジェクトを解釈して保持する', () => {
+    const parsed = parseChatResponse({
+      assistant_content: '回答',
+      error: null,
+      trigger_evidence: {
+        trigger_type: 'alert_rule',
+        summary: 'CPU閾値超過を検知',
+        source_id: 'rule:cpu-over-80',
+      },
+    })
+    expect(parsed.trigger_evidence?.trigger_type).toBe('alert_rule')
+    expect(parsed.trigger_evidence?.summary).toBe('CPU閾値超過を検知')
+    expect(parsed.trigger_evidence?.source_id).toBe('rule:cpu-over-80')
+  })
+
+  it('trigger_evidence が null でも解釈できる', () => {
+    const parsed = parseChatResponse({
+      assistant_content: '回答',
+      error: null,
+      trigger_evidence: null,
+    })
+    expect(parsed.trigger_evidence).toBeNull()
+  })
+
+  it('trigger_evidence が無くても後方互換で解釈できる', () => {
+    const parsed = parseChatResponse({
+      assistant_content: '回答',
+      error: null,
+    })
+    expect(parsed.trigger_evidence).toBeUndefined()
+  })
+
+  it('trigger_evidence の型が不正なとき拒否する', () => {
+    expect(() =>
+      parseChatResponse({
+        assistant_content: '回答',
+        error: null,
+        trigger_evidence: {
+          trigger_type: 123,
+          summary: 'CPU閾値超過を検知',
+        },
+      }),
+    ).toThrow()
   })
 })
 
@@ -449,5 +498,29 @@ describe('incidentTimelineBuildRequestSchema', () => {
         alert_top_n: 1.5,
       }),
     ).toThrow()
+  })
+})
+
+describe('incidentTimelineManualSnapshotListItemSchema', () => {
+  it('自動スナップショット項目の追加フィールドを受理する', () => {
+    const parsed = incidentTimelineManualSnapshotListItemSchema.parse({
+      snapshot_id: '00000000-0000-0000-0000-000000000001',
+      from: '2026-05-07T00:00:00Z',
+      to: '2026-05-08T00:00:00Z',
+      operator_note: '自動スナップショット: Critical burst',
+      timestamp_utc: '2026-05-07T01:00:00Z',
+      build_request_payload: {
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+      },
+      snapshot_kind: 'auto',
+      trigger_id: 'critical_burst',
+      trigger_evidence: {
+        trigger_id: 'critical_burst',
+        summary: '自動トリガー: Critical burst',
+      },
+    })
+    expect(parsed.snapshot_kind).toBe('auto')
+    expect(parsed.trigger_id).toBe('critical_burst')
   })
 })

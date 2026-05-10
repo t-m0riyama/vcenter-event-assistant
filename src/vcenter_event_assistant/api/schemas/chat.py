@@ -108,6 +108,8 @@ class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
     operator_note: str
     timestamp_utc: datetime
     build_request_payload: IncidentTimelineBuildRequest
+    snapshot_kind: Literal["manual", "auto"] = "manual"
+    trigger_id: str | None = None
 
 
 class IncidentTimelineManualSnapshotListItem(BaseModel):
@@ -120,6 +122,9 @@ class IncidentTimelineManualSnapshotListItem(BaseModel):
     operator_note: str
     timestamp_utc: datetime
     build_request_payload: IncidentTimelineBuildRequest
+    snapshot_kind: Literal["manual", "auto"] = "manual"
+    trigger_id: str | None = None
+    trigger_evidence: dict[str, object] | None = None
 
 
 class IncidentTimelineManualSnapshotListResponse(BaseModel):
@@ -138,6 +143,24 @@ class ChatLlmContextMeta(BaseModel):
     )
     max_input_tokens: int = Field(description="設定上の上限（LLM_CHAT_MAX_INPUT_TOKENS）")
     message_turns: int = Field(description="上限適用後の会話ターン数")
+
+class TriggerEvidence(BaseModel):
+    """監査説明に用いるトリガー根拠の最小情報。"""
+
+    trigger_type: str = Field(
+        min_length=1,
+        max_length=128,
+        description="根拠の種別（例: alert_rule / timeline_item）",
+    )
+    summary: str = Field(
+        min_length=1,
+        max_length=4000,
+        description="回答を生成した直接根拠の要約文",
+    )
+    source_id: str | None = Field(
+        default=None,
+        description="関連ルールやエンティティの識別子（未特定時は null）",
+    )
 
 class ChatResponse(BaseModel):
     """チャット API の応答。LLM 失敗時は ``assistant_content`` が空で ``error`` に理由。"""
@@ -158,6 +181,10 @@ class ChatResponse(BaseModel):
     token_per_sec: float | None = Field(
         default=None,
         description="トークン生成速度",
+    )
+    trigger_evidence: TriggerEvidence | None = Field(
+        default=None,
+        description="回答のトリガー根拠。旧保存データとの互換のため省略/ null を許容。",
     )
 
 class ChatPreviewResponse(BaseModel):

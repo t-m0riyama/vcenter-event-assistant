@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
@@ -18,7 +18,10 @@ from vcenter_event_assistant.api.schemas.chat import (
 )
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
 from vcenter_event_assistant.services.chat_context_payloads import build_incident_timeline_payload
-from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat_incident_timeline import (
+    IncidentTimelineEntry,
+    IncidentTimelinePayload,
+)
 
 router = APIRouter(prefix="/incident-timeline", tags=["incident-timeline"])
 
@@ -39,12 +42,70 @@ def _build_request_payload_for_response(snapshot: IncidentTimelineManualSnapshot
     )
 
 
+async def _persist_auto_trigger_snapshots(
+    *,
+    session: AsyncSession,
+    body: IncidentTimelineBuildRequest,
+    timeline: IncidentTimelinePayload,
+) -> None:
+    build_request_payload = body.model_dump(mode="json", by_alias=True, exclude_none=True)
+    trigger_entries: list[IncidentTimelineEntry] = [
+        item
+        for column in timeline.columns
+        for item in column.items
+        if item.kind == "alert" and item.trigger_id is not None
+    ]
+
+    if not trigger_entries:
+        return
+
+    for entry in trigger_entries:
+        trigger_id = entry.trigger_id
+        if trigger_id is None:
+            continue
+        normalized_timestamp = _normalize_utc_datetime(entry.timestamp_utc)
+        exists = await session.execute(
+            select(IncidentTimelineManualSnapshot.id).where(
+                and_(
+                    IncidentTimelineManualSnapshot.snapshot_kind == "auto",
+                    IncidentTimelineManualSnapshot.from_time == body.from_time,
+                    IncidentTimelineManualSnapshot.to_time == body.to_time,
+                    IncidentTimelineManualSnapshot.timestamp_utc == normalized_timestamp,
+                    IncidentTimelineManualSnapshot.trigger_id == trigger_id,
+                )
+            )
+        )
+        if exists.scalar_one_or_none() is not None:
+            continue
+
+        session.add(
+            IncidentTimelineManualSnapshot(
+                from_time=body.from_time,
+                to_time=body.to_time,
+                timestamp_utc=normalized_timestamp,
+                operator_note=f"自動スナップショット: {entry.title}",
+                build_request_payload=build_request_payload,
+                snapshot_kind="auto",
+                trigger_id=trigger_id,
+                trigger_evidence={
+                    "trigger_id": trigger_id,
+                    "summary": entry.title,
+                    "triggered_at_utc": normalized_timestamp.isoformat().replace("+00:00", "Z"),
+                },
+            )
+        )
+
+    await session.commit()
+
+
 @router.post("", response_model=IncidentTimelinePayload)
 async def post_incident_timeline(
     body: IncidentTimelineBuildRequest,
     session: AsyncSession = Depends(get_session),
 ) -> IncidentTimelinePayload:
-    return await build_incident_timeline_payload(session, body)
+    payload = await build_incident_timeline_payload(session, body)
+    await _persist_auto_trigger_snapshots(session=session, body=body, timeline=payload)
+    return payload
 
 
 @router.post("/snapshots/manual", response_model=IncidentTimelineManualSnapshotCreateResponse, status_code=201)
@@ -70,6 +131,8 @@ async def post_manual_snapshot(
         operator_note=snapshot.operator_note,
         timestamp_utc=_normalize_utc_datetime(snapshot.timestamp_utc),
         build_request_payload=_build_request_payload_for_response(snapshot),
+        snapshot_kind=snapshot.snapshot_kind,
+        trigger_id=snapshot.trigger_id,
     )
 
 
@@ -97,6 +160,9 @@ async def get_manual_snapshots(
             operator_note=row.operator_note,
             timestamp_utc=_normalize_utc_datetime(row.timestamp_utc),
             build_request_payload=_build_request_payload_for_response(row),
+            snapshot_kind=row.snapshot_kind,
+            trigger_id=row.trigger_id,
+            trigger_evidence=row.trigger_evidence,
         )
         for row in rows
     ]
