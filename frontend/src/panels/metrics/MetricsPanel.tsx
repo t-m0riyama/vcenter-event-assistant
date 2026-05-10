@@ -463,7 +463,6 @@ export function MetricsPanel({
                   x={snapshotChartGuidelineMs}
                   stroke="#c0392b"
                   strokeDasharray="4 3"
-                  isFront
                   label={{ value: 'スナップショット', position: 'top', fill: chartColors.axisTick, fontSize: 10 }}
                 />
               ) : null}
