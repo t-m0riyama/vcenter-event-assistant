@@ -204,6 +204,7 @@ class IncidentTimelineManualSnapshot(Base):
     snapshot_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="manual", index=True)
     trigger_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     trigger_evidence: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    graph_context: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

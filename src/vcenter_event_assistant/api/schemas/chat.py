@@ -47,6 +47,27 @@ class ChatRequest(BaseModel):
         return self
 
 
+class IncidentTimelineGraphCapturedRange(BaseModel):
+    """グラフ表示に用いた期間（ビューポート）の任意スナップショット。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
+
+
+class IncidentTimelineGraphContext(BaseModel):
+    """手動スナップショットに付与するメトリクス再生用メタデータ（すべて任意）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric_key: str | None = Field(default=None, max_length=512)
+    chart_event_type: str | None = Field(default=None, max_length=512)
+    marker_timestamp_utc: datetime | None = None
+    vcenter_id: uuid.UUID | None = None
+    captured_range: IncidentTimelineGraphCapturedRange | None = None
+
+
 class IncidentTimelineBuildRequest(BaseModel):
     """インシデントタイムライン構築用リクエスト。messages は受け付けない。"""
 
@@ -89,6 +110,7 @@ class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
     timestamp_utc: datetime
     operator_note: str = Field(min_length=1, max_length=10_000)
     build_request_payload: IncidentTimelineBuildRequest | None = None
+    graph_context: IncidentTimelineGraphContext | None = None
 
     @model_validator(mode="after")
     def validate_time_range(self) -> IncidentTimelineManualSnapshotCreateRequest:
@@ -110,6 +132,7 @@ class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
     build_request_payload: IncidentTimelineBuildRequest
     snapshot_kind: Literal["manual", "auto"] = "manual"
     trigger_id: str | None = None
+    graph_context: IncidentTimelineGraphContext | None = None
 
 
 class IncidentTimelineManualSnapshotListItem(BaseModel):
@@ -125,6 +148,7 @@ class IncidentTimelineManualSnapshotListItem(BaseModel):
     snapshot_kind: Literal["manual", "auto"] = "manual"
     trigger_id: str | None = None
     trigger_evidence: dict[str, object] | None = None
+    graph_context: IncidentTimelineGraphContext | None = None
 
 
 class IncidentTimelineManualSnapshotListResponse(BaseModel):

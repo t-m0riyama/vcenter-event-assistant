@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas.chat import (
     IncidentTimelineBuildRequest,
+    IncidentTimelineGraphContext,
     IncidentTimelineManualSnapshotCreateRequest,
     IncidentTimelineManualSnapshotCreateResponse,
     IncidentTimelineManualSnapshotListItem,
@@ -40,6 +41,13 @@ def _build_request_payload_for_response(snapshot: IncidentTimelineManualSnapshot
         from_time=_normalize_utc_datetime(snapshot.from_time),
         to_time=_normalize_utc_datetime(snapshot.to_time),
     )
+
+
+def _graph_context_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineGraphContext | None:
+    raw = snapshot.graph_context
+    if not raw:
+        return None
+    return IncidentTimelineGraphContext.model_validate(raw)
 
 
 async def _persist_auto_trigger_snapshots(
@@ -117,12 +125,20 @@ async def post_manual_snapshot(
         from_time=body.from_time,
         to_time=body.to_time,
     )
+    graph_context_dict: dict[str, object] | None = None
+    if body.graph_context is not None:
+        graph_context_dict = body.graph_context.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
     snapshot = IncidentTimelineManualSnapshot(
         from_time=body.from_time,
         to_time=body.to_time,
         timestamp_utc=body.timestamp_utc,
         operator_note=body.operator_note,
         build_request_payload=build_request_payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+        graph_context=graph_context_dict,
     )
     session.add(snapshot)
     await session.commit()
@@ -133,6 +149,7 @@ async def post_manual_snapshot(
         build_request_payload=_build_request_payload_for_response(snapshot),
         snapshot_kind=snapshot.snapshot_kind,
         trigger_id=snapshot.trigger_id,
+        graph_context=_graph_context_for_response(snapshot),
     )
 
 
@@ -163,6 +180,7 @@ async def get_manual_snapshots(
             snapshot_kind=row.snapshot_kind,
             trigger_id=row.trigger_id,
             trigger_evidence=row.trigger_evidence,
+            graph_context=_graph_context_for_response(row),
         )
         for row in rows
     ]
