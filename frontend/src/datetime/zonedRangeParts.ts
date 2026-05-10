@@ -110,6 +110,30 @@ export function presetRelativeRangeWallPartsWithUtcFallback(
 /**
  * ローリング窓の長さをグラフ見出し・折りたたみ要約用の短い日本語にする。
  */
+/**
+ * UTC の開始・終了 ISO を、指定タイムゾーンの壁時計で表した `ZonedRangeParts` に変換する。
+ * メトリクスやスナップショット再生で API の `from` / `to` をグラフ入力に合わせるために使う。
+ */
+export function zonedRangePartsFromUtcIsoEndpoints(
+  fromUtcIso: string,
+  toUtcIso: string,
+  timeZone: string,
+): ZonedRangeParts {
+  const fromC = utcIsoToZonedLocalDateTimeInput(fromUtcIso, timeZone)
+  const toC = utcIsoToZonedLocalDateTimeInput(toUtcIso, timeZone)
+  if (!fromC || !toC) {
+    return { ...EMPTY_ZONED_RANGE_PARTS }
+  }
+  const a = splitZonedLocalDateTimeInput(fromC)
+  const b = splitZonedLocalDateTimeInput(toC)
+  return {
+    fromDate: a.date,
+    fromTime: a.time,
+    toDate: b.date,
+    toTime: b.time,
+  }
+}
+
 export function formatRollingDurationLabel(durationMs: number): string {
   if (durationMs === METRICS_DEFAULT_ROLLING_DURATION_MS) {
     return '直近24時間'

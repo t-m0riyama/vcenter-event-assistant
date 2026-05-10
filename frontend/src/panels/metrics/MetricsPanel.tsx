@@ -7,6 +7,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   type TooltipProps,
@@ -22,7 +23,10 @@ import { MetricsChartErrorBoundary } from '../../metrics/MetricsChartErrorBounda
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { toErrorMessage } from '../../utils/errors'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
-import { useMetricsPanelController } from '../../hooks/useMetricsPanelController'
+import {
+  useMetricsPanelController,
+  type MetricsSnapshotReplayInput,
+} from '../../hooks/useMetricsPanelController'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { formatChartTooltipNumber } from '../../metrics/chartYAxisFormat'
 import {
@@ -38,10 +42,12 @@ export function MetricsPanel({
   onError,
   perfBucketSeconds,
   onNavigateToTimeline,
+  snapshotReplay,
 }: {
   onError: (e: string | null) => void
   perfBucketSeconds: number
   onNavigateToTimeline?: (params: { vcenterId: string }) => void
+  snapshotReplay?: MetricsSnapshotReplayInput | null
 }) {
   const {
     timeZone,
@@ -86,7 +92,8 @@ export function MetricsPanel({
     vcenterExportLabel,
     exportDisabled,
     csvExportOptions,
-  } = useMetricsPanelController(onError, perfBucketSeconds)
+    snapshotChartGuidelineMs,
+  } = useMetricsPanelController(onError, perfBucketSeconds, snapshotReplay ?? null)
   const latestVcenterIdRef = useRef(vcenterId)
   latestVcenterIdRef.current = vcenterId
 
@@ -450,6 +457,15 @@ export function MetricsPanel({
                   hide={hiddenSeriesDataKeys.has('evCount')}
                 />
               )}
+              {snapshotChartGuidelineMs != null && chartData.length > 0 ? (
+                <ReferenceLine
+                  yAxisId="left"
+                  x={snapshotChartGuidelineMs}
+                  stroke="#c0392b"
+                  strokeDasharray="4 3"
+                  label={{ value: 'スナップショット', position: 'top', fill: chartColors.axisTick, fontSize: 10 }}
+                />
+              ) : null}
             </LineChart>
           </ResponsiveContainer>
         </div>

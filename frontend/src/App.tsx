@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
 import { useAppConfig } from './hooks/useAppConfig'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
@@ -72,10 +73,19 @@ const SETTINGS_SUBTABS: SubTabConfig[] = [
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
   const [timelineInitialVcenterId, setTimelineInitialVcenterId] = useState<string>('')
+  const [metricsSnapshotReplay, setMetricsSnapshotReplay] =
+    useState<IncidentTimelineManualSnapshotListItem | null>(null)
+  const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
   const [err, setErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setErr)
+
+  useEffect(() => {
+    if (tab !== 'metrics') {
+      setMetricsSnapshotReplay(null)
+    }
+  }, [tab])
 
   return (
     <AppProviders>
@@ -173,6 +183,11 @@ export default function App() {
                   setShowHelp(false)
                   setErr(null)
                 }}
+                snapshotReplay={
+                  metricsSnapshotReplay
+                    ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
+                    : null
+                }
               />
             </Suspense>
           )}
@@ -180,7 +195,17 @@ export default function App() {
           {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
           {tab === 'chat' && <ChatPanel onError={setErr} />}
           {tab === 'timeline' && (
-            <TimelinePanel onError={setErr} initialVcenterId={timelineInitialVcenterId} />
+            <TimelinePanel
+              onError={setErr}
+              initialVcenterId={timelineInitialVcenterId}
+              onOpenSnapshotInMetrics={(item) => {
+                setMetricsSnapshotReplay(item)
+                setMetricsReplayNonce((n) => n + 1)
+                setTab('metrics')
+                setShowHelp(false)
+                setErr(null)
+              }}
+            />
           )}
           {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
           {tab === 'settings' && settingsSubTab === 'score_rules' && (

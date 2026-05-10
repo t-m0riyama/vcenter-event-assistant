@@ -545,6 +545,25 @@ export const incidentTimelineBuildRequestSchema = z
 
 export type IncidentTimelineBuildRequest = z.infer<typeof incidentTimelineBuildRequestSchema>
 
+/** スナップショットに保存するグラフ再生用メタ（すべて任意） */
+export const incidentTimelineGraphContextSchema = z
+  .object({
+    metric_key: z.string().max(512).optional(),
+    chart_event_type: z.string().max(512).optional(),
+    marker_timestamp_utc: isoUtcDateTimeSchema.optional(),
+    vcenter_id: z.string().uuid().nullable().optional(),
+    captured_range: z
+      .object({
+        from: isoUtcDateTimeSchema,
+        to: isoUtcDateTimeSchema,
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+export type IncidentTimelineGraphContext = z.infer<typeof incidentTimelineGraphContextSchema>
+
 export function parseIncidentTimelineResponse(raw: unknown): IncidentTimeline {
   return incidentTimelineSchema.parse(raw)
 }
@@ -556,6 +575,7 @@ export const incidentTimelineManualSnapshotCreateRequestSchema = z
     timestamp_utc: isoUtcDateTimeSchema,
     operator_note: z.string().min(1).max(10_000),
     build_request_payload: incidentTimelineBuildRequestSchema.optional(),
+    graph_context: incidentTimelineGraphContextSchema.optional(),
   })
   .strict()
 
@@ -570,6 +590,7 @@ export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
   build_request_payload: incidentTimelineBuildRequestSchema,
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
+  graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
 })
 
 export type IncidentTimelineManualSnapshotCreateResponse = z.infer<
@@ -586,6 +607,7 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
   trigger_evidence: z.record(z.string(), z.unknown()).optional().nullable(),
+  graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
 })
 
 export type IncidentTimelineManualSnapshotListItem = z.infer<

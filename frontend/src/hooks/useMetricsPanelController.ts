@@ -13,9 +13,11 @@ import {
   METRICS_DEFAULT_ROLLING_DURATION_MS,
   formatRollingDurationLabel,
   presetRelativeRangeWallPartsWithUtcFallback,
+  zonedRangePartsFromUtcIsoEndpoints,
   zonedRangePartsToCombinedInputs,
   type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
+import type { IncidentTimelineManualSnapshotListItem } from '../api/schemas'
 
 /** グラフの表示期間がクイックプリセットに追従するか、手入力固定か。 */
 export type GraphRangeFollowMode = 'rolling' | 'manual'
@@ -37,9 +39,16 @@ import { useMetricDataFetch } from './useMetricDataFetch'
 /** 系列 `tMs` の幅がこれ以下なら X 軸は月日を省略し時刻のみ */
 const CHART_TIME_SPAN_OMIT_MONTH_DAY_MS = 2 * 86400000
 
+/** メトリクスタブでスナップショット由来の期間・系列を一度だけ適用する。 */
+export type MetricsSnapshotReplayInput = {
+  item: IncidentTimelineManualSnapshotListItem
+  nonce: number
+}
+
 export function useMetricsPanelController(
   onError: (e: string | null) => void,
   perfBucketSeconds: number,
+  snapshotReplay?: MetricsSnapshotReplayInput | null,
 ) {
   const { timeZone } = useTimeZone()
   const [graphRangeFollowMode, setGraphRangeFollowMode] =
@@ -70,6 +79,7 @@ export function useMetricsPanelController(
   } | null>(null)
   const chartWrapRef = useRef<HTMLDivElement>(null)
   const chartColors = useChartThemeColors()
+  const [snapshotChartGuidelineMs, setSnapshotChartGuidelineMs] = useState<number | null>(null)
 
   const {
     vcenters,
@@ -98,6 +108,28 @@ export function useMetricsPanelController(
       setVcenterId(vcenters[0].id)
     }
   }, [vcenters, vcenterId])
+
+  useEffect(() => {
+    if (!snapshotReplay?.item || snapshotReplay.nonce < 1) {
+      setSnapshotChartGuidelineMs(null)
+      return
+    }
+    const { item } = snapshotReplay
+    const br = item.build_request_payload
+    const gc = item.graph_context
+    setGraphRangeFollowMode('manual')
+    const fromIso = gc?.captured_range?.from ?? br.from
+    const toIso = gc?.captured_range?.to ?? br.to
+    setRangeParts(zonedRangePartsFromUtcIsoEndpoints(fromIso, toIso, timeZone))
+    const vid = gc?.vcenter_id ?? br.vcenter_id
+    setVcenterId(vid && String(vid).length > 0 ? String(vid) : '')
+    setMetricKey(gc?.metric_key ?? '')
+    setChartEventType(gc?.chart_event_type ?? '')
+    const markerSrc = gc?.marker_timestamp_utc ?? item.timestamp_utc
+    setSnapshotChartGuidelineMs(parseApiUtcInstantMs(String(markerSrc)))
+    lastSeriesFetchRef.current = null
+    setChartResetKey((k) => k + 1)
+  }, [snapshotReplay?.item, snapshotReplay?.nonce, timeZone])
 
   useEffect(() => {
     if (!metricKey && metricKeys.length > 0) {
@@ -414,5 +446,6 @@ export function useMetricsPanelController(
     countByEpochSec,
     csvExportOptions,
     exportDisabled,
+    snapshotChartGuidelineMs,
   }
 }

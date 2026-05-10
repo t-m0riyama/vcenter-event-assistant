@@ -626,6 +626,7 @@ async def test_get_manual_snapshots_returns_paginated_list_with_limit_offset(
         "snapshot_kind",
         "trigger_id",
         "trigger_evidence",
+        "graph_context",
     } <= set(data["items"][0].keys())
     assert isinstance(data["items"][0]["timestamp_utc"], str)
     assert data["items"][0]["timestamp_utc"].endswith("Z")
@@ -636,3 +637,53 @@ async def test_get_manual_snapshots_returns_paginated_list_with_limit_offset(
     build_request = IncidentTimelineBuildRequest.model_validate(data["items"][0]["build_request_payload"])
     assert build_request.from_time == datetime.fromisoformat(data["items"][0]["from"].replace("Z", "+00:00"))
     assert build_request.to_time == datetime.fromisoformat(data["items"][0]["to"].replace("Z", "+00:00"))
+
+
+@pytest.mark.asyncio
+async def test_post_manual_snapshot_persists_graph_context_round_trip(
+    client: AsyncClient,
+) -> None:
+    vid = "550e8400-e29b-41d4-a716-446655440000"
+    graph_context = {
+        "metric_key": "host.cpu.usage_pct",
+        "chart_event_type": "VmPoweredOnEvent",
+        "vcenter_id": vid,
+        "marker_timestamp_utc": "2026-03-22T06:30:00Z",
+        "captured_range": {"from": "2026-03-22T00:00:00Z", "to": "2026-03-23T00:00:00Z"},
+    }
+    request_body = _manual_snapshot_request_body(
+        operator_note="graph ctx 付き保存",
+        graph_context=graph_context,
+    )
+    r = await client.post(
+        "/api/incident-timeline/snapshots/manual",
+        json=request_body,
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data.get("graph_context") == graph_context
+
+    list_r = await client.get(
+        "/api/incident-timeline/snapshots/manual",
+        params={"limit": 20, "offset": 0},
+    )
+    assert list_r.status_code == 200
+    items = list_r.json()["items"]
+    match = next((x for x in items if x.get("operator_note") == "graph ctx 付き保存"), None)
+    assert match is not None
+    assert match.get("graph_context") == graph_context
+
+
+@pytest.mark.asyncio
+async def test_post_manual_snapshot_rejects_invalid_graph_context(
+    client: AsyncClient,
+) -> None:
+    request_body = _manual_snapshot_request_body(
+        operator_note="invalid graph",
+        graph_context={"metric_key": "x" * 513},
+    )
+    r = await client.post(
+        "/api/incident-timeline/snapshots/manual",
+        json=request_body,
+    )
+    assert r.status_code == 422

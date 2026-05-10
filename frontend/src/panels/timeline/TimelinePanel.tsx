@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './TimelinePanel.css'
 
 import { apiGet, apiPost } from '../../api'
@@ -34,6 +34,30 @@ const TIMELINE_SORT_ORDER_STORAGE_KEY = 'vea.timeline.sort_order'
 const ALERT_TOP_N_STORAGE_KEY = 'vea.timeline.alert_top_n'
 type TimelineSortOrder = 'asc' | 'desc'
 
+/** 表示中タイムライン列の時刻範囲に重なるスナップショットをマーカー用に抽出する。 */
+function buildSnapshotMarkersForTimeline(
+  timeline: IncidentTimeline | null,
+  items: IncidentTimelineManualSnapshotListItem[],
+): { timestamp_utc: string; label: string }[] {
+  if (!timeline?.columns.length) {
+    return []
+  }
+  const times = timeline.columns.map((c) => new Date(c.timestamp_utc).getTime())
+  const minT = Math.min(...times)
+  const maxT = Math.max(...times)
+  const out: { timestamp_utc: string; label: string }[] = []
+  for (const item of items) {
+    const t = new Date(item.timestamp_utc).getTime()
+    if (!Number.isFinite(t)) {
+      continue
+    }
+    if (t >= minT && t <= maxT) {
+      out.push({ timestamp_utc: item.timestamp_utc, label: item.operator_note })
+    }
+  }
+  return out
+}
+
 function isValidMetricThresholdPercent(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 100
 }
@@ -60,9 +84,12 @@ function getInitialAlertTopN(): number {
 export function TimelinePanel({
   onError,
   initialVcenterId,
+  onOpenSnapshotInMetrics,
 }: {
   onError: (e: string | null) => void
   initialVcenterId?: string
+  /** 監査一覧からメトリクス（グラフ）タブでスナップショット条件を再生する。 */
+  onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
 }) {
   const { timeZone } = useTimeZone()
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
@@ -106,6 +133,11 @@ export function TimelinePanel({
   )
   const [alertTopN, setAlertTopN] = useState(getInitialAlertTopN)
   const [alertTopNInput, setAlertTopNInput] = useState(() => String(getInitialAlertTopN()))
+  const snapshotMarkers = useMemo(
+    () => buildSnapshotMarkersForTimeline(timeline, manualSnapshotAuditItems),
+    [timeline, manualSnapshotAuditItems],
+  )
+
   const [sortOrder, setSortOrder] = useState<TimelineSortOrder>(() => {
     if (typeof localStorage === 'undefined') {
       return 'desc'
@@ -284,12 +316,19 @@ export function TimelinePanel({
           alertTopN,
         },
       })
+      const tsIso = new Date().toISOString()
+      const graphContext = {
+        marker_timestamp_utc: tsIso,
+        ...(vcenterId.trim() !== '' ? { vcenter_id: vcenterId } : {}),
+        captured_range: { from: resolved.from, to: resolved.to },
+      }
       const payload = incidentTimelineManualSnapshotCreateRequestSchema.parse({
         from: resolved.from,
         to: resolved.to,
-        timestamp_utc: new Date().toISOString(),
+        timestamp_utc: tsIso,
         operator_note: operatorNote.trim(),
         build_request_payload: buildRequestPayload,
+        graph_context: graphContext,
       })
       const raw = await apiPost<unknown>('/api/incident-timeline/snapshots/manual', payload)
       incidentTimelineManualSnapshotCreateResponseSchema.parse(raw)
@@ -300,7 +339,23 @@ export function TimelinePanel({
     } finally {
       setSavingSnapshot(false)
     }
-  }, [fetchManualSnapshotAuditItems, onError, operatorNote, rangeParts, timeZone])
+  }, [
+    fetchManualSnapshotAuditItems,
+    onError,
+    operatorNote,
+    rangeParts,
+    timeZone,
+    vcenterId,
+    includePeriodMetricsCpu,
+    includePeriodMetricsMemory,
+    includePeriodMetricsDiskIo,
+    includePeriodMetricsNetworkIo,
+    metricThresholdCpuPct,
+    metricThresholdMemoryPct,
+    metricThresholdDiskPct,
+    metricThresholdNetworkPct,
+    alertTopN,
+  ])
 
   return (
     <div className="panel timeline-panel">
@@ -544,6 +599,15 @@ export function TimelinePanel({
                   >
                     {item.operator_note}
                   </button>{' '}
+                  {onOpenSnapshotInMetrics ? (
+                    <button
+                      type="button"
+                      className="btn btn--gray"
+                      onClick={() => onOpenSnapshotInMetrics(item)}
+                    >
+                      グラフで開く
+                    </button>
+                  ) : null}{' '}
                   <span>({item.timestamp_utc})</span>
                 </li>
               ))}
@@ -571,7 +635,11 @@ export function TimelinePanel({
       </section>
 
       {timeline ? (
-        <IncidentTimelinePanel timeline={timeline} sortOrder={sortOrder} />
+        <IncidentTimelinePanel
+          timeline={timeline}
+          sortOrder={sortOrder}
+          snapshotMarkers={snapshotMarkers}
+        />
       ) : (
         <p className="hint">
           「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。

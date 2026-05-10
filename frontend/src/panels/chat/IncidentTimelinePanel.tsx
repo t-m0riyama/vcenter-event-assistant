@@ -91,13 +91,21 @@ function formatTimelineHeader(
   return `${startDateClock}-${endClock}`
 }
 
+export type IncidentTimelineSnapshotMarker = {
+  readonly timestamp_utc: string
+  readonly label: string
+}
+
 /** インシデント統合タイムラインを時刻列ごとに表示する。 */
 export function IncidentTimelinePanel({
   timeline,
   sortOrder = 'desc',
+  snapshotMarkers = [],
 }: {
   timeline: IncidentTimeline
   sortOrder?: TimelineSortOrder
+  /** 保存スナップショットの記録時刻をタイムライン表示範囲内で注記する。 */
+  snapshotMarkers?: readonly IncidentTimelineSnapshotMarker[]
 }) {
   const [expandedTimestamps, setExpandedTimestamps] = useState<Set<string>>(() => new Set())
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
@@ -163,6 +171,19 @@ export function IncidentTimelinePanel({
               </select>
             </label>
           </div>
+          {snapshotMarkers.length > 0 ? (
+            <div
+              className="incident-timeline__snapshot-markers"
+              data-testid="incident-timeline-snapshot-markers"
+              aria-label="スナップショット記録"
+            >
+              {snapshotMarkers.map((m) => (
+                <span key={`${m.timestamp_utc}-${m.label}`} className="incident-timeline__snapshot-chip">
+                  {formatUtcClock(m.timestamp_utc) ?? m.timestamp_utc}: {m.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="incident-timeline__scroll">
             <ul
               className="incident-timeline incident-timeline--horizontal"

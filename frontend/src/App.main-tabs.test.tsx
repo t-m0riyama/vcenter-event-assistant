@@ -260,6 +260,9 @@ describe('App メインタブ', () => {
         screen.getByText('「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。'),
       ).toBeInTheDocument()
     })
-    expect(screen.getByLabelText('対象 vCenter')).toHaveValue('550e8400-e29b-41d4-a716-446655440000')
+    // vCenter 一覧は GET /api/vcenters の後に <option> が生成される。一覧前に value だけ立つと jsdom では空表示になり得るため待機する。
+    await waitFor(() => {
+      expect(screen.getByLabelText('対象 vCenter')).toHaveValue('550e8400-e29b-41d4-a716-446655440000')
+    })
   })
 })
