@@ -84,7 +84,14 @@
 - `metric_threshold` ルールの `config.metric_key` は、DB に保存されるキーと **完全一致** させる（CPU 利用率の例: `host.cpu.usage_pct`）。`GET /api/metrics/keys` またはグラフタブのキー一覧を参照する。UI 旧既定の `cpu.usage.average` ではサンプルにヒットしない。
 - 発火の確認は **通知履歴**（`GET /api/alerts/history`、画面の「通知履歴」タブ）。`_notify` が呼ばれると履歴行が増える。メールは `SMTP_HOST` と `ALERT_EMAIL_TO` が設定されているときのみ送信される（未設定時は warning ログのみで履歴は残る）。
 - 評価完了時に INFO ログ `alert evaluation complete rules_enabled=N firings=M resolutions=R` が出る。`firings=0` が続く場合は閾値・キー・収集データを見直す。
-- 既に `firing` 状態のルールは、条件が続いても **新規通知は出ない**（`fired_at` の更新のみ）。回復後に再度閾値超えで firing する。
+- 既に `firing` 状態の metric ルールは、条件が続いても **新規通知は出ない**（エンティティごとの状態更新のみ）。回復後に再度閾値超えで firing する。
+- **`event_score` ルール**
+  - 判定はイベント一覧と同じ DB 列 `notable_score >= config.threshold` かつ `occurred_at >= now - ALERT_EVENT_EVAL_LOOKBACK_HOURS`（**全ルール共通**。ルール `config` に lookback はない）。
+  - ウィンドウは `.env` の `ALERT_EVENT_EVAL_LOOKBACK_HOURS`（1〜168、既定 24）。**アプリ再起動**で反映。`ALERT_SNAPSHOT_LOOKBACK_HOURS`（スナップショット用・既定 2）とは別。
+  - `config` は `threshold`（必須・0〜100）と `cooldown_minutes`（任意、既定 10）。JSON インポートで `threshold` が文字列でも評価側で数値化する。レガシー `min_notable_score` は `threshold` として読む。
+  - ウィンドウ内に閾値以上の **より新しい** イベントが来たときは、既に `firing` でも通知を再送する（`context_key` はイベント ID）。
+  - ウィンドウ内に閾値以上が無く、`fired_at` から `cooldown_minutes` 経過で `resolved`。
+  - ログに `Error evaluating rule` や `invalid config` が出ていないか確認する。
 
 ### 2.5 収集・ダイジェスト・チャット
 

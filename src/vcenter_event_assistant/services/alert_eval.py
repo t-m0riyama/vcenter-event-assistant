@@ -9,12 +9,22 @@ from sqlalchemy import desc, select
 from vcenter_event_assistant.alert_levels import alert_level_label_ja
 from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState, EventRecord, MetricSample
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.services.alert_eval_event_score_config import (
+    event_eval_window_start,
+    parse_event_score_rule_config,
+)
 from vcenter_event_assistant.services.incident_timeline_snapshot import persist_alert_rule_firing_snapshot
 from vcenter_event_assistant.services.notification.email_channel import EmailChannel
 from vcenter_event_assistant.services.notification.renderer import NotificationRenderer
 from vcenter_event_assistant.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 @dataclass
@@ -63,35 +73,59 @@ class AlertEvaluator:
         return summary
 
     async def _evaluate_event_score(self, rule: AlertRule) -> tuple[int, int]:
-        threshold = rule.config.get("threshold", 60)
-        cooldown_mins = rule.config.get("cooldown_minutes", 10)
+        parsed = parse_event_score_rule_config(rule.config)
+        if parsed is None:
+            logger.warning("event_score rule=%s id=%s: invalid config", rule.name, rule.id)
+            return 0, 0
+
+        settings = get_settings()
+        lookback_hours = settings.alert_event_eval_lookback_hours
+        now = datetime.now(timezone.utc)
+        window_start = event_eval_window_start(now=now, lookback_hours=lookback_hours)
+        threshold = parsed.threshold
+        cooldown_mins = parsed.cooldown_minutes
         firings = 0
         resolutions = 0
 
         async with session_scope() as session:
             res = await session.execute(
                 select(EventRecord)
-                .where(EventRecord.notable_score >= threshold)
+                .where(
+                    EventRecord.notable_score >= threshold,
+                    EventRecord.occurred_at >= window_start,
+                )
                 .order_by(desc(EventRecord.occurred_at))
                 .limit(1)
             )
             latest_event = res.scalar_one_or_none()
+
+            logger.debug(
+                "event_score rule=%s lookback_hours=%s window_start=%s qualifying_in_window=%s",
+                rule.name,
+                lookback_hours,
+                window_start.isoformat(),
+                latest_event is not None,
+            )
 
             res = await session.execute(
                 select(AlertState).where(AlertState.rule_id == rule.id)
             )
             current_state = res.scalar_one_or_none()
 
-            now = datetime.now(timezone.utc)
-
             if latest_event:
-                context_key = latest_event.event_type
-                if not current_state or current_state.state == "resolved":
+                context_key = str(latest_event.id)
+                event_at = _as_utc(latest_event.occurred_at)
+                should_notify = (
+                    not current_state
+                    or current_state.state == "resolved"
+                    or event_at > _as_utc(current_state.fired_at)
+                )
+                if should_notify:
                     new_state = AlertState(
                         rule_id=rule.id,
                         state="firing",
                         context_key=context_key,
-                        fired_at=latest_event.occurred_at,
+                        fired_at=event_at,
                     )
                     session.add(new_state)
                     if current_state:
@@ -108,13 +142,11 @@ class AlertEvaluator:
                         },
                     )
                     firings = 1
-                else:
-                    current_state.fired_at = latest_event.occurred_at
+                elif current_state and current_state.state == "firing":
+                    current_state.fired_at = event_at
                     current_state.context_key = context_key
             elif current_state and current_state.state == "firing":
-                fired_at = current_state.fired_at
-                if fired_at.tzinfo is None:
-                    fired_at = fired_at.replace(tzinfo=timezone.utc)
+                fired_at = _as_utc(current_state.fired_at)
 
                 if now - fired_at > timedelta(minutes=cooldown_mins):
                     current_state.state = "resolved"
