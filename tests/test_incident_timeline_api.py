@@ -336,7 +336,7 @@ async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_persists_auto_trigger_snapshots(
+async def test_post_incident_timeline_does_not_persist_auto_trigger_snapshots(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -421,11 +421,7 @@ async def test_post_incident_timeline_persists_auto_trigger_snapshots(
     assert list_r.status_code == 200
     items = list_r.json()["items"]
     auto_items = [item for item in items if item.get("snapshot_kind") == "auto"]
-    assert len(auto_items) >= 3
-    trigger_ids = {item.get("trigger_id") for item in auto_items}
-    assert {"critical_burst", "sustained_breach", "multi_signal_overlap"} <= trigger_ids
-    assert all("build_request_payload" in item for item in auto_items)
-    assert all(item.get("trigger_evidence") is not None for item in auto_items)
+    assert auto_items == []
 
 
 @pytest.mark.asyncio

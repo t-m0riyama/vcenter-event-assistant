@@ -111,6 +111,12 @@ class AlertSettingsMixin(BaseModel):
     alert_email_from: str = Field(default="noreply@example.com")
     alert_email_to: str | None = Field(default=None, description="Global recipient for alerts (comma-separated).")
     alert_eval_interval_seconds: int = Field(default=60, ge=10, description="Alert evaluation job interval.")
+    alert_snapshot_lookback_hours: int = Field(
+        default=2,
+        ge=1,
+        le=168,
+        description="AlertRule firing スナップショットの from_time を fired_at から遡る時間（時間単位）。",
+    )
     alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
     alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
 

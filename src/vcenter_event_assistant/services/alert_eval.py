@@ -5,8 +5,10 @@ from sqlalchemy import select, desc
 from vcenter_event_assistant.db.models import AlertRule, AlertState, AlertHistory, EventRecord, MetricSample
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.alert_levels import alert_level_label_ja
-from vcenter_event_assistant.services.notification.renderer import NotificationRenderer
+from vcenter_event_assistant.services.incident_timeline_snapshot import persist_alert_rule_firing_snapshot
 from vcenter_event_assistant.services.notification.email_channel import EmailChannel
+from vcenter_event_assistant.services.notification.renderer import NotificationRenderer
+from vcenter_event_assistant.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +141,23 @@ class AlertEvaluator:
                         await self._notify(rule, current, {"details": f"Metric {metric_key} dropped to {sample.value} (threshold: {threshold}) on {sample.entity_name}"})
 
     async def _notify(self, rule: AlertRule, state: AlertState, extra_context: dict) -> None:
+        if state.state == "firing":
+            settings = get_settings()
+            async with session_scope() as session:
+                await persist_alert_rule_firing_snapshot(
+                    session=session,
+                    rule=rule,
+                    state=state,
+                    details=str(extra_context.get("details", "")),
+                    to_time=datetime.now(timezone.utc),
+                    lookback_hours=settings.alert_snapshot_lookback_hours,
+                )
+                await session.commit()
+
         fired_at = state.fired_at
         if fired_at and fired_at.tzinfo is None:
             fired_at = fired_at.replace(tzinfo=timezone.utc)
-        
+
         resolved_at = state.resolved_at
         if resolved_at and resolved_at.tzinfo is None:
             resolved_at = resolved_at.replace(tzinfo=timezone.utc)
