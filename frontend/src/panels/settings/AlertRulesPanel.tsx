@@ -489,14 +489,16 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                               />
                             </label>
                           ) : (
-                            <label>
-                              クールダウン（分）
+                            <label
+                              title="同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで"
+                            >
+                              再通知間隔（分）
                               <input
                                 type="number"
                                 min={1}
                                 value={draft.cooldown_minutes}
                                 onChange={(e) => updateDraft(r.id, { cooldown_minutes: Number(e.target.value) })}
-                                aria-label={`${r.name} のクールダウン分`}
+                                aria-label={`${r.name} の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで`}
                               />
                             </label>
                           )}

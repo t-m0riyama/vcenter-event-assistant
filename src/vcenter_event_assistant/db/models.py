@@ -157,6 +157,9 @@ class AlertState(Base):
     """現在のアラート発火状態。"""
 
     __tablename__ = "alert_states"
+    __table_args__ = (
+        UniqueConstraint("rule_id", "context_key", name="uq_alert_states_rule_id_context_key"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
@@ -164,6 +167,9 @@ class AlertState(Base):
     context_key: Mapped[str] = mapped_column(String(512), index=True)
     fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     rule: Mapped["AlertRule"] = relationship(back_populates="states")
 

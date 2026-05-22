@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,3 +47,44 @@ def event_eval_window_start(*, now: datetime, lookback_hours: int) -> datetime:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     return now - timedelta(hours=lookback_hours)
+
+
+def merge_latest_qualifying_by_event_type(
+    rows: list[tuple[str, datetime]],
+) -> dict[str, datetime]:
+    """イベント種別ごとに qualifying 行の最大 occurred_at を保持して集約する。"""
+    out: dict[str, datetime] = {}
+    for event_type, occurred_at in rows:
+        prev = out.get(event_type)
+        if prev is None or occurred_at > prev:
+            out[event_type] = occurred_at
+    return out
+
+
+def event_score_should_notify(
+    *,
+    current_state: Literal["firing", "resolved"] | None,
+    last_notified_at: datetime | None,
+    last_qualifying_at: datetime,
+    now: datetime,
+    cooldown_minutes: int,
+) -> bool:
+    """イベントスコアアラートの再通知許可判定（クールダウン）。
+
+    Args:
+        current_state: 現在のアラート状態。未評価（None）または resolved 後は最初の検知として通知許可。
+        last_notified_at: 直近通知時刻。
+        last_qualifying_at: 集約済み qualifying の最新発生時刻（将来ロジック用に受け取るのみ）。
+        now: 判定基準時刻。
+        cooldown_minutes: firing 連続時の再通知までの最短間隔。
+
+    Returns:
+        通知すべきとき True。
+    """
+    if current_state is None or current_state == "resolved":
+        return True
+    if last_notified_at is None:
+        return True
+    if now - last_notified_at >= timedelta(minutes=cooldown_minutes):
+        return True
+    return False
