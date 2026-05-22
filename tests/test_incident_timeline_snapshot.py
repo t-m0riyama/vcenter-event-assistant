@@ -139,7 +139,7 @@ async def test_evaluate_event_score_firing_persists_auto_snapshot():
         session.add(rule)
         event = EventRecord(
             vcenter_id=vc.id,
-            occurred_at=datetime(2026, 5, 22, 8, 0, tzinfo=timezone.utc),
+            occurred_at=datetime.now(timezone.utc),
             event_type="HostConnectionLostEvent",
             vmware_key=99,
             notable_score=70,
