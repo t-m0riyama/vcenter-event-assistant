@@ -64,3 +64,67 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
         await evaluator.evaluate_all()
         assert mock_notify.called
         assert mock_notify.call_args[0][1].state == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_does_not_fire_when_metric_key_mismatches_collector() -> None:
+    async with session_scope() as session:
+        vc = VCenter(name="vc_key", host="vc_key", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Wrong key",
+            rule_type="metric_threshold",
+            is_enabled=True,
+            config={"metric_key": "cpu.usage.average", "threshold": 90.0},
+        )
+        session.add(rule)
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=datetime.now(timezone.utc),
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="host.cpu.usage_pct",
+                value=95.0,
+            )
+        )
+        await session.flush()
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert not mock_notify.called
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_fires_when_metric_key_matches_collector() -> None:
+    async with session_scope() as session:
+        vc = VCenter(name="vc_ok", host="vc_ok", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Right key",
+            rule_type="metric_threshold",
+            is_enabled=True,
+            config={"metric_key": "host.cpu.usage_pct", "threshold": 90.0},
+        )
+        session.add(rule)
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=datetime.now(timezone.utc),
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="host.cpu.usage_pct",
+                value=95.0,
+            )
+        )
+        await session.flush()
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.called
