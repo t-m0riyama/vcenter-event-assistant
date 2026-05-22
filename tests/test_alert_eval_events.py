@@ -269,7 +269,6 @@ async def test_evaluate_event_score_resolves_when_no_qualifying_in_window() -> N
         )
         session.add(rule)
         await session.flush()
-        rule_id = rule.id
         session.add(
             EventRecord(
                 vcenter_id=vc.id,
