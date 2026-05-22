@@ -198,7 +198,6 @@ async def test_evaluate_event_score_suppresses_renotify_within_cooldown_same_typ
             )
         )
         await session.flush()
-        rule_id = rule.id
         vcenter_id = vc.id
 
     evaluator = AlertEvaluator()
