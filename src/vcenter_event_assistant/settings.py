@@ -118,7 +118,7 @@ class AlertSettingsMixin(BaseModel):
         description="AlertRule firing スナップショットの from_time を fired_at から遡る時間（時間単位）。",
     )
     alert_event_eval_lookback_hours: int = Field(
-        default=24,
+        default=1,
         ge=1,
         le=168,
         description=(

@@ -31,7 +31,7 @@ def test_alert_snapshot_lookback_hours_env_override(monkeypatch):
 
 def test_alert_event_eval_lookback_hours_default():
     settings = Settings()
-    assert settings.alert_event_eval_lookback_hours == 24
+    assert settings.alert_event_eval_lookback_hours == 1
 
 
 def test_alert_event_eval_lookback_hours_env_override(monkeypatch):
