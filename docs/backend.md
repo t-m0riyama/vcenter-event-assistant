@@ -87,9 +87,9 @@
 - 既に `firing` 状態の metric ルールは、条件が続いても **新規通知は出ない**（エンティティごとの状態更新のみ）。回復後に再度閾値超えで firing する。
 - **`event_score` ルール**
   - 判定はイベント一覧と同じ DB 列 `notable_score >= config.threshold` かつ `occurred_at >= now - ALERT_EVENT_EVAL_LOOKBACK_HOURS`（**全ルール共通**。ルール `config` に lookback はない）。
-  - ウィンドウは `.env` の `ALERT_EVENT_EVAL_LOOKBACK_HOURS`（1〜168、既定 24）。**アプリ再起動**で反映。`ALERT_SNAPSHOT_LOOKBACK_HOURS`（スナップショット用・既定 2）とは別。
+  - ウィンドウは `.env` の `ALERT_EVENT_EVAL_LOOKBACK_HOURS`（1〜168、既定 1）。**アプリ再起動**で反映。`ALERT_SNAPSHOT_LOOKBACK_HOURS`（スナップショット用・既定 2）とは別。
   - `config` は `threshold`（必須・0〜100）と `cooldown_minutes`（任意、既定 10）。JSON インポートで `threshold` が文字列でも評価側で数値化する。レガシー `min_notable_score` は `threshold` として読む。
-  - ウィンドウ内に閾値以上の **より新しい** イベントが来たときは、既に `firing` でも通知を再送する（`context_key` はイベント ID）。
+  - ウィンドウ内に閾値以上の **より新しい** イベントが来たときは、既に `firing` でも通知を再送する（メールの Resource / `context_key` は **イベント種別 `event_type`**）。
   - ウィンドウ内に閾値以上が無く、`fired_at` から `cooldown_minutes` 経過で `resolved`。
   - ログに `Error evaluating rule` や `invalid config` が出ていないか確認する。
 

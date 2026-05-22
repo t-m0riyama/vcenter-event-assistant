@@ -31,7 +31,6 @@ async def test_evaluate_event_score_firing():
         session.add(event)
         await session.flush()
         rule_id = rule.id
-        event_id = event.id
 
     evaluator = AlertEvaluator()
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
@@ -46,7 +45,7 @@ async def test_evaluate_event_score_firing():
         )
         state = res.scalar_one()
         assert state.state == "firing"
-        assert state.context_key == str(event_id)
+        assert state.context_key == "HostConnectionLostEvent"
 
 
 @pytest.mark.asyncio
@@ -221,7 +220,40 @@ async def test_evaluate_event_score_renotifies_on_second_newer_event() -> None:
         res = await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
         st = res.scalar_one()
         assert st.state == "firing"
+        assert st.context_key == "E2"
         assert _as_utc(st.fired_at) == _as_utc(t2)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_event_score_firing_notify_uses_event_type_in_context_key() -> None:
+    """メール件名の Resource（context_key）にイベント種別が出ること。"""
+    async with session_scope() as session:
+        vc = VCenter(name="vc_type", host="vc_type", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Type In Subject",
+            rule_type="event_score",
+            config={"threshold": 60, "cooldown_minutes": 5},
+        )
+        session.add(rule)
+        session.add(
+            EventRecord(
+                vcenter_id=vc.id,
+                occurred_at=datetime.now(timezone.utc),
+                event_type="vim.event.UserLoginSessionEvent",
+                vmware_key=99,
+                notable_score=65,
+            )
+        )
+        await session.flush()
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        notify_state = mock_notify.call_args[0][1]
+        assert notify_state.context_key == "vim.event.UserLoginSessionEvent"
+        assert not notify_state.context_key.isdigit()
 
 
 @pytest.mark.asyncio

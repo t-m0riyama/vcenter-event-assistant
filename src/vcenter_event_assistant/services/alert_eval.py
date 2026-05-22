@@ -113,7 +113,7 @@ class AlertEvaluator:
             current_state = res.scalar_one_or_none()
 
             if latest_event:
-                context_key = str(latest_event.id)
+                context_key = latest_event.event_type
                 event_at = _as_utc(latest_event.occurred_at)
                 should_notify = (
                     not current_state
