@@ -79,6 +79,8 @@
 
 #### 定期アラート評価（トラブルシュート）
 
+利用者向けの説明（画面操作・メールの読み方・FAQ）は [user-guides/alerts.md](user-guides/alerts.md) を参照する。
+
 - バックグラウンドジョブ `evaluate_alerts` は `ALERT_EVAL_INTERVAL_SECONDS`（既定 60 秒）ごとに動く。ログの `executed successfully` は **例外がなかったこと** を示し、必ずしも発火したとは限らない。
 - **有効な AlertRule が 1 件以上**必要（設定 → アラート、有効チェック ON）。
 - `metric_threshold` ルールの `config.metric_key` は、DB に保存されるキーと **完全一致** させる（CPU 利用率の例: `host.cpu.usage_pct`）。`GET /api/metrics/keys` またはグラフタブのキー一覧を参照する。UI 旧既定の `cpu.usage.average` ではサンプルにヒットしない。
