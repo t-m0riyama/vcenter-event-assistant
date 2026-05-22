@@ -14,6 +14,8 @@ import {
   formatAlertRulesFileParseError,
   formatAlertRulesImportApiError,
 } from './alertRulesImportErrors'
+import { KNOWN_METRIC_KEYS } from '../../metrics/knownMetricKeys'
+import { DEFAULT_ALERT_METRIC_KEY } from './alertRuleDefaults'
 import './AlertRulesPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -50,7 +52,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newType, setNewType] = useState<'event_score' | 'metric_threshold'>('event_score')
   const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
   const [newThreshold, setNewThreshold] = useState(60)
-  const [newMetricKey, setNewMetricKey] = useState('cpu.usage.average')
+  const [newMetricKey, setNewMetricKey] = useState(DEFAULT_ALERT_METRIC_KEY)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [drafts, setDrafts] = useState<Record<number, EditDraft>>({})
   const [overwriteExisting, setOverwriteExisting] = useState(true)
@@ -346,12 +348,18 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
             {newType === 'metric_threshold' && (
               <label>
                 メトリクスキー
-                <input 
-                  type="text" 
-                  value={newMetricKey} 
+                <input
+                  type="text"
+                  list="alert-metric-key-options"
+                  value={newMetricKey}
                   onChange={(e) => setNewMetricKey(e.target.value)}
-                  placeholder="cpu.usage.average"
+                  placeholder={DEFAULT_ALERT_METRIC_KEY}
                 />
+                <datalist id="alert-metric-key-options">
+                  {KNOWN_METRIC_KEYS.map((key) => (
+                    <option key={key} value={key} />
+                  ))}
+                </datalist>
               </label>
             )}
 
@@ -474,6 +482,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                               メトリクスキー
                               <input
                                 type="text"
+                                list="alert-metric-key-options"
                                 value={draft.metric_key}
                                 onChange={(e) => updateDraft(r.id, { metric_key: e.target.value })}
                                 aria-label={`${r.name} のメトリクスキー`}
