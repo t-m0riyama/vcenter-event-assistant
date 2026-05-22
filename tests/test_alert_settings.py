@@ -29,6 +29,17 @@ def test_alert_snapshot_lookback_hours_env_override(monkeypatch):
     assert settings.alert_snapshot_lookback_hours == 4
 
 
+def test_alert_event_eval_lookback_hours_default():
+    settings = Settings()
+    assert settings.alert_event_eval_lookback_hours == 24
+
+
+def test_alert_event_eval_lookback_hours_env_override(monkeypatch):
+    monkeypatch.setenv("ALERT_EVENT_EVAL_LOOKBACK_HOURS", "6")
+    settings = Settings()
+    assert settings.alert_event_eval_lookback_hours == 6
+
+
 def test_alert_settings_empty_str_normalization(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "  ")
     monkeypatch.setenv("ALERT_EMAIL_TO", "")

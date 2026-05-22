@@ -117,6 +117,15 @@ class AlertSettingsMixin(BaseModel):
         le=168,
         description="AlertRule firing スナップショットの from_time を fired_at から遡る時間（時間単位）。",
     )
+    alert_event_eval_lookback_hours: int = Field(
+        default=24,
+        ge=1,
+        le=168,
+        description=(
+            "event_score アラート評価ウィンドウ（時間）。"
+            "occurred_at がこの時間より古いイベントは判定に使わない。"
+        ),
+    )
     alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
     alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
 
