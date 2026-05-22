@@ -18,6 +18,17 @@ def test_alert_settings_env_override(monkeypatch):
     assert settings.smtp_port == 25
     assert settings.alert_eval_interval_seconds == 30
 
+def test_alert_snapshot_lookback_hours_default():
+    settings = Settings()
+    assert settings.alert_snapshot_lookback_hours == 2
+
+
+def test_alert_snapshot_lookback_hours_env_override(monkeypatch):
+    monkeypatch.setenv("ALERT_SNAPSHOT_LOOKBACK_HOURS", "4")
+    settings = Settings()
+    assert settings.alert_snapshot_lookback_hours == 4
+
+
 def test_alert_settings_empty_str_normalization(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "  ")
     monkeypatch.setenv("ALERT_EMAIL_TO", "")
