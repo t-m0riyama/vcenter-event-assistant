@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import desc, select
 
@@ -83,7 +83,6 @@ class AlertEvaluator:
         now = datetime.now(timezone.utc)
         window_start = event_eval_window_start(now=now, lookback_hours=lookback_hours)
         threshold = parsed.threshold
-        cooldown_mins = parsed.cooldown_minutes
         firings = 0
         resolutions = 0
 
@@ -145,24 +144,6 @@ class AlertEvaluator:
                 elif current_state and current_state.state == "firing":
                     current_state.fired_at = event_at
                     current_state.context_key = context_key
-            elif current_state and current_state.state == "firing":
-                fired_at = _as_utc(current_state.fired_at)
-
-                if now - fired_at > timedelta(minutes=cooldown_mins):
-                    current_state.state = "resolved"
-                    current_state.resolved_at = now
-                    await session.flush()
-                    await self._notify(
-                        rule,
-                        current_state,
-                        {
-                            "details": (
-                                f"No notable events (score >= {threshold}) "
-                                f"for {cooldown_mins} minutes."
-                            ),
-                        },
-                    )
-                    resolutions = 1
 
         return firings, resolutions
 

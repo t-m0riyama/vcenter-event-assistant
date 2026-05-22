@@ -49,44 +49,51 @@ async def test_evaluate_event_score_firing():
 
 
 @pytest.mark.asyncio
-async def test_evaluate_event_score_resolution():
+async def test_evaluate_event_score_does_not_auto_resolve_when_no_qualifying_in_window() -> None:
+    """イベントスコア型は沈黙でも自動回復しない（spec R4）。"""
     async with session_scope() as session:
-        vc = VCenter(name="vc2", host="vc2", username="u", password="p")
+        vc = VCenter(name="vc_no_auto_res", host="h", username="u", password="p")
         session.add(vc)
         await session.flush()
-
         rule = AlertRule(
-            name="Cooldown Test",
+            name="No Auto Resolve",
             rule_type="event_score",
             config={"threshold": 60, "cooldown_minutes": 5},
         )
         session.add(rule)
         await session.flush()
         rule_id = rule.id
-
-        state = AlertState(
-            rule_id=rule.id,
-            state="firing",
-            context_key="SomeEvent",
-            fired_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        session.add(
+            EventRecord(
+                vcenter_id=vc.id,
+                occurred_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+                event_type="LowOnly",
+                vmware_key=1,
+                notable_score=10,
+            )
         )
-        session.add(state)
+        session.add(
+            AlertState(
+                rule_id=rule.id,
+                state="firing",
+                context_key="vim.event.WasFiring",
+                fired_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+            )
+        )
         await session.flush()
 
     evaluator = AlertEvaluator()
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
-        assert mock_notify.called
-        assert mock_notify.call_args[0][1].state == "resolved"
+        mock_notify.assert_not_called()
 
     async with session_scope() as session:
         from sqlalchemy import select
 
-        res = await session.execute(
-            select(AlertState).where(AlertState.rule_id == rule_id)
-        )
-        state = res.scalar_one()
-        assert state.state == "resolved"
+        res = await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
+        st = res.scalar_one()
+        assert st.state == "firing"
+        assert st.context_key == "vim.event.WasFiring"
 
 
 @pytest.mark.asyncio
@@ -254,45 +261,6 @@ async def test_evaluate_event_score_firing_notify_uses_event_type_in_context_key
         notify_state = mock_notify.call_args[0][1]
         assert notify_state.context_key == "vim.event.UserLoginSessionEvent"
         assert not notify_state.context_key.isdigit()
-
-
-@pytest.mark.asyncio
-async def test_evaluate_event_score_resolves_when_no_qualifying_in_window() -> None:
-    async with session_scope() as session:
-        vc = VCenter(name="vc_res_win", host="vc_res_win", username="u", password="p")
-        session.add(vc)
-        await session.flush()
-        rule = AlertRule(
-            name="Resolve Window",
-            rule_type="event_score",
-            config={"threshold": 60, "cooldown_minutes": 5},
-        )
-        session.add(rule)
-        await session.flush()
-        session.add(
-            EventRecord(
-                vcenter_id=vc.id,
-                occurred_at=datetime.now(timezone.utc) - timedelta(minutes=1),
-                event_type="Low",
-                vmware_key=1,
-                notable_score=10,
-            )
-        )
-        session.add(
-            AlertState(
-                rule_id=rule.id,
-                state="firing",
-                context_key="99",
-                fired_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-            )
-        )
-        await session.flush()
-
-    evaluator = AlertEvaluator()
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
-        await evaluator.evaluate_all()
-        assert mock_notify.called
-        assert mock_notify.call_args[0][1].state == "resolved"
 
 
 def _as_utc(dt: datetime) -> datetime:
