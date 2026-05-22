@@ -25,6 +25,20 @@ uv run ruff check src tests
 uv run pytest -q
 ```
 
+### PR 前のローカルチェック
+
+CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗を PR 上で踏まないため、**push / PR 作成前**に次を実行する。
+
+| 変更内容 | 最低限 | CI と揃える（推奨） |
+|----------|--------|---------------------|
+| `tests/` を触った | `uv run ruff check tests/` | `uv run ruff check src tests` |
+| `src/` のみ | `uv run ruff check src` | `uv run ruff check src tests` |
+| 広く変更 | — | `uv run ruff check src tests` |
+
+あわせて関連 pytest を実行する（例: `uv run pytest tests/test_alert_eval_events.py -q`）。
+
+**よくある CI 失敗:** テストに `rule_id = rule.id` など**未使用の代入**を残すと Ruff **F841** になる。テストだけ直した PR でも `uv run ruff check tests/` を忘れないこと。
+
 UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は本ドキュメントの「UI スクリーンショット」セクションを参照）。一方、**Playwright E2E**（`frontend` で `npm run e2e`）は **テスト専用プロセスを新規起動**して実施する（既定は別ポート `9323`）。
 
 ---
