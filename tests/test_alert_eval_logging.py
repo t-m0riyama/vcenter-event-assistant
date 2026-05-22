@@ -58,3 +58,24 @@ async def test_evaluate_metric_firing_increments_summary_count(caplog: pytest.Lo
     assert summary.firings == 1
     messages = [r.message for r in caplog.records if r.name == "vcenter_event_assistant.services.alert_eval"]
     assert any("firings=1" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_event_score_invalid_config_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with session_scope() as session:
+        rule = AlertRule(
+            name="Bad Config",
+            rule_type="event_score",
+            is_enabled=True,
+            config={"threshold": "not-a-number"},
+        )
+        session.add(rule)
+        await session.flush()
+
+    caplog.set_level(logging.WARNING, logger="vcenter_event_assistant.services.alert_eval")
+    evaluator = AlertEvaluator()
+    await evaluator.evaluate_all()
+    messages = [r.message for r in caplog.records if r.name == "vcenter_event_assistant.services.alert_eval"]
+    assert any("invalid config" in m for m in messages)
