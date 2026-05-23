@@ -51,18 +51,18 @@
 ### 2.3 イベント・メトリクス
 
 - `GET /api/events`  
-  フィルタ付きイベント一覧（`total` を含む）。
+  フィルタ付きイベント一覧（`total` を含む）。利用者向けの説明は [user-guides/events.md](user-guides/events.md)。
+- `PATCH /api/events/{event_id}`  
+  イベントへのユーザーコメント（運用メモ）更新（利用者向けは上記 events.md）。
 - `GET /api/events/event-types`  
   イベント種別一覧。
 - `GET /api/events/rate-series`  
   指定イベント種別の時系列件数。
-- `PATCH /api/events/{event_id}`  
-  イベントへのユーザーコメント更新。
 - `GET /api/metrics/keys`  
   メトリクスキー一覧。
 - `GET /api/metrics`  
-  メトリクス系列（`total` と `X-Total-Count` を返却）。
-- `GET /api/dashboard/summary`  
+  メトリクス系列（`total` と `X-Total-Count` を返却）。利用者向けの説明は [user-guides/graph.md](user-guides/graph.md)。
+- `GET /api/dashboard/summary` — 利用者向けの説明は [user-guides/summary.md](user-guides/summary.md)  
   直近24hの集約サマリー。
 
 ### 2.4 ルール・ガイド・アラート
@@ -79,7 +79,7 @@
 
 #### 定期アラート評価（トラブルシュート）
 
-利用者向けの説明（画面操作・メールの読み方・FAQ）は [user-guides/alerts.md](user-guides/alerts.md) を参照する。
+利用者向けの説明（画面操作・メールの読み方・FAQ）は [user-guides/alerts.md](user-guides/alerts.md) を参照する。要注目スコアとスコアルールの設定は [user-guides/score-rules.md](user-guides/score-rules.md) を参照する。
 
 - バックグラウンドジョブ `evaluate_alerts` は `ALERT_EVAL_INTERVAL_SECONDS`（既定 60 秒）ごとに動く。ログの `executed successfully` は **例外がなかったこと** を示し、必ずしも発火したとは限らない。
 - **有効な AlertRule が 1 件以上**必要（設定 → アラート、有効チェック ON）。
@@ -97,6 +97,8 @@
 
 ### 2.5 収集・ダイジェスト・チャット
 
+利用者向けの説明（本文の読み方・画面操作・FAQ）は [user-guides/digests.md](user-guides/digests.md) を参照する。
+
 - `POST /api/ingest/run`  
   有効な全 vCenter に対して手動インジェストを実行。
 - `GET /api/digests`
@@ -105,7 +107,7 @@
   ダイジェストを手動生成。
 - `POST /api/chat`
 - `POST /api/chat/preview`  
-  期間コンテキスト付きチャットとプレビュー。
+  期間コンテキスト付きチャットとプレビュー。利用者向けの説明は [user-guides/chat.md](user-guides/chat.md) を参照する。
 
 ## 3. 設定の要点（環境変数）
 
@@ -175,5 +177,5 @@ uv run vcenter-event-assistant
 - 利用開始: `docs/getting-started.md`
 - 内部実装ガイド（API層中心）: `docs/backend-internals.md`
 - 開発者向けメモ: `docs/development.md`
-- チャット機能: `docs/chat.md`
+- チャット機能（利用者向け）: `user-guides/chat.md` — 概要・補助: `docs/chat.md`
 - 現状実装の整理: `docs/plans/2026-03-21-vcenter-event-assistant-as-built.md`

@@ -6,13 +6,13 @@
 
 ### 概要
 
-登録 vCenter 数や直近のイベント件数、スコアの高い要注意イベントの俯瞰を表示します。
+登録 vCenter 数や直近のイベント件数、スコアの高い要注意イベントの俯瞰を表示します。利用者向けの操作説明は [user-guides/summary.md](user-guides/summary.md) を参照してください。
 
 ![概要タブ](images/summary.png)
 
 ### イベント
 
-収集した vCenter イベントを期間・キーワードなどで絞り込み、一覧表示や CSV 出力ができます。
+収集した vCenter イベントを期間・キーワードなどで絞り込み、一覧表示や CSV 出力ができます。利用者向けの操作説明は [user-guides/events.md](user-guides/events.md) を参照してください。
 
 ![イベントタブ](images/events.png)
 
@@ -22,18 +22,18 @@
 
 ### グラフ（メトリクス）
 
-ホストの CPU・メモリなどの時系列を、vCenter とメトリクス種別を選んで表示します。
+ホストの CPU・メモリなどの時系列を、vCenter とメトリクス種別を選んで表示します。利用者向けの操作説明は [user-guides/graph.md](user-guides/graph.md) を参照してください。
 
 ![グラフタブ](images/metrics.png)
 
 ### ダイジェスト
 
-サーバーが生成した日次などのダイジェストを一覧し、本文（表・LLM 要約を含む Markdown）を表示します。LLM 要約が記録されていない場合は `## LLM 要約` ブロックは表示しません。
+サーバーが生成した日次などのダイジェストを一覧し、本文（表・LLM 要約を含む Markdown）を表示します。LLM 要約が記録されていない場合は `## LLM 要約` ブロックは表示しません。利用者向けの操作説明は [user-guides/digests.md](user-guides/digests.md) を参照してください。
 
 ### チャット
 
 収集済みのイベントやホストメトリクスをコンテキストとして、LLM に質問できます。
-詳細は **[チャット機能のドキュメント](chat.md)** を参照してください。
+利用者向けの操作説明は **[user-guides/chat.md](user-guides/chat.md)** を参照してください。概要・活用例の補助は [chat.md](chat.md) です。
 
 ![チャットタブ](images/chat.png)
 
@@ -57,7 +57,7 @@ vCenter の接続情報を登録・編集・管理します。
 
 ### 設定（スコアルール）
 
-イベント種別ごとのスコア加算値を設定します。
+イベント種別ごとのスコア加算値を設定します。利用者向けの操作説明は [user-guides/score-rules.md](user-guides/score-rules.md) を参照してください。
 
 ![設定のスコアルール](images/settings-score-rules.png)
 
