@@ -56,6 +56,7 @@ def test_event_score_should_notify_initial_firing() -> None:
         current_state=None,
         last_notified_at=None,
         last_qualifying_at=now - timedelta(minutes=1),
+        last_fired_qualifying_at=None,
         now=now,
         cooldown_minutes=10,
     )
@@ -68,18 +69,33 @@ def test_event_score_should_notify_false_within_cooldown() -> None:
         current_state="firing",
         last_notified_at=last_notified,
         last_qualifying_at=now,
+        last_fired_qualifying_at=now - timedelta(minutes=10),
         now=now,
         cooldown_minutes=10,
     )
 
 
-def test_event_score_should_notify_true_after_cooldown() -> None:
+def test_event_score_should_notify_true_after_cooldown_with_new_qualifying() -> None:
     now = datetime(2026, 5, 23, 12, 0, tzinfo=timezone.utc)
     last_notified = now - timedelta(minutes=11)
     assert event_score_should_notify(
         current_state="firing",
         last_notified_at=last_notified,
         last_qualifying_at=now,
+        last_fired_qualifying_at=now - timedelta(minutes=20),
+        now=now,
+        cooldown_minutes=10,
+    )
+
+
+def test_event_score_should_notify_false_after_cooldown_without_new_qualifying() -> None:
+    now = datetime(2026, 5, 23, 12, 0, tzinfo=timezone.utc)
+    qualifying = now - timedelta(minutes=20)
+    assert not event_score_should_notify(
+        current_state="firing",
+        last_notified_at=now - timedelta(minutes=11),
+        last_qualifying_at=qualifying,
+        last_fired_qualifying_at=qualifying,
         now=now,
         cooldown_minutes=10,
     )
@@ -91,6 +107,7 @@ def test_event_score_should_notify_after_resolved() -> None:
         current_state="resolved",
         last_notified_at=now - timedelta(hours=1),
         last_qualifying_at=now,
+        last_fired_qualifying_at=now - timedelta(hours=2),
         now=now,
         cooldown_minutes=10,
     )

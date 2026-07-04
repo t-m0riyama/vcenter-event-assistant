@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState, MetricSample
 from vcenter_event_assistant.db.session import session_scope
@@ -31,15 +31,24 @@ async def evaluate_metric_threshold_rule(
     resolutions = 0
 
     async with session_scope() as session:
+        rank_subq = (
+            select(
+                MetricSample.id,
+                func.row_number()
+                .over(
+                    partition_by=MetricSample.entity_moid,
+                    order_by=desc(MetricSample.sampled_at),
+                )
+                .label("rn"),
+            )
+            .where(MetricSample.metric_key == metric_key)
+        ).subquery()
         res = await session.execute(
             select(MetricSample)
-            .where(MetricSample.metric_key == metric_key)
-            .order_by(MetricSample.entity_moid, desc(MetricSample.sampled_at))
+            .join(rank_subq, MetricSample.id == rank_subq.c.id)
+            .where(rank_subq.c.rn == 1)
         )
-        latest_samples: dict[str, MetricSample] = {}
-        for sample in res.scalars().all():
-            if sample.entity_moid not in latest_samples:
-                latest_samples[sample.entity_moid] = sample
+        latest_samples = {sample.entity_moid: sample for sample in res.scalars().all()}
 
         if not latest_samples:
             logger.debug(

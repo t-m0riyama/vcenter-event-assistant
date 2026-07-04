@@ -12,13 +12,9 @@ import {
   type VCenter,
 } from '../api/schemas'
 import { resolveEventApiRange } from '../datetime/graphRange'
-import {
-  METRICS_DEFAULT_ROLLING_DURATION_MS,
-  presetRelativeRangeWallPartsWithUtcFallback,
-  zonedRangePartsToCombinedInputs,
-  type ZonedRangeParts,
-} from '../datetime/zonedRangeParts'
+import { zonedRangePartsToCombinedInputs } from '../datetime/zonedRangeParts'
 import { useTimeZone } from '../datetime/useTimeZone'
+import { useRollingZonedRangeParts } from './useRollingZonedRangeParts'
 import { buildSnapshotMarkersForTimeline } from '../panels/timeline/timelineSnapshotMarkers'
 import {
   ALERT_TOP_N_STORAGE_KEY,
@@ -39,9 +35,7 @@ export function useTimelinePanelController(onError: (e: string | null) => void) 
   const { timeZone } = useTimeZone()
   const thresholdFields = usePeriodMetricThresholdFields()
 
-  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
-    presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
-  )
+  const { rangeParts, setRangeParts } = useRollingZonedRangeParts(timeZone)
   const [vcenterId, setVcenterId] = useState<string>('')
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [timeline, setTimeline] = useState<IncidentTimeline | null>(null)
