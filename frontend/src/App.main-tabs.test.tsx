@@ -1,32 +1,20 @@
 /**
  * @vitest-environment happy-dom
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useState } from 'react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./panels/metrics/MetricsPanel', () => ({
-  MetricsPanel: ({
-    onNavigateToTimeline,
-  }: {
-    onNavigateToTimeline?: (params: { vcenterId: string }) => void
-  }) => {
-    const [vcenterId, setVcenterId] = useState('')
-    return (
-      <div>
-        <label>
-          vCenter
-          <select value={vcenterId} onChange={(e) => setVcenterId(e.target.value)}>
-            <option value="">全て</option>
-            <option value="550e8400-e29b-41d4-a716-446655440000">vc1</option>
-          </select>
-        </label>
-        <button type="button" onClick={() => onNavigateToTimeline?.({ vcenterId })}>
-          タイムラインへ移動
-        </button>
-      </div>
-    )
-  },
+  MetricsPanel: () => (
+    <div>
+      <label>
+        vCenter
+        <select defaultValue="">
+          <option value="">全て</option>
+        </select>
+      </label>
+    </div>
+  ),
 }))
 
 import App from './App'
@@ -147,122 +135,6 @@ describe('App メインタブ', () => {
       expect(
         screen.getByText('「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。'),
       ).toBeInTheDocument()
-    })
-  })
-
-  it('グラフタブに「タイムラインへ移動」操作が表示される', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.includes('/api/config')) {
-          return Promise.resolve(jsonResponse(emptyConfig))
-        }
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(
-            jsonResponse([{ id: '550e8400-e29b-41d4-a716-446655440000', name: 'vc1' }]),
-          )
-        }
-        if (url.includes('/api/metrics/keys')) {
-          return Promise.resolve(jsonResponse({ metric_keys: ['cpu.usage_pct'] }))
-        }
-        if (url.includes('/api/metrics?')) {
-          return Promise.resolve(jsonResponse({ points: [], total: 0 }))
-        }
-        if (url.includes('/api/events/event-types')) {
-          return Promise.resolve(jsonResponse({ event_types: [] }))
-        }
-        if (url.endsWith('/api/dashboard/summary')) {
-          return Promise.resolve(
-            jsonResponse({
-              vcenter_count: 0,
-              events_last_24h: 0,
-              notable_events_last_24h: 0,
-              top_notable_events: [],
-              high_cpu_hosts: [],
-              high_mem_hosts: [],
-              top_event_types_24h: [],
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      }),
-    )
-
-    render(<App />)
-    await waitFor(() => {
-      expect(within(tabNav()).getByRole('button', { name: 'グラフ' })).toBeInTheDocument()
-    })
-    within(tabNav()).getByRole('button', { name: 'グラフ' }).click()
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('vCenter')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'タイムラインへ移動' })).toBeInTheDocument()
-    })
-  })
-
-  it('グラフから「タイムラインへ移動」でタブ遷移し、vCenter 選択を引き継ぐ', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.includes('/api/config')) {
-          return Promise.resolve(jsonResponse(emptyConfig))
-        }
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(
-            jsonResponse([{ id: '550e8400-e29b-41d4-a716-446655440000', name: 'vc1' }]),
-          )
-        }
-        if (url.includes('/api/metrics/keys')) {
-          return Promise.resolve(jsonResponse({ metric_keys: ['cpu.usage_pct'] }))
-        }
-        if (url.includes('/api/metrics?')) {
-          return Promise.resolve(jsonResponse({ points: [], total: 0 }))
-        }
-        if (url.includes('/api/events/event-types')) {
-          return Promise.resolve(jsonResponse({ event_types: [] }))
-        }
-        if (url.endsWith('/api/dashboard/summary')) {
-          return Promise.resolve(
-            jsonResponse({
-              vcenter_count: 0,
-              events_last_24h: 0,
-              notable_events_last_24h: 0,
-              top_notable_events: [],
-              high_cpu_hosts: [],
-              high_mem_hosts: [],
-              top_event_types_24h: [],
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      }),
-    )
-
-    render(<App />)
-    await waitFor(() => {
-      expect(within(tabNav()).getByRole('button', { name: 'グラフ' })).toBeInTheDocument()
-    })
-    within(tabNav()).getByRole('button', { name: 'グラフ' }).click()
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('vCenter')).toBeInTheDocument()
-    })
-    fireEvent.change(screen.getByLabelText('vCenter'), {
-      target: { value: '550e8400-e29b-41d4-a716-446655440000' },
-    })
-
-    screen.getByRole('button', { name: 'タイムラインへ移動' }).click()
-
-    await waitFor(() => {
-      expect(
-        screen.getByText('「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。'),
-      ).toBeInTheDocument()
-    })
-    // vCenter 一覧は GET /api/vcenters の後に <option> が生成される。一覧前に value だけ立つと jsdom では空表示になり得るため待機する。
-    await waitFor(() => {
-      expect(screen.getByLabelText('対象 vCenter')).toHaveValue('550e8400-e29b-41d4-a716-446655440000')
     })
   })
 })

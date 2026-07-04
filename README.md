@@ -66,10 +66,16 @@ flowchart TB
 
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
 - **アラート機能（利用者向け）**（ルール・メール通知・通知履歴・タイムライン）: [docs/user-guides/alerts.md](docs/user-guides/alerts.md)
+- **スコアルール（利用者向け）**（要注目スコア・種別ごとの加算・JSON バックアップ）: [docs/user-guides/score-rules.md](docs/user-guides/score-rules.md)
+- **ダイジェスト（利用者向け）**（期間レポートの読み方・LLM 要約・画面操作）: [docs/user-guides/digests.md](docs/user-guides/digests.md)
+- **チャット（利用者向け）**（期間コンテキスト・会話の保持・サンプル質問）: [docs/user-guides/chat.md](docs/user-guides/chat.md)
+- **概要タブ（利用者向け）**（直近24h ダッシュボード・要注意一覧・自動更新）: [docs/user-guides/summary.md](docs/user-guides/summary.md)
+- **イベントタブ（利用者向け）**（一覧・絞り込み・運用メモ・CSV 出力）: [docs/user-guides/events.md](docs/user-guides/events.md)
+- **グラフタブ（利用者向け）**（メトリクス時系列・イベント件数オーバーレイ・エクスポート）: [docs/user-guides/graph.md](docs/user-guides/graph.md)
 - **バックエンドガイド**（API・設定・運用）: [docs/backend.md](docs/backend.md)
 - **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
 - **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
-- **チャット機能の活用**: [docs/chat.md](docs/chat.md)
+- **チャット機能の活用**（概要・補助）: [docs/chat.md](docs/chat.md) — 利用者向け正本は [docs/user-guides/chat.md](docs/user-guides/chat.md)
 - **設計・モジュール対応・改善タスク**（現状実装ベース）: [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md)
 
 ## ライセンス

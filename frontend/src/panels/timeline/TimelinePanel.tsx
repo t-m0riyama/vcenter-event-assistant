@@ -83,11 +83,9 @@ function getInitialAlertTopN(): number {
 
 export function TimelinePanel({
   onError,
-  initialVcenterId,
   onOpenSnapshotInMetrics,
 }: {
   onError: (e: string | null) => void
-  initialVcenterId?: string
   /** 監査一覧からメトリクス（グラフ）タブでスナップショット条件を再生する。 */
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
 }) {
@@ -195,12 +193,6 @@ export function TimelinePanel({
       }
     })()
   }, [onError])
-
-  useEffect(() => {
-    if (typeof initialVcenterId === 'string') {
-      setVcenterId(initialVcenterId)
-    }
-  }, [initialVcenterId])
 
   const handleMetricThresholdInputChange = useCallback(
     (

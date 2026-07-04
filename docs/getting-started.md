@@ -26,6 +26,8 @@ cp .env.example .env
 
 ### ダイジェスト用 LLM（任意）
 
+利用者向けのダイジェストの読み方・画面操作は [user-guides/digests.md](user-guides/digests.md) を参照する。チャットの使い方は [user-guides/chat.md](user-guides/chat.md) を参照する（ダイジェストと同じ `LLM_DIGEST_*` を基本に利用）。
+
 環境変数の一覧は [.env.example](.env.example) の「Batch digest」と LLM 節を参照する。
 
 - **OpenAI 互換**（`LLM_DIGEST_PROVIDER=openai_compatible`）は、**Ollama** や **LM Studio** など、Chat Completions 形式（`POST …/chat/completions`）のローカル API にも向けられる。
@@ -113,6 +115,7 @@ cd frontend && npm install && npm run dev
 画面の操作やアラート通知の仕組み（開発者向け API 説明ではない）:
 
 - [アラート機能の使い方](user-guides/alerts.md) — ルール設定、メール通知、通知履歴、タイムライン上の表示
+- [グラフタブの使い方](user-guides/graph.md) — メトリクス時系列、イベント件数オーバーレイ、エクスポート
 
 ## セキュリティ
 

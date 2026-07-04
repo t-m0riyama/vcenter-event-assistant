@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import './MetricsPanel.css'
 
 import type { ReactNode } from 'react'
@@ -41,12 +41,10 @@ const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
 export function MetricsPanel({
   onError,
   perfBucketSeconds,
-  onNavigateToTimeline,
   snapshotReplay,
 }: {
   onError: (e: string | null) => void
   perfBucketSeconds: number
-  onNavigateToTimeline?: (params: { vcenterId: string }) => void
   snapshotReplay?: MetricsSnapshotReplayInput | null
 }) {
   const {
@@ -94,8 +92,6 @@ export function MetricsPanel({
     csvExportOptions,
     snapshotChartGuidelineMs,
   } = useMetricsPanelController(onError, perfBucketSeconds, snapshotReplay ?? null)
-  const latestVcenterIdRef = useRef(vcenterId)
-  latestVcenterIdRef.current = vcenterId
 
   const {
     autoRefreshEnabled,
@@ -209,10 +205,7 @@ export function MetricsPanel({
           vCenter
           <select
             value={vcenterId}
-            onChange={(e) => {
-              latestVcenterIdRef.current = e.target.value
-              setVcenterId(e.target.value)
-            }}
+            onChange={(e) => setVcenterId(e.target.value)}
           >
             <option value="">全て</option>
             {vcenters.map((v) => (
@@ -282,13 +275,6 @@ export function MetricsPanel({
           onClick={downloadCsv}
         >
           CSV をダウンロード
-        </button>
-        <button
-          type="button"
-          className="btn btn--gray"
-          onClick={() => onNavigateToTimeline?.({ vcenterId: latestVcenterIdRef.current })}
-        >
-          タイムラインへ移動
         </button>
         {metricTotal !== null && !loading && (
           <span className="metric-total">

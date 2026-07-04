@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import (
     AlertRuleRead, AlertRuleCreate, AlertRuleUpdate,
-    AlertHistoryListResponse, AlertRulesImportRequest, AlertRulesImportResponse
+    AlertHistoryListResponse, AlertHistoryRead, AlertRulesImportRequest,
+    AlertRulesImportResponse, AlertStateResolveRequest,
 )
-from vcenter_event_assistant.db.models import AlertRule, AlertHistory
+from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
+from vcenter_event_assistant.services.alert_eval import AlertEvaluator
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -143,6 +145,31 @@ async def import_alert_rules(
     rules_count = len(list(count_res.scalars().all()))
     return AlertRulesImportResponse(rules_count=rules_count)
 
+def _history_item_to_read(
+    item: AlertHistory,
+    firing_keys: set[tuple[int, str]],
+) -> AlertHistoryRead:
+    rule_type = item.rule.rule_type if item.rule else ""
+    can_resolve = (
+        rule_type == "event_score"
+        and (item.rule_id, item.context_key) in firing_keys
+    )
+    return AlertHistoryRead(
+        id=item.id,
+        rule_id=item.rule_id,
+        rule_name=item.rule.name if item.rule else None,
+        rule_type=rule_type,
+        alert_level=item.alert_level,
+        state=item.state,
+        context_key=item.context_key,
+        notified_at=item.notified_at,
+        channel=item.channel,
+        success=item.success,
+        error_message=item.error_message,
+        can_resolve=can_resolve,
+    )
+
+
 @router.get("/history", response_model=AlertHistoryListResponse)
 async def list_alert_history(
     limit: int = 50,
@@ -161,6 +188,46 @@ async def list_alert_history(
         .limit(limit)
         .offset(offset)
     )
-    items = res.scalars().all()
-    
-    return AlertHistoryListResponse(items=list(items), total=total)
+    items = list(res.scalars().all())
+
+    firing_keys: set[tuple[int, str]] = set()
+    rule_ids = {item.rule_id for item in items}
+    if rule_ids:
+        firing_res = await session.execute(
+            select(AlertState.rule_id, AlertState.context_key)
+            .join(AlertRule, AlertRule.id == AlertState.rule_id)
+            .where(
+                AlertState.state == "firing",
+                AlertRule.rule_type == "event_score",
+                AlertState.rule_id.in_(rule_ids),
+            )
+        )
+        firing_keys = {(row.rule_id, row.context_key) for row in firing_res.all()}
+
+    return AlertHistoryListResponse(
+        items=[_history_item_to_read(item, firing_keys) for item in items],
+        total=total,
+    )
+
+
+@router.post("/states/resolve", status_code=status.HTTP_204_NO_CONTENT)
+async def resolve_alert_state(body: AlertStateResolveRequest) -> None:
+    evaluator = AlertEvaluator()
+    try:
+        await evaluator.resolve_event_score_manually(body.rule_id, body.context_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete("/history/{history_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_alert_history(
+    history_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    history = await session.get(AlertHistory, history_id)
+    if history is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert history not found")
+    await session.delete(history)
+    await session.flush()
