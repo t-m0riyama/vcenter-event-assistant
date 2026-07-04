@@ -24,6 +24,7 @@ function resolveInitialTimeZone(): string {
   return tz
 }
 
+/** 表示タイムゾーンを Context と localStorage で提供する Provider。 */
 export function TimeZoneProvider({ children }: { children: ReactNode }) {
   const [timeZone, setTimeZoneState] = useState(resolveInitialTimeZone)
 
@@ -45,6 +46,7 @@ export function TimeZoneProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/** IANA タイムゾーン選択 UI（一般設定等で使用）。 */
 export function TimeZoneSelect() {
   const { timeZone, setTimeZone } = useTimeZone()
   const baseOptions = useMemo(() => getSortedTimeZoneOptions(), [])

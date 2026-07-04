@@ -17,6 +17,7 @@ import { MetricsChart } from './MetricsChart'
 import { MetricsRangeFields } from './MetricsRangeFields'
 import { MetricsToolbar } from './MetricsToolbar'
 
+/** メトリクスグラフパネル（期間・系列・CSV/SVG export）。 */
 export function MetricsPanel({
   onError,
   perfBucketSeconds,

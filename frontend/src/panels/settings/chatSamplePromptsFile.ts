@@ -8,6 +8,7 @@ const rowSchema = z.object({
   text: z.string(),
 })
 
+/** チャットサンプルプロンプト export/import 用 Zod スキーマ。 */
 export const chatSamplePromptsFileSchema = z.object({
   format: z.literal('vea-chat-sample-prompts'),
   version: z.number().int().positive(),

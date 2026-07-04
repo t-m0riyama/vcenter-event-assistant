@@ -19,14 +19,17 @@ export class PanelErrorBoundary extends Component<
 > {
   state: PanelErrorBoundaryState = { hasError: false }
 
+  /** 子コンポーネントのレンダリング例外を state に反映する。 */
   static getDerivedStateFromError(): PanelErrorBoundaryState {
     return { hasError: true }
   }
 
+  /** 捕捉した例外をコンソールに記録する。 */
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error(`Panel error (${this.props.panelLabel}):`, error, info.componentStack)
   }
 
+  /** 例外時はフォールバック UI、通常時は子要素を描画する。 */
   render(): ReactNode {
     if (this.state.hasError) {
       return (

@@ -5,4 +5,5 @@ export type TimeZoneContextValue = {
   setTimeZone: (tz: string) => void
 }
 
+/** 表示タイムゾーン Context。 */
 export const TimeZoneContext = createContext<TimeZoneContextValue | null>(null)

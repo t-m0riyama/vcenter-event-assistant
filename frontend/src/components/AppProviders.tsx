@@ -6,6 +6,7 @@ import { ChatSamplePromptsProvider } from '../preferences/ChatSamplePromptsProvi
 import { SummaryTopNotableMinScoreProvider } from '../preferences/SummaryTopNotableMinScoreProvider'
 import { ThemeProvider } from '../theme/ThemeProvider'
 
+/** テーマ・TZ・各種ユーザー設定 Provider をネストして子要素を包む。 */
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>

@@ -4,5 +4,7 @@
  * チャート用ストロークはリテラル色にし、下記を `variables.css` のトークンと揃える。
  */
 export const CHART_STROKE_PRIMARY = '#007aff' // --color-primary
+/** 第2系列線のストローク色（プライマリと区別）。 */
 export const CHART_STROKE_SECONDARY = '#34c759' // system green (contrast with primary line)
+/** グリッド線のストローク色。 */
 export const CHART_STROKE_GRID = '#dde2e8' // --color-border / --color-gray-200

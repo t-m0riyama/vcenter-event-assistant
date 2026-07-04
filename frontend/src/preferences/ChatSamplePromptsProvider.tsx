@@ -11,6 +11,7 @@ function resolveInitial(): ChatSamplePromptRow[] {
   return readStoredChatSamplePrompts()
 }
 
+/** チャットサンプルプロンプトを Context と localStorage で提供する Provider。 */
 export function ChatSamplePromptsProvider({ children }: { readonly children: ReactNode }) {
   const [chatSamplePrompts, setChatSamplePromptsState] = useState(resolveInitial)
 

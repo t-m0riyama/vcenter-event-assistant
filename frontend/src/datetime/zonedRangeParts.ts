@@ -135,6 +135,7 @@ export function zonedRangePartsFromUtcIsoEndpoints(
   }
 }
 
+/** ローリング期間（ミリ秒）を UI 表示用ラベル（例: 直近24時間）に変換する。 */
 export function formatRollingDurationLabel(durationMs: number): string {
   if (durationMs === METRICS_DEFAULT_ROLLING_DURATION_MS) {
     return '直近24時間'

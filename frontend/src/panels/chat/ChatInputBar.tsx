@@ -16,6 +16,7 @@ type ChatInputBarProps = {
   onPreview: () => void | Promise<void>
 }
 
+/** チャットメッセージ入力バー。 */
 export function ChatInputBar({
   loading,
   previewing,

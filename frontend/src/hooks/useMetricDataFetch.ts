@@ -26,6 +26,7 @@ export interface UseMetricDataFetchOptions {
   onError: (e: string | null) => void
 }
 
+/** vCenter・メトリクス系列・イベントレート overlay を API から取得する。 */
 export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
   const {
     vcenterId,

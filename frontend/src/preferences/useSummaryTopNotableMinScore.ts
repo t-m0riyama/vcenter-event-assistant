@@ -4,6 +4,7 @@ import {
   type SummaryTopNotableMinScoreContextValue,
 } from './summaryTopNotableMinScoreContext'
 
+/** ``SummaryTopNotableMinScoreProvider`` 配下で最小スコア設定を取得する。 */
 export function useSummaryTopNotableMinScore(): SummaryTopNotableMinScoreContextValue {
   const ctx = useContext(SummaryTopNotableMinScoreContext)
   if (!ctx) {

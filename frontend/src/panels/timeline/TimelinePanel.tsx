@@ -6,6 +6,7 @@ import { TimelineFilters } from './TimelineFilters'
 import { TimelineResults } from './TimelineResults'
 import { TimelineSnapshotActions } from './TimelineSnapshotActions'
 
+/** インシデントタイムライン生成・表示パネル。 */
 export function TimelinePanel({
   onError,
   onOpenSnapshotInMetrics,

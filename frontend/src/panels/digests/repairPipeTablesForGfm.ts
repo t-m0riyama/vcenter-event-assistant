@@ -174,6 +174,7 @@ function removeBlankLinesBetweenPipeTableRows(markdown: string): string {
   return out.join('\n')
 }
 
+/** GFM パイプ表の区切り行欠落などを修復する。 */
 export function repairPipeTablesForGfm(markdown: string): string {
   // 先に空行を詰める。空行の直後の pipe 行をヘッダと誤認して区切り行を差し込むのを防ぐ。
   return insertMissingDelimiterRows(removeBlankLinesBetweenPipeTableRows(markdown))

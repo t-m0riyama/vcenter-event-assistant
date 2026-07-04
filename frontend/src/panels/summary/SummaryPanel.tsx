@@ -17,6 +17,7 @@ import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { asArray } from '../../utils/asArray'
 import { toErrorMessage } from '../../utils/errors'
 
+/** ダッシュボード概要パネル（統計・要注目イベント）。 */
 export function SummaryPanel({ onError }: { onError: (e: string | null) => void }) {
   const { timeZone } = useTimeZone()
   const { topNotableMinScore } = useSummaryTopNotableMinScore()

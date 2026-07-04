@@ -18,6 +18,7 @@ type ChatMessagesListProps = {
   onCopyAssistantMessage: (content: string) => void | Promise<void>
 }
 
+/** チャット会話メッセージ一覧。 */
 export function ChatMessagesList({
   messages,
   loading,

@@ -15,6 +15,7 @@ import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { asArray } from '../../utils/asArray'
 
+/** イベント一覧パネル（フィルタ・ページング・詳細・CSV export）。 */
 export function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
   const c = useEventsPanelController(onError)
   const { load: reloadEvents } = c

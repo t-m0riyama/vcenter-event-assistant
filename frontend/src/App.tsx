@@ -71,6 +71,7 @@ const SETTINGS_SUBTABS: SubTabConfig[] = [
   { id: 'chat_samples', label: 'チャット' },
 ]
 
+/** アプリのルート。メインタブと設定サブタブで各パネルを切り替える。 */
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
   const [metricsSnapshotReplay, setMetricsSnapshotReplay] =

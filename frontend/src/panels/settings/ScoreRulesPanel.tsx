@@ -18,6 +18,7 @@ import { SCORE_RULES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmD
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
 import { useSettingsListWithDrafts } from './useSettingsListCrud'
 
+/** イベントスコアルール設定パネル。 */
 export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
   const [newType, setNewType] = useState('')
   const [newDelta, setNewDelta] = useState(0)

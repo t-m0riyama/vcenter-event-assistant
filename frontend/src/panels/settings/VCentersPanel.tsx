@@ -16,6 +16,7 @@ type VCenterFormState = {
   is_enabled: boolean
 }
 
+/** vCenter 接続設定パネル。 */
 export function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<VCenter[]>([])
   const [form, setForm] = useState<VCenterFormState>({

@@ -13,6 +13,7 @@ import { useMetricsExport } from './useMetricsExport'
 
 export type { GraphRangeFollowMode, MetricsSnapshotReplayInput } from './useGraphRangeState'
 
+/** メトリクスパネルの状態・取得・チャート表示を統合するコントローラ。 */
 export function useMetricsPanelController(
   onError: (e: string | null) => void,
   perfBucketSeconds: number,

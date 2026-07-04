@@ -3,10 +3,12 @@ import type { ZodIssue } from 'zod'
 import { formatImportApiError } from './importExport/fastApiImportError'
 import { formatJsonFileParseError, zodIssuePathKey } from './importExport/formatJsonFileParseError'
 
+/** アラートルール import 時の JSON パースエラーメッセージ。 */
 export function formatAlertRulesFileParseError(err: unknown): string {
   return formatJsonFileParseError(err, describeAlertRulesZodIssues)
 }
 
+/** Zod  issue をアラートルール import 向け日本語に整形する。 */
 export function describeAlertRulesZodIssues(issues: readonly ZodIssue[]): string {
   if (issues.length === 0) return 'ファイルの形式が正しくありません。'
 
@@ -51,6 +53,7 @@ const API_DETAIL_JA: Record<string, string> = {
     'インポートするルールの中に、同じルール名が重複しています。ファイルを修正するか、エクスポートし直してください。',
 }
 
+/** アラートルール import API エラーを表示用に整形する。 */
 export function formatAlertRulesImportApiError(err: unknown): string {
   return formatImportApiError(err, {
     apiDetailJa: API_DETAIL_JA,

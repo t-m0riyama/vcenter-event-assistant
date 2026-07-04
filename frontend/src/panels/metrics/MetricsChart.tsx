@@ -57,6 +57,7 @@ type MetricsChartProps = {
   snapshotChartGuidelineMs: number | null
 }
 
+/** メトリクス Recharts グラフ本体。 */
 export function MetricsChart({
   chartResetKey,
   timeZone,

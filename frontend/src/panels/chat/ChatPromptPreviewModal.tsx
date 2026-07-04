@@ -27,6 +27,7 @@ function renderWithHighlights(text: string) {
   })
 }
 
+/** 送信前プロンプトプレビューモーダル。 */
 export function ChatPromptPreviewModal({
   preview,
   onClose,

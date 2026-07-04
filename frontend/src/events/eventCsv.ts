@@ -1,10 +1,10 @@
 import { escapeCsvField } from '../metrics/metricCsv'
 import { formatMetricsDownloadTimestamp } from '../metrics/export/downloadChartSvg'
 
-/** Fields aligned with API `EventRead` for CSV export (vcenter is human-readable name). */
+/** CSV エクスポート行（API ``EventRead`` 相当。vcenter は表示名）。 */
 export type EventCsvRow = {
   id: number
-  /** Display time in the user-selected IANA time zone (see `formatIsoInTimeZone`). */
+  /** ユーザー選択 TZ で表示した発生時刻（``formatIsoInTimeZone``）。 */
   occurred_at: string
   vcenter_name: string
   event_type: string
@@ -42,6 +42,7 @@ function notableTagsToField(tags: unknown): string {
   }
 }
 
+/** イベント行配列を CSV 文字列に変換する。 */
 export function eventRowsToCsv(rows: EventCsvRow[]): string {
   const lines: string[] = [HEADER.join(',')]
   for (const e of rows) {
@@ -65,6 +66,7 @@ export function eventRowsToCsv(rows: EventCsvRow[]): string {
   return `${lines.join('\r\n')}\r\n`
 }
 
+/** イベント CSV をブラウザダウンロードする。 */
 export function downloadEventListCsv(csv: string, filename: string): void {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -76,6 +78,7 @@ export function downloadEventListCsv(csv: string, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
+/** イベント CSV のファイル名（``events-YYYYMMDD-HHmmss.csv``）を生成する。 */
 export function buildEventExportFilename(d = new Date()): string {
   return `events-${formatMetricsDownloadTimestamp(d)}.csv`
 }

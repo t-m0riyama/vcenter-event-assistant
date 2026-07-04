@@ -47,6 +47,7 @@ type TimelineFiltersProps = {
   onAlertTopNBlur: () => void
 }
 
+/** タイムライン生成条件（期間・vCenter・メトリクス閾値等）の入力フォーム。 */
 export function TimelineFilters({
   rangeParts,
   setRangeParts,

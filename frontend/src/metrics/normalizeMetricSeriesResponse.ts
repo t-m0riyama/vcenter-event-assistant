@@ -33,6 +33,7 @@ function isValidMetricPoint(x: unknown): x is MetricPoint {
   return true
 }
 
+/** API 応答を ``MetricSeriesResponse`` に正規化する（不正ポイントは除外）。 */
 export function normalizeMetricSeriesResponse(data: unknown): MetricSeriesResponse {
   if (!data || typeof data !== 'object') {
     return { points: [], total: 0 }

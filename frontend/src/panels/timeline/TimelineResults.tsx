@@ -7,6 +7,7 @@ type TimelineResultsProps = {
   snapshotMarkers: { timestamp_utc: string; label: string }[]
 }
 
+/** 生成済みタイムラインの表示（空状態含む）。 */
 export function TimelineResults({ timeline, sortOrder, snapshotMarkers }: TimelineResultsProps) {
   if (timeline) {
     return (
