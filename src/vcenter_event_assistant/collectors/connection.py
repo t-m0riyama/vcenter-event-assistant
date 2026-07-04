@@ -1,4 +1,7 @@
-"""pyVmomi connection helpers (blocking; call via asyncio.to_thread)."""
+"""pyVmomi 接続ヘルパー（ブロッキング; ``asyncio.to_thread`` 経由で呼び出す）。
+
+vCenter への SmartConnect / Disconnect と接続テスト用情報の取得を担う。
+"""
 
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ from pyVim.connect import Disconnect, SmartConnect
 
 @dataclass(frozen=True, slots=True)
 class ConnectionInfo:
-    """Return object for connection test."""
+    """接続テスト API の応答に使う vCenter 製品情報。"""
 
     product_name: str
     product_version: str
@@ -20,7 +23,7 @@ class ConnectionInfo:
 
 
 def parse_proxy_url(url: str | None) -> tuple[str | None, int | None]:
-    """Parse a proxy URL into (host, port). Returns (None, None) if url is None or empty."""
+    """プロキシ URL を (host, port) に分解する。空の場合は (None, None)。"""
     if not url:
         return None, None
     parsed = urlparse(url)
@@ -40,7 +43,7 @@ def connect_vcenter(
     password: str,
     proxy_url: str | None = None,
 ):
-    """Establish a vCenter session. Caller must Disconnect(si)."""
+    """vCenter セッションを確立する。呼び出し元で ``Disconnect(si)`` すること。"""
     if protocol not in {"https", "http"}:
         raise ValueError("protocol must be 'https' or 'http'")
     proxy_host, proxy_port = parse_proxy_url(proxy_url)
@@ -57,10 +60,19 @@ def connect_vcenter(
 
 
 def disconnect(si) -> None:
+    """pyVmomi セッションを切断する。"""
     Disconnect(si)
 
 
 def read_connection_info(si) -> ConnectionInfo:
+    """接続済みセッションから vCenter 製品情報を読み取る。
+
+    Args:
+        si: ``SmartConnect`` が返した ServiceInstance。
+
+    Returns:
+        製品名・バージョン・API バージョン・インスタンス UUID。
+    """
     content = si.RetrieveContent()
     about = content.about
     return ConnectionInfo(

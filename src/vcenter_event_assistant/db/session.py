@@ -1,4 +1,7 @@
-"""Async engine and session factory."""
+"""非同期 DB エンジンとセッションファクトリ。
+
+SQLite / PostgreSQL 向けの engine 生成、``session_scope``、起動時マイグレーション補助を提供する。
+"""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -32,6 +35,14 @@ async def reset_db() -> None:
 
 
 def get_engine(*, settings: Settings | None = None):
+    """シングルトンの非同期 DB エンジンを返す。
+
+    Args:
+        settings: 未指定時は ``get_settings()`` を使用する。
+
+    Returns:
+        初回呼び出し時に生成した ``AsyncEngine``。
+    """
     global _engine
     if _engine is None:
         s = settings or get_settings()
@@ -50,6 +61,14 @@ def get_engine(*, settings: Settings | None = None):
 
 
 def get_session_factory(*, settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
+    """シングルトンの非同期セッションファクトリを返す。
+
+    Args:
+        settings: 未指定時は ``get_settings()`` を使用する。
+
+    Returns:
+        ``expire_on_commit=False`` の ``async_sessionmaker``。
+    """
     global _session_factory
     if _session_factory is None:
         engine = get_engine(settings=settings)
@@ -59,6 +78,16 @@ def get_session_factory(*, settings: Settings | None = None) -> async_sessionmak
 
 @asynccontextmanager
 async def session_scope(settings: Settings | None = None) -> AsyncIterator[AsyncSession]:
+    """トランザクション付き非同期セッションのコンテキストマネージャ。
+
+    正常終了時は commit、例外時は rollback する。
+
+    Args:
+        settings: 未指定時は ``get_settings()`` を使用する。
+
+    Yields:
+        非同期 SQLAlchemy セッション。
+    """
     factory = get_session_factory(settings=settings)
     async with factory() as session:
         try:
@@ -153,6 +182,13 @@ async def _ensure_alert_states_last_notified_at_column(engine: AsyncEngine) -> N
 
 
 async def init_db(settings: Settings | None = None) -> None:
+    """スキーマを作成し、旧 DB 向けの列追加マイグレーションを適用する。
+
+    ``create_all`` 後に ``events.user_comment`` 等の欠落列を dialect 別に追加する。
+
+    Args:
+        settings: 未指定時は ``get_settings()`` を使用する。
+    """
     # すべてのモデルを Base.metadata に登録してから create_all する
     import vcenter_event_assistant.db.models  # noqa: F401
 

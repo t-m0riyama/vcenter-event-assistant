@@ -204,10 +204,12 @@ class DigestSettingsMixin(BaseModel):
 
     @property
     def effective_digest_daily_enabled(self) -> bool:
+        """日次ダイジェストの実効有効フラグ（新設定 OR レガシー設定）。"""
         return self.digest_daily_enabled or self.digest_scheduler_enabled
 
     @property
     def effective_digest_daily_cron(self) -> str:
+        """日次ダイジェストの実効 cron 式（新設定をレガシーより優先）。"""
         if self.digest_daily_enabled:
             return self.digest_daily_cron
         if self.digest_scheduler_enabled:
@@ -272,7 +274,7 @@ class Settings(
     DigestSettingsMixin,
     LlmSettingsMixin,
 ):
-    """Monolithic application settings composed of specialized mixins."""
+    """アプリケーション設定（各 Mixin を合成した単一 Settings モデル）。"""
 
     model_config = SettingsConfigDict(
         env_file=_settings_env_file(),
@@ -283,4 +285,5 @@ class Settings(
 
 @lru_cache
 def get_settings() -> Settings:
+    """環境変数から読み込んだ ``Settings`` シングルトンを返す。"""
     return Settings()

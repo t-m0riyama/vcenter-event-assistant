@@ -1,3 +1,8 @@
+"""アラートルール評価のオーケストレーション。
+
+有効な ``AlertRule`` を種別ごとに評価し、通知・履歴・スナップショットを記録する。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -29,6 +34,8 @@ class AlertEvalSummary:
 
 
 class AlertEvaluator:
+    """全有効アラートルールの評価と通知送信を担うファサード。"""
+
     def __init__(self) -> None:
         self.renderer = NotificationRenderer()
         self.email_channel = EmailChannel()

@@ -1,4 +1,8 @@
-"""FastAPI application entry."""
+"""FastAPI アプリケーションエントリ。
+
+``create_app`` で API ルーター・CORS・静的 SPA フォールバックを組み立て、
+lifespan で DB 初期化と APScheduler を管理する。
+"""
 
 from __future__ import annotations
 
@@ -40,6 +44,7 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
     await init_db()
     await run_screenshot_e2e_seed_if_enabled()
     settings = get_settings()
@@ -50,6 +55,11 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """設定に基づき FastAPI アプリを構築する。
+
+    Returns:
+        ルーター・ミドルウェア・（存在すれば）フロントエンド静的配信を設定したアプリ。
+    """
     settings = get_settings()
     configure_logging(settings)
     app = FastAPI(title="vCenter Event Assistant", lifespan=lifespan)

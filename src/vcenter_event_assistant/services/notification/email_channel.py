@@ -1,3 +1,5 @@
+"""SMTP 経由のメール通知チャネル。"""
+
 import smtplib
 from email.message import EmailMessage
 from vcenter_event_assistant.db.models import AlertRule, AlertState
@@ -8,7 +10,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 class EmailChannel(NotificationChannel):
+    """設定された SMTP サーバ経由でアラートメールを送信する。"""
+
     async def notify(self, rule: AlertRule, state: AlertState, subject: str, body: str) -> None:
+        """件名・本文を SMTP で送信する。
+
+        ``SMTP_HOST`` または ``ALERT_EMAIL_TO`` 未設定時は警告ログのみで return する。
+
+        Args:
+            rule: 通知元のアラートルール（現状本文生成には未使用）。
+            state: 発火 / 解消状態。
+            subject: メール件名。
+            body: メール本文（プレーンテキスト）。
+
+        Raises:
+            Exception: SMTP 送信に失敗した場合。
+        """
         settings = get_settings()
         
         if not settings.smtp_host:

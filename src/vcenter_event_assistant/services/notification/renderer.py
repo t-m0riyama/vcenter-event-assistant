@@ -1,3 +1,5 @@
+"""Jinja2 テンプレートによるアラート通知文面の生成。"""
+
 from __future__ import annotations
 import os
 from pathlib import Path
@@ -7,6 +9,8 @@ from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.settings import get_settings
 
 class NotificationRenderer:
+    """発火 / 解消テンプレートから件名・本文をレンダリングする。"""
+
     def __init__(self):
         # 埋め込みテンプレート用（パッケージ内）
         self.pkg_env = Environment(
@@ -29,8 +33,15 @@ class NotificationRenderer:
         return template.render() # ここでは render ではなくソースを返す必要があるが、Jinja の仕組み上 template オブジェクトを返す
 
     def render(self, rule: AlertRule, state: AlertState, context: dict) -> tuple[str, str]:
-        """
-        (件名, 本文) のタプルを返す。
+        """テンプレートをレンダリングし (件名, 本文) を返す。
+
+        Args:
+            rule: アラートルール（重大度ラベル等に使用）。
+            state: ``firing`` / ``resolved`` でテンプレートを切り替える。
+            context: テンプレート変数（``rule_name`` 等）。
+
+        Returns:
+            1 行目を件名、2 行目以降を本文としたタプル。
         """
         settings = get_settings()
 

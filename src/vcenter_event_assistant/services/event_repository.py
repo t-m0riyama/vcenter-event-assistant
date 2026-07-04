@@ -1,3 +1,8 @@
+"""イベント集計クエリ。
+
+API グラフ向けにイベント発生率の時間バケット系列を DB から取得する。
+"""
+
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import select, func, cast, Integer, literal
@@ -7,7 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from vcenter_event_assistant.db.models import EventRecord
 
 def _epoch_seconds_expr(dialect_name: str):
-    """Portable UTC epoch seconds (integer) from ``occurred_at`` for bucketing."""
+    """``occurred_at`` から UTC エポック秒（整数）を dialect 非依存に算出する。"""
     if dialect_name == "postgresql":
         return cast(func.floor(func.extract("epoch", EventRecord.occurred_at)), Integer)
     return cast(func.strftime("%s", EventRecord.occurred_at), Integer)
@@ -20,6 +25,20 @@ async def get_event_rate_series(
     bucket_seconds: int,
     vcenter_id: uuid.UUID | None = None,
 ) -> list[dict[str, any]]:
+    """指定期間のイベント発生数を固定秒バケットで集計する。
+
+    Args:
+        session: 非同期 DB セッション。
+        event_type: 集計対象のイベント種別。
+        from_time: 期間開始（UTC 想定）。
+        to_time: 期間終了（UTC 想定）。
+        bucket_seconds: バケット幅（秒）。
+        vcenter_id: 指定時は当該 vCenter に限定する。
+
+    Returns:
+        ``bucket_start``（UTC datetime）と ``count`` を持つ dict のリスト。
+        データが無いバケットも count=0 で返す。
+    """
     conditions: list[ColumnElement[bool]] = [
         EventRecord.event_type == event_type.strip(),
         EventRecord.occurred_at >= from_time,
