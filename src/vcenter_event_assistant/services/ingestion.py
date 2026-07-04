@@ -134,6 +134,14 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
 
 
 async def purge_old_events(session: AsyncSession) -> int:
+    """保持期間を超えたイベント行を削除する。
+
+    Args:
+        session: 非同期 DB セッション。
+
+    Returns:
+        削除した行数。
+    """
     settings = get_settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.event_retention_days)
     res = await session.execute(delete(EventRecord).where(EventRecord.occurred_at < cutoff))
@@ -141,6 +149,14 @@ async def purge_old_events(session: AsyncSession) -> int:
 
 
 async def purge_old_metrics(session: AsyncSession) -> int:
+    """保持期間を超えたメトリクスサンプル行を削除する。
+
+    Args:
+        session: 非同期 DB セッション。
+
+    Returns:
+        削除した行数。
+    """
     settings = get_settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.metric_retention_days)
     res = await session.execute(delete(MetricSample).where(MetricSample.sampled_at < cutoff))
@@ -148,5 +164,13 @@ async def purge_old_metrics(session: AsyncSession) -> int:
 
 
 async def list_enabled_vcenters(session: AsyncSession) -> list[VCenter]:
+    """``is_enabled=True`` の vCenter 行をすべて返す。
+
+    Args:
+        session: 非同期 DB セッション。
+
+    Returns:
+        有効な vCenter モデルのリスト。
+    """
     q = await session.execute(select(VCenter).where(VCenter.is_enabled.is_(True)))
     return list(q.scalars().all())

@@ -1,9 +1,13 @@
-"""vCenter Event Assistant — collect events and host metrics for dashboards."""
+"""vCenter Event Assistant パッケージ。
+
+vCenter イベントとホストメトリクスを収集し、ダッシュボード向け API を提供する。
+"""
 
 __version__ = "0.1.0"
 
 
 def main() -> None:
+    """Uvicorn で FastAPI アプリを起動する CLI エントリポイント。"""
     import uvicorn
 
     from vcenter_event_assistant.main import create_app

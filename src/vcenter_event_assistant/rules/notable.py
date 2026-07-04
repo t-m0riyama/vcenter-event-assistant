@@ -1,4 +1,7 @@
-"""Rule-based scoring for notable events (pure functions)."""
+"""ルールベースの notable イベントスコアリング（純関数）。
+
+イベント種別・重大度・メッセージから 0..100 のスコアとタグを算出する。
+"""
 
 from __future__ import annotations
 
@@ -25,6 +28,8 @@ SEVERITY_WEIGHT: dict[str, int] = {
 
 @dataclass(frozen=True, slots=True)
 class NotableResult:
+    """notable 判定のスコアと付与タグ。"""
+
     score: int
     tags: list[str]
 
@@ -41,7 +46,7 @@ def score_event(
     severity: str | None,
     message: str,
 ) -> NotableResult:
-    """Compute a simple notable score and tags from event fields."""
+    """イベントフィールドから notable スコアとタグを算出する。"""
     tags: list[str] = []
     score = 0
 
@@ -75,7 +80,7 @@ def score_event(
 
 
 def clamp_notable_total(base_score: int, score_delta: int) -> int:
-    """Apply additive delta and clamp to 0..100 (matches stored ``notable_score`` semantics)."""
+    """加算 delta を適用し 0..100 にクランプする（保存 ``notable_score`` と同義）。"""
     return max(0, min(100, base_score + score_delta))
 
 
@@ -86,7 +91,7 @@ def final_notable_score(
     message: str,
     score_delta: int = 0,
 ) -> int:
-    """Base score from ``score_event`` plus optional per-type delta, clamped to 0..100."""
+    """``score_event`` の基底スコアに種別 delta を加え、0..100 にクランプする。"""
     base = score_event(event_type=event_type, severity=severity, message=message).score
     return clamp_notable_total(base, score_delta)
 
@@ -98,7 +103,7 @@ def flag_metric_spike(
     warn_threshold: float = 85.0,
     crit_threshold: float = 95.0,
 ) -> NotableResult:
-    """Classify a metric sample as notable when above thresholds."""
+    """閾値超過時にメトリクスサンプルを notable として分類する。"""
     if value >= crit_threshold:
         return NotableResult(score=90, tags=[f"metric:{metric_key}", "threshold:critical"])
     if value >= warn_threshold:

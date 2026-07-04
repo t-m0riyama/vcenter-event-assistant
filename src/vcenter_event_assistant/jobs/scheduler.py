@@ -1,4 +1,8 @@
-"""Background polling jobs."""
+"""バックグラウンド定期ジョブ。
+
+イベント取り込み・メトリクス収集・アラート評価・保持期間パージ・
+ダイジェスト生成を APScheduler でスケジュールする。
+"""
 
 from __future__ import annotations
 
@@ -128,6 +132,14 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
 
 
 def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
+    """APScheduler に定期ジョブを登録し、``app.state.scheduler`` に格納する。
+
+    Args:
+        app: スケジューラ参照を保持する FastAPI アプリ。
+
+    Returns:
+        起動済みの ``AsyncIOScheduler``。
+    """
     settings = get_settings()
     scheduler = AsyncIOScheduler()
 
@@ -195,6 +207,11 @@ def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
 
 
 def shutdown_scheduler(app: "FastAPI") -> None:
+    """``app.state.scheduler`` が存在すれば非同期シャットダウンする。
+
+    Args:
+        app: ``setup_scheduler`` で scheduler を登録した FastAPI アプリ。
+    """
     sched = getattr(app.state, "scheduler", None)
     if sched is not None:
         sched.shutdown(wait=False)

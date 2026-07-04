@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 @dataclass(frozen=True, slots=True)
 class EventScoreEvalConfig:
+    """``event_score`` ルール評価に必要な閾値とクールダウン。"""
+
     threshold: int
     cooldown_minutes: int
 

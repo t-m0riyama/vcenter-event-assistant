@@ -23,6 +23,8 @@ logger = logging.getLogger("vcenter_event_assistant.services.alert_eval")
 
 
 class AlertNotifyProtocol(Protocol):
+    """イベントスコア評価から通知送信へ委譲するためのプロトコル。"""
+
     async def _notify(self, rule: AlertRule, state: AlertState, extra_context: dict) -> None: ...
 
 
