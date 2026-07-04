@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -32,7 +32,10 @@ class VCenter(Base):
 
 class EventRecord(Base):
     __tablename__ = "events"
-    __table_args__ = (UniqueConstraint("vcenter_id", "vmware_key", name="uq_event_vcenter_vmware_key"),)
+    __table_args__ = (
+        UniqueConstraint("vcenter_id", "vmware_key", name="uq_event_vcenter_vmware_key"),
+        Index("ix_events_vcenter_id_occurred_at", "vcenter_id", "occurred_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
@@ -86,6 +89,13 @@ class MetricSample(Base):
             "entity_moid",
             "metric_key",
             name="uq_metric_sample_point",
+        ),
+        Index(
+            "ix_metric_samples_vcenter_entity_metric_sampled",
+            "vcenter_id",
+            "entity_moid",
+            "metric_key",
+            "sampled_at",
         ),
     )
 
