@@ -31,7 +31,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_metrics,
 )
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
-from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings import Settings
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -39,17 +39,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def run_daily_digest() -> None:
+async def run_daily_digest(settings: Settings) -> None:
     """設定 TZ の直前暦日を対象に日次ダイジェストを 1 件生成する。"""
-    tz, _ = resolve_digest_timezone(get_settings())
+    tz, _ = resolve_digest_timezone(settings)
     fr, to = zoned_yesterday_window(None, tz)
     try:
-        async with session_scope() as session:
+        async with session_scope(settings=settings) as session:
             row = await run_digest_once(
                 session,
                 kind="daily",
                 from_utc=fr,
                 to_utc=to,
+                settings=settings,
             )
         logger.info(
             "digest created kind=daily id=%s period=%s..%s",
@@ -61,17 +62,18 @@ async def run_daily_digest() -> None:
         logger.exception("daily digest job failed")
 
 
-async def run_weekly_digest() -> None:
+async def run_weekly_digest(settings: Settings) -> None:
     """設定 TZ の日曜 0:00 始まりの直前暦週を対象に週次ダイジェストを 1 件生成する。"""
-    tz, _ = resolve_digest_timezone(get_settings())
+    tz, _ = resolve_digest_timezone(settings)
     fr, to = zoned_previous_week_window(None, tz)
     try:
-        async with session_scope() as session:
+        async with session_scope(settings=settings) as session:
             row = await run_digest_once(
                 session,
                 kind="weekly",
                 from_utc=fr,
                 to_utc=to,
+                settings=settings,
             )
         logger.info(
             "digest created kind=weekly id=%s period=%s..%s",
@@ -83,17 +85,18 @@ async def run_weekly_digest() -> None:
         logger.exception("weekly digest job failed")
 
 
-async def run_monthly_digest() -> None:
+async def run_monthly_digest(settings: Settings) -> None:
     """設定 TZ の直前暦月を対象に月次ダイジェストを 1 件生成する。"""
-    tz, _ = resolve_digest_timezone(get_settings())
+    tz, _ = resolve_digest_timezone(settings)
     fr, to = zoned_previous_calendar_month_window(None, tz)
     try:
-        async with session_scope() as session:
+        async with session_scope(settings=settings) as session:
             row = await run_digest_once(
                 session,
                 kind="monthly",
                 from_utc=fr,
                 to_utc=to,
+                settings=settings,
             )
         logger.info(
             "digest created kind=monthly id=%s period=%s..%s",
@@ -116,68 +119,71 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
             run_daily_digest,
             CronTrigger.from_crontab(settings.effective_digest_daily_cron),
             id="digest_daily",
+            kwargs={"settings": settings},
         )
     if settings.digest_weekly_enabled:
         scheduler.add_job(
             run_weekly_digest,
             CronTrigger.from_crontab(settings.digest_weekly_cron),
             id="digest_weekly",
+            kwargs={"settings": settings},
         )
     if settings.digest_monthly_enabled:
         scheduler.add_job(
             run_monthly_digest,
             CronTrigger.from_crontab(settings.digest_monthly_cron),
             id="digest_monthly",
+            kwargs={"settings": settings},
         )
 
 
-def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
+def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
     """APScheduler に定期ジョブを登録し、``app.state.scheduler`` に格納する。
 
     Args:
         app: スケジューラ参照を保持する FastAPI アプリ。
+        settings: ジョブへ渡すアプリ設定。
 
     Returns:
         起動済みの ``AsyncIOScheduler``。
     """
-    settings = get_settings()
     scheduler = AsyncIOScheduler()
 
     async def poll_events() -> None:
-        async with session_scope() as session:
+        async with session_scope(settings=settings) as session:
             vcenters = await list_enabled_vcenters(session)
             ids = [v.id for v in vcenters]
         for vid in ids:
             try:
-                async with session_scope() as session:
+                async with session_scope(settings=settings) as session:
                     res = await session.execute(select(VCenter).where(VCenter.id == vid))
                     vc = res.scalar_one()
-                    n = await ingest_events_for_vcenter(session, vc)
+                    n = await ingest_events_for_vcenter(session, vc, settings=settings)
                     logger.info("events ingested vcenter=%s count=%s", vc.name, n)
             except Exception:
                 logger.exception("event poll failed vcenter_id=%s", vid)
 
     async def poll_perf() -> None:
-        async with session_scope() as session:
+        async with session_scope(settings=settings) as session:
             vcenters = await list_enabled_vcenters(session)
             ids = [v.id for v in vcenters]
         for vid in ids:
             try:
-                async with session_scope() as session:
+                async with session_scope(settings=settings) as session:
                     res = await session.execute(select(VCenter).where(VCenter.id == vid))
                     vc = res.scalar_one()
-                    n = await ingest_metrics_for_vcenter(session, vc)
+                    n = await ingest_metrics_for_vcenter(session, vc, settings=settings)
                     logger.info("metrics ingested vcenter=%s count=%s", vc.name, n)
             except Exception:
                 logger.exception("perf poll failed vcenter_id=%s", vid)
 
     async def purge() -> None:
         try:
-            async with session_scope() as session:
-                n_ev = await purge_old_events(session)
+            async with session_scope(settings=settings) as session:
+                n_ev = await purge_old_events(session, settings=settings)
                 if n_ev:
                     logger.info("purged old events count=%s", n_ev)
-                n_m = await purge_old_metrics(session)
+                n_m = await purge_old_metrics(session, settings=settings)
                 if n_m:
                     logger.info("purged old metric samples count=%s", n_m)
         except Exception:
@@ -185,7 +191,7 @@ def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
 
     async def evaluate_alerts() -> None:
         try:
-            evaluator = AlertEvaluator()
+            evaluator = AlertEvaluator(settings)
             await evaluator.evaluate_all()
         except Exception:
             logger.exception("alert evaluation job failed")

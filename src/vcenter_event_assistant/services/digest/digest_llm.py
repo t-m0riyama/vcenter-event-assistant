@@ -16,7 +16,8 @@ from vcenter_event_assistant.services.llm.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm.llm_profile import is_digest_llm_configured, resolve_llm_profile
 from vcenter_event_assistant.services.llm.llm_invoke import log_llm_failure, stream_chat_to_text
 from vcenter_event_assistant.services.llm.llm_user_errors import _llm_failure_detail_for_user
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 _logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ async def augment_digest_with_llm(
     template_markdown: str,
     runnable_config: RunnableConfig | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
+    settings: Settings | None = None,
 ) -> tuple[str, str | None]:
     """
     テンプレートに LLM 要約を追記した本文を返す。
@@ -89,14 +91,14 @@ async def augment_digest_with_llm(
         (body_markdown, error_message)。API キーが空のときは (template_markdown, None)。
         LLM 失敗時は (template_markdown, 警告文)。
     """
-    settings = get_settings()
-    if not is_digest_llm_configured(settings):
+    s = settings or require_settings()
+    if not is_digest_llm_configured(s):
         return (template_markdown, None)
 
     ctx_dict: dict[str, Any] = context.model_dump(mode="json")
     md_for_llm = template_markdown
     reverse_map: dict[str, str] = {}
-    if settings.llm_anonymization_enabled:
+    if s.llm_anonymization_enabled:
         ctx_dict, md_for_llm, reverse_map = anonymize_for_llm(
             ctx_dict,
             template_markdown,
@@ -107,7 +109,7 @@ async def augment_digest_with_llm(
     user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{md_for_llm}"
 
     try:
-        dprof = resolve_llm_profile(settings, purpose="digest")
+        dprof = resolve_llm_profile(s, purpose="digest")
         _logger.info(
             "digest LLM リクエスト json_chars=%s user_message_chars=%s timeout_seconds=%s model=%s",
             len(ctx_json),
@@ -118,18 +120,18 @@ async def augment_digest_with_llm(
         if dprof.provider == "copilot_cli":
             from vcenter_event_assistant.services.llm.copilot_cli_llm import run_copilot_cli_digest_completion
             summary = await run_copilot_cli_digest_completion(
-                settings,
+                s,
                 system_prompt=_SYSTEM_PROMPT,
                 user_block=user_block,
             )
         else:
-            model = build_chat_model(settings, purpose="digest", config=runnable_config)
+            model = build_chat_model(s, purpose="digest", config=runnable_config)
             lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
             summary, _, _ = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         summary = deanonymize_text(summary.strip(), reverse_map)
         merged = template_markdown.rstrip() + "\n\n" + summary + "\n"
         return (merged, None)
     except Exception as e:
-        log_llm_failure(settings, "digest", e)
+        log_llm_failure(s, "digest", e)
         detail = _llm_failure_detail_for_user(e)
         return (template_markdown, f"LLM 要約は省略（{detail}）")

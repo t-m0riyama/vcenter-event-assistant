@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
-from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
     EventListResponse,
     EventRateBucket,
@@ -23,7 +23,7 @@ from vcenter_event_assistant.api.schemas import (
 from vcenter_event_assistant.db.models import EventRecord
 from vcenter_event_assistant.services.event_repository import get_event_rate_series
 from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -73,13 +73,14 @@ async def event_rate_series(
     to_time: datetime = Query(..., alias="to"),
     bucket_seconds: int | None = Query(default=None, ge=60, le=86400),
     vcenter_id: uuid.UUID | None = None,
+    settings: Settings = Depends(get_app_settings),
 ) -> EventRateSeriesResponse:
     ft = to_utc(from_time)
     tt = to_utc(to_time)
     if ft >= tt:
         raise HTTPException(status_code=400, detail="from must be before to")
 
-    b = bucket_seconds if bucket_seconds is not None else get_settings().perf_sample_interval_seconds
+    b = bucket_seconds if bucket_seconds is not None else settings.perf_sample_interval_seconds
 
     buckets_data = await get_event_rate_series(
         session=session,

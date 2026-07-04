@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
-from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import DigestListResponse, DigestRead, DigestRunRequest
 from vcenter_event_assistant.db.models import DigestRecord
 from vcenter_event_assistant.services.digest.digest_run import run_digest_once
@@ -19,7 +19,7 @@ from vcenter_event_assistant.services.digest.digest_window import (
     zoned_previous_week_window,
     zoned_yesterday_window,
 )
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/digests", tags=["digests"])
 
@@ -75,6 +75,7 @@ async def get_digest(digest_id: int, session: AsyncSession = Depends(get_session
 async def run_digest(
     body: DigestRunRequest = Body(default_factory=DigestRunRequest),
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> DigestRead:
     req = body
     kind_arg = _canonical_digest_kind(req.kind)
@@ -90,7 +91,6 @@ async def run_digest(
                     f"got {req.kind!r}"
                 ),
             )
-        settings = get_settings()
         tz, _ = resolve_digest_timezone(settings)
         if kind_arg == "daily":
             period_start, period_end = zoned_yesterday_window(None, tz)
@@ -103,6 +103,7 @@ async def run_digest(
         kind=kind_arg,
         from_utc=period_start,
         to_utc=period_end,
+        settings=settings,
     )
     # レスポンス用 ``DigestRead`` の検証で失敗すると ``get_session`` が rollback する。
     # flush 済みでも未コミットのため行が消えるため、検証より前にコミットして永続化する。

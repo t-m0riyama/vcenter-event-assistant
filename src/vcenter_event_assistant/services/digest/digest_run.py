@@ -12,7 +12,7 @@ from vcenter_event_assistant.services.digest.digest_llm import augment_digest_wi
 from vcenter_event_assistant.services.digest.digest_markdown import render_digest_markdown
 from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 
 async def run_digest_once(
@@ -21,16 +21,16 @@ async def run_digest_once(
     kind: str,
     from_utc: datetime,
     to_utc: datetime,
+    settings: Settings,
 ) -> DigestRecord:
     """
     集約 → テンプレート Markdown →（任意）LLM 追記 → ``DigestRecord`` を ``session`` に追加する。
 
     呼び出し側で commit する（``get_session`` 依存ルートと同様）。
     """
-    settings = get_settings()
     ctx = await build_digest_context(session, from_utc, to_utc)
     try:
-        md = render_digest_markdown(ctx, kind=kind)
+        md = render_digest_markdown(ctx, kind=kind, settings=settings)
     except Exception as e:
         err = ("digest template: " + str(e))[:2000]
         row = DigestRecord(
@@ -54,6 +54,7 @@ async def run_digest_once(
         template_markdown=md,
         runnable_config=llm_cfg,
         extra_vcenter_strings=vc_anon,
+        settings=settings,
     )
 
     has_key = bool((settings.llm_digest_api_key or "").strip())

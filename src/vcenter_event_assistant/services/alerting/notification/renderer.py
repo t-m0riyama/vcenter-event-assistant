@@ -6,12 +6,13 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, PackageLoader, select_autoescape
 from vcenter_event_assistant.alert_levels import alert_level_label_ja
 from vcenter_event_assistant.db.models import AlertRule, AlertState
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 class NotificationRenderer:
     """発火 / 解消テンプレートから件名・本文をレンダリングする。"""
 
-    def __init__(self):
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         # 埋め込みテンプレート用（パッケージ内）
         self.pkg_env = Environment(
             loader=PackageLoader("vcenter_event_assistant", "templates"),
@@ -43,8 +44,7 @@ class NotificationRenderer:
         Returns:
             1 行目を件名、2 行目以降を本文としたタプル。
         """
-        settings = get_settings()
-
+        settings = self._settings
         merged: dict = {**context}
         level = getattr(rule, "alert_level", None) or merged.get("alert_level") or "warning"
         merged.setdefault("alert_level", level)

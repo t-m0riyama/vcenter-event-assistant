@@ -4,13 +4,16 @@ import smtplib
 from email.message import EmailMessage
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.services.alerting.notification.base import NotificationChannel
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 import logging
 
 logger = logging.getLogger(__name__)
 
 class EmailChannel(NotificationChannel):
     """設定された SMTP サーバ経由でアラートメールを送信する。"""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
 
     async def notify(self, rule: AlertRule, state: AlertState, subject: str, body: str) -> None:
         """件名・本文を SMTP で送信する。
@@ -26,8 +29,7 @@ class EmailChannel(NotificationChannel):
         Raises:
             Exception: SMTP 送信に失敗した場合。
         """
-        settings = get_settings()
-        
+        settings = self._settings
         if not settings.smtp_host:
             logger.warning("SMTP_HOST is not set. Skipping email notification.")
             return

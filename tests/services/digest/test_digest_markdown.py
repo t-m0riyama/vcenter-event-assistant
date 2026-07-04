@@ -28,7 +28,7 @@ def _minimal_settings(**kwargs: object) -> Settings:
 
 def _patch_digest_markdown_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest.digest_markdown.get_settings",
+        "vcenter_event_assistant.services.digest.digest_markdown.require_settings",
         lambda: settings,
     )
 

@@ -203,7 +203,7 @@ async def test_run_period_chat_copilot_cli_calls_completion_and_returns_text(
         raising=True,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         
         context=_minimal_ctx(),

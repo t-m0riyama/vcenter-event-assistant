@@ -32,7 +32,7 @@ async def test_evaluate_event_score_firing():
         await session.flush()
         rule_id = rule.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.called
@@ -82,7 +82,7 @@ async def test_evaluate_event_score_does_not_auto_resolve_when_no_qualifying_in_
         )
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         mock_notify.assert_not_called()
@@ -125,7 +125,7 @@ async def test_evaluate_event_score_ignores_high_score_outside_lookback_window(
             await session.flush()
             rule_id = rule.id
 
-        evaluator = AlertEvaluator()
+        evaluator = AlertEvaluator(get_settings())
         with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
             await evaluator.evaluate_all()
             mock_notify.assert_not_called()
@@ -163,7 +163,7 @@ async def test_evaluate_event_score_firing_with_string_threshold_in_config() -> 
         await session.flush()
         rule_id = rule.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.called
@@ -200,7 +200,7 @@ async def test_evaluate_event_score_suppresses_renotify_within_cooldown_same_typ
         await session.flush()
         vcenter_id = vc.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.call_count == 1
@@ -257,7 +257,7 @@ async def test_evaluate_event_score_independent_state_per_event_type() -> None:
         await session.flush()
         rule_id = rule.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.call_count == 2
@@ -300,7 +300,7 @@ async def test_evaluate_event_score_renotifies_after_cooldown_same_type() -> Non
         rule_id = rule.id
         vcenter_id = vc.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock):
         await evaluator.evaluate_all()
 
@@ -356,7 +356,7 @@ async def test_evaluate_event_score_does_not_renotify_after_cooldown_without_new
         await session.flush()
         rule_id = rule.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.call_count == 1
@@ -410,7 +410,7 @@ async def test_evaluate_event_score_refires_by_updating_resolved_state() -> None
         state_id = existing.id
         rule_id = rule.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.call_count == 1
@@ -451,7 +451,7 @@ async def test_evaluate_event_score_firing_notify_uses_event_type_in_context_key
         )
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         notify_state = mock_notify.call_args[0][1]

@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import String
 from sqlalchemy.types import TypeDecorator
 
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class EncryptedString(TypeDecorator[str]):
     def process_bind_param(self, value: str | None, dialect) -> str | None:
         if value is None:
             return None
-        secret = get_settings().vea_secret_key
+        secret = require_settings().vea_secret_key
         if not secret:
             return value
         if is_encrypted_storage_value(value):
@@ -81,7 +81,7 @@ class EncryptedString(TypeDecorator[str]):
             return None
         if not is_encrypted_storage_value(value):
             return value
-        secret = get_settings().vea_secret_key
+        secret = require_settings().vea_secret_key
         if not secret:
             msg = (
                 "Encrypted vCenter password found in database but VEA_SECRET_KEY is not set. "

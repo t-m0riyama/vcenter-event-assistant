@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 from vcenter_event_assistant.db.models import AlertRule, AlertState, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.settings import get_settings
 
 @pytest.mark.asyncio
 async def test_evaluate_metric_threshold_firing_and_resolution():
@@ -32,7 +33,7 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
         session.add(s1)
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     
     # 1. 発火の確認
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
@@ -92,7 +93,7 @@ async def test_metric_threshold_does_not_fire_when_metric_key_mismatches_collect
         )
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert not mock_notify.called
@@ -124,7 +125,7 @@ async def test_metric_threshold_fires_when_metric_key_matches_collector() -> Non
         )
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.called
@@ -167,7 +168,7 @@ async def test_metric_threshold_uses_latest_sample_per_entity() -> None:
         )
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         mock_notify.assert_not_called()
@@ -210,7 +211,7 @@ async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
         state_id = existing.id
         rule_id = rule.id
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.call_count == 1

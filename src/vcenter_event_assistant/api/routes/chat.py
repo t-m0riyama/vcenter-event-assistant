@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import ChatPreviewResponse, ChatRequest, ChatResponse
 from vcenter_event_assistant.services.chat.chat_context_payloads import build_chat_context_payloads
 from vcenter_event_assistant.services.chat.chat_llm import build_chat_preview, run_period_chat
 from vcenter_event_assistant.services.llm.llm_profile import is_chat_llm_configured
-from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
 from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -23,8 +23,8 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 async def post_chat(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> ChatResponse:
-    settings = get_settings()
     if not is_chat_llm_configured(settings):
         raise HTTPException(
             status_code=503,
@@ -50,6 +50,7 @@ async def post_chat(
         incident_timeline=payloads.incident_timeline,
         runnable_config=llm_cfg,
         extra_vcenter_strings=vc_anon,
+        settings=settings,
     )
     return ChatResponse(
         assistant_content=text,
@@ -65,6 +66,7 @@ async def post_chat(
 async def post_chat_preview(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> ChatPreviewResponse:
     payloads = await build_chat_context_payloads(session, body)
 
@@ -76,6 +78,7 @@ async def post_chat_preview(
         event_time_buckets=payloads.event_time_buckets,
         incident_timeline=payloads.incident_timeline,
         extra_vcenter_strings=vc_anon,
+        settings=settings,
     )
     return ChatPreviewResponse(
         context_block=block,

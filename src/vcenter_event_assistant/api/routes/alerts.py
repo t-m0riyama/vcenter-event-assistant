@@ -4,7 +4,7 @@ from sqlalchemy import delete, select, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
     AlertRuleRead, AlertRuleCreate, AlertRuleUpdate,
     AlertHistoryListResponse, AlertHistoryRead, AlertRulesImportRequest,
@@ -12,6 +12,7 @@ from vcenter_event_assistant.api.schemas import (
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -211,8 +212,11 @@ async def list_alert_history(
 
 
 @router.post("/states/resolve", status_code=status.HTTP_204_NO_CONTENT)
-async def resolve_alert_state(body: AlertStateResolveRequest) -> None:
-    evaluator = AlertEvaluator()
+async def resolve_alert_state(
+    body: AlertStateResolveRequest,
+    settings: Settings = Depends(get_app_settings),
+) -> None:
+    evaluator = AlertEvaluator(settings)
     try:
         await evaluator.resolve_event_score_manually(body.rule_id, body.context_key)
     except ValueError as exc:

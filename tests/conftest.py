@@ -22,8 +22,10 @@ os.environ["UVICORN_LOG_FILE"] = ""
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import bind_settings, clear_settings_binding
 
 get_settings.cache_clear()
+bind_settings(get_settings())
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -43,10 +45,12 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 async def _db_setup() -> None:
     await reset_db()
     get_settings.cache_clear()
-    await init_db()
+    bind_settings(get_settings())
+    await init_db(settings=get_settings())
     yield
     await reset_db()
     get_settings.cache_clear()
+    clear_settings_binding()
 
 
 @pytest.fixture

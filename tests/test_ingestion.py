@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from vcenter_event_assistant.settings import get_settings
+
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -86,7 +88,7 @@ async def test_ingest_events_burst_does_not_select_events_table() -> None:
             async with session_scope() as session:
                 vc = await session.get(VCenter, vcenter_id)
                 assert vc is not None
-                inserted = await ingest_events_for_vcenter(session, vc)
+                inserted = await ingest_events_for_vcenter(session, vc, settings=get_settings())
 
         assert inserted == 1000
         assert event_selects == []
@@ -98,7 +100,7 @@ async def test_ingest_events_burst_does_not_select_events_table() -> None:
             async with session_scope() as session:
                 vc = await session.get(VCenter, vcenter_id)
                 assert vc is not None
-                inserted_dup = await ingest_events_for_vcenter(session, vc)
+                inserted_dup = await ingest_events_for_vcenter(session, vc, settings=get_settings())
 
         assert inserted_dup == 0
         assert event_selects == []
@@ -161,8 +163,8 @@ async def test_ingest_metrics_skips_duplicates_without_select() -> None:
             async with session_scope() as session:
                 vc = await session.get(VCenter, vcenter_id)
                 assert vc is not None
-                first = await ingest_metrics_for_vcenter(session, vc)
-                second = await ingest_metrics_for_vcenter(session, vc)
+                first = await ingest_metrics_for_vcenter(session, vc, settings=get_settings())
+                second = await ingest_metrics_for_vcenter(session, vc, settings=get_settings())
 
         assert first == 1
         assert second == 0

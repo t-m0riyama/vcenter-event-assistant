@@ -16,7 +16,8 @@ from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetr
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
 from vcenter_event_assistant.services.digest.digest_llm import _trim_context_json
 from vcenter_event_assistant.services.llm.llm_anonymization import anonymize_chat_for_llm
-from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 MAX_CHAT_MESSAGES = 20
 
@@ -140,7 +141,7 @@ def fit_chat_payload_to_token_budget(
     Returns:
         (ctx_json, trimmed_messages, json_truncated)
     """
-    settings = settings or get_settings()
+    settings = settings or require_settings()
     max_tokens = settings.llm_chat_max_input_tokens
     trimmed = messages[-MAX_CHAT_MESSAGES:]
     json_truncated = False
@@ -187,7 +188,7 @@ def prepare_chat_payload(
     Returns:
         (payload, trimmed_messages, reverse_map)
     """
-    settings = settings or get_settings()
+    settings = settings or require_settings()
     digest_obj = context.model_dump(mode="json")
     digest_obj.pop("high_cpu_hosts", None)
     digest_obj.pop("high_mem_hosts", None)
@@ -226,7 +227,7 @@ def build_chat_llm_context(
     settings: Settings | None = None,
 ) -> tuple[str, list[ChatMessage], ChatLlmContextMeta, dict[str, str]]:
     """LLM 呼び出し前のコンテキストブロック・会話・メタデータを構築する。"""
-    settings = settings or get_settings()
+    settings = settings or require_settings()
     payload, trimmed_msgs, reverse_map = prepare_chat_payload(
         context,
         messages,

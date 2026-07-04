@@ -14,7 +14,7 @@ from vcenter_event_assistant.collectors.perf import sample_hosts_blocking
 from vcenter_event_assistant.db.models import EventRecord, IngestionState, MetricSample, VCenter
 from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 
 async def _insert_on_conflict_do_nothing(
@@ -36,7 +36,9 @@ async def _insert_on_conflict_do_nothing(
     return await session.execute(stmt)
 
 
-async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> int:
+async def ingest_events_for_vcenter(
+    session: AsyncSession, vcenter: VCenter, *, settings: Settings
+) -> int:
     """Fetch and store new events. Returns number of rows inserted."""
     state = await session.execute(
         select(IngestionState).where(
@@ -51,7 +53,6 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
         # advance window slightly to reduce duplicates at boundary
         since = since - timedelta(seconds=1)
 
-    settings = get_settings()
     normalized, max_ts = await asyncio.to_thread(
         fetch_events_blocking,
         host=vcenter.host,
@@ -111,9 +112,10 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
     return inserted
 
 
-async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) -> int:
+async def ingest_metrics_for_vcenter(
+    session: AsyncSession, vcenter: VCenter, *, settings: Settings
+) -> int:
     """Sample host metrics and store rows."""
-    settings = get_settings()
     rows = await asyncio.to_thread(
         sample_hosts_blocking,
         host=vcenter.host,
@@ -146,7 +148,7 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
     return inserted
 
 
-async def purge_old_events(session: AsyncSession) -> int:
+async def purge_old_events(session: AsyncSession, *, settings: Settings) -> int:
     """保持期間を超えたイベント行を削除する。
 
     Args:
@@ -155,13 +157,12 @@ async def purge_old_events(session: AsyncSession) -> int:
     Returns:
         削除した行数。
     """
-    settings = get_settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.event_retention_days)
     res = await session.execute(delete(EventRecord).where(EventRecord.occurred_at < cutoff))
     return res.rowcount or 0
 
 
-async def purge_old_metrics(session: AsyncSession) -> int:
+async def purge_old_metrics(session: AsyncSession, *, settings: Settings) -> int:
     """保持期間を超えたメトリクスサンプル行を削除する。
 
     Args:
@@ -170,7 +171,6 @@ async def purge_old_metrics(session: AsyncSession) -> int:
     Returns:
         削除した行数。
     """
-    settings = get_settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.metric_retention_days)
     res = await session.execute(delete(MetricSample).where(MetricSample.sampled_at < cutoff))
     return res.rowcount or 0

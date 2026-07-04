@@ -9,7 +9,8 @@ from alembic.config import Config
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 ALEMBIC_HEAD = "p2q3r4s5t6u7"
 
@@ -22,7 +23,7 @@ class LegacySchemaStampError(RuntimeError):
 
 def alembic_config(*, settings: Settings | None = None) -> Config:
     """``DATABASE_URL`` を反映した Alembic 設定を返す。"""
-    s = settings or get_settings()
+    s = settings or require_settings()
     cfg = Config(str(_PROJECT_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", s.database_url)
     return cfg
