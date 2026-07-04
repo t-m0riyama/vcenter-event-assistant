@@ -124,6 +124,7 @@
   - `SCHEDULER_ENABLED`
   - `ALERT_EVAL_INTERVAL_SECONDS`
   - `DIGEST_DAILY_*`, `DIGEST_WEEKLY_*`, `DIGEST_MONTHLY_*`
+  - **非推奨（v0.3.0 削除予定）**: `DIGEST_SCHEDULER_ENABLED`, `DIGEST_CRON` — 日次ダイジェスト向けレガシー名。実効値は `effective_digest_daily_*` で新設定と合成される。移行先は `DIGEST_DAILY_ENABLED` / `DIGEST_DAILY_CRON`。レガシーが有効なとき起動ログに WARNING が出る。
 - ネットワーク・ログ:
   - `CORS_ORIGINS`
   - `VCENTER_HTTP_PROXY`

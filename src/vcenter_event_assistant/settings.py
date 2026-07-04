@@ -183,14 +183,16 @@ class DigestSettingsMixin(BaseModel):
     digest_scheduler_enabled: bool = Field(
         default=False,
         description=(
-            "（非推奨）日次ダイジェストを有効化するレガシー名。`DIGEST_SCHEDULER_ENABLED`。"
-            "新設の `digest_daily_enabled` と OR で実効化される（`effective_digest_daily_enabled`）。"
+            "（非推奨・v0.3.0 削除予定）日次ダイジェストを有効化するレガシー名。"
+            "`DIGEST_SCHEDULER_ENABLED`。移行先は `digest_daily_enabled` / `DIGEST_DAILY_ENABLED`。"
+            "新設定と OR で実効化される（`effective_digest_daily_enabled`）。"
         ),
     )
     digest_cron: str = Field(
         default="0 7 * * *",
         description=(
-            "（非推奨）レガシー日次 cron。`DIGEST_CRON`。"
+            "（非推奨・v0.3.0 削除予定）レガシー日次 cron。`DIGEST_CRON`。"
+            "移行先は `digest_daily_cron` / `DIGEST_DAILY_CRON`。"
             "`digest_daily_enabled` が True のときは `digest_daily_cron` が優先され、"
             "レガシーのみ有効なときだけ本フィールドが実効（`effective_digest_daily_cron`）。"
         ),
