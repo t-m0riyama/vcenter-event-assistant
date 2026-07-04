@@ -1,7 +1,15 @@
 """vCenter API CRUD."""
 
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
+
+from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.db.session import session_scope
 
 
 @pytest.mark.asyncio
@@ -94,3 +102,41 @@ async def test_vcenter_create_defaults_protocol_to_https(client: AsyncClient) ->
     )
     assert r.status_code == 201
     assert r.json()["protocol"] == "https"
+
+
+@pytest.mark.asyncio
+async def test_vcenter_delete_cascades_related_events(client: AsyncClient) -> None:
+    """関連 events がある vCenter も DELETE できる（DB ON DELETE CASCADE + passive_deletes）。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "with-events",
+            "host": "vc.example.local",
+            "protocol": "https",
+            "port": 443,
+            "username": "admin",
+            "password": "secret",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+
+    async with session_scope() as session:
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=datetime.now(timezone.utc),
+                event_type="com.vmware.test",
+                message="bench event",
+                vmware_key=42,
+                notable_score=1,
+            )
+        )
+
+    d = await client.delete(f"/api/vcenters/{vid}")
+    assert d.status_code == 204
+
+    list_r = await client.get("/api/vcenters")
+    assert list_r.status_code == 200
+    assert list_r.json() == []
