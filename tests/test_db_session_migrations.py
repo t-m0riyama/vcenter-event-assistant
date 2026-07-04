@@ -12,6 +12,7 @@ from vcenter_event_assistant.db.alembic_runner import (
 )
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import bind_settings
 
 ALEMBIC_HEAD = "p2q3r4s5t6u7"
 
@@ -52,6 +53,7 @@ async def test_init_db_adds_alert_states_last_notified_at_on_legacy_schema(
     db_path = tmp_path / "legacy.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     get_settings.cache_clear()
+    bind_settings(get_settings())
 
     await reset_db()
     await init_db()
@@ -110,6 +112,7 @@ async def test_init_db_aborts_on_ambiguous_legacy_schema(
     db_path = tmp_path / "ambiguous.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     get_settings.cache_clear()
+    bind_settings(get_settings())
 
     await reset_db()
     await init_db()
@@ -169,6 +172,7 @@ async def test_init_db_aborts_on_ambiguous_legacy_schema(
     await reset_db()
     get_settings.cache_clear()
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    bind_settings(get_settings())
 
     with pytest.raises(LegacySchemaStampError):
         await init_db()

@@ -13,6 +13,7 @@ from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter_password_storage
 from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import bind_settings
 
 
 async def _raw_password(vcenter_id: uuid.UUID) -> str:
@@ -30,8 +31,10 @@ async def _raw_password(vcenter_id: uuid.UUID) -> str:
 def secret_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VEA_SECRET_KEY", "test-secret-key-for-encryption")
     get_settings.cache_clear()
+    bind_settings(get_settings())
     yield
     get_settings.cache_clear()
+    bind_settings(get_settings())
 
 
 @pytest.mark.asyncio
@@ -127,6 +130,7 @@ async def test_decrypt_fails_when_secret_key_rotated(secret_env) -> None:
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setenv("VEA_SECRET_KEY", "different-secret-key")
     get_settings.cache_clear()
+    bind_settings(get_settings())
     try:
         with pytest.raises(SecretKeyDecryptError, match="Failed to decrypt"):
             async with session_scope() as session:
@@ -135,6 +139,7 @@ async def test_decrypt_fails_when_secret_key_rotated(secret_env) -> None:
     finally:
         monkeypatch.undo()
         get_settings.cache_clear()
+        bind_settings(get_settings())
     await reset_db()
 
 

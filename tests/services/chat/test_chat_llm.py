@@ -47,7 +47,7 @@ async def test_run_period_chat_skips_http_when_no_api_key(monkeypatch: pytest.Mo
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key=None,
     )
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         
         context=_minimal_ctx(),
@@ -95,7 +95,7 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat( context=_minimal_ctx(), messages=msgs)
     assert err is None
     assert out == "追質問への回答"
@@ -152,7 +152,7 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
     )
 
     cfg = {"metadata": {"x": 1}}
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     await run_period_chat(
         
         context=_minimal_ctx(),
@@ -190,7 +190,7 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         
         context=_minimal_ctx(),
@@ -255,7 +255,7 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         
         context=huge_ctx,
@@ -311,7 +311,7 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         
         context=_minimal_ctx(),
@@ -366,7 +366,7 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         
         context=_minimal_ctx(),
@@ -423,7 +423,7 @@ async def test_run_period_chat_includes_incident_timeline_in_user_block_when_set
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     out, err, meta, _, _ = await run_period_chat(
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
@@ -494,7 +494,7 @@ async def test_run_period_chat_anonymizes_entity_names_sent_to_llm(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     await run_period_chat(
         
         context=ctx,
@@ -540,7 +540,7 @@ async def test_run_period_chat_anonymizes_extra_vcenter_strings_in_user_message(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     await run_period_chat(
         
         context=_minimal_ctx(),
@@ -614,7 +614,7 @@ async def test_run_period_chat_respects_llm_anonymization_disabled(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
     await run_period_chat(
         
         context=ctx,

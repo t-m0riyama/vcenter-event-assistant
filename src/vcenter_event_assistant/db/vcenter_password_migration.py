@@ -12,7 +12,8 @@ from vcenter_event_assistant.db.encrypted_string import (
     is_encrypted_storage_value,
 )
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ async def ensure_vcenter_password_storage(settings: Settings | None = None) -> N
     - 鍵未設定: WARNING を出し平文のまま（後方互換）。
     - 鍵あり: DB 内の平文行を ``enc:`` 形式へ一括更新する。
     """
-    s = settings or get_settings()
+    s = settings or require_settings()
     secret = s.vea_secret_key
     if not secret:
         async with session_scope(settings=s) as session:

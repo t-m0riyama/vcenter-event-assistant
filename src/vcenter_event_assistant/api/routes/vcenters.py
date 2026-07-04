@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
 from vcenter_event_assistant.collectors.connection import (
     connect_vcenter,
@@ -18,7 +18,7 @@ from vcenter_event_assistant.collectors.connection import (
     read_connection_info,
 )
 from vcenter_event_assistant.db.models import VCenter
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/vcenters", tags=["vcenters"])
 
@@ -98,13 +98,12 @@ async def delete_vcenter(
 async def test_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> dict:
     res = await session.execute(select(VCenter).where(VCenter.id == vcenter_id))
     vc = res.scalar_one_or_none()
     if vc is None:
         raise HTTPException(status_code=404, detail="vCenter not found")
-
-    settings = get_settings()
 
     def _run():
         si = connect_vcenter(

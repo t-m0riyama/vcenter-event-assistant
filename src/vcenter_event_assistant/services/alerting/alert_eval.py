@@ -19,7 +19,7 @@ from vcenter_event_assistant.services.alerting.alert_eval_metric import evaluate
 from vcenter_event_assistant.services.incident_timeline_snapshot import persist_alert_rule_firing_snapshot
 from vcenter_event_assistant.services.alerting.notification.email_channel import EmailChannel
 from vcenter_event_assistant.services.alerting.notification.renderer import NotificationRenderer
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +36,10 @@ class AlertEvalSummary:
 class AlertEvaluator:
     """全有効アラートルールの評価と通知送信を担うファサード。"""
 
-    def __init__(self) -> None:
-        self.renderer = NotificationRenderer()
-        self.email_channel = EmailChannel()
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self.renderer = NotificationRenderer(settings)
+        self.email_channel = EmailChannel(settings)
         self._last_summary = AlertEvalSummary()
 
     async def evaluate_all(self) -> AlertEvalSummary:
@@ -52,7 +53,9 @@ class AlertEvaluator:
         for rule in rules:
             try:
                 if rule.rule_type == "event_score":
-                    firings, resolutions = await evaluate_event_score_rule(self, rule)
+                    firings, resolutions = await evaluate_event_score_rule(
+                        self, rule, settings=self._settings
+                    )
                 elif rule.rule_type == "metric_threshold":
                     firings, resolutions = await evaluate_metric_threshold_rule(self, rule)
                 else:
@@ -108,15 +111,14 @@ class AlertEvaluator:
 
     async def _notify(self, rule: AlertRule, state: AlertState, extra_context: dict) -> None:
         if state.state == "firing":
-            settings = get_settings()
-            async with session_scope() as session:
+            async with session_scope(settings=self._settings) as session:
                 await persist_alert_rule_firing_snapshot(
                     session=session,
                     rule=rule,
                     state=state,
                     details=str(extra_context.get("details", "")),
                     to_time=datetime.now(timezone.utc),
-                    lookback_hours=settings.alert_snapshot_lookback_hours,
+                    lookback_hours=self._settings.alert_snapshot_lookback_hours,
                 )
                 await session.commit()
 

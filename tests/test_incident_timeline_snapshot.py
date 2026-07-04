@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from vcenter_event_assistant.settings import get_settings
+
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -147,7 +149,7 @@ async def test_evaluate_event_score_firing_persists_auto_snapshot():
         session.add(event)
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator.email_channel, "notify", new_callable=AsyncMock):
         await evaluator.evaluate_all()
 
@@ -185,7 +187,7 @@ async def test_evaluate_event_score_resolution_does_not_add_snapshot():
         session.add(state)
         await session.flush()
 
-    evaluator = AlertEvaluator()
+    evaluator = AlertEvaluator(get_settings())
     with patch.object(evaluator.email_channel, "notify", new_callable=AsyncMock):
         await evaluator.evaluate_all()
 

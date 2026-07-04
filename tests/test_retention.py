@@ -70,7 +70,7 @@ async def test_purge_old_events_removes_only_stale_rows(client: AsyncClient) -> 
             )
 
         async with session_scope() as session:
-            n = await purge_old_events(session)
+            n = await purge_old_events(session, settings=get_settings())
         assert n == 1
 
         async with session_scope() as session:

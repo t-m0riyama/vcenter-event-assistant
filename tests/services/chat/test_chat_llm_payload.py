@@ -38,7 +38,7 @@ def _minimal_ctx(**kwargs: object) -> DigestContext:
 
 def test_prepare_chat_payload_excludes_high_cpu_mem_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=False)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     ctx = _minimal_ctx(
         high_cpu_hosts=[],
         high_mem_hosts=[],
@@ -62,7 +62,7 @@ def test_prepare_chat_payload_includes_optional_blocks_when_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     s = Settings(database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=False)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
     pm = PeriodMetricsPayload(bucket_minutes=15, from_utc=t0, to_utc=t1, cpu=[])
@@ -96,7 +96,7 @@ def test_fit_chat_payload_to_token_budget_truncates_large_json(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_chat_max_input_tokens=2500,
     )
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     pad = "x" * 120_000
     payload = {
         "digest_context": {
@@ -123,7 +123,7 @@ def test_build_chat_llm_context_returns_meta_without_llm_call(
         llm_chat_max_input_tokens=8000,
         llm_anonymization_enabled=False,
     )
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     block, trimmed, meta, reverse_map = build_chat_llm_context(
         _minimal_ctx(),
         [ChatMessage(role="user", content="ping")],
@@ -148,7 +148,7 @@ def test_build_chat_llm_context_anonymizes_entity_names_when_enabled(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_anonymization_enabled=True,
     )
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.get_settings", lambda: s)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     secret = "SECRET-ESXI-01.example.com"
     ctx = _minimal_ctx(

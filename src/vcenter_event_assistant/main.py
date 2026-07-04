@@ -37,6 +37,7 @@ from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.logging_config import configure_logging
 from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import bind_settings
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,12 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
-    await init_db()
-    await ensure_vcenter_password_storage()
-    await run_screenshot_e2e_seed_if_enabled()
     settings = get_settings()
+    await init_db(settings=settings)
+    await ensure_vcenter_password_storage(settings=settings)
+    await run_screenshot_e2e_seed_if_enabled()
     if settings.scheduler_enabled:
-        setup_scheduler(app)
+        setup_scheduler(app, settings)
     yield
     shutdown_scheduler(app)
 
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
         ルーター・ミドルウェア・（存在すれば）フロントエンド静的配信を設定したアプリ。
     """
     settings = get_settings()
+    bind_settings(settings)
     configure_logging(settings)
     app = FastAPI(title="vCenter Event Assistant", lifespan=lifespan)
 

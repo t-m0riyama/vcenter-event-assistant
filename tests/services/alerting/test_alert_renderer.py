@@ -1,9 +1,10 @@
 from vcenter_event_assistant.services.alerting.notification.renderer import NotificationRenderer
 from vcenter_event_assistant.db.models import AlertRule, AlertState
+from vcenter_event_assistant.settings import get_settings
 from datetime import datetime, timezone
 
 def test_render_firing_alert():
-    renderer = NotificationRenderer()
+    renderer = NotificationRenderer(get_settings())
     rule = AlertRule(name="High CPU", rule_type="metric_threshold")
     state = AlertState(
         state="firing",
@@ -31,7 +32,7 @@ def test_render_firing_alert():
     assert "95%" in body
 
 def test_render_resolved_alert():
-    renderer = NotificationRenderer()
+    renderer = NotificationRenderer(get_settings())
     rule = AlertRule(name="High CPU", rule_type="metric_threshold")
     state = AlertState(
         state="resolved",

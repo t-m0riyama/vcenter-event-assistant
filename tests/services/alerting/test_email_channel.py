@@ -19,7 +19,7 @@ async def test_email_channel_send_success(monkeypatch):
     monkeypatch.setenv("SMTP_PASSWORD", "pass")
     monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
     
-    channel = EmailChannel()
+    channel = EmailChannel(get_settings())
     rule = AlertRule(name="Test Rule")
     state = AlertState(state="firing")
     
@@ -38,7 +38,7 @@ async def test_email_channel_send_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_email_channel_skips_if_no_host(monkeypatch, caplog):
     monkeypatch.setenv("SMTP_HOST", "")
-    channel = EmailChannel()
+    channel = EmailChannel(get_settings())
     await channel.notify(AlertRule(), AlertState(), "S", "B")
     assert "SMTP_HOST is not set" in caplog.text
 
@@ -47,7 +47,7 @@ async def test_email_channel_fails_on_smtp_error(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
     monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
     
-    channel = EmailChannel()
+    channel = EmailChannel(get_settings())
     with patch("smtplib.SMTP") as mock_smtp:
         instance = mock_smtp.return_value.__enter__.return_value
         instance.send_message.side_effect = Exception("SMTP Error")

@@ -27,7 +27,8 @@ from vcenter_event_assistant.services.llm.llm_profile import (
     resolve_llm_profile,
 )
 from vcenter_event_assistant.services.llm.llm_invoke import log_llm_failure, stream_chat_to_text
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 _logger = logging.getLogger(__name__)
 
@@ -57,12 +58,14 @@ def build_chat_preview(
     event_time_buckets: EventTimeBucketsPayload | None = None,
     incident_timeline: IncidentTimelinePayload | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
+    settings: Settings | None = None,
 ) -> tuple[str, list[ChatMessage], ChatLlmContextMeta | None]:
     """
     LLM API を呼び出さずに、送出するコンテキストブロックと会話履歴を準備する。
     Returns:
         (context_block_string, trimmed_messages, llm_context_meta)
     """
+    s = settings or require_settings()
     block, trimmed, meta, _ = build_chat_llm_context(
         context,
         messages,
@@ -70,7 +73,7 @@ def build_chat_preview(
         event_time_buckets,
         incident_timeline,
         extra_vcenter_strings,
-        settings=get_settings(),
+        settings=s,
     )
     return block, trimmed, meta
 
@@ -84,6 +87,7 @@ async def run_period_chat(
     incident_timeline: IncidentTimelinePayload | None = None,
     runnable_config: RunnableConfig | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
+    settings: Settings | None = None,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None, int | None, float | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
@@ -101,8 +105,8 @@ async def run_period_chat(
         チャット LLM が未設定のとき（``is_chat_llm_configured`` が False）は ("", None, None, None, None)。
         LLM 呼び出し前までに確定する統計は、HTTP 失敗時も第 3 要素に返す。
     """
-    settings = get_settings()
-    if not is_chat_llm_configured(settings):
+    s = settings or require_settings()
+    if not is_chat_llm_configured(s):
         return ("", None, None, None, None)
 
     block, trimmed, meta, reverse_map = build_chat_llm_context(
@@ -112,11 +116,11 @@ async def run_period_chat(
         event_time_buckets,
         incident_timeline,
         extra_vcenter_strings,
-        settings=settings,
+        settings=s,
     )
 
     try:
-        cprof = resolve_llm_profile(settings, purpose="chat")
+        cprof = resolve_llm_profile(s, purpose="chat")
         _logger.info(
             "chat LLM リクエスト est_input_tokens=%s json_chars=%s json_truncated=%s message_turns=%s "
             "timeout_seconds=%s model=%s max_input_tokens=%s",
@@ -126,12 +130,12 @@ async def run_period_chat(
             meta.message_turns,
             cprof.timeout_seconds,
             cprof.model,
-            settings.llm_chat_max_input_tokens,
+            s.llm_chat_max_input_tokens,
         )
         if cprof.provider == "copilot_cli":
             start_time = time.perf_counter()
             text = await run_copilot_cli_chat_completion(
-                settings,
+                s,
                 system_prompt=CHAT_SYSTEM_PROMPT,
                 block=block,
                 messages=trimmed,
@@ -148,12 +152,12 @@ async def run_period_chat(
                 except Exception:
                     pass
         else:
-            model = build_chat_model(settings, purpose="chat", config=runnable_config)
+            model = build_chat_model(s, purpose="chat", config=runnable_config)
             lc_messages = _to_langchain_messages(block, trimmed)
             text, latency_ms, token_per_sec = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         text = deanonymize_text(text.strip(), reverse_map)
         return (text, None, meta, latency_ms, token_per_sec)
     except Exception as e:
-        log_llm_failure(settings, "chat", e)
+        log_llm_failure(s, "chat", e)
         detail = _llm_failure_detail_for_user(e)
         return ("", f"チャット応答を取得できませんでした（{detail}）", meta, None, None)

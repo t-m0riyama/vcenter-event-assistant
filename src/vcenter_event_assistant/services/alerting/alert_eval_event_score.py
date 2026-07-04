@@ -17,7 +17,7 @@ from vcenter_event_assistant.services.alerting.alert_eval_event_score_config imp
     merge_latest_qualifying_by_event_type,
     parse_event_score_rule_config,
 )
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger("vcenter_event_assistant.services.alerting.alert_eval")
 
@@ -31,6 +31,8 @@ class AlertNotifyProtocol(Protocol):
 async def evaluate_event_score_rule(
     notify: AlertNotifyProtocol,
     rule: AlertRule,
+    *,
+    settings: Settings,
 ) -> tuple[int, int]:
     """event_score ルールを 1 件評価する。"""
     parsed = parse_event_score_rule_config(rule.config)
@@ -38,7 +40,6 @@ async def evaluate_event_score_rule(
         logger.warning("event_score rule=%s id=%s: invalid config", rule.name, rule.id)
         return 0, 0
 
-    settings = get_settings()
     lookback_hours = settings.alert_event_eval_lookback_hours
     now = datetime.now(timezone.utc)
     window_start = event_eval_window_start(now=now, lookback_hours=lookback_hours)

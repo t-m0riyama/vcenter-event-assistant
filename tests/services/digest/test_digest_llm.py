@@ -38,7 +38,7 @@ def _minimal_ctx() -> DigestContext:
 
 def _patch_digest_llm_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.digest.digest_llm.get_settings",
+        "vcenter_event_assistant.services.digest.digest_llm.require_settings",
         lambda: settings,
     )
 
