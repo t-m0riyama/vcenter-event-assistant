@@ -72,7 +72,6 @@ const SETTINGS_SUBTABS: SubTabConfig[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('summary')
-  const [timelineInitialVcenterId, setTimelineInitialVcenterId] = useState<string>('')
   const [metricsSnapshotReplay, setMetricsSnapshotReplay] =
     useState<IncidentTimelineManualSnapshotListItem | null>(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
@@ -177,12 +176,6 @@ export default function App() {
               <MetricsPanel
                 onError={setErr}
                 perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
-                onNavigateToTimeline={({ vcenterId }) => {
-                  setTimelineInitialVcenterId(vcenterId)
-                  setTab('timeline')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
                 snapshotReplay={
                   metricsSnapshotReplay
                     ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
@@ -197,7 +190,6 @@ export default function App() {
           {tab === 'timeline' && (
             <TimelinePanel
               onError={setErr}
-              initialVcenterId={timelineInitialVcenterId}
               onOpenSnapshotInMetrics={(item) => {
                 setMetricsSnapshotReplay(item)
                 setMetricsReplayNonce((n) => n + 1)
