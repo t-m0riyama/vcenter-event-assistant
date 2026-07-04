@@ -13,6 +13,48 @@ from vcenter_event_assistant.db.session import session_scope
 
 
 @pytest.mark.asyncio
+async def test_vcenter_create_rejects_password_with_storage_prefix(client: AsyncClient) -> None:
+    """暗号化ストレージ形式のプレフィックス ``enc:`` で始まるパスワードは拒否する。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "bad-password",
+            "host": "vc.example.local",
+            "protocol": "https",
+            "port": 443,
+            "username": "admin",
+            "password": "enc:looks-like-ciphertext",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_vcenter_patch_rejects_password_with_storage_prefix(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "patch-target",
+            "host": "vc.example.local",
+            "protocol": "https",
+            "port": 443,
+            "username": "admin",
+            "password": "secret",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = r.json()["id"]
+
+    p = await client.patch(
+        f"/api/vcenters/{vid}",
+        json={"password": "enc:bad"},
+    )
+    assert p.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_vcenter_crud(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",

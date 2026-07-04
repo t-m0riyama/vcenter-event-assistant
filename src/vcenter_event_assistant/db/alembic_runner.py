@@ -6,13 +6,12 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
-
-ALEMBIC_HEAD = "p2q3r4s5t6u7"
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -27,6 +26,20 @@ def alembic_config(*, settings: Settings | None = None) -> Config:
     cfg = Config(str(_PROJECT_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", s.database_url)
     return cfg
+
+
+def get_alembic_head(*, settings: Settings | None = None) -> str:
+    """リポジトリ上の Alembic head リビジョン ID を返す。
+
+    Raises:
+        RuntimeError: head が 0 個または複数ある。
+    """
+    script = ScriptDirectory.from_config(alembic_config(settings=settings))
+    heads = script.get_heads()
+    if len(heads) != 1:
+        msg = f"expected exactly one Alembic head, got {heads!r}"
+        raise RuntimeError(msg)
+    return heads[0]
 
 
 def _run_with_connection(sync_conn: object, cfg: Config, fn) -> None:

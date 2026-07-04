@@ -8,13 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vcenter_event_assistant.db.alembic_runner import (
     LegacySchemaStampError,
+    get_alembic_head,
     get_applied_alembic_revision,
 )
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
-
-ALEMBIC_HEAD = "p2q3r4s5t6u7"
 
 
 async def _alert_states_column_names(engine: AsyncEngine) -> list[str]:
@@ -33,7 +32,7 @@ async def test_init_db_sets_alembic_head_on_fresh_db() -> None:
 
     engine = get_engine()
     revision = await get_applied_alembic_revision(engine)
-    assert revision == ALEMBIC_HEAD
+    assert revision == get_alembic_head()
 
     async with engine.connect() as conn:
 
@@ -63,7 +62,7 @@ async def test_init_db_adds_alert_states_last_notified_at_on_legacy_schema(
     engine = get_engine()
     cols = await _alert_states_column_names(engine)
     assert "last_notified_at" in cols
-    assert await get_applied_alembic_revision(engine) == ALEMBIC_HEAD
+    assert await get_applied_alembic_revision(engine) == get_alembic_head()
 
     async with engine.begin() as conn:
         await conn.execute(
@@ -98,7 +97,7 @@ async def test_init_db_adds_alert_states_last_notified_at_on_legacy_schema(
 
     cols_after = await _alert_states_column_names(engine)
     assert "last_notified_at" in cols_after
-    assert await get_applied_alembic_revision(engine) == ALEMBIC_HEAD
+    assert await get_applied_alembic_revision(engine) == get_alembic_head()
 
     await reset_db()
 
