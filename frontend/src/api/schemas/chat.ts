@@ -12,6 +12,8 @@ export const chatMessageSchema = z.object({
   created_at: z.string().optional(),
   latency_ms: z.number().nullable().optional(),
   token_per_sec: z.number().nullable().optional(),
+  /** クライアント側の送信トラッキング用（API には送らない） */
+  client_request_id: z.string().optional(),
 })
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>

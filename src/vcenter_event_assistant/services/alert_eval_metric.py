@@ -67,19 +67,23 @@ async def evaluate_metric_threshold_rule(
 
             if is_above:
                 if not current or current.state == "resolved":
-                    new_state = AlertState(
-                        rule_id=rule.id,
-                        state="firing",
-                        context_key=moid,
-                        fired_at=sample.sampled_at,
-                    )
-                    session.add(new_state)
-                    if current:
-                        await session.delete(current)
+                    if not current:
+                        notify_state = AlertState(
+                            rule_id=rule.id,
+                            state="firing",
+                            context_key=moid,
+                            fired_at=sample.sampled_at,
+                        )
+                        session.add(notify_state)
+                    else:
+                        current.state = "firing"
+                        current.fired_at = sample.sampled_at
+                        current.resolved_at = None
+                        notify_state = current
                     await session.flush()
                     await notify._notify(
                         rule,
-                        new_state,
+                        notify_state,
                         {
                             "details": (
                                 f"Metric {metric_key} reached {sample.value} "

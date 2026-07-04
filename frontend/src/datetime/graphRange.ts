@@ -1,3 +1,4 @@
+import { parseApiUtcInstantMs } from './formatIsoInTimeZone'
 import {
   isValidUtcRangeOrder,
   zonedLocalDateTimeToUtcIso,
@@ -10,6 +11,14 @@ import {
 export type EventRangeResolve =
   | { ok: true; from?: string; to?: string }
   | { ok: false; message: string }
+
+/** `T23:59` の終了入力をその壁時計分の末尾（+59秒）まで含める。 */
+function utcIsoThroughEndOfWallMinute(wallInput: string, utcIso: string): string {
+  if (!wallInput.endsWith('T23:59')) return utcIso
+  const ms = parseApiUtcInstantMs(utcIso)
+  if (!Number.isFinite(ms)) return utcIso
+  return new Date(ms + 59_000).toISOString()
+}
 
 /**
  * Maps optional wall-clock range inputs (display time zone) to API `from` / `to` UTC ISO strings.
@@ -44,7 +53,7 @@ export function resolveEventApiRange(
           '終了の日付・時刻が解釈できないか、この時刻は存在しません（例: サマータイムの欠落時刻）。日付と時刻を確認してください。',
       }
     }
-    toUtc = iso
+    toUtc = utcIsoThroughEndOfWallMinute(rt, iso)
   }
   if (fromUtc && toUtc && !isValidUtcRangeOrder(fromUtc, toUtc)) {
     return { ok: false, message: '開始は終了より前の時刻にしてください。' }

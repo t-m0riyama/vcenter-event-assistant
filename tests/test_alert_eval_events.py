@@ -376,6 +376,58 @@ async def test_evaluate_event_score_does_not_renotify_after_cooldown_without_new
 
 
 @pytest.mark.asyncio
+async def test_evaluate_event_score_refires_by_updating_resolved_state() -> None:
+    async with session_scope() as session:
+        vc = VCenter(name="vc_upsert", host="h", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Upsert Refire",
+            rule_type="event_score",
+            config={"threshold": 60, "cooldown_minutes": 5},
+        )
+        session.add(rule)
+        await session.flush()
+        now = datetime.now(timezone.utc)
+        existing = AlertState(
+            rule_id=rule.id,
+            state="resolved",
+            context_key="vim.event.E1",
+            fired_at=now - timedelta(hours=2),
+            resolved_at=now - timedelta(hours=1),
+        )
+        session.add(existing)
+        session.add(
+            EventRecord(
+                vcenter_id=vc.id,
+                occurred_at=now - timedelta(minutes=1),
+                event_type="vim.event.E1",
+                vmware_key=1,
+                notable_score=70,
+            )
+        )
+        await session.flush()
+        state_id = existing.id
+        rule_id = rule.id
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.call_count == 1
+
+    async with session_scope() as session:
+        from sqlalchemy import select
+
+        states = (
+            await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
+        ).scalars().all()
+        assert len(states) == 1
+        assert states[0].id == state_id
+        assert states[0].state == "firing"
+        assert states[0].resolved_at is None
+
+
+@pytest.mark.asyncio
 async def test_evaluate_event_score_firing_notify_uses_event_type_in_context_key() -> None:
     """メール件名の Resource（context_key）にイベント種別が出ること。"""
     async with session_scope() as session:

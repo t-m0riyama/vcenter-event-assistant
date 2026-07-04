@@ -60,6 +60,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const storageWriteErrorReportedRef = useRef(false)
   const skipMaxTrimOnMountRef = useRef(true)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const sendInFlightRef = useRef(false)
 
   useEffect(() => {
     void (async () => {
@@ -172,7 +173,15 @@ export function useChatPanelController(onError: (e: string | null) => void) {
               metricThresholdNetworkPct: thresholdFields.metricThresholdNetworkPct,
             },
           }),
-          messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES),
+          messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES).map(
+            ({ role, content, created_at, latency_ms, token_per_sec }) => ({
+              role,
+              content,
+              ...(created_at !== undefined ? { created_at } : {}),
+              ...(latency_ms !== undefined ? { latency_ms } : {}),
+              ...(token_per_sec !== undefined ? { token_per_sec } : {}),
+            }),
+          ),
         },
       }
     },
@@ -193,10 +202,19 @@ export function useChatPanelController(onError: (e: string | null) => void) {
 
   const send = useCallback(async () => {
     const text = draft.trim()
-    if (!text) return
+    if (!text || sendInFlightRef.current) return
 
+    const requestId = crypto.randomUUID()
     const nextMessages = trimChatMessagesToMax(
-      [...messages, { role: 'user', content: text, created_at: new Date().toISOString() }],
+      [
+        ...messages,
+        {
+          role: 'user',
+          content: text,
+          created_at: new Date().toISOString(),
+          client_request_id: requestId,
+        },
+      ],
       chatMaxStoredMessages,
     )
     const built = buildChatRequestBody(nextMessages)
@@ -209,6 +227,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     setMessages(nextMessages)
     setDraft('')
     setDebouncedDraft('')
+    sendInFlightRef.current = true
     setLoading(true)
     try {
       const raw = await apiPost<unknown>('/api/chat', built.body)
@@ -249,8 +268,9 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       }
     } catch (e) {
       onError(toErrorMessage(e))
-      setMessages((m) => m.slice(0, -1))
+      setMessages((m) => m.filter((msg) => msg.client_request_id !== requestId))
     } finally {
+      sendInFlightRef.current = false
       setLoading(false)
     }
   }, [draft, messages, onError, buildChatRequestBody, chatMaxStoredMessages])
