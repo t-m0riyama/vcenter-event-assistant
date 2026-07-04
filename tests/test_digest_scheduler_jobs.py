@@ -48,3 +48,16 @@ def test_add_digest_cron_jobs_all_three_enabled() -> None:
     sched = AsyncIOScheduler()
     add_digest_cron_jobs(sched, s)
     assert _digest_job_ids(sched) == {"digest_daily", "digest_weekly", "digest_monthly"}
+
+
+def test_add_digest_cron_jobs_use_coalesce_and_max_instances_one() -> None:
+    s = Settings(
+        digest_daily_enabled=True,
+        digest_weekly_enabled=True,
+        digest_monthly_enabled=True,
+    )
+    sched = AsyncIOScheduler()
+    add_digest_cron_jobs(sched, s)
+    for job in sched.get_jobs():
+        assert job.coalesce is True
+        assert job.max_instances == 1
