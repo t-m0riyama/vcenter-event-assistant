@@ -5,20 +5,134 @@
 
 ### データベースマイグレーション（Alembic）
 
-起動時の `init_db()` は **Alembic `upgrade head` のみ**でスキーマを最新化する（`alembic_version` 未作成の旧 DB は列 fingerprint で `stamp` 後に upgrade。曖昧な場合は起動 abort）。空 DB は stamp せず `upgrade head` で全テーブルを作成する。
+#### 運用ルール
 
-手動でマイグレーションする場合:
+**スキーマ変更は Alembic リビジョン追加のみ**で行う。次は **行わない**（2-1 で廃止済み）。
+
+- `Base.metadata.create_all` を起動時に呼ぶ
+- `session.py` 等に手書きの `_ensure_*` 列追加関数を足す
+- モデルだけ変更して Alembic を更新しない
+
+モデルを [`src/vcenter_event_assistant/db/models.py`](../src/vcenter_event_assistant/db/models.py) で変更したら、必ず `alembic/versions/` にリビジョンを追加し、PR では **モデルとマイグレーションをセット**でレビューする。起動時は [`init_db()`](../src/vcenter_event_assistant/db/session.py) が Alembic **`upgrade head` のみ**を実行する。
+
+#### 起動時の `init_db()` の挙動
+
+| DB の状態 | 処理 |
+| --- | --- |
+| `alembic_version` あり | `upgrade head` のみ（未適用リビジョンがあれば適用） |
+| 空 DB（テーブルなし） | stamp せず `upgrade head`（全テーブル作成） |
+| 旧 DB（`alembic_version` なし・`vcenters` 等あり） | 列 fingerprint で stamp → `upgrade head` |
+| fingerprint が曖昧 | **起動 abort**（`LegacySchemaStampError`） |
+
+fingerprint は次の 3 列の有無で stamp 先を推定する（[`alembic_runner.py`](../src/vcenter_event_assistant/db/alembic_runner.py)）。
+
+| `events.user_comment` | `event_type_guides.action_required` | `alert_states.last_notified_at` | stamp 先リビジョン |
+| --- | --- | --- | --- |
+| あり | あり | あり | `k4l5m6n7o8p9`（head） |
+| あり | あり | なし | `j3k4l5m6n7o8` |
+| あり | なし | なし | `b2c3d4e5f6a7` |
+| なし | なし | なし | `c4d27748ae50` |
+
+上記以外の組み合わせは自動 stamp できない。**バックアップから復元**するか、スキーマを確認のうえ手動で `alembic stamp` する（下記「トラブルシューティング」）。
+
+#### モデル変更の開発手順
+
+1. `models.py` を編集する。
+2. リビジョンを生成する（内容は必ず目視確認する）。
 
 ```bash
 export DATABASE_URL=sqlite+aiosqlite:///./data/vea.db   # または PostgreSQL URL
+uv run alembic revision --autogenerate -m "describe_change"
+```
+
+3. 生成された `alembic/versions/*.py` をレビューし、不要な drop/create が無いか確認する。
+4. ローカル DB で適用する。
+
+```bash
 uv run alembic upgrade head
 ```
 
-新しいリビジョンを作成する場合（モデル変更後）は次を実行する。
+5. `uv run pytest -q`（特に [`tests/test_db_session_migrations.py`](../tests/test_db_session_migrations.py)）を実行する。
+
+手動でマイグレーションのみ実行する場合も同じく `upgrade head` を使う。
 
 ```bash
-uv run alembic revision --autogenerate -m "describe_change"
+export DATABASE_URL=sqlite+aiosqlite:///./data/vea.db
+uv run alembic upgrade head
 ```
+
+現在の head リビジョン ID は `uv run alembic heads` で確認できる（コード上の定数は `ALEMBIC_HEAD`）。
+
+#### 既存 DB を新バージョンに上げる前（バックアップ必須）
+
+**Grilling 決定:** 本番・ステージングなど **既存データを持つ DB** をアップグレードする前に、必ずバックアップを取る。起動時の自動 stamp / upgrade は通常成功するが、失敗時や曖昧 fingerprint 時に復旧できるようにする。
+
+**SQLite（ローカル `./data/vea.db`）**
+
+1. アプリ（または `docker compose`）を停止する。
+2. DB ファイルをコピーする。
+
+```bash
+mkdir -p backup
+cp ./data/vea.db "./backup/vea.db.$(date +%Y%m%d-%H%M%S).bak"
+```
+
+**SQLite（Docker Compose・ボリューム `vea_data`）**
+
+1. `docker compose stop` で app を止める。
+2. ボリュームからファイルを退避する（例）。
+
+```bash
+mkdir -p backup
+docker run --rm \
+  -v "$(docker volume ls -q | grep vea_data | head -1):/data:ro" \
+  -v "$(pwd)/backup:/backup" \
+  alpine cp /data/vea.db "/backup/vea.db.$(date +%Y%m%d-%H%M%S).bak"
+```
+
+ボリューム名は環境により `プロジェクト名_vea_data` になる。`docker volume ls` で確認する。
+
+**PostgreSQL**
+
+1. アプリを停止する（書き込みを止める）。
+2. 論理ダンプを取得する。
+
+```bash
+export DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/vcenter_event_assistant
+# 接続情報に合わせて pg_dump（asyncpg URL ではなく libpq 形式）
+pg_dump -h localhost -U user -d vcenter_event_assistant -Fc -f "./backup/vea-$(date +%Y%m%d-%H%M%S).dump"
+```
+
+復元例（SQLite）: アプリ停止 → 問題の `vea.db` を退避 → バックアップを `data/vea.db` に戻す → 再起動。
+
+#### バージョンアップ手順（運用）
+
+1. 上記のとおり **バックアップ**を取る。
+2. 新しいイメージ／コードをデプロイし、アプリを起動する（lifespan 内の `init_db()` が `upgrade head` を実行）。
+3. 起動ログに `LegacySchemaStampError` が無いことを確認する。
+4. 必要なら `GET /health` および主要画面で DB 参照が成功することを確認する。
+
+手動のみ適用する場合は、バックアップ後に `DATABASE_URL` を設定して `uv run alembic upgrade head` を実行してから起動してもよい。
+
+#### トラブルシューティング
+
+**起動時に `LegacySchemaStampError`（fingerprint 曖昧）**
+
+- ログに `user_comment` / `action_required` / `last_notified_at` の有無が出る。手動で列を追加・削除した DB、または部分マイグレーション状態の可能性がある。
+- **バックアップから復元**し、スキーマを Alembic 履歴と一致させる。
+- 復元後も解決しない場合は、実スキーマに合うリビジョンを特定し、**バックアップを取ったうえで**手動 stamp する。
+
+```bash
+export DATABASE_URL=...
+uv run alembic stamp <revision_id>   # 例: k4l5m6n7o8p9
+uv run alembic upgrade head
+```
+
+stamp は「この DB は既にそのリビジョン相当のスキーマである」と Alembic に記録する操作であり、**スキーマを自動修正しない**。stamp 先を誤ると以降の `upgrade` が失敗するため、不明な場合はバックアップ復元を優先する。
+
+**`alembic_version` と実スキーマがずれた**
+
+- 同様にバックアップ復元 → 正しいリビジョンへの stamp → `upgrade head`、またはクリーン DB への再構築（データ移行が別途必要）を検討する。
 
 ### 開発・テストコマンド
 
