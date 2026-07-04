@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useCallback } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../api'
 import {
   alertRuleRowSchema,
@@ -16,6 +16,7 @@ import { KNOWN_METRIC_KEYS } from '../../metrics/knownMetricKeys'
 import { DEFAULT_ALERT_METRIC_KEY } from './alertRuleDefaults'
 import { ALERT_RULES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmDestructiveImport'
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
+import { useSettingsListFetch } from './useSettingsListCrud'
 import './AlertRulesPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -45,8 +46,17 @@ interface EditDraft {
  * アラートルールの一覧・新規作成・レベル変更（PATCH）・有効切替・削除を行う設定パネル。
  */
 export function AlertRulesPanel({ onError }: { onError: (msg: string) => void }) {
-  const [rules, setRules] = useState<AlertRule[]>([])
-  const [loading, setLoading] = useState(true)
+  const fetchList = useCallback(async () => {
+    const data = await apiGet<unknown>('/api/alerts/rules')
+    const parsed = alertRuleRowSchema.array().parse(data)
+    return parsed as AlertRule[]
+  }, [])
+
+  const { list: rules, loading, load: fetchRules } = useSettingsListFetch({
+    onError,
+    fetchList,
+  })
+
   const [isAdding, setIsAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<'event_score' | 'metric_threshold'>('event_score')
@@ -55,23 +65,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newMetricKey, setNewMetricKey] = useState<string>(DEFAULT_ALERT_METRIC_KEY)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [drafts, setDrafts] = useState<Record<number, EditDraft>>({})
-
-  const fetchRules = useCallback(async () => {
-    try {
-      onError('')
-      const data = await apiGet<unknown>('/api/alerts/rules')
-      const parsed = alertRuleRowSchema.array().parse(data)
-      setRules(parsed as AlertRule[])
-    } catch (e) {
-      onError(toErrorMessage(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [onError])
-
-  useEffect(() => {
-    fetchRules()
-  }, [fetchRules])
 
   const importExport = useSettingsJsonImportExport({
     exportFilenamePrefix: 'vea-alert-rules',
