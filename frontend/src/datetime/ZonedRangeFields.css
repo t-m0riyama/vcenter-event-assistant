@@ -1,0 +1,21 @@
+.zoned-range-fields {
+  margin-top: var(--spacing-3);
+}
+
+.zoned-range-fields__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-top: var(--spacing-3);
+}
+
+.zoned-range-fields__presets-label {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+}
+
+.zoned-range-fields__date input[type='date'],
+.zoned-range-fields__time input[type='time'] {
+  min-width: 9rem;
+}

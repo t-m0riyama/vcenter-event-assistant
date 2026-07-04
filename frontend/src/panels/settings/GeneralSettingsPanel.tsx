@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './GeneralSettingsPanel.css'
 import { TimeZoneSelect } from '../../datetime/TimeZoneProvider'
 import {
   CHAT_MAX_STORED_MESSAGES_MAX,
