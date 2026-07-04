@@ -17,7 +17,7 @@ from vcenter_event_assistant.db.base import Base
 
 config = context.config
 
-if config.config_file_name is not None:
+if config.config_file_name is not None and not config.attributes.get("skip_file_config"):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
@@ -71,6 +71,10 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
+    connectable = config.attributes.get("connection")
+    if connectable is not None:
+        do_run_migrations(connectable)
+        return
     asyncio.run(run_async_migrations())
 
 

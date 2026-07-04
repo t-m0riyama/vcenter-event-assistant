@@ -13,7 +13,6 @@ from sqlalchemy.pool import StaticPool
 from vcenter_event_assistant.db.base import Base
 from vcenter_event_assistant.settings import Settings, get_settings
 
-
 def _sqlite_enable_foreign_keys(dbapi_connection, _connection_record) -> None:
     """SQLite requires per-connection PRAGMA for FK enforcement."""
     cursor = dbapi_connection.cursor()
@@ -182,19 +181,38 @@ async def _ensure_alert_states_last_notified_at_column(engine: AsyncEngine) -> N
 
 
 async def init_db(settings: Settings | None = None) -> None:
-    """スキーマを作成し、旧 DB 向けの列追加マイグレーションを適用する。
+    """Alembic でスキーマを最新化し、旧 DB 向けの列追加マイグレーションを適用する。
 
-    ``create_all`` 後に ``events.user_comment`` 等の欠落列を dialect 別に追加する。
+    - ``alembic_version`` あり: ``upgrade head`` のみ
+    - 空 DB: ``upgrade head``（新規作成）
+    - 旧 DB（``alembic_version`` なし）: 列 fingerprint で ``stamp`` 後 ``upgrade head``
+      （曖昧な場合は :class:`LegacySchemaStampError` で起動 abort）
+    - 移行完了までの安全網として ``_ensure_*`` も引き続き実行する（2-1b で削除予定）
 
     Args:
         settings: 未指定時は ``get_settings()`` を使用する。
     """
-    # すべてのモデルを Base.metadata に登録してから create_all する
     import vcenter_event_assistant.db.models  # noqa: F401
+
+    from vcenter_event_assistant.db.alembic_runner import (
+        ALEMBIC_HEAD,
+        alembic_stamp,
+        alembic_upgrade_head,
+        get_applied_alembic_revision,
+        infer_legacy_stamp_revision,
+    )
 
     engine = get_engine(settings=settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    applied = await get_applied_alembic_revision(engine)
+    if applied is None:
+        stamp_revision = await infer_legacy_stamp_revision(engine)
+        if stamp_revision is None:
+            stamp_revision = ALEMBIC_HEAD
+        await alembic_stamp(engine, stamp_revision, settings=settings)
+    await alembic_upgrade_head(engine, settings=settings)
     await _ensure_events_user_comment_column(engine)
     await ensure_event_type_guides_action_required_column(engine)
     await _ensure_alert_states_last_notified_at_column(engine)
