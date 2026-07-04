@@ -22,6 +22,7 @@ uv run alembic revision --autogenerate -m "describe_change"
 
 ```bash
 uv run ruff check src tests
+uv run mypy
 uv run pytest -q
 ```
 
@@ -41,10 +42,10 @@ CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗
 
 | 変更内容 | 最低限 | CI と揃える（推奨） |
 |----------|--------|---------------------|
-| `tests/` を触った | `uv run ruff check tests/` | `uv run ruff check src tests` |
-| `src/` のみ | `uv run ruff check src` | `uv run ruff check src tests` |
+| `tests/` を触った | `uv run ruff check tests/` | `uv run ruff check src tests` + `uv run mypy` |
+| `src/` のみ | `uv run ruff check src` + `uv run mypy` | `uv run ruff check src tests` + `uv run mypy` |
 | `frontend/` を触った | `cd frontend && npm run test` | `cd frontend && npm run test:coverage` |
-| 広く変更 | — | `uv run ruff check src tests` |
+| 広く変更 | — | `uv run ruff check src tests` + `uv run mypy` |
 
 あわせて関連 pytest を実行する（例: `uv run pytest tests/test_alert_eval_events.py -q`）。
 

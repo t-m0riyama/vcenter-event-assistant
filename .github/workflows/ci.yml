@@ -17,6 +17,7 @@ jobs:
         run: |
           uv sync --all-groups
           uv run ruff check src tests
+          uv run mypy
           uv run pytest
 
   frontend-unit:
