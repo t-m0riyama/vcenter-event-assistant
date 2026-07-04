@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,25 @@ from vcenter_event_assistant.db.models import EventRecord, IngestionState, Metri
 from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 from vcenter_event_assistant.settings import get_settings
+
+
+async def _insert_on_conflict_do_nothing(
+    session: AsyncSession,
+    model: type[Any],
+    values: dict[str, Any],
+    *,
+    index_elements: list[str],
+):
+    """PostgreSQL / SQLite 向け INSERT ... ON CONFLICT DO NOTHING を実行する。"""
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+
+    stmt = dialect_insert(model).values(**values).on_conflict_do_nothing(
+        index_elements=index_elements
+    )
+    return await session.execute(stmt)
 
 
 async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> int:
@@ -46,15 +66,6 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
     deltas = await load_event_score_delta_map(session)
     inserted = 0
     for r in normalized:
-        exists = await session.execute(
-            select(EventRecord.id).where(
-                EventRecord.vcenter_id == vcenter.id,
-                EventRecord.vmware_key == int(r["vmware_key"]),
-            )
-        )
-        if exists.scalar_one_or_none() is not None:
-            continue
-
         nr = score_event(
             event_type=r["event_type"],
             severity=r.get("severity"),
@@ -62,22 +73,26 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
         )
         delta = deltas.get(r["event_type"], 0)
         final_score = clamp_notable_total(nr.score, delta)
-        ev = EventRecord(
-            vcenter_id=vcenter.id,
-            occurred_at=r["occurred_at"],
-            event_type=r["event_type"],
-            message=r["message"],
-            severity=r.get("severity"),
-            user_name=r.get("user_name"),
-            entity_name=r.get("entity_name"),
-            entity_type=r.get("entity_type"),
-            vmware_key=int(r["vmware_key"]),
-            chain_id=r.get("chain_id"),
-            notable_score=final_score,
-            notable_tags=nr.tags,
+        result = await _insert_on_conflict_do_nothing(
+            session,
+            EventRecord,
+            {
+                "vcenter_id": vcenter.id,
+                "occurred_at": r["occurred_at"],
+                "event_type": r["event_type"],
+                "message": r["message"],
+                "severity": r.get("severity"),
+                "user_name": r.get("user_name"),
+                "entity_name": r.get("entity_name"),
+                "entity_type": r.get("entity_type"),
+                "vmware_key": int(r["vmware_key"]),
+                "chain_id": r.get("chain_id"),
+                "notable_score": final_score,
+                "notable_tags": nr.tags,
+            },
+            index_elements=["vcenter_id", "vmware_key"],
         )
-        session.add(ev)
-        inserted += 1
+        inserted += result.rowcount or 0
 
     if row is None:
         row = IngestionState(vcenter_id=vcenter.id, kind="events", cursor_value=None)
@@ -109,27 +124,21 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
 
     inserted = 0
     for r in rows:
-        dup = await session.execute(
-            select(MetricSample.id).where(
-                MetricSample.vcenter_id == vcenter.id,
-                MetricSample.sampled_at == r["sampled_at"],
-                MetricSample.entity_moid == r["entity_moid"],
-                MetricSample.metric_key == r["metric_key"],
-            )
+        result = await _insert_on_conflict_do_nothing(
+            session,
+            MetricSample,
+            {
+                "vcenter_id": vcenter.id,
+                "sampled_at": r["sampled_at"],
+                "entity_type": r["entity_type"],
+                "entity_moid": r["entity_moid"],
+                "entity_name": r["entity_name"],
+                "metric_key": r["metric_key"],
+                "value": float(r["value"]),
+            },
+            index_elements=["vcenter_id", "sampled_at", "entity_moid", "metric_key"],
         )
-        if dup.scalar_one_or_none() is not None:
-            continue
-        ms = MetricSample(
-            vcenter_id=vcenter.id,
-            sampled_at=r["sampled_at"],
-            entity_type=r["entity_type"],
-            entity_moid=r["entity_moid"],
-            entity_name=r["entity_name"],
-            metric_key=r["metric_key"],
-            value=float(r["value"]),
-        )
-        session.add(ms)
-        inserted += 1
+        inserted += result.rowcount or 0
     return inserted
 
 
