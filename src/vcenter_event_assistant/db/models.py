@@ -26,9 +26,18 @@ class VCenter(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
-    events: Mapped[list["EventRecord"]] = relationship(back_populates="vcenter")
-    metric_samples: Mapped[list["MetricSample"]] = relationship(back_populates="vcenter")
-    ingestion_states: Mapped[list["IngestionState"]] = relationship(back_populates="vcenter")
+    events: Mapped[list["EventRecord"]] = relationship(
+        back_populates="vcenter",
+        passive_deletes=True,
+    )
+    metric_samples: Mapped[list["MetricSample"]] = relationship(
+        back_populates="vcenter",
+        passive_deletes=True,
+    )
+    ingestion_states: Mapped[list["IngestionState"]] = relationship(
+        back_populates="vcenter",
+        passive_deletes=True,
+    )
 
 
 class EventRecord(Base):
