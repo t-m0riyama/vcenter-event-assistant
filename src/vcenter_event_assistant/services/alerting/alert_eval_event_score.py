@@ -4,35 +4,25 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Protocol
 
 from sqlalchemy import select
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState, EventRecord
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.alerting.alert_eval_common import as_utc
+from vcenter_event_assistant.services.alerting.alert_eval_common import AlertEvaluationDeps, as_utc
 from vcenter_event_assistant.services.alerting.alert_eval_event_score_config import (
     event_eval_window_start,
     event_score_should_notify,
     merge_latest_qualifying_by_event_type,
     parse_event_score_rule_config,
 )
-from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger("vcenter_event_assistant.services.alerting.alert_eval")
 
 
-class AlertNotifyProtocol(Protocol):
-    """イベントスコア評価から通知送信へ委譲するためのプロトコル。"""
-
-    async def _notify(self, rule: AlertRule, state: AlertState, extra_context: dict) -> None: ...
-
-
 async def evaluate_event_score_rule(
-    notify: AlertNotifyProtocol,
+    deps: AlertEvaluationDeps,
     rule: AlertRule,
-    *,
-    settings: Settings,
 ) -> tuple[int, int]:
     """event_score ルールを 1 件評価する。"""
     parsed = parse_event_score_rule_config(rule.config)
@@ -40,6 +30,7 @@ async def evaluate_event_score_rule(
         logger.warning("event_score rule=%s id=%s: invalid config", rule.name, rule.id)
         return 0, 0
 
+    settings = deps.settings
     lookback_hours = settings.alert_event_eval_lookback_hours
     now = datetime.now(timezone.utc)
     window_start = event_eval_window_start(now=now, lookback_hours=lookback_hours)
@@ -116,7 +107,7 @@ async def evaluate_event_score_rule(
                     current.resolved_at = None
                     notify_state = current
                 await session.flush()
-                await notify._notify(
+                await deps.notify(
                     rule,
                     notify_state,
                     {

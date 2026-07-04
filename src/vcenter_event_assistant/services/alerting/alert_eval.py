@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from sqlalchemy import select
 from vcenter_event_assistant.alert_levels import alert_level_label_ja
 from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.services.alerting.alert_eval_common import AlertEvaluationDeps
 from vcenter_event_assistant.services.alerting.alert_eval_event_score import evaluate_event_score_rule
 from vcenter_event_assistant.services.alerting.alert_eval_metric import evaluate_metric_threshold_rule
 from vcenter_event_assistant.services.incident_timeline_snapshot import persist_alert_rule_firing_snapshot
@@ -22,6 +24,13 @@ from vcenter_event_assistant.services.alerting.notification.renderer import Noti
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+RuleEvaluator = Callable[[AlertEvaluationDeps, AlertRule], Awaitable[tuple[int, int]]]
+
+_RULE_EVALUATORS: dict[str, RuleEvaluator] = {
+    "event_score": evaluate_event_score_rule,
+    "metric_threshold": evaluate_metric_threshold_rule,
+}
 
 
 @dataclass
@@ -50,16 +59,14 @@ class AlertEvaluator:
             rules = res.scalars().all()
 
         summary.rules_enabled = len(rules)
+        deps = AlertEvaluationDeps(settings=self._settings, notify=self._notify)
         for rule in rules:
             try:
-                if rule.rule_type == "event_score":
-                    firings, resolutions = await evaluate_event_score_rule(
-                        self, rule, settings=self._settings
-                    )
-                elif rule.rule_type == "metric_threshold":
-                    firings, resolutions = await evaluate_metric_threshold_rule(self, rule)
-                else:
+                evaluator_fn = _RULE_EVALUATORS.get(rule.rule_type)
+                if evaluator_fn is None:
                     firings, resolutions = 0, 0
+                else:
+                    firings, resolutions = await evaluator_fn(deps, rule)
                 summary.firings += firings
                 summary.resolutions += resolutions
             except Exception as e:
