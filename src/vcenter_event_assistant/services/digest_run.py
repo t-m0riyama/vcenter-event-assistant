@@ -12,7 +12,7 @@ from vcenter_event_assistant.services.digest_llm import augment_digest_with_llm
 from vcenter_event_assistant.services.digest_markdown import render_digest_markdown
 from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
-from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings import get_settings
 
 
 async def run_digest_once(
@@ -21,17 +21,16 @@ async def run_digest_once(
     kind: str,
     from_utc: datetime,
     to_utc: datetime,
-    settings: Settings | None = None,
 ) -> DigestRecord:
     """
     集約 → テンプレート Markdown →（任意）LLM 追記 → ``DigestRecord`` を ``session`` に追加する。
 
     呼び出し側で commit する（``get_session`` 依存ルートと同様）。
     """
-    s = settings or get_settings()
+    settings = get_settings()
     ctx = await build_digest_context(session, from_utc, to_utc)
     try:
-        md = render_digest_markdown(ctx, kind=kind, settings=s)
+        md = render_digest_markdown(ctx, kind=kind)
     except Exception as e:
         err = ("digest template: " + str(e))[:2000]
         row = DigestRecord(
@@ -48,18 +47,17 @@ async def run_digest_once(
         await session.refresh(row)
         return row
 
-    llm_cfg = build_llm_runnable_config(s, run_kind="digest", digest_kind=kind)
+    llm_cfg = build_llm_runnable_config(settings, run_kind="digest", digest_kind=kind)
     vc_anon = await load_all_vcenter_anonymization_strings(session)
     body, llm_err = await augment_digest_with_llm(
-        s,
         context=ctx,
         template_markdown=md,
         runnable_config=llm_cfg,
         extra_vcenter_strings=vc_anon,
     )
 
-    has_key = bool((s.llm_digest_api_key or "").strip())
-    llm_model_val = s.llm_digest_model if has_key and llm_err is None else None
+    has_key = bool((settings.llm_digest_api_key or "").strip())
+    llm_model_val = settings.llm_digest_model if has_key and llm_err is None else None
 
     row = DigestRecord(
         period_start=from_utc,

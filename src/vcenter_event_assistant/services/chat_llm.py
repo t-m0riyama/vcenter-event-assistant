@@ -28,7 +28,7 @@ from vcenter_event_assistant.services.llm_profile import (
     resolve_llm_profile,
 )
 from vcenter_event_assistant.services.llm_invoke import log_llm_failure, stream_chat_to_text
-from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings import get_settings
 
 _logger = logging.getLogger(__name__)
 
@@ -144,7 +144,6 @@ def _best_json_string_for_budget(
 
 
 def _fit_chat_payload_to_token_budget(
-    settings: Settings,
     payload: dict[str, Any],
     messages: list[ChatMessage],
 ) -> tuple[str, list[ChatMessage], bool]:
@@ -156,6 +155,7 @@ def _fit_chat_payload_to_token_budget(
     Returns:
         (ctx_json, trimmed_messages, json_truncated)
     """
+    settings = get_settings()
     max_tokens = settings.llm_chat_max_input_tokens
     trimmed = messages[-_MAX_CHAT_MESSAGES:]
     json_truncated = False
@@ -199,8 +199,9 @@ def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseM
         else:
             out.append(AIMessage(content=m.content))
     return out
+
+
 def _prepare_chat_payload(
-    settings: Settings,
     context: DigestContext,
     messages: list[ChatMessage],
     period_metrics: PeriodMetricsPayload | None,
@@ -213,6 +214,7 @@ def _prepare_chat_payload(
     Returns:
         (payload, trimmed_messages, reverse_map)
     """
+    settings = get_settings()
     digest_obj = context.model_dump(mode="json")
     digest_obj.pop("high_cpu_hosts", None)
     digest_obj.pop("high_mem_hosts", None)
@@ -250,10 +252,10 @@ def _build_chat_context_and_meta(
 ) -> tuple[str, list[ChatMessage], ChatLlmContextMeta, dict[str, str]]:
     settings = get_settings()
     payload, trimmed_msgs, reverse_map = _prepare_chat_payload(
-        settings, context, messages,
+        context, messages,
         period_metrics, event_time_buckets, incident_timeline, extra_vcenter_strings,
     )
-    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(settings, payload, trimmed_msgs)
+    ctx_json, trimmed, json_truncated = _fit_chat_payload_to_token_budget(payload, trimmed_msgs)
     block = _merged_context_user_block(ctx_json)
     est_tokens = _estimate_chat_input_tokens(block, trimmed)
     meta = ChatLlmContextMeta(

@@ -12,7 +12,7 @@ from jinja2 import Environment
 
 from vcenter_event_assistant.services.digest_context import DigestContext
 from vcenter_event_assistant.services.digest_timezone import resolve_digest_timezone
-from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings import Settings, get_settings
 
 
 def _strip_opt(s: str | None) -> str:
@@ -86,13 +86,14 @@ def _format_ts_value(value: object, display_tz: ZoneInfo) -> str:
     return local.isoformat(timespec="seconds")
 
 
-def render_digest_markdown(ctx: DigestContext, *, kind: str, settings: Settings) -> str:
+def render_digest_markdown(ctx: DigestContext, *, kind: str) -> str:
     """
     ``DigestContext`` を Jinja2 で Markdown にレンダリングする。
 
     Raises:
         OSError / jinja2 例外: テンプレ読込・構文・レンダリング失敗時（呼び出し側で ``DigestRecord.status=error`` にできる）。
     """
+    settings = get_settings()
     source = _load_template_source(settings, kind=kind)
     display_tz, display_label = _resolve_display_timezone(settings)
 

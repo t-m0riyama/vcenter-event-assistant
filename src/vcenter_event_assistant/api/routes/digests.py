@@ -103,7 +103,6 @@ async def run_digest(
         kind=kind_arg,
         from_utc=period_start,
         to_utc=period_end,
-        settings=get_settings(),
     )
     # レスポンス用 ``DigestRead`` の検証で失敗すると ``get_session`` が rollback する。
     # flush 済みでも未コミットのため行が消えるため、検証より前にコミットして永続化する。
