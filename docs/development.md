@@ -5,7 +5,7 @@
 
 ### データベースマイグレーション（Alembic）
 
-起動時の `init_db()` は **Alembic `upgrade head`** を実行する（`alembic_version` 未作成の旧 DB は列 fingerprint で `stamp` 後に upgrade。曖昧な場合は起動 abort）。Alembic 履歴に無い新規テーブルは従来どおり `create_all` で補完する。
+起動時の `init_db()` は **Alembic `upgrade head` のみ**でスキーマを最新化する（`alembic_version` 未作成の旧 DB は列 fingerprint で `stamp` 後に upgrade。曖昧な場合は起動 abort）。空 DB は stamp せず `upgrade head` で全テーブルを作成する。
 
 手動でマイグレーションする場合:
 

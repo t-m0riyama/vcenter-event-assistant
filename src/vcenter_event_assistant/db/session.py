@@ -1,17 +1,17 @@
 """非同期 DB エンジンとセッションファクトリ。
 
-SQLite / PostgreSQL 向けの engine 生成、``session_scope``、起動時マイグレーション補助を提供する。
+SQLite / PostgreSQL 向けの engine 生成、``session_scope``、起動時 Alembic マイグレーションを提供する。
 """
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import event, inspect, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from vcenter_event_assistant.db.base import Base
 from vcenter_event_assistant.settings import Settings, get_settings
+
 
 def _sqlite_enable_foreign_keys(dbapi_connection, _connection_record) -> None:
     """SQLite requires per-connection PRAGMA for FK enforcement."""
@@ -97,97 +97,13 @@ async def session_scope(settings: Settings | None = None) -> AsyncIterator[Async
             raise
 
 
-async def _ensure_events_user_comment_column(engine: AsyncEngine) -> None:
-    """Add ``events.user_comment`` when DB predates that column (``create_all`` does not alter tables)."""
-
-    def sync_check(sync_conn) -> None:
-        insp = inspect(sync_conn)
-        if not insp.has_table("events"):
-            return
-        cols = [c["name"] for c in insp.get_columns("events")]
-        if "user_comment" in cols:
-            return
-        sync_conn.execute(
-            text("ALTER TABLE events ADD COLUMN user_comment TEXT"),
-        )
-
-    async with engine.begin() as conn:
-        await conn.run_sync(sync_check)
-
-
-async def ensure_event_type_guides_action_required_column(engine: AsyncEngine) -> None:
-    """``event_type_guides.action_required`` を、旧 DB（列なし）向けに追加する。``create_all`` は既存テーブルを変更しない。
-
-    SQLite は ``inspect.get_columns`` が期待どおりでないケースがあるため、列の有無は ``PRAGMA table_info`` で判定する。
-    """
-
-    def sync_check(sync_conn) -> None:
-        insp = inspect(sync_conn)
-        if not insp.has_table("event_type_guides"):
-            return
-        dialect = sync_conn.dialect.name
-        if dialect == "sqlite":
-            res = sync_conn.execute(text("PRAGMA table_info(event_type_guides)"))
-            cols = [row[1] for row in res.fetchall()]
-        else:
-            cols = [c["name"] for c in insp.get_columns("event_type_guides")]
-        if "action_required" in cols:
-            return
-        if dialect == "postgresql":
-            sync_conn.execute(
-                text(
-                    "ALTER TABLE event_type_guides ADD COLUMN action_required BOOLEAN NOT NULL DEFAULT false"
-                ),
-            )
-        else:
-            # SQLite 等: BOOLEAN は 0/1
-            sync_conn.execute(
-                text(
-                    "ALTER TABLE event_type_guides ADD COLUMN action_required BOOLEAN NOT NULL DEFAULT 0"
-                ),
-            )
-
-    async with engine.begin() as conn:
-        await conn.run_sync(sync_check)
-
-
-async def _ensure_alert_states_last_notified_at_column(engine: AsyncEngine) -> None:
-    """``alert_states.last_notified_at`` を、旧 DB（列なし）向けに追加する。``create_all`` は既存テーブルを変更しない。"""
-
-    def sync_check(sync_conn) -> None:
-        insp = inspect(sync_conn)
-        if not insp.has_table("alert_states"):
-            return
-        dialect = sync_conn.dialect.name
-        if dialect == "sqlite":
-            res = sync_conn.execute(text("PRAGMA table_info(alert_states)"))
-            cols = [row[1] for row in res.fetchall()]
-        else:
-            cols = [c["name"] for c in insp.get_columns("alert_states")]
-        if "last_notified_at" in cols:
-            return
-        sync_conn.execute(
-            text("ALTER TABLE alert_states ADD COLUMN last_notified_at DATETIME"),
-        )
-        sync_conn.execute(
-            text(
-                "UPDATE alert_states SET last_notified_at = fired_at "
-                "WHERE last_notified_at IS NULL"
-            ),
-        )
-
-    async with engine.begin() as conn:
-        await conn.run_sync(sync_check)
-
-
 async def init_db(settings: Settings | None = None) -> None:
-    """Alembic でスキーマを最新化し、旧 DB 向けの列追加マイグレーションを適用する。
+    """Alembic でスキーマを最新化する。
 
     - ``alembic_version`` あり: ``upgrade head`` のみ
     - 空 DB: ``upgrade head``（新規作成）
     - 旧 DB（``alembic_version`` なし）: 列 fingerprint で ``stamp`` 後 ``upgrade head``
       （曖昧な場合は :class:`LegacySchemaStampError` で起動 abort）
-    - 移行完了までの安全網として ``_ensure_*`` も引き続き実行する（2-1b で削除予定）
 
     Args:
         settings: 未指定時は ``get_settings()`` を使用する。
@@ -195,7 +111,6 @@ async def init_db(settings: Settings | None = None) -> None:
     import vcenter_event_assistant.db.models  # noqa: F401
 
     from vcenter_event_assistant.db.alembic_runner import (
-        ALEMBIC_HEAD,
         alembic_stamp,
         alembic_upgrade_head,
         get_applied_alembic_revision,
@@ -203,16 +118,9 @@ async def init_db(settings: Settings | None = None) -> None:
     )
 
     engine = get_engine(settings=settings)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     applied = await get_applied_alembic_revision(engine)
     if applied is None:
         stamp_revision = await infer_legacy_stamp_revision(engine)
-        if stamp_revision is None:
-            stamp_revision = ALEMBIC_HEAD
-        await alembic_stamp(engine, stamp_revision, settings=settings)
+        if stamp_revision is not None:
+            await alembic_stamp(engine, stamp_revision, settings=settings)
     await alembic_upgrade_head(engine, settings=settings)
-    await _ensure_events_user_comment_column(engine)
-    await ensure_event_type_guides_action_required_column(engine)
-    await _ensure_alert_states_last_notified_at_column(engine)

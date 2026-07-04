@@ -64,7 +64,7 @@ async def infer_legacy_stamp_revision(engine: AsyncEngine) -> str | None:
     def sync_infer(sync_conn) -> str | None:
         insp = inspect(sync_conn)
         if not insp.has_table("vcenters"):
-            return ALEMBIC_HEAD
+            return None
 
         def has_column(table: str, column: str) -> bool:
             if not insp.has_table(table):

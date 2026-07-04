@@ -1,4 +1,4 @@
-"""init_db の Alembic 一本化（2-1a）と旧スキーマ向け列追加。"""
+"""init_db の Alembic 一本化（2-1a / 2-1b）。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,8 @@ async def test_init_db_sets_alembic_head_on_fresh_db() -> None:
     async with engine.connect() as conn:
 
         def sync_check(sync_conn) -> bool:
-            return inspect(sync_conn).has_table("vcenters")
+            insp = inspect(sync_conn)
+            return insp.has_table("vcenters") and insp.has_table("incident_timeline_manual_snapshots")
 
         assert await conn.run_sync(sync_check)
 
