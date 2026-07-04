@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, useState, type ErrorInfo, type ReactNode } from 'react'
 
 type PanelErrorBoundaryProps = {
   children: ReactNode
@@ -40,4 +40,27 @@ export class PanelErrorBoundary extends Component<
     }
     return this.props.children
   }
+}
+
+export type PanelShellProps = {
+  panelLabel: string
+  children: (reportError: (message: string | null) => void) => ReactNode
+}
+
+/**
+ * パネル内の API エラー（``onError`` 経由）とレンダリング例外を 1 箇所で扱う。
+ */
+export function PanelShell({ panelLabel, children }: PanelShellProps) {
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <PanelErrorBoundary panelLabel={panelLabel}>
+      {error ? (
+        <div className="error-banner panel-error-banner" role="alert">
+          {error}
+        </div>
+      ) : null}
+      {children(setError)}
+    </PanelErrorBoundary>
+  )
 }

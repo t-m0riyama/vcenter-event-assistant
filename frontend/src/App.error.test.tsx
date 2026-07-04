@@ -32,7 +32,13 @@ function tabNav(): HTMLElement {
   return el as HTMLElement
 }
 
-describe('App error banner', () => {
+function mainRegion(): HTMLElement {
+  const el = document.querySelector('main.main')
+  if (!el) throw new Error('main.main not found')
+  return el as HTMLElement
+}
+
+describe('App error display', () => {
   beforeEach(() => {
     localStorage.clear()
     window.history.replaceState(null, '', '/')
@@ -42,7 +48,28 @@ describe('App error banner', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows role=alert when dashboard summary fails', async () => {
+  it('shows app-level alert when config fetch fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/config')) {
+          return Promise.resolve(new Response('config fail', { status: 503 }))
+        }
+        if (url.includes('/api/dashboard/summary')) {
+          return Promise.resolve(jsonResponse(emptySummary))
+        }
+        return Promise.resolve(new Response('n', { status: 404 }))
+      }),
+    )
+    render(<App />)
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('503 config fail')
+    })
+    expect(document.querySelector('.app-error-banner')).toBeInTheDocument()
+  })
+
+  it('shows panel alert when dashboard summary fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -55,11 +82,12 @@ describe('App error banner', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('500 bad')
+      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('500 bad')
     })
+    expect(document.querySelector('.app-error-banner')).not.toBeInTheDocument()
   })
 
-  it('shows role=alert when events list fails', async () => {
+  it('shows panel alert when events list fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -82,11 +110,11 @@ describe('App error banner', () => {
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'イベント' }))
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('502 no')
+      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('502 no')
     })
   })
 
-  it('shows role=alert when vcenters list fails', async () => {
+  it('shows panel alert when vcenters list fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -115,12 +143,12 @@ describe('App error banner', () => {
       ),
     )
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('503 vc fail')
+      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('503 vc fail')
     })
   })
 
   it(
-    'shows role=alert when metrics series fails',
+    'shows panel alert when metrics series fails',
     async () => {
       vi.stubGlobal(
         'fetch',
@@ -151,7 +179,6 @@ describe('App error banner', () => {
       await waitFor(() => {
         expect(screen.getByText('高 CPU ホスト（直近24h サンプル上位）')).toBeInTheDocument()
       })
-      // `App` は MetricsPanel を lazy + Suspense する。フォールバックのままでは fetch も onError も走らない。
       await import('./panels/metrics/MetricsPanel')
       fireEvent.click(within(tabNav()).getByRole('button', { name: 'グラフ' }))
       await waitFor(
@@ -161,7 +188,7 @@ describe('App error banner', () => {
         { timeout: 10_000 },
       )
       await waitFor(() => {
-        expect(screen.getByRole('alert')).toHaveTextContent('500 m err')
+        expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('500 m err')
       })
     },
     20_000,
