@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './EventTypeGuidesPanel.css'
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
@@ -9,20 +9,14 @@ import {
   eventTypeGuidesImportResponseSchema,
   type EventTypeGuideRow,
 } from '../../api/schemas'
-import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
 import { formatEventTypeGuideCollapsedPreview } from './EventTypeGuideCollapsedPreview'
 import {
   formatEventTypeGuidesFileParseError,
   formatEventTypeGuidesImportApiError,
 } from './eventTypeGuidesImportErrors'
-import { buildVeaExportFilename } from './importExport/buildExportFilename'
-import { UNPARSEABLE_IMPORT_RESPONSE_MESSAGE } from './importExport/constants'
-import {
-  EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES,
-  confirmDestructiveImport,
-} from './importExport/confirmDestructiveImport'
-import { parseJsonImportFile, takeFirstImportFile } from './importExport/parseJsonImportFile'
+import { EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmDestructiveImport'
+import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
 
 type Draft = {
   general_meaning: string
@@ -51,9 +45,6 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   const [newRemediation, setNewRemediation] = useState('')
   const [newActionRequired, setNewActionRequired] = useState(false)
   const [draft, setDraft] = useState<Record<number, Draft>>({})
-  const [overwriteExisting, setOverwriteExisting] = useState(true)
-  const [deleteGuidesNotInImport, setDeleteGuidesNotInImport] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     onError(null)
@@ -75,6 +66,25 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
+
+  const importExport = useSettingsJsonImportExport({
+    exportFilenamePrefix: 'vea-event-type-guides',
+    buildExportPayload: () => buildEventTypeGuidesExportPayload(list),
+    fileSchema: eventTypeGuidesFileSchema,
+    getImportItemCount: (file) => file.guides.length,
+    buildImportRequestBody: (file, options) => ({
+      overwrite_existing: options.overwriteExisting,
+      delete_guides_not_in_import: options.deleteNotInImport,
+      guides: file.guides,
+    }),
+    importPath: '/api/event-type-guides/import',
+    importResponseSchema: eventTypeGuidesImportResponseSchema,
+    destructiveMessages: EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES,
+    formatFileParseError: formatEventTypeGuidesFileParseError,
+    formatImportApiError: formatEventTypeGuidesImportApiError,
+    onError,
+    onImportComplete: load,
+  })
 
   const add = async () => {
     const et = newType.trim()
@@ -130,57 +140,6 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
     }
   }
 
-  const exportToFile = () => {
-    onError(null)
-    try {
-      const payload = buildEventTypeGuidesExportPayload(list)
-      const name = buildVeaExportFilename('vea-event-type-guides')
-      downloadJsonFile(name, payload)
-    } catch (e) {
-      onError(toErrorMessage(e))
-    }
-  }
-
-  const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = takeFirstImportFile(e.target)
-    if (!file) return
-
-    const parsed = await parseJsonImportFile(file, eventTypeGuidesFileSchema)
-    if (!parsed.ok) {
-      onError(formatEventTypeGuidesFileParseError(parsed.error))
-      return
-    }
-    const parsedFile = parsed.data
-
-    if (
-      !confirmDestructiveImport(
-        deleteGuidesNotInImport,
-        parsedFile.guides.length,
-        EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES,
-      )
-    ) {
-      return
-    }
-
-    onError(null)
-    try {
-      const raw = await apiPost<unknown>('/api/event-type-guides/import', {
-        overwrite_existing: overwriteExisting,
-        delete_guides_not_in_import: deleteGuidesNotInImport,
-        guides: parsedFile.guides,
-      })
-      try {
-        eventTypeGuidesImportResponseSchema.parse(raw)
-      } catch {
-        onError(UNPARSEABLE_IMPORT_RESPONSE_MESSAGE)
-        return
-      }
-      await load()
-    } catch (err) {
-      onError(formatEventTypeGuidesImportApiError(err))
-    }
-  }
-
   return (
     <div className="panel">
       <p className="hint">
@@ -197,8 +156,8 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
           <label className="check">
             <input
               type="checkbox"
-              checked={overwriteExisting}
-              onChange={(ev) => setOverwriteExisting(ev.target.checked)}
+              checked={importExport.overwriteExisting}
+              onChange={(ev) => importExport.setOverwriteExisting(ev.target.checked)}
               aria-label="既存の同一イベント種別を上書き"
             />
             既存の同一イベント種別を上書き
@@ -206,8 +165,8 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
           <label className="check">
             <input
               type="checkbox"
-              checked={deleteGuidesNotInImport}
-              onChange={(ev) => setDeleteGuidesNotInImport(ev.target.checked)}
+              checked={importExport.deleteNotInImport}
+              onChange={(ev) => importExport.setDeleteNotInImport(ev.target.checked)}
               aria-label="ファイルに含まれないイベント種別のガイドを削除"
             />
             ファイルに含まれないイベント種別のガイドを削除
@@ -215,21 +174,21 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
         </div>
       </fieldset>
       <div className="score-rules-file-actions">
-        <button type="button" className="btn btn--gray" onClick={exportToFile}>
+        <button type="button" className="btn btn--gray" onClick={importExport.exportToFile}>
           ファイルにエクスポート
         </button>
         <input
-          ref={fileInputRef}
+          ref={importExport.fileInputRef}
           type="file"
           accept="application/json,.json"
           className="hidden-file-input"
           aria-label="イベント種別ガイド JSON を選択"
-          onChange={(ev) => void onImportFileChange(ev)}
+          onChange={(ev) => void importExport.onImportFileChange(ev)}
         />
         <button
           type="button"
           className="btn btn--filled"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={importExport.openImportFilePicker}
         >
           ファイルからインポート
         </button>
