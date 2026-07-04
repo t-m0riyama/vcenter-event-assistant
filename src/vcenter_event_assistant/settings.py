@@ -41,6 +41,16 @@ class DatabaseSettingsMixin(BaseModel):
 
     event_poll_interval_seconds: int = Field(default=120, ge=10)
     perf_sample_interval_seconds: int = Field(default=300, ge=60)
+    ingestion_concurrency: int = Field(
+        default=3,
+        ge=1,
+        description="vCenter ごとのイベント／メトリクス取り込みの同時実行上限。",
+    )
+    purge_interval_hours: int = Field(
+        default=6,
+        ge=1,
+        description="古いイベント・メトリクスを削除するパージジョブの実行間隔（時間）。",
+    )
     event_retention_days: int = Field(
         default=7,
         ge=1,
