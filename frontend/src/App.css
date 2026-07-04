@@ -91,6 +91,10 @@
   font-size: var(--font-size-subhead);
 }
 
+.panel-error-banner {
+  margin-top: 0;
+}
+
 .tabs {
   display: flex;
   gap: var(--spacing-1);

@@ -19,7 +19,7 @@ import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
 import { HelpIcon } from './components/help-icon'
 import { AppProviders } from './components/AppProviders'
-import { PanelErrorBoundary } from './components/PanelErrorBoundary'
+import { PanelShell } from './components/PanelErrorBoundary'
 import './App.css'
 
 const HELP_CONTENT: Record<MainTabId, string> = {
@@ -51,7 +51,7 @@ type MainTabConfig = {
   readonly label: string
   readonly help: string
   readonly panelLabel: string
-  readonly render: () => ReactNode
+  readonly render: (onError: (message: string | null) => void) => ReactNode
 }
 
 type SettingsSubTabConfig = {
@@ -80,9 +80,9 @@ export default function App() {
   const [metricsSnapshotReplay, setMetricsSnapshotReplay] =
     useState<IncidentTimelineManualSnapshotListItem | null>(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
-  const [err, setErr] = useState<string | null>(null)
+  const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
-  const { retention } = useAppConfig(setErr)
+  const { retention } = useAppConfig(setAppErr)
 
   useEffect(() => {
     if (tab !== 'metrics') {
@@ -112,14 +112,12 @@ export default function App() {
     ensureMainTabMounted(next)
     setTab(next)
     setShowHelp(false)
-    setErr(null)
   }
 
   const selectSettingsSubTab = (next: SettingsSubTabId) => {
     ensureSettingsSubTabMounted(next)
     setSettingsSubTab(next)
     setShowHelp(false)
-    setErr(null)
   }
 
   const mainTabs: MainTabConfig[] = useMemo(
@@ -129,24 +127,24 @@ export default function App() {
         label: '概要',
         help: HELP_CONTENT.summary,
         panelLabel: '概要',
-        render: () => <SummaryPanel onError={setErr} />,
+        render: (onError) => <SummaryPanel onError={onError} />,
       },
       {
         id: 'events',
         label: 'イベント',
         help: HELP_CONTENT.events,
         panelLabel: 'イベント一覧',
-        render: () => <EventsPanel onError={setErr} />,
+        render: (onError) => <EventsPanel onError={onError} />,
       },
       {
         id: 'metrics',
         label: 'グラフ',
         help: HELP_CONTENT.metrics,
         panelLabel: 'グラフ',
-        render: () => (
+        render: (onError) => (
           <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
             <MetricsPanel
-              onError={setErr}
+              onError={onError}
               perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
               snapshotReplay={
                 metricsSnapshotReplay
@@ -162,37 +160,36 @@ export default function App() {
         label: 'ダイジェスト',
         help: HELP_CONTENT.digests,
         panelLabel: 'ダイジェスト',
-        render: () => <DigestsPanel onError={setErr} />,
+        render: (onError) => <DigestsPanel onError={onError} />,
       },
       {
         id: 'alerts',
         label: '通知履歴',
         help: HELP_CONTENT.alerts,
         panelLabel: '通知履歴',
-        render: () => <AlertHistoryPanel onError={setErr} />,
+        render: (onError) => <AlertHistoryPanel onError={onError} />,
       },
       {
         id: 'chat',
         label: 'チャット',
         help: HELP_CONTENT.chat,
         panelLabel: 'チャット',
-        render: () => <ChatPanel onError={setErr} />,
+        render: (onError) => <ChatPanel onError={onError} />,
       },
       {
         id: 'timeline',
         label: 'タイムライン',
         help: HELP_CONTENT.timeline,
         panelLabel: 'タイムライン',
-        render: () => (
+        render: (onError) => (
           <TimelinePanel
-            onError={setErr}
+            onError={onError}
             onOpenSnapshotInMetrics={(item) => {
               setMetricsSnapshotReplay(item)
               setMetricsReplayNonce((n) => n + 1)
               ensureMainTabMounted('metrics')
               setTab('metrics')
               setShowHelp(false)
-              setErr(null)
             }}
           />
         ),
@@ -267,9 +264,9 @@ export default function App() {
           )}
         </header>
 
-        {err && (
-          <div className="error-banner" role="alert">
-            {err}
+        {appErr && (
+          <div className="error-banner app-error-banner" role="alert">
+            {appErr}
           </div>
         )}
 
@@ -337,9 +334,9 @@ export default function App() {
                       hidden={tab !== 'settings' || settingsSubTab !== sub.id}
                       aria-hidden={tab !== 'settings' || settingsSubTab !== sub.id}
                     >
-                      <PanelErrorBoundary panelLabel={sub.panelLabel}>
-                        {sub.render(setErr)}
-                      </PanelErrorBoundary>
+                      <PanelShell panelLabel={sub.panelLabel}>
+                        {(onError) => sub.render(onError)}
+                      </PanelShell>
                     </div>
                   ),
               )}
@@ -351,7 +348,9 @@ export default function App() {
               mountedMainTabs.has(t.id) &&
               t.id !== 'settings' && (
                 <div key={t.id} hidden={tab !== t.id} aria-hidden={tab !== t.id}>
-                  <PanelErrorBoundary panelLabel={t.panelLabel}>{t.render()}</PanelErrorBoundary>
+                  <PanelShell panelLabel={t.panelLabel}>
+                    {(onError) => t.render(onError)}
+                  </PanelShell>
                 </div>
               ),
           )}
