@@ -97,7 +97,7 @@ async def evaluate_event_score_rule(
                 cooldown_minutes=cooldown,
             ):
                 message, score = event_details.get(event_type, ("", 0))
-                if not current or current.state == "resolved":
+                if not current:
                     notify_state = AlertState(
                         rule_id=rule.id,
                         state="firing",
@@ -106,11 +106,11 @@ async def evaluate_event_score_rule(
                         last_notified_at=now,
                     )
                     session.add(notify_state)
-                    if current:
-                        await session.delete(current)
                 else:
+                    current.state = "firing"
                     current.fired_at = last_at
                     current.last_notified_at = now
+                    current.resolved_at = None
                     notify_state = current
                 await session.flush()
                 await notify._notify(

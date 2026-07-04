@@ -23,7 +23,8 @@ export const EMPTY_ZONED_RANGE_PARTS: ZonedRangeParts = {
 
 /**
  * Combines HTML `date` / `time` values into `YYYY-MM-DDTHH:mm` for {@link zonedLocalDateTimeToUtcIso}.
- * Empty date means that endpoint is unset. If date is set but time is empty, uses 00:00 for start and 23:59 for end.
+ * Empty date means that endpoint is unset. If date is set but time is empty, uses 00:00 for start
+ * and 23:59 for end（API 解決時はその壁時計分の末尾まで含む）。
  */
 export function combineDateAndOptionalTime(
   dateStr: string,

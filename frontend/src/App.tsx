@@ -17,6 +17,7 @@ import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
 import { HelpIcon } from './components/help-icon'
 import { AppProviders } from './components/AppProviders'
+import { PanelErrorBoundary } from './components/PanelErrorBoundary'
 import './App.css'
 
 const HELP_CONTENT: Record<string, string> = {
@@ -169,51 +170,89 @@ export default function App() {
               ))}
             </nav>
           )}
-          {tab === 'summary' && <SummaryPanel onError={setErr} />}
-          {tab === 'events' && <EventsPanel onError={setErr} />}
+          {tab === 'summary' && (
+            <PanelErrorBoundary panelLabel="概要">
+              <SummaryPanel onError={setErr} />
+            </PanelErrorBoundary>
+          )}
+          {tab === 'events' && (
+            <PanelErrorBoundary panelLabel="イベント一覧">
+              <EventsPanel onError={setErr} />
+            </PanelErrorBoundary>
+          )}
           {tab === 'metrics' && (
-            <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
-              <MetricsPanel
-                onError={setErr}
-                perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
-                snapshotReplay={
-                  metricsSnapshotReplay
-                    ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
-                    : null
-                }
-              />
-            </Suspense>
+            <PanelErrorBoundary panelLabel="グラフ">
+              <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
+                <MetricsPanel
+                  onError={setErr}
+                  perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+                  snapshotReplay={
+                    metricsSnapshotReplay
+                      ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
+                      : null
+                  }
+                />
+              </Suspense>
+            </PanelErrorBoundary>
           )}
-          {tab === 'digests' && <DigestsPanel onError={setErr} />}
-          {tab === 'alerts' && <AlertHistoryPanel onError={setErr} />}
-          {tab === 'chat' && <ChatPanel onError={setErr} />}
+          {tab === 'digests' && (
+            <PanelErrorBoundary panelLabel="ダイジェスト">
+              <DigestsPanel onError={setErr} />
+            </PanelErrorBoundary>
+          )}
+          {tab === 'alerts' && (
+            <PanelErrorBoundary panelLabel="通知履歴">
+              <AlertHistoryPanel onError={setErr} />
+            </PanelErrorBoundary>
+          )}
+          {tab === 'chat' && (
+            <PanelErrorBoundary panelLabel="チャット">
+              <ChatPanel onError={setErr} />
+            </PanelErrorBoundary>
+          )}
           {tab === 'timeline' && (
-            <TimelinePanel
-              onError={setErr}
-              onOpenSnapshotInMetrics={(item) => {
-                setMetricsSnapshotReplay(item)
-                setMetricsReplayNonce((n) => n + 1)
-                setTab('metrics')
-                setShowHelp(false)
-                setErr(null)
-              }}
-            />
+            <PanelErrorBoundary panelLabel="タイムライン">
+              <TimelinePanel
+                onError={setErr}
+                onOpenSnapshotInMetrics={(item) => {
+                  setMetricsSnapshotReplay(item)
+                  setMetricsReplayNonce((n) => n + 1)
+                  setTab('metrics')
+                  setShowHelp(false)
+                  setErr(null)
+                }}
+              />
+            </PanelErrorBoundary>
           )}
-          {tab === 'settings' && settingsSubTab === 'general' && <GeneralSettingsPanel />}
+          {tab === 'settings' && settingsSubTab === 'general' && (
+            <PanelErrorBoundary panelLabel="一般設定">
+              <GeneralSettingsPanel />
+            </PanelErrorBoundary>
+          )}
           {tab === 'settings' && settingsSubTab === 'score_rules' && (
-            <ScoreRulesPanel onError={setErr} />
+            <PanelErrorBoundary panelLabel="スコアルール">
+              <ScoreRulesPanel onError={setErr} />
+            </PanelErrorBoundary>
           )}
           {tab === 'settings' && settingsSubTab === 'event_type_guides' && (
-            <EventTypeGuidesPanel onError={setErr} />
+            <PanelErrorBoundary panelLabel="イベント種別ガイド">
+              <EventTypeGuidesPanel onError={setErr} />
+            </PanelErrorBoundary>
           )}
           {tab === 'settings' && settingsSubTab === 'vcenters' && (
-            <VCentersPanel onError={setErr} />
+            <PanelErrorBoundary panelLabel="vCenter 設定">
+              <VCentersPanel onError={setErr} />
+            </PanelErrorBoundary>
           )}
           {tab === 'settings' && settingsSubTab === 'chat_samples' && (
-            <ChatSamplePromptsPanel onError={setErr} />
+            <PanelErrorBoundary panelLabel="チャットサンプル">
+              <ChatSamplePromptsPanel onError={setErr} />
+            </PanelErrorBoundary>
           )}
           {tab === 'settings' && settingsSubTab === 'alerts' && (
-            <AlertRulesPanel onError={setErr} />
+            <PanelErrorBoundary panelLabel="アラート設定">
+              <AlertRulesPanel onError={setErr} />
+            </PanelErrorBoundary>
           )}
         </main>
       </div>

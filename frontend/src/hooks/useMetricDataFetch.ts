@@ -3,8 +3,8 @@ import { apiGet } from '../api'
 import type { VCenter } from '../api/schemas'
 import { asArray } from '../utils/asArray'
 import { toErrorMessage } from '../utils/errors'
-import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { resolveMetricsGraphRange } from '../datetime/graphRange'
+import { computeEventRateOverlayRange } from '../metrics/computeEventRateOverlayRange'
 import {
   fetchMetricKeysForVcenter,
   pickMetricKeyAfterFetch,
@@ -51,6 +51,7 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
   const metricKeyRef = useRef(metricKey)
   metricKeyRef.current = metricKey
   const loadSeriesGenerationRef = useRef(0)
+  const eventRateGenerationRef = useRef(0)
 
   useEffect(() => {
     void apiGet<unknown>('/api/vcenters')
@@ -141,39 +142,18 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
       setEventSeriesLoading(false)
       return
     }
-    let cancelled = false
+    const generation = ++eventRateGenerationRef.current
     setEventSeriesLoading(true)
     void (async () => {
-      let from: string
-      let to: string
-      if (graphRange.mode === 'range') {
-        from = graphRange.from
-        to = graphRange.to
-      } else {
-        let minTs = Infinity
-        let maxTs = -Infinity
-        for (const p of points) {
-          const t = parseApiUtcInstantMs(p.sampled_at)
-          if (Number.isFinite(t)) {
-            if (t < minTs) minTs = t
-            if (t > maxTs) maxTs = t
-          }
+      const bounds = computeEventRateOverlayRange(graphRange, points, perfBucketSeconds)
+      if (!bounds) {
+        if (generation === eventRateGenerationRef.current) {
+          setEventRateBuckets(null)
+          setEventSeriesLoading(false)
         }
-        if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
-          if (!cancelled) {
-            setEventRateBuckets(null)
-            setEventSeriesLoading(false)
-          }
-          return
-        }
-        from = new Date(minTs).toISOString()
-        to = new Date(maxTs).toISOString()
+        return
       }
-      const fromMs = parseApiUtcInstantMs(from)
-      const toMs = parseApiUtcInstantMs(to)
-      if (fromMs >= toMs) {
-        to = new Date(fromMs + Math.max(perfBucketSeconds, 60) * 1000).toISOString()
-      }
+      const { from, to } = bounds
       try {
         const q = new URLSearchParams({
           event_type: et,
@@ -185,22 +165,19 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
         const data = await apiGet<{
           buckets?: Array<{ bucket_start: string; count: number }>
         }>(`/api/events/rate-series?${q.toString()}`)
-        if (!cancelled) {
-          setEventRateBuckets(Array.isArray(data.buckets) ? data.buckets : [])
-          onError(null)
-        }
+        if (generation !== eventRateGenerationRef.current) return
+        setEventRateBuckets(Array.isArray(data.buckets) ? data.buckets : [])
+        onError(null)
       } catch (e) {
-        if (!cancelled) {
-          setEventRateBuckets(null)
-          onError(toErrorMessage(e))
-        }
+        if (generation !== eventRateGenerationRef.current) return
+        setEventRateBuckets(null)
+        onError(toErrorMessage(e))
       } finally {
-        if (!cancelled) setEventSeriesLoading(false)
+        if (generation === eventRateGenerationRef.current) {
+          setEventSeriesLoading(false)
+        }
       }
     })()
-    return () => {
-      cancelled = true
-    }
   }, [points, chartEventType, vcenterId, perfBucketSeconds, onError, rangeFromInput, rangeToInput, timeZone])
 
   return {

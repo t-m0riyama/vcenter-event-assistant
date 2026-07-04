@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
-from vcenter_event_assistant.db.models import AlertRule, MetricSample, VCenter
+from vcenter_event_assistant.db.models import AlertRule, AlertState, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alert_eval import AlertEvaluator
 
@@ -171,3 +171,57 @@ async def test_metric_threshold_uses_latest_sample_per_entity() -> None:
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         mock_notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
+    async with session_scope() as session:
+        vc = VCenter(name="vc_upsert_m", host="vc_upsert_m", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Upsert metric",
+            rule_type="metric_threshold",
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
+        )
+        session.add(rule)
+        await session.flush()
+        now = datetime.now(timezone.utc)
+        existing = AlertState(
+            rule_id=rule.id,
+            state="resolved",
+            context_key="host-1",
+            fired_at=now - timedelta(hours=2),
+            resolved_at=now - timedelta(hours=1),
+        )
+        session.add(existing)
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=now,
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="cpu.usage",
+                value=95.0,
+            )
+        )
+        await session.flush()
+        state_id = existing.id
+        rule_id = rule.id
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.call_count == 1
+
+    async with session_scope() as session:
+        from sqlalchemy import select
+
+        states = (
+            await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
+        ).scalars().all()
+        assert len(states) == 1
+        assert states[0].id == state_id
+        assert states[0].state == "firing"
+        assert states[0].resolved_at is None
