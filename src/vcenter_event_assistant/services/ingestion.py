@@ -61,6 +61,8 @@ async def ingest_events_for_vcenter(session: AsyncSession, vcenter: VCenter) -> 
         password=vcenter.password,
         since=since,
         proxy_url=settings.vcenter_http_proxy,
+        verify_ssl=vcenter.verify_ssl,
+        ca_bundle_path=settings.vcenter_ca_bundle,
     )
 
     deltas = await load_event_score_delta_map(session)
@@ -120,6 +122,8 @@ async def ingest_metrics_for_vcenter(session: AsyncSession, vcenter: VCenter) ->
         username=vcenter.username,
         password=vcenter.password,
         proxy_url=settings.vcenter_http_proxy,
+        verify_ssl=vcenter.verify_ssl,
+        ca_bundle_path=settings.vcenter_ca_bundle,
     )
 
     inserted = 0

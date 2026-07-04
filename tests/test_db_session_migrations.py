@@ -13,7 +13,7 @@ from vcenter_event_assistant.db.alembic_runner import (
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.settings import get_settings
 
-ALEMBIC_HEAD = "n1o2p3q4r5s6"
+ALEMBIC_HEAD = "p2q3r4s5t6u7"
 
 
 async def _alert_states_column_names(engine: AsyncEngine) -> list[str]:

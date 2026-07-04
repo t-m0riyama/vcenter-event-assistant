@@ -26,6 +26,8 @@ def fetch_events_blocking(
     since: datetime | None,
     max_pages: int = 100,
     proxy_url: str | None = None,
+    verify_ssl: bool = False,
+    ca_bundle_path: str | None = None,
 ) -> tuple[list[dict[str, Any]], datetime | None]:
     """
     Pull events from vCenter since ``since`` (inclusive window start).
@@ -38,6 +40,8 @@ def fetch_events_blocking(
         username=username,
         password=password,
         proxy_url=proxy_url,
+        verify_ssl=verify_ssl,
+        ca_bundle_path=ca_bundle_path,
     )
     try:
         content = si.RetrieveContent()

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vcenter_event_assistant.settings import Settings, get_settings
 
-ALEMBIC_HEAD = "n1o2p3q4r5s6"
+ALEMBIC_HEAD = "p2q3r4s5t6u7"
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 

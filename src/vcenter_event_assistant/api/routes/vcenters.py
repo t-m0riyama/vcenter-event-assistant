@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
-from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect, read_connection_info
+from vcenter_event_assistant.collectors.connection import (
+    connect_vcenter,
+    disconnect,
+    format_connection_error_detail,
+    read_connection_info,
+)
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.settings import get_settings
 
@@ -38,6 +43,7 @@ async def create_vcenter(
         port=body.port,
         username=body.username,
         password=body.password,
+        verify_ssl=body.verify_ssl,
         is_enabled=body.is_enabled,
     )
     session.add(vc)
@@ -102,8 +108,14 @@ async def test_vcenter(
 
     def _run():
         si = connect_vcenter(
-            host=vc.host, protocol=vc.protocol, port=vc.port, username=vc.username, password=vc.password,
+            host=vc.host,
+            protocol=vc.protocol,
+            port=vc.port,
+            username=vc.username,
+            password=vc.password,
             proxy_url=settings.vcenter_http_proxy,
+            verify_ssl=vc.verify_ssl,
+            ca_bundle_path=settings.vcenter_ca_bundle,
         )
         try:
             return read_connection_info(si)
@@ -115,13 +127,24 @@ async def test_vcenter(
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Connection failed ({vc.protocol}://{vc.host}:{vc.port}): {exc!s}",
+            detail=format_connection_error_detail(
+                protocol=vc.protocol,
+                host=vc.host,
+                port=vc.port,
+                exc=exc,
+            ),
         ) from exc
 
-    return {
+    response: dict = {
         "ok": True,
         "product_name": info.product_name,
         "product_version": info.product_version,
         "api_version": info.api_version,
         "instance_uuid": info.instance_uuid,
     }
+    if vc.protocol == "https" and not vc.verify_ssl:
+        response["recommend_ssl_verification"] = True
+        response["recommend_ssl_verification_message"] = (
+            "本番環境では SSL 証明書検証（verify_ssl）を有効にすることを推奨します。"
+        )
+    return response

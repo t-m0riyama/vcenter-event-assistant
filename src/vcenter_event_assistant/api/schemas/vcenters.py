@@ -16,6 +16,7 @@ class VCenterCreate(BaseModel):
     port: int = Field(default=443, ge=1, le=65535)
     username: str = Field(min_length=1, max_length=512)
     password: str = Field(min_length=1, max_length=2048)
+    verify_ssl: bool = False
     is_enabled: bool = True
 
 
@@ -26,6 +27,7 @@ class VCenterUpdate(BaseModel):
     port: int | None = Field(default=None, ge=1, le=65535)
     username: str | None = Field(default=None, min_length=1, max_length=512)
     password: str | None = Field(default=None, min_length=1, max_length=2048)
+    verify_ssl: bool | None = None
     is_enabled: bool | None = None
 
 
@@ -38,5 +40,6 @@ class VCenterRead(BaseModel):
     protocol: Literal["https", "http"]
     port: int
     username: str
+    verify_ssl: bool
     is_enabled: bool
     created_at: datetime
