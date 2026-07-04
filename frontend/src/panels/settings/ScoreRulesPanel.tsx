@@ -8,7 +8,6 @@ import {
   eventScoreRulesFileSchema,
   eventScoreRulesImportResponseSchema,
   type EventScoreRuleRow,
-  type EventScoreRulesFile,
 } from '../../api/schemas'
 import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
@@ -16,18 +15,13 @@ import {
   formatScoreRulesFileParseError,
   formatScoreRulesImportApiError,
 } from './scoreRulesImportErrors'
-
-function confirmDestructiveImport(deleteRulesNotInImport: boolean, ruleCount: number): boolean {
-  if (!deleteRulesNotInImport) return true
-  if (ruleCount === 0) {
-    return confirm(
-      'このファイルにはルールが含まれていません。既存のルールをすべて削除します。よろしいですか？',
-    )
-  }
-  return confirm(
-    'ファイルに含まれないイベント種別のルールは削除されます。よろしいですか？',
-  )
-}
+import { buildVeaExportFilename } from './importExport/buildExportFilename'
+import { UNPARSEABLE_IMPORT_RESPONSE_MESSAGE } from './importExport/constants'
+import {
+  SCORE_RULES_DESTRUCTIVE_IMPORT_MESSAGES,
+  confirmDestructiveImport,
+} from './importExport/confirmDestructiveImport'
+import { parseJsonImportFile, takeFirstImportFile } from './importExport/parseJsonImportFile'
 
 export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
   const [list, setList] = useState<EventScoreRuleRow[]>([])
@@ -107,7 +101,7 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
     onError(null)
     try {
       const payload = buildScoreRulesExportPayload(list)
-      const name = `vea-score-rules-${new Date().toISOString().slice(0, 10)}.json`
+      const name = buildVeaExportFilename('vea-score-rules')
       downloadJsonFile(name, payload)
     } catch (e) {
       onError(toErrorMessage(e))
@@ -115,21 +109,23 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
   }
 
   const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
+    const file = takeFirstImportFile(e.target)
     if (!file) return
 
-    let parsedFile: EventScoreRulesFile
-    try {
-      const text = await file.text()
-      const json: unknown = JSON.parse(text)
-      parsedFile = eventScoreRulesFileSchema.parse(json)
-    } catch (err) {
-      onError(formatScoreRulesFileParseError(err))
+    const parsed = await parseJsonImportFile(file, eventScoreRulesFileSchema)
+    if (!parsed.ok) {
+      onError(formatScoreRulesFileParseError(parsed.error))
       return
     }
+    const parsedFile = parsed.data
 
-    if (!confirmDestructiveImport(deleteRulesNotInImport, parsedFile.rules.length)) {
+    if (
+      !confirmDestructiveImport(
+        deleteRulesNotInImport,
+        parsedFile.rules.length,
+        SCORE_RULES_DESTRUCTIVE_IMPORT_MESSAGES,
+      )
+    ) {
       return
     }
 
@@ -143,9 +139,7 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
       try {
         eventScoreRulesImportResponseSchema.parse(raw)
       } catch {
-        onError(
-          'サーバーからの応答を解釈できませんでした。アプリを最新版に更新するか、しばらくしてから再度お試しください。',
-        )
+        onError(UNPARSEABLE_IMPORT_RESPONSE_MESSAGE)
         return
       }
       await load()

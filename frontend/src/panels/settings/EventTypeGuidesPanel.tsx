@@ -8,7 +8,6 @@ import {
   eventTypeGuidesFileSchema,
   eventTypeGuidesImportResponseSchema,
   type EventTypeGuideRow,
-  type EventTypeGuidesFile,
 } from '../../api/schemas'
 import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
@@ -17,16 +16,13 @@ import {
   formatEventTypeGuidesFileParseError,
   formatEventTypeGuidesImportApiError,
 } from './eventTypeGuidesImportErrors'
-
-function confirmDestructiveGuideImport(deleteGuidesNotInImport: boolean, guideCount: number): boolean {
-  if (!deleteGuidesNotInImport) return true
-  if (guideCount === 0) {
-    return confirm(
-      'このファイルにはガイドが含まれていません。既存のガイドをすべて削除します。よろしいですか？',
-    )
-  }
-  return confirm('ファイルに含まれないイベント種別のガイドは削除されます。よろしいですか？')
-}
+import { buildVeaExportFilename } from './importExport/buildExportFilename'
+import { UNPARSEABLE_IMPORT_RESPONSE_MESSAGE } from './importExport/constants'
+import {
+  EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES,
+  confirmDestructiveImport,
+} from './importExport/confirmDestructiveImport'
+import { parseJsonImportFile, takeFirstImportFile } from './importExport/parseJsonImportFile'
 
 type Draft = {
   general_meaning: string
@@ -138,7 +134,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
     onError(null)
     try {
       const payload = buildEventTypeGuidesExportPayload(list)
-      const name = `vea-event-type-guides-${new Date().toISOString().slice(0, 10)}.json`
+      const name = buildVeaExportFilename('vea-event-type-guides')
       downloadJsonFile(name, payload)
     } catch (e) {
       onError(toErrorMessage(e))
@@ -146,21 +142,23 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   }
 
   const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
+    const file = takeFirstImportFile(e.target)
     if (!file) return
 
-    let parsedFile: EventTypeGuidesFile
-    try {
-      const text = await file.text()
-      const json: unknown = JSON.parse(text)
-      parsedFile = eventTypeGuidesFileSchema.parse(json)
-    } catch (err) {
-      onError(formatEventTypeGuidesFileParseError(err))
+    const parsed = await parseJsonImportFile(file, eventTypeGuidesFileSchema)
+    if (!parsed.ok) {
+      onError(formatEventTypeGuidesFileParseError(parsed.error))
       return
     }
+    const parsedFile = parsed.data
 
-    if (!confirmDestructiveGuideImport(deleteGuidesNotInImport, parsedFile.guides.length)) {
+    if (
+      !confirmDestructiveImport(
+        deleteGuidesNotInImport,
+        parsedFile.guides.length,
+        EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES,
+      )
+    ) {
       return
     }
 
@@ -174,9 +172,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
       try {
         eventTypeGuidesImportResponseSchema.parse(raw)
       } catch {
-        onError(
-          'サーバーからの応答を解釈できませんでした。アプリを最新版に更新するか、しばらくしてから再度お試しください。',
-        )
+        onError(UNPARSEABLE_IMPORT_RESPONSE_MESSAGE)
         return
       }
       await load()

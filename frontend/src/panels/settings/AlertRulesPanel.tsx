@@ -6,7 +6,6 @@ import {
   alertRulesImportResponseSchema,
   buildAlertRulesExportPayload,
   type AlertRuleRow,
-  type AlertRulesFile,
 } from '../../api/schemas'
 import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
@@ -16,6 +15,13 @@ import {
 } from './alertRulesImportErrors'
 import { KNOWN_METRIC_KEYS } from '../../metrics/knownMetricKeys'
 import { DEFAULT_ALERT_METRIC_KEY } from './alertRuleDefaults'
+import { buildVeaExportFilename } from './importExport/buildExportFilename'
+import { UNPARSEABLE_IMPORT_RESPONSE_MESSAGE } from './importExport/constants'
+import {
+  ALERT_RULES_DESTRUCTIVE_IMPORT_MESSAGES,
+  confirmDestructiveImport,
+} from './importExport/confirmDestructiveImport'
+import { parseJsonImportFile, takeFirstImportFile } from './importExport/parseJsonImportFile'
 import './AlertRulesPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -58,16 +64,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [overwriteExisting, setOverwriteExisting] = useState(true)
   const [deleteRulesNotInImport, setDeleteRulesNotInImport] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const confirmDestructiveImport = (ruleCount: number): boolean => {
-    if (!deleteRulesNotInImport) return true
-    if (ruleCount === 0) {
-      return confirm(
-        'このファイルにはルールが含まれていません。既存のアラートルールをすべて削除します。よろしいですか？',
-      )
-    }
-    return confirm('ファイルに含まれないアラートルールは削除されます。よろしいですか？')
-  }
 
   const fetchRules = useCallback(async () => {
     try {
@@ -204,7 +200,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     onError('')
     try {
       const payload = buildAlertRulesExportPayload(rules)
-      const name = `vea-alert-rules-${new Date().toISOString().slice(0, 10)}.json`
+      const name = buildVeaExportFilename('vea-alert-rules')
       downloadJsonFile(name, payload)
     } catch (e) {
       onError(toErrorMessage(e))
@@ -212,21 +208,23 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   }
 
   const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
+    const file = takeFirstImportFile(e.target)
     if (!file) return
 
-    let parsedFile: AlertRulesFile
-    try {
-      const text = await file.text()
-      const json: unknown = JSON.parse(text)
-      parsedFile = alertRulesFileSchema.parse(json)
-    } catch (err) {
-      onError(formatAlertRulesFileParseError(err))
+    const parsed = await parseJsonImportFile(file, alertRulesFileSchema)
+    if (!parsed.ok) {
+      onError(formatAlertRulesFileParseError(parsed.error))
       return
     }
+    const parsedFile = parsed.data
 
-    if (!confirmDestructiveImport(parsedFile.rules.length)) {
+    if (
+      !confirmDestructiveImport(
+        deleteRulesNotInImport,
+        parsedFile.rules.length,
+        ALERT_RULES_DESTRUCTIVE_IMPORT_MESSAGES,
+      )
+    ) {
       return
     }
 
@@ -240,9 +238,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       try {
         alertRulesImportResponseSchema.parse(raw)
       } catch {
-        onError(
-          'サーバーからの応答を解釈できませんでした。アプリを最新版に更新するか、しばらくしてから再度お試しください。',
-        )
+        onError(UNPARSEABLE_IMPORT_RESPONSE_MESSAGE)
         return
       }
       await fetchRules()
