@@ -84,6 +84,13 @@ class AppLogSettingsMixin(BaseModel):
             "例: http://proxy.example.com:8080。未設定でプロキシなし。"
         ),
     )
+    vcenter_ca_bundle: str | None = Field(
+        default=None,
+        description=(
+            "vCenter TLS 検証 ON 時の CA バンドルファイルパス（``VCENTER_CA_BUNDLE``）。"
+            "未設定時は OS 既定の信頼ストアを使用。"
+        ),
+    )
 
     scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
 
@@ -104,6 +111,11 @@ class AppLogSettingsMixin(BaseModel):
     @field_validator("vea_secret_key", mode="before")
     @classmethod
     def empty_vea_secret_key_to_none(cls, v: object) -> str | None:
+        return _normalize_empty_to_none(v)
+
+    @field_validator("vcenter_ca_bundle", mode="before")
+    @classmethod
+    def empty_vcenter_ca_bundle_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)
 
     @field_validator("vcenter_http_proxy", mode="before")

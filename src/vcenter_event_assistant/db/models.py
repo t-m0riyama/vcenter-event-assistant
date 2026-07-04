@@ -20,6 +20,7 @@ class VCenter(Base):
     port: Mapped[int] = mapped_column(Integer, default=443)
     username: Mapped[str] = mapped_column(String(512))
     password: Mapped[str] = mapped_column(EncryptedString(2048))
+    verify_ssl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

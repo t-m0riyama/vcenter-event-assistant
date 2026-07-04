@@ -67,6 +67,8 @@ def sample_hosts_blocking(
     username: str,
     password: str,
     proxy_url: str | None = None,
+    verify_ssl: bool = False,
+    ca_bundle_path: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return flattened metric sample dicts for all hosts and datastores."""
     si = connect_vcenter(
@@ -76,6 +78,8 @@ def sample_hosts_blocking(
         username=username,
         password=password,
         proxy_url=proxy_url,
+        verify_ssl=verify_ssl,
+        ca_bundle_path=ca_bundle_path,
     )
     try:
         rows: list[dict[str, Any]] = []

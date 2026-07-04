@@ -36,6 +36,7 @@ describe('VCentersPanel protocol selector', () => {
           port: 80,
           username: 'admin',
           is_enabled: true,
+          verify_ssl: false,
           created_at: '2026-04-24T00:00:00Z',
         }, 201),
       )

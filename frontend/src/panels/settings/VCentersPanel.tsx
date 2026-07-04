@@ -13,6 +13,7 @@ type VCenterFormState = {
   port: number
   username: string
   password: string
+  verify_ssl: boolean
   is_enabled: boolean
 }
 
@@ -26,6 +27,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     port: 443,
     username: '',
     password: '',
+    verify_ssl: false,
     is_enabled: true,
   })
 
@@ -40,6 +42,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     port: 443,
     username: '',
     password: '',
+    verify_ssl: false,
     is_enabled: true,
   })
 
@@ -69,6 +72,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
         port: 443,
         username: '',
         password: '',
+        verify_ssl: false,
         is_enabled: true,
       })
       await load()
@@ -106,7 +110,16 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     onError(null)
     try {
       const r = await apiGet<Record<string, unknown>>(`/api/vcenters/${id}/test`)
-      alert(JSON.stringify(r, null, 2))
+      const recommend = r.recommend_ssl_verification === true
+      const recommendMsg =
+        typeof r.recommend_ssl_verification_message === 'string'
+          ? r.recommend_ssl_verification_message
+          : '本番環境では SSL 証明書検証（verify_ssl）を有効にすることを推奨します。'
+      if (recommend) {
+        alert(`${recommendMsg}\n\n接続テスト結果:\n${JSON.stringify(r, null, 2)}`)
+      } else {
+        alert(JSON.stringify(r, null, 2))
+      }
     } catch (e) {
       onError(toErrorMessage(e))
     }
@@ -121,6 +134,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
       port: v.port,
       username: v.username,
       password: '', // パスワードは API レスポンスに含まれない
+      verify_ssl: v.verify_ssl,
       is_enabled: v.is_enabled,
     })
   }
@@ -140,6 +154,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
         protocol: editForm.protocol,
         port: editForm.port,
         username: editForm.username,
+        verify_ssl: editForm.verify_ssl,
         is_enabled: editForm.is_enabled,
       }
       if (editForm.password) {
@@ -179,7 +194,11 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
           <select
             value={form.protocol}
             onChange={(e) =>
-              setForm({ ...form, protocol: e.target.value === 'http' ? 'http' : 'https' })
+              setForm({
+                ...form,
+                protocol: e.target.value === 'http' ? 'http' : 'https',
+                verify_ssl: e.target.value === 'http' ? false : form.verify_ssl,
+              })
             }
           >
             <option value="https">HTTPS</option>
@@ -212,6 +231,15 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
         <label className="check">
           <input
             type="checkbox"
+            checked={form.protocol === 'https' && form.verify_ssl}
+            disabled={form.protocol !== 'https'}
+            onChange={(e) => setForm({ ...form, verify_ssl: e.target.checked })}
+          />
+          SSL 証明書を検証（HTTPS のみ）
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
             checked={form.is_enabled}
             onChange={(e) => setForm({ ...form, is_enabled: e.target.checked })}
           />
@@ -228,6 +256,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
           <tr>
             <th>名前</th>
             <th>ホスト</th>
+            <th>SSL 検証</th>
             <th>有効</th>
             <th>ユーザー</th>
             <th />
@@ -251,6 +280,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                       setEditForm({
                         ...editForm,
                         protocol: e.target.value === 'http' ? 'http' : 'https',
+                        verify_ssl: e.target.value === 'http' ? false : editForm.verify_ssl,
                       })
                     }
                     aria-label="プロトコル"
@@ -273,6 +303,18 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                     aria-label="ポート"
                     style={{ display: 'inline', width: '22%', marginLeft: '4px' }}
                   />
+                </td>
+                <td>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={editForm.protocol === 'https' && editForm.verify_ssl}
+                      disabled={editForm.protocol !== 'https'}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, verify_ssl: e.target.checked })
+                      }
+                    />
+                  </label>
                 </td>
                 <td>
                   <label className="check">
@@ -315,6 +357,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                 <td>
                   {v.protocol}://{v.host}:{v.port}
                 </td>
+                <td>{v.protocol === 'https' && v.verify_ssl ? 'はい' : 'いいえ'}</td>
                 <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
                 <td>{v.username}</td>
                 <td className="actions">
