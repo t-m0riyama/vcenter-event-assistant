@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPatch } from '../api'
+import { apiGet } from '../api'
 import type { EventRow, VCenter } from '../api/schemas'
-import { eventRowSchema, normalizeEventListPayload } from '../api/schemas'
+import { normalizeEventListPayload } from '../api/schemas'
 import { resolveEventApiRange } from '../datetime/graphRange'
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
@@ -11,16 +11,15 @@ import {
   type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
 import { buildEventListSearchParams } from '../events/buildEventListQuery'
-import {
-  EVENT_EXPORT_CHUNK,
-  EVENT_PAGE_SIZES,
-} from '../events/constants'
+import { EVENT_PAGE_SIZES } from '../events/constants'
 import { eventRowToCsvRow } from '../events/eventRowToCsv'
 import {
   buildEventExportFilename,
   downloadEventListCsv,
   eventRowsToCsv,
 } from '../events/eventCsv'
+import { fetchAllEventsForExport } from '../events/fetchAllEventsForExport'
+import { useEventCommentEdit } from './useEventCommentEdit'
 import { asArray } from '../utils/asArray'
 import { toErrorMessage } from '../utils/errors'
 
@@ -40,14 +39,34 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
   const [filterComment, setFilterComment] = useState('')
   const [pageSize, setPageSize] = useState<EventsPanelPageSize>(50)
   const [page, setPage] = useState(1)
-  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
-  const [commentDraft, setCommentDraft] = useState('')
   const [exporting, setExporting] = useState(false)
   const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
   const { rangeFromInput, rangeToInput } = useMemo(
     () => zonedRangePartsToCombinedInputs(rangeParts),
     [rangeParts],
   )
+
+  const filters = useMemo(
+    () => ({
+      minScore,
+      filterEventType,
+      filterSeverity,
+      filterMessage,
+      filterComment,
+    }),
+    [minScore, filterEventType, filterSeverity, filterMessage, filterComment],
+  )
+
+  const commentEdit = useEventCommentEdit({ onError, setRows })
+  const {
+    editingCommentId,
+    commentDraft,
+    setCommentDraft,
+    beginCommentEdit,
+    cancelCommentEdit,
+    saveComment,
+    resetCommentEdit,
+  } = commentEdit
 
   const load = useCallback(async () => {
     onError(null)
@@ -56,13 +75,6 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
       if (!range.ok) {
         onError(range.message)
         return
-      }
-      const filters = {
-        minScore,
-        filterEventType,
-        filterSeverity,
-        filterMessage,
-        filterComment,
       }
       const q = buildEventListSearchParams({
         limit: pageSize,
@@ -81,12 +93,8 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
       onError(toErrorMessage(e))
     }
   }, [
+    filters,
     onError,
-    minScore,
-    filterEventType,
-    filterSeverity,
-    filterMessage,
-    filterComment,
     page,
     pageSize,
     rangeFromInput,
@@ -111,46 +119,8 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
   const canNext = total > 0 && safePage * pageSize < total
 
   useEffect(() => {
-    setEditingCommentId(null)
-    setCommentDraft('')
-  }, [
-    page,
-    pageSize,
-    minScore,
-    filterEventType,
-    filterSeverity,
-    filterMessage,
-    filterComment,
-    rangeParts,
-  ])
-
-  const beginCommentEdit = useCallback((e: EventRow) => {
-    setEditingCommentId(e.id)
-    setCommentDraft(e.user_comment ?? '')
-  }, [])
-
-  const cancelCommentEdit = useCallback(() => {
-    setEditingCommentId(null)
-    setCommentDraft('')
-  }, [])
-
-  const saveComment = useCallback(
-    async (eventId: number) => {
-      onError(null)
-      try {
-        const raw = await apiPatch<unknown>(`/api/events/${eventId}`, {
-          user_comment: commentDraft.trim() === '' ? null : commentDraft,
-        })
-        const updated = eventRowSchema.parse(raw)
-        setRows((prev) => prev.map((r) => (r.id === eventId ? { ...r, ...updated } : r)))
-        setEditingCommentId(null)
-        setCommentDraft('')
-      } catch (e) {
-        onError(toErrorMessage(e))
-      }
-    },
-    [commentDraft, onError],
-  )
+    resetCommentEdit()
+  }, [resetCommentEdit, page, pageSize, filters, rangeParts])
 
   const downloadCsv = useCallback(async () => {
     onError(null)
@@ -161,35 +131,15 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
         onError(range.message)
         return
       }
-      const filters = {
-        minScore,
-        filterEventType,
-        filterSeverity,
-        filterMessage,
-        filterComment,
-      }
       const vcenters = await apiGet<unknown>('/api/vcenters')
       const vcenterList = asArray<VCenter>(vcenters)
       const nameById = new Map(vcenterList.map((v) => [v.id, v.name]))
 
-      const all: EventRow[] = []
-      let offset = 0
-      let totalExpected = 0
-      for (;;) {
-        const q = buildEventListSearchParams({
-          limit: EVENT_EXPORT_CHUNK,
-          offset,
-          filters,
-          range: { from: range.from, to: range.to },
-        })
-        const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
-        const { items, total, rawItemCount } = normalizeEventListPayload(raw)
-        totalExpected = total
-        all.push(...items)
-        offset += rawItemCount
-        if (rawItemCount === 0) break
-        if (all.length >= totalExpected) break
-      }
+      const all = await fetchAllEventsForExport(
+        (q) => apiGet<unknown>(`/api/events?${q.toString()}`),
+        filters,
+        { from: range.from, to: range.to },
+      )
       all.sort(
         (a, b) =>
           parseApiUtcInstantMs(a.occurred_at) - parseApiUtcInstantMs(b.occurred_at),
@@ -209,17 +159,7 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
     } finally {
       setExporting(false)
     }
-  }, [
-    onError,
-    minScore,
-    filterEventType,
-    filterSeverity,
-    filterMessage,
-    filterComment,
-    timeZone,
-    rangeFromInput,
-    rangeToInput,
-  ])
+  }, [filters, onError, rangeFromInput, rangeToInput, timeZone])
 
   return {
     load,
