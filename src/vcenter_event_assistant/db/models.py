@@ -7,6 +7,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Intege
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
+from vcenter_event_assistant.db.encrypted_string import EncryptedString
 
 
 class VCenter(Base):
@@ -18,7 +19,7 @@ class VCenter(Base):
     protocol: Mapped[str] = mapped_column(String(16), default="https")
     port: Mapped[int] = mapped_column(Integer, default=443)
     username: Mapped[str] = mapped_column(String(512))
-    password: Mapped[str] = mapped_column(String(2048))
+    password: Mapped[str] = mapped_column(EncryptedString(2048))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

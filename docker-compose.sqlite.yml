@@ -7,7 +7,7 @@ services:
       - .env
     environment:
       DATABASE_URL: sqlite+aiosqlite:////data/vea.db
-      # ログ専用ボリューム（DB の vea_data とは分離）
+      # 本番では .env の VEA_SECRET_KEY で vCenter パスワードを DB 暗号化（未設定時は平文 + 起動 WARNING）
       APP_LOG_FILE: /var/log/vea/app.log
       UVICORN_LOG_FILE: /var/log/vea/uvicorn.log
     volumes:

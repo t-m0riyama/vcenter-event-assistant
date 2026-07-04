@@ -70,6 +70,13 @@ class AppLogSettingsMixin(BaseModel):
     )
 
     cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
+    vea_secret_key: str | None = Field(
+        default=None,
+        description=(
+            "vCenter パスワード DB 暗号化用の秘密鍵（``VEA_SECRET_KEY``）。"
+            "未設定時は平文保存（起動時 WARNING）。"
+        ),
+    )
     vcenter_http_proxy: str | None = Field(
         default=None,
         description=(
@@ -92,6 +99,11 @@ class AppLogSettingsMixin(BaseModel):
     @field_validator("app_log_file", "uvicorn_log_file", mode="before")
     @classmethod
     def empty_log_path_to_none(cls, v: object) -> str | None:
+        return _normalize_empty_to_none(v)
+
+    @field_validator("vea_secret_key", mode="before")
+    @classmethod
+    def empty_vea_secret_key_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)
 
     @field_validator("vcenter_http_proxy", mode="before")

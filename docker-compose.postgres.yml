@@ -21,6 +21,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://vea:${POSTGRES_PASSWORD:-vea}@postgres:5432/vcenter_event_assistant
+      # 本番では .env の VEA_SECRET_KEY で vCenter パスワードを DB 暗号化（未設定時は平文 + 起動 WARNING）
       APP_LOG_FILE: /var/log/vea/app.log
       UVICORN_LOG_FILE: /var/log/vea/uvicorn.log
     volumes:

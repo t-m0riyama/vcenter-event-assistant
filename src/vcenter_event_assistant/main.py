@@ -33,6 +33,7 @@ from vcenter_event_assistant.api.routes.incident_timeline import (
 )
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
+from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter_password_storage
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.logging_config import configure_logging
 from vcenter_event_assistant.settings import get_settings
@@ -46,6 +47,7 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
     await init_db()
+    await ensure_vcenter_password_storage()
     await run_screenshot_e2e_seed_if_enabled()
     settings = get_settings()
     if settings.scheduler_enabled:
