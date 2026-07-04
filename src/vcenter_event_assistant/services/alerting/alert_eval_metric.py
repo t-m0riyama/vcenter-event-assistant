@@ -3,24 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Protocol
 
 from sqlalchemy import desc, func, select
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState, MetricSample
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.services.alerting.alert_eval_common import AlertEvaluationDeps
 
 logger = logging.getLogger("vcenter_event_assistant.services.alerting.alert_eval")
 
 
-class AlertNotifyProtocol(Protocol):
-    """メトリクス閾値評価から通知送信へ委譲するためのプロトコル。"""
-
-    async def _notify(self, rule: AlertRule, state: AlertState, extra_context: dict) -> None: ...
-
-
 async def evaluate_metric_threshold_rule(
-    notify: AlertNotifyProtocol,
+    deps: AlertEvaluationDeps,
     rule: AlertRule,
 ) -> tuple[int, int]:
     """metric_threshold ルールを 1 件評価する。"""
@@ -83,7 +77,7 @@ async def evaluate_metric_threshold_rule(
                         current.resolved_at = None
                         notify_state = current
                     await session.flush()
-                    await notify._notify(
+                    await deps.notify(
                         rule,
                         notify_state,
                         {
@@ -98,7 +92,7 @@ async def evaluate_metric_threshold_rule(
                 current.state = "resolved"
                 current.resolved_at = sample.sampled_at
                 await session.flush()
-                await notify._notify(
+                await deps.notify(
                     rule,
                     current,
                     {
