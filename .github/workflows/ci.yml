@@ -55,22 +55,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            e2e:
+              - 'frontend/**'
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
       - uses: astral-sh/setup-uv@v5
+        if: github.event_name == 'push' || steps.changes.outputs.e2e == 'true'
         with:
           version: "latest"
       - uses: actions/setup-node@v4
+        if: github.event_name == 'push' || steps.changes.outputs.e2e == 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Sync Python deps
+        if: github.event_name == 'push' || steps.changes.outputs.e2e == 'true'
         run: uv sync --all-groups
       - name: Install frontend deps and Playwright Chromium
+        if: github.event_name == 'push' || steps.changes.outputs.e2e == 'true'
         working-directory: frontend
         run: |
           npm ci
           npx playwright install --with-deps chromium
       - name: E2E
+        if: github.event_name == 'push' || steps.changes.outputs.e2e == 'true'
         working-directory: frontend
         env:
           CI: "true"
