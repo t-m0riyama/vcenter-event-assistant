@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import './EventTypeGuidesPanel.css'
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
@@ -17,6 +17,7 @@ import {
 } from './eventTypeGuidesImportErrors'
 import { EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmDestructiveImport'
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
+import { useSettingsListWithDrafts } from './useSettingsListCrud'
 
 type Draft = {
   general_meaning: string
@@ -38,34 +39,30 @@ function rowToDraft(r: EventTypeGuideRow): Draft {
  * 設定タブ「イベント種別ガイド」: イベント種別ごとの意味・原因・対処の登録・編集。
  */
 export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) => void }) {
-  const [list, setList] = useState<EventTypeGuideRow[]>([])
   const [newType, setNewType] = useState('')
   const [newMeaning, setNewMeaning] = useState('')
   const [newCauses, setNewCauses] = useState('')
   const [newRemediation, setNewRemediation] = useState('')
   const [newActionRequired, setNewActionRequired] = useState(false)
-  const [draft, setDraft] = useState<Record<number, Draft>>({})
 
-  const load = useCallback(async () => {
-    onError(null)
-    try {
-      const data = await apiGet<unknown>('/api/event-type-guides')
-      const parsed = eventTypeGuideListSchema.parse(data)
-      setList(parsed)
-      const d: Record<number, Draft> = {}
-      for (const r of parsed) {
-        d[r.id] = rowToDraft(r)
-      }
-      setDraft(d)
-    } catch (e) {
-      onError(toErrorMessage(e))
+  const fetchList = useCallback(async () => {
+    const data = await apiGet<unknown>('/api/event-type-guides')
+    return eventTypeGuideListSchema.parse(data)
+  }, [])
+
+  const rowsToDrafts = useCallback((rows: readonly EventTypeGuideRow[]) => {
+    const d: Record<number, Draft> = {}
+    for (const r of rows) {
+      d[r.id] = rowToDraft(r)
     }
-  }, [onError])
+    return d
+  }, [])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
-    void load()
-  }, [load])
+  const { list, drafts: draft, setDrafts: setDraft, load } = useSettingsListWithDrafts({
+    onError,
+    fetchList,
+    rowsToDrafts,
+  })
 
   const importExport = useSettingsJsonImportExport({
     exportFilenamePrefix: 'vea-event-type-guides',

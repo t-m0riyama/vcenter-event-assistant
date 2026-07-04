@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import './ScoreRulesPanel.css'
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
@@ -16,33 +16,30 @@ import {
 } from './scoreRulesImportErrors'
 import { SCORE_RULES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmDestructiveImport'
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
+import { useSettingsListWithDrafts } from './useSettingsListCrud'
 
 export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
-  const [list, setList] = useState<EventScoreRuleRow[]>([])
   const [newType, setNewType] = useState('')
   const [newDelta, setNewDelta] = useState(0)
-  const [draftDelta, setDraftDelta] = useState<Record<number, number>>({})
 
-  const load = useCallback(async () => {
-    onError(null)
-    try {
-      const data = await apiGet<unknown>('/api/event-score-rules')
-      const parsed = eventScoreRuleListSchema.parse(data)
-      setList(parsed)
-      const d: Record<number, number> = {}
-      for (const r of parsed) {
-        d[r.id] = r.score_delta
-      }
-      setDraftDelta(d)
-    } catch (e) {
-      onError(toErrorMessage(e))
+  const fetchList = useCallback(async () => {
+    const data = await apiGet<unknown>('/api/event-score-rules')
+    return eventScoreRuleListSchema.parse(data)
+  }, [])
+
+  const rowsToDrafts = useCallback((rows: readonly EventScoreRuleRow[]) => {
+    const d: Record<number, number> = {}
+    for (const r of rows) {
+      d[r.id] = r.score_delta
     }
-  }, [onError])
+    return d
+  }, [])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
-    void load()
-  }, [load])
+  const { list, drafts: draftDelta, setDrafts: setDraftDelta, load } = useSettingsListWithDrafts({
+    onError,
+    fetchList,
+    rowsToDrafts,
+  })
 
   const importExport = useSettingsJsonImportExport({
     exportFilenamePrefix: 'vea-score-rules',
