@@ -1,6 +1,47 @@
 # 開発者向けメモ
 
 
+## ローカル SQLite の使い分け
+
+| ファイル | 用途 |
+| --- | --- |
+| `./data/vea.db` | 手元の永続データ（UI で触る本番相当）。**開発・スクリプト・エージェントでは触らない** |
+| `./data/vea.dev.db` | 日常開発・Alembic 試行・ベンチマーク・エージェント検証用（`.env` の推奨 `DATABASE_URL`） |
+
+開発用 DB の初期化:
+
+```bash
+uv run scripts/init_dev_db.py
+```
+
+vCenter 削除 + 関連 events の CASCADE スモーク:
+
+```bash
+uv run scripts/verify_dev_db.py
+```
+
+どちらも `VEA_DEV_DATABASE_URL` 未設定時は `./data/vea.dev.db` を使う（**シェルの `DATABASE_URL` は読まない**）。一時的に別ファイルへ向ける例:
+
+```bash
+VEA_DEV_DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db uv run scripts/init_dev_db.py
+```
+
+**ルール:** ad-hoc の Python ワンライナー・ベンチマークは `:memory:` または `vea.dev.db` のみ。`vea.db` への直接 INSERT は禁止。
+
+**worktree 推奨:** リポジトリ直下（`main` チェックアウト）の `.env` や `./data/vea.db` を触らないため、DB 初期化・アプリ起動・Alembic 試行は **隔離 worktree** で行う。
+
+```bash
+git check-ignore -q .worktrees   # 未 ignore なら .gitignore に追加してから
+git worktree add .worktrees/<topic> -b feature/<topic>
+cd .worktrees/<topic>
+cp .env.example .env             # DATABASE_URL は vea.dev.db を既定に
+uv run scripts/init_dev_db.py
+```
+
+worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレクトリになる。リポジトリ直下の `.env` は **`vea.db`（手元の永続データ）** のまま維持する。
+
+`pytest` は [`tests/conftest.py`](../tests/conftest.py) で `:memory:` を強制するため、単体テストはどちらのファイル DB も変更しない。
+
 ## 基本的な開発操作
 
 ### データベースマイグレーション（Alembic）
@@ -41,7 +82,7 @@ fingerprint は次の 3 列の有無で stamp 先を推定する（[`alembic_run
 2. リビジョンを生成する（内容は必ず目視確認する）。
 
 ```bash
-export DATABASE_URL=sqlite+aiosqlite:///./data/vea.db   # または PostgreSQL URL
+export DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db   # または PostgreSQL URL
 uv run alembic revision --autogenerate -m "describe_change"
 ```
 
@@ -57,7 +98,7 @@ uv run alembic upgrade head
 手動でマイグレーションのみ実行する場合も同じく `upgrade head` を使う。
 
 ```bash
-export DATABASE_URL=sqlite+aiosqlite:///./data/vea.db
+export DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 uv run alembic upgrade head
 ```
 
