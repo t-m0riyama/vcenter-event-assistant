@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildMetricsChartModel,
+  formatMetricChartSeriesLegendName,
   hostMetricSeriesDataKey,
   isDatastoreMetricKey,
   isHostMetricKey,
@@ -43,6 +44,9 @@ describe('hostMetricSeriesDataKey', () => {
   it('prefixes and sanitizes moid', () => {
     expect(hostMetricSeriesDataKey('host-21')).toBe('m_host_21')
     expect(hostMetricSeriesDataKey('a.b-c')).toBe('m_a_b_c')
+  })
+  it('includes vcenter id when provided', () => {
+    expect(hostMetricSeriesDataKey('host-21', 'vc-1')).toBe('m_host_21__vc_vc_1')
   })
 })
 
@@ -123,6 +127,78 @@ describe('buildMetricsChartModel', () => {
     const names = new Set(r.metricSeries.map((s) => s.legendName))
     expect(names.has('dup (a)')).toBe(true)
     expect(names.has('dup (b)')).toBe(true)
+  })
+
+  it('host mode: splits by vcenter when multiple vcenters are present', () => {
+    const t = '2025-01-01T12:00:00Z'
+    const vc1 = '00000000-0000-0000-0000-000000000001'
+    const vc2 = '00000000-0000-0000-0000-000000000002'
+    const points: MetricPoint[] = [
+      basePoint({
+        sampled_at: t,
+        value: 11,
+        entity_moid: 'host-1',
+        entity_name: 'ESXi-1',
+        vcenter_id: vc1,
+      }),
+      basePoint({
+        sampled_at: t,
+        value: 22,
+        entity_moid: 'host-1',
+        entity_name: 'ESXi-1',
+        vcenter_id: vc2,
+      }),
+    ]
+    const vcenterNameById = new Map([
+      [vc1, 'VC-A'],
+      [vc2, 'VC-B'],
+    ])
+    const r = buildMetricsChartModel(
+      'host.cpu.usage_pct',
+      points,
+      300,
+      false,
+      new Map(),
+      vcenterNameById,
+      true,
+    )
+    if (r.mode !== 'host') throw new Error('expected host')
+    expect(r.metricSeries).toHaveLength(2)
+    expect(r.metricSeries.map((s) => s.vcenterLegendPrefix).sort()).toEqual(['VC-A', 'VC-B'])
+    expect(
+      r.metricSeries.map((s) => formatMetricChartSeriesLegendName(s, '全て')).sort(),
+    ).toEqual(['VC-A / ESXi-1', 'VC-B / ESXi-1'])
+    const k1 = hostMetricSeriesDataKey('host-1', vc1)
+    const k2 = hostMetricSeriesDataKey('host-1', vc2)
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0]?.[k1]).toBe(11)
+    expect(r.rows[0]?.[k2]).toBe(22)
+  })
+
+  it('uses vcenter prefix in legend when splitSeriesByVcenter is true even for single vcenter data', () => {
+    const t = '2025-01-01T12:00:00Z'
+    const vc1 = '00000000-0000-0000-0000-000000000001'
+    const points: MetricPoint[] = [
+      basePoint({
+        sampled_at: t,
+        value: 11,
+        entity_moid: 'ds-1',
+        entity_name: 'DS-1',
+        vcenter_id: vc1,
+      }),
+    ]
+    const vcenterNameById = new Map([[vc1, 'VC-A']])
+    const r = buildMetricsChartModel(
+      'datastore.space.used_pct',
+      points,
+      300,
+      false,
+      new Map(),
+      vcenterNameById,
+      true,
+    )
+    if (r.mode !== 'host') throw new Error('expected host')
+    expect(formatMetricChartSeriesLegendName(r.metricSeries[0], '全て')).toBe('VC-A / DS-1')
   })
 
   it('datastore mode: splits series by entity_moid and merges same timestamp into one row', () => {

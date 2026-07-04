@@ -23,11 +23,14 @@ function isEntitySplitMetricKey(metricKey: string): boolean {
 /**
  * Recharts の `dataKey` 用に `entity_moid`（ホスト MOID・データストア MOID 共通）を列名として使える形にする。
  */
-export function hostMetricSeriesDataKey(entityMoid: string): string {
+export function hostMetricSeriesDataKey(entityMoid: string, vcenterId?: string): string {
   const s = String(entityMoid).trim()
   if (!s) return 'm_unknown'
   const safe = s.replace(/[^a-zA-Z0-9_]/g, '_')
-  return `m_${safe}`
+  const base = `m_${safe}`
+  if (!vcenterId) return base
+  const safeVc = String(vcenterId).replace(/[^a-zA-Z0-9_]/g, '_')
+  return `${base}__vc_${safeVc}`
 }
 
 export type MetricChartRowSingle = {
@@ -44,8 +47,10 @@ export type MetricChartRowHost = {
 
 export type MetricChartSeriesLine = {
   dataKey: string
-  /** Recharts `Line` の `name`（凡例） */
+  /** Recharts `Line` の `name`（凡例）のエンティティ部分 */
   legendName: string
+  /** 複数 vCenter 集約時のみ。凡例の vCenter 接頭辞。 */
+  vcenterLegendPrefix?: string
 }
 
 export type BuildMetricsChartModelResult =
@@ -67,31 +72,58 @@ function filterValidPoints(points: MetricPoint[]): MetricPoint[] {
   })
 }
 
-function buildLegendNamesByMoid(points: MetricPoint[]): Map<string, string> {
-  const nameByMoid = new Map<string, string>()
+function buildLegendNamesByMoid(points: MetricPoint[], multiVcenter: boolean): Map<string, string> {
+  const seriesKey = (p: MetricPoint) =>
+    multiVcenter ? `${p.vcenter_id}\0${p.entity_moid}` : String(p.entity_moid)
+
+  const nameBySeriesKey = new Map<string, string>()
   for (const p of points) {
-    const m = String(p.entity_moid)
-    if (!nameByMoid.has(m)) {
+    const k = seriesKey(p)
+    if (!nameBySeriesKey.has(k)) {
       const n = String(p.entity_name ?? '').trim()
-      nameByMoid.set(m, n || m)
+      nameBySeriesKey.set(k, n || String(p.entity_moid))
     }
   }
-  const moidsByDisplayName = new Map<string, Set<string>>()
-  for (const [moid, name] of nameByMoid) {
-    if (!moidsByDisplayName.has(name)) moidsByDisplayName.set(name, new Set())
-    moidsByDisplayName.get(name)!.add(moid)
+  const moidsByDisplayScope = new Map<string, Set<string>>()
+  for (const p of points) {
+    const k = seriesKey(p)
+    const name = nameBySeriesKey.get(k) ?? String(p.entity_moid)
+    const scope = multiVcenter ? `${p.vcenter_id}\0${name}` : name
+    if (!moidsByDisplayScope.has(scope)) moidsByDisplayScope.set(scope, new Set())
+    moidsByDisplayScope.get(scope)!.add(String(p.entity_moid))
   }
   const out = new Map<string, string>()
-  for (const [moid, name] of nameByMoid) {
-    const dup = (moidsByDisplayName.get(name)?.size ?? 0) > 1
-    out.set(moid, dup ? `${name} (${moid})` : name)
+  for (const p of points) {
+    const k = seriesKey(p)
+    if (out.has(k)) continue
+    const name = nameBySeriesKey.get(k) ?? String(p.entity_moid)
+    const scope = multiVcenter ? `${p.vcenter_id}\0${name}` : name
+    const dup = (moidsByDisplayScope.get(scope)?.size ?? 0) > 1
+    out.set(k, dup ? `${name} (${p.entity_moid})` : name)
   }
   return out
+}
+
+function distinctVcenterIds(points: MetricPoint[]): string[] {
+  return [...new Set(points.map((p) => String(p.vcenter_id)))].sort()
+}
+
+/** 凡例・ツールチップ用の系列表示名を組み立てる。 */
+export function formatMetricChartSeriesLegendName(
+  series: MetricChartSeriesLine,
+  vcenterLabelForChart: string,
+): string {
+  const entity = series.legendName
+  if (series.vcenterLegendPrefix) {
+    return `${series.vcenterLegendPrefix} / ${entity}`
+  }
+  return `${vcenterLabelForChart} / ${entity}`
 }
 
 /**
  * メトリクスグラフ用の行データと左軸系列メタデータを組み立てる。
  * `host.*` または `datastore.*` のときは `entity_moid` ごとに列を分け、同一時刻を 1 行にマージする。
+ * `splitSeriesByVcenter` が true（vCenter「全て」選択時）のときは `vcenter_id` も系列キーに含める。
  */
 export function buildMetricsChartModel(
   metricKey: string,
@@ -99,6 +131,8 @@ export function buildMetricsChartModel(
   perfBucketSeconds: number,
   showEventLine: boolean,
   countByEpochSec: ReadonlyMap<number, number>,
+  vcenterNameById?: ReadonlyMap<string, string>,
+  splitSeriesByVcenter = false,
 ): BuildMetricsChartModelResult {
   const valid = filterValidPoints(points)
   if (!isEntitySplitMetricKey(metricKey)) {
@@ -116,18 +150,43 @@ export function buildMetricsChartModel(
     }
   }
 
-  const legendByMoid = buildLegendNamesByMoid(valid)
-  const moids = [...new Set(valid.map((p) => String(p.entity_moid)))].sort()
-  const metricSeries: MetricChartSeriesLine[] = moids.map((moid) => ({
-    dataKey: hostMetricSeriesDataKey(moid),
-    legendName: legendByMoid.get(moid) ?? moid,
-  }))
+  const splitByVcenter = splitSeriesByVcenter || distinctVcenterIds(valid).length > 1
+  const legendBySeriesKey = buildLegendNamesByMoid(valid, splitByVcenter)
+  const seriesIdentities = [
+    ...new Map(
+      valid.map((p) => {
+        const moid = String(p.entity_moid)
+        const vcenterId = String(p.vcenter_id)
+        const identityKey = splitByVcenter ? `${vcenterId}\0${moid}` : moid
+        return [identityKey, { vcenterId, moid }] as const
+      }),
+    ).values(),
+  ].sort((a, b) => {
+    const byVc = a.vcenterId.localeCompare(b.vcenterId)
+    if (byVc !== 0) return byVc
+    return a.moid.localeCompare(b.moid)
+  })
+
+  const metricSeries: MetricChartSeriesLine[] = seriesIdentities.map(({ vcenterId, moid }) => {
+    const seriesKey = splitByVcenter ? `${vcenterId}\0${moid}` : moid
+    const vcenterLegendPrefix = splitByVcenter
+      ? (vcenterNameById?.get(vcenterId) ?? vcenterId)
+      : undefined
+    return {
+      dataKey: hostMetricSeriesDataKey(moid, splitByVcenter ? vcenterId : undefined),
+      legendName: legendBySeriesKey.get(seriesKey) ?? moid,
+      vcenterLegendPrefix,
+    }
+  })
 
   const byTime = new Map<number, MetricChartRowHost>()
   for (const p of valid) {
     const sampled = String(p.sampled_at)
     const tMs = parseApiUtcInstantMs(sampled)
-    const key = hostMetricSeriesDataKey(String(p.entity_moid))
+    const key = hostMetricSeriesDataKey(
+      String(p.entity_moid),
+      splitByVcenter ? String(p.vcenter_id) : undefined,
+    )
     const bucketSec = bucketEpochUtcSec(sampled, perfBucketSeconds)
     const evCount = showEventLine ? (countByEpochSec.get(bucketSec) ?? 0) : 0
     let row = byTime.get(tMs)
