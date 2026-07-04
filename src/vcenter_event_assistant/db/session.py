@@ -123,6 +123,35 @@ async def ensure_event_type_guides_action_required_column(engine: AsyncEngine) -
         await conn.run_sync(sync_check)
 
 
+async def _ensure_alert_states_last_notified_at_column(engine: AsyncEngine) -> None:
+    """``alert_states.last_notified_at`` を、旧 DB（列なし）向けに追加する。``create_all`` は既存テーブルを変更しない。"""
+
+    def sync_check(sync_conn) -> None:
+        insp = inspect(sync_conn)
+        if not insp.has_table("alert_states"):
+            return
+        dialect = sync_conn.dialect.name
+        if dialect == "sqlite":
+            res = sync_conn.execute(text("PRAGMA table_info(alert_states)"))
+            cols = [row[1] for row in res.fetchall()]
+        else:
+            cols = [c["name"] for c in insp.get_columns("alert_states")]
+        if "last_notified_at" in cols:
+            return
+        sync_conn.execute(
+            text("ALTER TABLE alert_states ADD COLUMN last_notified_at DATETIME"),
+        )
+        sync_conn.execute(
+            text(
+                "UPDATE alert_states SET last_notified_at = fired_at "
+                "WHERE last_notified_at IS NULL"
+            ),
+        )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(sync_check)
+
+
 async def init_db(settings: Settings | None = None) -> None:
     # すべてのモデルを Base.metadata に登録してから create_all する
     import vcenter_event_assistant.db.models  # noqa: F401
@@ -132,3 +161,4 @@ async def init_db(settings: Settings | None = None) -> None:
         await conn.run_sync(Base.metadata.create_all)
     await _ensure_events_user_comment_column(engine)
     await ensure_event_type_guides_action_required_column(engine)
+    await _ensure_alert_states_last_notified_at_column(engine)
