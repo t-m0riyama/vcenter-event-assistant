@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 from vcenter_event_assistant.db.models import AlertRule, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
@@ -128,3 +128,46 @@ async def test_metric_threshold_fires_when_metric_key_matches_collector() -> Non
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.called
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_uses_latest_sample_per_entity() -> None:
+    async with session_scope() as session:
+        vc = VCenter(name="vc_hist", host="vc_hist", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Latest sample",
+            rule_type="metric_threshold",
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
+        )
+        session.add(rule)
+        now = datetime.now(timezone.utc)
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=now - timedelta(hours=2),
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="cpu.usage",
+                value=99.0,
+            )
+        )
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=now,
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="cpu.usage",
+                value=20.0,
+            )
+        )
+        await session.flush()
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        mock_notify.assert_not_called()

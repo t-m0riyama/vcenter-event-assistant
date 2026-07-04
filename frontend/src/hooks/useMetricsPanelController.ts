@@ -29,6 +29,7 @@ export function useMetricsPanelController(
     metricKey: string
     rangeKey: string
   } | null>(null)
+  const seriesFetchEffectGenerationRef = useRef(0)
   const [snapshotChartGuidelineMs, setSnapshotChartGuidelineMs] = useState<number | null>(null)
 
   const invalidateSeriesCache = useCallback(() => {
@@ -102,10 +103,12 @@ export function useMetricsPanelController(
   }, [vcenterId])
 
   useEffect(() => {
+    const generation = ++seriesFetchEffectGenerationRef.current
     void (async () => {
       let key = metricKey
       if (lastSeriesFetchRef.current?.vcenterId !== vcenterId) {
         key = await loadMetricKeys()
+        if (generation !== seriesFetchEffectGenerationRef.current) return
         setMetricKey(key)
       }
       const rangeKey = `${rangeParts.fromDate}|${rangeParts.fromTime}|${rangeParts.toDate}|${rangeParts.toTime}`
@@ -120,6 +123,7 @@ export function useMetricsPanelController(
         return
       }
       const ok = await loadSeries(key)
+      if (generation !== seriesFetchEffectGenerationRef.current) return
       if (ok) lastSeriesFetchRef.current = sig
     })()
   }, [vcenterId, metricKey, loadSeries, loadMetricKeys, rangeParts])

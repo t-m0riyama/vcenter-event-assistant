@@ -50,6 +50,7 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
 
   const metricKeyRef = useRef(metricKey)
   metricKeyRef.current = metricKey
+  const loadSeriesGenerationRef = useRef(0)
 
   useEffect(() => {
     void apiGet<unknown>('/api/vcenters')
@@ -78,9 +79,11 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
 
   const loadSeries = useCallback(
     async (overrideKey?: string, fetchOptions?: { silent?: boolean }): Promise<boolean> => {
+      const generation = ++loadSeriesGenerationRef.current
       const silent = fetchOptions?.silent === true
       const graphRange = resolveMetricsGraphRange(rangeFromInput, rangeToInput, timeZone)
       if (graphRange.mode === 'invalid') {
+        if (generation !== loadSeriesGenerationRef.current) return false
         onError(graphRange.message)
         setPoints([])
         setMetricTotal(null)
@@ -89,6 +92,7 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
       }
       const key = (overrideKey ?? metricKey).trim()
       if (!key) {
+        if (generation !== loadSeriesGenerationRef.current) return false
         onError(null)
         setPoints([])
         setMetricTotal(null)
@@ -106,15 +110,19 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
           q.set('to', graphRange.to)
         }
         const data = await apiGet<unknown>(`/api/metrics?${q.toString()}`)
+        if (generation !== loadSeriesGenerationRef.current) return false
         const normalized = normalizeMetricSeriesResponse(data)
         setPoints(normalized.points)
         setMetricTotal(normalized.total)
         return true
       } catch (e) {
+        if (generation !== loadSeriesGenerationRef.current) return false
         onError(toErrorMessage(e))
         return false
       } finally {
-        setLoading(false)
+        if (generation === loadSeriesGenerationRef.current) {
+          setLoading(false)
+        }
       }
     },
     [vcenterId, metricKey, onError, rangeFromInput, rangeToInput, timeZone],

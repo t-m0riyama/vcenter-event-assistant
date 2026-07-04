@@ -90,6 +90,9 @@ async def evaluate_event_score_rule(
                     else None
                 ),
                 last_qualifying_at=last_at,
+                last_fired_qualifying_at=(
+                    as_utc(current.fired_at) if current and current.fired_at else None
+                ),
                 now=now,
                 cooldown_minutes=cooldown,
             ):

@@ -332,6 +332,50 @@ async def test_evaluate_event_score_renotifies_after_cooldown_same_type() -> Non
 
 
 @pytest.mark.asyncio
+async def test_evaluate_event_score_does_not_renotify_after_cooldown_without_new_qualifying() -> None:
+    async with session_scope() as session:
+        vc = VCenter(name="vc_stale", host="h", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Stale Qualifying",
+            rule_type="event_score",
+            config={"threshold": 60, "cooldown_minutes": 10},
+        )
+        session.add(rule)
+        t1 = datetime.now(timezone.utc) - timedelta(minutes=20)
+        session.add(
+            EventRecord(
+                vcenter_id=vc.id,
+                occurred_at=t1,
+                event_type="vim.event.E1",
+                vmware_key=1,
+                notable_score=70,
+            )
+        )
+        await session.flush()
+        rule_id = rule.id
+
+    evaluator = AlertEvaluator()
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.call_count == 1
+
+    async with session_scope() as session:
+        from sqlalchemy import select
+
+        st = (
+            await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
+        ).scalar_one()
+        st.last_notified_at = datetime.now(timezone.utc) - timedelta(minutes=11)
+        await session.flush()
+
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        mock_notify.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_evaluate_event_score_firing_notify_uses_event_type_in_context_key() -> None:
     """メール件名の Resource（context_key）にイベント種別が出ること。"""
     async with session_scope() as session:

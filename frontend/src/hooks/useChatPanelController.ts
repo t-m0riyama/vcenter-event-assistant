@@ -12,12 +12,10 @@ import {
 } from '../api/schemas'
 import { resolveEventApiRange } from '../datetime/graphRange'
 import {
-  METRICS_DEFAULT_ROLLING_DURATION_MS,
-  presetRelativeRangeWallPartsWithUtcFallback,
   zonedRangePartsToCombinedInputs,
-  type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
 import { useTimeZone } from '../datetime/useTimeZone'
+import { useRollingZonedRangeParts } from './useRollingZonedRangeParts'
 import { readStoredChatMaxStoredMessages } from '../preferences/chatMaxStoredMessagesStorage'
 import { useChatMaxStoredMessages } from '../preferences/useChatMaxStoredMessages'
 import {
@@ -42,9 +40,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const { chatMaxStoredMessages } = useChatMaxStoredMessages()
   const thresholdFields = usePeriodMetricThresholdFields()
 
-  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(() =>
-    presetRelativeRangeWallPartsWithUtcFallback(METRICS_DEFAULT_ROLLING_DURATION_MS, 'UTC'),
-  )
+  const { rangeParts, setRangeParts } = useRollingZonedRangeParts(timeZone)
   const [vcenterId, setVcenterId] = useState<string>('')
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])

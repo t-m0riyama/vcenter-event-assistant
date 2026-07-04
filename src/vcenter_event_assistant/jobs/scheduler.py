@@ -180,7 +180,13 @@ def setup_scheduler(app: "FastAPI") -> AsyncIOScheduler:
 
     scheduler.add_job(poll_events, "interval", seconds=settings.event_poll_interval_seconds, id="poll_events")
     scheduler.add_job(poll_perf, "interval", seconds=settings.perf_sample_interval_seconds, id="poll_perf")
-    scheduler.add_job(evaluate_alerts, "interval", seconds=settings.alert_eval_interval_seconds, id="evaluate_alerts")
+    scheduler.add_job(
+        evaluate_alerts,
+        "interval",
+        seconds=settings.alert_eval_interval_seconds,
+        id="evaluate_alerts",
+        coalesce=True,
+    )
     scheduler.add_job(purge, "interval", hours=6, id="purge_metrics")
     add_digest_cron_jobs(scheduler, settings)
     scheduler.start()
