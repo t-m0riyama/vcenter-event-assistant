@@ -68,6 +68,17 @@
   white-space: pre-wrap;
 }
 
+.help-doc-link {
+  margin: var(--spacing-3) 0 0;
+  font-size: var(--font-size-caption1);
+  color: var(--color-text-secondary);
+}
+
+.help-doc-path {
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: var(--font-size-caption2);
+}
+
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }

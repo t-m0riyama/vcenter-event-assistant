@@ -2,6 +2,8 @@
 
 [vCenter Event Assistant](../README.md) の Web UI です。React・TypeScript・[Vite](https://vite.dev/) で実装し、バックエンドの FastAPI と同一オリジンまたは開発時プロキシ経由で API を呼び出します。イベントの一覧・概要、ホストメトリクスのグラフ、保存済みダイジェスト（Markdown）の参照、vCenter 登録やスコアルールなどの設定をブラウザから行えます。
 
+各タブの **簡易ヘルプ**（「使い方を表示」）は `frontend/src/help/tabHelpContent.ts` で要約と利用者向けガイド（`docs/user-guides/*.md` 等）への対応を一元管理する。ガイド側には `<!-- vea-tab-help: ... -->` マーカーを付与し、`frontend/src/help/tabHelpContent.test.ts` でファイル存在とマーカー整合を検証する。
+
 ## 画面の例
 
 ### 概要
