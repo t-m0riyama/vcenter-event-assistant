@@ -46,7 +46,6 @@ async def run_daily_digest() -> None:
                 kind="daily",
                 from_utc=fr,
                 to_utc=to,
-                settings=get_settings(),
             )
         logger.info(
             "digest created kind=daily id=%s period=%s..%s",
@@ -69,7 +68,6 @@ async def run_weekly_digest() -> None:
                 kind="weekly",
                 from_utc=fr,
                 to_utc=to,
-                settings=get_settings(),
             )
         logger.info(
             "digest created kind=weekly id=%s period=%s..%s",
@@ -92,7 +90,6 @@ async def run_monthly_digest() -> None:
                 kind="monthly",
                 from_utc=fr,
                 to_utc=to,
-                settings=get_settings(),
             )
         logger.info(
             "digest created kind=monthly id=%s period=%s..%s",

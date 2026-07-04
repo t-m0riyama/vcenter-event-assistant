@@ -16,7 +16,7 @@ from vcenter_event_assistant.services.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm_profile import is_digest_llm_configured, resolve_llm_profile
 from vcenter_event_assistant.services.llm_invoke import log_llm_failure, stream_chat_to_text
 from vcenter_event_assistant.services.llm_user_errors import _llm_failure_detail_for_user
-from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings import get_settings
 
 _logger = logging.getLogger(__name__)
 
@@ -71,7 +71,6 @@ def _trim_context_json(payload: dict[str, Any], *, max_chars: int | None = None)
 
 
 async def augment_digest_with_llm(
-    settings: Settings,
     *,
     context: DigestContext,
     template_markdown: str,
@@ -90,6 +89,7 @@ async def augment_digest_with_llm(
         (body_markdown, error_message)。API キーが空のときは (template_markdown, None)。
         LLM 失敗時は (template_markdown, 警告文)。
     """
+    settings = get_settings()
     if not is_digest_llm_configured(settings):
         return (template_markdown, None)
 

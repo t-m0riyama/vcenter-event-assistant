@@ -14,8 +14,17 @@ from vcenter_event_assistant.services.digest_run import run_digest_once
 from vcenter_event_assistant.settings import Settings
 
 
+def _patch_digest_run_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
+    def getter() -> Settings:
+        return settings
+
+    monkeypatch.setattr("vcenter_event_assistant.services.digest_run.get_settings", getter)
+    monkeypatch.setattr("vcenter_event_assistant.services.digest_markdown.get_settings", getter)
+    monkeypatch.setattr("vcenter_event_assistant.services.digest_llm.get_settings", getter)
+
+
 @pytest.mark.asyncio
-async def test_run_digest_once_persists_without_llm() -> None:
+async def test_run_digest_once_persists_without_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     vid = uuid.uuid4()
     base = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
     fr = base - timedelta(hours=1)
@@ -49,6 +58,7 @@ async def test_run_digest_once_persists_without_llm() -> None:
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key=None,
     )
+    _patch_digest_run_settings(monkeypatch, settings)
 
     async with session_scope() as session:
         row = await run_digest_once(
@@ -56,7 +66,6 @@ async def test_run_digest_once_persists_without_llm() -> None:
             kind="daily",
             from_utc=fr,
             to_utc=to,
-            settings=settings,
         )
         assert row.id is not None
         assert row.status == "ok"
@@ -75,7 +84,10 @@ async def test_run_digest_once_persists_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_digest_once_template_error_sets_status_error(tmp_path: Path) -> None:
+async def test_run_digest_once_template_error_sets_status_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bad = tmp_path / "bad.j2"
     bad.write_text("{% unclosed", encoding="utf-8")
 
@@ -113,6 +125,7 @@ async def test_run_digest_once_template_error_sets_status_error(tmp_path: Path) 
         llm_digest_api_key=None,
         digest_template_path=str(bad),
     )
+    _patch_digest_run_settings(monkeypatch, settings)
 
     async with session_scope() as session:
         row = await run_digest_once(
@@ -120,7 +133,6 @@ async def test_run_digest_once_template_error_sets_status_error(tmp_path: Path) 
             kind="daily",
             from_utc=fr,
             to_utc=to,
-            settings=settings,
         )
         assert row.status == "error"
         assert row.body_markdown == ""

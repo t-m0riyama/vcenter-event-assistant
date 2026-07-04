@@ -36,14 +36,22 @@ def _minimal_ctx() -> DigestContext:
     )
 
 
+def _patch_digest_llm_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest_llm.get_settings",
+        lambda: settings,
+    )
+
+
 @pytest.mark.asyncio
-async def test_augment_skips_http_when_no_api_key() -> None:
+async def test_augment_skips_http_when_no_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key=None,
     )
+    _patch_digest_llm_settings(monkeypatch, s)
     md = "# t\n"
-    out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown=md)
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown=md)
     assert out == md
     assert err is None
 
@@ -57,6 +65,7 @@ async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         llm_digest_base_url="https://api.openai.com/v1",
         llm_digest_model="gpt-4o-mini",
     )
+    _patch_digest_llm_settings(monkeypatch, s)
     fake = FakeListChatModel(responses=["## LLM 要約\n- テスト"])
 
     def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> FakeListChatModel:
@@ -70,7 +79,7 @@ async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         _fake_build,
     )
 
-    out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# base")
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# base")
     assert err is None
     assert "## LLM 要約" in out
     assert "# base" in out
@@ -84,6 +93,7 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         llm_digest_provider="gemini",
         llm_digest_model="gemini-2.0-flash",
     )
+    _patch_digest_llm_settings(monkeypatch, s)
     fake = FakeListChatModel(responses=["## LLM 要約\n- G"])
 
     def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> FakeListChatModel:
@@ -97,7 +107,7 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         _fake_build,
     )
 
-    out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# x")
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# x")
     assert err is None
     assert "G" in out
 
@@ -109,6 +119,7 @@ async def test_augment_returns_template_on_http_error(monkeypatch: pytest.Monkey
         llm_digest_api_key="sk-x",
         llm_digest_provider="openai_compatible",
     )
+    _patch_digest_llm_settings(monkeypatch, s)
 
     async def _boom(*a: object, **k: object) -> tuple[str, int | None, float | None]:
         raise RuntimeError("HTTP 500: err")
@@ -118,7 +129,7 @@ async def test_augment_returns_template_on_http_error(monkeypatch: pytest.Monkey
         _boom,
     )
 
-    out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# only")
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# only")
     assert out == "# only"
     assert err is not None
     assert "LLM 要約は省略" in (err or "")
@@ -133,6 +144,7 @@ async def test_augment_uses_exception_type_when_str_empty(monkeypatch: pytest.Mo
         llm_digest_api_key="sk-x",
         llm_digest_provider="openai_compatible",
     )
+    _patch_digest_llm_settings(monkeypatch, s)
 
     async def _boom(*a: object, **k: object) -> tuple[str, int | None, float | None]:
         raise ConnectionError()
@@ -142,7 +154,7 @@ async def test_augment_uses_exception_type_when_str_empty(monkeypatch: pytest.Mo
         _boom,
     )
 
-    out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# only")
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# only")
     assert out == "# only"
     assert err == "LLM 要約は省略（ConnectionError）"
 
@@ -155,6 +167,7 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
         llm_digest_api_key="sk-x",
         llm_digest_provider="openai_compatible",
     )
+    _patch_digest_llm_settings(monkeypatch, s)
 
     async def _boom(*a: object, **k: object) -> tuple[str, int | None, float | None]:
         raise httpx.ReadTimeout("")
@@ -164,7 +177,7 @@ async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.Monkey
         _boom,
     )
 
-    out, err = await augment_digest_with_llm(s, context=_minimal_ctx(), template_markdown="# only")
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# only")
     assert out == "# only"
     assert err is not None
     assert "ReadTimeout" in (err or "")
@@ -185,6 +198,7 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
         llm_digest_model="gpt-4o-mini",
         llm_anonymization_enabled=True,
     )
+    _patch_digest_llm_settings(monkeypatch, s)
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     host = "DIGEST-HOST-SECRET-01"
     ctx = DigestContext(
@@ -224,7 +238,7 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
     )
 
     md = f"# タイトル\nホスト {host} のメモ\n"
-    out, err = await augment_digest_with_llm(s, context=ctx, template_markdown=md)
+    out, err = await augment_digest_with_llm(context=ctx, template_markdown=md)
     assert err is None
     assert host in out
     assert host not in str(captured.get("human"))
@@ -243,6 +257,7 @@ async def test_augment_digest_anonymizes_extra_vcenter_in_template(
         llm_digest_model="gpt-4o-mini",
         llm_anonymization_enabled=True,
     )
+    _patch_digest_llm_settings(monkeypatch, s)
     label = "EXTRA-VC-DISPLAY-ONLY"
     captured: dict[str, object] = {}
 
@@ -261,7 +276,6 @@ async def test_augment_digest_anonymizes_extra_vcenter_in_template(
 
     md = f"# タイトル\n{label} について\n"
     out, err = await augment_digest_with_llm(
-        s,
         context=_minimal_ctx(),
         template_markdown=md,
         extra_vcenter_strings=[label],
