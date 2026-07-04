@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
@@ -58,7 +59,7 @@ async def _ingest_for_enabled_vcenters(
 
     sem = asyncio.Semaphore(settings.ingestion_concurrency)
 
-    async def _one(vid: int) -> None:
+    async def _one(vid: uuid.UUID) -> None:
         async with sem:
             try:
                 async with session_scope(settings=settings) as session:

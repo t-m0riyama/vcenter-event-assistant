@@ -102,7 +102,7 @@ export DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 uv run alembic upgrade head
 ```
 
-現在の head リビジョン ID は `uv run alembic heads` で確認できる（コード上の定数は `ALEMBIC_HEAD`）。
+現在の head リビジョン ID は `uv run alembic heads` で確認できる（コードでは `get_alembic_head()` が `ScriptDirectory` から導出する）。
 
 #### 既存 DB を新バージョンに上げる前（バックアップ必須）
 

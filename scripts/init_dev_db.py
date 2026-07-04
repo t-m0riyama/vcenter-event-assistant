@@ -28,7 +28,7 @@ async def main() -> None:
 
     get_settings.cache_clear()
 
-    from vcenter_event_assistant.db.alembic_runner import ALEMBIC_HEAD, get_applied_alembic_revision
+    from vcenter_event_assistant.db.alembic_runner import get_alembic_head, get_applied_alembic_revision
     from vcenter_event_assistant.db.session import get_engine, init_db, reset_db
 
     await reset_db()
@@ -38,7 +38,7 @@ async def main() -> None:
     await reset_db()
 
     print(f"DATABASE_URL={url}")
-    print(f"alembic head={ALEMBIC_HEAD} applied={revision}")
+    print(f"alembic head={get_alembic_head()} applied={revision}")
 
 
 if __name__ == "__main__":
