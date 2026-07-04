@@ -432,6 +432,7 @@ class AlertHistoryRead(BaseModel):
     id: int
     rule_id: int
     rule_name: str | None = None
+    rule_type: str = ""
     alert_level: Literal["critical", "error", "warning"]
     state: str
     context_key: str
@@ -439,6 +440,7 @@ class AlertHistoryRead(BaseModel):
     channel: str
     success: bool
     error_message: str | None
+    can_resolve: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -446,6 +448,13 @@ class AlertHistoryRead(BaseModel):
         if hasattr(v, "rule") and v.rule:
             v.rule_name = v.rule.name
         return v
+
+
+class AlertStateResolveRequest(BaseModel):
+    """イベントスコア型アラートの手動解消リクエスト。"""
+
+    rule_id: int
+    context_key: str
 
 
 class AlertHistoryListResponse(BaseModel):

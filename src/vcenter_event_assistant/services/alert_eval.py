@@ -74,6 +74,41 @@ class AlertEvaluator:
         self._last_summary = summary
         return summary
 
+    async def resolve_event_score_manually(self, rule_id: int, context_key: str) -> None:
+        """イベントスコア型の発火中アラートを手動で resolved にし、回復通知を送る。"""
+        async with session_scope() as session:
+            rule = await session.get(AlertRule, rule_id)
+            if rule is None:
+                raise LookupError("alert rule not found")
+            if rule.rule_type != "event_score":
+                raise ValueError("manual resolve is only supported for event_score rules")
+
+            res = await session.execute(
+                select(AlertState).where(
+                    AlertState.rule_id == rule_id,
+                    AlertState.context_key == context_key,
+                    AlertState.state == "firing",
+                )
+            )
+            state = res.scalar_one_or_none()
+            if state is None:
+                raise LookupError("no firing alert state for this rule and context")
+
+            now = datetime.now(timezone.utc)
+            state.state = "resolved"
+            state.resolved_at = now
+            await session.flush()
+
+            await self._notify(
+                rule,
+                state,
+                {
+                    "details": (
+                        f"Alert manually resolved for event type: {context_key}"
+                    ),
+                },
+            )
+
     async def _evaluate_event_score(self, rule: AlertRule) -> tuple[int, int]:
         parsed = parse_event_score_rule_config(rule.config)
         if parsed is None:

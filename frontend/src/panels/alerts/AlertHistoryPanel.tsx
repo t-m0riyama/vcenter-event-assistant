@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { apiGet } from '../../api'
+import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import './AlertHistoryPanel.css'
@@ -16,6 +16,7 @@ interface AlertHistory {
   id: number
   rule_id: number
   rule_name: string | null
+  rule_type: string
   alert_level: AlertLevel
   state: string
   context_key: string
@@ -23,6 +24,7 @@ interface AlertHistory {
   channel: string
   success: boolean
   error_message: string | null
+  can_resolve: boolean
 }
 
 interface HistoryResponse {
@@ -55,6 +57,36 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     return () => clearInterval(timer)
   }, [fetchHistory])
 
+  const handleResolve = async (item: AlertHistory) => {
+    const label = item.rule_name || `Rule #${item.rule_id}`
+    if (
+      !confirm(
+        `「${label}」の対象「${item.context_key}」を解消しますか？\n回復メールが送信され、再通知が止まります。`,
+      )
+    ) {
+      return
+    }
+    try {
+      await apiPost('/api/alerts/states/resolve', {
+        rule_id: item.rule_id,
+        context_key: item.context_key,
+      })
+      await fetchHistory()
+    } catch (e) {
+      onError(String(e))
+    }
+  }
+
+  const handleDelete = async (item: AlertHistory) => {
+    if (!confirm('この通知履歴行を削除しますか？（発火状態自体は変わりません）')) return
+    try {
+      await apiDelete(`/api/alerts/history/${item.id}`)
+      await fetchHistory()
+    } catch (e) {
+      onError(String(e))
+    }
+  }
+
   if (loading && history.length === 0) {
     return <div className="loading">通知履歴を読み込み中…</div>
   }
@@ -81,6 +113,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                 <th>状態</th>
                 <th>対象</th>
                 <th>結果</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -107,6 +140,24 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                         失敗
                       </span>
                     )}
+                  </td>
+                  <td className="col-actions">
+                    {h.can_resolve && (
+                      <button
+                        type="button"
+                        className="btn btn--gray alert-history-action"
+                        onClick={() => void handleResolve(h)}
+                      >
+                        解消
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn--gray alert-history-action"
+                      onClick={() => void handleDelete(h)}
+                    >
+                      削除
+                    </button>
                   </td>
                 </tr>
               ))}

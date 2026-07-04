@@ -100,3 +100,11 @@
   background: var(--color-gray-100, #f2f2f7);
   color: var(--color-text-secondary);
 }
+
+.col-actions {
+  white-space: nowrap;
+}
+
+.alert-history-action + .alert-history-action {
+  margin-left: var(--spacing-2);
+}

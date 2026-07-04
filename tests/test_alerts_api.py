@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
-from vcenter_event_assistant.db.models import AlertHistory, AlertRule
+from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.services.alert_eval import AlertEvaluator
 
 @pytest.mark.asyncio
 async def test_alerts_rules_crud(client: AsyncClient):
@@ -338,3 +341,195 @@ async def test_alert_rules_import_delete_all_when_empty_rules(client: AsyncClien
     listed = await client.get("/api/alerts/rules")
     assert listed.status_code == 200
     assert listed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_can_resolve_when_event_score_firing(client: AsyncClient):
+    async with session_scope() as session:
+        rule = AlertRule(
+            name="Resolve UI Rule",
+            rule_type="event_score",
+            alert_level="warning",
+            config={"threshold": 50},
+        )
+        session.add(rule)
+        await session.flush()
+        session.add(
+            AlertState(
+                rule_id=rule.id,
+                state="firing",
+                context_key="vim.event.ExampleEvent",
+                fired_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            AlertHistory(
+                rule_id=rule.id,
+                alert_level="warning",
+                state="firing",
+                context_key="vim.event.ExampleEvent",
+                notified_at=datetime.now(timezone.utc),
+                channel="email",
+                success=True,
+            )
+        )
+        rule_id = rule.id
+
+    resp = await client.get("/api/alerts/history")
+    assert resp.status_code == 200
+    item = next(i for i in resp.json()["items"] if i["rule_id"] == rule_id)
+    assert item["rule_type"] == "event_score"
+    assert item["can_resolve"] is True
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_can_resolve_false_when_resolved(client: AsyncClient):
+    async with session_scope() as session:
+        rule = AlertRule(
+            name="Resolved Rule",
+            rule_type="event_score",
+            alert_level="warning",
+            config={"threshold": 50},
+        )
+        session.add(rule)
+        await session.flush()
+        session.add(
+            AlertState(
+                rule_id=rule.id,
+                state="resolved",
+                context_key="vim.event.ResolvedEvent",
+                fired_at=datetime.now(timezone.utc),
+                resolved_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            AlertHistory(
+                rule_id=rule.id,
+                alert_level="warning",
+                state="firing",
+                context_key="vim.event.ResolvedEvent",
+                notified_at=datetime.now(timezone.utc),
+                channel="email",
+                success=True,
+            )
+        )
+        rule_id = rule.id
+
+    resp = await client.get("/api/alerts/history")
+    item = next(i for i in resp.json()["items"] if i["rule_id"] == rule_id)
+    assert item["can_resolve"] is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_event_score_alert(client: AsyncClient):
+    async with session_scope() as session:
+        rule = AlertRule(
+            name="Manual Resolve Rule",
+            rule_type="event_score",
+            alert_level="error",
+            config={"threshold": 60},
+        )
+        session.add(rule)
+        await session.flush()
+        session.add(
+            AlertState(
+                rule_id=rule.id,
+                state="firing",
+                context_key="vim.event.ManualEvent",
+                fired_at=datetime.now(timezone.utc),
+            )
+        )
+        rule_id = rule.id
+        context_key = "vim.event.ManualEvent"
+
+    with patch.object(AlertEvaluator, "_notify", new_callable=AsyncMock):
+        resp = await client.post(
+            "/api/alerts/states/resolve",
+            json={"rule_id": rule_id, "context_key": context_key},
+        )
+    assert resp.status_code == 204
+
+    async with session_scope() as session:
+        res = await session.execute(
+            select(AlertState).where(
+                AlertState.rule_id == rule_id,
+                AlertState.context_key == context_key,
+            )
+        )
+        state = res.scalar_one()
+        assert state.state == "resolved"
+        assert state.resolved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_resolve_event_score_alert_rejects_metric_rule(client: AsyncClient):
+    async with session_scope() as session:
+        rule = AlertRule(
+            name="Metric Rule",
+            rule_type="metric_threshold",
+            alert_level="warning",
+            config={"threshold": 90, "metric_key": "host.cpu.usage_pct"},
+        )
+        session.add(rule)
+        await session.flush()
+        session.add(
+            AlertState(
+                rule_id=rule.id,
+                state="firing",
+                context_key="host-1",
+                fired_at=datetime.now(timezone.utc),
+            )
+        )
+        rule_id = rule.id
+
+    resp = await client.post(
+        "/api/alerts/states/resolve",
+        json={"rule_id": rule_id, "context_key": "host-1"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_resolve_event_score_alert_not_found(client: AsyncClient):
+    resp = await client.post(
+        "/api/alerts/states/resolve",
+        json={"rule_id": 999999, "context_key": "missing"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_alert_history_row(client: AsyncClient):
+    async with session_scope() as session:
+        rule = AlertRule(
+            name="Delete History Rule",
+            rule_type="event_score",
+            alert_level="warning",
+            config={"threshold": 1},
+        )
+        session.add(rule)
+        await session.flush()
+        history = AlertHistory(
+            rule_id=rule.id,
+            alert_level="warning",
+            state="firing",
+            context_key="ctx-delete",
+            notified_at=datetime.now(timezone.utc),
+            channel="email",
+            success=True,
+        )
+        session.add(history)
+        await session.flush()
+        history_id = history.id
+
+    resp = await client.delete(f"/api/alerts/history/{history_id}")
+    assert resp.status_code == 204
+
+    async with session_scope() as session:
+        assert await session.get(AlertHistory, history_id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_alert_history_not_found(client: AsyncClient):
+    resp = await client.delete("/api/alerts/history/999999")
+    assert resp.status_code == 404
