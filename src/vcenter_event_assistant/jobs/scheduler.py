@@ -16,9 +16,9 @@ from sqlalchemy import select
 
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.digest_run import run_digest_once
-from vcenter_event_assistant.services.digest_timezone import resolve_digest_timezone
-from vcenter_event_assistant.services.digest_window import (
+from vcenter_event_assistant.services.digest.digest_run import run_digest_once
+from vcenter_event_assistant.services.digest.digest_timezone import resolve_digest_timezone
+from vcenter_event_assistant.services.digest.digest_window import (
     zoned_previous_calendar_month_window,
     zoned_previous_week_window,
     zoned_yesterday_window,
@@ -30,7 +30,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_events,
     purge_old_metrics,
 )
-from vcenter_event_assistant.services.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.settings import Settings, get_settings
 
 if TYPE_CHECKING:

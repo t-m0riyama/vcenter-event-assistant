@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 
 @pytest.mark.asyncio
 async def test_alerts_rules_crud(client: AsyncClient):

@@ -16,7 +16,7 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.services.incident_timeline_snapshot import (
     build_alert_rule_snapshot_build_request,
     format_alert_rule_trigger_id,

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 
 class ChatMessage(BaseModel):
     """チャット 1 ターン（クライアント送受信・LLM 呼び出しの両方で使用）。"""

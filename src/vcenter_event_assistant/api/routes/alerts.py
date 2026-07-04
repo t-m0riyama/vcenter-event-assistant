@@ -11,7 +11,7 @@ from vcenter_event_assistant.api.schemas import (
     AlertRulesImportResponse, AlertStateResolveRequest,
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
-from vcenter_event_assistant.services.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
