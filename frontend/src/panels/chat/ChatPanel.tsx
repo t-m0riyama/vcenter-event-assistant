@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './ChatPanel.css'
 
 import { apiGet, apiPost } from '../../api'
@@ -15,10 +15,8 @@ import {
   type VCenter,
 } from '../../api/schemas'
 import { asArray } from '../../utils/asArray'
-import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { resolveEventApiRange } from '../../datetime/graphRange'
-import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import {
   METRICS_DEFAULT_ROLLING_DURATION_MS,
   presetRelativeRangeWallPartsWithUtcFallback,
@@ -27,23 +25,16 @@ import {
 } from '../../datetime/zonedRangeParts'
 import { toErrorMessage } from '../../utils/errors'
 import {
-  CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
-  computeScrollTopToShowChildAtListTop,
-} from './chatMessagesListScroll'
-import {
   CHAT_LLM_CONTEXT_MAX_MESSAGES,
   clearChatPanelSnapshot,
   readChatPanelSnapshot,
   trimChatMessagesToMax,
   writeChatPanelSnapshot,
 } from '../../preferences/chatPanelStorage'
-import { appendChatSampleTextToDraft } from './appendChatSampleTextToDraft'
-import { ChatCopyAnswerSvg, ChatPreviewSvg, ChatSendSvg } from './chatPanelIcons'
-import { ChatMarkdownContent } from './ChatMarkdownContent'
+import { ChatContextBar } from './ChatContextBar'
+import { ChatInputBar } from './ChatInputBar'
+import { ChatMessagesList } from './ChatMessagesList'
 import { ChatPromptPreviewModal } from './ChatPromptPreviewModal'
-
-/** メッセージリスト下端からの距離がこの値以下なら「最下部付近」とみなし、新着で追従する */
-const CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX = 48
 
 /** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
@@ -102,55 +93,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     String(DEFAULT_METRIC_THRESHOLD_NETWORK_PCT),
   )
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
-  /** `localStorage` からの初回復元が終わるまで永続化 `write` しない */
   const [storageHydrated, setStorageHydrated] = useState(false)
-  /** `draft` の debounce 反映値（永続化スナップショットの `draft` に使う） */
   const [debouncedDraft, setDebouncedDraft] = useState('')
-  /** 「会話をクリア」直後のみ、空状態での `write` をスキップしてキー削除を維持する */
   const skipNextPersistRef = useRef(false)
-  /** `localStorage` 書き込み失敗を連続で `onError` しないためのフラグ（成功時にリセット） */
   const storageWriteErrorReportedRef = useRef(false)
-  /** 初回マウントでは `chatMaxStoredMessages` 変更によるトリムをスキップ（ハイドレートと競合させない） */
   const skipMaxTrimOnMountRef = useRef(true)
-
-  const messagesListRef = useRef<HTMLUListElement>(null)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
-  /** 最下部付近にいるときだけ `messages` 更新後に末尾へスクロールする */
-  const stickToBottomRef = useRef(true)
-
-  const syncStickToBottomFromScroll = useCallback(() => {
-    const el = messagesListRef.current
-    if (!el) return
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    stickToBottomRef.current = distanceFromBottom <= CHAT_MESSAGES_STICKY_BOTTOM_THRESHOLD_PX
-  }, [])
-
-  useLayoutEffect(() => {
-    const list = messagesListRef.current
-    if (!list || !stickToBottomRef.current) return
-
-    if (loading) {
-      list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
-      return
-    }
-
-    const last = messages.at(-1)
-    if (last?.role === 'assistant') {
-      const item = list.querySelector('li.chat-panel__msg--assistant:last-of-type')
-      if (item instanceof HTMLElement) {
-        // `.chat-panel__messages` は `position: relative` により `li` の offsetTop がリスト内座標になる
-        list.scrollTop = computeScrollTopToShowChildAtListTop({
-          childOffsetTop: item.offsetTop,
-          scrollHeight: list.scrollHeight,
-          clientHeight: list.clientHeight,
-          marginPx: CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
-        })
-        return
-      }
-    }
-
-    list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight)
-  }, [messages, loading])
 
   useEffect(() => {
     void (async () => {
@@ -358,7 +306,7 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
       [...messages, { role: 'user', content: text }],
       chatMaxStoredMessages,
     )
-    
+
     setPreviewing(true)
     try {
       const body: Record<string, unknown> = {
@@ -437,213 +385,60 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
     [],
   )
 
+  const handleClearConversation = () => {
+    if (!window.confirm('会話をすべて削除しますか？')) return
+    skipNextPersistRef.current = true
+    clearChatPanelSnapshot()
+    setMessages([])
+    setLastLlmContext(null)
+  }
+
   return (
     <div className="panel chat-panel">
       <p className="hint">
         指定期間のイベント・メトリクス集約を根拠に、質問・追質問ができます（会話はブラウザに保持し、サーバーは保存しません）。
       </p>
 
-      <section className="chat-panel__section" aria-label="集計期間">
-        <ZonedRangeFields value={rangeParts} onChange={setRangeParts} />
-      </section>
+      <ChatContextBar
+        rangeParts={rangeParts}
+        setRangeParts={setRangeParts}
+        vcenters={vcenters}
+        vcenterId={vcenterId}
+        setVcenterId={setVcenterId}
+        loading={loading}
+        includePeriodMetricsCpu={includePeriodMetricsCpu}
+        setIncludePeriodMetricsCpu={setIncludePeriodMetricsCpu}
+        includePeriodMetricsMemory={includePeriodMetricsMemory}
+        setIncludePeriodMetricsMemory={setIncludePeriodMetricsMemory}
+        includePeriodMetricsDiskIo={includePeriodMetricsDiskIo}
+        setIncludePeriodMetricsDiskIo={setIncludePeriodMetricsDiskIo}
+        includePeriodMetricsNetworkIo={includePeriodMetricsNetworkIo}
+        setIncludePeriodMetricsNetworkIo={setIncludePeriodMetricsNetworkIo}
+        metricThresholdCpuInput={metricThresholdCpuInput}
+        metricThresholdCpuPct={metricThresholdCpuPct}
+        setMetricThresholdCpuInput={setMetricThresholdCpuInput}
+        setMetricThresholdCpuPct={setMetricThresholdCpuPct}
+        metricThresholdMemoryInput={metricThresholdMemoryInput}
+        metricThresholdMemoryPct={metricThresholdMemoryPct}
+        setMetricThresholdMemoryInput={setMetricThresholdMemoryInput}
+        setMetricThresholdMemoryPct={setMetricThresholdMemoryPct}
+        metricThresholdDiskInput={metricThresholdDiskInput}
+        metricThresholdDiskPct={metricThresholdDiskPct}
+        setMetricThresholdDiskInput={setMetricThresholdDiskInput}
+        setMetricThresholdDiskPct={setMetricThresholdDiskPct}
+        metricThresholdNetworkInput={metricThresholdNetworkInput}
+        metricThresholdNetworkPct={metricThresholdNetworkPct}
+        setMetricThresholdNetworkInput={setMetricThresholdNetworkInput}
+        setMetricThresholdNetworkPct={setMetricThresholdNetworkPct}
+        onMetricThresholdInputChange={handleMetricThresholdInputChange}
+      />
 
-      <section className="chat-panel__section" aria-label="vCenter">
-        <label>
-          対象 vCenter
-          <select
-            value={vcenterId}
-            onChange={(e) => {
-              setVcenterId(e.target.value)
-            }}
-          >
-            <option value="">すべて（登録済み全体の集約）</option>
-            {vcenters.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
-
-      <section className="chat-panel__section" aria-label="期間メトリクス">
-        <p className="hint chat-panel__metrics-hint">LLM に含めるメトリクス（期間内をバケット平均で送る・追加 DB クエリあり）</p>
-        <label className="chat-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsCpu}
-            onChange={(e) => {
-              setIncludePeriodMetricsCpu(e.target.checked)
-            }}
-            disabled={loading}
-          />
-          CPU 使用率
-        </label>
-        <label className="chat-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsMemory}
-            onChange={(e) => {
-              setIncludePeriodMetricsMemory(e.target.checked)
-            }}
-            disabled={loading}
-          />
-          メモリ使用率
-        </label>
-        <label className="chat-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsDiskIo}
-            onChange={(e) => {
-              setIncludePeriodMetricsDiskIo(e.target.checked)
-            }}
-            disabled={loading}
-          />
-          ディスク IO
-        </label>
-        <label className="chat-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsNetworkIo}
-            onChange={(e) => {
-              setIncludePeriodMetricsNetworkIo(e.target.checked)
-            }}
-            disabled={loading}
-          />
-          ネットワーク IO
-        </label>
-      </section>
-
-      <section className="chat-panel__section" aria-label="メトリクス閾値">
-        <p className="hint chat-panel__metrics-hint">インシデント判定に使う閾値（%）</p>
-        <div className="chat-panel__threshold-grid">
-          <label className="chat-panel__threshold-field">
-            CPU 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdCpuInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdCpuInput,
-                  setMetricThresholdCpuPct,
-                )
-              }
-              onBlur={() => setMetricThresholdCpuInput(String(metricThresholdCpuPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="chat-panel__threshold-field">
-            Memory 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdMemoryInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdMemoryInput,
-                  setMetricThresholdMemoryPct,
-                )
-              }
-              onBlur={() => setMetricThresholdMemoryInput(String(metricThresholdMemoryPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="chat-panel__threshold-field">
-            Disk 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdDiskInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdDiskInput,
-                  setMetricThresholdDiskPct,
-                )
-              }
-              onBlur={() => setMetricThresholdDiskInput(String(metricThresholdDiskPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="chat-panel__threshold-field">
-            Network 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdNetworkInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdNetworkInput,
-                  setMetricThresholdNetworkPct,
-                )
-              }
-              onBlur={() => setMetricThresholdNetworkInput(String(metricThresholdNetworkPct))}
-              disabled={loading}
-            />
-          </label>
-        </div>
-      </section>
-
-      <ul
-        ref={messagesListRef}
-        className="chat-panel__messages"
-        aria-label="会話"
-        aria-busy={loading ? 'true' : 'false'}
-        onScroll={syncStickToBottomFromScroll}
-      >
-        {messages.map((m, i) => (
-          <li key={`${i}-${m.role}`} className={`chat-panel__msg chat-panel__msg--${m.role}`}>
-            <span className="chat-panel__role">
-              {m.role === 'user' ? 'あなた' : 'アシスタント'}
-              {m.created_at && (
-                <span className="chat-panel__msg-meta">
-                  {' '}- {formatIsoInTimeZone(m.created_at, timeZone)}
-                  {m.latency_ms != null && (
-                    <span className="chat-panel__metrics">
-                      {' '}（{m.token_per_sec != null ? `${m.token_per_sec.toFixed(1)} tokens/sec | ` : ''}latency {(m.latency_ms / 1000).toFixed(1)}s）
-                    </span>
-                  )}
-                </span>
-              )}
-            </span>
-            <div className="chat-panel__bubble">
-              <ChatMarkdownContent markdown={m.content} />
-            </div>
-            {m.role === 'assistant' && (
-              <div className="chat-panel__msg-actions">
-                <button
-                  type="button"
-                  className="btn btn--gray chat-panel__icon-btn chat-panel__copy-answer-btn"
-                  aria-label="回答をコピー"
-                  title="回答をコピー"
-                  disabled={!m.content.trim()}
-                  onClick={() => void copyAssistantMessageContent(m.content)}
-                >
-                  <ChatCopyAnswerSvg />
-                </button>
-              </div>
-            )}
-          </li>
-        ))}
-        {loading && (
-          <li className="chat-panel__msg chat-panel__msg--pending">
-            <span className="chat-panel__role">アシスタント</span>
-            <div className="chat-panel__bubble chat-panel__bubble--pending">応答を生成しています…</div>
-          </li>
-        )}
-      </ul>
+      <ChatMessagesList
+        messages={messages}
+        loading={loading}
+        timeZone={timeZone}
+        onCopyAssistantMessage={copyAssistantMessageContent}
+      />
 
       {lastLlmContext != null && (
         <p className="hint chat-panel__llm-meta" role="status" aria-live="polite">
@@ -654,93 +449,19 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         </p>
       )}
 
-      <div className="chat-panel__composer-stack">
-        <button
-          type="button"
-          className="btn btn--gray"
-          disabled={loading || messages.length === 0}
-          onClick={() => {
-            if (!window.confirm('会話をすべて削除しますか？')) return
-            skipNextPersistRef.current = true
-            clearChatPanelSnapshot()
-            setMessages([])
-            setLastLlmContext(null)
-          }}
-        >
-          会話をクリア
-        </button>
-        <div
-          className="chat-panel__sample-prompts"
-          role="group"
-          aria-label="サンプルの質問"
-        >
-          {visibleChatSamplePrompts.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              className="btn btn--gray chat-panel__sample-toggle"
-              aria-label={`サンプル「${row.label}」`}
-              disabled={loading}
-              onClick={() => {
-                setDraft((d) => appendChatSampleTextToDraft(d, row.text))
-              }}
-            >
-              {row.label}
-            </button>
-          ))}
-        </div>
-        <div className="chat-panel__composer">
-          <div className="chat-panel__composer-field">
-            <label className="chat-panel__composer-label">
-              メッセージ
-              <textarea
-                ref={draftTextareaRef}
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value)
-                }}
-                onKeyDown={(e) => {
-                  // IME 確定中は Enter を横取りしない
-                  if (e.nativeEvent.isComposing) return
-                  if (e.key !== 'Enter') return
-                  if (e.shiftKey) {
-                    e.preventDefault()
-                    setDraft((d) => `${d}\n`)
-                    return
-                  }
-                  e.preventDefault()
-                  void send()
-                }}
-                rows={3}
-                disabled={loading}
-                placeholder="質問を入力…"
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            className="btn btn--gray chat-panel__icon-btn chat-panel__preview-btn"
-            disabled={loading || previewing}
-            aria-busy={previewing}
-            aria-label={previewing ? 'プレビューを生成中' : 'プレビュー'}
-            title={previewing ? 'プレビューを生成中' : 'プレビュー'}
-            onClick={() => void previewPrompt()}
-          >
-            <ChatPreviewSvg />
-          </button>
-          <button
-            type="button"
-            className="btn btn--filled chat-panel__icon-btn chat-panel__send-btn"
-            disabled={loading || previewing}
-            aria-busy={loading}
-            aria-label={loading ? '送信中' : '送信'}
-            title={loading ? '送信中' : '送信'}
-            onClick={() => void send()}
-          >
-            <ChatSendSvg />
-          </button>
-        </div>
-      </div>
+      <ChatInputBar
+        loading={loading}
+        previewing={previewing}
+        hasMessages={messages.length > 0}
+        visibleChatSamplePrompts={visibleChatSamplePrompts}
+        draft={draft}
+        setDraft={setDraft}
+        draftTextareaRef={draftTextareaRef}
+        onClearConversation={handleClearConversation}
+        onSend={send}
+        onPreview={previewPrompt}
+      />
+
       {previewData && isPreviewModalOpen && (
         <ChatPromptPreviewModal
           preview={previewData}

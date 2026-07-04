@@ -12,7 +12,6 @@ import {
   type IncidentTimeline,
   type VCenter,
 } from '../../api/schemas'
-import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { resolveEventApiRange } from '../../datetime/graphRange'
 import {
   METRICS_DEFAULT_ROLLING_DURATION_MS,
@@ -23,7 +22,9 @@ import {
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
 import { asArray } from '../../utils/asArray'
-import { IncidentTimelinePanel } from '../chat/IncidentTimelinePanel'
+import { TimelineFilters } from './TimelineFilters'
+import { TimelineResults } from './TimelineResults'
+import { TimelineSnapshotActions } from './TimelineSnapshotActions'
 
 const DEFAULT_METRIC_THRESHOLD_CPU_PCT = 80
 const DEFAULT_METRIC_THRESHOLD_MEMORY_PCT = 85
@@ -34,7 +35,6 @@ const TIMELINE_SORT_ORDER_STORAGE_KEY = 'vea.timeline.sort_order'
 const ALERT_TOP_N_STORAGE_KEY = 'vea.timeline.alert_top_n'
 type TimelineSortOrder = 'asc' | 'desc'
 
-/** 表示中タイムライン列の時刻範囲に重なるスナップショットをマーカー用に抽出する。 */
 function buildSnapshotMarkersForTimeline(
   timeline: IncidentTimeline | null,
   items: IncidentTimelineManualSnapshotListItem[],
@@ -86,7 +86,6 @@ export function TimelinePanel({
   onOpenSnapshotInMetrics,
 }: {
   onError: (e: string | null) => void
-  /** 監査一覧からメトリクス（グラフ）タブでスナップショット条件を再生する。 */
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
 }) {
   const { timeZone } = useTimeZone()
@@ -208,6 +207,18 @@ export function TimelinePanel({
     },
     [],
   )
+
+  const handleAlertTopNInputChange = useCallback((rawValue: string) => {
+    setAlertTopNInput(rawValue)
+    if (rawValue.trim() === '') {
+      return
+    }
+    const parsed = parseAlertTopN(rawValue)
+    if (parsed == null) {
+      return
+    }
+    setAlertTopN(parsed)
+  }, [])
 
   const generateTimeline = useCallback(async () => {
     const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(rangeParts)
@@ -351,292 +362,68 @@ export function TimelinePanel({
 
   return (
     <div className="panel timeline-panel">
-      <section className="timeline-panel__section" aria-label="集計期間">
-        <ZonedRangeFields value={rangeParts} onChange={setRangeParts} />
-      </section>
+      <TimelineFilters
+        rangeParts={rangeParts}
+        setRangeParts={setRangeParts}
+        vcenters={vcenters}
+        vcenterId={vcenterId}
+        setVcenterId={setVcenterId}
+        loading={loading}
+        includePeriodMetricsCpu={includePeriodMetricsCpu}
+        setIncludePeriodMetricsCpu={setIncludePeriodMetricsCpu}
+        includePeriodMetricsMemory={includePeriodMetricsMemory}
+        setIncludePeriodMetricsMemory={setIncludePeriodMetricsMemory}
+        includePeriodMetricsDiskIo={includePeriodMetricsDiskIo}
+        setIncludePeriodMetricsDiskIo={setIncludePeriodMetricsDiskIo}
+        includePeriodMetricsNetworkIo={includePeriodMetricsNetworkIo}
+        setIncludePeriodMetricsNetworkIo={setIncludePeriodMetricsNetworkIo}
+        metricThresholdCpuInput={metricThresholdCpuInput}
+        metricThresholdCpuPct={metricThresholdCpuPct}
+        setMetricThresholdCpuInput={setMetricThresholdCpuInput}
+        setMetricThresholdCpuPct={setMetricThresholdCpuPct}
+        metricThresholdMemoryInput={metricThresholdMemoryInput}
+        metricThresholdMemoryPct={metricThresholdMemoryPct}
+        setMetricThresholdMemoryInput={setMetricThresholdMemoryInput}
+        setMetricThresholdMemoryPct={setMetricThresholdMemoryPct}
+        metricThresholdDiskInput={metricThresholdDiskInput}
+        metricThresholdDiskPct={metricThresholdDiskPct}
+        setMetricThresholdDiskInput={setMetricThresholdDiskInput}
+        setMetricThresholdDiskPct={setMetricThresholdDiskPct}
+        metricThresholdNetworkInput={metricThresholdNetworkInput}
+        metricThresholdNetworkPct={metricThresholdNetworkPct}
+        setMetricThresholdNetworkInput={setMetricThresholdNetworkInput}
+        setMetricThresholdNetworkPct={setMetricThresholdNetworkPct}
+        alertTopNInput={alertTopNInput}
+        alertTopN={alertTopN}
+        setAlertTopNInput={setAlertTopNInput}
+        setAlertTopN={setAlertTopN}
+        sortOrder={sortOrder}
+        setSortOrder={setSortOrder}
+        onMetricThresholdInputChange={handleMetricThresholdInputChange}
+        onAlertTopNInputChange={handleAlertTopNInputChange}
+        onAlertTopNBlur={() => setAlertTopNInput(String(alertTopN))}
+      />
 
-      <section className="timeline-panel__section" aria-label="vCenter">
-        <label>
-          対象 vCenter
-          <select
-            value={vcenterId}
-            onChange={(e) => {
-              setVcenterId(e.target.value)
-            }}
-          >
-            <option value="">すべて（登録済み全体の集約）</option>
-            {vcenters.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
+      <TimelineSnapshotActions
+        loading={loading}
+        savingSnapshot={savingSnapshot}
+        hasTimeline={timeline != null}
+        operatorNote={operatorNote}
+        setOperatorNote={setOperatorNote}
+        onGenerateTimeline={generateTimeline}
+        onSaveSnapshot={saveManualSnapshot}
+        manualSnapshotAuditItems={manualSnapshotAuditItems}
+        selectedManualSnapshotId={selectedManualSnapshotId}
+        setSelectedManualSnapshotId={setSelectedManualSnapshotId}
+        onLoadTimelineFromSnapshot={loadTimelineFromSnapshot}
+        onOpenSnapshotInMetrics={onOpenSnapshotInMetrics}
+      />
 
-      <section className="timeline-panel__section" aria-label="期間メトリクス">
-        <p className="hint timeline-panel__metrics-hint">
-          タイムライン生成に含めるメトリクス（期間内をバケット平均で集約）
-        </p>
-        <label className="timeline-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsCpu}
-            onChange={(e) => setIncludePeriodMetricsCpu(e.target.checked)}
-            disabled={loading}
-          />
-          CPU 使用率
-        </label>
-        <label className="timeline-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsMemory}
-            onChange={(e) => setIncludePeriodMetricsMemory(e.target.checked)}
-            disabled={loading}
-          />
-          メモリ使用率
-        </label>
-        <label className="timeline-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsDiskIo}
-            onChange={(e) => setIncludePeriodMetricsDiskIo(e.target.checked)}
-            disabled={loading}
-          />
-          ディスク IO
-        </label>
-        <label className="timeline-panel__checkbox-label">
-          <input
-            type="checkbox"
-            checked={includePeriodMetricsNetworkIo}
-            onChange={(e) => setIncludePeriodMetricsNetworkIo(e.target.checked)}
-            disabled={loading}
-          />
-          ネットワーク IO
-        </label>
-      </section>
-
-      <section className="timeline-panel__section" aria-label="メトリクス閾値">
-        <p className="hint timeline-panel__metrics-hint">インシデント判定に使う閾値（%）</p>
-        <div className="timeline-panel__threshold-grid">
-          <label className="timeline-panel__threshold-field">
-            CPU 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdCpuInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdCpuInput,
-                  setMetricThresholdCpuPct,
-                )
-              }
-              onBlur={() => setMetricThresholdCpuInput(String(metricThresholdCpuPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="timeline-panel__threshold-field">
-            Memory 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdMemoryInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdMemoryInput,
-                  setMetricThresholdMemoryPct,
-                )
-              }
-              onBlur={() => setMetricThresholdMemoryInput(String(metricThresholdMemoryPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="timeline-panel__threshold-field">
-            Disk 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdDiskInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdDiskInput,
-                  setMetricThresholdDiskPct,
-                )
-              }
-              onBlur={() => setMetricThresholdDiskInput(String(metricThresholdDiskPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="timeline-panel__threshold-field">
-            Network 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdNetworkInput}
-              onChange={(e) =>
-                handleMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdNetworkInput,
-                  setMetricThresholdNetworkPct,
-                )
-              }
-              onBlur={() => setMetricThresholdNetworkInput(String(metricThresholdNetworkPct))}
-              disabled={loading}
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className="timeline-panel__section" aria-label="表示オプション">
-        <label className="timeline-panel__threshold-field">
-          アラート上位件数
-          <input
-            type="number"
-            min={1}
-            max={20}
-            step={1}
-            value={alertTopNInput}
-            onChange={(e) => {
-              const rawValue = e.target.value
-              setAlertTopNInput(rawValue)
-              if (rawValue.trim() === '') {
-                return
-              }
-              const parsed = parseAlertTopN(rawValue)
-              if (parsed == null) {
-                return
-              }
-              setAlertTopN(parsed)
-            }}
-            onBlur={() => setAlertTopNInput(String(alertTopN))}
-            disabled={loading}
-          />
-        </label>
-        <button
-          type="button"
-          className="btn btn--gray"
-          onClick={() => {
-            setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-          }}
-          disabled={loading}
-        >
-          {sortOrder === 'asc' ? '表示順: 昇順' : '表示順: 降順'}
-        </button>
-      </section>
-
-      <div className="timeline-panel__actions">
-        <button
-          type="button"
-          className="btn btn--filled"
-          onClick={() => void generateTimeline()}
-          disabled={loading}
-          aria-busy={loading ? 'true' : 'false'}
-        >
-          {loading ? 'タイムライン生成中' : 'タイムラインを生成'}
-        </button>
-      </div>
-
-      {timeline ? (
-        <section className="timeline-panel__section" aria-label="手動スナップショット保存">
-          <label className="timeline-panel__threshold-field">
-            運用メモ（必須）
-            <input
-              type="text"
-              value={operatorNote}
-              onChange={(e) => setOperatorNote(e.target.value)}
-              disabled={loading || savingSnapshot}
-            />
-          </label>
-          <div className="timeline-panel__actions">
-            <button
-              type="button"
-              className="btn btn--gray"
-              onClick={() => void saveManualSnapshot()}
-              disabled={loading || savingSnapshot || operatorNote.trim() === ''}
-            >
-              スナップショットを保存
-            </button>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="timeline-panel__section" aria-label="手動スナップショット監査ビュー">
-        <h3>手動スナップショット監査ビュー</h3>
-        {manualSnapshotAuditItems.length === 0 ? (
-          <p className="hint">保存済みスナップショットはまだありません。</p>
-        ) : (
-          <>
-            <ul>
-              {manualSnapshotAuditItems.map((item) => (
-                <li key={item.snapshot_id}>
-                  <button
-                    type="button"
-                    className="btn btn--gray"
-                    onClick={() => {
-                      setSelectedManualSnapshotId(item.snapshot_id)
-                      void loadTimelineFromSnapshot(item)
-                    }}
-                    aria-pressed={selectedManualSnapshotId === item.snapshot_id}
-                  >
-                    {item.operator_note}
-                  </button>{' '}
-                  {onOpenSnapshotInMetrics ? (
-                    <button
-                      type="button"
-                      className="btn btn--gray"
-                      onClick={() => onOpenSnapshotInMetrics(item)}
-                    >
-                      グラフで開く
-                    </button>
-                  ) : null}{' '}
-                  <span>({item.timestamp_utc})</span>
-                </li>
-              ))}
-            </ul>
-            {selectedManualSnapshotId ? (
-              <section aria-label="選択中スナップショット">
-                <h4>選択中スナップショット</h4>
-                {(() => {
-                  const selected = manualSnapshotAuditItems.find(
-                    (item) => item.snapshot_id === selectedManualSnapshotId,
-                  )
-                  if (!selected) {
-                    return <p className="hint">選択中のスナップショットは見つかりません。</p>
-                  }
-                  return (
-                    <p>
-                      <strong>{selected.operator_note}</strong> ({selected.timestamp_utc})
-                    </p>
-                  )
-                })()}
-              </section>
-            ) : null}
-          </>
-        )}
-      </section>
-
-      {timeline ? (
-        <IncidentTimelinePanel
-          timeline={timeline}
-          sortOrder={sortOrder}
-          snapshotMarkers={snapshotMarkers}
-        />
-      ) : (
-        <p className="hint">
-          「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。
-        </p>
-      )}
+      <TimelineResults
+        timeline={timeline}
+        sortOrder={sortOrder}
+        snapshotMarkers={snapshotMarkers}
+      />
     </div>
   )
 }

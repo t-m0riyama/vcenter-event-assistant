@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import './SummaryPanel.css'
 import { apiGet } from '../../api'
 import {
   parseSummary,

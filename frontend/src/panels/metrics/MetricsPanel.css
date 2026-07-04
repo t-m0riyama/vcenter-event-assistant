@@ -49,3 +49,11 @@
 .empty-metrics p {
   margin: 0 0 var(--spacing-1);
 }
+
+.metrics-panel__range-details {
+  margin-top: var(--spacing-3);
+}
+
+.metrics-panel__range-auto-refresh {
+  margin-top: var(--spacing-2);
+}
