@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import ChatPreviewResponse, ChatRequest, ChatResponse
-from vcenter_event_assistant.services.chat_context_payloads import build_chat_context_payloads
-from vcenter_event_assistant.services.chat_llm import build_chat_preview, run_period_chat
-from vcenter_event_assistant.services.llm_profile import is_chat_llm_configured
+from vcenter_event_assistant.services.chat.chat_context_payloads import build_chat_context_payloads
+from vcenter_event_assistant.services.chat.chat_llm import build_chat_preview, run_period_chat
+from vcenter_event_assistant.services.llm.llm_profile import is_chat_llm_configured
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
-from vcenter_event_assistant.services.llm_tracing import build_llm_runnable_config
+from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.settings import get_settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])

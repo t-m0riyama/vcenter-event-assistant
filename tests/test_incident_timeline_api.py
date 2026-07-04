@@ -13,13 +13,13 @@ from vcenter_event_assistant.api.routes import incident_timeline as incident_tim
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.chat_period_metrics import (
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
     PeriodMetricBucketPoint,
     PeriodMetricHostSeries,
     PeriodMetricsPayload,
 )
-from vcenter_event_assistant.services.digest_context import DigestContext
-from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.digest.digest_context import DigestContext
+from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 
 
 def _request_body(**overrides: object) -> dict:
@@ -182,15 +182,15 @@ async def test_post_incident_timeline_emits_alert_entries_per_bucket(
         )
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_digest_context",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context",
         _fake_digest_context,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics",
         _fake_period_metrics,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
         _fake_event_buckets,
     )
 
@@ -302,15 +302,15 @@ async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
         )
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_digest_context",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context",
         _fake_digest_context,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics",
         _fake_period_metrics,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
         _fake_event_buckets,
     )
 
@@ -396,15 +396,15 @@ async def test_post_incident_timeline_does_not_persist_auto_trigger_snapshots(
         )
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_digest_context",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context",
         _fake_digest_context,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_chat_period_metrics",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics",
         _fake_period_metrics,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat_context_payloads.build_chat_event_time_buckets",
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
         _fake_event_buckets,
     )
 

@@ -18,8 +18,8 @@ from vcenter_event_assistant.api.schemas.chat import (
     IncidentTimelineManualSnapshotListResponse,
 )
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
-from vcenter_event_assistant.services.chat_context_payloads import build_incident_timeline_payload
-from vcenter_event_assistant.services.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_context_payloads import build_incident_timeline_payload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 
 router = APIRouter(prefix="/incident-timeline", tags=["incident-timeline"])
 
