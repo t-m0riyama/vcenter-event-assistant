@@ -294,10 +294,10 @@ describe(
     fireEvent.click(screen.getByRole('button', { name: 'サンプル「期間の要約」' }))
 
     const ta = screen.getByPlaceholderText('質問を入力…') as HTMLTextAreaElement
-    expect(ta.value).toContain('この期間のイベントと傾向を')
-    expect(ta.value).toContain('期間メトリクス（CPU・メモリ等）')
-    expect(ta.value.indexOf('期間メトリクス（CPU・メモリ等）')).toBeLessThan(
-      ta.value.indexOf('この期間のイベントと傾向を'),
+    expect(ta.value).toContain('## メトリクス観測')
+    expect(ta.value).toContain('## 上位イベント（重要度順）')
+    expect(ta.value.indexOf('## メトリクス観測')).toBeLessThan(
+      ta.value.indexOf('## 上位イベント（重要度順）'),
     )
   })
 
@@ -321,7 +321,7 @@ describe(
 
     const ta = screen.getByPlaceholderText('質問を入力…') as HTMLTextAreaElement
     expect(ta.value.startsWith('既存')).toBe(true)
-    expect(ta.value).toContain('この期間のイベントと傾向を')
+    expect(ta.value).toContain('## 上位イベント（重要度順）')
   })
 
   it('送信中はサンプルチップが無効になる', async () => {
