@@ -29,21 +29,8 @@ function getCachedDateTimeFormat(
  * `Intl.DateTimeFormat` をキャッシュ付き実装に差し替える。
  */
 export function installFastIntlDateTimeFormatForTests(): void {
-  const FastDateTimeFormat = function (
-    locales?: Intl.LocalesArgument,
-    options?: Intl.DateTimeFormatOptions,
-  ): Intl.DateTimeFormat {
-    return getCachedDateTimeFormat(locales ?? 'en-US', options)
-  } as unknown as typeof Intl.DateTimeFormat
-
-  FastDateTimeFormat.prototype = NativeDateTimeFormat.prototype
-  Object.setPrototypeOf(FastDateTimeFormat, NativeDateTimeFormat)
-
-  for (const prop of Object.getOwnPropertyNames(NativeDateTimeFormat)) {
-    if (prop === 'length' || prop === 'name' || prop === 'prototype') continue
-    const desc = Object.getOwnPropertyDescriptor(NativeDateTimeFormat, prop)
-    if (desc) Object.defineProperty(FastDateTimeFormat, prop, desc)
-  }
-
-  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(FastDateTimeFormat)
+  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(
+    (locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) =>
+      getCachedDateTimeFormat(locales ?? 'en-US', options),
+  )
 }
