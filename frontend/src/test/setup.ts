@@ -1,6 +1,9 @@
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, vi } from 'vitest'
+import { installFastIntlDateTimeFormatForTests } from './intlDateTimeFormatForTests'
+
+installFastIntlDateTimeFormatForTests()
 
 // Global localStorage mock for happy-dom environment
 const storage: Record<string, string> = {}

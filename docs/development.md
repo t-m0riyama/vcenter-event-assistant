@@ -25,6 +25,16 @@ uv run ruff check src tests
 uv run pytest -q
 ```
 
+フロントエンド単体テスト（Vitest）:
+
+```bash
+cd frontend
+npm run test              # 単体テスト
+npm run test:coverage     # カバレッジ付き（HTML: frontend/coverage/index.html）
+```
+
+**フロント単体カバレッジ baseline（2026-07 時点）:** lines **~79%**（閾値ゲートなし。CI ジョブ `frontend-unit` で `coverage-summary.json` と HTML を artifact 保存）。
+
 ### PR 前のローカルチェック
 
 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗を PR 上で踏まないため、**push / PR 作成前**に次を実行する。
@@ -33,6 +43,7 @@ CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗
 |----------|--------|---------------------|
 | `tests/` を触った | `uv run ruff check tests/` | `uv run ruff check src tests` |
 | `src/` のみ | `uv run ruff check src` | `uv run ruff check src tests` |
+| `frontend/` を触った | `cd frontend && npm run test` | `cd frontend && npm run test:coverage` |
 | 広く変更 | — | `uv run ruff check src tests` |
 
 あわせて関連 pytest を実行する（例: `uv run pytest tests/test_alert_eval_events.py -q`）。
