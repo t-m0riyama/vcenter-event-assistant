@@ -24,7 +24,10 @@ uv run alembic revision --autogenerate -m "describe_change"
 uv run ruff check src tests
 uv run mypy
 uv run pytest -q
+uv run pytest --cov=vcenter_event_assistant --cov-report=term-missing:skip-covered -q  # カバレッジ確認
 ```
+
+**バックエンド単体カバレッジ baseline（2026-07 時点）:** lines **~78%**（閾値ゲートなし。CI ジョブ `python` で `coverage.xml` と HTML を artifact 保存）。
 
 フロントエンド単体テスト（Vitest）:
 

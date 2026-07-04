@@ -18,7 +18,15 @@ jobs:
           uv sync --all-groups
           uv run ruff check src tests
           uv run mypy
-          uv run pytest
+          uv run pytest --cov=vcenter_event_assistant --cov-report=xml --cov-report=html
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: |
+            coverage.xml
+            htmlcov/index.html
+          if-no-files-found: error
 
   frontend-unit:
     runs-on: ubuntu-latest
