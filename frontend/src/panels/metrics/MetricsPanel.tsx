@@ -17,7 +17,7 @@ import {
 import {
   buildMetricsExportBasename,
   downloadChartSvg,
-} from '../../metrics/downloadChartSvg'
+} from '../../metrics/export/downloadChartSvg'
 import { downloadMetricPointsCsv } from '../../metrics/metricCsv'
 import { MetricsChartErrorBoundary } from '../../metrics/MetricsChartErrorBoundary'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
@@ -28,7 +28,7 @@ import {
   type MetricsSnapshotReplayInput,
 } from '../../hooks/useMetricsPanelController'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
-import { formatChartTooltipNumber } from '../../metrics/chartYAxisFormat'
+import { formatChartTooltipNumber } from '../../metrics/export/chartYAxisFormat'
 import {
   xAxisBottomMarginForWidth,
   xAxisMinTickGapForWidth,

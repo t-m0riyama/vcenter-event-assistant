@@ -1,5 +1,5 @@
 import { escapeCsvField } from '../metrics/metricCsv'
-import { formatMetricsDownloadTimestamp } from '../metrics/downloadChartSvg'
+import { formatMetricsDownloadTimestamp } from '../metrics/export/downloadChartSvg'
 
 /** Fields aligned with API `EventRead` for CSV export (vcenter is human-readable name). */
 export type EventCsvRow = {

@@ -12,7 +12,7 @@ import {
   buildMetricsChartModel,
   formatMetricChartSeriesLegendName,
 } from '../metrics/buildMetricsChartModel'
-import { formatChartYAxisTick } from '../metrics/chartYAxisFormat'
+import { formatChartYAxisTick } from '../metrics/export/chartYAxisFormat'
 import {
   buildMetricsChartSeriesIdentityKey,
   legendDataKeyToString,
