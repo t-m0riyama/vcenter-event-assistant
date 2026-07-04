@@ -16,8 +16,8 @@ describe('buildSnapshotMarkersForTimeline', () => {
   it('タイムライン列の min/max 内のスナップショットのみ返す', () => {
     const timeline = {
       columns: [
-        { timestamp_utc: '2026-05-07T10:00:00Z', visible_items: [], hidden_count: 0 },
-        { timestamp_utc: '2026-05-07T12:00:00Z', visible_items: [], hidden_count: 0 },
+        { timestamp_utc: '2026-05-07T10:00:00Z', items: [], visible_items: [], hidden_count: 0 },
+        { timestamp_utc: '2026-05-07T12:00:00Z', items: [], visible_items: [], hidden_count: 0 },
       ],
     }
     const markers = buildSnapshotMarkersForTimeline(timeline, [
@@ -28,6 +28,7 @@ describe('buildSnapshotMarkersForTimeline', () => {
         operator_note: 'in range',
         timestamp_utc: '2026-05-07T11:00:00Z',
         build_request_payload: { from: '2026-05-07T09:00:00Z', to: '2026-05-07T13:00:00Z' },
+        snapshot_kind: 'manual' as const,
       },
       {
         snapshot_id: 'b',
@@ -36,6 +37,7 @@ describe('buildSnapshotMarkersForTimeline', () => {
         operator_note: 'out of range',
         timestamp_utc: '2026-05-07T08:00:00Z',
         build_request_payload: { from: '2026-05-07T09:00:00Z', to: '2026-05-07T13:00:00Z' },
+        snapshot_kind: 'manual' as const,
       },
     ])
     expect(markers).toEqual([
