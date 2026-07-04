@@ -35,6 +35,7 @@ function tabNav(): HTMLElement {
 describe('App error banner', () => {
   beforeEach(() => {
     localStorage.clear()
+    window.history.replaceState(null, '', '/')
   })
 
   afterEach(() => {

@@ -1,6 +1,8 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
 import { useAppConfig } from './hooks/useAppConfig'
+import { useAppTabHashSync } from './hooks/useAppTabHashSync'
+import { parseAppHash } from './routing/appHashRouting'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
@@ -20,7 +22,7 @@ import { AppProviders } from './components/AppProviders'
 import { PanelErrorBoundary } from './components/PanelErrorBoundary'
 import './App.css'
 
-const HELP_CONTENT: Record<string, string> = {
+const HELP_CONTENT: Record<MainTabId, string> = {
   summary:
     '【概要】\nシステムの稼働状況と最新の主要イベントを表示します。\n- 各種統計（イベント数、スコア別集計など）を確認できます。\n- スコアの高い「要注目イベント」を抽出して一覧表示します。',
   events:
@@ -44,40 +46,40 @@ const MetricsPanel = lazy(async () => {
   return { default: m.MetricsPanel }
 })
 
-type Tab = MainTabId
-type SettingsSubTab = SettingsSubTabId
+type MainTabConfig = {
+  readonly id: MainTabId
+  readonly label: string
+  readonly help: string
+  readonly panelLabel: string
+  readonly render: () => ReactNode
+}
 
-type TabConfig = { id: Tab; label: string }
+type SettingsSubTabConfig = {
+  readonly id: SettingsSubTabId
+  readonly label: string
+  readonly panelLabel: string
+  readonly render: (onError: (e: string | null) => void) => ReactNode
+}
 
-const MAIN_TABS: TabConfig[] = [
-  { id: 'summary', label: '概要' },
-  { id: 'events', label: 'イベント' },
-  { id: 'metrics', label: 'グラフ' },
-  { id: 'digests', label: 'ダイジェスト' },
-  { id: 'alerts', label: '通知履歴' },
-  { id: 'chat', label: 'チャット' },
-  { id: 'timeline', label: 'タイムライン' },
-  { id: 'settings', label: '設定' },
-]
+function initialMountedMainTabs(): Set<MainTabId> {
+  return new Set([parseAppHash(window.location.hash).tab])
+}
 
-type SubTabConfig = { id: SettingsSubTab; label: string }
-
-const SETTINGS_SUBTABS: SubTabConfig[] = [
-  { id: 'general', label: '一般' },
-  { id: 'vcenters', label: 'vCenter' },
-  { id: 'score_rules', label: 'スコアルール' },
-  { id: 'event_type_guides', label: 'イベント種別ガイド' },
-  { id: 'alerts', label: 'アラート' },
-  { id: 'chat_samples', label: 'チャット' },
-]
+function initialMountedSettingsSubTabs(): Set<SettingsSubTabId> {
+  const parsed = parseAppHash(window.location.hash)
+  return parsed.tab === 'settings' ? new Set([parsed.settingsSubTab]) : new Set()
+}
 
 /** アプリのルート。メインタブと設定サブタブで各パネルを切り替える。 */
 export default function App() {
-  const [tab, setTab] = useState<Tab>('summary')
+  const { tab, setTab, settingsSubTab, setSettingsSubTab } = useAppTabHashSync()
+  const [mountedMainTabs, setMountedMainTabs] = useState<Set<MainTabId>>(initialMountedMainTabs)
+  const [mountedSettingsSubTabs, setMountedSettingsSubTabs] = useState<Set<SettingsSubTabId>>(
+    initialMountedSettingsSubTabs,
+  )
   const [metricsSnapshotReplay, setMetricsSnapshotReplay] =
     useState<IncidentTimelineManualSnapshotListItem | null>(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
-  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('general')
   const [err, setErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setErr)
@@ -87,6 +89,159 @@ export default function App() {
       setMetricsSnapshotReplay(null)
     }
   }, [tab])
+
+  const ensureMainTabMounted = (id: MainTabId) => {
+    setMountedMainTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }
+
+  const ensureSettingsSubTabMounted = (id: SettingsSubTabId) => {
+    ensureMainTabMounted('settings')
+    setMountedSettingsSubTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }
+
+  useEffect(() => {
+    ensureMainTabMounted(tab)
+    if (tab === 'settings') {
+      ensureSettingsSubTabMounted(settingsSubTab)
+    }
+    // hashchange 等で tab が変わったときもマウントを追従させる
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsSubTab, tab])
+
+  const selectMainTab = (next: MainTabId) => {
+    ensureMainTabMounted(next)
+    setTab(next)
+    setShowHelp(false)
+    setErr(null)
+  }
+
+  const selectSettingsSubTab = (next: SettingsSubTabId) => {
+    ensureSettingsSubTabMounted(next)
+    setSettingsSubTab(next)
+    setShowHelp(false)
+    setErr(null)
+  }
+
+  const mainTabs: MainTabConfig[] = useMemo(
+    () => [
+      {
+        id: 'summary',
+        label: '概要',
+        help: HELP_CONTENT.summary,
+        panelLabel: '概要',
+        render: () => <SummaryPanel onError={setErr} />,
+      },
+      {
+        id: 'events',
+        label: 'イベント',
+        help: HELP_CONTENT.events,
+        panelLabel: 'イベント一覧',
+        render: () => <EventsPanel onError={setErr} />,
+      },
+      {
+        id: 'metrics',
+        label: 'グラフ',
+        help: HELP_CONTENT.metrics,
+        panelLabel: 'グラフ',
+        render: () => (
+          <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
+            <MetricsPanel
+              onError={setErr}
+              perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
+              snapshotReplay={
+                metricsSnapshotReplay
+                  ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
+                  : null
+              }
+            />
+          </Suspense>
+        ),
+      },
+      {
+        id: 'digests',
+        label: 'ダイジェスト',
+        help: HELP_CONTENT.digests,
+        panelLabel: 'ダイジェスト',
+        render: () => <DigestsPanel onError={setErr} />,
+      },
+      {
+        id: 'alerts',
+        label: '通知履歴',
+        help: HELP_CONTENT.alerts,
+        panelLabel: '通知履歴',
+        render: () => <AlertHistoryPanel onError={setErr} />,
+      },
+      {
+        id: 'chat',
+        label: 'チャット',
+        help: HELP_CONTENT.chat,
+        panelLabel: 'チャット',
+        render: () => <ChatPanel onError={setErr} />,
+      },
+      {
+        id: 'timeline',
+        label: 'タイムライン',
+        help: HELP_CONTENT.timeline,
+        panelLabel: 'タイムライン',
+        render: () => (
+          <TimelinePanel
+            onError={setErr}
+            onOpenSnapshotInMetrics={(item) => {
+              setMetricsSnapshotReplay(item)
+              setMetricsReplayNonce((n) => n + 1)
+              ensureMainTabMounted('metrics')
+              setTab('metrics')
+              setShowHelp(false)
+              setErr(null)
+            }}
+          />
+        ),
+      },
+    ],
+    [metricsReplayNonce, metricsSnapshotReplay, retention?.perf_sample_interval_seconds, setTab],
+  )
+
+  const settingsSubTabs: SettingsSubTabConfig[] = useMemo(
+    () => [
+      {
+        id: 'general',
+        label: '一般',
+        panelLabel: '一般設定',
+        render: () => <GeneralSettingsPanel />,
+      },
+      {
+        id: 'vcenters',
+        label: 'vCenter',
+        panelLabel: 'vCenter 設定',
+        render: (onError) => <VCentersPanel onError={onError} />,
+      },
+      {
+        id: 'score_rules',
+        label: 'スコアルール',
+        panelLabel: 'スコアルール',
+        render: (onError) => <ScoreRulesPanel onError={onError} />,
+      },
+      {
+        id: 'event_type_guides',
+        label: 'イベント種別ガイド',
+        panelLabel: 'イベント種別ガイド',
+        render: (onError) => <EventTypeGuidesPanel onError={onError} />,
+      },
+      {
+        id: 'alerts',
+        label: 'アラート',
+        panelLabel: 'アラート設定',
+        render: (onError) => <AlertRulesPanel onError={onError} />,
+      },
+      {
+        id: 'chat_samples',
+        label: 'チャット',
+        panelLabel: 'チャットサンプル',
+        render: (onError) => <ChatSamplePromptsPanel onError={onError} />,
+      },
+    ],
+    [],
+  )
 
   return (
     <AppProviders>
@@ -129,16 +284,12 @@ export default function App() {
         )}
 
         <nav className="tabs">
-          {MAIN_TABS.map((t) => (
+          {mainTabs.map((t) => (
             <button
               key={t.id}
               type="button"
               className={tab === t.id ? 'active' : undefined}
-              onClick={() => {
-                setTab(t.id)
-                setShowHelp(false)
-                setErr(null)
-              }}
+              onClick={() => selectMainTab(t.id)}
             >
               <span className="tab-button__inner">
                 <MainTabIcon tabId={t.id} />
@@ -146,114 +297,63 @@ export default function App() {
               </span>
             </button>
           ))}
+          <button
+            key="settings"
+            type="button"
+            className={tab === 'settings' ? 'active' : undefined}
+            onClick={() => selectMainTab('settings')}
+          >
+            <span className="tab-button__inner">
+              <MainTabIcon tabId="settings" />
+              <span className="tab-button__label">設定</span>
+            </span>
+          </button>
         </nav>
 
         <main className="main">
-          {tab === 'settings' && (
-            <nav className="settings-subtabs" aria-label="設定">
-              {SETTINGS_SUBTABS.map((sub) => (
-                <button
-                  key={sub.id}
-                  type="button"
-                  className={settingsSubTab === sub.id ? 'active' : undefined}
-                  aria-selected={settingsSubTab === sub.id}
-                  onClick={() => {
-                    setSettingsSubTab(sub.id)
-                    setShowHelp(false)
-                    setErr(null)
-                  }}
-                >
-                  <span className="tab-button__inner">
-                    <SettingsSubTabIcon tabId={sub.id} />
-                    <span className="tab-button__label">{sub.label}</span>
-                  </span>
-                </button>
-              ))}
-            </nav>
+          {mountedMainTabs.has('settings') && (
+            <div hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
+              <nav className="settings-subtabs" aria-label="設定">
+                {settingsSubTabs.map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    className={settingsSubTab === sub.id ? 'active' : undefined}
+                    aria-selected={settingsSubTab === sub.id}
+                    onClick={() => selectSettingsSubTab(sub.id)}
+                  >
+                    <span className="tab-button__inner">
+                      <SettingsSubTabIcon tabId={sub.id} />
+                      <span className="tab-button__label">{sub.label}</span>
+                    </span>
+                  </button>
+                ))}
+              </nav>
+              {settingsSubTabs.map(
+                (sub) =>
+                  mountedSettingsSubTabs.has(sub.id) && (
+                    <div
+                      key={sub.id}
+                      hidden={tab !== 'settings' || settingsSubTab !== sub.id}
+                      aria-hidden={tab !== 'settings' || settingsSubTab !== sub.id}
+                    >
+                      <PanelErrorBoundary panelLabel={sub.panelLabel}>
+                        {sub.render(setErr)}
+                      </PanelErrorBoundary>
+                    </div>
+                  ),
+              )}
+            </div>
           )}
-          {tab === 'summary' && (
-            <PanelErrorBoundary panelLabel="概要">
-              <SummaryPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'events' && (
-            <PanelErrorBoundary panelLabel="イベント一覧">
-              <EventsPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'metrics' && (
-            <PanelErrorBoundary panelLabel="グラフ">
-              <Suspense fallback={<p className="hint">グラフを読み込み中…</p>}>
-                <MetricsPanel
-                  onError={setErr}
-                  perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
-                  snapshotReplay={
-                    metricsSnapshotReplay
-                      ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
-                      : null
-                  }
-                />
-              </Suspense>
-            </PanelErrorBoundary>
-          )}
-          {tab === 'digests' && (
-            <PanelErrorBoundary panelLabel="ダイジェスト">
-              <DigestsPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'alerts' && (
-            <PanelErrorBoundary panelLabel="通知履歴">
-              <AlertHistoryPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'chat' && (
-            <PanelErrorBoundary panelLabel="チャット">
-              <ChatPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'timeline' && (
-            <PanelErrorBoundary panelLabel="タイムライン">
-              <TimelinePanel
-                onError={setErr}
-                onOpenSnapshotInMetrics={(item) => {
-                  setMetricsSnapshotReplay(item)
-                  setMetricsReplayNonce((n) => n + 1)
-                  setTab('metrics')
-                  setShowHelp(false)
-                  setErr(null)
-                }}
-              />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'settings' && settingsSubTab === 'general' && (
-            <PanelErrorBoundary panelLabel="一般設定">
-              <GeneralSettingsPanel />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'settings' && settingsSubTab === 'score_rules' && (
-            <PanelErrorBoundary panelLabel="スコアルール">
-              <ScoreRulesPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'settings' && settingsSubTab === 'event_type_guides' && (
-            <PanelErrorBoundary panelLabel="イベント種別ガイド">
-              <EventTypeGuidesPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'settings' && settingsSubTab === 'vcenters' && (
-            <PanelErrorBoundary panelLabel="vCenter 設定">
-              <VCentersPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'settings' && settingsSubTab === 'chat_samples' && (
-            <PanelErrorBoundary panelLabel="チャットサンプル">
-              <ChatSamplePromptsPanel onError={setErr} />
-            </PanelErrorBoundary>
-          )}
-          {tab === 'settings' && settingsSubTab === 'alerts' && (
-            <PanelErrorBoundary panelLabel="アラート設定">
-              <AlertRulesPanel onError={setErr} />
-            </PanelErrorBoundary>
+
+          {mainTabs.map(
+            (t) =>
+              mountedMainTabs.has(t.id) &&
+              t.id !== 'settings' && (
+                <div key={t.id} hidden={tab !== t.id} aria-hidden={tab !== t.id}>
+                  <PanelErrorBoundary panelLabel={t.panelLabel}>{t.render()}</PanelErrorBoundary>
+                </div>
+              ),
           )}
         </main>
       </div>
