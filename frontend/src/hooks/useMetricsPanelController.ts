@@ -25,7 +25,7 @@ import {
   resolveMetricsGraphRange,
   summarizeGraphRangePreview,
 } from '../datetime/graphRange'
-import { buildMetricsChartModel } from '../metrics/buildMetricsChartModel'
+import { buildMetricsChartModel, formatMetricChartSeriesLegendName } from '../metrics/buildMetricsChartModel'
 import {
   buildMetricsChartSeriesIdentityKey,
   legendDataKeyToString,
@@ -102,13 +102,7 @@ export function useMetricsPanelController(
     onError,
   })
 
-  // Initialize vcenterId and metricKey if not set
-  useEffect(() => {
-    if (!vcenterId && vcenters.length > 0) {
-      setVcenterId(vcenters[0].id)
-    }
-  }, [vcenters, vcenterId])
-
+  // metricKey のみ未設定時に先頭キーを選ぶ（vcenterId の '' は「全て」として有効）
   useEffect(() => {
     if (!snapshotReplay?.item || snapshotReplay.nonce < 1) {
       setSnapshotChartGuidelineMs(null)
@@ -227,6 +221,14 @@ export function useMetricsPanelController(
     [showEventLine, leftYAxisLabel],
   )
 
+  const vcenterNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const v of vcenters) {
+      m.set(v.id, v.name)
+    }
+    return m
+  }, [vcenters])
+
   const chartModel = useMemo(
     () =>
       buildMetricsChartModel(
@@ -235,8 +237,10 @@ export function useMetricsPanelController(
         perfBucketSeconds,
         showEventLine,
         countByEpochSec,
+        vcenterNameById,
+        !vcenterId,
       ),
-    [metricKey, points, perfBucketSeconds, showEventLine, countByEpochSec],
+    [metricKey, points, perfBucketSeconds, showEventLine, countByEpochSec, vcenterNameById, vcenterId],
   )
 
   const [hiddenSeriesDataKeys, setHiddenSeriesDataKeys] = useState<Set<string>>(() => new Set())
@@ -432,6 +436,7 @@ export function useMetricsPanelController(
     hiddenSeriesDataKeys,
     onMetricsLegendClick,
     vcenterLabelForChart,
+    formatMetricChartSeriesLegendName,
     metricsChartTitleLines,
     graphRangeDisplayLabel,
     metricsChartLegendName,

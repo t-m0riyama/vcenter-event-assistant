@@ -78,6 +78,7 @@ export function MetricsPanel({
     hiddenSeriesDataKeys,
     onMetricsLegendClick,
     vcenterLabelForChart,
+    formatMetricChartSeriesLegendName,
     metricsChartTitleLines,
     graphRangeDisplayLabel,
     metricsChartLegendName,
@@ -422,7 +423,7 @@ export function MetricsPanel({
                     yAxisId="left"
                     type="monotone"
                     dataKey={s.dataKey}
-                    name={`${vcenterLabelForChart} / ${s.legendName}`}
+                    name={formatMetricChartSeriesLegendName(s, vcenterLabelForChart)}
                     stroke={chartColors.series[i % chartColors.series.length]}
                     connectNulls
                     dot={LINE_CHART_DATA_DOT}
