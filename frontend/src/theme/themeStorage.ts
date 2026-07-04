@@ -1,3 +1,4 @@
+/** localStorage に保存するテーマ設定のキー。 */
 export const THEME_STORAGE_KEY = 'vea.theme'
 
 export type ThemePreference = 'light' | 'dark' | 'system'

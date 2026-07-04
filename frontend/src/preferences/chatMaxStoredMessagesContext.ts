@@ -6,6 +6,7 @@ export type ChatMaxStoredMessagesContextValue = {
   setChatMaxStoredMessages: (n: number) => void
 }
 
+/** チャット最大保持件数 Context。 */
 export const ChatMaxStoredMessagesContext = createContext<ChatMaxStoredMessagesContextValue | null>(
   null,
 )

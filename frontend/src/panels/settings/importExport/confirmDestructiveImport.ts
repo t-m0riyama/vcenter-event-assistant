@@ -4,12 +4,14 @@ export type DestructiveImportConfirmMessages = {
   readonly deleteNotInFileConfirm: string
 }
 
+/** アラートルール破壊的 import 確認ダイアログの文言。 */
 export const ALERT_RULES_DESTRUCTIVE_IMPORT_MESSAGES: DestructiveImportConfirmMessages = {
   emptyImportConfirm:
     'このファイルにはルールが含まれていません。既存のアラートルールをすべて削除します。よろしいですか？',
   deleteNotInFileConfirm: 'ファイルに含まれないアラートルールは削除されます。よろしいですか？',
 }
 
+/** スコアルール破壊的 import 確認ダイアログの文言。 */
 export const SCORE_RULES_DESTRUCTIVE_IMPORT_MESSAGES: DestructiveImportConfirmMessages = {
   emptyImportConfirm:
     'このファイルにはルールが含まれていません。既存のルールをすべて削除します。よろしいですか？',
@@ -17,6 +19,7 @@ export const SCORE_RULES_DESTRUCTIVE_IMPORT_MESSAGES: DestructiveImportConfirmMe
     'ファイルに含まれないイベント種別のルールは削除されます。よろしいですか？',
 }
 
+/** イベント種別ガイド破壊的 import 確認ダイアログの文言。 */
 export const EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES: DestructiveImportConfirmMessages = {
   emptyImportConfirm:
     'このファイルにはガイドが含まれていません。既存のガイドをすべて削除します。よろしいですか？',

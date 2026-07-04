@@ -14,6 +14,7 @@ function resolveInitial(): number {
   return readStoredChatMaxStoredMessages()
 }
 
+/** チャット最大保持件数を Context と localStorage で提供する Provider。 */
 export function ChatMaxStoredMessagesProvider({ children }: { readonly children: ReactNode }) {
   const [chatMaxStoredMessages, setChatMaxStoredMessagesState] = useState(resolveInitial)
 

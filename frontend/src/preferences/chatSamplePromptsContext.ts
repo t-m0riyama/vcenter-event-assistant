@@ -11,4 +11,5 @@ export type ChatSamplePromptsContextValue = {
   readonly visibleChatSamplePrompts: readonly ChatSamplePromptRow[]
 }
 
+/** チャットサンプルプロンプト Context。 */
 export const ChatSamplePromptsContext = createContext<ChatSamplePromptsContextValue | null>(null)

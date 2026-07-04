@@ -71,6 +71,7 @@ type ChatContextBarProps = {
   ) => void
 }
 
+/** チャットの集計期間・vCenter・期間メトリクス閾値の入力バー。 */
 export function ChatContextBar({
   rangeParts,
   setRangeParts,

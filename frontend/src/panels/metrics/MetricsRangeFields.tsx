@@ -10,6 +10,7 @@ type MetricsRangeFieldsProps = {
   applyRollingPreset: (durationMs: number) => void
 }
 
+/** メトリクスグラフの期間入力（ローリング / 手入力）。 */
 export function MetricsRangeFields({
   graphRangeDisplayLabel,
   autoRefreshEnabled,

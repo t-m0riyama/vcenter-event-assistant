@@ -27,6 +27,7 @@ type UseGraphRangeStateOptions = {
   onRollingRangeInvalidated?: () => void
 }
 
+/** メトリクスグラフの表示期間・ローリング追従状態を管理する。 */
 export function useGraphRangeState(
   timeZone: string,
   snapshotReplay?: MetricsSnapshotReplayInput | null,

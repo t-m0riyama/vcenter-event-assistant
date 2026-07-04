@@ -6,5 +6,6 @@ export type SummaryTopNotableMinScoreContextValue = {
   setTopNotableMinScore: (n: number) => void
 }
 
+/** 概要パネル要注意イベント最小スコア Context。 */
 export const SummaryTopNotableMinScoreContext =
   createContext<SummaryTopNotableMinScoreContextValue | null>(null)

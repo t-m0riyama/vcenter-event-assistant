@@ -36,6 +36,7 @@ type UseMetricsChartSeriesParams = {
   graphRangeDisplayLabel: string
 }
 
+/** メトリクスチャートの系列モデル・凡例・軸フォーマットを組み立てる。 */
 export function useMetricsChartSeries({
   timeZone,
   metricKey,

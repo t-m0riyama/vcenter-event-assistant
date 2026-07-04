@@ -29,6 +29,7 @@ function ThemeAppearanceSelect() {
   )
 }
 
+/** 一般設定パネル（TZ・テーマ・自動更新等）。 */
 export function GeneralSettingsPanel() {
   const { chatMaxStoredMessages, setChatMaxStoredMessages } = useChatMaxStoredMessages()
   const { topNotableMinScore, setTopNotableMinScore } = useSummaryTopNotableMinScore()

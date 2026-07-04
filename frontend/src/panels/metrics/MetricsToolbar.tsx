@@ -19,6 +19,7 @@ type MetricsToolbarProps = {
   onDownloadCsv: () => void
 }
 
+/** メトリクスパネルのツールバー（vCenter・系列・export 等）。 */
 export function MetricsToolbar({
   vcenters,
   vcenterId,

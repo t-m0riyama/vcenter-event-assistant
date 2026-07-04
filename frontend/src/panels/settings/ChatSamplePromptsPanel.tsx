@@ -26,6 +26,7 @@ function confirmDestructiveChatSampleImport(deleteNotInImport: boolean, sampleCo
   return confirm('ファイルに含まれない id のサンプルは削除されます。よろしいですか？')
 }
 
+/** チャットサンプルプロンプト設定パネル。 */
 export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null) => void }) {
   const { chatSamplePrompts, setChatSamplePrompts } = useChatSamplePrompts()
   const [overwriteExisting, setOverwriteExisting] = useState(true)

@@ -15,6 +15,7 @@ type TimelineSnapshotActionsProps = {
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
 }
 
+/** タイムライン生成・スナップショット保存・読み込み操作 UI。 */
 export function TimelineSnapshotActions({
   loading,
   savingSnapshot,

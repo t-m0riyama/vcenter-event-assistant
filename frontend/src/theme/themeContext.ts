@@ -2,11 +2,12 @@ import { createContext } from 'react'
 import type { ThemePreference } from './themeStorage'
 
 export type ThemeContextValue = {
-  /** User choice in 一般 settings (ライト / ダーク / システム). */
+  /** 一般設定のユーザー選択（ライト / ダーク / システム）。 */
   readonly preference: ThemePreference
-  /** Resolved light or dark for `data-theme` and charts. */
+  /** ``data-theme`` とチャートに使う解決済み light / dark。 */
   readonly effectiveTheme: 'light' | 'dark'
   readonly setPreference: (preference: ThemePreference) => void
 }
 
+/** テーマ Context。 */
 export const ThemeContext = createContext<ThemeContextValue | null>(null)

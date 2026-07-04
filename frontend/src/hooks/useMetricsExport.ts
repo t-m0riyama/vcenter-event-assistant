@@ -16,6 +16,7 @@ type UseMetricsExportParams = {
   countByEpochSec: Map<number, number>
 }
 
+/** メトリクス CSV / SVG エクスポート用の派生データを提供する。 */
 export function useMetricsExport({
   vcenterId,
   vcenters,

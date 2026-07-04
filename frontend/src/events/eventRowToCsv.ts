@@ -2,6 +2,7 @@ import { formatIsoInTimeZone } from '../datetime/formatIsoInTimeZone'
 import type { EventRow } from '../api/schemas'
 import type { EventCsvRow } from './eventCsv'
 
+/** API イベント行を CSV エクスポート行に変換する（時刻は表示 TZ）。 */
 export function eventRowToCsvRow(
   e: EventRow,
   vcenterName: string,

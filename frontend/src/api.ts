@@ -5,12 +5,14 @@ function headers(): HeadersInit {
 /** ブラウザ既定キャッシュで GET が古い JSON を返すのを防ぐ */
 const fetchNoStore: RequestInit = { cache: 'no-store' }
 
+/** JSON GET（``cache: 'no-store'``）。 */
 export async function apiGet<T>(path: string): Promise<T> {
   const r = await fetch(path, { ...fetchNoStore, headers: headers() })
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return r.json() as Promise<T>
 }
 
+/** JSON POST。204 の場合は body なしとして ``undefined`` を返す。 */
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(path, {
     ...fetchNoStore,
@@ -23,6 +25,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>
 }
 
+/** JSON PATCH。 */
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(path, {
     ...fetchNoStore,
@@ -34,6 +37,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>
 }
 
+/** JSON DELETE。 */
 export async function apiDelete(path: string): Promise<void> {
   const r = await fetch(path, { ...fetchNoStore, method: 'DELETE', headers: headers() })
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)

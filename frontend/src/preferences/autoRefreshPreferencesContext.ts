@@ -8,5 +8,6 @@ export type AutoRefreshPreferencesContextValue = {
   setAutoRefreshIntervalMinutes: (minutes: number) => void
 }
 
+/** 非設定タブの自動更新設定 Context。 */
 export const AutoRefreshPreferencesContext =
   createContext<AutoRefreshPreferencesContextValue | null>(null)

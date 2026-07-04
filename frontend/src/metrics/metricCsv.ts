@@ -1,6 +1,7 @@
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import type { MetricPoint } from './normalizeMetricSeriesResponse'
 
+/** CSV フィールドを RFC 4180 相当にエスケープする。 */
 export function escapeCsvField(value: string): string {
   if (/[",\r\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`
@@ -35,6 +36,7 @@ export type MetricCsvExportOptions = {
   overlayEventType?: string
 }
 
+/** メトリクスポイント配列を CSV 文字列に変換する（イベント overlay 列は任意）。 */
 export function metricPointsToCsv(points: MetricPoint[], options?: MetricCsvExportOptions): string {
   const overlay =
     options?.overlayEventType?.trim() &&
@@ -67,6 +69,7 @@ export function metricPointsToCsv(points: MetricPoint[], options?: MetricCsvExpo
   return `${lines.join('\r\n')}\r\n`
 }
 
+/** メトリクス CSV をブラウザダウンロードする。 */
 export function downloadMetricPointsCsv(
   points: MetricPoint[],
   filename: string,

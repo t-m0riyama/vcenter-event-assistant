@@ -1,12 +1,12 @@
 /**
- * Serialize the Recharts chart for download.
- * - Main plot: largest `svg.recharts-surface` (legend icons are smaller surfaces).
- * - Legend: HTML in `div.recharts-legend-wrapper` (sibling inside `.recharts-wrapper`), merged via `foreignObject`.
+ * Recharts チャートを SVG としてシリアライズしてダウンロードする。
+ * メインプロットは最大の ``svg.recharts-surface``、凡例は ``foreignObject`` で合成する。
  */
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const XHTML_NS = 'http://www.w3.org/1999/xhtml'
 
+/** コンテナ内の ``.recharts-wrapper`` 要素を返す。 */
 export function findRechartsWrapper(container: HTMLElement): HTMLElement | null {
   return container.querySelector('.recharts-wrapper')
 }
@@ -56,6 +56,7 @@ export function findChartSvgForExport(container: HTMLElement): SVGSVGElement | n
   return best
 }
 
+/** ファイル名に使えない文字を除去し、空白をアンダースコアに置換する。 */
 export function sanitizeFilenameSegment(segment: string): string {
   return segment
     .trim()
@@ -64,6 +65,7 @@ export function sanitizeFilenameSegment(segment: string): string {
     .slice(0, 200)
 }
 
+/** メトリクス export 用タイムスタンプ（``YYYYMMDD-HHmmss``）。 */
 export function formatMetricsDownloadTimestamp(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
@@ -273,6 +275,7 @@ export function serializeRechartsWrapperWithLegend(
   return new XMLSerializer().serializeToString(outer)
 }
 
+/** Recharts コンテナから凡例付き SVG 文字列を生成する。 */
 export function serializeChartSvg(
   container: HTMLElement,
   title?: ChartSvgExportTitle,

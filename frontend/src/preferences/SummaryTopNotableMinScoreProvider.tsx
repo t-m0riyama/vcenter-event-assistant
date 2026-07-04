@@ -14,6 +14,7 @@ function resolveInitialScore(): number {
   return readStoredSummaryTopNotableMinScore()
 }
 
+/** 概要要注意イベント最小スコアを Context と localStorage で提供する Provider。 */
 export function SummaryTopNotableMinScoreProvider({ children }: { children: ReactNode }) {
   const [topNotableMinScore, setTopNotableMinScoreState] = useState(resolveInitialScore)
 

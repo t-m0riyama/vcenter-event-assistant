@@ -21,7 +21,7 @@ function utcIsoThroughEndOfWallMinute(wallInput: string, utcIso: string): string
 }
 
 /**
- * Maps optional wall-clock range inputs (display time zone) to API `from` / `to` UTC ISO strings.
+ * 壁時計の期間入力（表示 TZ）を API 用 UTC ISO ``from`` / ``to`` に変換する。
  */
 export function resolveEventApiRange(
   rangeFromInput: string,
@@ -67,8 +67,8 @@ export type MetricsGraphRangeResolve =
   | { mode: 'invalid'; message: string }
 
 /**
- * Graph tab: either both start/end are empty (no time filter), or both must be valid (same rules as events).
- * One-sided input is rejected so `GET /api/events/rate-series` can use the same bounds as metrics when a range is set.
+ * メトリクスグラフ用の期間解決。両方空ならフィルタなし、片方のみは invalid。
+ * イベントレート overlay と metrics で同一 bounds を使うため、イベントと同じルールを適用する。
  */
 export function resolveMetricsGraphRange(
   rangeFromInput: string,
@@ -93,7 +93,7 @@ export function resolveMetricsGraphRange(
   return { mode: 'range', from: r.from, to: r.to }
 }
 
-/** Graph tab: one-line summary for collapsed range `<details>` (no `open` = default closed). */
+/** 折りたたみ期間 `<details>` 用の一行プレビュー（未入力 / 入力中 / 範囲表示）。 */
 export function summarizeGraphRangePreview(parts: ZonedRangeParts): string {
   const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(parts)
   const rf = rangeFromInput.trim()
