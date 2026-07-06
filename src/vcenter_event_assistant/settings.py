@@ -142,6 +142,12 @@ class AlertSettingsMixin(BaseModel):
     smtp_username: str | None = Field(default=None)
     smtp_password: str | None = Field(default=None)
     smtp_use_tls: bool = Field(default=True)
+    smtp_timeout_seconds: int = Field(
+        default=10,
+        ge=1,
+        le=300,
+        description="SMTP 接続・送受信のタイムアウト（秒）。",
+    )
     alert_email_from: str = Field(default="noreply@example.com")
     alert_email_to: str | None = Field(default=None, description="Global recipient for alerts (comma-separated).")
     alert_eval_interval_seconds: int = Field(default=60, ge=10, description="Alert evaluation job interval.")

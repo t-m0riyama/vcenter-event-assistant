@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import event, func, select
 
-from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
+from vcenter_event_assistant.db.models import EventRecord, IngestionState, MetricSample, VCenter
 from vcenter_event_assistant.db.session import get_engine, session_scope
 from vcenter_event_assistant.services.ingestion import (
     ingest_events_for_vcenter,
@@ -175,3 +175,50 @@ async def test_ingest_metrics_skips_duplicates_without_select() -> None:
     async with session_scope() as session:
         cnt = await session.execute(select(func.count()).select_from(MetricSample))
     assert cnt.scalar() == 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_events_does_not_rewind_cursor_on_empty_fetch() -> None:
+    """新規イベントなしの空フェッチでカーソルが 1 秒ずつ後退しない。"""
+    cursor_ts = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    async with session_scope() as session:
+        vc = VCenter(
+            id=uuid.uuid4(),
+            name="cursor-empty",
+            host="vc.example",
+            username="u",
+            password="p",
+        )
+        session.add(vc)
+        await session.flush()
+        session.add(
+            IngestionState(
+                vcenter_id=vc.id,
+                kind="events",
+                cursor_value=cursor_ts.isoformat(),
+            )
+        )
+        await session.flush()
+        vcenter_id = vc.id
+
+    with patch(
+        "vcenter_event_assistant.services.ingestion.asyncio.to_thread",
+        new=AsyncMock(return_value=([], None)),
+    ):
+        async with session_scope() as session:
+            vc = await session.get(VCenter, vcenter_id)
+            assert vc is not None
+            inserted = await ingest_events_for_vcenter(session, vc, settings=get_settings())
+            assert inserted == 0
+
+    async with session_scope() as session:
+        row = await session.execute(
+            select(IngestionState).where(
+                IngestionState.vcenter_id == vcenter_id,
+                IngestionState.kind == "events",
+            )
+        )
+        state = row.scalar_one()
+        assert state.cursor_value == cursor_ts.isoformat()
+

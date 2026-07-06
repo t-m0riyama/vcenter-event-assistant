@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from vcenter_event_assistant.services.alerting.notification.email_channel import EmailChannel
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.settings import get_settings
@@ -34,6 +34,27 @@ async def test_email_channel_send_success(monkeypatch):
         sent_msg = instance.send_message.call_args[0][0]
         assert sent_msg["To"] == "ops@example.com"
         assert sent_msg["Subject"] == "Subject"
+
+@pytest.mark.asyncio
+async def test_email_channel_uses_to_thread_and_smtp_timeout(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_TIMEOUT_SECONDS", "15")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
+
+    channel = EmailChannel(get_settings())
+
+    with (
+        patch("smtplib.SMTP") as mock_smtp,
+        patch(
+            "vcenter_event_assistant.services.alerting.notification.email_channel.asyncio.to_thread",
+            new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)),
+        ) as mock_to_thread,
+    ):
+        await channel.notify(AlertRule(), AlertState(), "Subject", "Body")
+
+    mock_to_thread.assert_awaited_once()
+    mock_smtp.assert_called_once_with("smtp.test.com", 587, timeout=15)
 
 @pytest.mark.asyncio
 async def test_email_channel_skips_if_no_host(monkeypatch, caplog):
