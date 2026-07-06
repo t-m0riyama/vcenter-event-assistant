@@ -57,3 +57,26 @@ def test_render_resolved_alert():
     assert "RESOLVED" in body.upper()
     assert "警告" in body
     assert "Usage is now 20%" in body
+
+
+def test_render_stale_alert():
+    renderer = NotificationRenderer(get_settings())
+    rule = AlertRule(name="High CPU", rule_type="metric_threshold")
+    state = AlertState(
+        state="stale",
+        context_key="host-123",
+        fired_at=datetime(2026, 4, 23, 10, 0, 0, tzinfo=timezone.utc),
+    )
+    context = {
+        "rule_name": rule.name,
+        "state": state.state,
+        "context_key": state.context_key,
+        "fired_at": state.fired_at,
+        "details": "Metric data is outdated",
+    }
+
+    subject, body = renderer.render(rule, state, context)
+
+    assert "[STALE]" in subject
+    assert "STALE" in body.upper()
+    assert "Metric data is outdated" in body

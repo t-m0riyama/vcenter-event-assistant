@@ -184,7 +184,7 @@ class AlertState(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
-    state: Mapped[str] = mapped_column(String(32), index=True)  # "firing" or "resolved"
+    state: Mapped[str] = mapped_column(String(32), index=True)  # firing / resolved / stale
     context_key: Mapped[str] = mapped_column(String(512), index=True)
     fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

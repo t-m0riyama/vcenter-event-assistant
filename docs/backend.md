@@ -84,6 +84,7 @@
 - バックグラウンドジョブ `evaluate_alerts` は `ALERT_EVAL_INTERVAL_SECONDS`（既定 60 秒）ごとに動く。ログの `executed successfully` は **例外がなかったこと** を示し、必ずしも発火したとは限らない。
 - **有効な AlertRule が 1 件以上**必要（設定 → アラート、有効チェック ON）。
 - `metric_threshold` ルールの `config.metric_key` は、DB に保存されるキーと **完全一致** させる（CPU 利用率の例: `host.cpu.usage_pct`）。`GET /api/metrics/keys` またはグラフタブのキー一覧を参照する。UI 旧既定の `cpu.usage.average` ではサンプルにヒットしない。
+- `metric_threshold` の `AlertState.context_key` は **`{vcenter_id}:{entity_moid}`** 形式（vCenter 間の MoRef 衝突を避ける）。鮮度上限（`METRIC_STALENESS_WINDOW_SECONDS`、未設定時は `PERF_SAMPLE_INTERVAL_SECONDS * 3`）を超えたサンプルは評価対象外。`firing` 中に鮮度切れすると **`stale`** へ遷移し、初回のみ通知する。
 - 発火の確認は **通知履歴**（`GET /api/alerts/history`、画面の「通知履歴」タブ）。`_notify` が呼ばれると履歴行が増える。メールは `SMTP_HOST` と `ALERT_EMAIL_TO` が設定されているときのみ送信される（未設定時は warning ログのみで履歴は残る）。
 - 評価完了時に INFO ログ `alert evaluation complete rules_enabled=N firings=M resolutions=R` が出る。`firings=0` が続く場合は閾値・キー・収集データを見直す。
 - 既に `firing` 状態の metric ルールは、条件が続いても **新規通知は出ない**（エンティティごとの状態更新のみ）。回復後に再度閾値超えで firing する。

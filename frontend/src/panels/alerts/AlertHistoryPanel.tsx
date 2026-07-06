@@ -12,6 +12,12 @@ const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
   warning: '警告',
 }
 
+function alertStateLabel(state: string): string {
+  if (state === 'firing') return '発火中'
+  if (state === 'stale') return 'データ古い'
+  return '回復済み'
+}
+
 interface AlertHistory {
   id: number
   rule_id: number
@@ -128,7 +134,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                   </td>
                   <td className="col-state">
                     <span className={`state-badge ${h.state}`}>
-                      {h.state === 'firing' ? '発火中' : '回復済み'}
+                      {alertStateLabel(h.state)}
                     </span>
                   </td>
                   <td className="col-context">{h.context_key}</td>
