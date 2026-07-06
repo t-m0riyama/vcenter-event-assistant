@@ -6,18 +6,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import uuid
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from sqlalchemy import select
-
-from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.services.digest.digest_run import run_digest_once
@@ -27,10 +21,11 @@ from vcenter_event_assistant.services.digest.digest_window import (
     zoned_previous_week_window,
     zoned_yesterday_window,
 )
+from vcenter_event_assistant.services.ingest_runner import (
+    run_ingest_events,
+    run_ingest_metrics,
+)
 from vcenter_event_assistant.services.ingestion import (
-    ingest_events_for_vcenter,
-    ingest_metrics_for_vcenter,
-    list_enabled_vcenters,
     purge_old_events,
     purge_old_metrics,
 )
@@ -45,52 +40,14 @@ logger = logging.getLogger(__name__)
 _JOB_OPTIONS = {"coalesce": True, "max_instances": 1}
 
 
-async def _ingest_for_enabled_vcenters(
-    settings: Settings,
-    ingest_fn: Callable[..., Awaitable[int]],
-    *,
-    success_log: str,
-    failure_log: str,
-) -> None:
-    """有効 vCenter ごとに取り込み関数を並行実行する（失敗は vCenter 単位で分離）。"""
-    async with session_scope(settings=settings) as session:
-        vcenters = await list_enabled_vcenters(session)
-        ids = [v.id for v in vcenters]
-
-    sem = asyncio.Semaphore(settings.ingestion_concurrency)
-
-    async def _one(vid: uuid.UUID) -> None:
-        async with sem:
-            try:
-                async with session_scope(settings=settings) as session:
-                    res = await session.execute(select(VCenter).where(VCenter.id == vid))
-                    vc = res.scalar_one()
-                    n = await ingest_fn(session, vc, settings=settings)
-                    logger.info(success_log, vc.name, n)
-            except Exception:
-                logger.exception(failure_log, vid)
-
-    await asyncio.gather(*(_one(vid) for vid in ids))
-
-
 async def poll_events(settings: Settings) -> None:
     """有効 vCenter からイベントを取り込む。"""
-    await _ingest_for_enabled_vcenters(
-        settings,
-        ingest_events_for_vcenter,
-        success_log="events ingested vcenter=%s count=%s",
-        failure_log="event poll failed vcenter_id=%s",
-    )
+    await run_ingest_events(settings)
 
 
 async def poll_perf(settings: Settings) -> None:
     """有効 vCenter からメトリクスを取り込む。"""
-    await _ingest_for_enabled_vcenters(
-        settings,
-        ingest_metrics_for_vcenter,
-        success_log="metrics ingested vcenter=%s count=%s",
-        failure_log="perf poll failed vcenter_id=%s",
-    )
+    await run_ingest_metrics(settings)
 
 
 async def purge_retention(settings: Settings) -> None:
