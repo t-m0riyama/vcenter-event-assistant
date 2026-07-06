@@ -24,8 +24,19 @@ def _iter_hosts(si) -> list[Any]:
         view.Destroy()
 
 
+def _host_is_connected(host) -> bool:
+    runtime = getattr(host, "runtime", None)
+    if runtime is None:
+        return False
+    return runtime.connectionState == vim.HostSystem.ConnectionState.connected
+
+
 def _host_metrics(host) -> list[dict[str, Any]]:
+    if not _host_is_connected(host):
+        return []
     qs = host.summary.quickStats
+    if qs is None:
+        return []
     hw = host.summary.hardware
     num_cores = host.hardware.cpuInfo.numCpuCores if host.hardware.cpuInfo else 1
     cpu_mhz_used = float(qs.overallCpuUsage or 0)
@@ -84,8 +95,15 @@ def sample_hosts_blocking(
     try:
         rows: list[dict[str, Any]] = []
         for h in _iter_hosts(si):
-            rows.extend(_host_metrics(h))
-            rows.extend(collect_host_perf_metric_rows(si, h))
+            try:
+                rows.extend(_host_metrics(h))
+                if _host_is_connected(h):
+                    rows.extend(collect_host_perf_metric_rows(si, h))
+            except Exception:
+                logger.exception(
+                    "host metric sampling failed host=%s",
+                    getattr(h, "name", h),
+                )
         try:
             rows.extend(sample_datastore_metrics_blocking(si))
         except Exception:

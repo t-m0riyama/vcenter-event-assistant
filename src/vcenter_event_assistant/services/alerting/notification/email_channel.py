@@ -1,13 +1,34 @@
 """SMTP 経由のメール通知チャネル。"""
 
+from __future__ import annotations
+
+import asyncio
+import logging
 import smtplib
 from email.message import EmailMessage
+
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.services.alerting.notification.base import NotificationChannel
 from vcenter_event_assistant.settings import Settings
-import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _send_smtp_message(settings: Settings, msg: EmailMessage) -> None:
+    """SMTP でメールを送信する（同期。``asyncio.to_thread`` から呼ぶ）。"""
+    with smtplib.SMTP(
+        settings.smtp_host,
+        settings.smtp_port,
+        timeout=settings.smtp_timeout_seconds,
+    ) as server:
+        if settings.smtp_use_tls:
+            server.starttls()
+
+        if settings.smtp_username and settings.smtp_password:
+            server.login(settings.smtp_username, settings.smtp_password)
+
+        server.send_message(msg)
+
 
 class EmailChannel(NotificationChannel):
     """設定された SMTP サーバ経由でアラートメールを送信する。"""
@@ -44,18 +65,9 @@ class EmailChannel(NotificationChannel):
         msg["From"] = settings.alert_email_from
         msg["To"] = settings.alert_email_to
 
-        # SMTP 送信 (同期ライブラリを使用するためブロッキングに注意が必要だが、
-        # 現状の設計ではシンプルに進める。将来的に aiosmtplib 等への移行も検討)
         try:
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-                if settings.smtp_use_tls:
-                    server.starttls()
-                
-                if settings.smtp_username and settings.smtp_password:
-                    server.login(settings.smtp_username, settings.smtp_password)
-                
-                server.send_message(msg)
-                logger.info(f"Email notification sent: {subject}")
+            await asyncio.to_thread(_send_smtp_message, settings, msg)
+            logger.info("Email notification sent: %s", subject)
         except Exception as e:
-            logger.error(f"Failed to send email notification: {e}")
-            raise e
+            logger.error("Failed to send email notification: %s", e)
+            raise

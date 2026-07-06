@@ -48,10 +48,11 @@ async def ingest_events_for_vcenter(
     )
     row = state.scalar_one_or_none()
     since: datetime | None = None
+    fetch_since: datetime | None = None
     if row and row.cursor_value:
         since = datetime.fromisoformat(row.cursor_value)
         # advance window slightly to reduce duplicates at boundary
-        since = since - timedelta(seconds=1)
+        fetch_since = since - timedelta(seconds=1)
 
     normalized, max_ts = await asyncio.to_thread(
         fetch_events_blocking,
@@ -60,7 +61,7 @@ async def ingest_events_for_vcenter(
         port=vcenter.port,
         username=vcenter.username,
         password=vcenter.password,
-        since=since,
+        since=fetch_since,
         proxy_url=settings.vcenter_http_proxy,
         verify_ssl=vcenter.verify_ssl,
         ca_bundle_path=settings.vcenter_ca_bundle,
@@ -104,9 +105,7 @@ async def ingest_events_for_vcenter(
 
     if max_ts is not None:
         row.cursor_value = max_ts.isoformat()
-    elif since is not None:
-        row.cursor_value = since.isoformat()
-    else:
+    elif since is None:
         row.cursor_value = datetime.now(timezone.utc).isoformat()
 
     return inserted
