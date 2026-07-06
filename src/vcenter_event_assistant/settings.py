@@ -168,6 +168,26 @@ class AlertSettingsMixin(BaseModel):
     )
     alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
     alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
+    alert_template_stale_path: str | None = Field(
+        default=None,
+        description="Custom Jinja2 template for stale metric_threshold alerts.",
+    )
+    metric_staleness_window_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=86400,
+        description=(
+            "metric_threshold 評価に使う最新サンプルの鮮度上限（秒）。"
+            "未設定時は perf_sample_interval_seconds * 3。"
+        ),
+    )
+
+    @property
+    def effective_metric_staleness_window_seconds(self) -> int:
+        """metric_threshold 評価の鮮度上限（秒）。"""
+        if self.metric_staleness_window_seconds is not None:
+            return self.metric_staleness_window_seconds
+        return self.perf_sample_interval_seconds * 3
 
     @field_validator(
         "smtp_host",
@@ -176,6 +196,7 @@ class AlertSettingsMixin(BaseModel):
         "alert_email_to",
         "alert_template_firing_path",
         "alert_template_resolved_path",
+        "alert_template_stale_path",
         mode="before",
     )
     @classmethod

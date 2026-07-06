@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,6 +11,25 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from vcenter_event_assistant.db.models import AlertRule, AlertState
     from vcenter_event_assistant.settings import Settings
+
+
+def metric_context_key(vcenter_id: uuid.UUID, entity_moid: str) -> str:
+    """metric_threshold 用の vCenter スコープ付き context_key。"""
+    return f"{vcenter_id}:{entity_moid}"
+
+
+def is_vcenter_scoped_context_key(context_key: str) -> bool:
+    """``{vcenter_id}:{entity_moid}`` 形式かどうか。"""
+    if ":" not in context_key:
+        return False
+    prefix, _rest = context_key.split(":", 1)
+    if not prefix or not _rest:
+        return False
+    try:
+        uuid.UUID(prefix)
+    except ValueError:
+        return False
+    return True
 
 
 def as_utc(dt: datetime) -> datetime:

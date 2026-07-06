@@ -51,6 +51,12 @@
   border: 1px solid color-mix(in srgb, var(--color-success, #32d74b) 30%, transparent);
 }
 
+.state-badge.stale {
+  background: color-mix(in srgb, var(--color-warning, #ff9f0a) 15%, transparent);
+  color: var(--color-warning, #ff9f0a);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #ff9f0a) 30%, transparent);
+}
+
 .success-tag {
   color: var(--color-success, #32d74b);
   font-size: var(--font-size-caption2);

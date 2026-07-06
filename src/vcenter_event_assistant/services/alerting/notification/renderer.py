@@ -53,6 +53,9 @@ class NotificationRenderer:
         if state.state == "firing":
             custom_path = settings.alert_template_firing_path
             default_file = "alert_firing.txt.j2"
+        elif state.state == "stale":
+            custom_path = settings.alert_template_stale_path
+            default_file = "alert_stale.txt.j2"
         else:
             custom_path = settings.alert_template_resolved_path
             default_file = "alert_resolved.txt.j2"

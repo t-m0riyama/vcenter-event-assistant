@@ -1,0 +1,11 @@
+[STALE][{{ alert_level }}] {{ rule_name }} - {{ context_key }}
+
+Alert is STALE (metric data is outdated).
+
+Level: {{ alert_level_label }} ({{ alert_level }})
+Rule: {{ rule_name }}
+Resource: {{ context_key }}
+Fired At: {{ fired_at.isoformat() }}
+
+Details:
+{{ details }}

@@ -1,10 +1,22 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
+
+from sqlalchemy import delete, select
+
 from vcenter_event_assistant.db.models import AlertRule, AlertState, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.alert_eval_common import metric_context_key
 from vcenter_event_assistant.settings import get_settings
+
+
+@pytest.fixture(autouse=True)
+def clear_settings_cache():
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
 
 @pytest.mark.asyncio
 async def test_evaluate_metric_threshold_firing_and_resolution():
@@ -12,15 +24,15 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
         vc = VCenter(name="vc_m", host="vc_m", username="u", password="p")
         session.add(vc)
         await session.flush()
-        
+        vc_id = vc.id
+
         rule = AlertRule(
             name="Host CPU High",
             rule_type="metric_threshold",
-            config={"metric_key": "cpu.usage", "threshold": 90.0}
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
         )
         session.add(rule)
-        
-        # 閾値超えのメトリクス
+
         s1 = MetricSample(
             vcenter_id=vc.id,
             sampled_at=datetime.now(timezone.utc),
@@ -28,35 +40,32 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
             entity_moid="host-1",
             entity_name="ESXi-1",
             metric_key="cpu.usage",
-            value=95.0
+            value=95.0,
         )
         session.add(s1)
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    
-    # 1. 発火の確認
+
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert mock_notify.called
         assert mock_notify.call_args[0][1].state == "firing"
-        assert mock_notify.call_args[0][1].context_key == "host-1"
+        assert mock_notify.call_args[0][1].context_key == metric_context_key(vc_id, "host-1")
 
-    # 2. 継続（通知が飛ばないこと）
     with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
         await evaluator.evaluate_all()
         assert not mock_notify.called
 
-    # 3. 回復
     async with session_scope() as session:
         s2 = MetricSample(
-            vcenter_id=vc.id,
+            vcenter_id=vc_id,
             sampled_at=datetime.now(timezone.utc),
             entity_type="HostSystem",
             entity_moid="host-1",
             entity_name="ESXi-1",
             metric_key="cpu.usage",
-            value=20.0
+            value=20.0,
         )
         session.add(s2)
         await session.flush()
@@ -188,10 +197,11 @@ async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
         session.add(rule)
         await session.flush()
         now = datetime.now(timezone.utc)
+        context_key = metric_context_key(vc.id, "host-1")
         existing = AlertState(
             rule_id=rule.id,
             state="resolved",
-            context_key="host-1",
+            context_key=context_key,
             fired_at=now - timedelta(hours=2),
             resolved_at=now - timedelta(hours=1),
         )
@@ -217,8 +227,6 @@ async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
         assert mock_notify.call_count == 1
 
     async with session_scope() as session:
-        from sqlalchemy import select
-
         states = (
             await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
         ).scalars().all()
@@ -226,3 +234,107 @@ async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
         assert states[0].id == state_id
         assert states[0].state == "firing"
         assert states[0].resolved_at is None
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_separates_same_moid_across_vcenters() -> None:
+    async with session_scope() as session:
+        vc1 = VCenter(name="vc_a", host="vc_a", username="u", password="p")
+        vc2 = VCenter(name="vc_b", host="vc_b", username="u", password="p")
+        session.add_all([vc1, vc2])
+        await session.flush()
+        rule = AlertRule(
+            name="CPU both",
+            rule_type="metric_threshold",
+            is_enabled=True,
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
+        )
+        session.add(rule)
+        now = datetime.now(timezone.utc)
+        for vc in (vc1, vc2):
+            session.add(
+                MetricSample(
+                    vcenter_id=vc.id,
+                    sampled_at=now,
+                    entity_type="HostSystem",
+                    entity_moid="host-10",
+                    entity_name=f"ESXi-{vc.name}",
+                    metric_key="cpu.usage",
+                    value=95.0,
+                )
+            )
+        await session.flush()
+
+    evaluator = AlertEvaluator(get_settings())
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.call_count == 2
+        keys = {call.args[1].context_key for call in mock_notify.call_args_list}
+        assert len(keys) == 2
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypatch) -> None:
+    monkeypatch.setenv("METRIC_STALENESS_WINDOW_SECONDS", "300")
+    get_settings.cache_clear()
+
+    async with session_scope() as session:
+        vc = VCenter(name="vc_stale", host="vc_stale", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="Stale metric",
+            rule_type="metric_threshold",
+            is_enabled=True,
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
+        )
+        session.add(rule)
+        now = datetime.now(timezone.utc)
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=now,
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="cpu.usage",
+                value=95.0,
+            )
+        )
+        await session.flush()
+        rule_id = rule.id
+        vc_id = vc.id
+
+    evaluator = AlertEvaluator(get_settings())
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.call_count == 1
+
+    async with session_scope() as session:
+        await session.execute(delete(MetricSample))
+        session.add(
+            MetricSample(
+                vcenter_id=vc_id,
+                sampled_at=now - timedelta(hours=2),
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="cpu.usage",
+                value=95.0,
+            )
+        )
+
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        assert mock_notify.call_count == 1
+        assert mock_notify.call_args[0][1].state == "stale"
+
+    async with session_scope() as session:
+        state = (
+            await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
+        ).scalar_one()
+        assert state.state == "stale"
+
+    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+        await evaluator.evaluate_all()
+        mock_notify.assert_not_called()
