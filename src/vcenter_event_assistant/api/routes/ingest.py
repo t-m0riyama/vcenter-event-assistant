@@ -1,32 +1,28 @@
 """手動インジェストエンドポイント。"""
 
-from fastapi import APIRouter
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from vcenter_event_assistant.db.models import VCenter
-from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.ingestion import (
-    ingest_events_for_vcenter,
-    ingest_metrics_for_vcenter,
-    list_enabled_vcenters,
-)
+from vcenter_event_assistant.api.deps import get_app_settings
+from vcenter_event_assistant.services.ingest_runner import IngestBusyError, run_ingest_all
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
+
 @router.post("/run")
-async def run_ingest_now() -> dict[str, str | int]:
-    async with session_scope() as session:
-        vcenters = await list_enabled_vcenters(session)
-        ids = [v.id for v in vcenters]
-    ev_total = 0
-    m_total = 0
-    for vid in ids:
-        async with session_scope() as session:
-            res = await session.execute(select(VCenter).where(VCenter.id == vid))
-            vc = res.scalar_one()
-            ev_total += await ingest_events_for_vcenter(session, vc)
-        async with session_scope() as session:
-            res = await session.execute(select(VCenter).where(VCenter.id == vid))
-            vc = res.scalar_one()
-            m_total += await ingest_metrics_for_vcenter(session, vc)
-    return {"status": "ok", "events_inserted": ev_total, "metrics_inserted": m_total}
+async def run_ingest_now(
+    settings: Settings = Depends(get_app_settings),
+) -> dict[str, str | int]:
+    """全有効 vCenter のイベント・メトリクスを手動取り込みする。"""
+    try:
+        result = await run_ingest_all(settings)
+    except IngestBusyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ingest already running",
+        ) from None
+    return {
+        "status": "ok",
+        "events_inserted": result.events_inserted,
+        "metrics_inserted": result.metrics_inserted,
+    }

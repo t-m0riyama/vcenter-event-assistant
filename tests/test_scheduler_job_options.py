@@ -6,10 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from vcenter_event_assistant.jobs.scheduler import (
-    _ingest_for_enabled_vcenters,
-    setup_scheduler,
-)
+from vcenter_event_assistant.jobs.scheduler import setup_scheduler
+from vcenter_event_assistant.services.ingest_runner import ingest_for_enabled_vcenters
 from vcenter_event_assistant.settings import Settings
 
 _INTERVAL_JOB_IDS = frozenset(
@@ -56,25 +54,25 @@ async def test_ingest_for_enabled_vcenters_uses_gather_with_semaphore() -> None:
 
     with (
         patch(
-            "vcenter_event_assistant.jobs.scheduler.list_enabled_vcenters",
+            "vcenter_event_assistant.services.ingest_runner.list_enabled_vcenters",
             new=AsyncMock(return_value=[_Vc(1, "a"), _Vc(2, "b"), _Vc(3, "c")]),
         ),
         patch(
-            "vcenter_event_assistant.jobs.scheduler.session_scope",
+            "vcenter_event_assistant.services.ingest_runner.session_scope",
         ) as mock_session_scope,
         patch(
-            "vcenter_event_assistant.jobs.scheduler.asyncio.gather",
-            new=AsyncMock(),
+            "vcenter_event_assistant.services.ingest_runner.asyncio.gather",
+            new=AsyncMock(return_value=[1, 1, 1]),
         ) as mock_gather,
         patch(
-            "vcenter_event_assistant.jobs.scheduler.asyncio.Semaphore",
+            "vcenter_event_assistant.services.ingest_runner.asyncio.Semaphore",
         ) as mock_semaphore,
     ):
         mock_session = AsyncMock()
         mock_session_scope.return_value.__aenter__.return_value = mock_session
         mock_session_scope.return_value.__aexit__.return_value = None
 
-        await _ingest_for_enabled_vcenters(
+        total = await ingest_for_enabled_vcenters(
             settings,
             ingest_fn,
             success_log="ok vcenter=%s count=%s",
@@ -84,3 +82,4 @@ async def test_ingest_for_enabled_vcenters_uses_gather_with_semaphore() -> None:
     mock_semaphore.assert_called_once_with(2)
     mock_gather.assert_awaited_once()
     assert len(mock_gather.call_args.args) == 3
+    assert total == 3
