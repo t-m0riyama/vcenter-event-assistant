@@ -61,7 +61,7 @@ class AlertHistoryRead(BaseModel):
     context_key: str
     notified_at: datetime
     channel: str
-    success: bool
+    success: bool | None
     error_message: str | None
     can_resolve: bool = False
 

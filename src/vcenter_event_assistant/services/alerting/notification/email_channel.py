@@ -9,6 +9,9 @@ from email.message import EmailMessage
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.services.alerting.notification.base import NotificationChannel
+from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
+    NotificationDeliveryOutcome,
+)
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -36,16 +39,16 @@ class EmailChannel(NotificationChannel):
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    async def notify(self, rule: AlertRule, state: AlertState, subject: str, body: str) -> None:
+    async def notify(
+        self,
+        rule: AlertRule,
+        state: AlertState,
+        subject: str,
+        body: str,
+    ) -> NotificationDeliveryOutcome:
         """件名・本文を SMTP で送信する。
 
-        ``SMTP_HOST`` または ``ALERT_EMAIL_TO`` 未設定時は警告ログのみで return する。
-
-        Args:
-            rule: 通知元のアラートルール（現状本文生成には未使用）。
-            state: 発火 / 解消状態。
-            subject: メール件名。
-            body: メール本文（プレーンテキスト）。
+        ``SMTP_HOST`` または ``ALERT_EMAIL_TO`` 未設定時はスキップ結果を返す。
 
         Raises:
             Exception: SMTP 送信に失敗した場合。
@@ -53,11 +56,19 @@ class EmailChannel(NotificationChannel):
         settings = self._settings
         if not settings.smtp_host:
             logger.warning("SMTP_HOST is not set. Skipping email notification.")
-            return
+            return NotificationDeliveryOutcome(
+                channel="none",
+                success=None,
+                error_message="smtp not configured: SMTP_HOST is not set",
+            )
 
         if not settings.alert_email_to:
             logger.warning("ALERT_EMAIL_TO is not set. Skipping email notification.")
-            return
+            return NotificationDeliveryOutcome(
+                channel="none",
+                success=None,
+                error_message="smtp not configured: ALERT_EMAIL_TO is not set",
+            )
 
         msg = EmailMessage()
         msg.set_content(body)
@@ -68,6 +79,7 @@ class EmailChannel(NotificationChannel):
         try:
             await asyncio.to_thread(_send_smtp_message, settings, msg)
             logger.info("Email notification sent: %s", subject)
+            return NotificationDeliveryOutcome(channel="email", success=True)
         except Exception as e:
             logger.error("Failed to send email notification: %s", e)
             raise

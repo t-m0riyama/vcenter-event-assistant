@@ -174,10 +174,11 @@
 
 監視の考え方:
 
-- メール送信は `src/vcenter_event_assistant/services/notification/email_channel.py` が担当する
+- メール送信は `src/vcenter_event_assistant/services/alerting/notification/email_channel.py` が担当する
 - `SMTP_HOST` 未設定、または `ALERT_EMAIL_TO` 未設定の場合は送信をスキップし、警告ログが出る
   - `SMTP_HOST is not set. Skipping email notification.`
   - `ALERT_EMAIL_TO is not set. Skipping email notification.`
+- スキップ時は通知履歴に `channel=none`, `success=null`（未送信）として記録される
 - 送信失敗時はエラーログが出る
   - `Failed to send email notification: ...`
 

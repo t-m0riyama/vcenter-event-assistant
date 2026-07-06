@@ -442,7 +442,7 @@ async def test_resolve_event_score_alert(client: AsyncClient):
         rule_id = rule.id
         context_key = "vim.event.ManualEvent"
 
-    with patch.object(AlertEvaluator, "_notify", new_callable=AsyncMock):
+    with patch.object(AlertEvaluator, "_deliver_notification", new_callable=AsyncMock):
         resp = await client.post(
             "/api/alerts/states/resolve",
             json={"rule_id": rule_id, "context_key": context_key},

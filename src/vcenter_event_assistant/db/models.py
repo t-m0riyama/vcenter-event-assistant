@@ -210,8 +210,8 @@ class AlertHistory(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
-    channel: Mapped[str] = mapped_column(String(64))  # "email"
-    success: Mapped[bool] = mapped_column(Boolean)
+    channel: Mapped[str] = mapped_column(String(64))  # email / none
+    success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     rule: Mapped["AlertRule"] = relationship(back_populates="history")
