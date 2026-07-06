@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from pyVmomi import vim
+
 from vcenter_event_assistant.collectors.perf import sample_hosts_blocking
 
 
@@ -26,6 +28,9 @@ def test_sample_hosts_blocking_merges_cpu_mem_host_perf_and_datastore(
     host = SimpleNamespace(
         _moId="host-1",
         name="esxi-a",
+        runtime=SimpleNamespace(
+            connectionState=vim.HostSystem.ConnectionState.connected,
+        ),
         summary=SimpleNamespace(
             quickStats=SimpleNamespace(overallCpuUsage=1000, overallMemoryUsage=1024),
             hardware=SimpleNamespace(cpuMhz=2000),
