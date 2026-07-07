@@ -102,7 +102,9 @@ class AppLogSettingsMixin(BaseModel):
         description="uvicorn 系ログのファイルパス。空はファイル出力なし（`UVICORN_LOG_FILE`）。",
     )
 
-    cors_origins: str = Field(default="http://localhost:5173", description="Comma-separated origins")
+    cors_origins: str = Field(
+        default="http://localhost:5173", description="Comma-separated origins"
+    )
     vea_secret_key: str | None = Field(
         default=None,
         description=(
@@ -125,7 +127,9 @@ class AppLogSettingsMixin(BaseModel):
         ),
     )
 
-    scheduler_enabled: bool = Field(default=True, description="Disable for tests or one-shot runs")
+    scheduler_enabled: bool = Field(
+        default=True, description="Disable for tests or one-shot runs"
+    )
 
     @field_validator("log_level")
     @classmethod
@@ -160,7 +164,9 @@ class AppLogSettingsMixin(BaseModel):
 class AlertSettingsMixin(BaseModel):
     """SMTP and Alert Notifications settings."""
 
-    smtp_host: str | None = Field(default=None, description="SMTP server host (e.g., smtp.gmail.com).")
+    smtp_host: str | None = Field(
+        default=None, description="SMTP server host (e.g., smtp.gmail.com)."
+    )
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str | None = Field(default=None)
     smtp_password: str | None = Field(default=None)
@@ -172,8 +178,12 @@ class AlertSettingsMixin(BaseModel):
         description="SMTP 接続・送受信のタイムアウト（秒）。",
     )
     alert_email_from: str = Field(default="noreply@example.com")
-    alert_email_to: str | None = Field(default=None, description="Global recipient for alerts (comma-separated).")
-    alert_eval_interval_seconds: int = Field(default=60, ge=10, description="Alert evaluation job interval.")
+    alert_email_to: str | None = Field(
+        default=None, description="Global recipient for alerts (comma-separated)."
+    )
+    alert_eval_interval_seconds: int = Field(
+        default=60, ge=10, description="Alert evaluation job interval."
+    )
     alert_snapshot_lookback_hours: int = Field(
         default=2,
         ge=1,
@@ -189,8 +199,12 @@ class AlertSettingsMixin(BaseModel):
             "occurred_at がこの時間より古いイベントは判定に使わない。"
         ),
     )
-    alert_template_firing_path: str | None = Field(default=None, description="Custom Jinja2 template for firing alerts.")
-    alert_template_resolved_path: str | None = Field(default=None, description="Custom Jinja2 template for resolved alerts.")
+    alert_template_firing_path: str | None = Field(
+        default=None, description="Custom Jinja2 template for firing alerts."
+    )
+    alert_template_resolved_path: str | None = Field(
+        default=None, description="Custom Jinja2 template for resolved alerts."
+    )
     alert_template_stale_path: str | None = Field(
         default=None,
         description="Custom Jinja2 template for stale metric_threshold alerts.",
@@ -350,6 +364,37 @@ class ResearchSettingsMixin(BaseModel):
         ge=1,
         description="成果なし（status=no_result）結果の鮮度期限（日）。超過で再調査対象になる。",
     )
+    research_error_retry_minutes: int = Field(
+        default=60,
+        ge=1,
+        description=(
+            "検索失敗（status=error）後に再調査を試みるまでの間隔（分）。"
+            "API キー不備等での毎サイクル再検索を防ぐ。"
+        ),
+    )
+    research_interval_seconds: int = Field(
+        default=600,
+        ge=60,
+        description="事前調査ジョブ（高スコア event_type の WEB 調査）の実行間隔（秒）。",
+    )
+    research_event_score_threshold: int = Field(
+        default=40,
+        ge=0,
+        description=(
+            "WEB 調査の対象とする notable_score の下限。"
+            "既定 40 はダイジェストの「要注意イベント」と同じ閾値。"
+        ),
+    )
+    research_event_lookback_hours: int = Field(
+        default=24,
+        ge=1,
+        description="WEB 調査対象イベントの遡り時間（時間）。この範囲の高スコアイベント種別を調査する。",
+    )
+    research_max_per_cycle: int = Field(
+        default=5,
+        ge=1,
+        description="事前調査ジョブ 1 サイクル当たりの検索実行上限（レート・課金の保護）。",
+    )
 
     @field_validator("tavily_api_key", "search_http_proxy", mode="before")
     @classmethod
@@ -382,7 +427,13 @@ class LlmSettingsMixin(BaseModel):
     langsmith_project: str | None = Field(default=None)
     langsmith_endpoint: str | None = Field(default=None)
 
-    @field_validator("llm_digest_api_key", "llm_chat_api_key", "llm_chat_base_url", "llm_chat_model", mode="before")
+    @field_validator(
+        "llm_digest_api_key",
+        "llm_chat_api_key",
+        "llm_chat_base_url",
+        "llm_chat_model",
+        mode="before",
+    )
     @classmethod
     def empty_llm_optional_str_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)
@@ -395,7 +446,9 @@ class LlmSettingsMixin(BaseModel):
         s = str(v).strip()
         return s or "https://api.openai.com/v1"
 
-    @field_validator("langsmith_api_key", "langsmith_project", "langsmith_endpoint", mode="before")
+    @field_validator(
+        "langsmith_api_key", "langsmith_project", "langsmith_endpoint", mode="before"
+    )
     @classmethod
     def empty_langsmith_str_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)

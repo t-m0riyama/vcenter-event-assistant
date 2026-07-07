@@ -69,19 +69,23 @@ def research_is_fresh(
     settings: Settings,
     now: datetime | None = None,
 ) -> bool:
-    """調査結果が TTL 内かどうか。``error`` 行は常に再調査対象（False）。"""
+    """調査結果が TTL 内かどうか。
+
+    ``error`` 行は ``research_error_retry_minutes`` の間だけ fresh 扱いにし、
+    API キー不備等での毎サイクル再検索を防ぐ（経過後に再調査対象へ戻る）。
+    """
     if row.status == RESEARCH_STATUS_OK:
-        ttl_days = settings.research_success_ttl_days
+        ttl = timedelta(days=settings.research_success_ttl_days)
     elif row.status == RESEARCH_STATUS_NO_RESULT:
-        ttl_days = settings.research_no_result_ttl_days
+        ttl = timedelta(days=settings.research_no_result_ttl_days)
     else:
-        return False
+        ttl = timedelta(minutes=settings.research_error_retry_minutes)
 
     searched_at = row.searched_at
     if searched_at.tzinfo is None:
         searched_at = searched_at.replace(tzinfo=timezone.utc)
     current = now or datetime.now(timezone.utc)
-    return searched_at >= current - timedelta(days=ttl_days)
+    return searched_at >= current - ttl
 
 
 async def research_event_type(

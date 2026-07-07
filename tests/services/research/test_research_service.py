@@ -212,11 +212,14 @@ def test_research_is_fresh_no_result_uses_shorter_ttl() -> None:
     assert not research_is_fresh(stale, settings=settings, now=now)
 
 
-def test_research_is_fresh_error_rows_always_stale() -> None:
+def test_research_is_fresh_error_rows_use_retry_window() -> None:
+    """error 行は retry 間隔（既定 60 分）内は fresh、経過後に再調査対象へ戻る。"""
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    row = _row(RESEARCH_STATUS_ERROR, now)
-    assert not research_is_fresh(row, settings=settings, now=now)
+    recent = _row(RESEARCH_STATUS_ERROR, now - timedelta(minutes=59))
+    old = _row(RESEARCH_STATUS_ERROR, now - timedelta(minutes=61))
+    assert research_is_fresh(recent, settings=settings, now=now)
+    assert not research_is_fresh(old, settings=settings, now=now)
 
 
 def test_research_is_fresh_accepts_naive_searched_at() -> None:

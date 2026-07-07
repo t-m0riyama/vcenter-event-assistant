@@ -15,7 +15,9 @@ from apscheduler.triggers.cron import CronTrigger
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.services.digest.digest_run import run_digest_once
-from vcenter_event_assistant.services.digest.digest_timezone import resolve_digest_timezone
+from vcenter_event_assistant.services.digest.digest_timezone import (
+    resolve_digest_timezone,
+)
 from vcenter_event_assistant.services.digest.digest_window import (
     zoned_previous_calendar_month_window,
     zoned_previous_week_window,
@@ -31,6 +33,10 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_events,
     purge_old_incident_timeline_snapshots,
     purge_old_metrics,
+)
+from vcenter_event_assistant.services.research.research_job import run_research_cycle
+from vcenter_event_assistant.services.research.search_provider import (
+    build_search_provider,
 )
 from vcenter_event_assistant.settings import Settings
 
@@ -56,7 +62,9 @@ def _job_options_for_interval(interval_seconds: int) -> dict[str, object]:
     }
 
 
-def _job_options_for_cron(*, misfire_grace_time: int = _DIGEST_CRON_MISFIRE_GRACE_SECONDS) -> dict[str, object]:
+def _job_options_for_cron(
+    *, misfire_grace_time: int = _DIGEST_CRON_MISFIRE_GRACE_SECONDS
+) -> dict[str, object]:
     return {**_BASE_JOB_OPTIONS, "misfire_grace_time": misfire_grace_time}
 
 
@@ -86,7 +94,9 @@ async def purge_retention(settings: Settings) -> None:
             n_dg = await purge_old_digest_records(session, settings=settings)
             if n_dg:
                 logger.info("purged old digest records count=%s", n_dg)
-            n_sn = await purge_old_incident_timeline_snapshots(session, settings=settings)
+            n_sn = await purge_old_incident_timeline_snapshots(
+                session, settings=settings
+            )
             if n_sn:
                 logger.info("purged old incident timeline snapshots count=%s", n_sn)
     except Exception:
@@ -100,6 +110,14 @@ async def evaluate_alerts(settings: Settings) -> None:
         await evaluator.evaluate_all()
     except Exception:
         logger.exception("alert evaluation job failed")
+
+
+async def run_web_research(settings: Settings) -> None:
+    """高スコア event_type の WEB 事前調査を 1 サイクル実行する。"""
+    try:
+        await run_research_cycle(settings)
+    except Exception:
+        logger.exception("web research job failed")
 
 
 async def run_daily_digest(settings: Settings) -> None:
@@ -248,6 +266,15 @@ def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
         kwargs={"settings": settings},
         **_job_options_for_interval(purge_interval_seconds),
     )
+    if build_search_provider(settings) is not None:
+        scheduler.add_job(
+            run_web_research,
+            "interval",
+            seconds=settings.research_interval_seconds,
+            id="web_research",
+            kwargs={"settings": settings},
+            **_job_options_for_interval(settings.research_interval_seconds),
+        )
     add_digest_cron_jobs(scheduler, settings)
     scheduler.start()
     app.state.scheduler = scheduler
