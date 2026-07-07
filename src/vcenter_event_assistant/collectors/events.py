@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pyVmomi import vim
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_aware(dt: datetime) -> datetime:
@@ -63,6 +66,12 @@ def fetch_events_blocking(
                 if not page:
                     break
                 raw.extend(page)
+            else:
+                logger.warning(
+                    "event fetch hit max_pages=%s (host=%s); more events may remain in vCenter",
+                    max_pages,
+                    host,
+                )
         finally:
             collector.DestroyCollector()
 
@@ -70,6 +79,8 @@ def fetch_events_blocking(
         max_ts: datetime | None = None
         for e in raw:
             row = normalize_event(e)
+            if row is None:
+                continue
             normalized.append(row)
             ot = row["occurred_at"]
             if max_ts is None or ot > max_ts:
@@ -79,13 +90,25 @@ def fetch_events_blocking(
         disconnect(si)
 
 
-def normalize_event(e: Any) -> dict[str, Any]:
-    """Map a pyVmomi event object to a plain dict for persistence."""
+def normalize_event(e: Any) -> dict[str, Any] | None:
+    """Map a pyVmomi event object to a plain dict for persistence.
+
+    ``key`` が無い、または ``None`` のイベントは ``vmware_key=0`` に潰さずスキップする。
+    """
     event_type = type(e).__name__
     created = getattr(e, "createdTime", None) or datetime.now(timezone.utc)
     created = _ensure_aware(created)
     message = getattr(e, "fullFormattedMessage", None) or str(e)
-    vmware_key = int(getattr(e, "key", 0) or 0)
+
+    if not hasattr(e, "key") or getattr(e, "key", None) is None:
+        logger.warning(
+            "event missing vmware key, skipping insert: event_type=%s message=%r",
+            event_type,
+            message[:200],
+        )
+        return None
+
+    vmware_key = int(getattr(e, "key"))
     chain_id = getattr(e, "chainId", None)
     if chain_id is not None:
         chain_id = int(chain_id)
