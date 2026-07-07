@@ -11,7 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.collectors.events import fetch_events_blocking
 from vcenter_event_assistant.collectors.perf import sample_hosts_blocking
-from vcenter_event_assistant.db.models import EventRecord, IngestionState, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertHistory,
+    DigestRecord,
+    EventRecord,
+    IncidentTimelineManualSnapshot,
+    IngestionState,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 from vcenter_event_assistant.settings import Settings
@@ -172,6 +180,40 @@ async def purge_old_metrics(session: AsyncSession, *, settings: Settings) -> int
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.metric_retention_days)
     res = await session.execute(delete(MetricSample).where(MetricSample.sampled_at < cutoff))
+    return res.rowcount or 0
+
+
+async def purge_old_alert_history(session: AsyncSession, *, settings: Settings) -> int:
+    """保持期間を超えた通知履歴行を削除する。"""
+    days = settings.alert_history_retention_days
+    if days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    res = await session.execute(delete(AlertHistory).where(AlertHistory.notified_at < cutoff))
+    return res.rowcount or 0
+
+
+async def purge_old_digest_records(session: AsyncSession, *, settings: Settings) -> int:
+    """保持期間を超えたダイジェスト行を削除する。"""
+    days = settings.digest_retention_days
+    if days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    res = await session.execute(delete(DigestRecord).where(DigestRecord.created_at < cutoff))
+    return res.rowcount or 0
+
+
+async def purge_old_incident_timeline_snapshots(session: AsyncSession, *, settings: Settings) -> int:
+    """保持期間を超えたインシデントタイムラインスナップショット行を削除する。"""
+    days = settings.incident_timeline_snapshot_retention_days
+    if days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    res = await session.execute(
+        delete(IncidentTimelineManualSnapshot).where(
+            IncidentTimelineManualSnapshot.created_at < cutoff,
+        )
+    )
     return res.rowcount or 0
 
 

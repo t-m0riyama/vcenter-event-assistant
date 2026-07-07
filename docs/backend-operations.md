@@ -163,7 +163,7 @@
 
 整合確認:
 
-- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
 
 #### E) SMTP/メール通知（配信経路）
 
@@ -252,7 +252,7 @@
 - `DATABASE_URL` が正しいか（ホスト/ポート/ユーザー/DB名）
 - SQLite ファイル運用なら、ディスク空きとファイル権限を確認する
 - PostgreSQL 運用なら、接続数・ディスク・インデックス肥大の兆候を確認する
-- `EVENT_RETENTION_DAYS` / `METRIC_RETENTION_DAYS` と実データ増加が整合しているか
+- 保持期間設定（イベント・メトリクス・通知履歴・ダイジェスト・スナップショット）と実データ増加が整合しているか
 
 対処の例:
 
@@ -327,7 +327,7 @@
 
 - DB: `DATABASE_URL`
 - スケジューラ有効化: `SCHEDULER_ENABLED`
-- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`
+- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
