@@ -6,7 +6,7 @@
 
 **2026-07-07 進捗追記（夜）:** フェーズ 2 完了。[#130](https://github.com/t-m0riyama/vcenter-event-assistant/pull/130)（M-3/M-7）・[#135](https://github.com/t-m0riyama/vcenter-event-assistant/pull/135)（M-6）を **main にマージ済み**。次は **フェーズ 3**（[#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133)）。
 
-**2026-07-07 進捗追記（深夜）:** フェーズ 3 — L-7/L-3 を [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136) で **main にマージ済み**。L-1（digest `ok_llm_failed`）を PR 作成中。
+**2026-07-07 進捗追記（深夜）:** フェーズ 3 — L-7/L-3 [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136)、L-1 [#137](https://github.com/t-m0riyama/vcenter-event-assistant/pull/137) を **main にマージ済み**。L-2/L-6（scheduler）を PR 作成中。
 
 ## 進捗状況（2026-07-07 時点）
 
@@ -21,11 +21,12 @@
 | 2-2 M-3/M-7 | [#130](https://github.com/t-m0riyama/vcenter-event-assistant/pull/130) | [#132](https://github.com/t-m0riyama/vcenter-event-assistant/issues/132) | **完了** | 2026-07-07 | key 欠落スキップ、max_pages ログ |
 | 2-3 M-6 | [#135](https://github.com/t-m0riyama/vcenter-event-assistant/pull/135) | [#131](https://github.com/t-m0riyama/vcenter-event-assistant/issues/131) | **完了** | 2026-07-07 | 履歴・ダイジェスト・スナップショットパージ |
 | 3-2 L-3 / 3-6 L-7 | [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136) | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **完了** | 2026-07-07 | `spa_fallback` 修正、rate-series 422 |
-| 3-3 L-1 | （PR 作成中） | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **レビュー待ち** | — | digest `ok_llm_failed`、UI バッジ |
-| フェーズ 3 残り | — | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **未着手** | — | L-2/L-6, L-4, L-5 |
+| 3-3 L-1 | [#137](https://github.com/t-m0riyama/vcenter-event-assistant/pull/137) | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **完了** | 2026-07-07 | digest `ok_llm_failed`、UI バッジ |
+| 3-1 L-2 / L-6 | （PR 作成中） | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **レビュー待ち** | — | misfire_grace、digest try 統一 |
+| フェーズ 3 残り | — | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **未着手** | — | L-4, L-5 |
 | Backlog | — | [#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134) | **追跡中** | — | 先送り項目 |
 
-**フェーズ 1 + 2: 完了。** フェーズ 3 は #136 まで完了、L-1 を PR 中。
+**フェーズ 1 + 2: 完了。** フェーズ 3 は #137 まで完了、L-2/L-6 を PR 中。
 
 ### マージ済み PR の実装メモ
 
@@ -35,11 +36,12 @@
 - **#128（M-1 / M-5 / M-4）**: `PendingAlertNotification` キュー、`_deliver_notification`、`AlertHistory.success` nullable。SMTP 未設定は `channel=none` / UI「未送信」。移行 `r8s9t0u1v2w3`。
 - **#130（M-3 / M-7）**: `normalize_event` が `key` 欠落時スキップ + WARNING。`max_pages` 到達 WARNING。`tests/test_events_collector.py`（8 件）。
 - **#135（M-6）**: `purge_retention` に `AlertHistory` / `DigestRecord` / `IncidentTimelineManualSnapshot` を追加。`ALERT_HISTORY_RETENTION_DAYS`（90）等、`0` で無効。`tests/test_retention.py` 拡張（+4 件）。
-- **#136（L-3 / L-7）**: `is_spa_fallback_reserved_path()` で `api`/`api/` のみ SPA 予約パスに。`EVENT_RATE_MAX_BUCKETS`（既定 5000）超過で rate-series が 422。`tests/test_spa_routing.py`・`test_event_rate_bucket_count.py` 追加（計 363 passed）。
+- **#136（L-3 / L-7）**: `is_spa_fallback_reserved_path()`、`EVENT_RATE_MAX_BUCKETS`（既定 5000）。
+- **#137（L-1）**: digest `ok_llm_failed`、`digestStatusDisplay` バッジ、旧行後方互換。
 
 ### 次のアクション
 
-1. **フェーズ 3 継続**: L-2/L-6（scheduler）、L-4/L-5 は L-1 マージ後
+1. **フェーズ 3 継続**: L-4/L-5 は L-2/L-6 マージ後
 2. **本番・ステージング**: Alembic upgrade、パージ設定の確認、#130 の WARNING ログ監視
 3. **Backlog**: [#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134) — 運用観測に応じて優先度判断
 
@@ -133,19 +135,19 @@
 - `purge_retention` ジョブに `AlertHistory`（例: 既定 90 日）、`DigestRecord`（既定 365 日）、インシデントタイムラインスナップショット（既定 90 日）の削除を追加。保持日数はそれぞれ Settings 化し、`0`（無効=無期限）を許可する。✅
 - `.env.example` と `docs/backend-operations.md` に追記。✅
 
-## フェーズ 3: 運用品質・堅牢性（順次）⏳ **進行中**（3/6 完了、L-1 PR 中）
+## フェーズ 3: 運用品質・堅牢性（順次）⏳ **進行中**（4/6 完了、L-2/L-6 PR 中）
 
-### 3-1. スケジューラ設定の見直し（L-2, L-6)
+### 3-1. スケジューラ設定の見直し（L-2, L-6) ✅ **PR 作成中**
 
-- `_JOB_OPTIONS` に `misfire_grace_time`（例: interval ジョブは間隔の半分、digest cron は 3600 秒）を追加。
-- digest ジョブの TZ 解決・ウィンドウ計算を try 内へ移動し、他ジョブと同じ「例外はログして継続」ポリシーに統一。
+- `_job_options_for_interval` / `_job_options_for_cron` で `misfire_grace_time` を付与（interval は間隔の半分、digest cron は 3600 秒）。✅
+- digest ジョブの TZ 解決・ウィンドウ計算を try 内へ移動し、他ジョブと同じ「例外はログして継続」ポリシーに統一。✅
 
 ### 3-2. `get_event_rate_series` の入力ガード（L-3）✅ **完了（#136）**
 
 - API 層で `(to - from) / bucket_seconds` に上限（`EVENT_RATE_MAX_BUCKETS`、既定 5,000）を設け、超過時は 422 を返す。✅
 - 返り値アノテーション `any` → `Any` の修正。✅
 
-### 3-3. digest の LLM 失敗を status で区別（L-1）✅ **PR 作成中**
+### 3-3. digest の LLM 失敗を status で区別（L-1）✅ **完了（#137）**
 
 - `status` に `ok_llm_failed` を追加（テンプレ成功・LLM 失敗時）。✅
 - フロントの一覧・詳細でバッジ表示。旧行は `status=ok` + `error_message` でも `ok_llm_failed` と表示。✅
@@ -177,8 +179,9 @@
 | #7 / [#130](https://github.com/t-m0riyama/vcenter-event-assistant/pull/130) | 3〜 | 2-2 vmware_key 欠落・フェッチ上限ログ | M-3, M-7 | 小 | ✅ |
 | #8 / [#135](https://github.com/t-m0riyama/vcenter-event-assistant/pull/135) | 3〜 | 2-3 履歴パージ | M-6 | 小 | ✅ |
 | #9 / [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136) | 以降 | 3-2 / 3-6 rate-series・spa_fallback | L-3, L-7 | 小 | ✅ |
-| #10 / （PR 作成中） | 以降 | 3-3 digest LLM 失敗 status | L-1 | 小 | ⏳ |
-| — / [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | 以降 | フェーズ 3 残り | L-2/L-6, L-4, L-5 | 小の集合 | ⏳ **次** |
+| #10 / [#137](https://github.com/t-m0riyama/vcenter-event-assistant/pull/137) | 以降 | 3-3 digest LLM 失敗 status | L-1 | 小 | ✅ |
+| #11 / （PR 作成中） | 以降 | 3-1 scheduler misfire・digest try | L-2, L-6 | 小 | ⏳ |
+| — / [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | 以降 | フェーズ 3 残り | L-4, L-5 | 小の集合 | ⏳ **次** |
 
 ```
 週1     [PR#1 / #125] H-1 マージ済み ✅
@@ -188,8 +191,9 @@
          [PR#7 / #130] M-3/M-7 マージ済み ✅
          [PR#8 / #135] M-6 マージ済み ✅  ← フェーズ2 完了
          [PR#9 / #136] L-3/L-7 マージ済み ✅
-         [PR#10] L-1 PR 中
-以降     [Issue #133] L-2/L-6 → L-4/L-5 + [Issue #134] backlog
+         [PR#10 / #137] L-1 マージ済み ✅
+         [PR#11] L-2/L-6 PR 中
+以降     [Issue #133] L-4 → L-5 + [Issue #134] backlog
 ```
 
 ## Backlog（grilling で明示的に先送り）
@@ -209,4 +213,4 @@
 - 修正前に不具合を再現する失敗テストを先に書く（特に H-1 のようにテストの死角で発生したものは、同じ層のテストを必ず追加する）。
 - H-2 / 2-1 のようにスキーマ・設計に触れるものは Alembic マイグレーションと `docs/` 更新をセットにする。
 - 新設する設定値（SMTP タイムアウト、鮮度ウィンドウ、履歴保持日数、バケット上限）はすべて `.env.example` に既定値と説明を追記する。
-- **フェーズ 3** は #136 まで完了。L-1（`ok_llm_failed`）を PR 中（[#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133)）。
+- **フェーズ 3** は #137 まで完了。L-2/L-6（scheduler）を PR 中（[#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133)）。

@@ -39,8 +39,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# 全スケジュールジョブに共通の APScheduler オプション
-_JOB_OPTIONS = {"coalesce": True, "max_instances": 1}
+# 全スケジュールジョブに共通の APScheduler オプション（misfire_grace_time はジョブ種別ごとに付与）
+_BASE_JOB_OPTIONS = {"coalesce": True, "max_instances": 1}
+_DIGEST_CRON_MISFIRE_GRACE_SECONDS = 3600
+
+
+def _interval_misfire_grace_seconds(interval_seconds: int) -> int:
+    """interval ジョブの misfire 猶予（秒）。既定は間隔の半分。"""
+    return max(1, interval_seconds // 2)
+
+
+def _job_options_for_interval(interval_seconds: int) -> dict[str, object]:
+    return {
+        **_BASE_JOB_OPTIONS,
+        "misfire_grace_time": _interval_misfire_grace_seconds(interval_seconds),
+    }
+
+
+def _job_options_for_cron(*, misfire_grace_time: int = _DIGEST_CRON_MISFIRE_GRACE_SECONDS) -> dict[str, object]:
+    return {**_BASE_JOB_OPTIONS, "misfire_grace_time": misfire_grace_time}
 
 
 async def poll_events(settings: Settings) -> None:
@@ -87,9 +104,9 @@ async def evaluate_alerts(settings: Settings) -> None:
 
 async def run_daily_digest(settings: Settings) -> None:
     """設定 TZ の直前暦日を対象に日次ダイジェストを 1 件生成する。"""
-    tz, _ = resolve_digest_timezone(settings)
-    fr, to = zoned_yesterday_window(None, tz)
     try:
+        tz, _ = resolve_digest_timezone(settings)
+        fr, to = zoned_yesterday_window(None, tz)
         async with session_scope(settings=settings) as session:
             row = await run_digest_once(
                 session,
@@ -110,9 +127,9 @@ async def run_daily_digest(settings: Settings) -> None:
 
 async def run_weekly_digest(settings: Settings) -> None:
     """設定 TZ の日曜 0:00 始まりの直前暦週を対象に週次ダイジェストを 1 件生成する。"""
-    tz, _ = resolve_digest_timezone(settings)
-    fr, to = zoned_previous_week_window(None, tz)
     try:
+        tz, _ = resolve_digest_timezone(settings)
+        fr, to = zoned_previous_week_window(None, tz)
         async with session_scope(settings=settings) as session:
             row = await run_digest_once(
                 session,
@@ -133,9 +150,9 @@ async def run_weekly_digest(settings: Settings) -> None:
 
 async def run_monthly_digest(settings: Settings) -> None:
     """設定 TZ の直前暦月を対象に月次ダイジェストを 1 件生成する。"""
-    tz, _ = resolve_digest_timezone(settings)
-    fr, to = zoned_previous_calendar_month_window(None, tz)
     try:
+        tz, _ = resolve_digest_timezone(settings)
+        fr, to = zoned_previous_calendar_month_window(None, tz)
         async with session_scope(settings=settings) as session:
             row = await run_digest_once(
                 session,
@@ -166,7 +183,7 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
             CronTrigger.from_crontab(settings.effective_digest_daily_cron),
             id="digest_daily",
             kwargs={"settings": settings},
-            **_JOB_OPTIONS,
+            **_job_options_for_cron(),
         )
     if settings.digest_weekly_enabled:
         scheduler.add_job(
@@ -174,7 +191,7 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
             CronTrigger.from_crontab(settings.digest_weekly_cron),
             id="digest_weekly",
             kwargs={"settings": settings},
-            **_JOB_OPTIONS,
+            **_job_options_for_cron(),
         )
     if settings.digest_monthly_enabled:
         scheduler.add_job(
@@ -182,7 +199,7 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
             CronTrigger.from_crontab(settings.digest_monthly_cron),
             id="digest_monthly",
             kwargs={"settings": settings},
-            **_JOB_OPTIONS,
+            **_job_options_for_cron(),
         )
 
 
@@ -204,7 +221,7 @@ def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
         seconds=settings.event_poll_interval_seconds,
         id="poll_events",
         kwargs={"settings": settings},
-        **_JOB_OPTIONS,
+        **_job_options_for_interval(settings.event_poll_interval_seconds),
     )
     scheduler.add_job(
         poll_perf,
@@ -212,7 +229,7 @@ def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
         seconds=settings.perf_sample_interval_seconds,
         id="poll_perf",
         kwargs={"settings": settings},
-        **_JOB_OPTIONS,
+        **_job_options_for_interval(settings.perf_sample_interval_seconds),
     )
     scheduler.add_job(
         evaluate_alerts,
@@ -220,15 +237,16 @@ def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
         seconds=settings.alert_eval_interval_seconds,
         id="evaluate_alerts",
         kwargs={"settings": settings},
-        **_JOB_OPTIONS,
+        **_job_options_for_interval(settings.alert_eval_interval_seconds),
     )
+    purge_interval_seconds = settings.purge_interval_hours * 3600
     scheduler.add_job(
         purge_retention,
         "interval",
         hours=settings.purge_interval_hours,
         id="purge_metrics",
         kwargs={"settings": settings},
-        **_JOB_OPTIONS,
+        **_job_options_for_interval(purge_interval_seconds),
     )
     add_digest_cron_jobs(scheduler, settings)
     scheduler.start()

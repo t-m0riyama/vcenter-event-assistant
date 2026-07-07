@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from vcenter_event_assistant.jobs.scheduler import add_digest_cron_jobs
+from vcenter_event_assistant.jobs.scheduler import (
+    _DIGEST_CRON_MISFIRE_GRACE_SECONDS,
+    add_digest_cron_jobs,
+)
 from vcenter_event_assistant.settings import Settings
 
 _DIGEST_IDS = frozenset({"digest_daily", "digest_weekly", "digest_monthly"})
@@ -61,3 +64,4 @@ def test_add_digest_cron_jobs_use_coalesce_and_max_instances_one() -> None:
     for job in sched.get_jobs():
         assert job.coalesce is True
         assert job.max_instances == 1
+        assert job.misfire_grace_time == _DIGEST_CRON_MISFIRE_GRACE_SECONDS

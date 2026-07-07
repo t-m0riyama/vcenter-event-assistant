@@ -15,6 +15,14 @@ _INTERVAL_JOB_IDS = frozenset(
 )
 
 
+_INTERVAL_JOB_MISFIRE = {
+    "poll_events": 60,  # default 120s interval / 2
+    "poll_perf": 150,  # default 300s / 2
+    "evaluate_alerts": 30,  # default 60s / 2
+    "purge_metrics": 6 * 3600 // 2,  # default 6h / 2
+}
+
+
 @pytest.mark.asyncio
 async def test_setup_scheduler_interval_jobs_use_coalesce_and_max_instances_one() -> None:
     app = MagicMock()
@@ -25,6 +33,26 @@ async def test_setup_scheduler_interval_jobs_use_coalesce_and_max_instances_one(
             assert job is not None, job_id
             assert job.coalesce is True, job_id
             assert job.max_instances == 1, job_id
+            assert job.misfire_grace_time == _INTERVAL_JOB_MISFIRE[job_id], job_id
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_setup_scheduler_interval_misfire_scales_with_settings() -> None:
+    app = MagicMock()
+    settings = Settings(
+        event_poll_interval_seconds=200,
+        perf_sample_interval_seconds=400,
+        alert_eval_interval_seconds=100,
+        purge_interval_hours=4,
+    )
+    scheduler = setup_scheduler(app, settings)
+    try:
+        assert scheduler.get_job("poll_events").misfire_grace_time == 100
+        assert scheduler.get_job("poll_perf").misfire_grace_time == 200
+        assert scheduler.get_job("evaluate_alerts").misfire_grace_time == 50
+        assert scheduler.get_job("purge_metrics").misfire_grace_time == 4 * 3600 // 2
     finally:
         scheduler.shutdown(wait=False)
 
