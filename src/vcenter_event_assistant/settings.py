@@ -61,6 +61,24 @@ class DatabaseSettingsMixin(BaseModel):
         ge=1,
         description="Delete metric samples older than this many days (sampled_at).",
     )
+    alert_history_retention_days: int = Field(
+        default=90,
+        ge=0,
+        description="Delete alert history older than this many days (notified_at). 0 disables purge.",
+    )
+    digest_retention_days: int = Field(
+        default=365,
+        ge=0,
+        description="Delete digest records older than this many days (created_at). 0 disables purge.",
+    )
+    incident_timeline_snapshot_retention_days: int = Field(
+        default=90,
+        ge=0,
+        description=(
+            "Delete incident timeline snapshots older than this many days (created_at). "
+            "0 disables purge."
+        ),
+    )
 
 
 class AppLogSettingsMixin(BaseModel):

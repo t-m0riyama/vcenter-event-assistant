@@ -26,7 +26,10 @@ from vcenter_event_assistant.services.ingest_runner import (
     run_ingest_metrics,
 )
 from vcenter_event_assistant.services.ingestion import (
+    purge_old_alert_history,
+    purge_old_digest_records,
     purge_old_events,
+    purge_old_incident_timeline_snapshots,
     purge_old_metrics,
 )
 from vcenter_event_assistant.settings import Settings
@@ -51,7 +54,7 @@ async def poll_perf(settings: Settings) -> None:
 
 
 async def purge_retention(settings: Settings) -> None:
-    """保持期間を超えたイベント・メトリクスを削除する。"""
+    """保持期間を超えたイベント・メトリクス・履歴系データを削除する。"""
     try:
         async with session_scope(settings=settings) as session:
             n_ev = await purge_old_events(session, settings=settings)
@@ -60,6 +63,15 @@ async def purge_retention(settings: Settings) -> None:
             n_m = await purge_old_metrics(session, settings=settings)
             if n_m:
                 logger.info("purged old metric samples count=%s", n_m)
+            n_ah = await purge_old_alert_history(session, settings=settings)
+            if n_ah:
+                logger.info("purged old alert history count=%s", n_ah)
+            n_dg = await purge_old_digest_records(session, settings=settings)
+            if n_dg:
+                logger.info("purged old digest records count=%s", n_dg)
+            n_sn = await purge_old_incident_timeline_snapshots(session, settings=settings)
+            if n_sn:
+                logger.info("purged old incident timeline snapshots count=%s", n_sn)
     except Exception:
         logger.exception("purge failed")
 
