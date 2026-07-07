@@ -107,7 +107,9 @@ async def test_purge_old_alert_history_removes_only_stale_rows() -> None:
         old = datetime.now(timezone.utc) - timedelta(days=100)
         recent = datetime.now(timezone.utc) - timedelta(days=1)
         async with session_scope() as session:
-            rule = AlertRule(name="purge-hist", rule_type="event_score", config={"threshold": 50})
+            rule = AlertRule(
+                name="purge-hist", rule_type="event_score", config={"threshold": 50}
+            )
             session.add(rule)
             await session.flush()
             session.add(
@@ -212,7 +214,9 @@ async def test_purge_old_incident_timeline_snapshots_removes_only_stale_rows() -
             )
 
         async with session_scope() as session:
-            n = await purge_old_incident_timeline_snapshots(session, settings=get_settings())
+            n = await purge_old_incident_timeline_snapshots(
+                session, settings=get_settings()
+            )
         assert n == 1
 
         async with session_scope() as session:
@@ -232,7 +236,9 @@ async def test_purge_skips_when_retention_days_zero() -> None:
     try:
         old = datetime.now(timezone.utc) - timedelta(days=365)
         async with session_scope() as session:
-            rule = AlertRule(name="purge-skip", rule_type="event_score", config={"threshold": 50})
+            rule = AlertRule(
+                name="purge-skip", rule_type="event_score", config={"threshold": 50}
+            )
             session.add(rule)
             await session.flush()
             session.add(
@@ -256,3 +262,19 @@ async def test_purge_skips_when_retention_days_zero() -> None:
     finally:
         os.environ.pop("ALERT_HISTORY_RETENTION_DAYS", None)
         get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_get_app_config_reports_chat_web_search_availability(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    r = await client.get("/api/config")
+    assert r.status_code == 200
+    assert r.json()["chat_web_search_available"] is False
+
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    get_settings.cache_clear()
+    r = await client.get("/api/config")
+    assert r.status_code == 200
+    assert r.json()["chat_web_search_available"] is True

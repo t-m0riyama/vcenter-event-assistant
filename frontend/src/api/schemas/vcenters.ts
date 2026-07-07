@@ -20,6 +20,8 @@ export const appConfigSchema = z.object({
   event_retention_days: z.number(),
   metric_retention_days: z.number(),
   perf_sample_interval_seconds: z.number(),
+  /** チャットの WEB 検索（検索プロバイダ構成済み + 対応 LLM）が使えるか（旧サーバ互換で optional） */
+  chat_web_search_available: z.boolean().optional(),
 })
 
 export type AppConfig = z.infer<typeof appConfigSchema>

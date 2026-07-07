@@ -16,6 +16,8 @@ type ChatMessagesListProps = {
   loading: boolean
   timeZone: string
   onCopyAssistantMessage: (content: string) => void | Promise<void>
+  /** 送信中プレースホルダの文言（未指定時は既定文言） */
+  pendingLabel?: string
 }
 
 /** チャット会話メッセージ一覧。 */
@@ -24,6 +26,7 @@ export function ChatMessagesList({
   loading,
   timeZone,
   onCopyAssistantMessage,
+  pendingLabel,
 }: ChatMessagesListProps) {
   const messagesListRef = useRef<HTMLUListElement>(null)
   const stickToBottomRef = useRef(true)
@@ -109,7 +112,9 @@ export function ChatMessagesList({
       {loading && (
         <li className="chat-panel__msg chat-panel__msg--pending">
           <span className="chat-panel__role">アシスタント</span>
-          <div className="chat-panel__bubble chat-panel__bubble--pending">応答を生成しています…</div>
+          <div className="chat-panel__bubble chat-panel__bubble--pending">
+            {pendingLabel ?? '応答を生成しています…'}
+          </div>
         </li>
       )}
     </ul>

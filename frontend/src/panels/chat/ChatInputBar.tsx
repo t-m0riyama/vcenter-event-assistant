@@ -14,6 +14,10 @@ type ChatInputBarProps = {
   onClearConversation: () => void
   onSend: () => void | Promise<void>
   onPreview: () => void | Promise<void>
+  /** サーバが WEB 検索可能な構成のときだけトグルを表示する */
+  webSearchAvailable: boolean
+  enableWebSearch: boolean
+  setEnableWebSearch: (value: boolean) => void
 }
 
 /** チャットメッセージ入力バー。 */
@@ -28,9 +32,23 @@ export function ChatInputBar({
   onClearConversation,
   onSend,
   onPreview,
+  webSearchAvailable,
+  enableWebSearch,
+  setEnableWebSearch,
 }: ChatInputBarProps) {
   return (
     <div className="chat-panel__composer-stack">
+      {webSearchAvailable && (
+        <label className="chat-panel__checkbox-label" title="送信するメッセージの応答生成中に、LLM が必要と判断した場合のみ外部の WEB 検索を発行します（固有名・IP は検索クエリに含めません）">
+          <input
+            type="checkbox"
+            checked={enableWebSearch}
+            onChange={(e) => setEnableWebSearch(e.target.checked)}
+            disabled={loading}
+          />
+          WEB 検索を許可（このメッセージの応答で外部検索を発行することがあります）
+        </label>
+      )}
       <button
         type="button"
         className="btn btn--gray"

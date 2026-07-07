@@ -64,6 +64,11 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         loading={c.loading}
         timeZone={c.timeZone}
         onCopyAssistantMessage={c.copyAssistantMessageContent}
+        pendingLabel={
+          c.webSearchAvailable && c.enableWebSearch
+            ? 'WEB 調査を含む応答を生成しています…'
+            : undefined
+        }
       />
 
       {c.lastLlmContext != null && (
@@ -86,6 +91,9 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         onClearConversation={c.handleClearConversation}
         onSend={c.send}
         onPreview={c.previewPrompt}
+        webSearchAvailable={c.webSearchAvailable}
+        enableWebSearch={c.enableWebSearch}
+        setEnableWebSearch={c.setEnableWebSearch}
       />
 
       {c.previewData && c.isPreviewModalOpen && (

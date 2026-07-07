@@ -55,6 +55,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [includeResearch, setIncludeResearch] = useState(true)
+  const [enableWebSearch, setEnableWebSearch] = useState(false)
+  const [webSearchAvailable, setWebSearchAvailable] = useState(false)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [storageHydrated, setStorageHydrated] = useState(false)
   const [debouncedDraft, setDebouncedDraft] = useState('')
@@ -74,6 +76,20 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       }
     })()
   }, [onError])
+
+  useEffect(() => {
+    // WEB 検索の利用可否（取得失敗時は静かに無効のまま = トグル非表示）
+    void (async () => {
+      try {
+        const raw = (await apiGet<unknown>('/api/config')) as {
+          chat_web_search_available?: boolean
+        }
+        setWebSearchAvailable(raw?.chat_web_search_available === true)
+      } catch {
+        setWebSearchAvailable(false)
+      }
+    })()
+  }, [])
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -179,6 +195,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
             },
           }),
           include_research: includeResearch,
+          enable_web_search: webSearchAvailable && enableWebSearch,
           messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES).map(
             ({ role, content, created_at, latency_ms, token_per_sec }) => ({
               role,
@@ -200,6 +217,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       includePeriodMetricsDiskIo,
       includePeriodMetricsNetworkIo,
       includeResearch,
+      enableWebSearch,
+      webSearchAvailable,
       thresholdFields.metricThresholdCpuPct,
       thresholdFields.metricThresholdMemoryPct,
       thresholdFields.metricThresholdDiskPct,
@@ -359,6 +378,9 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     setIncludePeriodMetricsNetworkIo,
     includeResearch,
     setIncludeResearch,
+    enableWebSearch,
+    setEnableWebSearch,
+    webSearchAvailable,
     lastLlmContext,
     draftTextareaRef,
     ...thresholdFields,

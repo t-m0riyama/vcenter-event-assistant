@@ -10,23 +10,43 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelinePayload,
+)
 from vcenter_event_assistant.services.chat.chat_llm_payload import (
     CHAT_SYSTEM_PROMPT,
     build_chat_llm_context,
 )
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_web_search import (
+    render_web_search_sources,
+    run_chat_with_web_search,
+)
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
 from vcenter_event_assistant.services.llm.llm_anonymization import deanonymize_text
-from vcenter_event_assistant.services.llm.llm_user_errors import _llm_failure_detail_for_user
-from vcenter_event_assistant.services.llm.copilot_cli_llm import run_copilot_cli_chat_completion
+from vcenter_event_assistant.services.research.search_provider import (
+    build_search_provider,
+)
+from vcenter_event_assistant.services.llm.llm_user_errors import (
+    _llm_failure_detail_for_user,
+)
+from vcenter_event_assistant.services.llm.copilot_cli_llm import (
+    run_copilot_cli_chat_completion,
+)
 from vcenter_event_assistant.services.llm.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm.llm_profile import (
     is_chat_llm_configured,
     resolve_llm_profile,
 )
-from vcenter_event_assistant.services.llm.llm_invoke import log_llm_failure, stream_chat_to_text
+from vcenter_event_assistant.services.llm.llm_invoke import (
+    log_llm_failure,
+    stream_chat_to_text,
+)
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -88,6 +108,7 @@ async def run_period_chat(
     runnable_config: RunnableConfig | None = None,
     extra_vcenter_strings: Sequence[str] | None = None,
     settings: Settings | None = None,
+    enable_web_search: bool = False,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None, int | None, float | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
@@ -147,6 +168,7 @@ async def run_period_chat(
             if duration_sec > 0:
                 try:
                     import tiktoken
+
                     enc = tiktoken.get_encoding("cl100k_base")
                     token_per_sec = round(len(enc.encode(text)) / duration_sec, 1)
                 except Exception:
@@ -154,7 +176,29 @@ async def run_period_chat(
         else:
             model = build_chat_model(s, purpose="chat", config=runnable_config)
             lc_messages = _to_langchain_messages(block, trimmed)
-            text, latency_ms, token_per_sec = await stream_chat_to_text(model, lc_messages, config=runnable_config)
+            web_search_provider = (
+                build_search_provider(s) if enable_web_search else None
+            )
+            if web_search_provider is not None:
+                start_time = time.perf_counter()
+                text, web_sources = await run_chat_with_web_search(
+                    model,
+                    lc_messages,
+                    web_search_provider,
+                    s,
+                    config=runnable_config,
+                )
+                latency_ms = int((time.perf_counter() - start_time) * 1000)
+                token_per_sec = None
+                text = deanonymize_text(text.strip(), reverse_map)
+                # 出典は実際のツール実行結果からサーバ側で連結（LLM 出力の URL は一次情報にしない）
+                sources_block = render_web_search_sources(web_sources)
+                if sources_block:
+                    text = text.rstrip() + "\n\n" + sources_block
+                return (text, None, meta, latency_ms, token_per_sec)
+            text, latency_ms, token_per_sec = await stream_chat_to_text(
+                model, lc_messages, config=runnable_config
+            )
         text = deanonymize_text(text.strip(), reverse_map)
         return (text, None, meta, latency_ms, token_per_sec)
     except Exception as e:
