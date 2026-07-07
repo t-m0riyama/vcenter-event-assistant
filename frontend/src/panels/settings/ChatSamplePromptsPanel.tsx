@@ -7,6 +7,7 @@ import type { ChatSamplePromptRow } from '../chat/chatSamplePromptTypes'
 import { getInitialChatSamplePromptsSnapshot } from '../chat/defaultChatSamplePrompts'
 import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
+import { randomId } from '../../utils/randomId'
 import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
 import {
   buildChatSamplePromptsExportPayload,
@@ -35,7 +36,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
 
   const addRow = useCallback(() => {
     const row: ChatSamplePromptRow = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       label: '新しいサンプル',
       text: 'ここに質問文を入力してください。',
     }
