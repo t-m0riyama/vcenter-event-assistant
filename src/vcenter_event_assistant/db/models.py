@@ -153,6 +153,32 @@ class DigestRecord(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+class EventTypeResearch(Base):
+    """event_type 単位の WEB 調査結果キャッシュ（原因・対処情報の要約と出典）。
+
+    status: ok（要約または出典あり）/ no_result（有用な情報なし）/ error（検索失敗）。
+    origin: auto（事前調査ジョブ）/ chat（ユーザー起点の同期調査）。
+    """
+
+    __tablename__ = "event_type_research"
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_type_research_event_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    query: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    origin: Mapped[str] = mapped_column(String(16), default="auto")
+    searched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class AlertRule(Base):
     """アラートルール定義。"""
 

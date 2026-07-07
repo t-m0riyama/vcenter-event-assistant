@@ -303,6 +303,60 @@ class DigestSettingsMixin(BaseModel):
         return self.digest_daily_cron
 
 
+class ResearchSettingsMixin(BaseModel):
+    """WEB 調査（event_type 単位の原因・対処情報の検索と要約）設定。"""
+
+    web_research_enabled: bool = Field(
+        default=True,
+        description=(
+            "WEB 調査機能のマスタースイッチ（`WEB_RESEARCH_ENABLED`）。"
+            "検索プロバイダの API キー未設定時は、この値に関わらず機能は無効。"
+        ),
+    )
+    search_provider: Literal["tavily"] = Field(
+        default="tavily",
+        description="WEB 調査に使う検索プロバイダ（`SEARCH_PROVIDER`）。現在は tavily のみ。",
+    )
+    tavily_api_key: str | None = Field(
+        default=None,
+        description="Tavily Search API キー（`TAVILY_API_KEY`）。未設定で WEB 調査機能は無効。",
+    )
+    search_timeout_seconds: int = Field(
+        default=15,
+        ge=1,
+        le=120,
+        description="検索 API 呼び出しのタイムアウト（秒）。",
+    )
+    search_http_proxy: str | None = Field(
+        default=None,
+        description=(
+            "検索 API 用 HTTP プロキシの URL（`SEARCH_HTTP_PROXY`）。"
+            "例: http://proxy.example.com:8080。未設定でプロキシなし。"
+        ),
+    )
+    search_max_results: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="1 クエリ当たりの検索結果取得件数。",
+    )
+    research_success_ttl_days: int = Field(
+        default=90,
+        ge=1,
+        description="調査成功（status=ok）結果の鮮度期限（日）。超過で再調査対象になる。",
+    )
+    research_no_result_ttl_days: int = Field(
+        default=30,
+        ge=1,
+        description="成果なし（status=no_result）結果の鮮度期限（日）。超過で再調査対象になる。",
+    )
+
+    @field_validator("tavily_api_key", "search_http_proxy", mode="before")
+    @classmethod
+    def empty_research_str_to_none(cls, v: object) -> str | None:
+        return _normalize_empty_to_none(v)
+
+
 class LlmSettingsMixin(BaseModel):
     """LLM (Chat/Digest) and LangSmith settings."""
 
@@ -358,6 +412,7 @@ class Settings(
     AppLogSettingsMixin,
     AlertSettingsMixin,
     DigestSettingsMixin,
+    ResearchSettingsMixin,
     LlmSettingsMixin,
 ):
     """アプリケーション設定（各 Mixin を合成した単一 Settings モデル）。"""
