@@ -81,6 +81,69 @@ async def test_run_digest_once_persists_without_llm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_digest_once_llm_failure_sets_ok_llm_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vid = uuid.uuid4()
+    base = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+    fr = base - timedelta(hours=1)
+    to = base + timedelta(hours=1)
+
+    async with session_scope() as session:
+        session.add(
+            VCenter(
+                id=vid,
+                name="run-vc",
+                host="h",
+                port=443,
+                username="u",
+                password="p",
+                is_enabled=True,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="VmPoweredOnEvent",
+                message="x",
+                severity="info",
+                vmware_key=1,
+                notable_score=1,
+            )
+        )
+
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        llm_digest_model="gpt-4o-mini",
+    )
+    _use_digest_settings(settings)
+
+    async def _fake_augment(**_kwargs: object) -> tuple[str, str | None]:
+        return ("# vCenter ダイジェスト（日次）\n", "LLM 要約は省略（timeout）")
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest.digest_run.augment_digest_with_llm",
+        _fake_augment,
+    )
+
+    async with session_scope(settings=settings) as session:
+        row = await run_digest_once(
+            session,
+            kind="daily",
+            from_utc=fr,
+            to_utc=to,
+            settings=settings,
+        )
+        assert row.status == "ok_llm_failed"
+        assert row.error_message == "LLM 要約は省略（timeout）"
+        assert "# vCenter ダイジェスト（日次）" in row.body_markdown
+        assert row.llm_model is None
+
+
+@pytest.mark.asyncio
 async def test_run_digest_once_template_error_sets_status_error(tmp_path: Path) -> None:
     bad = tmp_path / "bad.j2"
     bad.write_text("{% unclosed", encoding="utf-8")
