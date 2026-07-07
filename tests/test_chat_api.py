@@ -606,3 +606,33 @@ async def test_post_chat_without_research_cache_unchanged(
     r = await client.post("/api/chat", json=_chat_body())
     assert r.status_code == 200
     assert r.json()["assistant_content"] == "回答本文"
+
+
+@pytest.mark.asyncio
+async def test_post_chat_passes_enable_web_search_to_llm(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
+        _ = a
+        captured.update(k)
+        return ("ok", None, None, None, None)
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat",
+        _fake_run,
+    )
+
+    r = await client.post("/api/chat", json=_chat_body(enable_web_search=True))
+    assert r.status_code == 200
+    assert captured.get("enable_web_search") is True
+
+    r = await client.post("/api/chat", json=_chat_body())
+    assert r.status_code == 200
+    assert captured.get("enable_web_search") is False

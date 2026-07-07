@@ -401,6 +401,12 @@ class ResearchSettingsMixin(BaseModel):
         le=10,
         description="ダイジェスト・チャットに付記する調査結果の上限件数（スコア上位）。",
     )
+    chat_web_search_max_calls: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="チャット 1 メッセージ当たりの WEB 検索（LLM ツール呼び出し）実行上限。",
+    )
 
     @field_validator("tavily_api_key", "search_http_proxy", mode="before")
     @classmethod

@@ -8,10 +8,20 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from vcenter_event_assistant.api.schemas import ChatMessage
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelineColumn, IncidentTimelinePayload
-from vcenter_event_assistant.services.chat.chat_llm import _CHAT_SYSTEM_PROMPT, run_period_chat
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelineColumn,
+    IncidentTimelinePayload,
+)
+from vcenter_event_assistant.services.chat.chat_llm import (
+    _CHAT_SYSTEM_PROMPT,
+    run_period_chat,
+)
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricsPayload,
+)
 from vcenter_event_assistant.services.digest.digest_context import (
     DigestContext,
     DigestEventTypeBucket,
@@ -42,14 +52,17 @@ def test_chat_system_prompt_forbids_internal_lm_tokens_in_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_period_chat_skips_http_when_no_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_period_chat_skips_http_when_no_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key=None,
     )
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="要約して")],
     )
@@ -76,13 +89,17 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
     ]
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         assert _settings is s
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "追質問への回答", None, None
 
@@ -95,8 +112,10 @@ async def test_run_period_chat_openai_sends_multiturn_and_returns_assistant_text
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
-    out, err, meta, _, _ = await run_period_chat( context=_minimal_ctx(), messages=msgs)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+    out, err, meta, _, _ = await run_period_chat(context=_minimal_ctx(), messages=msgs)
     assert err is None
     assert out == "追質問への回答"
     assert meta is not None
@@ -128,7 +147,9 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
@@ -152,9 +173,10 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
     )
 
     cfg = {"metadata": {"x": 1}}
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="ping")],
         runnable_config=cfg,
@@ -163,7 +185,9 @@ async def test_run_period_chat_passes_runnable_config_to_stream(
 
 
 @pytest.mark.asyncio
-async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_period_chat_gemini_returns_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key="gemini-key",
@@ -172,12 +196,16 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "Gemini の回答", None, None
 
@@ -190,9 +218,10 @@ async def test_run_period_chat_gemini_returns_text(monkeypatch: pytest.MonkeyPat
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="hello")],
     )
@@ -237,12 +266,16 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "ok", None, None
 
@@ -255,9 +288,10 @@ async def test_run_period_chat_truncates_json_when_token_budget_tight(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
-        
         context=huge_ctx,
         messages=[ChatMessage(role="user", content="質問")],
     )
@@ -293,12 +327,16 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "y", None, None
 
@@ -311,9 +349,10 @@ async def test_run_period_chat_includes_period_metrics_in_user_block_when_set(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
         period_metrics=pm,
@@ -348,12 +387,16 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "z", None, None
 
@@ -366,9 +409,10 @@ async def test_run_period_chat_includes_event_time_buckets_in_user_block_when_se
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
         event_time_buckets=etb,
@@ -405,12 +449,16 @@ async def test_run_period_chat_includes_incident_timeline_in_user_block_when_set
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "incident", None, None
 
@@ -423,7 +471,9 @@ async def test_run_period_chat_includes_incident_timeline_in_user_block_when_set
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="q")],
@@ -476,12 +526,16 @@ async def test_run_period_chat_anonymizes_entity_names_sent_to_llm(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "ok", None, None
 
@@ -494,9 +548,10 @@ async def test_run_period_chat_anonymizes_entity_names_sent_to_llm(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     await run_period_chat(
-        
         context=ctx,
         messages=[ChatMessage(role="user", content="状況は")],
     )
@@ -522,12 +577,16 @@ async def test_run_period_chat_anonymizes_extra_vcenter_strings_in_user_message(
     short_label = "vc-short-label"
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "ok", None, None
 
@@ -540,9 +599,10 @@ async def test_run_period_chat_anonymizes_extra_vcenter_strings_in_user_message(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[
             ChatMessage(
@@ -596,12 +656,16 @@ async def test_run_period_chat_respects_llm_anonymization_disabled(
     )
     captured: dict[str, object] = {}
 
-    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> object:
+    def _fake_build(
+        _settings: Settings, *, purpose: object = None, config: object = None
+    ) -> object:
         _ = purpose
         _ = config
         return object()
 
-    async def _spy_stream_fixed(model: object, messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
+    async def _spy_stream_fixed(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
         captured["lc_messages"] = messages
         return "ok", None, None
 
@@ -614,11 +678,104 @@ async def test_run_period_chat_respects_llm_anonymization_disabled(
         _spy_stream_fixed,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     await run_period_chat(
-        
         context=ctx,
         messages=[ChatMessage(role="user", content="状況は")],
     )
     lc = captured["lc_messages"]
     assert secret in str(lc[1].content)
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_web_search_appends_sources_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """enable_web_search + プロバイダ構成済みでツールループを使い、出典ブロックを連結する。"""
+    from vcenter_event_assistant.services.research.search_provider import (
+        WebSearchResult,
+    )
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+        tavily_api_key="tvly-test",
+    )
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.build_chat_model",
+        lambda _s, *, purpose=None, config=None: object(),
+    )
+
+    async def _fake_web_search_run(
+        model: object,
+        lc_messages: object,
+        provider: object,
+        settings: object,
+        *,
+        config: object = None,
+    ) -> tuple[str, list[WebSearchResult]]:
+        _ = model, lc_messages, provider, settings, config
+        return "検索を踏まえた回答", [
+            WebSearchResult(title="KB 9", url="https://example.com/kb9", snippet="")
+        ]
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.run_chat_with_web_search",
+        _fake_web_search_run,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+
+    out, err, _, latency_ms, _ = await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="この障害を調べて")],
+        enable_web_search=True,
+    )
+    assert err is None
+    assert out.startswith("検索を踏まえた回答")
+    assert "## WEB 検索の出典" in out
+    assert "- [KB 9](https://example.com/kb9)" in out
+    assert latency_ms is not None
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_web_search_ignored_without_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """enable_web_search でも検索プロバイダ未構成なら従来のストリーミング経路。"""
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="sk-test",
+        llm_digest_provider="openai_compatible",
+    )
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.build_chat_model",
+        lambda _s, *, purpose=None, config=None: object(),
+    )
+
+    async def _spy_stream(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
+        return "通常の回答", None, None
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.stream_chat_to_text",
+        _spy_stream,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+
+    out, err, _, _, _ = await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="q")],
+        enable_web_search=True,
+    )
+    assert err is None
+    assert out == "通常の回答"

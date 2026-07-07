@@ -732,6 +732,71 @@ describe(
     })
   })
 
+  it('WEB 検索トグルはサーバが利用可能なときだけ表示し、ON で enable_web_search: true を送る', async () => {
+    const sentEnableWebSearch: (boolean | undefined)[] = []
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/config')) {
+        return Promise.resolve(
+          jsonResponse({
+            event_retention_days: 7,
+            metric_retention_days: 7,
+            perf_sample_interval_seconds: 300,
+            chat_web_search_available: true,
+          }),
+        )
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { enable_web_search?: boolean }
+        sentEnableWebSearch.push(body.enable_web_search)
+        return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    const toggle = await screen.findByRole('checkbox', { name: /WEB 検索を許可/ })
+    expect(toggle).not.toBeChecked()
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(sentEnableWebSearch).toEqual([false])
+    })
+
+    fireEvent.click(toggle)
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q2' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(sentEnableWebSearch).toEqual([false, true])
+    })
+  })
+
+  it('WEB 検索が利用不可（config 取得失敗含む）ならトグルを表示しない', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByRole('checkbox', { name: /WEB 検索を許可/ })).toBeNull()
+  })
+
   it('プレビュー時に変更した閾値4項目を POST /api/chat/preview 本文へ送る', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

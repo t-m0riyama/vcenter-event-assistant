@@ -52,6 +52,13 @@ class ChatRequest(BaseModel):
             "応答末尾に定型ブロックで付記する（キャッシュがなければ何も付かない）"
         ),
     )
+    enable_web_search: bool = Field(
+        default=False,
+        description=(
+            "真のとき、このメッセージの応答生成で LLM に WEB 検索ツールを許可する。"
+            "検索プロバイダ未構成または copilot_cli では無視される（検索なしで応答）"
+        ),
+    )
 
     @model_validator(mode="after")
     def last_message_is_user(self) -> ChatRequest:

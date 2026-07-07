@@ -65,6 +65,7 @@ async def post_chat(
         runnable_config=llm_cfg,
         extra_vcenter_strings=vc_anon,
         settings=settings,
+        enable_web_search=body.enable_web_search,
     )
 
     # 関連調査情報は LLM 応答の後にサーバ側で連結する（LLM プロンプトには混ぜない）。

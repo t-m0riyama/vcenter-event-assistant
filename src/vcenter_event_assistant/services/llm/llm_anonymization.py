@@ -86,6 +86,11 @@ class LlmAnonymizer:
         return pairs
 
 
+def strip_ipv4(text: str) -> str:
+    """文字列中の IPv4 アドレスを除去する（WEB 検索クエリ等の外部送出前サニタイズ用）。"""
+    return _IPV4_RE.sub("", text)
+
+
 def deanonymize_text(text: str, reverse_map: dict[str, str]) -> str:
     """トークンを原文に戻す。トークン同士の部分一致を避けるため長いトークンから置換する。"""
     if not reverse_map:
@@ -109,7 +114,9 @@ def _append_extra_vcenter_pairs(
             pairs.append(("vcenter", s))
 
 
-def _apply_entity_fqdn_short_aliases(a: LlmAnonymizer, pairs: list[tuple[str, str]]) -> None:
+def _apply_entity_fqdn_short_aliases(
+    a: LlmAnonymizer, pairs: list[tuple[str, str]]
+) -> None:
     """
     ``entity_name`` が FQDN のとき、第1ラベル（短縮ホスト名）を FQDN と同一トークンに紐づける。
 
