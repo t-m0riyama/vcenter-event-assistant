@@ -690,6 +690,48 @@ describe(
     })
   })
 
+  it('WEB 調査情報トグルは既定 ON で、OFF にすると include_research: false を送る', async () => {
+    const sentIncludeResearch: (boolean | undefined)[] = []
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/vcenters')) {
+        return Promise.resolve(jsonResponse([]))
+      }
+      if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { include_research?: boolean }
+        sentIncludeResearch.push(body.include_research)
+        return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderChat()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    const toggle = screen.getByRole('checkbox', { name: /WEB 調査情報を応答に付記/ })
+    expect(toggle).toBeChecked()
+
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(sentIncludeResearch).toEqual([true])
+    })
+
+    fireEvent.click(toggle)
+    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+      target: { value: 'q2' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => {
+      expect(sentIncludeResearch).toEqual([true, false])
+    })
+  })
+
   it('プレビュー時に変更した閾値4項目を POST /api/chat/preview 本文へ送る', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

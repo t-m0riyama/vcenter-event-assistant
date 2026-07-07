@@ -8,14 +8,28 @@ import pytest
 from httpx import AsyncClient
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, HighCpuHostRow
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketRow
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricBucketPoint
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricHostSeries
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketRow,
+)
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelinePayload,
+)
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricBucketPoint,
+)
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricHostSeries,
+)
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricsPayload,
+)
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
-from vcenter_event_assistant.services.digest.digest_context import DigestNotableEventGroup
+from vcenter_event_assistant.services.digest.digest_context import (
+    DigestNotableEventGroup,
+)
 from vcenter_event_assistant.settings import get_settings
 
 
@@ -37,7 +51,9 @@ async def test_post_chat_returns_503_when_llm_key_missing(client: AsyncClient) -
 
 
 @pytest.mark.asyncio
-async def test_post_chat_returns_400_when_window_inverted(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_post_chat_returns_400_when_window_inverted(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
     r = await client.post(
@@ -92,7 +108,9 @@ async def test_post_chat_returns_422_when_metric_threshold_out_of_range(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         _ = a
         _ = k
         return ("ok", None, None, None, None)
@@ -117,7 +135,9 @@ async def test_post_chat_accepts_metric_thresholds_in_range(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         _ = a
         _ = k
         return ("ok", None, None, None, None)
@@ -147,7 +167,9 @@ async def test_post_chat_returns_assistant_content_when_llm_succeeds(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         return ("回答テキスト", None, None, 1500, 15.5)
 
     monkeypatch.setattr(
@@ -171,7 +193,9 @@ async def test_post_chat_returns_llm_context_when_run_period_chat_provides_meta(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, ChatLlmContextMeta, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, ChatLlmContextMeta, int | None, float | None]:
         return (
             "回答",
             None,
@@ -209,7 +233,9 @@ async def test_post_chat_returns_error_field_when_llm_returns_error(
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
 
-    async def _fake_fail(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_fail(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         return ("", "何か失敗", None, None, None)
 
     monkeypatch.setattr(
@@ -264,7 +290,9 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
         _spy_buckets,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         return ("ok", None, None, None, None)
 
     monkeypatch.setattr(
@@ -324,7 +352,9 @@ async def test_post_chat_sets_period_payloads_none_when_all_toggles_false(
         _fake_buckets,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         captured["period_metrics"] = k.get("period_metrics")
         captured["event_time_buckets"] = k.get("event_time_buckets")
         return ("ok", None, None, None, None)
@@ -426,7 +456,9 @@ async def test_post_chat_builds_incident_timeline_and_passes_to_run_period_chat(
                     entity_name="esxi-01",
                     entity_moid="host-1",
                     metric_key="host.cpu.usage_pct",
-                    series=[PeriodMetricBucketPoint(bucket_start_utc=t0, avg=42.0, n=1)],
+                    series=[
+                        PeriodMetricBucketPoint(bucket_start_utc=t0, avg=42.0, n=1)
+                    ],
                 )
             ],
         )
@@ -449,7 +481,9 @@ async def test_post_chat_builds_incident_timeline_and_passes_to_run_period_chat(
         _fake_timeline,
     )
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         captured["incident_timeline"] = k.get("incident_timeline")
         return ("ok", None, None, None, None)
 
@@ -466,3 +500,109 @@ async def test_post_chat_builds_incident_timeline_and_passes_to_run_period_chat(
     assert isinstance(entries, list)
     kinds = {entry.kind for entry in entries}
     assert {"alert", "event", "metric"} <= kinds
+
+
+async def _seed_research_fixture() -> None:
+    """2026-03-22..23 のチャット期間に高スコアイベントと調査キャッシュを用意する。"""
+    import uuid as _uuid
+
+    from vcenter_event_assistant.db.models import (
+        EventRecord,
+        EventTypeResearch,
+        VCenter,
+    )
+    from vcenter_event_assistant.db.session import session_scope
+
+    async with session_scope() as session:
+        vc = VCenter(
+            name=f"vc-{_uuid.uuid4().hex[:8]}",
+            host="vc.example",
+            username="u",
+            password="p",
+        )
+        session.add(vc)
+        await session.flush()
+        session.add(
+            EventRecord(
+                vcenter_id=vc.id,
+                occurred_at=datetime(2026, 3, 22, 12, 0, tzinfo=timezone.utc),
+                event_type="esx.problem.test",
+                message="m",
+                vmware_key=1,
+                notable_score=90,
+            )
+        )
+        session.add(
+            EventTypeResearch(
+                event_type="esx.problem.test",
+                status="ok",
+                query="q",
+                summary="- 原因の候補。",
+                sources=[{"title": "KB 1", "url": "https://example.com/kb1"}],
+                searched_at=datetime(2026, 3, 22, 13, 0, tzinfo=timezone.utc),
+            )
+        )
+
+
+def _patch_chat_llm(monkeypatch: pytest.MonkeyPatch, answer: str) -> None:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
+        _ = a
+        _ = k
+        return (answer, None, None, None, None)
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat",
+        _fake_run,
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_chat_appends_research_block(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    _patch_chat_llm(monkeypatch, "回答本文")
+    await _seed_research_fixture()
+
+    r = await client.post("/api/chat", json=_chat_body())
+    assert r.status_code == 200
+    content = r.json()["assistant_content"]
+    assert content.startswith("回答本文")
+    assert "## 関連調査情報（自動 WEB 調査）" in content
+    assert "- [KB 1](https://example.com/kb1)" in content
+    # 本文の後に定型ブロックが連結される
+    assert content.index("回答本文") < content.index("関連調査情報")
+
+
+@pytest.mark.asyncio
+async def test_post_chat_include_research_false_omits_block(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    _patch_chat_llm(monkeypatch, "回答本文")
+    await _seed_research_fixture()
+
+    r = await client.post("/api/chat", json=_chat_body(include_research=False))
+    assert r.status_code == 200
+    content = r.json()["assistant_content"]
+    assert content == "回答本文"
+
+
+@pytest.mark.asyncio
+async def test_post_chat_without_research_cache_unchanged(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    _patch_chat_llm(monkeypatch, "回答本文")
+
+    r = await client.post("/api/chat", json=_chat_body())
+    assert r.status_code == 200
+    assert r.json()["assistant_content"] == "回答本文"

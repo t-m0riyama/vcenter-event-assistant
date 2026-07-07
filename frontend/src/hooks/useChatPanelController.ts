@@ -54,6 +54,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const [includePeriodMetricsMemory, setIncludePeriodMetricsMemory] = useState(false)
   const [includePeriodMetricsDiskIo, setIncludePeriodMetricsDiskIo] = useState(false)
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
+  const [includeResearch, setIncludeResearch] = useState(true)
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [storageHydrated, setStorageHydrated] = useState(false)
   const [debouncedDraft, setDebouncedDraft] = useState('')
@@ -94,6 +95,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       setIncludePeriodMetricsMemory(snap.includePeriodMetricsMemory)
       setIncludePeriodMetricsDiskIo(snap.includePeriodMetricsDiskIo)
       setIncludePeriodMetricsNetworkIo(snap.includePeriodMetricsNetworkIo)
+      setIncludeResearch(snap.includeResearch)
     }
     setStorageHydrated(true)
   }, [])
@@ -123,6 +125,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
         includePeriodMetricsMemory,
         includePeriodMetricsDiskIo,
         includePeriodMetricsNetworkIo,
+        includeResearch,
         draft: debouncedDraft,
       },
       chatMaxStoredMessages,
@@ -142,6 +145,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     includePeriodMetricsMemory,
     includePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
+    includeResearch,
     debouncedDraft,
     onError,
     chatMaxStoredMessages,
@@ -174,6 +178,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
               metricThresholdNetworkPct: thresholdFields.metricThresholdNetworkPct,
             },
           }),
+          include_research: includeResearch,
           messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES).map(
             ({ role, content, created_at, latency_ms, token_per_sec }) => ({
               role,
@@ -194,6 +199,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       includePeriodMetricsMemory,
       includePeriodMetricsDiskIo,
       includePeriodMetricsNetworkIo,
+      includeResearch,
       thresholdFields.metricThresholdCpuPct,
       thresholdFields.metricThresholdMemoryPct,
       thresholdFields.metricThresholdDiskPct,
@@ -351,6 +357,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     setIncludePeriodMetricsDiskIo,
     includePeriodMetricsNetworkIo,
     setIncludePeriodMetricsNetworkIo,
+    includeResearch,
+    setIncludeResearch,
     lastLlmContext,
     draftTextareaRef,
     ...thresholdFields,
