@@ -3,15 +3,21 @@ import uuid
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelinePayload,
+)
+
 
 class ChatMessage(BaseModel):
     """チャット 1 ターン（クライアント送受信・LLM 呼び出しの両方で使用）。"""
+
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=200_000)
 
+
 class ChatRequest(BaseModel):
     """期間指定チャット。JSON では ``from`` / ``to`` キー（クエリと同様の別名）。"""
+
     model_config = ConfigDict(populate_by_name=True)
 
     from_time: datetime = Field(alias="from")
@@ -39,6 +45,13 @@ class ChatRequest(BaseModel):
     metric_threshold_memory_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
+    include_research: bool = Field(
+        default=True,
+        description=(
+            "真のとき、期間内の高スコア event_type の WEB 調査キャッシュを"
+            "応答末尾に定型ブロックで付記する（キャッシュがなければ何も付かない）"
+        ),
+    )
 
     @model_validator(mode="after")
     def last_message_is_user(self) -> ChatRequest:
@@ -137,6 +150,7 @@ class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
 
 class IncidentTimelineManualSnapshotListItem(BaseModel):
     """手動スナップショット一覧の1件。"""
+
     model_config = ConfigDict(populate_by_name=True)
 
     snapshot_id: str
@@ -159,14 +173,21 @@ class IncidentTimelineManualSnapshotListResponse(BaseModel):
     limit: int
     offset: int
 
+
 class ChatLlmContextMeta(BaseModel):
     """チャット LLM 直前のコンテキスト統計（トークン予算・JSON 切り詰めの確認用）。"""
-    json_truncated: bool = Field(description="マージ済み JSON がトークン上限のため切り詰められたか")
+
+    json_truncated: bool = Field(
+        description="マージ済み JSON がトークン上限のため切り詰められたか"
+    )
     estimated_input_tokens: int = Field(
         description="tiktoken cl100k_base による入力全体の推定トークン数（Gemini 公式値とは一致しない場合あり）"
     )
-    max_input_tokens: int = Field(description="設定上の上限（LLM_CHAT_MAX_INPUT_TOKENS）")
+    max_input_tokens: int = Field(
+        description="設定上の上限（LLM_CHAT_MAX_INPUT_TOKENS）"
+    )
     message_turns: int = Field(description="上限適用後の会話ターン数")
+
 
 class TriggerEvidence(BaseModel):
     """監査説明に用いるトリガー根拠の最小情報。"""
@@ -186,8 +207,10 @@ class TriggerEvidence(BaseModel):
         description="関連ルールやエンティティの識別子（未特定時は null）",
     )
 
+
 class ChatResponse(BaseModel):
     """チャット API の応答。LLM 失敗時は ``assistant_content`` が空で ``error`` に理由。"""
+
     assistant_content: str
     error: str | None = None
     llm_context: ChatLlmContextMeta | None = Field(
@@ -211,8 +234,10 @@ class ChatResponse(BaseModel):
         description="回答のトリガー根拠。旧保存データとの互換のため省略/ null を許容。",
     )
 
+
 class ChatPreviewResponse(BaseModel):
     """チャット用プロンプトのプレビュー応答。"""
+
     context_block: str
     conversation: list[ChatMessage]
     llm_context: ChatLlmContextMeta | None

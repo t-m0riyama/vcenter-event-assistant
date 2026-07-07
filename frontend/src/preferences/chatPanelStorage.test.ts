@@ -24,6 +24,7 @@ function minimalSnapshot(overrides?: Partial<Parameters<typeof writeChatPanelSna
     includePeriodMetricsMemory: false,
     includePeriodMetricsDiskIo: false,
     includePeriodMetricsNetworkIo: false,
+    includeResearch: true,
     draft: '',
     ...overrides,
   }
@@ -63,6 +64,14 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
     const snap = minimalSnapshot({ draft: '下書き', vcenterId: 'vc-1' })
     expect(writeChatPanelSnapshot(snap, 200)).toBe(true)
     expect(readChatPanelSnapshot(200)).toEqual(snap)
+  })
+
+  it('includeResearch を持たない旧スナップショットは true 扱いで読める（後方互換）', () => {
+    const { includeResearch: _omitted, ...legacy } = minimalSnapshot()
+    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(legacy))
+    const got = readChatPanelSnapshot(200)
+    expect(got).not.toBeNull()
+    expect(got?.includeResearch).toBe(true)
   })
 
   it('不正 JSON なら null にしキーを削除する', () => {

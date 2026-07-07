@@ -32,6 +32,8 @@ export const chatRequestSchema = z.object({
   metric_threshold_memory_pct: metricThresholdNullablePercentSchema,
   metric_threshold_disk_pct: metricThresholdNullablePercentSchema,
   metric_threshold_network_pct: metricThresholdNullablePercentSchema,
+  /** 真のとき期間内の高スコア event_type の WEB 調査キャッシュを応答末尾に付記（既定 true） */
+  include_research: z.boolean().optional(),
 })
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>

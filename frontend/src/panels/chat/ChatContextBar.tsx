@@ -48,6 +48,8 @@ type ChatContextBarProps = {
   setIncludePeriodMetricsDiskIo: (value: boolean) => void
   includePeriodMetricsNetworkIo: boolean
   setIncludePeriodMetricsNetworkIo: (value: boolean) => void
+  includeResearch: boolean
+  setIncludeResearch: (value: boolean) => void
   metricThresholdCpuInput: string
   metricThresholdCpuPct: number
   setMetricThresholdCpuInput: (value: string) => void
@@ -87,6 +89,8 @@ export function ChatContextBar({
   setIncludePeriodMetricsDiskIo,
   includePeriodMetricsNetworkIo,
   setIncludePeriodMetricsNetworkIo,
+  includeResearch,
+  setIncludeResearch,
   metricThresholdCpuInput,
   metricThresholdCpuPct,
   setMetricThresholdCpuInput,
@@ -164,6 +168,18 @@ export function ChatContextBar({
             disabled={loading}
           />
           ネットワーク IO
+        </label>
+      </section>
+
+      <section className="chat-panel__section" aria-label="WEB 調査情報">
+        <label className="chat-panel__checkbox-label">
+          <input
+            type="checkbox"
+            checked={includeResearch}
+            onChange={(e) => setIncludeResearch(e.target.checked)}
+            disabled={loading}
+          />
+          WEB 調査情報を応答に付記（高スコアイベントの調査キャッシュ）
         </label>
       </section>
 
