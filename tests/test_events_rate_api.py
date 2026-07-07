@@ -79,6 +79,31 @@ async def test_rate_series_rejects_from_after_to(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_rate_series_rejects_too_many_buckets(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    from vcenter_event_assistant.settings import get_settings
+
+    monkeypatch.setenv("EVENT_RATE_MAX_BUCKETS", "2")
+    get_settings.cache_clear()
+    try:
+        t0 = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        t1 = t0 + timedelta(hours=1)
+        q = (
+            f"/api/events/rate-series?event_type=Foo"
+            f"&from={quote(t0.isoformat().replace('+00:00', 'Z'))}"
+            f"&to={quote(t1.isoformat().replace('+00:00', 'Z'))}"
+            f"&bucket_seconds=60"
+        )
+        resp = await client.get(q)
+        assert resp.status_code == 422
+        assert "bucket count" in resp.json()["detail"]
+    finally:
+        os.environ.pop("EVENT_RATE_MAX_BUCKETS", None)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
 async def test_event_types_ordered_by_recent(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",

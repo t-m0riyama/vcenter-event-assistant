@@ -41,6 +41,11 @@ class DatabaseSettingsMixin(BaseModel):
 
     event_poll_interval_seconds: int = Field(default=120, ge=10)
     perf_sample_interval_seconds: int = Field(default=300, ge=60)
+    event_rate_max_buckets: int = Field(
+        default=5000,
+        ge=1,
+        description="GET /api/events/rate-series のバケット数上限。超過時は 422。",
+    )
     ingestion_concurrency: int = Field(
         default=3,
         ge=1,

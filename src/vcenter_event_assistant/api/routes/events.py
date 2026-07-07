@@ -21,7 +21,10 @@ from vcenter_event_assistant.api.schemas import (
     EventUserCommentPatch,
 )
 from vcenter_event_assistant.db.models import EventRecord
-from vcenter_event_assistant.services.event_repository import get_event_rate_series
+from vcenter_event_assistant.services.event_repository import (
+    event_rate_bucket_count,
+    get_event_rate_series,
+)
 from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
 from vcenter_event_assistant.settings import Settings
 
@@ -81,6 +84,17 @@ async def event_rate_series(
         raise HTTPException(status_code=400, detail="from must be before to")
 
     b = bucket_seconds if bucket_seconds is not None else settings.perf_sample_interval_seconds
+
+    bucket_count = event_rate_bucket_count(ft, tt, b)
+    if bucket_count > settings.event_rate_max_buckets:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"bucket count {bucket_count} exceeds maximum "
+                f"{settings.event_rate_max_buckets}; narrow the time range or "
+                "increase bucket_seconds"
+            ),
+        )
 
     buckets_data = await get_event_rate_series(
         session=session,

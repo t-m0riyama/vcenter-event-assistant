@@ -5,11 +5,29 @@ API グラフ向けにイベント発生率の時間バケット系列を DB か
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
+
 from sqlalchemy import select, func, cast, Integer, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.db.models import EventRecord
+
+
+def event_rate_bucket_count(
+    from_time: datetime,
+    to_time: datetime,
+    bucket_seconds: int,
+) -> int:
+    """``get_event_rate_series`` が返すバケット数（空期間は 0）。"""
+    from_ts = int(from_time.timestamp())
+    to_ts = int(to_time.timestamp())
+    first = (from_ts // bucket_seconds) * bucket_seconds
+    last = (to_ts // bucket_seconds) * bucket_seconds
+    if last < first:
+        return 0
+    return (last - first) // bucket_seconds + 1
+
 
 def _epoch_seconds_expr(dialect_name: str):
     """``occurred_at`` から UTC エポック秒（整数）を dialect 非依存に算出する。"""
@@ -24,7 +42,7 @@ async def get_event_rate_series(
     to_time: datetime,
     bucket_seconds: int,
     vcenter_id: uuid.UUID | None = None,
-) -> list[dict[str, any]]:
+) -> list[dict[str, Any]]:
     """指定期間のイベント発生数を固定秒バケットで集計する。
 
     Args:

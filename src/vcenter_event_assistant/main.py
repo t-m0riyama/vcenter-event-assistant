@@ -47,6 +47,15 @@ logger = logging.getLogger(__name__)
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+def is_spa_fallback_reserved_path(full_path: str) -> bool:
+    """SPA フォールバックで配信してはいけないパス（API / OpenAPI）かどうか。"""
+    return (
+        full_path == "api"
+        or full_path.startswith("api/")
+        or full_path in ("docs", "openapi.json", "redoc")
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
@@ -118,7 +127,7 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str):
-            if full_path.startswith("api") or full_path in ("docs", "openapi.json", "redoc"):
+            if is_spa_fallback_reserved_path(full_path):
                 raise HTTPException(status_code=404, detail="Not found")
             
             target_path = (FRONTEND_DIST / full_path).resolve()
