@@ -24,7 +24,9 @@ _INTERVAL_JOB_MISFIRE = {
 
 
 @pytest.mark.asyncio
-async def test_setup_scheduler_interval_jobs_use_coalesce_and_max_instances_one() -> None:
+async def test_setup_scheduler_interval_jobs_use_coalesce_and_max_instances_one() -> (
+    None
+):
     app = MagicMock()
     scheduler = setup_scheduler(app, Settings())
     try:
@@ -111,3 +113,27 @@ async def test_ingest_for_enabled_vcenters_uses_gather_with_semaphore() -> None:
     mock_gather.assert_awaited_once()
     assert len(mock_gather.call_args.args) == 3
     assert total == 3
+
+
+@pytest.mark.asyncio
+async def test_setup_scheduler_omits_web_research_job_without_provider() -> None:
+    app = MagicMock()
+    scheduler = setup_scheduler(app, Settings())
+    try:
+        assert scheduler.get_job("web_research") is None
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_setup_scheduler_adds_web_research_job_with_provider() -> None:
+    app = MagicMock()
+    scheduler = setup_scheduler(app, Settings(tavily_api_key="tvly-test"))
+    try:
+        job = scheduler.get_job("web_research")
+        assert job is not None
+        assert job.coalesce is True
+        assert job.max_instances == 1
+        assert job.misfire_grace_time == 300  # default 600s interval / 2
+    finally:
+        scheduler.shutdown(wait=False)
