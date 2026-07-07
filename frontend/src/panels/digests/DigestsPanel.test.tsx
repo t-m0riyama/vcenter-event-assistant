@@ -288,6 +288,88 @@ describe('DigestsPanel', () => {
     expect(container.querySelector('.digests-detail.digests-detail--sticky')).not.toBeNull()
   })
 
+  it('shows LLM failure badge for legacy ok + error_message rows', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith('/api/digests?')) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: 3,
+                  period_start: '2026-03-27T00:00:00Z',
+                  period_end: '2026-03-28T00:00:00Z',
+                  kind: 'daily',
+                  body_markdown: '# X',
+                  status: 'ok',
+                  error_message: 'LLM 要約は省略（timeout）',
+                  llm_model: null,
+                  created_at: '2026-03-28T01:00:00Z',
+                },
+              ],
+              total: 1,
+            }),
+          )
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${url}`))
+      }),
+    )
+
+    renderDigests()
+
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'ダイジェスト一覧' })).toBeInTheDocument()
+    })
+
+    const listNav = screen.getByRole('navigation', { name: 'ダイジェスト一覧' })
+    expect(within(listNav).getByText('LLM 失敗')).toBeInTheDocument()
+
+    fireEvent.click(within(listNav).getByRole('button', { name: /daily/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/LLM 要約は省略/)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/テンプレート本文は保存済みですが/)).toBeInTheDocument()
+  })
+
+  it('shows ok_llm_failed status badge in list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith('/api/digests?')) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: 4,
+                  period_start: '2026-03-27T00:00:00Z',
+                  period_end: '2026-03-28T00:00:00Z',
+                  kind: 'daily',
+                  body_markdown: '# X',
+                  status: 'ok_llm_failed',
+                  error_message: 'LLM 要約は省略（timeout）',
+                  llm_model: null,
+                  created_at: '2026-03-28T01:00:00Z',
+                },
+              ],
+              total: 1,
+            }),
+          )
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${url}`))
+      }),
+    )
+
+    renderDigests()
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('navigation', { name: 'ダイジェスト一覧' })).getByText('LLM 失敗')).toBeInTheDocument()
+    })
+  })
+
   it('shows error_message when digest has auxiliary error text', async () => {
     vi.stubGlobal(
       'fetch',

@@ -277,7 +277,7 @@
 - `error_message` が `digest template:` で始まる場合はテンプレート側の問題を疑う
 - LLM 要約が期待どおりでない場合は `LLM_DIGEST_*` と `LLM_DIGEST_API_KEY` の有無を確認する
   - `LLM_DIGEST_API_KEY` が空の場合、LLM 呼び出しは行われず、テンプレート本文がそのまま保存される（`src/vcenter_event_assistant/services/digest_llm.py`）
-  - LLM 呼び出しに失敗した場合、`status` は `ok` のまま `error_message` に省略理由が入ることがある
+  - LLM 呼び出しに失敗した場合、`status` は `ok_llm_failed`（テンプレート本文は保存済み）となり、`error_message` に省略理由が入る。旧データは `status=ok` のまま `error_message` のみが入っている場合がある
 
 対処の例:
 

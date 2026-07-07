@@ -10,6 +10,10 @@ from vcenter_event_assistant.db.models import DigestRecord
 from vcenter_event_assistant.services.digest.digest_context import build_digest_context
 from vcenter_event_assistant.services.digest.digest_llm import augment_digest_with_llm
 from vcenter_event_assistant.services.digest.digest_markdown import render_digest_markdown
+from vcenter_event_assistant.services.digest.digest_status import (
+    DIGEST_STATUS_ERROR,
+    resolve_digest_status_after_llm,
+)
 from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
 from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
 from vcenter_event_assistant.settings import Settings
@@ -38,7 +42,7 @@ async def run_digest_once(
             period_end=to_utc,
             kind=kind,
             body_markdown="",
-            status="error",
+            status=DIGEST_STATUS_ERROR,
             error_message=err,
             llm_model=None,
         )
@@ -65,7 +69,7 @@ async def run_digest_once(
         period_end=to_utc,
         kind=kind,
         body_markdown=body,
-        status="ok",
+        status=resolve_digest_status_after_llm(llm_error_message=llm_err),
         error_message=llm_err,
         llm_model=llm_model_val,
     )

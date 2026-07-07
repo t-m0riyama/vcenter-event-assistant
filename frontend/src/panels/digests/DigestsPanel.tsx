@@ -10,6 +10,7 @@ import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
 import { downloadTextFile } from '../../utils/downloadTextFile'
 import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
+import { digestStatusLabel, resolveDigestEffectiveStatus } from './digestStatusDisplay'
 import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
 
 /** 1 ページあたりのダイジェスト件数（`GET /api/digests` の `limit`） */
@@ -30,6 +31,7 @@ function SelectedDigestDetail({
   formatDigestInstant: (iso: string) => string
 }) {
   const bodyMd = getDigestBodyMarkdownForDisplay(selected)
+  const effectiveStatus = resolveDigestEffectiveStatus(selected)
   return (
     <>
       <p className="digests-detail-meta">
@@ -58,7 +60,12 @@ function SelectedDigestDetail({
           {selected.error_message}
         </div>
       )}
-      {selected.status === 'error' && (
+      {effectiveStatus === 'ok_llm_failed' && (
+        <p className="hint digest-status-hint" role="status">
+          テンプレート本文は保存済みですが、LLM 要約は生成できませんでした。
+        </p>
+      )}
+      {effectiveStatus === 'error' && (
         <p className="hint" role="status">
           このダイジェストはエラーで保存されています。
         </p>
@@ -201,7 +208,9 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
             <div data-testid="digests-list-scroll-region" className="digests-list-scroll">
               <nav aria-label="ダイジェスト一覧">
                 <ul className="digests-list">
-                  {items.map((d) => (
+                  {items.map((d) => {
+                    const effectiveStatus = resolveDigestEffectiveStatus(d)
+                    return (
                     <li key={d.id}>
                       <button
                         type="button"
@@ -214,13 +223,19 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
                         <span className="digests-row-range">
                           {formatListPeriodStartDate(d.period_start)}
                         </span>
-                        <span className="digests-row-status">{d.status}</span>
+                        <span
+                          className={`digest-status-badge digest-status-badge--${effectiveStatus}`}
+                          title={d.status}
+                        >
+                          {digestStatusLabel(effectiveStatus)}
+                        </span>
                         <span className="digests-row-created">
                           作成 {formatDigestInstant(d.created_at)}
                         </span>
                       </button>
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               </nav>
             </div>
