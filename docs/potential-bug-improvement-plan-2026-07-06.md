@@ -6,7 +6,7 @@
 
 **2026-07-07 進捗追記（夜）:** フェーズ 2 完了。[#130](https://github.com/t-m0riyama/vcenter-event-assistant/pull/130)（M-3/M-7）・[#135](https://github.com/t-m0riyama/vcenter-event-assistant/pull/135)（M-6）を **main にマージ済み**。次は **フェーズ 3**（[#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133)）。
 
-**2026-07-07 進捗追記（深夜）:** フェーズ 3 — L-7/L-3 [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136)、L-1 [#137](https://github.com/t-m0riyama/vcenter-event-assistant/pull/137) を **main にマージ済み**。L-2/L-6（scheduler）を PR 作成中。
+**2026-07-07 進捗追記（深夜）:** フェーズ 3 — #136〜#138 マージ済み。L-4/L-5 を PR 作成中（フェーズ 3 完了予定）。
 
 ## 進捗状況（2026-07-07 時点）
 
@@ -22,11 +22,11 @@
 | 2-3 M-6 | [#135](https://github.com/t-m0riyama/vcenter-event-assistant/pull/135) | [#131](https://github.com/t-m0riyama/vcenter-event-assistant/issues/131) | **完了** | 2026-07-07 | 履歴・ダイジェスト・スナップショットパージ |
 | 3-2 L-3 / 3-6 L-7 | [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136) | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **完了** | 2026-07-07 | `spa_fallback` 修正、rate-series 422 |
 | 3-3 L-1 | [#137](https://github.com/t-m0riyama/vcenter-event-assistant/pull/137) | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **完了** | 2026-07-07 | digest `ok_llm_failed`、UI バッジ |
-| 3-1 L-2 / L-6 | （PR 作成中） | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **レビュー待ち** | — | misfire_grace、digest try 統一 |
-| フェーズ 3 残り | — | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **未着手** | — | L-4, L-5 |
-| Backlog | — | [#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134) | **追跡中** | — | 先送り項目 |
+| 3-1 L-2 / L-6 | [#138](https://github.com/t-m0riyama/vcenter-event-assistant/pull/138) | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **完了** | 2026-07-07 | misfire_grace、digest try 統一 |
+| 3-4 L-4 / 3-5 L-5 | （PR 作成中） | [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | **レビュー待ち** | — | `resolve_vea_secret_key`、SQLite 運用 doc |
+| Backlog | — | [#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134) | **追跡中** | — | 先送り項目（取り込み途中 commit 等） |
 
-**フェーズ 1 + 2: 完了。** フェーズ 3 は #137 まで完了、L-2/L-6 を PR 中。
+**フェーズ 1 + 2: 完了。フェーズ 3: L-4/L-5 PR 中（#138 まで完了）。**
 
 ### マージ済み PR の実装メモ
 
@@ -37,13 +37,14 @@
 - **#130（M-3 / M-7）**: `normalize_event` が `key` 欠落時スキップ + WARNING。`max_pages` 到達 WARNING。`tests/test_events_collector.py`（8 件）。
 - **#135（M-6）**: `purge_retention` に `AlertHistory` / `DigestRecord` / `IncidentTimelineManualSnapshot` を追加。`ALERT_HISTORY_RETENTION_DAYS`（90）等、`0` で無効。`tests/test_retention.py` 拡張（+4 件）。
 - **#136（L-3 / L-7）**: `is_spa_fallback_reserved_path()`、`EVENT_RATE_MAX_BUCKETS`（既定 5000）。
-- **#137（L-1）**: digest `ok_llm_failed`、`digestStatusDisplay` バッジ、旧行後方互換。
+- **#137（L-1）**: digest `ok_llm_failed`、UI バッジ。
+- **#138（L-2/L-6）**: `misfire_grace_time`、digest TZ/ウィンドウを try 内へ。
 
 ### 次のアクション
 
-1. **フェーズ 3 継続**: L-4/L-5 は L-2/L-6 マージ後
+1. **フェーズ 3 完了**: L-4/L-5 PR マージ後 [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) を Close
 2. **本番・ステージング**: Alembic upgrade、パージ設定の確認、#130 の WARNING ログ監視
-3. **Backlog**: [#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134) — 運用観測に応じて優先度判断
+3. **Backlog**: 取り込み途中 commit（L-5 緩和策）等は [#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134) で追跡
 
 ## 確定した前提（grilling）
 
@@ -135,12 +136,12 @@
 - `purge_retention` ジョブに `AlertHistory`（例: 既定 90 日）、`DigestRecord`（既定 365 日）、インシデントタイムラインスナップショット（既定 90 日）の削除を追加。保持日数はそれぞれ Settings 化し、`0`（無効=無期限）を許可する。✅
 - `.env.example` と `docs/backend-operations.md` に追記。✅
 
-## フェーズ 3: 運用品質・堅牢性（順次）⏳ **進行中**（4/6 完了、L-2/L-6 PR 中）
+## フェーズ 3: 運用品質・堅牢性（順次）⏳ **L-4/L-5 PR 中**（5/6 完了）
 
-### 3-1. スケジューラ設定の見直し（L-2, L-6) ✅ **PR 作成中**
+### 3-1. スケジューラ設定の見直し（L-2, L-6) ✅ **完了（#138）**
 
-- `_job_options_for_interval` / `_job_options_for_cron` で `misfire_grace_time` を付与（interval は間隔の半分、digest cron は 3600 秒）。✅
-- digest ジョブの TZ 解決・ウィンドウ計算を try 内へ移動し、他ジョブと同じ「例外はログして継続」ポリシーに統一。✅
+- `_job_options_for_interval` / `_job_options_for_cron` で `misfire_grace_time` を付与。✅
+- digest ジョブの TZ 解決・ウィンドウ計算を try 内へ移動。✅
 
 ### 3-2. `get_event_rate_series` の入力ガード（L-3）✅ **完了（#136）**
 
@@ -152,15 +153,15 @@
 - `status` に `ok_llm_failed` を追加（テンプレ成功・LLM 失敗時）。✅
 - フロントの一覧・詳細でバッジ表示。旧行は `status=ok` + `error_message` でも `ok_llm_failed` と表示。✅
 
-### 3-4. `EncryptedString` の Settings 依存の緩和（L-4）
+### 3-4. `EncryptedString` の Settings 依存の緩和（L-4）✅ **PR 作成中**
 
-- 鍵の解決を「bind 済み Settings → 環境変数 `VEA_SECRET_KEY` 直読み」のフォールバック付きヘルパーに切り出し、Alembic・スクリプト文脈でも動作するようにする。
-- `enc:` 誤判定は現状の API バリデーションで実用上足りるため、ドキュメント注記のみとする。
+- `resolve_vea_secret_key()`（bind 済み Settings → `VEA_SECRET_KEY` 環境変数）。✅
+- `enc:` 誤判定は API バリデーション + ドキュメント注記。✅
 
-### 3-5. SQLite 運用の明文化と緩和（L-5）
+### 3-5. SQLite 運用の明文化と緩和（L-5）✅ **PR 作成中（doc）**
 
-- `docs/getting-started.md` / `backend-operations.md` に「SQLite は小規模・単一ノード向け。vCenter 多数・本番は PostgreSQL 推奨」を明記。
-- 取り込みの 1 トランザクション肥大を避けるため、イベント挿入を N 件（例: 500）ごとに commit する分割を検討（カーソル更新は最後に 1 回）。
+- `getting-started.md` / `backend-operations.md` に SQLite 小規模向け・本番 PG 推奨を明記。✅
+- 取り込みの途中 commit 分割は **backlog**（[#134](https://github.com/t-m0riyama/vcenter-event-assistant/issues/134)）へ。
 
 ### 3-6. `spa_fallback` のプレフィックス判定修正（L-7）✅ **完了（#136）**
 
@@ -180,8 +181,8 @@
 | #8 / [#135](https://github.com/t-m0riyama/vcenter-event-assistant/pull/135) | 3〜 | 2-3 履歴パージ | M-6 | 小 | ✅ |
 | #9 / [#136](https://github.com/t-m0riyama/vcenter-event-assistant/pull/136) | 以降 | 3-2 / 3-6 rate-series・spa_fallback | L-3, L-7 | 小 | ✅ |
 | #10 / [#137](https://github.com/t-m0riyama/vcenter-event-assistant/pull/137) | 以降 | 3-3 digest LLM 失敗 status | L-1 | 小 | ✅ |
-| #11 / （PR 作成中） | 以降 | 3-1 scheduler misfire・digest try | L-2, L-6 | 小 | ⏳ |
-| — / [#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133) | 以降 | フェーズ 3 残り | L-4, L-5 | 小の集合 | ⏳ **次** |
+| #11 / [#138](https://github.com/t-m0riyama/vcenter-event-assistant/pull/138) | 以降 | 3-1 scheduler misfire・digest try | L-2, L-6 | 小 | ✅ |
+| #12 / （PR 作成中） | 以降 | 3-4 / 3-5 secret key・SQLite doc | L-4, L-5 | 小 | ⏳ |
 
 ```
 週1     [PR#1 / #125] H-1 マージ済み ✅
@@ -192,8 +193,9 @@
          [PR#8 / #135] M-6 マージ済み ✅  ← フェーズ2 完了
          [PR#9 / #136] L-3/L-7 マージ済み ✅
          [PR#10 / #137] L-1 マージ済み ✅
-         [PR#11] L-2/L-6 PR 中
-以降     [Issue #133] L-4 → L-5 + [Issue #134] backlog
+         [PR#11 / #138] L-2/L-6 マージ済み ✅
+         [PR#12] L-4/L-5 PR 中  ← フェーズ3 完了予定
+以降     [Issue #134] backlog
 ```
 
 ## Backlog（grilling で明示的に先送り）
@@ -213,4 +215,4 @@
 - 修正前に不具合を再現する失敗テストを先に書く（特に H-1 のようにテストの死角で発生したものは、同じ層のテストを必ず追加する）。
 - H-2 / 2-1 のようにスキーマ・設計に触れるものは Alembic マイグレーションと `docs/` 更新をセットにする。
 - 新設する設定値（SMTP タイムアウト、鮮度ウィンドウ、履歴保持日数、バケット上限）はすべて `.env.example` に既定値と説明を追記する。
-- **フェーズ 3** は #137 まで完了。L-2/L-6（scheduler）を PR 中（[#133](https://github.com/t-m0riyama/vcenter-event-assistant/issues/133)）。
+- **フェーズ 3** は L-4/L-5 PR で完了予定（取り込み途中 commit は backlog）。
