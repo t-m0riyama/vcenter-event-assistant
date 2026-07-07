@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import String
 from sqlalchemy.types import TypeDecorator
 
-from vcenter_event_assistant.settings_binding import require_settings
+from vcenter_event_assistant.settings_binding import resolve_vea_secret_key
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,10 @@ class EncryptedString(TypeDecorator[str]):
     """``VEA_SECRET_KEY`` 設定時のみ Fernet 暗号化して DB に保存する文字列型。
 
     Python 側では常に平文。鍵未設定時は平文のまま読み書きする。
+    秘密鍵は ``resolve_vea_secret_key()`` で解決する（bind 済み Settings または環境変数）。
+
+    注意: DB 値が ``enc:`` で始まると暗号化済みとみなす。API 経由の新規入力では
+    ``enc:`` 始まりのパスワードは拒否されるが、DB 直接投入では平文が誤判定されうる。
     """
 
     impl = String
@@ -69,7 +73,7 @@ class EncryptedString(TypeDecorator[str]):
     def process_bind_param(self, value: str | None, dialect) -> str | None:
         if value is None:
             return None
-        secret = require_settings().vea_secret_key
+        secret = resolve_vea_secret_key()
         if not secret:
             return value
         if is_encrypted_storage_value(value):
@@ -81,7 +85,7 @@ class EncryptedString(TypeDecorator[str]):
             return None
         if not is_encrypted_storage_value(value):
             return value
-        secret = require_settings().vea_secret_key
+        secret = resolve_vea_secret_key()
         if not secret:
             msg = (
                 "Encrypted vCenter password found in database but VEA_SECRET_KEY is not set. "

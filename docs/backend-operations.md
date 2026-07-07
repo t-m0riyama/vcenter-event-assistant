@@ -165,6 +165,17 @@
 
 - アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
 
+**SQLite と PostgreSQL の選び方:**
+
+- **SQLite**（`sqlite+aiosqlite://...`）: 開発・試用・単一ノードの小規模向け。`StaticPool` により DB 接続は実質 1 本で、取り込み・評価・API が直列化されやすい。vCenter を多数登録する本番では **PostgreSQL を推奨**する。
+- **PostgreSQL**: 本番・複数 vCenter・同時負荷向け。接続プールと書き込み性能に余裕がある。
+- 取り込みトランザクションが長大になると SQLite では API が待たされる。緩和策としてイベント挿入の途中 commit 分割は将来検討（現状は vCenter 単位で 1 トランザクション）。
+
+**vCenter パスワード暗号化（`VEA_SECRET_KEY`）:**
+
+- 鍵は bind 済み Settings または環境変数 `VEA_SECRET_KEY` から解決する（`resolve_vea_secret_key`）。Alembic・単発スクリプトでは **環境変数を設定**してから vCenter 行に触れる。
+- API では `enc:` で始まるパスワード文字列は拒否される。DB 直接投入では `enc:` 始まりの平文が暗号化済みと誤判定されうる（稀な縁ケース）。
+
 #### E) SMTP/メール通知（配信経路）
 
 設定（環境変数名の例）:
