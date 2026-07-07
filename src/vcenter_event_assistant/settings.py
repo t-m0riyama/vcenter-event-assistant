@@ -395,6 +395,12 @@ class ResearchSettingsMixin(BaseModel):
         ge=1,
         description="事前調査ジョブ 1 サイクル当たりの検索実行上限（レート・課金の保護）。",
     )
+    research_attach_max_items: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="ダイジェスト・チャットに付記する調査結果の上限件数（スコア上位）。",
+    )
 
     @field_validator("tavily_api_key", "search_http_proxy", mode="before")
     @classmethod

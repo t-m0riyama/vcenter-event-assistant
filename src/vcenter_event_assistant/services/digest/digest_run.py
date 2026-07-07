@@ -9,13 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.db.models import DigestRecord
 from vcenter_event_assistant.services.digest.digest_context import build_digest_context
 from vcenter_event_assistant.services.digest.digest_llm import augment_digest_with_llm
-from vcenter_event_assistant.services.digest.digest_markdown import render_digest_markdown
+from vcenter_event_assistant.services.digest.digest_markdown import (
+    render_digest_markdown,
+)
 from vcenter_event_assistant.services.digest.digest_status import (
     DIGEST_STATUS_ERROR,
     resolve_digest_status_after_llm,
 )
 from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
-from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
+from vcenter_event_assistant.services.research.research_attach import (
+    build_research_attachment_markdown,
+)
+from vcenter_event_assistant.services.vcenter_labels import (
+    load_all_vcenter_anonymization_strings,
+)
 from vcenter_event_assistant.settings import Settings
 
 
@@ -60,6 +67,18 @@ async def run_digest_once(
         extra_vcenter_strings=vc_anon,
         settings=settings,
     )
+
+    # 関連調査情報は LLM 追記の後にサーバ側で連結する（LLM プロンプトには混ぜない）。
+    # 即応性が価値の情報のため日次のみ（週次・月次の振り返りには付けない）。
+    if kind == "daily":
+        research_md = await build_research_attachment_markdown(
+            session,
+            from_utc=from_utc,
+            to_utc=to_utc,
+            settings=settings,
+        )
+        if research_md:
+            body = body.rstrip() + "\n\n" + research_md
 
     has_key = bool((settings.llm_digest_api_key or "").strip())
     llm_model_val = settings.llm_digest_model if has_key and llm_err is None else None
