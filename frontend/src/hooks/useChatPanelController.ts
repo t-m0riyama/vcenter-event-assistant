@@ -27,6 +27,7 @@ import {
 } from '../preferences/chatPanelStorage'
 import { asArray } from '../utils/asArray'
 import { toErrorMessage } from '../utils/errors'
+import { randomId } from '../utils/randomId'
 import { usePeriodMetricThresholdFields } from './usePeriodMetricThresholdFields'
 
 /** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
@@ -204,7 +205,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     const text = draft.trim()
     if (!text || sendInFlightRef.current) return
 
-    const requestId = crypto.randomUUID()
+    const requestId = randomId()
     const nextMessages = trimChatMessagesToMax(
       [
         ...messages,
