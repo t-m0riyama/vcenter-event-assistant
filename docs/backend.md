@@ -85,7 +85,7 @@
 - **有効な AlertRule が 1 件以上**必要（設定 → アラート、有効チェック ON）。
 - `metric_threshold` ルールの `config.metric_key` は、DB に保存されるキーと **完全一致** させる（CPU 利用率の例: `host.cpu.usage_pct`）。`GET /api/metrics/keys` またはグラフタブのキー一覧を参照する。UI 旧既定の `cpu.usage.average` ではサンプルにヒットしない。
 - `metric_threshold` の `AlertState.context_key` は **`{vcenter_id}:{entity_moid}`** 形式（vCenter 間の MoRef 衝突を避ける）。鮮度上限（`METRIC_STALENESS_WINDOW_SECONDS`、未設定時は `PERF_SAMPLE_INTERVAL_SECONDS * 3`）を超えたサンプルは評価対象外。`firing` 中に鮮度切れすると **`stale`** へ遷移し、初回のみ通知する。
-- 発火の確認は **通知履歴**（`GET /api/alerts/history`、画面の「通知履歴」タブ）。`_notify` が呼ばれると履歴行が増える。メールは `SMTP_HOST` と `ALERT_EMAIL_TO` が設定されているときのみ送信される（未設定時は warning ログのみで履歴は残る）。
+- 発火の確認は **通知履歴**（`GET /api/alerts/history`、画面の「通知履歴」タブ）。評価後に通知がキューされ履歴行が増える。メールは `SMTP_HOST` と `ALERT_EMAIL_TO` が設定されているときのみ送信される（未設定時は `channel=none`, `success=null` として履歴に記録される）。
 - 評価完了時に INFO ログ `alert evaluation complete rules_enabled=N firings=M resolutions=R` が出る。`firings=0` が続く場合は閾値・キー・収集データを見直す。
 - 既に `firing` 状態の metric ルールは、条件が続いても **新規通知は出ない**（エンティティごとの状態更新のみ）。回復後に再度閾値超えで firing する。
 - **`event_score` ルール**（利用者向けの挙動の正本は [user-guides/alerts.md](user-guides/alerts.md)。本節は実装・トラブルシュート用の補足）
@@ -93,7 +93,7 @@
   - ウィンドウは `.env` の `ALERT_EVENT_EVAL_LOOKBACK_HOURS`（1〜168、既定 1）。**アプリ再起動**で反映。`ALERT_SNAPSHOT_LOOKBACK_HOURS`（スナップショット用・既定 2）とは別。
   - `config` は `threshold`（必須・0〜100）と `cooldown_minutes`（任意、既定 10）。JSON インポートで `threshold` が文字列でも評価側で数値化する。レガシー `min_notable_score` は `threshold` として読む。
   - 状態は **`event_type`（イベント種別）ごと** の `AlertState` を持ち、通知の Resource / `context_key` は **イベント種別名** である。`cooldown_minutes` は **同一種別へのメール再送の最短間隔（再通知間隔）のみ** に用いる。`last_notified_at` 等と組み合わせ、**間隔未満の再送を抑止** する。
-  - **沈黙やウィンドウの切れ目だけで `resolved`（自動回復）にはしない**。調査完了後の手動解消は **今後の機能追加で対応予定**。
+  - **沈黙やウィンドウの切れ目だけで `resolved`（自動回復）にはしない**。`event_score` 型は当面 **自動 resolve を実装しない**（通知履歴画面の解消ボタンで手動 resolve する）。
   - ログに `Error evaluating rule` や `invalid config` が出ていないか確認する。
 
 ### 2.5 収集・ダイジェスト・チャット

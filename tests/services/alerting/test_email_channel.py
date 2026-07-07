@@ -25,7 +25,7 @@ async def test_email_channel_send_success(monkeypatch):
     
     with patch("smtplib.SMTP") as mock_smtp:
         instance = mock_smtp.return_value.__enter__.return_value
-        await channel.notify(rule, state, "Subject", "Body")
+        outcome = await channel.notify(rule, state, "Subject", "Body")
         
         instance.starttls.assert_called_once()
         instance.login.assert_called_once_with("user", "pass")
@@ -34,6 +34,9 @@ async def test_email_channel_send_success(monkeypatch):
         sent_msg = instance.send_message.call_args[0][0]
         assert sent_msg["To"] == "ops@example.com"
         assert sent_msg["Subject"] == "Subject"
+        assert outcome.channel == "email"
+        assert outcome.success is True
+        assert outcome.error_message is None
 
 @pytest.mark.asyncio
 async def test_email_channel_uses_to_thread_and_smtp_timeout(monkeypatch):
@@ -51,17 +54,21 @@ async def test_email_channel_uses_to_thread_and_smtp_timeout(monkeypatch):
             new=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)),
         ) as mock_to_thread,
     ):
-        await channel.notify(AlertRule(), AlertState(), "Subject", "Body")
+        outcome = await channel.notify(AlertRule(), AlertState(), "Subject", "Body")
 
     mock_to_thread.assert_awaited_once()
     mock_smtp.assert_called_once_with("smtp.test.com", 587, timeout=15)
+    assert outcome.success is True
 
 @pytest.mark.asyncio
 async def test_email_channel_skips_if_no_host(monkeypatch, caplog):
     monkeypatch.setenv("SMTP_HOST", "")
     channel = EmailChannel(get_settings())
-    await channel.notify(AlertRule(), AlertState(), "S", "B")
+    outcome = await channel.notify(AlertRule(), AlertState(), "S", "B")
     assert "SMTP_HOST is not set" in caplog.text
+    assert outcome.channel == "none"
+    assert outcome.success is None
+    assert outcome.error_message is not None
 
 @pytest.mark.asyncio
 async def test_email_channel_fails_on_smtp_error(monkeypatch):

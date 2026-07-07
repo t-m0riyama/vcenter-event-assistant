@@ -1,7 +1,9 @@
 .alert-history-panel-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: var(--spacing-2);
   margin-bottom: var(--spacing-4);
 }
 
@@ -67,6 +69,18 @@
   text-decoration: underline dotted;
   cursor: help;
   font-size: var(--font-size-caption2);
+}
+
+.skipped-tag {
+  color: var(--color-gray-600, #636366);
+  font-size: var(--font-size-caption2);
+}
+
+.alert-history-note {
+  margin: 0;
+  flex: 1 1 100%;
+  font-size: var(--font-size-caption2);
+  color: var(--color-text-secondary);
 }
 
 .col-time {

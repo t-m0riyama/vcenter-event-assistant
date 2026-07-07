@@ -47,15 +47,18 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
 
     evaluator = AlertEvaluator(get_settings())
 
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    # 1. 発火の確認
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.called
-        assert mock_notify.call_args[0][1].state == "firing"
-        assert mock_notify.call_args[0][1].context_key == metric_context_key(vc_id, "host-1")
+        assert mock_deliver.called
+        pending = mock_deliver.call_args[0][0]
+        assert pending.state == "firing"
+        assert pending.context_key == metric_context_key(vc_id, "host-1")
 
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    # 2. 継続（通知が飛ばないこと）
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert not mock_notify.called
+        assert not mock_deliver.called
 
     async with session_scope() as session:
         s2 = MetricSample(
@@ -70,10 +73,11 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
         session.add(s2)
         await session.flush()
 
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.called
-        assert mock_notify.call_args[0][1].state == "resolved"
+        assert mock_deliver.called
+        pending = mock_deliver.call_args[0][0]
+        assert pending.state == "resolved"
 
 
 @pytest.mark.asyncio
@@ -103,9 +107,9 @@ async def test_metric_threshold_does_not_fire_when_metric_key_mismatches_collect
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert not mock_notify.called
+        assert not mock_deliver.called
 
 
 @pytest.mark.asyncio
@@ -135,9 +139,9 @@ async def test_metric_threshold_fires_when_metric_key_matches_collector() -> Non
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.called
+        assert mock_deliver.called
 
 
 @pytest.mark.asyncio
@@ -178,9 +182,9 @@ async def test_metric_threshold_uses_latest_sample_per_entity() -> None:
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        mock_notify.assert_not_called()
+        mock_deliver.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -222,9 +226,9 @@ async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
         rule_id = rule.id
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.call_count == 1
+        assert mock_deliver.call_count == 1
 
     async with session_scope() as session:
         states = (
@@ -266,10 +270,10 @@ async def test_metric_threshold_separates_same_moid_across_vcenters() -> None:
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.call_count == 2
-        keys = {call.args[1].context_key for call in mock_notify.call_args_list}
+        assert mock_deliver.call_count == 2
+        keys = {call.args[0].context_key for call in mock_deliver.call_args_list}
         assert len(keys) == 2
 
 
@@ -306,9 +310,9 @@ async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypat
         vc_id = vc.id
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.call_count == 1
+        assert mock_deliver.call_count == 1
 
     async with session_scope() as session:
         await session.execute(delete(MetricSample))
@@ -324,10 +328,10 @@ async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypat
             )
         )
 
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        assert mock_notify.call_count == 1
-        assert mock_notify.call_args[0][1].state == "stale"
+        assert mock_deliver.call_count == 1
+        assert mock_deliver.call_args[0][0].state == "stale"
 
     async with session_scope() as session:
         state = (
@@ -335,6 +339,6 @@ async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypat
         ).scalar_one()
         assert state.state == "stale"
 
-    with patch.object(evaluator, "_notify", new_callable=AsyncMock) as mock_notify:
+    with patch.object(evaluator, "_deliver_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
-        mock_notify.assert_not_called()
+        mock_deliver.assert_not_called()

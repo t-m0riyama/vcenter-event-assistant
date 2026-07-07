@@ -107,7 +107,7 @@ async def evaluate_event_score_rule(
                     current.resolved_at = None
                     notify_state = current
                 await session.flush()
-                await deps.notify(
+                deps.queue_notify(
                     rule,
                     notify_state,
                     {

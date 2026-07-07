@@ -94,7 +94,7 @@ async def evaluate_metric_threshold_rule(
                         current.resolved_at = None
                         notify_state = current
                     await session.flush()
-                    await deps.notify(
+                    deps.queue_notify(
                         rule,
                         notify_state,
                         {
@@ -109,7 +109,7 @@ async def evaluate_metric_threshold_rule(
                 current.state = "resolved"
                 current.resolved_at = sample.sampled_at
                 await session.flush()
-                await deps.notify(
+                deps.queue_notify(
                     rule,
                     current,
                     {
@@ -129,7 +129,7 @@ async def evaluate_metric_threshold_rule(
             current.state = "stale"
             current.resolved_at = None
             await session.flush()
-            await deps.notify(
+            deps.queue_notify(
                 rule,
                 current,
                 {

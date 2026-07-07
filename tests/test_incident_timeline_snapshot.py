@@ -19,6 +19,9 @@ from vcenter_event_assistant.db.models import (
 )
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
+    NotificationDeliveryOutcome,
+)
 from vcenter_event_assistant.services.incident_timeline_snapshot import (
     build_alert_rule_snapshot_build_request,
     format_alert_rule_trigger_id,
@@ -150,7 +153,12 @@ async def test_evaluate_event_score_firing_persists_auto_snapshot():
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator.email_channel, "notify", new_callable=AsyncMock):
+    with patch.object(
+        evaluator.email_channel,
+        "notify",
+        new_callable=AsyncMock,
+        return_value=NotificationDeliveryOutcome(channel="email", success=True),
+    ):
         await evaluator.evaluate_all()
 
     async with session_scope() as session:
@@ -188,7 +196,12 @@ async def test_evaluate_event_score_resolution_does_not_add_snapshot():
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator.email_channel, "notify", new_callable=AsyncMock):
+    with patch.object(
+        evaluator.email_channel,
+        "notify",
+        new_callable=AsyncMock,
+        return_value=NotificationDeliveryOutcome(channel="email", success=True),
+    ):
         await evaluator.evaluate_all()
 
     async with session_scope() as session:

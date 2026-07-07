@@ -28,7 +28,7 @@ interface AlertHistory {
   context_key: string
   notified_at: string
   channel: string
-  success: boolean
+  success: boolean | null
   error_message: string | null
   can_resolve: boolean
 }
@@ -101,6 +101,9 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     <div className="panel alert-history-panel">
       <div className="alert-history-panel-header">
         <h2>通知履歴</h2>
+        <p className="alert-history-note">
+          event_score 型はイベント発生を点で検知するため、自動では「回復済み」になりません。解消ボタンで手動 resolve してください。
+        </p>
         <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
           一覧を更新
         </button>
@@ -139,7 +142,11 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                   </td>
                   <td className="col-context">{h.context_key}</td>
                   <td className="col-status">
-                    {h.success ? (
+                    {h.channel === 'none' || h.success === null ? (
+                      <span className="skipped-tag" title={h.error_message || 'SMTP 未設定'}>
+                        未送信
+                      </span>
+                    ) : h.success ? (
                       <span className="success-tag">成功</span>
                     ) : (
                       <span className="error-tag" title={h.error_message || '不明なエラー'}>
