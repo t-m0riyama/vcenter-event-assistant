@@ -106,7 +106,9 @@ async def _run_copilot_cli_completion_base(
                 on_permission_request=deny_permission,
                 model=prof.model,
                 streaming=False,
-                available_tools=[],
+                # available_tools は組み込み・カスタム共通の allowlist。
+                # [] だとカスタムツールも隠れるため、登録するツール名のみ許可する
+                available_tools=[t.name for t in tools] if tools else [],
                 tools=tools or None,
                 system_message=system_message,
             )

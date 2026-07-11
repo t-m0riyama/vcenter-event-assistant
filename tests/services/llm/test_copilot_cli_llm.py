@@ -281,7 +281,10 @@ async def test_run_copilot_cli_falls_back_without_tools_when_registration_fails(
     # 1 回目はツール付きで失敗し、2 回目はツールなしで成功する
     assert len(create_calls) == 2
     assert create_calls[0].get("tools")
+    # カスタムツールは available_tools の allowlist にも載せる（[] だと隠れる）
+    assert create_calls[0].get("available_tools") == ["web_search"]
     assert create_calls[1].get("tools") is None
+    assert create_calls[1].get("available_tools") == []
 
 
 @pytest.mark.asyncio
