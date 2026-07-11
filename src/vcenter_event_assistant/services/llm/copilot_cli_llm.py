@@ -37,6 +37,15 @@ def format_copilot_chat_prompt(block: str, messages: list[ChatMessage]) -> str:
     return "".join(parts)
 
 
+def _looks_like_tool_registration_error(e: Exception) -> bool:
+    """セッション生成失敗がカスタムツール登録に起因するらしいかどうか。
+
+    モデル未対応・認証エラー等の無関係な失敗でツールなし再試行（と紛らわしい警告）を
+    しないため、メッセージに tool を含む場合のみツール起因とみなす。
+    """
+    return "tool" in str(e).lower()
+
+
 def _extract_assistant_text(ev: object | None) -> str:
     if ev is None:
         return ""
@@ -102,7 +111,7 @@ async def _run_copilot_cli_completion_base(
                 system_message=system_message,
             )
         except Exception as e:
-            if not tools:
+            if not tools or not _looks_like_tool_registration_error(e):
                 raise
             # 古い CLI 等でカスタムツール登録が使えない場合は検索なしで続行する（失敗分離）
             logger.warning(

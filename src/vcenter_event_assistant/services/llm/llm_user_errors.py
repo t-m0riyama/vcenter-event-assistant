@@ -40,6 +40,12 @@ def _llm_failure_detail_for_user(exc: BaseException) -> str:
             "ローカル Ollama ではより軽いモデル・短いプロンプトを検討してください）"
         )
     raw = str(exc)
+    if "Model" in raw and "is not available" in raw:
+        return (
+            f"{raw.strip()}（Copilot CLI で利用できないモデルです。"
+            "LLM_CHAT_MODEL / LLM_DIGEST_MODEL に Copilot CLI で利用可能なモデル名"
+            "（copilot コマンドの /model で確認できます）を設定してください）"
+        )
     if "Personal Access Tokens are not supported" in raw or "third-party user token" in raw:
         return (
             "このモデル／エンドポイントでは GitHub PAT を SDK に渡せません。"
