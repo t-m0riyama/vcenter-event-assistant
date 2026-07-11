@@ -281,4 +281,77 @@ async def test_run_copilot_cli_falls_back_without_tools_when_registration_fails(
     # 1 回目はツール付きで失敗し、2 回目はツールなしで成功する
     assert len(create_calls) == 2
     assert create_calls[0].get("tools")
+    # カスタムツールは available_tools の allowlist にも載せる（[] だと隠れる）
+    assert create_calls[0].get("available_tools") == ["web_search"]
     assert create_calls[1].get("tools") is None
+    assert create_calls[1].get("available_tools") == []
+
+
+@pytest.mark.asyncio
+async def test_run_copilot_cli_does_not_retry_on_unrelated_session_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """モデル未対応等ツールと無関係なセッション生成失敗ではツールなし再試行をしない。"""
+    from copilot.tools import define_tool
+
+    create_calls: list[dict[str, object]] = []
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+        async def create_session(self, **kwargs: object) -> object:
+            create_calls.append(kwargs)
+            raise RuntimeError(
+                'JSON-RPC Error -32603: Request session.create failed with message: '
+                'Model "gpt-4o-mini" is not available.'
+            )
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.llm.copilot_cli_llm.CopilotClient",
+        lambda *_a, **_k: _FakeClient(),
+    )
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="k",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_chat_provider="copilot_cli",  # type: ignore[arg-type]
+        llm_chat_api_key="ghp_test",
+        llm_chat_model="gpt-4o-mini",
+    )
+    tool = define_tool(
+        "web_search",
+        description="d",
+        handler=lambda params, _inv: "r",
+        params_type=None,
+    )
+    with pytest.raises(RuntimeError, match="is not available"):
+        await run_copilot_cli_chat_completion(
+            s,
+            system_prompt="sys",
+            block="{}",
+            messages=[ChatMessage(role="user", content="hi")],
+            tools=[tool],
+        )
+    # ツールなしでの再試行は行われない
+    assert len(create_calls) == 1
+
+
+def test_llm_failure_detail_guides_copilot_model_unavailable() -> None:
+    from vcenter_event_assistant.services.llm.llm_user_errors import (
+        _llm_failure_detail_for_user,
+    )
+
+    exc = RuntimeError(
+        'JSON-RPC Error -32603: Request session.create failed with message: '
+        'Model "gpt-4o-mini" is not available.'
+    )
+    detail = _llm_failure_detail_for_user(exc)
+    assert "gpt-4o-mini" in detail
+    assert "LLM_CHAT_MODEL" in detail
