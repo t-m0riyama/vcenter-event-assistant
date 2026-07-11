@@ -212,3 +212,73 @@ async def test_run_period_chat_copilot_cli_calls_completion_and_returns_text(
     assert err is None
     assert out == "copilot応答"
     assert meta is not None
+
+
+@pytest.mark.asyncio
+async def test_run_copilot_cli_falls_back_without_tools_when_registration_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """カスタムツール登録に失敗した場合はツールなしで応答生成を継続する。"""
+    from copilot.tools import define_tool
+
+    create_calls: list[dict[str, object]] = []
+
+    class _FakeSession:
+        class _Data:
+            content = "ツールなし応答"
+
+        def __init__(self) -> None:
+            self.data = _FakeSession._Data()
+
+        async def send_and_wait(self, *_a: object, **_k: object) -> _FakeSession:
+            return self
+
+        async def disconnect(self) -> None:
+            return None
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+        async def create_session(self, **kwargs: object) -> _FakeSession:
+            create_calls.append(kwargs)
+            if kwargs.get("tools"):
+                raise RuntimeError("tools not supported by this CLI version")
+            return _FakeSession()
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.llm.copilot_cli_llm.CopilotClient",
+        lambda *_a, **_k: _FakeClient(),
+    )
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_api_key="k",
+        llm_digest_provider="openai_compatible",
+        llm_digest_base_url="https://api.openai.com/v1",
+        llm_digest_model="gpt-4o-mini",
+        llm_chat_provider="copilot_cli",  # type: ignore[arg-type]
+        llm_chat_api_key="ghp_test",
+        llm_chat_model="gpt-4.1",
+    )
+    tool = define_tool(
+        "web_search",
+        description="d",
+        handler=lambda params, _inv: "r",
+        params_type=None,
+    )
+    out = await run_copilot_cli_chat_completion(
+        s,
+        system_prompt="sys",
+        block="{}",
+        messages=[ChatMessage(role="user", content="hi")],
+        tools=[tool],
+    )
+    assert out == "ツールなし応答"
+    # 1 回目はツール付きで失敗し、2 回目はツールなしで成功する
+    assert len(create_calls) == 2
+    assert create_calls[0].get("tools")
+    assert create_calls[1].get("tools") is None

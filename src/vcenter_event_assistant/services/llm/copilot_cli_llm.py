@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import logging
+
 from copilot import CopilotClient
 from copilot.client import SubprocessConfig
 from copilot.session import PermissionRequestResult, SystemMessageAppendConfig
+from copilot.tools import Tool
 
 from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.llm.llm_profile import LlmPurpose, resolve_llm_profile
 
 if TYPE_CHECKING:
     from vcenter_event_assistant.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def format_copilot_chat_prompt(block: str, messages: list[ChatMessage]) -> str:
@@ -50,6 +55,8 @@ async def _run_copilot_cli_completion_base(
     purpose: LlmPurpose,
     system_prompt: str,
     prompt: str,
+    tools: list[Tool] | None = None,
+    timeout_extra: float = 0.0,
 ) -> str:
     prof = resolve_llm_profile(settings, purpose=purpose)
     if prof.provider != "copilot_cli":
@@ -85,16 +92,34 @@ async def _run_copilot_cli_completion_base(
     system_message: SystemMessageAppendConfig = {"mode": "append", "content": system_prompt}
 
     async with CopilotClient(cfg) as client:
-        session = await client.create_session(
-            on_permission_request=deny_permission,
-            model=prof.model,
-            streaming=False,
-            available_tools=[],
-            system_message=system_message,
-        )
+        try:
+            session = await client.create_session(
+                on_permission_request=deny_permission,
+                model=prof.model,
+                streaming=False,
+                available_tools=[],
+                tools=tools or None,
+                system_message=system_message,
+            )
+        except Exception as e:
+            if not tools:
+                raise
+            # 古い CLI 等でカスタムツール登録が使えない場合は検索なしで続行する（失敗分離）
+            logger.warning(
+                "Copilot CLI へのカスタムツール登録に失敗したため、ツールなしで続行します: %r", e
+            )
+            session = await client.create_session(
+                on_permission_request=deny_permission,
+                model=prof.model,
+                streaming=False,
+                available_tools=[],
+                system_message=system_message,
+            )
         ev: object | None = None
         try:
-            ev = await session.send_and_wait(prompt, timeout=prof.timeout_seconds)
+            ev = await session.send_and_wait(
+                prompt, timeout=prof.timeout_seconds + timeout_extra
+            )
         finally:
             await session.disconnect()
         text = _extract_assistant_text(ev)
@@ -109,11 +134,16 @@ async def run_copilot_cli_chat_completion(
     system_prompt: str,
     block: str,
     messages: list[ChatMessage],
+    tools: list[Tool] | None = None,
+    timeout_extra: float = 0.0,
 ) -> str:
     """
     Copilot CLI セッションを 1 回生成し、単一プロンプトで応答本文を返す。
 
     呼び出し側は ``resolve_llm_profile(..., purpose=\"chat\")`` が ``copilot_cli`` であることを保証すること。
+
+    ``tools`` にカスタムツール（WEB 検索等）を渡すと、セッション内のツール実行を含めて
+    ``send_and_wait`` で完結する。``timeout_extra`` はツール実行分のタイムアウト延長（秒）。
     """
     prompt = format_copilot_chat_prompt(block, messages)
     return await _run_copilot_cli_completion_base(
@@ -121,6 +151,8 @@ async def run_copilot_cli_chat_completion(
         purpose="chat",
         system_prompt=system_prompt,
         prompt=prompt,
+        tools=tools,
+        timeout_extra=timeout_extra,
     )
 
 

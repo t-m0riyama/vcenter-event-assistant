@@ -16,6 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import EventTypeResearch
+from vcenter_event_assistant.services.llm.copilot_cli_llm import (
+    run_copilot_cli_digest_completion,
+)
 from vcenter_event_assistant.services.llm.llm_factory import build_chat_model
 from vcenter_event_assistant.services.llm.llm_invoke import stream_chat_to_text
 from vcenter_event_assistant.services.llm.llm_profile import (
@@ -185,9 +188,6 @@ async def _summarize_results(
         return None, None, "digest LLM not configured"
 
     profile = resolve_llm_profile(settings, purpose="digest")
-    if profile.provider == "copilot_cli":
-        # LangChain ChatModel 非対応（設計判断 #8: copilot_cli では要約なしで運用）
-        return None, None, "copilot_cli does not support research summarization"
 
     lines = [f"イベント種別: {event_type}", "", "検索結果:"]
     for i, r in enumerate(results, start=1):
@@ -196,16 +196,25 @@ async def _summarize_results(
         if r.snippet:
             lines.append(f"抜粋: {r.snippet}")
         lines.append("")
+    user_block = "\n".join(lines)
 
     try:
-        model = build_chat_model(settings, purpose="digest")
-        text, _, _ = await stream_chat_to_text(
-            model,
-            [
-                SystemMessage(content=_SUMMARY_SYSTEM_PROMPT),
-                HumanMessage(content="\n".join(lines)),
-            ],
-        )
+        if profile.provider == "copilot_cli":
+            # LangChain ChatModel 非対応のため単発プロンプトの専用経路で要約する
+            text = await run_copilot_cli_digest_completion(
+                settings,
+                system_prompt=_SUMMARY_SYSTEM_PROMPT,
+                user_block=user_block,
+            )
+        else:
+            model = build_chat_model(settings, purpose="digest")
+            text, _, _ = await stream_chat_to_text(
+                model,
+                [
+                    SystemMessage(content=_SUMMARY_SYSTEM_PROMPT),
+                    HumanMessage(content=user_block),
+                ],
+            )
         summary = text.strip()
         return (summary or None), profile.model, None
     except Exception as e:

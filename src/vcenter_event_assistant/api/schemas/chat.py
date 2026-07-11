@@ -56,7 +56,7 @@ class ChatRequest(BaseModel):
         default=False,
         description=(
             "真のとき、このメッセージの応答生成で LLM に WEB 検索ツールを許可する。"
-            "検索プロバイダ未構成または copilot_cli では無視される（検索なしで応答）"
+            "検索プロバイダ未構成では無視される（検索なしで応答）"
         ),
     )
 

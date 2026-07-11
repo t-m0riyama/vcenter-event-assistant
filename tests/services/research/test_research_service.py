@@ -228,3 +228,48 @@ def test_research_is_fresh_accepts_naive_searched_at() -> None:
     now = datetime.now(timezone.utc)
     row = _row(RESEARCH_STATUS_OK, now.replace(tzinfo=None))
     assert research_is_fresh(row, settings=settings, now=now)
+
+
+@pytest.mark.asyncio
+async def test_research_saves_summary_with_copilot_cli_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """digest LLM が copilot_cli でも単発プロンプト経路で要約を保存する。"""
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.research.research_service.is_digest_llm_configured",
+        lambda settings: True,
+    )
+
+    class _Profile:
+        provider = "copilot_cli"
+        model = "gpt-4.1"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.research.research_service.resolve_llm_profile",
+        lambda settings, *, purpose: _Profile(),
+    )
+
+    captured: dict[str, str] = {}
+
+    async def _fake_copilot(settings, *, system_prompt: str, user_block: str) -> str:
+        captured["system_prompt"] = system_prompt
+        captured["user_block"] = user_block
+        return "- copilot 要約"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.research.research_service.run_copilot_cli_digest_completion",
+        _fake_copilot,
+    )
+
+    async with session_scope() as session:
+        row = await research_event_type(
+            session,
+            _EVENT_TYPE,
+            settings=get_settings(),
+            provider=_FakeProvider(results=[_result()]),
+        )
+        assert row.status == RESEARCH_STATUS_OK
+        assert row.summary == "- copilot 要約"
+        assert row.llm_model == "gpt-4.1"
+        assert row.error_message is None
+        assert _EVENT_TYPE in captured["user_block"]
