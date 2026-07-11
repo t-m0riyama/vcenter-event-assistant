@@ -26,10 +26,12 @@ from vcenter_event_assistant.services.chat.chat_period_metrics import (
 from vcenter_event_assistant.services.chat.chat_web_search import (
     render_web_search_sources,
     run_chat_with_web_search,
+    run_copilot_chat_with_web_search,
 )
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
 from vcenter_event_assistant.services.llm.llm_anonymization import deanonymize_text
 from vcenter_event_assistant.services.research.search_provider import (
+    WebSearchResult,
     build_search_provider,
 )
 from vcenter_event_assistant.services.llm.llm_user_errors import (
@@ -153,14 +155,25 @@ async def run_period_chat(
             cprof.model,
             s.llm_chat_max_input_tokens,
         )
+        web_search_provider = build_search_provider(s) if enable_web_search else None
+        web_sources: list[WebSearchResult] = []
         if cprof.provider == "copilot_cli":
             start_time = time.perf_counter()
-            text = await run_copilot_cli_chat_completion(
-                s,
-                system_prompt=CHAT_SYSTEM_PROMPT,
-                block=block,
-                messages=trimmed,
-            )
+            if web_search_provider is not None:
+                text, web_sources = await run_copilot_chat_with_web_search(
+                    s,
+                    system_prompt=CHAT_SYSTEM_PROMPT,
+                    block=block,
+                    messages=trimmed,
+                    provider=web_search_provider,
+                )
+            else:
+                text = await run_copilot_cli_chat_completion(
+                    s,
+                    system_prompt=CHAT_SYSTEM_PROMPT,
+                    block=block,
+                    messages=trimmed,
+                )
             end_time = time.perf_counter()
             latency_ms = int((end_time - start_time) * 1000)
             token_per_sec = None
@@ -176,9 +189,6 @@ async def run_period_chat(
         else:
             model = build_chat_model(s, purpose="chat", config=runnable_config)
             lc_messages = _to_langchain_messages(block, trimmed)
-            web_search_provider = (
-                build_search_provider(s) if enable_web_search else None
-            )
             if web_search_provider is not None:
                 start_time = time.perf_counter()
                 text, web_sources = await run_chat_with_web_search(
@@ -190,16 +200,15 @@ async def run_period_chat(
                 )
                 latency_ms = int((time.perf_counter() - start_time) * 1000)
                 token_per_sec = None
-                text = deanonymize_text(text.strip(), reverse_map)
-                # 出典は実際のツール実行結果からサーバ側で連結（LLM 出力の URL は一次情報にしない）
-                sources_block = render_web_search_sources(web_sources)
-                if sources_block:
-                    text = text.rstrip() + "\n\n" + sources_block
-                return (text, None, meta, latency_ms, token_per_sec)
-            text, latency_ms, token_per_sec = await stream_chat_to_text(
-                model, lc_messages, config=runnable_config
-            )
+            else:
+                text, latency_ms, token_per_sec = await stream_chat_to_text(
+                    model, lc_messages, config=runnable_config
+                )
         text = deanonymize_text(text.strip(), reverse_map)
+        # 出典は実際のツール実行結果からサーバ側で連結（LLM 出力の URL は一次情報にしない）
+        sources_block = render_web_search_sources(web_sources)
+        if sources_block:
+            text = text.rstrip() + "\n\n" + sources_block
         return (text, None, meta, latency_ms, token_per_sec)
     except Exception as e:
         log_llm_failure(s, "chat", e)

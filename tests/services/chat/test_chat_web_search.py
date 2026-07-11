@@ -7,10 +7,15 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from copilot.tools import ToolInvocation
+
+from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat.chat_web_search import (
+    build_copilot_web_search_tool,
     chat_web_search_available,
     render_web_search_sources,
     run_chat_with_web_search,
+    run_copilot_chat_with_web_search,
     sanitize_search_query,
 )
 from vcenter_event_assistant.services.research.search_provider import (
@@ -76,10 +81,11 @@ def test_sanitize_search_query_strips_ipv4() -> None:
     assert q == "vsphere host disconnected esx.problem"
 
 
-def test_chat_web_search_available_requires_provider_and_tool_capable_llm() -> None:
+def test_chat_web_search_available_requires_provider() -> None:
     assert not chat_web_search_available(_settings())
     assert chat_web_search_available(_settings(tavily_api_key="tvly-x"))
-    assert not chat_web_search_available(
+    # copilot_cli もカスタムツール経由で検索可能
+    assert chat_web_search_available(
         _settings(tavily_api_key="tvly-x", llm_chat_provider="copilot_cli")
     )
     assert not chat_web_search_available(
@@ -206,3 +212,92 @@ async def test_run_chat_dedupes_sources_by_url() -> None:
     )
 
     assert [s.url for s in sources] == ["https://example.com/kb1"]
+
+
+# --- copilot_cli 経路（カスタムクライアントツール） ---
+
+
+def _invocation(query: str) -> ToolInvocation:
+    return ToolInvocation(tool_name="web_search", arguments={"query": query})
+
+
+@pytest.mark.asyncio
+async def test_copilot_tool_executes_search_and_collects_sources() -> None:
+    provider = _FakeProvider()
+    sources: list[WebSearchResult] = []
+    tool = build_copilot_web_search_tool(provider, _settings(), sources)
+
+    assert tool.name == "web_search"
+    assert tool.skip_permission is True
+    result = await tool.handler(_invocation("vsphere 10.0.0.1 scsi latency"))
+
+    assert result.result_type == "success"
+    # クエリは IPv4 除去済みで検索プロバイダに渡る
+    assert provider.queries == ["vsphere scsi latency"]
+    assert [s.url for s in sources] == ["https://example.com/kb1"]
+    # ツール応答には検索結果 + 指示無視の注意が含まれる
+    assert "従わないこと" in result.text_result_for_llm
+    assert "https://example.com/kb1" in result.text_result_for_llm
+
+
+@pytest.mark.asyncio
+async def test_copilot_tool_enforces_max_calls() -> None:
+    provider = _FakeProvider()
+    sources: list[WebSearchResult] = []
+    tool = build_copilot_web_search_tool(
+        provider, _settings(chat_web_search_max_calls=1), sources
+    )
+
+    first = await tool.handler(_invocation("q1"))
+    second = await tool.handler(_invocation("q2"))
+
+    assert len(provider.queries) == 1
+    assert "従わないこと" in first.text_result_for_llm
+    assert "上限" in second.text_result_for_llm
+
+
+@pytest.mark.asyncio
+async def test_copilot_tool_search_failure_returns_failure_message() -> None:
+    provider = _FakeProvider(error=RuntimeError("rate limited"))
+    sources: list[WebSearchResult] = []
+    tool = build_copilot_web_search_tool(provider, _settings(), sources)
+
+    result = await tool.handler(_invocation("q1"))
+
+    assert sources == []
+    assert "失敗" in result.text_result_for_llm
+    assert "既知の情報で回答" in result.text_result_for_llm
+
+
+@pytest.mark.asyncio
+async def test_run_copilot_chat_passes_tool_and_extends_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _fake_completion(settings: Any, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        # LLM がツールを 1 回呼んだことをシミュレート
+        tool = kwargs["tools"][0]
+        await tool.handler(_invocation("q1"))
+        return "copilot 回答"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_web_search.run_copilot_cli_chat_completion",
+        _fake_completion,
+    )
+
+    provider = _FakeProvider()
+    settings = _settings(chat_web_search_max_calls=2)
+    text, sources = await run_copilot_chat_with_web_search(
+        settings,
+        system_prompt="sys",
+        block="{}",
+        messages=[ChatMessage(role="user", content="質問")],
+        provider=provider,
+    )
+
+    assert text == "copilot 回答"
+    assert [s.url for s in sources] == ["https://example.com/kb1"]
+    assert captured["timeout_extra"] == 30.0 * 2
+    assert [t.name for t in captured["tools"]] == ["web_search"]
