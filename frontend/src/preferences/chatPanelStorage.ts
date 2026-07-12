@@ -28,8 +28,6 @@ const chatPanelSnapshotSchema = z.object({
   includePeriodMetricsMemory: z.boolean(),
   includePeriodMetricsDiskIo: z.boolean(),
   includePeriodMetricsNetworkIo: z.boolean(),
-  /** WEB 調査キャッシュの付記（後方互換のため既存スナップショットでは true 扱い） */
-  includeResearch: z.boolean().default(true),
   draft: z.string(),
 })
 

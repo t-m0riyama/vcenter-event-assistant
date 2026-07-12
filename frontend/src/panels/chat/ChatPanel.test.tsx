@@ -690,16 +690,15 @@ describe(
     })
   })
 
-  it('WEB 調査情報トグルは既定 ON で、OFF にすると include_research: false を送る', async () => {
-    const sentIncludeResearch: (boolean | undefined)[] = []
+  it('WEB 調査情報トグルは表示せず、include_research を送らない（サーバ既定 true に委ねる）', async () => {
+    const sentBodies: Record<string, unknown>[] = []
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
         return Promise.resolve(jsonResponse([]))
       }
       if (url.endsWith('/api/chat') && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as { include_research?: boolean }
-        sentIncludeResearch.push(body.include_research)
+        sentBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>)
         return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -711,25 +710,18 @@ describe(
       expect(fetchMock).toHaveBeenCalled()
     })
 
-    const toggle = screen.getByRole('checkbox', { name: /WEB 調査情報を応答に付記/ })
-    expect(toggle).toBeChecked()
+    expect(
+      screen.queryByRole('checkbox', { name: /WEB 調査情報を応答に付記/ }),
+    ).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
       target: { value: 'q1' },
     })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     await waitFor(() => {
-      expect(sentIncludeResearch).toEqual([true])
+      expect(sentBodies).toHaveLength(1)
     })
-
-    fireEvent.click(toggle)
-    fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
-      target: { value: 'q2' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '送信' }))
-    await waitFor(() => {
-      expect(sentIncludeResearch).toEqual([true, false])
-    })
+    expect(sentBodies[0]).not.toHaveProperty('include_research')
   })
 
   it('WEB 検索トグルはサーバが利用可能なときだけ表示し、ON で enable_web_search: true を送る', async () => {
