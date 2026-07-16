@@ -76,6 +76,7 @@ flowchart TB
 - **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
 - **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
 - **チャット機能の活用**（概要・補助）: [docs/chat.md](docs/chat.md) — 利用者向け正本は [docs/user-guides/chat.md](docs/user-guides/chat.md)
+- **WEB 検索が行われる条件**（事前調査ジョブ・チャット検索の実行条件・外部送出内容）: [docs/web-search-conditions.md](docs/web-search-conditions.md)
 - **設計・モジュール対応・改善タスク**（現状実装ベース）: [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md)
 
 ## ライセンス
