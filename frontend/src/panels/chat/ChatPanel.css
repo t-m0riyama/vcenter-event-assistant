@@ -116,16 +116,18 @@
   margin-bottom: 0;
 }
 
+/** ユーザー発言（右寄せ）と同じレーンに揃うよう、入力系も右に寄せる */
 .chat-panel__composer-stack {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  align-items: flex-start;
+  align-items: flex-end;
 }
 
 .chat-panel__sample-prompts {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--spacing-2);
   align-items: center;
   max-width: min(100%, 960px);
