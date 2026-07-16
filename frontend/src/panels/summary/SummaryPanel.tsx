@@ -7,6 +7,7 @@ import {
   type Summary,
   type SummaryHostMetricRow,
 } from '../../api/schemas'
+import { ScoreBadge } from '../../components/badges'
 import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
 import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
@@ -66,7 +67,19 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
     void load()
   }, [load])
 
-  if (loadState === 'loading') return <p>読み込み中…</p>
+  if (loadState === 'loading') {
+    return (
+      <div className="panel" aria-busy="true" aria-label="概要を読み込み中">
+        <div className="stats">
+          <div className="skeleton skeleton--stat" />
+          <div className="skeleton skeleton--stat" />
+          <div className="skeleton skeleton--stat" />
+        </div>
+        <div className="skeleton skeleton--block" />
+        <div className="skeleton skeleton--block" />
+      </div>
+    )
+  }
   if (loadState === 'error' || !data) {
     return <p className="hint">概要を読み込めませんでした。上部のメッセージを確認してください。</p>
   }
@@ -89,7 +102,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
           <span className="label">24h イベント</span>
           <span className="num">{data.events_last_24h}</span>
         </div>
-        <div className="stat">
+        <div className={data.notable_events_last_24h > 0 ? 'stat stat--alert' : 'stat'}>
           <span className="label">24h 要注意（スコア≥40）</span>
           <span className="num">{data.notable_events_last_24h}</span>
         </div>
@@ -102,6 +115,9 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             {notableRows.length === 0 ? '該当なし' : `${notableRows.length} 件`}
           </span>
         </summary>
+        {notableRows.length === 0 ? (
+          <p className="table-empty">直近24時間に該当するイベントはありません</p>
+        ) : (
         <table className="table">
           <thead>
             <tr>
@@ -142,7 +158,9 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                     '—'
                   )}
                 </td>
-                <td>{e.notable_score}</td>
+                <td>
+                  <ScoreBadge score={e.notable_score} />
+                </td>
                 <td className="msg">{e.message}</td>
                 <td className="event-comment-cell event-comment-cell--readonly">
                   {e.user_comment ?? '—'}
@@ -151,6 +169,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             ))}
           </tbody>
         </table>
+        )}
       </details>
 
       <details className="toolbar__filters-details summary-panel__event-type-details">
@@ -160,6 +179,9 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             {topEventTypesRows.length === 0 ? '該当なし' : `${topEventTypesRows.length} 件`}
           </span>
         </summary>
+        {topEventTypesRows.length === 0 ? (
+          <p className="table-empty">直近24時間に該当するイベントはありません</p>
+        ) : (
         <table className="table">
           <thead>
             <tr>
@@ -200,11 +222,14 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                   )}
                 </td>
                 <td>{row.event_count}</td>
-                <td>{row.max_notable_score}</td>
+                <td>
+                  <ScoreBadge score={row.max_notable_score} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        )}
       </details>
 
       <details open className="toolbar__filters-details summary-panel__host-metric-details">
@@ -214,6 +239,9 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             {highCpuRows.length === 0 ? '該当なし' : `${highCpuRows.length} 件`}
           </span>
         </summary>
+        {highCpuRows.length === 0 ? (
+          <p className="table-empty">直近24時間に該当するホストはありません</p>
+        ) : (
         <table className="table">
           <thead>
             <tr>
@@ -234,6 +262,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             ))}
           </tbody>
         </table>
+        )}
       </details>
 
       <details open className="toolbar__filters-details summary-panel__host-metric-details">
@@ -245,6 +274,9 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             {highMemRows.length === 0 ? '該当なし' : `${highMemRows.length} 件`}
           </span>
         </summary>
+        {highMemRows.length === 0 ? (
+          <p className="table-empty">直近24時間に該当するホストはありません</p>
+        ) : (
         <table className="table">
           <thead>
             <tr>
@@ -265,6 +297,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             ))}
           </tbody>
         </table>
+        )}
       </details>
     </div>
   )

@@ -14,6 +14,8 @@
   --color-primary-focus-ring: rgba(0, 122, 255, 0.32);
   --color-success: #34c759;
   --color-warning: #ffcc00;
+  /** 警告バッジの文字色。--color-warning（黄）は白背景上で可読性が足りないため別トークン */
+  --color-warning-text: #9a6b00;
   --color-error: #ff3b30;
 
   --color-gray-50: #f7f8fa;
@@ -31,6 +33,8 @@
   --color-background: #ffffff;
   --color-background-elevated: #ffffff;
   --color-background-secondary: var(--color-gray-50);
+  /** ページ全体の下地。パネル（elevated）より一段沈ませて奥行きを出す */
+  --color-page-background: #f2f4f8;
   --color-border: var(--color-gray-200);
 
   --color-error-surface: color-mix(
@@ -81,6 +85,8 @@ html[data-theme='dark'] {
   --color-primary-50: rgba(10, 132, 255, 0.18);
   --color-primary-focus-ring: rgba(10, 132, 255, 0.45);
 
+  --color-warning-text: #ffd60a;
+
   --color-gray-50: #2c2c2e;
   --color-gray-100: #3a3a3c;
   --color-gray-200: #48484a;
@@ -96,6 +102,7 @@ html[data-theme='dark'] {
   --color-background: #000000;
   --color-background-elevated: #1c1c1e;
   --color-background-secondary: #2c2c2e;
+  --color-page-background: #000000;
   --color-border: var(--color-gray-200);
 
   --color-error-surface: color-mix(

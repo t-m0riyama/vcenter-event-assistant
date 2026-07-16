@@ -15,23 +15,36 @@
   width: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-footnote);
+  font-variant-numeric: tabular-nums;
 }
 
 .alert-history-table th,
 .alert-history-table td {
-  border: 1px solid var(--color-border);
-  padding: var(--spacing-2);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-2) var(--spacing-3);
   text-align: left;
   vertical-align: middle;
 }
 
 .alert-history-table th {
-  background: var(--color-gray-50);
+  font-size: var(--font-size-caption2);
   font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  border-bottom-color: var(--color-gray-300);
+  white-space: nowrap;
 }
 
-.alert-history-table tr:hover td {
+.alert-history-table tbody tr {
+  transition: background-color 0.12s ease;
+}
+
+.alert-history-table tbody tr:hover td {
   background: var(--color-background-secondary);
+}
+
+.alert-history-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .state-badge {

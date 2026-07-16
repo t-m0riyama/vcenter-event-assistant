@@ -1,10 +1,11 @@
 import { useCallback, useLayoutEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
 import type { LegendPayload, TooltipProps } from 'recharts'
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -28,7 +29,8 @@ import {
 } from './chartXAxisLayout'
 import { MetricsXAxisTick } from './MetricsXAxisTick'
 
-const LINE_CHART_DATA_DOT = { r: 3, strokeWidth: 1 } as const
+/** データ点はホバー時のみ表示して線を主役にする */
+const LINE_CHART_ACTIVE_DOT = { r: 4, strokeWidth: 0 } as const
 
 type ChartColors = ReturnType<typeof useChartThemeColors>
 
@@ -111,7 +113,8 @@ export function MetricsChart({
       ({
         backgroundColor: 'var(--color-background-elevated)',
         border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-control)',
+        borderRadius: 'var(--radius-button)',
+        boxShadow: 'var(--shadow-panel)',
         padding: 'var(--spacing-2) var(--spacing-3)',
       }) as const,
     [],
@@ -162,8 +165,14 @@ export function MetricsChart({
       </h2>
       <div className="chart-wrap" ref={chartWrapRef}>
         <ResponsiveContainer width="100%" height={380}>
-          <LineChart key={timeZone} data={chartData} margin={lineChartMargin}>
-            <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+          <ComposedChart key={timeZone} data={chartData} margin={lineChartMargin}>
+            <defs>
+              <linearGradient id="metricAreaFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={chartColors.primary} stopOpacity={0.22} />
+                <stop offset="100%" stopColor={chartColors.primary} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="tMs"
               type="number"
@@ -229,13 +238,16 @@ export function MetricsChart({
               onClick={onMetricsLegendClick}
             />
             {chartModel.mode === 'single' ? (
-              <Line
+              <Area
                 yAxisId="left"
                 type="monotone"
                 dataKey="v"
                 name={metricsChartLegendName}
                 stroke={chartColors.primary}
-                dot={LINE_CHART_DATA_DOT}
+                strokeWidth={2}
+                fill="url(#metricAreaFill)"
+                dot={false}
+                activeDot={LINE_CHART_ACTIVE_DOT}
                 isAnimationActive={false}
                 hide={hiddenSeriesDataKeys.has('v')}
               />
@@ -248,8 +260,10 @@ export function MetricsChart({
                   dataKey={s.dataKey}
                   name={formatMetricChartSeriesLegendName(s, vcenterLabelForChart)}
                   stroke={chartColors.series[i % chartColors.series.length]}
+                  strokeWidth={2}
                   connectNulls
-                  dot={LINE_CHART_DATA_DOT}
+                  dot={false}
+                  activeDot={LINE_CHART_ACTIVE_DOT}
                   isAnimationActive={false}
                   hide={hiddenSeriesDataKeys.has(s.dataKey)}
                 />
@@ -262,7 +276,9 @@ export function MetricsChart({
                 dataKey="evCount"
                 name={eventSeriesLegendName}
                 stroke={chartColors.secondary}
-                dot={LINE_CHART_DATA_DOT}
+                strokeWidth={2}
+                dot={false}
+                activeDot={LINE_CHART_ACTIVE_DOT}
                 isAnimationActive={false}
                 hide={hiddenSeriesDataKeys.has('evCount')}
               />
@@ -281,7 +297,7 @@ export function MetricsChart({
                 }}
               />
             ) : null}
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </MetricsChartErrorBoundary>

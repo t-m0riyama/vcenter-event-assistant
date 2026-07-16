@@ -221,7 +221,8 @@ export default function App() {
     <AppProviders>
       <div className="app">
         <header className="header">
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="header__row">
+            <img src="/favicon.svg" alt="" className="header__logo" width={30} height={30} />
             <h1>vCenter Event Assistant</h1>
             <button
               type="button"

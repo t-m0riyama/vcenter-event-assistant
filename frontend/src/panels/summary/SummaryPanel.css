@@ -10,18 +10,33 @@
   border: 1px solid var(--color-border);
   padding: var(--spacing-3) var(--spacing-4);
   border-radius: var(--radius-button);
-  min-width: 140px;
+  min-width: 160px;
 }
 
 .stat .label {
   display: block;
   font-size: var(--font-size-caption2);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-1);
 }
 
 .stat .num {
-  font-size: 28px;
-  font-weight: var(--font-weight-semibold);
+  font-size: 34px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+/** 要注意イベントが 1 件以上あるカードは警告色でティントして目を引かせる */
+.stat--alert {
+  background: var(--color-error-surface);
+  border-color: var(--color-error-border);
+}
+
+.stat--alert .num {
+  color: var(--color-error);
 }
 
 .summary-panel__notable-details,
