@@ -16,7 +16,7 @@ body {
     sans-serif;
   line-height: 1.45;
   color: var(--color-text-primary);
-  background: var(--color-background);
+  background: var(--color-page-background);
   font-size: var(--font-size-body);
 }
 

@@ -1,0 +1,67 @@
+/**
+ * 共通バッジ。重大度（.badge）とスコア（.score-badge）で使う。
+ * 配色は variables.css のセマンティックトークンから color-mix で導出する。
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px var(--spacing-2);
+  border-radius: 999px;
+  font-size: var(--font-size-caption2);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.7;
+  white-space: nowrap;
+  background: var(--color-gray-100);
+  color: var(--color-text-secondary);
+}
+
+/** 状態を示すドット。文字色に追従させる */
+.badge::before {
+  content: '';
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge--info {
+  background: var(--color-primary-50);
+  color: var(--color-primary);
+}
+
+.badge--warning {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning-text);
+}
+
+.badge--error {
+  background: var(--color-error-surface);
+  color: var(--color-error);
+}
+
+.score-badge {
+  display: inline-block;
+  min-width: 2.4em;
+  padding: 1px var(--spacing-2);
+  border-radius: 999px;
+  text-align: center;
+  font-size: var(--font-size-caption2);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.7;
+  background: var(--color-gray-100);
+  color: var(--color-text-secondary);
+}
+
+.score-badge--elevated {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning-text);
+}
+
+.score-badge--high {
+  background: var(--color-error-surface);
+  color: var(--color-error);
+}

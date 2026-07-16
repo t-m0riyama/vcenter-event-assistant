@@ -52,9 +52,12 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
     fullPage: false,
   })
 
-  const guideDetails = page.locator('td.event-type-guide-cell details.event-type-guide-details').first()
+  // 概要タブなど hidden なパネル内の同名要素を拾わないよう、表示中の要素に限定する
+  const guideDetails = page
+    .locator('td.event-type-guide-cell details.event-type-guide-details:visible')
+    .first()
   await guideDetails.locator('summary').click()
-  await expect(page.getByText('一般的な意味', { exact: true }).first()).toBeVisible()
+  await expect(guideDetails.getByText('一般的な意味', { exact: true })).toBeVisible()
   // ホバー／フォーカスで表示されるツールチップ用ポップオーバーは撮らない（details 展開のみ）
   await page.evaluate(() => {
     const a = document.activeElement
@@ -74,7 +77,8 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await expect(page.getByLabel('メトリクスキー')).toBeVisible()
   // シード済みメトリクスで折れ線が描画されるまで待つ（空グラフのキャプチャを避ける）
   // Recharts は系列ごとに `.recharts-line` を複数描画するため strict 回避で先頭のみ検証する
-  await expect(page.locator('.recharts-line').first()).toBeVisible({ timeout: 20_000 })
+  // 単一系列はエリア（.recharts-area）で描画されるため両方を待つ
+  await expect(page.locator('.recharts-line, .recharts-area').first()).toBeVisible({ timeout: 20_000 })
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'metrics.png'),
     fullPage: false,
@@ -97,9 +101,9 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
 
   await page.getByRole('button', { name: 'スコアルール' }).click()
   await expect(
-    page.getByText(
-      'イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値を設定します。',
-    ),
+    page.getByText('ルールベースのスコアへ加算する値をサーバーに保存します', {
+      exact: false,
+    }),
   ).toBeVisible()
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'settings-score-rules.png'),
@@ -119,7 +123,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   })
 
   await page.locator('nav.settings-subtabs').getByRole('button', { name: 'チャット' }).click()
-  await expect(page.getByRole('heading', { name: 'プロンプトスニペット' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'エクスポート・インポート' })).toBeVisible()
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'settings-chat.png'),
     fullPage: false,

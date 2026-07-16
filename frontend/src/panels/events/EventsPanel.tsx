@@ -10,6 +10,7 @@ import { EVENT_PAGE_SIZES } from '../../events/constants'
 import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
 import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
+import { ScoreBadge, SeverityBadge } from '../../components/badges'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
@@ -204,8 +205,12 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
                   '—'
                 )}
               </td>
-              <td>{e.severity ?? ''}</td>
-              <td>{e.notable_score}</td>
+              <td>
+                <SeverityBadge severity={e.severity} />
+              </td>
+              <td>
+                <ScoreBadge score={e.notable_score} />
+              </td>
               <td className="msg">{e.message}</td>
               <td className="event-comment-cell">
                 {c.editingCommentId === e.id ? (
