@@ -34,7 +34,8 @@ class SearchProvider(ABC):
 def build_search_provider(settings: Settings) -> SearchProvider | None:
     """設定から検索プロバイダを組み立てる。利用できない構成では ``None``。
 
-    ``None`` の条件: ``web_research_enabled=False``、または選択プロバイダの API キー未設定。
+    ``None`` の条件: ``web_research_enabled=False``、または選択プロバイダの接続情報未設定
+    （tavily は API キー、firecrawl はベース URL か API キーのいずれか）。
     """
     if not settings.web_research_enabled:
         return None
@@ -44,4 +45,12 @@ def build_search_provider(settings: Settings) -> SearchProvider | None:
         )
 
         return TavilySearchProvider(settings)
+    if settings.search_provider == "firecrawl" and (
+        settings.firecrawl_base_url or settings.firecrawl_api_key
+    ):
+        from vcenter_event_assistant.services.research.firecrawl_provider import (
+            FirecrawlSearchProvider,
+        )
+
+        return FirecrawlSearchProvider(settings)
     return None

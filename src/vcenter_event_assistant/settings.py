@@ -327,13 +327,27 @@ class ResearchSettingsMixin(BaseModel):
             "検索プロバイダの API キー未設定時は、この値に関わらず機能は無効。"
         ),
     )
-    search_provider: Literal["tavily"] = Field(
+    search_provider: Literal["tavily", "firecrawl"] = Field(
         default="tavily",
-        description="WEB 調査に使う検索プロバイダ（`SEARCH_PROVIDER`）。現在は tavily のみ。",
+        description="WEB 調査に使う検索プロバイダ（`SEARCH_PROVIDER`）。tavily または firecrawl。",
     )
     tavily_api_key: str | None = Field(
         default=None,
         description="Tavily Search API キー（`TAVILY_API_KEY`）。未設定で WEB 調査機能は無効。",
+    )
+    firecrawl_api_key: str | None = Field(
+        default=None,
+        description=(
+            "Firecrawl API キー（`FIRECRAWL_API_KEY`）。"
+            "クラウド（base_url 未設定）では必須。セルフホストでは任意。"
+        ),
+    )
+    firecrawl_base_url: str | None = Field(
+        default=None,
+        description=(
+            "セルフホスト Firecrawl のベース URL（`FIRECRAWL_BASE_URL`）。"
+            "例: http://firecrawl.internal:3002。未設定でクラウド API を使う。"
+        ),
     )
     search_timeout_seconds: int = Field(
         default=15,
@@ -408,7 +422,13 @@ class ResearchSettingsMixin(BaseModel):
         description="チャット 1 メッセージ当たりの WEB 検索（LLM ツール呼び出し）実行上限。",
     )
 
-    @field_validator("tavily_api_key", "search_http_proxy", mode="before")
+    @field_validator(
+        "tavily_api_key",
+        "firecrawl_api_key",
+        "firecrawl_base_url",
+        "search_http_proxy",
+        mode="before",
+    )
     @classmethod
     def empty_research_str_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)
