@@ -25,13 +25,6 @@
   cursor: pointer;
 }
 
-.hint {
-  font-size: var(--font-size-subhead);
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--spacing-3);
-  line-height: 1.5;
-}
-
 .empty-metrics {
   background: var(--color-background-secondary);
   border: 1px solid var(--color-border);

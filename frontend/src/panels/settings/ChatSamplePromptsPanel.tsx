@@ -210,7 +210,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
             </label>
             <button
               type="button"
-              className="btn btn--gray"
+              className="btn btn--danger"
               onClick={() => {
                 removeRow(row.id)
               }}

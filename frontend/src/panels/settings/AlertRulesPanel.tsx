@@ -400,7 +400,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                       </label>
                     </td>
                     <td className="actions">
-                      <button type="button" className="btn btn--gray" onClick={() => handleDelete(r.id)}>削除</button>
+                      <button type="button" className="btn btn--danger" onClick={() => handleDelete(r.id)}>削除</button>
                     </td>
                   </tr>
                   {expanded ? (

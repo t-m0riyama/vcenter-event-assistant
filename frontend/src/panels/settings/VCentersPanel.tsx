@@ -374,7 +374,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                   >
                     {v.is_enabled ? '無効' : '有効'}
                   </button>
-                  <button type="button" className="btn btn--gray" onClick={() => void remove(v.id)}>
+                  <button type="button" className="btn btn--danger" onClick={() => void remove(v.id)}>
                     削除
                   </button>
                 </td>

@@ -359,7 +359,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
                     <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
                       保存
                     </button>
-                    <button type="button" className="btn btn--gray" onClick={() => void remove(r.id)}>
+                    <button type="button" className="btn btn--danger" onClick={() => void remove(r.id)}>
                       削除
                     </button>
                   </div>

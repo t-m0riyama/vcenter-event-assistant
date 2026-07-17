@@ -1,0 +1,90 @@
+/**
+ * <dialog> 共通スタイル（showModal 前提）。
+ * パネルと同じ角丸・影の言語で、背景は半透明+ブラーで沈める。
+ */
+
+.dialog {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+  background: var(--color-background-elevated);
+  color: var(--color-text-primary);
+  padding: 0;
+  width: min(760px, calc(100vw - 2 * var(--spacing-6)));
+  max-height: calc(100vh - 2 * var(--spacing-8));
+}
+
+.dialog::backdrop {
+  background: rgba(8, 12, 20, 0.45);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.dialog[open] {
+  animation: dialog-in 0.18s ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4) var(--spacing-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dialog__title {
+  margin: 0;
+  font-size: var(--font-size-title3);
+  font-weight: var(--font-weight-semibold);
+}
+
+.dialog__close-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dialog__body {
+  padding: var(--spacing-4) var(--spacing-6);
+  overflow-y: auto;
+}
+
+.dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-6) var(--spacing-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/** プレビュー等で使う整形済みテキストブロック */
+.code-block {
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--spacing-3);
+  font-size: var(--font-size-footnote);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open] {
+    animation: none;
+  }
+}
