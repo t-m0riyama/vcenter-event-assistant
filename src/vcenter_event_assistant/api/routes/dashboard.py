@@ -61,6 +61,23 @@ async def dashboard_summary(
         .where(EventRecord.occurred_at >= day_ago, EventRecord.notable_score >= 40)
     )
 
+    # 直近24h の時間別件数（概要カードのスパークライン用）。index 0 が最古、23 が直近 1 時間。
+    # DB 方言依存の日時関数を避け、occurred_at を取得して Python 側でバケット集計する。
+    hourly_q = await session.execute(
+        select(EventRecord.occurred_at, EventRecord.notable_score).where(
+            EventRecord.occurred_at >= day_ago
+        )
+    )
+    events_hourly = [0] * 24
+    notable_hourly = [0] * 24
+    for occurred_at, score in hourly_q.all():
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+        idx = min(23, max(0, int((occurred_at - day_ago).total_seconds() // 3600)))
+        events_hourly[idx] += 1
+        if (score or 0) >= 40:
+            notable_hourly[idx] += 1
+
     # 直近24h の要注意イベント上位。notable_score がクエリ下限未満の行は除外する。
     top_q = await session.execute(
         select(EventRecord)
@@ -103,6 +120,8 @@ async def dashboard_summary(
         vcenter_count=int(vc_count.scalar_one() or 0),
         events_last_24h=int(ev_24.scalar_one() or 0),
         notable_events_last_24h=int(notable_24.scalar_one() or 0),
+        events_last_24h_hourly=events_hourly,
+        notable_events_last_24h_hourly=notable_hourly,
         top_notable_events=top_notable_events,
         high_cpu_hosts=high_cpu,
         high_mem_hosts=high_mem,

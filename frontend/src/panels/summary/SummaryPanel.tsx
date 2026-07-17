@@ -8,6 +8,7 @@ import {
   type SummaryHostMetricRow,
 } from '../../api/schemas'
 import { ScoreBadge } from '../../components/badges'
+import { Sparkline } from '../../components/Sparkline'
 import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
 import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
@@ -101,10 +102,16 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         <div className="stat">
           <span className="label">24h イベント</span>
           <span className="num">{data.events_last_24h}</span>
+          <span className="stat__spark" title="直近24時間の時間別件数">
+            <Sparkline values={data.events_last_24h_hourly} />
+          </span>
         </div>
         <div className={data.notable_events_last_24h > 0 ? 'stat stat--alert' : 'stat'}>
           <span className="label">24h 要注意（スコア≥40）</span>
           <span className="num">{data.notable_events_last_24h}</span>
+          <span className="stat__spark" title="直近24時間の時間別件数">
+            <Sparkline values={data.notable_events_last_24h_hourly} />
+          </span>
         </div>
       </div>
 

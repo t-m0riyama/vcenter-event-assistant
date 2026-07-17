@@ -29,6 +29,9 @@ export const summarySchema = z
     vcenter_count: z.number(),
     events_last_24h: z.number(),
     notable_events_last_24h: z.number(),
+    // 旧サーバーはこのフィールドを返さないため optional（スパークライン非表示にフォールバック）
+    events_last_24h_hourly: z.array(z.number()).optional(),
+    notable_events_last_24h_hourly: z.array(z.number()).optional(),
     top_notable_events: z.unknown(),
     high_cpu_hosts: z.unknown(),
     high_mem_hosts: z.unknown(),
@@ -40,6 +43,8 @@ export type Summary = {
   vcenter_count: number
   events_last_24h: number
   notable_events_last_24h: number
+  events_last_24h_hourly: number[]
+  notable_events_last_24h_hourly: number[]
   top_notable_events: EventRow[]
   high_cpu_hosts: SummaryHostMetricRow[]
   high_mem_hosts: SummaryHostMetricRow[]
@@ -52,6 +57,8 @@ export function parseSummary(raw: unknown): Summary {
     vcenter_count: base.vcenter_count,
     events_last_24h: base.events_last_24h,
     notable_events_last_24h: base.notable_events_last_24h,
+    events_last_24h_hourly: base.events_last_24h_hourly ?? [],
+    notable_events_last_24h_hourly: base.notable_events_last_24h_hourly ?? [],
     top_notable_events: asArray<unknown>(base.top_notable_events)
       .map((row) => eventRowSchema.safeParse(row))
       .flatMap((r) => (r.success ? [r.data] : [])),
