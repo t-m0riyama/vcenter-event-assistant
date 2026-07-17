@@ -30,8 +30,9 @@
 }
 
 .digests-kind-filter .is-active {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  background: var(--color-primary-50);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-primary);
 }
 
 .digests-layout {
@@ -108,9 +109,11 @@
   background: var(--color-background-elevated);
 }
 
+/** 選択行はプライマリ淡色+左アクセントバー（チャットのユーザーバブルと同じ色言語） */
 .digests-row.is-selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  background: var(--color-primary-50);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-primary);
 }
 
 .digests-row-kind {

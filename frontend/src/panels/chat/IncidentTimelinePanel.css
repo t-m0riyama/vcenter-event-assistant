@@ -19,7 +19,7 @@
   margin: 0;
   padding: 0;
   display: flex;
-  gap: var(--spacing-2);
+  gap: var(--spacing-3);
 }
 
 .incident-timeline__scroll {
@@ -28,25 +28,55 @@
   padding-bottom: var(--spacing-1);
 }
 
+/** 時系列を示す横レール。各時刻カードの上にドットを置いてレールと繋ぐ */
 .incident-timeline--horizontal {
   flex-direction: row;
   align-items: stretch;
   min-width: max-content;
+  position: relative;
+  padding-top: 18px;
+}
+
+.incident-timeline--horizontal::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-border);
 }
 
 .incident-timeline__column {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  padding: var(--spacing-2);
-  background: var(--color-background-secondary);
+  border-radius: var(--radius-button);
+  padding: var(--spacing-3);
+  background: var(--color-background-elevated);
+  box-shadow: var(--shadow-panel);
   min-width: 260px;
   max-width: 360px;
+  position: relative;
+}
+
+.incident-timeline__column::before {
+  content: '';
+  position: absolute;
+  top: -17px;
+  left: var(--spacing-3);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-background-elevated);
 }
 
 .incident-timeline__timestamp {
-  margin: 0 0 var(--spacing-1);
+  margin: 0 0 var(--spacing-2);
   font-size: var(--font-size-footnote);
-  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
 }
 
 .incident-timeline__items {
@@ -58,22 +88,22 @@
 .incident-timeline__item {
   display: inline-flex;
   align-items: center;
-  border-radius: var(--radius-pill);
+  border-radius: 999px;
   padding: 2px 8px;
   color: #fff;
   font-size: var(--font-size-footnote);
 }
 
 .incident-timeline__item--alert {
-  background: #b91c1c;
+  background: var(--color-error);
 }
 
 .incident-timeline__item--event {
-  background: #1d4ed8;
+  background: var(--color-primary);
 }
 
 .incident-timeline__item--metric {
-  background: #15803d;
+  background: var(--color-success);
 }
 
 .incident-timeline__expand-btn {
@@ -90,10 +120,10 @@
 .incident-timeline__snapshot-chip {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: var(--radius-control);
+  border-radius: 999px;
   border: 1px dashed var(--color-border);
   font-size: 0.85em;
-  color: var(--color-text-muted, #555);
+  color: var(--color-text-secondary);
 }
 
 @media (max-width: 768px) {

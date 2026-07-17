@@ -72,9 +72,14 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
+  --font-size-caption: 12px;
+  --font-size-caption1: 12px;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   --radius-panel: 14px;
   --radius-button: 10px;
   --radius-control: 6px;
+  --radius-sm: 4px;
   --shadow-panel: 0 2px 12px rgba(26, 31, 41, 0.06);
 }
 
