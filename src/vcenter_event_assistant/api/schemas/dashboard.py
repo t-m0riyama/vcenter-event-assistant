@@ -63,6 +63,14 @@ class DashboardSummary(BaseModel):
     vcenter_count: int
     events_last_24h: int
     notable_events_last_24h: int
+    events_last_24h_hourly: list[int] = Field(
+        default_factory=list,
+        description="直近24h の時間別イベント件数（スパークライン用、24 要素・先頭が最古）",
+    )
+    notable_events_last_24h_hourly: list[int] = Field(
+        default_factory=list,
+        description="直近24h の時間別要注意イベント件数（notable_score >= 40、24 要素・先頭が最古）",
+    )
     top_notable_events: list[EventRead]
     high_cpu_hosts: list[HighCpuHostRow]
     high_mem_hosts: list[HighMemHostRow]

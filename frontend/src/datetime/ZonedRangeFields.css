@@ -15,6 +15,15 @@
   color: var(--color-text-secondary);
 }
 
+/** クイック期間ボタンはチップらしくピル型・小ぶりにする */
+.zoned-range-fields__presets .btn {
+  min-height: 36px;
+  padding: 0 var(--spacing-3);
+  border-radius: 999px;
+  font-size: var(--font-size-footnote);
+  font-weight: var(--font-weight-regular);
+}
+
 .zoned-range-fields__date input[type='date'],
 .zoned-range-fields__time input[type='time'] {
   min-width: 9rem;

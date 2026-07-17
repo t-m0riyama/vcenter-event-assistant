@@ -443,6 +443,83 @@ async def test_top_notable_events_respects_top_notable_min_score_query(client: A
 
 
 @pytest.mark.asyncio
+async def test_hourly_series_buckets_events_and_notables(client: AsyncClient) -> None:
+    """時間別件数は 24 要素で、直近 1 時間が末尾。notable は score >= 40 のみ数える。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-hourly",
+            "host": "vc-hourly.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    async with session_scope() as session:
+        # 直近 1 時間: 2 件（うち 1 件は要注意）
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base - timedelta(minutes=5),
+                event_type="RecentHigh",
+                message="m",
+                vmware_key=1,
+                notable_score=50,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base - timedelta(minutes=10),
+                event_type="RecentLow",
+                message="m",
+                vmware_key=2,
+                notable_score=0,
+            )
+        )
+        # 2〜3 時間前: 1 件
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base - timedelta(hours=2, minutes=30),
+                event_type="Older",
+                message="m",
+                vmware_key=3,
+                notable_score=0,
+            )
+        )
+        # 24 時間より前: 対象外
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base - timedelta(hours=25),
+                event_type="Stale",
+                message="m",
+                vmware_key=4,
+                notable_score=90,
+            )
+        )
+
+    resp = await client.get("/api/dashboard/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    hourly = body["events_last_24h_hourly"]
+    notable_hourly = body["notable_events_last_24h_hourly"]
+    assert len(hourly) == 24
+    assert len(notable_hourly) == 24
+    assert hourly[23] == 2
+    assert hourly[21] == 1
+    assert sum(hourly) == body["events_last_24h"] == 3
+    assert notable_hourly[23] == 1
+    assert sum(notable_hourly) == body["notable_events_last_24h"] == 1
+
+
+@pytest.mark.asyncio
 async def test_top_notable_events_includes_type_guide_action_required(client: AsyncClient) -> None:
     """要注意イベント上位に ``type_guide``（``action_required`` 含む）が付く。"""
     r = await client.post(

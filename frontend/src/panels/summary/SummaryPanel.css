@@ -29,6 +29,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.stat__spark {
+  display: block;
+  margin-top: var(--spacing-1);
+  color: var(--color-primary);
+  line-height: 0;
+}
+
 /** 要注意イベントが 1 件以上あるカードは警告色でティントして目を引かせる */
 .stat--alert {
   background: var(--color-error-surface);
@@ -36,6 +43,10 @@
 }
 
 .stat--alert .num {
+  color: var(--color-error);
+}
+
+.stat--alert .stat__spark {
   color: var(--color-error);
 }
 
