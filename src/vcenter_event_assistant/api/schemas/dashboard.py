@@ -59,6 +59,15 @@ class EventTypeCountRow(BaseModel):
     type_guide: EventTypeGuideSnippet | None = None
 
 
+class DashboardAttention(BaseModel):
+    """タブのアテンションドット用の軽量サマリ（カウントのみ）。"""
+
+    notable_events_last_24h: int = Field(
+        description="直近24h の要注意イベント件数（notable_score >= 40）"
+    )
+    firing_alerts: int = Field(description="有効なルールで現在 firing 状態のアラート数")
+
+
 class DashboardSummary(BaseModel):
     vcenter_count: int
     events_last_24h: int

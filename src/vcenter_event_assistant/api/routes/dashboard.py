@@ -16,7 +16,8 @@ from vcenter_event_assistant.api.schemas import (
     HighCpuHostRow,
     HighMemHostRow,
 )
-from vcenter_event_assistant.db.models import EventRecord, VCenter
+from vcenter_event_assistant.api.schemas.dashboard import DashboardAttention
+from vcenter_event_assistant.db.models import AlertRule, AlertState, EventRecord, VCenter
 from vcenter_event_assistant.services.vcenter_labels import load_vcenter_labels_map
 from vcenter_event_assistant.services.event_type_guide_attach import (
     attach_type_guides_to_event_reads,
@@ -31,6 +32,29 @@ from vcenter_event_assistant.services.metric_ranking import (
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 _TOP_EVENT_TYPES_LIMIT = 10
+
+
+@router.get("/attention", response_model=DashboardAttention)
+async def dashboard_attention(
+    session: AsyncSession = Depends(get_session),
+) -> DashboardAttention:
+    """タブのアテンションドット用の軽量カウント。summary と違い一覧やガイドは返さない。"""
+    day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+    notable = await session.execute(
+        select(func.count())
+        .select_from(EventRecord)
+        .where(EventRecord.occurred_at >= day_ago, EventRecord.notable_score >= 40)
+    )
+    firing = await session.execute(
+        select(func.count())
+        .select_from(AlertState)
+        .join(AlertRule, AlertRule.id == AlertState.rule_id)
+        .where(AlertState.state == "firing", AlertRule.is_enabled.is_(True))
+    )
+    return DashboardAttention(
+        notable_events_last_24h=int(notable.scalar_one() or 0),
+        firing_alerts=int(firing.scalar_one() or 0),
+    )
 
 
 @router.get("/summary", response_model=DashboardSummary)
