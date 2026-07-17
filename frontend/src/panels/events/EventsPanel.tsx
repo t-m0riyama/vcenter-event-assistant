@@ -164,6 +164,9 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
           </div>
         </details>
       </div>
+      {asArray<EventRow>(c.rows).length === 0 ? (
+        <p className="table-empty">条件に一致するイベントはありません</p>
+      ) : (
       <table className="table">
         <thead>
           <tr>
@@ -255,6 +258,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
           ))}
         </tbody>
       </table>
+      )}
     </div>
   )
 }

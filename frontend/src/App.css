@@ -1,6 +1,7 @@
 @import "./styles/toolbar.css";
 @import "./styles/forms.css";
 @import "./styles/badges.css";
+@import "./styles/dialog.css";
 
 .app {
   max-width: 1200px;
@@ -265,6 +266,16 @@
   min-height: 40vh;
 }
 
+/** 補足説明。遅延ロードされるパネル CSS に置くと未ロード時に崩れるためここで定義する */
+.hint {
+  font-size: var(--font-size-subhead);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-3);
+  line-height: 1.5;
+  /* 長文説明がパネル幅いっぱいに伸びて読みにくくならないよう行長を制限 */
+  max-width: 76ch;
+}
+
 .panel h2 {
   font-size: var(--font-size-title3);
   margin: var(--spacing-6) 0 var(--spacing-2);
@@ -312,7 +323,8 @@
 }
 
 /** テーブルの代わりに出す空状態 */
-.table-empty {
+.table-empty,
+.no-data {
   margin: var(--spacing-3) 0 var(--spacing-1);
   padding: var(--spacing-6) var(--spacing-4);
   text-align: center;

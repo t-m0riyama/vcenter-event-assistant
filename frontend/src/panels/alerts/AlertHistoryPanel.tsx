@@ -166,7 +166,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                     )}
                     <button
                       type="button"
-                      className="btn btn--gray alert-history-action"
+                      className="btn btn--danger alert-history-action"
                       onClick={() => void handleDelete(h)}
                     >
                       削除

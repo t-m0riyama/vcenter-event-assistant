@@ -128,30 +128,28 @@
   font-size: var(--font-size-caption);
 }
 
+/** badges.css のピルと同じ色言語（トークン由来・ダークテーマ追従） */
 .digest-status-badge {
   display: inline-block;
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--radius-control);
+  padding: 1px var(--spacing-2);
+  border-radius: 999px;
   font-weight: var(--font-weight-semibold);
-  line-height: 1.3;
+  line-height: 1.7;
 }
 
 .digest-status-badge--ok {
   color: var(--color-text-secondary);
-  background: var(--color-background-secondary);
-  border: 1px solid var(--color-border);
+  background: var(--color-gray-100);
 }
 
 .digest-status-badge--ok_llm_failed {
-  color: var(--color-warning-text, #8a5a00);
-  background: var(--color-warning-bg, #fff8e6);
-  border: 1px solid var(--color-warning-border, #e6c200);
+  color: var(--color-warning-text);
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
 }
 
 .digest-status-badge--error {
-  color: var(--color-danger-text, #8b1a1a);
-  background: var(--color-danger-bg, #fdecec);
-  border: 1px solid var(--color-danger-border, #e8a0a0);
+  color: var(--color-error);
+  background: var(--color-error-surface);
 }
 
 .digest-status-hint {

@@ -41,6 +41,12 @@ textarea::placeholder {
   color: var(--color-gray-400);
 }
 
+input:not([type="checkbox"]):hover:not(:focus-visible),
+select:hover:not(:focus-visible),
+textarea:hover:not(:focus-visible) {
+  border-color: var(--color-gray-300);
+}
+
 input:not([type="checkbox"]):focus-visible,
 select:focus-visible,
 textarea:focus-visible {
@@ -56,7 +62,32 @@ textarea:focus-visible {
   border: 1px solid transparent;
   font-size: var(--font-size-subhead);
   font-weight: var(--font-weight-semibold);
-  transition: background-color 120ms ease;
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+
+  .btn:not(:disabled):hover,
+  .btn:not(:disabled):active {
+    transform: none;
+    box-shadow: none;
+  }
 }
 
 .btn:focus-visible {
@@ -84,6 +115,17 @@ textarea:focus-visible {
 
 .btn--gray:hover {
   background: var(--color-gray-200);
+}
+
+/** 破壊的操作（削除等）。枠線+赤文字で、hover で赤面に */
+.btn--danger {
+  color: var(--color-error);
+  background: transparent;
+  border-color: var(--color-error-border);
+}
+
+.btn--danger:hover {
+  background: var(--color-error-surface);
 }
 
 .btn:disabled {

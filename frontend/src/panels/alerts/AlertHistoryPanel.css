@@ -47,29 +47,29 @@
   border-bottom: none;
 }
 
+/** badges.css のピルと同じ色言語（トークン由来・ダークテーマ追従） */
 .state-badge {
-  padding: 0.1rem 0.6rem;
-  border-radius: 12px;
+  display: inline-block;
+  padding: 1px var(--spacing-2);
+  border-radius: 999px;
   font-size: var(--font-size-caption2);
   font-weight: var(--font-weight-semibold);
+  line-height: 1.7;
 }
 
 .state-badge.firing {
   background: var(--color-error-surface);
   color: var(--color-error);
-  border: 1px solid var(--color-error-border);
 }
 
 .state-badge.resolved {
-  background: color-mix(in srgb, var(--color-success, #32d74b) 15%, transparent);
-  color: var(--color-success, #32d74b);
-  border: 1px solid color-mix(in srgb, var(--color-success, #32d74b) 30%, transparent);
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
 }
 
 .state-badge.stale {
-  background: color-mix(in srgb, var(--color-warning, #ff9f0a) 15%, transparent);
-  color: var(--color-warning, #ff9f0a);
-  border: 1px solid color-mix(in srgb, var(--color-warning, #ff9f0a) 30%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning-text);
 }
 
 .success-tag {
@@ -85,7 +85,7 @@
 }
 
 .skipped-tag {
-  color: var(--color-gray-600, #636366);
+  color: var(--color-text-secondary);
   font-size: var(--font-size-caption2);
 }
 
@@ -110,27 +110,27 @@
 
 .level-badge {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
-  border-radius: 10px;
+  padding: 1px var(--spacing-2);
+  border-radius: 999px;
   font-size: var(--font-size-caption2);
   font-weight: var(--font-weight-semibold);
-  border: 1px solid var(--color-border);
+  line-height: 1.7;
+  background: var(--color-gray-100);
+  color: var(--color-text-secondary);
 }
 
 .level-badge--critical {
-  background: color-mix(in srgb, var(--color-error, #ff453a) 18%, transparent);
-  color: var(--color-error, #ff453a);
-  border-color: color-mix(in srgb, var(--color-error, #ff453a) 35%, transparent);
+  background: var(--color-error-surface);
+  color: var(--color-error);
 }
 
 .level-badge--error {
-  background: color-mix(in srgb, var(--color-warning, #ff9f0a) 20%, transparent);
-  color: var(--color-warning, #ff9f0a);
-  border-color: color-mix(in srgb, var(--color-warning, #ff9f0a) 35%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning-text);
 }
 
 .level-badge--warning {
-  background: var(--color-gray-100, #f2f2f7);
+  background: var(--color-gray-100);
   color: var(--color-text-secondary);
 }
 
