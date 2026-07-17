@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
 import { useAppConfig } from './hooks/useAppConfig'
+import { useAttentionStatus } from './hooks/useAttentionStatus'
 import { useAppTabHashSync } from './hooks/useAppTabHashSync'
 import { parseAppHash } from './routing/appHashRouting'
 import { EventsPanel } from './panels/events/EventsPanel'
@@ -65,6 +66,13 @@ export default function App() {
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setAppErr)
+  const attention = useAttentionStatus()
+
+  // タブに出すアテンションドット。概要=直近24hの要注意イベント、通知履歴=firing 中のアラート
+  const tabAttention: Partial<Record<MainTabId, boolean>> = {
+    summary: (attention?.notable_events_last_24h ?? 0) > 0,
+    alerts: (attention?.firing_alerts ?? 0) > 0,
+  }
 
   useEffect(() => {
     if (tab !== 'metrics') {
@@ -261,6 +269,11 @@ export default function App() {
               <span className="tab-button__inner">
                 <MainTabIcon tabId={t.id} />
                 <span className="tab-button__label">{t.label}</span>
+                {tabAttention[t.id] && (
+                  <span className="tab-attention-dot" title="要注意の項目があります">
+                    <span className="visually-hidden">（要注意あり）</span>
+                  </span>
+                )}
               </span>
             </button>
           ))}

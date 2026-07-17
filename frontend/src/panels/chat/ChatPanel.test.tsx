@@ -761,6 +761,11 @@ describe(
     await waitFor(() => {
       expect(sentEnableWebSearch).toEqual([false])
     })
+    // 応答処理が終わるまでトグルは disabled のため、ここで待たないとクリックが無視されて
+    // 2 通目が false のまま送られることがある（フレーク対策）
+    await waitFor(() => {
+      expect(toggle).not.toBeDisabled()
+    })
 
     fireEvent.click(toggle)
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {

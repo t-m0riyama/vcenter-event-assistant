@@ -6,7 +6,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, EventTypeGuide, MetricSample
+from vcenter_event_assistant.db.models import (
+    AlertRule,
+    AlertState,
+    EventRecord,
+    EventScoreRule,
+    EventTypeGuide,
+    MetricSample,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.rules.notable import final_notable_score
 
@@ -440,6 +447,78 @@ async def test_top_notable_events_respects_top_notable_min_score_query(client: A
     top0 = resp_min0.json()["top_notable_events"]
     scores = [row["notable_score"] for row in top0]
     assert 50 in scores and 0 in scores
+
+
+@pytest.mark.asyncio
+async def test_attention_counts_notables_and_enabled_firing_alerts(client: AsyncClient) -> None:
+    """attention は要注意イベント（24h・score>=40）と有効ルールの firing のみ数える。"""
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "dash-attention",
+            "host": "vc-attn.example",
+            "port": 443,
+            "username": "u",
+            "password": "p",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 201
+    vid = uuid.UUID(r.json()["id"])
+    base = datetime.now(timezone.utc)
+
+    async with session_scope() as session:
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="AttnHigh",
+                message="m",
+                vmware_key=1,
+                notable_score=60,
+            )
+        )
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base,
+                event_type="AttnLow",
+                message="m",
+                vmware_key=2,
+                notable_score=10,
+            )
+        )
+        # 25 時間前の高スコアは対象外
+        session.add(
+            EventRecord(
+                vcenter_id=vid,
+                occurred_at=base - timedelta(hours=25),
+                event_type="AttnStale",
+                message="m",
+                vmware_key=3,
+                notable_score=90,
+            )
+        )
+        rule_on = AlertRule(name="attn-rule-on", rule_type="event_score", is_enabled=True)
+        rule_off = AlertRule(name="attn-rule-off", rule_type="event_score", is_enabled=False)
+        session.add_all([rule_on, rule_off])
+        await session.flush()
+        session.add(
+            AlertState(rule_id=rule_on.id, state="firing", context_key="ctx-a", fired_at=base)
+        )
+        session.add(
+            AlertState(rule_id=rule_on.id, state="resolved", context_key="ctx-b", fired_at=base)
+        )
+        # 無効ルールの firing は数えない
+        session.add(
+            AlertState(rule_id=rule_off.id, state="firing", context_key="ctx-c", fired_at=base)
+        )
+
+    resp = await client.get("/api/dashboard/attention")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["notable_events_last_24h"] == 1
+    assert body["firing_alerts"] == 1
 
 
 @pytest.mark.asyncio

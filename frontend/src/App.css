@@ -180,6 +180,29 @@
   height: 16px;
 }
 
+/** タブのアテンションドット（要注意イベント・firing アラートがあるとき） */
+.tab-attention-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 22%, transparent);
+}
+
+/** スクリーンリーダー向けの不可視テキスト */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .tabs button:hover {
   background: var(--color-background-secondary);
 }

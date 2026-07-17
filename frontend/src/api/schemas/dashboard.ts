@@ -24,6 +24,14 @@ export const topEventTypeRowSchema = z.object({
 
 export type TopEventTypeRow = z.infer<typeof topEventTypeRowSchema>
 
+/** タブのアテンションドット用の軽量サマリ（GET /api/dashboard/attention）。 */
+export const dashboardAttentionSchema = z.object({
+  notable_events_last_24h: z.number(),
+  firing_alerts: z.number(),
+})
+
+export type DashboardAttention = z.infer<typeof dashboardAttentionSchema>
+
 export const summarySchema = z
   .object({
     vcenter_count: z.number(),
