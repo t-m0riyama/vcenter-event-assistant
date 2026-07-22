@@ -718,11 +718,13 @@ async def test_run_period_chat_web_search_appends_sources_block(
         *,
         config: object = None,
     ) -> tuple[str, list[WebSearchResult]]:
-        _ = model, lc_messages, provider, settings, config
+        captured["lc_messages"] = lc_messages
+        _ = model, provider, settings, config
         return "検索を踏まえた回答", [
             WebSearchResult(title="KB 9", url="https://example.com/kb9", snippet="")
         ]
 
+    captured: dict[str, object] = {}
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat.chat_llm.run_chat_with_web_search",
         _fake_web_search_run,
@@ -741,6 +743,12 @@ async def test_run_period_chat_web_search_appends_sources_block(
     assert "## WEB 検索の出典" in out
     assert "- [KB 9](https://example.com/kb9)" in out
     assert latency_ms is not None
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    assert isinstance(lc[0], SystemMessage)
+    assert "【WEB 検索ツール】" in str(lc[0].content)
+    assert "検索してよい例" in str(lc[0].content)
+    assert "検索しない例" in str(lc[0].content)
 
 
 @pytest.mark.asyncio
@@ -762,8 +770,10 @@ async def test_run_period_chat_web_search_ignored_without_provider(
     async def _spy_stream(
         model: object, messages: object, *, config: object = None
     ) -> tuple[str, int | None, float | None]:
+        captured["lc_messages"] = messages
         return "通常の回答", None, None
 
+    captured: dict[str, object] = {}
     monkeypatch.setattr(
         "vcenter_event_assistant.services.chat.chat_llm.stream_chat_to_text",
         _spy_stream,
@@ -779,3 +789,8 @@ async def test_run_period_chat_web_search_ignored_without_provider(
     )
     assert err is None
     assert out == "通常の回答"
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    assert isinstance(lc[0], SystemMessage)
+    assert lc[0].content == _CHAT_SYSTEM_PROMPT
+    assert "【WEB 検索ツール】" not in str(lc[0].content)

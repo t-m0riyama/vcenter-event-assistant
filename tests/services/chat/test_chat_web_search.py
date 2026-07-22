@@ -221,6 +221,19 @@ def _invocation(query: str) -> ToolInvocation:
     return ToolInvocation(tool_name="web_search", arguments={"query": query})
 
 
+def test_web_search_tool_docstring_covers_vmware_ops_scope() -> None:
+    """ツール説明は障害・イベントに限らず VMware 運用全般・関連製品を対象とする。"""
+    from vcenter_event_assistant.services.chat.chat_web_search import web_search
+
+    desc = web_search.__doc__ or ""
+    assert "障害" in desc
+    assert "ベストプラクティス" in desc
+    assert "設定手順" in desc
+    assert "NSX" in desc
+    assert "vSAN" in desc
+    assert "固有" in desc
+
+
 @pytest.mark.asyncio
 async def test_copilot_tool_executes_search_and_collects_sources() -> None:
     provider = _FakeProvider()
