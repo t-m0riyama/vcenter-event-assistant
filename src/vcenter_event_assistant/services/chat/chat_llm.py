@@ -19,6 +19,7 @@ from vcenter_event_assistant.services.chat.chat_incident_timeline import (
 from vcenter_event_assistant.services.chat.chat_llm_payload import (
     CHAT_SYSTEM_PROMPT,
     build_chat_llm_context,
+    compose_chat_system_prompt,
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import (
     PeriodMetricsPayload,
@@ -58,10 +59,15 @@ _logger = logging.getLogger(__name__)
 _CHAT_SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT
 
 
-def _to_langchain_messages(block: str, trimmed: list[ChatMessage]) -> list[BaseMessage]:
+def _to_langchain_messages(
+    block: str,
+    trimmed: list[ChatMessage],
+    *,
+    system_prompt: str | None = None,
+) -> list[BaseMessage]:
     """システム・コンテキスト JSON ブロック・会話履歴を LangChain メッセージ列に変換する。"""
     out: list[BaseMessage] = [
-        SystemMessage(content=CHAT_SYSTEM_PROMPT),
+        SystemMessage(content=system_prompt if system_prompt is not None else CHAT_SYSTEM_PROMPT),
         HumanMessage(content=block),
     ]
     for m in trimmed:
@@ -156,13 +162,17 @@ async def run_period_chat(
             s.llm_chat_max_input_tokens,
         )
         web_search_provider = build_search_provider(s) if enable_web_search else None
+        # ツールが実際にバインドされるときだけ検索指針をシステムプロンプトへ付与する
+        system_prompt = compose_chat_system_prompt(
+            enable_web_search=web_search_provider is not None
+        )
         web_sources: list[WebSearchResult] = []
         if cprof.provider == "copilot_cli":
             start_time = time.perf_counter()
             if web_search_provider is not None:
                 text, web_sources = await run_copilot_chat_with_web_search(
                     s,
-                    system_prompt=CHAT_SYSTEM_PROMPT,
+                    system_prompt=system_prompt,
                     block=block,
                     messages=trimmed,
                     provider=web_search_provider,
@@ -170,7 +180,7 @@ async def run_period_chat(
             else:
                 text = await run_copilot_cli_chat_completion(
                     s,
-                    system_prompt=CHAT_SYSTEM_PROMPT,
+                    system_prompt=system_prompt,
                     block=block,
                     messages=trimmed,
                 )
@@ -188,7 +198,9 @@ async def run_period_chat(
                     pass
         else:
             model = build_chat_model(s, purpose="chat", config=runnable_config)
-            lc_messages = _to_langchain_messages(block, trimmed)
+            lc_messages = _to_langchain_messages(
+                block, trimmed, system_prompt=system_prompt
+            )
             if web_search_provider is not None:
                 start_time = time.perf_counter()
                 text, web_sources = await run_chat_with_web_search(

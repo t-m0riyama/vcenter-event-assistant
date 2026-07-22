@@ -66,6 +66,29 @@ CHAT_SYSTEM_PROMPT = (
     "- ホスト名や識別子に括弧で別名・補足を付けて二重に表現しない（同一ホストを短縮名と FQDN で対照しない）。\n"
 )
 
+# enable_web_search 時のみ CHAT_SYSTEM_PROMPT に連結する指針（ハードゲートは別途）。
+CHAT_WEB_SEARCH_GUIDANCE = (
+    "\n"
+    "【WEB 検索ツール】\n"
+    " web_search が利用可能です。VMware vSphere および関連製品（ESXi / vCenter / NSX / vSAN 等）の"
+    " 運用に関する一般情報（障害・イベントの原因と対処、KB・公式ドキュメント、設定手順、"
+    " ベストプラクティス、互換性・バージョン）を補うときに使ってください。\n"
+    "- 検索してよい例: 入力 JSON だけでは足りない一般的な手順・KB・互換性の確認が必要なとき。\n"
+    "- 検索しない例: 入力イベント JSON や会話コンテキストだけで答えられる要約・列挙・数値確認、"
+    " 環境固有の事実確認だけのとき。\n"
+    "- クエリには固有名・IP・匿名化トークンを含めないこと。\n"
+)
+
+
+def compose_chat_system_prompt(*, enable_web_search: bool = False) -> str:
+    """チャット用システムプロンプトを組み立てる。
+
+    ``enable_web_search`` が真のときだけ WEB 検索の利用指針を末尾に付ける。
+    """
+    if enable_web_search:
+        return CHAT_SYSTEM_PROMPT + CHAT_WEB_SEARCH_GUIDANCE
+    return CHAT_SYSTEM_PROMPT
+
 
 @lru_cache(maxsize=1)
 def _chat_token_encoding() -> tiktoken.Encoding:

@@ -10,7 +10,10 @@ from vcenter_event_assistant.api.schemas import ChatMessage
 from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
 from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelineColumn, IncidentTimelinePayload
 from vcenter_event_assistant.services.chat.chat_llm_payload import (
+    CHAT_SYSTEM_PROMPT,
+    CHAT_WEB_SEARCH_GUIDANCE,
     build_chat_llm_context,
+    compose_chat_system_prompt,
     fit_chat_payload_to_token_budget,
     prepare_chat_payload,
 )
@@ -34,6 +37,17 @@ def _minimal_ctx(**kwargs: object) -> DigestContext:
     }
     defaults.update(kwargs)
     return DigestContext(**defaults)  # type: ignore[arg-type]
+
+
+def test_compose_chat_system_prompt_appends_guidance_only_when_enabled() -> None:
+    base = compose_chat_system_prompt(enable_web_search=False)
+    with_search = compose_chat_system_prompt(enable_web_search=True)
+    assert base == CHAT_SYSTEM_PROMPT
+    assert "【WEB 検索ツール】" not in base
+    assert with_search == CHAT_SYSTEM_PROMPT + CHAT_WEB_SEARCH_GUIDANCE
+    assert "検索してよい例" in with_search
+    assert "検索しない例" in with_search
+    assert "NSX" in with_search
 
 
 def test_prepare_chat_payload_excludes_high_cpu_mem_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
