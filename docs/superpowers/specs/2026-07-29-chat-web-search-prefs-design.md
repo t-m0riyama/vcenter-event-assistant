@@ -105,14 +105,14 @@ Settings サブタブ `chat_samples`（ナビラベル「チャット」）を�
 
 実装の置き場:
 
-- `compose_chat_system_prompt(enable_web_search, scope=..., aggressiveness=...)` が指針文言を組み立て
-- `web_search` ツールの説明文も scope に応じて切替（積極度は主にシステム指針側）
-- 文言テーブルは `chat_llm_payload.py`（または隣接モジュール）に集約し、docstring 固定文字列だけに依存しない
+- `compose_chat_system_prompt(*, enable_web_search, scope=..., aggressiveness=...)` が指針文言を組み立てる
+- `web_search` ツール説明は **scope のみ** で切替（積極度はシステム指針側）。LangChain / Copilot の両経路で同じ説明文を使う
+- スコープ別・積極度別の文言テーブルは `chat_llm_payload.py` に集約する（クラス docstring 固定文字列には依存しない）
 
 ## ドキュメント
 
 - `docs/web-search-conditions.md` 経路 B: ユーザー指定の scope / aggressiveness を追記
-- 利用者ガイド（Settings「チャット」）に短く追記（既存ガイドがあれば）
+- チャット利用者ガイド（`docs/superpowers/specs` 配下の chat user guide、または README からリンクされるガイド）に Settings「チャット」の項目を短く追記。該当セクションが無ければ `web-search-conditions.md` へのリンク追加で足りる
 
 ## テスト
 
