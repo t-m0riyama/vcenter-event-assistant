@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
 import tiktoken
 
@@ -67,26 +67,100 @@ CHAT_SYSTEM_PROMPT = (
 )
 
 # enable_web_search 時のみ CHAT_SYSTEM_PROMPT に連結する指針（ハードゲートは別途）。
-CHAT_WEB_SEARCH_GUIDANCE = (
-    "\n"
-    "【WEB 検索ツール】\n"
-    " web_search が利用可能です。VMware vSphere および関連製品（ESXi / vCenter / NSX / vSAN 等）の"
-    " 運用に関する一般情報（障害・イベントの原因と対処、KB・公式ドキュメント、設定手順、"
-    " ベストプラクティス、互換性・バージョン）を補うときに使ってください。\n"
-    "- 検索してよい例: 入力 JSON だけでは足りない一般的な手順・KB・互換性の確認が必要なとき。\n"
-    "- 検索しない例: 入力イベント JSON や会話コンテキストだけで答えられる要約・列挙・数値確認、"
-    " 環境固有の事実確認だけのとき。\n"
-    "- クエリには固有名・IP・匿名化トークンを含めないこと。\n"
-)
+
+WebSearchScope = Literal["incidents", "vsphere_ops", "vmware_ecosystem"]
+WebSearchAggressiveness = Literal["conservative", "balanced", "aggressive"]
+
+DEFAULT_WEB_SEARCH_SCOPE: WebSearchScope = "vmware_ecosystem"
+DEFAULT_WEB_SEARCH_AGGRESSIVENESS: WebSearchAggressiveness = "balanced"
+
+_WEB_SEARCH_SCOPE_BLURBS: dict[WebSearchScope, str] = {
+    "incidents": (
+        "障害・イベントの原因と対処、および関連する KB・公式ドキュメント"
+    ),
+    "vsphere_ops": (
+        "障害・イベントの原因と対処、KB・公式ドキュメント、設定手順、"
+        "ベストプラクティス、互換性・バージョン（vSphere 運用全般）"
+    ),
+    "vmware_ecosystem": (
+        "障害・イベントの原因と対処、KB・公式ドキュメント、設定手順、"
+        "ベストプラクティス、互換性・バージョン、および ESXi / vCenter / NSX / vSAN "
+        "など関連製品の一般的な運用情報"
+    ),
+}
+
+_WEB_SEARCH_AGGRESSIVENESS_GUIDANCE: dict[WebSearchAggressiveness, str] = {
+    "conservative": (
+        "- 検索してよい例: 一般的な KB・手順が明確に必要で、入力 JSON や会話だけでは"
+        " 答えられないとき。\n"
+        "- 検索しない例: 入力イベント JSON や会話コンテキストで足りそうな要約・列挙・"
+        " 数値確認、環境固有の事実確認、推測で補える程度の一般知識。"
+    ),
+    "balanced": (
+        "- 検索してよい例: 入力 JSON だけでは足りない一般的な手順・KB・互換性の確認が"
+        " 必要なとき。\n"
+        "- 検索しない例: 入力イベント JSON や会話コンテキストだけで答えられる要約・列挙・"
+        " 数値確認、環境固有の事実確認だけのとき。"
+    ),
+    "aggressive": (
+        "- 検索してよい例: 一般知識・手順・KB で答えの質が上がりそうなとき"
+        "（設定手順・互換性・原因調査を含む）。\n"
+        "- 検索しない例: 入力 JSON の要約・件数やホストの単純列挙、環境固有の事実確認だけ"
+        " のとき。"
+    ),
+}
 
 
-def compose_chat_system_prompt(*, enable_web_search: bool = False) -> str:
+def web_search_tool_description(
+    scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
+) -> str:
+    """LLM に渡す ``web_search`` ツール説明（scope のみで切替）。"""
+    blurb = _WEB_SEARCH_SCOPE_BLURBS[scope]
+    return (
+        f"VMware / vSphere 関連の運用に関する一般情報を WEB 検索する。\n"
+        f"\n"
+        f"対象: {blurb}。\n"
+        f"\n"
+        f"クエリには固有のホスト名・IP アドレス・環境固有の識別子（匿名化トークンを含む）を"
+        f"含めず、製品名・イベント種別・エラーメッセージ等の汎用語のみを使うこと。"
+    )
+
+
+def compose_web_search_guidance(
+    *,
+    scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
+    aggressiveness: WebSearchAggressiveness = DEFAULT_WEB_SEARCH_AGGRESSIVENESS,
+) -> str:
+    """システムプロンプト末尾に付ける WEB 検索指針。"""
+    blurb = _WEB_SEARCH_SCOPE_BLURBS[scope]
+    tips = _WEB_SEARCH_AGGRESSIVENESS_GUIDANCE[aggressiveness]
+    return (
+        "\n"
+        "【WEB 検索ツール】\n"
+        f" web_search が利用可能です。対象は次のとおり: {blurb}。\n"
+        f"{tips}\n"
+        "- クエリには固有名・IP・匿名化トークンを含めないこと。\n"
+    )
+
+
+# 後方互換: 既定（vmware_ecosystem + balanced）の指針文言
+CHAT_WEB_SEARCH_GUIDANCE = compose_web_search_guidance()
+
+
+def compose_chat_system_prompt(
+    *,
+    enable_web_search: bool = False,
+    scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
+    aggressiveness: WebSearchAggressiveness = DEFAULT_WEB_SEARCH_AGGRESSIVENESS,
+) -> str:
     """チャット用システムプロンプトを組み立てる。
 
     ``enable_web_search`` が真のときだけ WEB 検索の利用指針を末尾に付ける。
     """
     if enable_web_search:
-        return CHAT_SYSTEM_PROMPT + CHAT_WEB_SEARCH_GUIDANCE
+        return CHAT_SYSTEM_PROMPT + compose_web_search_guidance(
+            scope=scope, aggressiveness=aggressiveness
+        )
     return CHAT_SYSTEM_PROMPT
 
 

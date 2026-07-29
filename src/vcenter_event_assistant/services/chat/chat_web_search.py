@@ -11,7 +11,6 @@ LLM が発行した検索クエリは外部送出前にサニタイズする（I
 
 from __future__ import annotations
 
-import inspect
 import logging
 from typing import Any
 
@@ -19,9 +18,15 @@ from copilot.tools import Tool, define_tool
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from vcenter_event_assistant.api.schemas import ChatMessage
+from vcenter_event_assistant.services.chat.chat_llm_payload import (
+    DEFAULT_WEB_SEARCH_SCOPE,
+    WebSearchScope,
+    web_search_tool_description,
+)
 from vcenter_event_assistant.services.llm.copilot_cli_llm import (
     run_copilot_cli_chat_completion,
 )
@@ -43,18 +48,25 @@ WEB_SEARCH_SOURCES_HEADING = "## WEB 検索の出典"
 
 
 class web_search(BaseModel):  # noqa: N801 - クラス名がそのままツール名として LLM に渡る
-    """VMware vSphere / 関連製品の運用に関する一般情報を WEB 検索する。
+    """VMware / vSphere 関連の運用に関する一般情報を WEB 検索する（フォールバック説明）。
 
-    対象の例: 障害・イベントの原因と対処、KB・公式ドキュメント、設定手順、
-    ベストプラクティス、互換性・バージョン情報、および ESXi / vCenter / NSX / vSAN
-    など関連製品の一般的な運用情報。
-
+    実行時の説明文は ``web_search_tool_description(scope)`` で上書きする。
     クエリには固有のホスト名・IP アドレス・環境固有の識別子（匿名化トークンを含む）を
     含めず、製品名・イベント種別・エラーメッセージ等の汎用語のみを使うこと。
     """
 
     query: str = Field(
         description="検索クエリ（汎用語のみ。固有名・IP・トークンを含めない）"
+    )
+
+
+def _structured_web_search_tool(scope: WebSearchScope) -> StructuredTool:
+    """LangChain ``bind_tools`` 用。説明文だけ scope で切替する。"""
+    return StructuredTool.from_function(
+        func=lambda query: "",
+        name="web_search",
+        description=web_search_tool_description(scope),
+        args_schema=web_search,
     )
 
 
@@ -141,6 +153,7 @@ async def run_chat_with_web_search(
     provider: SearchProvider,
     settings: Settings,
     *,
+    scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
     config: RunnableConfig | None = None,
 ) -> tuple[str, list[WebSearchResult]]:
     """WEB 検索ツールを提供して LLM を呼び、最終応答と使用した出典を返す。
@@ -149,7 +162,7 @@ async def run_chat_with_web_search(
     「既知の情報で回答」を返して最終応答を促す。検索失敗はツール応答として
     LLM に伝え、応答生成自体は継続する。
     """
-    bound = model.bind_tools([web_search])
+    bound = model.bind_tools([_structured_web_search_tool(scope)])
     messages: list[BaseMessage] = list(lc_messages)
     sources: list[WebSearchResult] = []
     searches_used = 0
@@ -209,6 +222,8 @@ def build_copilot_web_search_tool(
     provider: SearchProvider,
     settings: Settings,
     sources: list[WebSearchResult],
+    *,
+    scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
 ) -> Tool:
     """copilot_cli セッションに登録する ``web_search`` カスタムツールを構築する。
 
@@ -237,7 +252,7 @@ def build_copilot_web_search_tool(
 
     return define_tool(
         "web_search",
-        description=inspect.cleandoc(web_search.__doc__ or ""),
+        description=web_search_tool_description(scope),
         handler=lambda params, _inv: _handle(params),
         params_type=web_search,
         skip_permission=True,
@@ -251,6 +266,7 @@ async def run_copilot_chat_with_web_search(
     block: str,
     messages: list[ChatMessage],
     provider: SearchProvider,
+    scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
 ) -> tuple[str, list[WebSearchResult]]:
     """copilot_cli 経路で WEB 検索ツールを提供してチャット応答と出典を返す。
 
@@ -259,7 +275,7 @@ async def run_copilot_chat_with_web_search(
     検索なしで応答生成を継続する（``copilot_cli_llm`` 側の失敗分離）。
     """
     sources: list[WebSearchResult] = []
-    tool = build_copilot_web_search_tool(provider, settings, sources)
+    tool = build_copilot_web_search_tool(provider, settings, sources, scope=scope)
     text = await run_copilot_cli_chat_completion(
         settings,
         system_prompt=system_prompt,

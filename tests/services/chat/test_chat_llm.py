@@ -716,9 +716,11 @@ async def test_run_period_chat_web_search_appends_sources_block(
         provider: object,
         settings: object,
         *,
+        scope: object = None,
         config: object = None,
     ) -> tuple[str, list[WebSearchResult]]:
         captured["lc_messages"] = lc_messages
+        captured["scope"] = scope
         _ = model, provider, settings, config
         return "検索を踏まえた回答", [
             WebSearchResult(title="KB 9", url="https://example.com/kb9", snippet="")
@@ -737,18 +739,21 @@ async def test_run_period_chat_web_search_appends_sources_block(
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="この障害を調べて")],
         enable_web_search=True,
+        web_search_scope="incidents",
+        web_search_aggressiveness="conservative",
     )
     assert err is None
     assert out.startswith("検索を踏まえた回答")
     assert "## WEB 検索の出典" in out
     assert "- [KB 9](https://example.com/kb9)" in out
     assert latency_ms is not None
+    assert captured.get("scope") == "incidents"
     lc = captured["lc_messages"]
     assert isinstance(lc, list)
     assert isinstance(lc[0], SystemMessage)
     assert "【WEB 検索ツール】" in str(lc[0].content)
-    assert "検索してよい例" in str(lc[0].content)
-    assert "検索しない例" in str(lc[0].content)
+    assert "明確に必要" in str(lc[0].content)
+    assert "NSX" not in str(lc[0].content)
 
 
 @pytest.mark.asyncio

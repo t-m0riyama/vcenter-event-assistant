@@ -14,8 +14,10 @@ from vcenter_event_assistant.services.chat.chat_llm_payload import (
     CHAT_WEB_SEARCH_GUIDANCE,
     build_chat_llm_context,
     compose_chat_system_prompt,
+    compose_web_search_guidance,
     fit_chat_payload_to_token_budget,
     prepare_chat_payload,
+    web_search_tool_description,
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest.digest_context import DigestContext, DigestNotableEventGroup
@@ -48,6 +50,33 @@ def test_compose_chat_system_prompt_appends_guidance_only_when_enabled() -> None
     assert "検索してよい例" in with_search
     assert "検索しない例" in with_search
     assert "NSX" in with_search
+
+
+def test_compose_chat_system_prompt_varies_by_scope_and_aggressiveness() -> None:
+    incidents = compose_chat_system_prompt(
+        enable_web_search=True, scope="incidents", aggressiveness="conservative"
+    )
+    ecosystem = compose_chat_system_prompt(
+        enable_web_search=True, scope="vmware_ecosystem", aggressiveness="aggressive"
+    )
+    assert "障害・イベント" in incidents
+    assert "NSX" not in incidents
+    assert "明確に必要" in incidents
+    assert "NSX" in ecosystem
+    assert "答えの質が上がりそう" in ecosystem
+    assert incidents != ecosystem
+
+
+def test_web_search_tool_description_varies_by_scope() -> None:
+    incidents = web_search_tool_description("incidents")
+    ops = web_search_tool_description("vsphere_ops")
+    eco = web_search_tool_description("vmware_ecosystem")
+    assert "障害・イベント" in incidents
+    assert "NSX" not in incidents
+    assert "設定手順" in ops
+    assert "NSX" in eco
+    assert "固有" in eco
+    assert compose_web_search_guidance() == CHAT_WEB_SEARCH_GUIDANCE
 
 
 def test_prepare_chat_payload_excludes_high_cpu_mem_hosts(monkeypatch: pytest.MonkeyPatch) -> None:

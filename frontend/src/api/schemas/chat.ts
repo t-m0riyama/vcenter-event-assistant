@@ -36,6 +36,10 @@ export const chatRequestSchema = z.object({
   include_research: z.boolean().optional(),
   /** 真のときこのメッセージの応答生成で LLM に WEB 検索ツールを許可（既定 false） */
   enable_web_search: z.boolean().optional(),
+  /** WEB 検索の対象範囲（enable_web_search 真のとき有効。省略時サーバ既定） */
+  web_search_scope: z.enum(['incidents', 'vsphere_ops', 'vmware_ecosystem']).optional(),
+  /** WEB 検索の積極度（enable_web_search 真のとき有効。省略時サーバ既定） */
+  web_search_aggressiveness: z.enum(['conservative', 'balanced', 'aggressive']).optional(),
 })
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>
