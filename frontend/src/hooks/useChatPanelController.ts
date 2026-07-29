@@ -18,6 +18,7 @@ import { useTimeZone } from '../datetime/useTimeZone'
 import { useRollingZonedRangeParts } from './useRollingZonedRangeParts'
 import { readStoredChatMaxStoredMessages } from '../preferences/chatMaxStoredMessagesStorage'
 import { useChatMaxStoredMessages } from '../preferences/useChatMaxStoredMessages'
+import { useChatWebSearchPrefs } from '../preferences/useChatWebSearchPrefs'
 import {
   CHAT_LLM_CONTEXT_MAX_MESSAGES,
   clearChatPanelSnapshot,
@@ -39,6 +40,7 @@ const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
 export function useChatPanelController(onError: (e: string | null) => void) {
   const { timeZone } = useTimeZone()
   const { chatMaxStoredMessages } = useChatMaxStoredMessages()
+  const { prefs: webSearchPrefs } = useChatWebSearchPrefs()
   const thresholdFields = usePeriodMetricThresholdFields()
 
   const { rangeParts, setRangeParts } = useRollingZonedRangeParts(timeZone)
@@ -191,6 +193,12 @@ export function useChatPanelController(onError: (e: string | null) => void) {
             },
           }),
           enable_web_search: webSearchAvailable && enableWebSearch,
+          ...(webSearchAvailable && enableWebSearch
+            ? {
+                web_search_scope: webSearchPrefs.scope,
+                web_search_aggressiveness: webSearchPrefs.aggressiveness,
+              }
+            : {}),
           messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES).map(
             ({ role, content, created_at, latency_ms, token_per_sec }) => ({
               role,
@@ -213,6 +221,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       includePeriodMetricsNetworkIo,
       enableWebSearch,
       webSearchAvailable,
+      webSearchPrefs.scope,
+      webSearchPrefs.aggressiveness,
       thresholdFields.metricThresholdCpuPct,
       thresholdFields.metricThresholdMemoryPct,
       thresholdFields.metricThresholdDiskPct,

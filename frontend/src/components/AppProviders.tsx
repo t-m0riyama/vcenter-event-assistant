@@ -3,6 +3,7 @@ import { TimeZoneProvider } from '../datetime/TimeZoneProvider'
 import { AutoRefreshPreferencesProvider } from '../preferences/AutoRefreshPreferencesProvider'
 import { ChatMaxStoredMessagesProvider } from '../preferences/ChatMaxStoredMessagesProvider'
 import { ChatSamplePromptsProvider } from '../preferences/ChatSamplePromptsProvider'
+import { ChatWebSearchPrefsProvider } from '../preferences/ChatWebSearchPrefsProvider'
 import { SummaryTopNotableMinScoreProvider } from '../preferences/SummaryTopNotableMinScoreProvider'
 import { ThemeProvider } from '../theme/ThemeProvider'
 
@@ -14,7 +15,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <AutoRefreshPreferencesProvider>
           <SummaryTopNotableMinScoreProvider>
             <ChatMaxStoredMessagesProvider>
-              <ChatSamplePromptsProvider>{children}</ChatSamplePromptsProvider>
+              <ChatWebSearchPrefsProvider>
+                <ChatSamplePromptsProvider>{children}</ChatSamplePromptsProvider>
+              </ChatWebSearchPrefsProvider>
             </ChatMaxStoredMessagesProvider>
           </SummaryTopNotableMinScoreProvider>
         </AutoRefreshPreferencesProvider>

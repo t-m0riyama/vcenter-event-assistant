@@ -6,6 +6,7 @@ import { useAppTabHashSync } from './hooks/useAppTabHashSync'
 import { parseAppHash } from './routing/appHashRouting'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
+import { ChatWebSearchPrefsPanel } from './panels/settings/ChatWebSearchPrefsPanel'
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
@@ -216,8 +217,13 @@ export default function App() {
       {
         id: 'chat_samples',
         label: 'チャット',
-        panelLabel: 'チャットサンプル',
-        render: (onError) => <ChatSamplePromptsPanel onError={onError} />,
+        panelLabel: 'チャット設定',
+        render: (onError) => (
+          <>
+            <ChatWebSearchPrefsPanel />
+            <ChatSamplePromptsPanel onError={onError} />
+          </>
+        ),
       },
     ],
     [],

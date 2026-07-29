@@ -11,11 +11,16 @@ import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { CHAT_MAX_STORED_MESSAGES_STORAGE_KEY } from '../../preferences/chatMaxStoredMessagesStorage'
 import { ChatMaxStoredMessagesProvider } from '../../preferences/ChatMaxStoredMessagesProvider'
 import { ChatSamplePromptsProvider } from '../../preferences/ChatSamplePromptsProvider'
+import { ChatWebSearchPrefsProvider } from '../../preferences/ChatWebSearchPrefsProvider'
 import { CHAT_PANEL_STORAGE_KEY, writeChatPanelSnapshot } from '../../preferences/chatPanelStorage'
 import {
   CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY,
   CHAT_SAMPLE_PROMPTS_STORAGE_KEY,
 } from '../../preferences/chatSamplePromptsStorage'
+import {
+  CHAT_WEB_SEARCH_PREFS_STORAGE_KEY,
+  writeStoredChatWebSearchPrefs,
+} from '../../preferences/chatWebSearchPrefsStorage'
 import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
@@ -35,9 +40,11 @@ function renderChat(onError: (e: string | null) => void = vi.fn()) {
   return render(
     <TimeZoneProvider>
       <ChatMaxStoredMessagesProvider>
-        <ChatSamplePromptsProvider>
-          <ChatPanel onError={onError} />
-        </ChatSamplePromptsProvider>
+        <ChatWebSearchPrefsProvider>
+          <ChatSamplePromptsProvider>
+            <ChatPanel onError={onError} />
+          </ChatSamplePromptsProvider>
+        </ChatWebSearchPrefsProvider>
       </ChatMaxStoredMessagesProvider>
     </TimeZoneProvider>,
   )
@@ -122,6 +129,7 @@ describe(
   beforeEach(() => {
     localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
+    localStorage.removeItem(CHAT_WEB_SEARCH_PREFS_STORAGE_KEY)
   })
 
   afterEach(() => {
@@ -131,6 +139,7 @@ describe(
     localStorage.removeItem(CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY)
     localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
+    localStorage.removeItem(CHAT_WEB_SEARCH_PREFS_STORAGE_KEY)
   })
 
   it(
@@ -725,7 +734,12 @@ describe(
   })
 
   it('WEB 検索トグルはサーバが利用可能なときだけ表示し、ON で enable_web_search: true を送る', async () => {
-    const sentEnableWebSearch: (boolean | undefined)[] = []
+    writeStoredChatWebSearchPrefs({ scope: 'incidents', aggressiveness: 'aggressive' })
+    const sentBodies: {
+      enable_web_search?: boolean
+      web_search_scope?: string
+      web_search_aggressiveness?: string
+    }[] = []
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -742,8 +756,12 @@ describe(
         )
       }
       if (url.endsWith('/api/chat') && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as { enable_web_search?: boolean }
-        sentEnableWebSearch.push(body.enable_web_search)
+        const body = JSON.parse(String(init.body)) as {
+          enable_web_search?: boolean
+          web_search_scope?: string
+          web_search_aggressiveness?: string
+        }
+        sentBodies.push(body)
         return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -759,8 +777,10 @@ describe(
     })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     await waitFor(() => {
-      expect(sentEnableWebSearch).toEqual([false])
+      expect(sentBodies).toHaveLength(1)
     })
+    expect(sentBodies[0]?.enable_web_search).toBe(false)
+    expect(sentBodies[0]).not.toHaveProperty('web_search_scope')
     // 応答処理が終わるまでトグルは disabled のため、ここで待たないとクリックが無視されて
     // 2 通目が false のまま送られることがある（フレーク対策）
     await waitFor(() => {
@@ -773,8 +793,11 @@ describe(
     })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     await waitFor(() => {
-      expect(sentEnableWebSearch).toEqual([false, true])
+      expect(sentBodies).toHaveLength(2)
     })
+    expect(sentBodies[1]?.enable_web_search).toBe(true)
+    expect(sentBodies[1]?.web_search_scope).toBe('incidents')
+    expect(sentBodies[1]?.web_search_aggressiveness).toBe('aggressive')
   })
 
   it('WEB 検索が利用不可（config 取得失敗含む）ならトグルを表示しない', async () => {
