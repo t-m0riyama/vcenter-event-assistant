@@ -59,6 +59,20 @@ class ChatRequest(BaseModel):
             "検索プロバイダ未構成では無視される（検索なしで応答）"
         ),
     )
+    web_search_scope: Literal["incidents", "vsphere_ops", "vmware_ecosystem"] = Field(
+        default="vmware_ecosystem",
+        description=(
+            "WEB 検索ツールの対象範囲。"
+            "enable_web_search が偽、または検索プロバイダ未構成のときは無視される。"
+        ),
+    )
+    web_search_aggressiveness: Literal["conservative", "balanced", "aggressive"] = Field(
+        default="balanced",
+        description=(
+            "WEB 検索をどの程度積極的に使うかの指針。"
+            "enable_web_search が偽、または検索プロバイダ未構成のときは無視される。"
+        ),
+    )
 
     @model_validator(mode="after")
     def last_message_is_user(self) -> ChatRequest:

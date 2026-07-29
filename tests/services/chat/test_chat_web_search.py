@@ -222,15 +222,28 @@ def _invocation(query: str) -> ToolInvocation:
 
 
 def test_web_search_tool_docstring_covers_vmware_ops_scope() -> None:
-    """ツール説明は障害・イベントに限らず VMware 運用全般・関連製品を対象とする。"""
-    from vcenter_event_assistant.services.chat.chat_web_search import web_search
+    """既定 scope のツール説明は VMware 運用全般・関連製品を対象とする。"""
+    from vcenter_event_assistant.services.chat.chat_llm_payload import (
+        web_search_tool_description,
+    )
 
-    desc = web_search.__doc__ or ""
+    desc = web_search_tool_description("vmware_ecosystem")
     assert "障害" in desc
     assert "ベストプラクティス" in desc
     assert "設定手順" in desc
     assert "NSX" in desc
     assert "vSAN" in desc
+    assert "固有" in desc
+
+
+def test_web_search_tool_description_incidents_is_narrower() -> None:
+    from vcenter_event_assistant.services.chat.chat_llm_payload import (
+        web_search_tool_description,
+    )
+
+    desc = web_search_tool_description("incidents")
+    assert "障害" in desc
+    assert "NSX" not in desc
     assert "固有" in desc
 
 

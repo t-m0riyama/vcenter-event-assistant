@@ -18,6 +18,10 @@ from vcenter_event_assistant.services.chat.chat_incident_timeline import (
 )
 from vcenter_event_assistant.services.chat.chat_llm_payload import (
     CHAT_SYSTEM_PROMPT,
+    DEFAULT_WEB_SEARCH_AGGRESSIVENESS,
+    DEFAULT_WEB_SEARCH_SCOPE,
+    WebSearchAggressiveness,
+    WebSearchScope,
     build_chat_llm_context,
     compose_chat_system_prompt,
 )
@@ -117,6 +121,8 @@ async def run_period_chat(
     extra_vcenter_strings: Sequence[str] | None = None,
     settings: Settings | None = None,
     enable_web_search: bool = False,
+    web_search_scope: WebSearchScope = DEFAULT_WEB_SEARCH_SCOPE,
+    web_search_aggressiveness: WebSearchAggressiveness = DEFAULT_WEB_SEARCH_AGGRESSIVENESS,
 ) -> tuple[str, str | None, ChatLlmContextMeta | None, int | None, float | None]:
     """
     集約 JSON と会話履歴を渡して LLM の応答本文を返す。
@@ -164,7 +170,9 @@ async def run_period_chat(
         web_search_provider = build_search_provider(s) if enable_web_search else None
         # ツールが実際にバインドされるときだけ検索指針をシステムプロンプトへ付与する
         system_prompt = compose_chat_system_prompt(
-            enable_web_search=web_search_provider is not None
+            enable_web_search=web_search_provider is not None,
+            scope=web_search_scope,
+            aggressiveness=web_search_aggressiveness,
         )
         web_sources: list[WebSearchResult] = []
         if cprof.provider == "copilot_cli":
@@ -176,6 +184,7 @@ async def run_period_chat(
                     block=block,
                     messages=trimmed,
                     provider=web_search_provider,
+                    scope=web_search_scope,
                 )
             else:
                 text = await run_copilot_cli_chat_completion(
@@ -208,6 +217,7 @@ async def run_period_chat(
                     lc_messages,
                     web_search_provider,
                     s,
+                    scope=web_search_scope,
                     config=runnable_config,
                 )
                 latency_ms = int((time.perf_counter() - start_time) * 1000)

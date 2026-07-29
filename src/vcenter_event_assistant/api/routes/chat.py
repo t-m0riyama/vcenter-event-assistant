@@ -66,6 +66,8 @@ async def post_chat(
         extra_vcenter_strings=vc_anon,
         settings=settings,
         enable_web_search=body.enable_web_search,
+        web_search_scope=body.web_search_scope,
+        web_search_aggressiveness=body.web_search_aggressiveness,
     )
 
     # 関連調査情報は LLM 応答の後にサーバ側で連結する（LLM プロンプトには混ぜない）。

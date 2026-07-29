@@ -632,7 +632,27 @@ async def test_post_chat_passes_enable_web_search_to_llm(
     r = await client.post("/api/chat", json=_chat_body(enable_web_search=True))
     assert r.status_code == 200
     assert captured.get("enable_web_search") is True
+    assert captured.get("web_search_scope") == "vmware_ecosystem"
+    assert captured.get("web_search_aggressiveness") == "balanced"
+
+    r = await client.post(
+        "/api/chat",
+        json=_chat_body(
+            enable_web_search=True,
+            web_search_scope="incidents",
+            web_search_aggressiveness="aggressive",
+        ),
+    )
+    assert r.status_code == 200
+    assert captured.get("web_search_scope") == "incidents"
+    assert captured.get("web_search_aggressiveness") == "aggressive"
 
     r = await client.post("/api/chat", json=_chat_body())
     assert r.status_code == 200
     assert captured.get("enable_web_search") is False
+
+    bad = await client.post(
+        "/api/chat",
+        json=_chat_body(enable_web_search=True, web_search_scope="unknown"),
+    )
+    assert bad.status_code == 422
