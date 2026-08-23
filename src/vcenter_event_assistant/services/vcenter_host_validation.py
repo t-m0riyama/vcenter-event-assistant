@@ -111,6 +111,10 @@ def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = Non
     except ValueError:
         pass
     else:
+        if suffixes:
+            raise ValueError(
+                "IP literals are not allowed when VCENTER_ALLOWED_HOST_SUFFIXES is configured; use an FQDN"
+            )
         if _is_blocked_ip(ip):
             raise ValueError(
                 "host resolves to a blocked IP range (private, loopback, link-local, or metadata)"

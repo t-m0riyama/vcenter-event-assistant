@@ -31,6 +31,11 @@ def test_rejects_localhost_hostname() -> None:
         validate_vcenter_host("localhost")
 
 
+def test_rejects_public_ip_when_suffix_allowlist_configured() -> None:
+    with pytest.raises(ValueError, match="IP literals are not allowed"):
+        validate_vcenter_host("8.8.8.8", allowed_suffixes=[".corp.local"])
+
+
 def test_suffix_allowlist() -> None:
     with pytest.raises(ValueError, match="not allowed"):
         validate_vcenter_host("evil.example.com", allowed_suffixes=[".corp.local"])
