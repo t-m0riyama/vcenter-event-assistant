@@ -1,10 +1,13 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
+from vcenter_event_assistant.api.import_guards import reject_empty_destructive_import
 from vcenter_event_assistant.api.schemas import (
     AlertRuleRead, AlertRuleCreate, AlertRuleUpdate,
     AlertHistoryListResponse, AlertHistoryRead, AlertRulesImportRequest,
@@ -134,6 +137,11 @@ async def import_alert_rules(
             existing.config = imported_rule.config
 
     if body.delete_rules_not_in_import:
+        reject_empty_destructive_import(
+            item_count=len(body.rules),
+            delete_not_in_import=True,
+            resource_label="alert rules",
+        )
         names = set(names_in_file)
         if not names:
             await session.execute(delete(AlertRule))
@@ -173,9 +181,9 @@ def _history_item_to_read(
 
 @router.get("/history", response_model=AlertHistoryListResponse)
 async def list_alert_history(
-    limit: int = 50,
-    offset: int = 0,
-    session: AsyncSession = Depends(get_session)
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session: AsyncSession = Depends(get_session),
 ):
     # 合計件数
     count_res = await session.execute(select(func.count(AlertHistory.id)))

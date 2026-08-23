@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from vcenter_event_assistant.services.chat.chat_incident_timeline import (
@@ -78,6 +78,20 @@ class ChatRequest(BaseModel):
     def last_message_is_user(self) -> ChatRequest:
         if self.messages[-1].role != "user":
             raise ValueError("最後のメッセージは user である必要があります")
+        return self
+
+    @model_validator(mode="after")
+    def validate_time_span(self) -> ChatRequest:
+        ft = self.from_time
+        tt = self.to_time
+        if ft.tzinfo is None:
+            ft = ft.replace(tzinfo=timezone.utc)
+        if tt.tzinfo is None:
+            tt = tt.replace(tzinfo=timezone.utc)
+        if ft >= tt:
+            raise ValueError("from must be before to")
+        if tt - ft > timedelta(days=90):
+            raise ValueError("time range must not exceed 90 days")
         return self
 
 
