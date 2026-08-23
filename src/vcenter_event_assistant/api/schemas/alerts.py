@@ -15,6 +15,23 @@ class AlertRuleCreate(BaseModel):
     alert_level: Literal["critical", "error", "warning"]
     config: dict = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_config_for_rule_type(self) -> AlertRuleCreate:
+        cfg = self.config
+        if not isinstance(cfg, dict):
+            raise ValueError("config must be an object")
+        if self.rule_type == "metric_threshold":
+            if "metric_key" not in cfg or not isinstance(cfg.get("metric_key"), str) or not cfg["metric_key"].strip():
+                raise ValueError("metric_threshold config requires non-empty string metric_key")
+            if "threshold" not in cfg or not isinstance(cfg.get("threshold"), (int, float)):
+                raise ValueError("metric_threshold config requires numeric threshold")
+        elif self.rule_type == "event_score":
+            if "min_score" in cfg and not isinstance(cfg.get("min_score"), (int, float)):
+                raise ValueError("event_score config.min_score must be numeric when set")
+            if "event_type" in cfg and not isinstance(cfg.get("event_type"), str):
+                raise ValueError("event_score config.event_type must be a string when set")
+        return self
+
 
 class AlertRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
