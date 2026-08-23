@@ -328,7 +328,7 @@ class ResearchSettingsMixin(BaseModel):
     """WEB 調査（event_type 単位の原因・対処情報の検索と要約）設定。"""
 
     web_research_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "WEB 調査機能のマスタースイッチ（`WEB_RESEARCH_ENABLED`）。"
             "検索プロバイダの API キー未設定時は、この値に関わらず機能は無効。"
