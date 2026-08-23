@@ -52,6 +52,7 @@ worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレ
 | 収集・接続テスト | pyVmomi を呼ばず合成データを返す |
 | アラートメール | SMTP せずログへ出力し成功扱い |
 | LLM / WEB 検索 | 決定論的な固定応答（API キー不要） |
+| LangSmith | `MOCK_MODE` 中はトレーサを付けない（外部送信なし） |
 | `SCHEDULER_ENABLED` | 独立。`true` ならモック収集が定期実行、`false` ならシードのみ |
 
 ```bash

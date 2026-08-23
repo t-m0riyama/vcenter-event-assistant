@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -166,7 +167,6 @@ async def test_mock_mode_alert_notify_skips_smtp(
         mock_smtp.assert_not_called()
 
     assert summary.rules_enabled >= 1
-    # LoggingEmailChannel が INFO を出す（発火が無くてもチャネル自体は mock）
     assert evaluator.email_channel.__class__.__name__ == "LoggingEmailChannel"
 
 
@@ -176,3 +176,106 @@ async def test_mock_mode_seed_skipped_when_disabled() -> None:
     async with session_scope() as session:
         n_vc = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
     assert n_vc == 0
+
+
+@pytest.mark.asyncio
+async def test_mock_mode_digest_skips_copilot_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    from vcenter_event_assistant.services.digest.digest_context import DigestContext
+    from vcenter_event_assistant.services.digest.digest_llm import augment_digest_with_llm
+    from vcenter_event_assistant.settings import Settings
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        mock_mode=True,
+        llm_digest_provider="copilot_cli",
+        llm_digest_api_key=None,
+        scheduler_enabled=False,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.digest.digest_llm.require_settings",
+        lambda: s,
+    )
+
+    async def _boom(*_a: object, **_k: object) -> str:
+        raise AssertionError("copilot CLI must not run in MOCK_MODE")
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.llm.copilot_cli_llm.run_copilot_cli_digest_completion",
+        _boom,
+    )
+
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    ctx = DigestContext(
+        from_utc=t0,
+        to_utc=t0,
+        vcenter_count=0,
+        total_events=0,
+        notable_events_count=0,
+        top_notable_event_groups=[],
+        top_event_types=[],
+        high_cpu_hosts=[],
+        high_mem_hosts=[],
+    )
+    out, err = await augment_digest_with_llm(
+        context=ctx,
+        template_markdown="# テンプレ\n",
+        settings=s,
+    )
+    assert err is None
+    assert "モック" in out
+
+
+@pytest.mark.asyncio
+async def test_mock_mode_research_summary_skips_copilot_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from vcenter_event_assistant.services.research.research_service import _summarize_results
+    from vcenter_event_assistant.services.research.search_provider import WebSearchResult
+    from vcenter_event_assistant.settings import Settings
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        mock_mode=True,
+        llm_digest_provider="copilot_cli",
+        llm_digest_api_key=None,
+        scheduler_enabled=False,
+    )
+
+    async def _boom(*_a: object, **_k: object) -> str:
+        raise AssertionError("copilot CLI must not run in MOCK_MODE")
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.research.research_service.run_copilot_cli_digest_completion",
+        _boom,
+    )
+
+    summary, model, err = await _summarize_results(
+        "vim.event.MockDemoHostConnectionLostEvent",
+        [
+            WebSearchResult(
+                title="t",
+                url="https://example.com/x",
+                snippet="s",
+            )
+        ],
+        s,
+    )
+    assert err is None
+    assert summary is not None
+    assert "モック" in summary
+    assert model  # mock profile still exposes configured model id
+
+
+def test_mock_mode_disables_langsmith_tracer() -> None:
+    from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
+    from vcenter_event_assistant.settings import Settings
+
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        mock_mode=True,
+        langsmith_tracing_enabled=True,
+        langsmith_api_key="ls-test",
+        scheduler_enabled=False,
+    )
+    cfg = build_llm_runnable_config(s, run_kind="digest")
+    assert "callbacks" not in cfg
