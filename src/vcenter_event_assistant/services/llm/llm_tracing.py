@@ -43,7 +43,7 @@ def build_llm_runnable_config(
     out: RunnableConfig = {"tags": tags, "metadata": metadata}
 
     key = (settings.langsmith_api_key or "").strip()
-    if not settings.langsmith_tracing_enabled or not key:
+    if settings.mock_mode or not settings.langsmith_tracing_enabled or not key:
         return out
 
     client_kw: dict[str, str] = {"api_key": key}

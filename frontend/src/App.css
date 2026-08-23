@@ -33,6 +33,16 @@
   color: var(--color-text-secondary);
 }
 
+.mock-mode-banner {
+  margin: 0 0 var(--spacing-4);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+  background: var(--color-fill-secondary, #f2f2f7);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+}
+
 .help-toggle-button {
   display: inline-flex;
   align-items: center;

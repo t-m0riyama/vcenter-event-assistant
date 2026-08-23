@@ -22,6 +22,8 @@ export const appConfigSchema = z.object({
   perf_sample_interval_seconds: z.number(),
   /** チャットの WEB 検索（検索プロバイダ構成済み + 対応 LLM）が使えるか（旧サーバ互換で optional） */
   chat_web_search_available: z.boolean().optional(),
+  /** デモ・開発用モックモード（外部サービス非接続）。旧サーバ互換で optional */
+  mock_mode: z.boolean().optional(),
 })
 
 export type AppConfig = z.infer<typeof appConfigSchema>

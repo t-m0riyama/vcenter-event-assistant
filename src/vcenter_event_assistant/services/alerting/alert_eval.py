@@ -26,7 +26,9 @@ from vcenter_event_assistant.services.incident_timeline_snapshot import persist_
 from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
     NotificationDeliveryOutcome,
 )
-from vcenter_event_assistant.services.alerting.notification.email_channel import EmailChannel
+from vcenter_event_assistant.services.alerting.notification.channel_factory import (
+    build_notification_channel,
+)
 from vcenter_event_assistant.services.alerting.notification.renderer import NotificationRenderer
 from vcenter_event_assistant.settings import Settings
 
@@ -93,7 +95,7 @@ class AlertEvaluator:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self.renderer = NotificationRenderer(settings)
-        self.email_channel = EmailChannel(settings)
+        self.email_channel = build_notification_channel(settings)
         self._last_summary = AlertEvalSummary()
 
     async def evaluate_all(self) -> AlertEvalSummary:

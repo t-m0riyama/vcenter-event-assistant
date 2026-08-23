@@ -175,7 +175,7 @@ async def run_period_chat(
             aggressiveness=web_search_aggressiveness,
         )
         web_sources: list[WebSearchResult] = []
-        if cprof.provider == "copilot_cli":
+        if cprof.provider == "copilot_cli" and not s.mock_mode:
             start_time = time.perf_counter()
             if web_search_provider is not None:
                 text, web_sources = await run_copilot_chat_with_web_search(
