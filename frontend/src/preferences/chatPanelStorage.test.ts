@@ -63,6 +63,8 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
     const snap = minimalSnapshot({ draft: '下書き', vcenterId: 'vc-1' })
     expect(writeChatPanelSnapshot(snap, 200)).toBe(true)
     expect(readChatPanelSnapshot(200)).toEqual(snap)
+    // 共有端末向け: chat panel 状態は sessionStorage のみ（localStorage には書かない）
+    expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it('includeResearch を含む旧スナップショットも読める（後方互換・値は無視）', () => {
