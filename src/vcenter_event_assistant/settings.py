@@ -105,6 +105,8 @@ class AppLogSettingsMixin(BaseModel):
     cors_origins: str = Field(
         default="http://localhost:5173", description="Comma-separated origins"
     )
+    uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
+    uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
         default=None,
         description=(
