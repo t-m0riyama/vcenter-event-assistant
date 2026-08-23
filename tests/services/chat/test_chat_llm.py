@@ -703,6 +703,7 @@ async def test_run_period_chat_web_search_appends_sources_block(
         llm_digest_api_key="sk-test",
         llm_digest_provider="openai_compatible",
         tavily_api_key="tvly-test",
+        web_research_enabled=True,
     )
 
     monkeypatch.setattr(

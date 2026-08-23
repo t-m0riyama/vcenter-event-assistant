@@ -83,10 +83,10 @@ def test_sanitize_search_query_strips_ipv4() -> None:
 
 def test_chat_web_search_available_requires_provider() -> None:
     assert not chat_web_search_available(_settings())
-    assert chat_web_search_available(_settings(tavily_api_key="tvly-x"))
+    assert chat_web_search_available(_settings(tavily_api_key="tvly-x", web_research_enabled=True))
     # copilot_cli もカスタムツール経由で検索可能
     assert chat_web_search_available(
-        _settings(tavily_api_key="tvly-x", llm_chat_provider="copilot_cli")
+        _settings(tavily_api_key="tvly-x", llm_chat_provider="copilot_cli", web_research_enabled=True)
     )
     assert not chat_web_search_available(
         _settings(tavily_api_key="tvly-x", web_research_enabled=False)
