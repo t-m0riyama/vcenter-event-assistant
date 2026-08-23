@@ -90,7 +90,9 @@ UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/
 (cd frontend; npm run build); uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
 
 ```
-4. ブラウザで `http://localhost:8000` を開く。
+4. ブラウザで `http://localhost:8000` を開く。起動に成功すると概要タブが表示されます（下図は `MOCK_MODE=1` で取得した例。ヘッダ下にモックバナーが出ます）。
+
+![起動後の概要タブ](images/summary.png)
 
 ### 開発用途（フロントエンドの改修・HMR）（Vite 開発サーバー）
 
@@ -110,7 +112,13 @@ uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 
 cd frontend && npm install && npm run dev
 ```
 
-**ブラウザ**: 既定では `http://localhost:5173`（Vite が表示する URL でもよい）。`/api` と `/health` は開発サーバーが `http://127.0.0.1:8000` にプロキシする。フロントの npm スクリプト一覧は [docs/frontend.md](docs/frontend.md) を参照する。
+**ブラウザ**: 既定では `http://localhost:5173`（Vite が表示する URL でもよい）。`/api` と `/health` は開発サーバーが `http://127.0.0.1:8000` にプロキシする。フロントの npm スクリプト一覧は [frontend.md](frontend.md) を参照する。
+
+### 起動後の主な画面例
+
+下図は `MOCK_MODE=1`（デモ用 DB）で起動したときのキャプチャです。タブごとの説明と追加の画面例は [frontend.md](frontend.md) を参照してください。
+
+![グラフタブ](images/metrics.png)
 
 ### モックモード（外部サービスなしのデモ・開発）
 
@@ -125,6 +133,12 @@ DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 
 uv run vcenter-event-assistant
 ```
+
+起動に成功するとヘッダ付近にモックバナーが表示され、シード済みのデモイベントや登録済みの `mock-demo-vc` を確認できます。
+
+![モックモード時のイベントタブ](images/events.png)
+
+![モックモード時の vCenter 設定](images/settings-vcenters.png)
 
 実装詳細は [development.md](development.md#モックモードmock_mode1) を参照してください。
 
