@@ -64,9 +64,11 @@ describe('App error display', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(
+      const alert = screen.getByRole('alert')
+      expect(alert).toHaveTextContent(
         'リクエストに失敗しました。時間をおいて再度お試しください。',
       )
+      expect(alert.textContent).not.toContain('config fail')
     })
     expect(document.querySelector('.app-error-banner')).toBeInTheDocument()
   })
@@ -84,9 +86,11 @@ describe('App error display', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+      const alert = within(mainRegion()).getByRole('alert')
+      expect(alert).toHaveTextContent(
         'リクエストに失敗しました。時間をおいて再度お試しください。',
       )
+      expect(alert.textContent).not.toContain('bad')
     })
     expect(document.querySelector('.app-error-banner')).not.toBeInTheDocument()
   })
@@ -114,9 +118,11 @@ describe('App error display', () => {
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'イベント' }))
     await waitFor(() => {
-      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+      const alert = within(mainRegion()).getByRole('alert')
+      expect(alert).toHaveTextContent(
         'リクエストに失敗しました。時間をおいて再度お試しください。',
       )
+      expect(alert.textContent).not.toContain('no')
     })
   })
 
@@ -149,9 +155,11 @@ describe('App error display', () => {
       ),
     )
     await waitFor(() => {
-      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+      const alert = within(mainRegion()).getByRole('alert')
+      expect(alert).toHaveTextContent(
         'リクエストに失敗しました。時間をおいて再度お試しください。',
       )
+      expect(alert.textContent).not.toContain('vc fail')
     })
   })
 
@@ -196,9 +204,11 @@ describe('App error display', () => {
         { timeout: 10_000 },
       )
       await waitFor(() => {
-        expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+        const alert = within(mainRegion()).getByRole('alert')
+        expect(alert).toHaveTextContent(
           'リクエストに失敗しました。時間をおいて再度お試しください。',
         )
+        expect(alert.textContent).not.toContain('m err')
       })
     },
     20_000,
