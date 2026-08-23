@@ -32,3 +32,17 @@ async def test_chat_rejects_excessive_time_range(client: AsyncClient) -> None:
         },
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_rejects_excessive_time_range(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/incident-timeline",
+        json={
+            "from": "2020-01-01T00:00:00Z",
+            "to": "2026-01-01T00:00:00Z",
+        },
+    )
+    assert r.status_code == 422
+    detail = str(r.json().get("detail", ""))
+    assert "90" in detail
