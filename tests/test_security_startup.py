@@ -1,0 +1,51 @@
+"""起動時セキュリティ設定検証。"""
+
+from __future__ import annotations
+
+import pytest
+
+from vcenter_event_assistant.security_startup import (
+    SecurityConfigurationError,
+    validate_startup_settings,
+)
+from vcenter_event_assistant.settings import Settings
+
+
+def test_production_requires_secret_key() -> None:
+    settings = Settings(
+        app_env="production",
+        database_url="sqlite+aiosqlite:///:memory:",
+        vea_secret_key=None,
+    )
+    with pytest.raises(SecurityConfigurationError, match="VEA_SECRET_KEY"):
+        validate_startup_settings(settings)
+
+
+def test_production_rejects_mock_mode() -> None:
+    settings = Settings(
+        app_env="production",
+        database_url="sqlite+aiosqlite:///:memory:",
+        vea_secret_key="prod-secret",
+        mock_mode=True,
+    )
+    with pytest.raises(SecurityConfigurationError, match="MOCK_MODE"):
+        validate_startup_settings(settings)
+
+
+def test_production_rejects_weak_db_password() -> None:
+    settings = Settings(
+        app_env="production",
+        database_url="postgresql+asyncpg://vea:vea@postgres:5432/vcenter_event_assistant",
+        vea_secret_key="prod-secret",
+    )
+    with pytest.raises(SecurityConfigurationError, match="weak default password"):
+        validate_startup_settings(settings)
+
+
+def test_development_allows_missing_secret_with_plaintext_flag() -> None:
+    settings = Settings(
+        app_env="development",
+        database_url="sqlite+aiosqlite:///:memory:",
+        vea_allow_plaintext_passwords=True,
+    )
+    validate_startup_settings(settings)

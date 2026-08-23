@@ -17,7 +17,7 @@ os.environ["SCHEDULER_ENABLED"] = "false"
 os.environ["LLM_DIGEST_API_KEY"] = ""
 # .env の APP_LOG_FILE へ書かない（digest_llm の失敗系テストの WARNING が混ざるのを防ぐ）
 os.environ["APP_LOG_FILE"] = ""
-os.environ["UVICORN_LOG_FILE"] = ""
+os.environ["VEA_ALLOW_PLAINTEXT_PASSWORDS"] = "1"
 
 from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.main import create_app

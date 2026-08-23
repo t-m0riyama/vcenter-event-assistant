@@ -54,9 +54,9 @@ cp .env.example .env
 2. 利用する DB に合わせて、**テンプレートのいずれかを `docker-compose.yml` にコピー**する（このファイル名が Compose の既定である）。
    - **SQLite（単一コンテナ・名前付きボリューム）:** `cp docker-compose.sqlite.yml docker-compose.yml`
    - **PostgreSQL（`postgres` サービス付き）:** `cp docker-compose.postgres.yml docker-compose.yml` のうえ、`.env` に **`POSTGRES_PASSWORD`** を設定する（`postgres` コンテナと `app` の `DATABASE_URL` の両方で同じ値が使われる）。指定例は次のとおり。
-     - `.env` に 1 行追加する例: `POSTGRES_PASSWORD=changeme`
+     - `.env` に 1 行追加する例: `POSTGRES_PASSWORD=your-strong-password`
      - シェルで一時指定して起動する例: `POSTGRES_PASSWORD='your-secure-password' docker compose up --build`
-     - 省略時は compose テンプレートの既定 `vea` が使われる（開発・試用向け）。
+     - **未設定の場合は compose が起動に失敗する**（弱い既定パスワードを排除）。
      - パスワードに `@` や `:` などが含まれる場合は、URL 用に**エンコード**した値を `POSTGRES_PASSWORD` に渡すか、シンプルな文字列に変更すること。
 3. ビルドして起動する。
 

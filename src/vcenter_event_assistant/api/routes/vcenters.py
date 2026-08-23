@@ -18,9 +18,29 @@ from vcenter_event_assistant.collectors.connection import (
     read_connection_info,
 )
 from vcenter_event_assistant.db.models import VCenter
+from vcenter_event_assistant.security_startup import passwords_may_be_stored
+from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/vcenters", tags=["vcenters"])
+
+
+def _ensure_password_storage_allowed(settings: Settings) -> None:
+    if not passwords_may_be_stored(settings):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "vCenter パスワードを保存できません。VEA_SECRET_KEY を設定するか、"
+                "開発環境では VEA_ALLOW_PLAINTEXT_PASSWORDS=1 を設定してください。"
+            ),
+        )
+
+
+def _validate_vcenter_host_for_settings(host: str, settings: Settings) -> str:
+    return validate_vcenter_host(
+        host,
+        allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
+    )
 
 
 @router.get("", response_model=list[VCenterRead])
@@ -35,10 +55,13 @@ async def list_vcenters(
 async def create_vcenter(
     body: VCenterCreate,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> VCenter:
+    _ensure_password_storage_allowed(settings)
+    validated_host = _validate_vcenter_host_for_settings(body.host, settings)
     vc = VCenter(
         name=body.name,
-        host=body.host,
+        host=validated_host,
         protocol=body.protocol,
         port=body.port,
         username=body.username,
@@ -69,12 +92,17 @@ async def update_vcenter(
     vcenter_id: uuid.UUID,
     body: VCenterUpdate,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> VCenter:
     res = await session.execute(select(VCenter).where(VCenter.id == vcenter_id))
     vc = res.scalar_one_or_none()
     if vc is None:
         raise HTTPException(status_code=404, detail="vCenter not found")
     data = body.model_dump(exclude_unset=True)
+    if "password" in data:
+        _ensure_password_storage_allowed(settings)
+    if "host" in data and data["host"] is not None:
+        data["host"] = _validate_vcenter_host_for_settings(data["host"], settings)
     for k, v in data.items():
         setattr(vc, k, v)
     await session.flush()
@@ -104,6 +132,11 @@ async def test_vcenter(
     vc = res.scalar_one_or_none()
     if vc is None:
         raise HTTPException(status_code=404, detail="vCenter not found")
+
+    try:
+        _validate_vcenter_host_for_settings(vc.host, settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if settings.mock_mode:
         from vcenter_event_assistant.mocks.mock_connection import mock_connection_info
