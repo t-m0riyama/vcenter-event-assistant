@@ -86,18 +86,18 @@ def _resolve_host_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6A
     return ips
 
 
-def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = None) -> str:
+def validate_vcenter_host(
+    host: str,
+    *,
+    allowed_suffixes: list[str] | None = None,
+    resolve_dns: bool = True,
+) -> str:
     """vCenter 接続先ホストを検証する。SSRF 向けの危険宛先を拒否する。
 
     Args:
         host: API 入力の host 文字列。
         allowed_suffixes: 本番で許可する FQDN サフィックス（``VCENTER_ALLOWED_HOST_SUFFIXES``）。
-
-    Returns:
-        正規化済みホスト名。
-
-    Raises:
-        ValueError: 危険または不正な host。
+        resolve_dns: True のとき DNS 解決後の IP も検査する（接続直前は True、スキーマ層は False）。
     """
     normalized = _normalize_host(host)
     suffixes = allowed_suffixes or []
@@ -128,6 +128,9 @@ def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = Non
         raise ValueError(
             "host is not allowed; configure VCENTER_ALLOWED_HOST_SUFFIXES for permitted domains"
         )
+
+    if not resolve_dns:
+        return normalized
 
     resolved_ips = _resolve_host_ips(normalized)
     # Suffix 一致ホストはオンプレ向けに RFC1918 プライベート IP を許可する。

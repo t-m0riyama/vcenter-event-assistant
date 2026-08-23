@@ -21,7 +21,8 @@ def _reject_storage_prefix_password(value: str) -> str:
 
 
 def _validate_host_field(value: str) -> str:
-    return validate_vcenter_host(value)
+    # スキーマ層では DNS 解決しない（サフィックス設定はルート／接続時に適用）。
+    return validate_vcenter_host(value, resolve_dns=False)
 
 
 class VCenterCreate(BaseModel):
