@@ -147,6 +147,20 @@ class IncidentTimelineBuildRequest(BaseModel):
     metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
 
+    @model_validator(mode="after")
+    def validate_time_span(self) -> IncidentTimelineBuildRequest:
+        ft = self.from_time
+        tt = self.to_time
+        if ft.tzinfo is None:
+            ft = ft.replace(tzinfo=timezone.utc)
+        if tt.tzinfo is None:
+            tt = tt.replace(tzinfo=timezone.utc)
+        if ft >= tt:
+            raise ValueError("from must be before to")
+        if tt - ft > timedelta(days=90):
+            raise ValueError("time range must not exceed 90 days")
+        return self
+
 
 class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
     """手動スナップショット保存リクエスト。"""
