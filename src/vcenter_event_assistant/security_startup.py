@@ -42,6 +42,10 @@ def validate_startup_settings(settings: Settings) -> None:
             raise SecurityConfigurationError(
                 "VEA_SECRET_KEY is required when APP_ENV=production"
             )
+        if not settings.vcenter_allowed_host_suffix_list:
+            raise SecurityConfigurationError(
+                "VCENTER_ALLOWED_HOST_SUFFIXES is required when APP_ENV=production"
+            )
         _validate_production_database_url(settings.database_url)
     elif not settings.vea_secret_key and not settings.mock_mode:
         if not settings.vea_allow_plaintext_passwords:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,27 @@ from vcenter_event_assistant.settings_binding import bind_settings, clear_settin
 
 get_settings.cache_clear()
 bind_settings(get_settings())
+
+
+def _fake_vcenter_getaddrinfo(
+    host: str,
+    port: object,
+    family: int = 0,
+    type: int = 0,
+    proto: int = 0,
+    flags: int = 0,
+) -> list[tuple]:
+    """vCenter テスト用: ホスト名を公開 IP に解決した扱いにする（SSRF DNS 検証用）。"""
+    _ = (host, port, family, type, proto, flags)
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+
+@pytest.fixture(autouse=True)
+def _mock_vcenter_host_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.vcenter_host_validation.socket.getaddrinfo",
+        _fake_vcenter_getaddrinfo,
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

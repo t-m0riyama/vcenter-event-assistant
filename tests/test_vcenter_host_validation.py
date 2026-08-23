@@ -26,6 +26,11 @@ def test_rejects_metadata_ip() -> None:
         validate_vcenter_host("169.254.169.254")
 
 
+def test_rejects_localhost_hostname() -> None:
+    with pytest.raises(ValueError, match="blocked"):
+        validate_vcenter_host("localhost")
+
+
 def test_suffix_allowlist() -> None:
     with pytest.raises(ValueError, match="not allowed"):
         validate_vcenter_host("evil.example.com", allowed_suffixes=[".corp.local"])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import socket
 from urllib.parse import urlparse
 
 # クラウドメタデータ等の既知危険アドレス
@@ -11,6 +12,14 @@ _BLOCKED_IP_LITERALS = frozenset(
     {
         "169.254.169.254",  # AWS / Azure / GCP metadata
         "fd00:ec2::254",
+    }
+)
+
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "metadata.google.internal",
+        "metadata.goog",
     }
 )
 
@@ -59,6 +68,24 @@ def _hostname_allowed_by_suffix(host: str, allowed_suffixes: list[str]) -> bool:
     return False
 
 
+def _resolve_host_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"host could not be resolved: {host}") from exc
+    ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip not in ips:
+            ips.append(ip)
+    if not ips:
+        raise ValueError(f"host could not be resolved: {host}")
+    return ips
+
+
 def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = None) -> str:
     """vCenter 接続先ホストを検証する。SSRF 向けの危険宛先を拒否する。
 
@@ -74,6 +101,10 @@ def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = Non
     """
     normalized = _normalize_host(host)
     suffixes = allowed_suffixes or []
+    lowered = normalized.lower()
+
+    if lowered in _BLOCKED_HOSTNAMES or lowered.endswith(".localhost"):
+        raise ValueError("host is blocked (localhost or cloud metadata hostname)")
 
     try:
         ip = ipaddress.ip_address(normalized)
@@ -93,5 +124,12 @@ def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = Non
         raise ValueError(
             "host is not allowed; configure VCENTER_ALLOWED_HOST_SUFFIXES for permitted domains"
         )
+
+    for resolved_ip in _resolve_host_ips(normalized):
+        if _is_blocked_ip(resolved_ip):
+            raise ValueError(
+                "host DNS resolution points to a blocked IP range "
+                "(private, loopback, link-local, or metadata)"
+            )
 
     return normalized

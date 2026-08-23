@@ -37,8 +37,20 @@ def test_production_rejects_weak_db_password() -> None:
         app_env="production",
         database_url="postgresql+asyncpg://vea:vea@postgres:5432/vcenter_event_assistant",
         vea_secret_key="prod-secret",
+        vcenter_allowed_host_suffixes=".corp.local",
     )
     with pytest.raises(SecurityConfigurationError, match="weak default password"):
+        validate_startup_settings(settings)
+
+
+def test_production_requires_host_suffixes() -> None:
+    settings = Settings(
+        app_env="production",
+        database_url="sqlite+aiosqlite:///:memory:",
+        vea_secret_key="prod-secret",
+        vcenter_allowed_host_suffixes="",
+    )
+    with pytest.raises(SecurityConfigurationError, match="VCENTER_ALLOWED_HOST_SUFFIXES"):
         validate_startup_settings(settings)
 
 
