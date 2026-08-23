@@ -52,7 +52,7 @@ describe('trimChatMessagesToMax', () => {
 
 describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapshot', () => {
   afterEach(() => {
-    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
   })
 
   it('未設定なら null', () => {
@@ -67,22 +67,22 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
 
   it('includeResearch を含む旧スナップショットも読める（後方互換・値は無視）', () => {
     const legacy = { ...minimalSnapshot(), includeResearch: false }
-    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(legacy))
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(legacy))
     const got = readChatPanelSnapshot(200)
     expect(got).not.toBeNull()
     expect(got).not.toHaveProperty('includeResearch')
   })
 
   it('不正 JSON なら null にしキーを削除する', () => {
-    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, '{broken')
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, '{broken')
     expect(readChatPanelSnapshot(200)).toBeNull()
-    expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it('Zod に通らないオブジェクトなら null にしキーを削除する', () => {
-    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify({ foo: 1 }))
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify({ foo: 1 }))
     expect(readChatPanelSnapshot(200)).toBeNull()
-    expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it('write は messages を最大件数にトリムしてから保存する', () => {
@@ -97,7 +97,7 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
   })
 
   it('maxStoredMessages が 0 のとき read の messages は空', () => {
-    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot()))
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot()))
     expect(readChatPanelSnapshot(0)?.messages).toEqual([])
   })
 
@@ -106,14 +106,14 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
       role: 'user' as const,
       content: `m${i}`,
     }))
-    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot({ messages: many })))
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot({ messages: many })))
     const got = readChatPanelSnapshot(200)
     expect(got?.messages).toHaveLength(200)
     expect(got?.messages[0]?.content).toBe('m50')
   })
 
   it('setItem が失敗したとき write は false を返す', () => {
-    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    const spy = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError')
     })
     expect(writeChatPanelSnapshot(minimalSnapshot(), 200)).toBe(false)
@@ -123,11 +123,11 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
   it('clearChatPanelSnapshot でキーが消える', () => {
     expect(writeChatPanelSnapshot(minimalSnapshot(), 200)).toBe(true)
     clearChatPanelSnapshot()
-    expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
-  it('localStorage が無い環境では read は null・write は false・clear は no-op', () => {
-    vi.stubGlobal('localStorage', undefined)
+  it('sessionStorage が無い環境では read は null・write は false・clear は no-op', () => {
+    vi.stubGlobal('sessionStorage', undefined)
     expect(readChatPanelSnapshot(200)).toBeNull()
     expect(writeChatPanelSnapshot(minimalSnapshot(), 200)).toBe(false)
     expect(() => clearChatPanelSnapshot()).not.toThrow()
