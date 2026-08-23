@@ -11,6 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.collectors.events import fetch_events_blocking
 from vcenter_event_assistant.collectors.perf import sample_hosts_blocking
+from vcenter_event_assistant.mocks.mock_collectors import (
+    fetch_mock_events_blocking,
+    sample_mock_hosts_blocking,
+)
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     DigestRecord,
@@ -62,18 +66,24 @@ async def ingest_events_for_vcenter(
         # advance window slightly to reduce duplicates at boundary
         fetch_since = since - timedelta(seconds=1)
 
-    normalized, max_ts = await asyncio.to_thread(
-        fetch_events_blocking,
-        host=vcenter.host,
-        protocol=vcenter.protocol,
-        port=vcenter.port,
-        username=vcenter.username,
-        password=vcenter.password,
-        since=fetch_since,
-        proxy_url=settings.vcenter_http_proxy,
-        verify_ssl=vcenter.verify_ssl,
-        ca_bundle_path=settings.vcenter_ca_bundle,
-    )
+    if settings.mock_mode:
+        normalized, max_ts = await asyncio.to_thread(
+            fetch_mock_events_blocking,
+            since=fetch_since,
+        )
+    else:
+        normalized, max_ts = await asyncio.to_thread(
+            fetch_events_blocking,
+            host=vcenter.host,
+            protocol=vcenter.protocol,
+            port=vcenter.port,
+            username=vcenter.username,
+            password=vcenter.password,
+            since=fetch_since,
+            proxy_url=settings.vcenter_http_proxy,
+            verify_ssl=vcenter.verify_ssl,
+            ca_bundle_path=settings.vcenter_ca_bundle,
+        )
 
     deltas = await load_event_score_delta_map(session)
     inserted = 0
@@ -123,17 +133,20 @@ async def ingest_metrics_for_vcenter(
     session: AsyncSession, vcenter: VCenter, *, settings: Settings
 ) -> int:
     """Sample host metrics and store rows."""
-    rows = await asyncio.to_thread(
-        sample_hosts_blocking,
-        host=vcenter.host,
-        protocol=vcenter.protocol,
-        port=vcenter.port,
-        username=vcenter.username,
-        password=vcenter.password,
-        proxy_url=settings.vcenter_http_proxy,
-        verify_ssl=vcenter.verify_ssl,
-        ca_bundle_path=settings.vcenter_ca_bundle,
-    )
+    if settings.mock_mode:
+        rows = await asyncio.to_thread(sample_mock_hosts_blocking)
+    else:
+        rows = await asyncio.to_thread(
+            sample_hosts_blocking,
+            host=vcenter.host,
+            protocol=vcenter.protocol,
+            port=vcenter.port,
+            username=vcenter.username,
+            password=vcenter.password,
+            proxy_url=settings.vcenter_http_proxy,
+            verify_ssl=vcenter.verify_ssl,
+            ca_bundle_path=settings.vcenter_ca_bundle,
+        )
 
     inserted = 0
     for r in rows:

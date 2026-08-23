@@ -42,6 +42,24 @@ worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレ
 
 `pytest` は [`tests/conftest.py`](../tests/conftest.py) で `:memory:` を強制するため、単体テストはどちらのファイル DB も変更しない。
 
+## モックモード（`MOCK_MODE=1`）
+
+外部の vCenter / SMTP / LLM / Tavily・Firecrawl なしでアプリを動かすデモ・開発用フラグ。
+
+| 項目 | 挙動 |
+| --- | --- |
+| 起動時 | [`mock_mode_seed.py`](../src/vcenter_event_assistant/dev/mock_mode_seed.py) がデモ vCenter・イベント・メトリクス等を冪等投入 |
+| 収集・接続テスト | pyVmomi を呼ばず合成データを返す |
+| アラートメール | SMTP せずログへ出力し成功扱い |
+| LLM / WEB 検索 | 決定論的な固定応答（API キー不要） |
+| `SCHEDULER_ENABLED` | 独立。`true` ならモック収集が定期実行、`false` ならシードのみ |
+
+```bash
+MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db uv run vcenter-event-assistant
+```
+
+Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併存可能。
+
 ## 基本的な開発操作
 
 ### データベースマイグレーション（Alembic）

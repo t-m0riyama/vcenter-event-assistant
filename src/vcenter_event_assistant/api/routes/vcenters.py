@@ -105,34 +105,40 @@ async def test_vcenter(
     if vc is None:
         raise HTTPException(status_code=404, detail="vCenter not found")
 
-    def _run():
-        si = connect_vcenter(
-            host=vc.host,
-            protocol=vc.protocol,
-            port=vc.port,
-            username=vc.username,
-            password=vc.password,
-            proxy_url=settings.vcenter_http_proxy,
-            verify_ssl=vc.verify_ssl,
-            ca_bundle_path=settings.vcenter_ca_bundle,
-        )
-        try:
-            return read_connection_info(si)
-        finally:
-            disconnect(si)
+    if settings.mock_mode:
+        from vcenter_event_assistant.mocks.mock_connection import mock_connection_info
 
-    try:
-        info = await asyncio.to_thread(_run)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=format_connection_error_detail(
-                protocol=vc.protocol,
+        info = mock_connection_info()
+    else:
+
+        def _run():
+            si = connect_vcenter(
                 host=vc.host,
+                protocol=vc.protocol,
                 port=vc.port,
-                exc=exc,
-            ),
-        ) from exc
+                username=vc.username,
+                password=vc.password,
+                proxy_url=settings.vcenter_http_proxy,
+                verify_ssl=vc.verify_ssl,
+                ca_bundle_path=settings.vcenter_ca_bundle,
+            )
+            try:
+                return read_connection_info(si)
+            finally:
+                disconnect(si)
+
+        try:
+            info = await asyncio.to_thread(_run)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=format_connection_error_detail(
+                    protocol=vc.protocol,
+                    host=vc.host,
+                    port=vc.port,
+                    exc=exc,
+                ),
+            ) from exc
 
     response: dict = {
         "ok": True,

@@ -112,6 +112,22 @@ cd frontend && npm install && npm run dev
 
 **ブラウザ**: 既定では `http://localhost:5173`（Vite が表示する URL でもよい）。`/api` と `/health` は開発サーバーが `http://127.0.0.1:8000` にプロキシする。フロントの npm スクリプト一覧は [docs/frontend.md](docs/frontend.md) を参照する。
 
+### モックモード（外部サービスなしのデモ・開発）
+
+vCenter・SMTP・LLM・WEB 検索 API が無い環境でも、UI と主要フローを試せる。
+
+```bash
+# .env に追記（またはシェルで指定）
+MOCK_MODE=1
+DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
+# 任意: 合成データを定期追加する（false なら起動時シードのみ）
+# SCHEDULER_ENABLED=true
+
+uv run vcenter-event-assistant
+```
+
+起動時にデモ用 vCenter・イベント・メトリクスを投入する。接続テスト・取り込み・アラートメール・チャット／ダイジェスト LLM・WEB 検索はすべてモック応答になる（実ネットワーク呼び出しなし）。詳細は [development.md](development.md) を参照。
+
 ## 利用者向けガイド
 
 画面の操作やアラート通知の仕組み（開発者向け API 説明ではない）:

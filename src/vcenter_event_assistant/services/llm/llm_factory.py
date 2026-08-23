@@ -30,6 +30,11 @@ def build_chat_model(
             **本関数内では使用しない**（将来、モデル生成時にメタデータを付けたい場合のシグネチャ互換のため受け取る）。
     """
     _ = config
+    if settings.mock_mode:
+        from vcenter_event_assistant.mocks.mock_llm import build_mock_chat_model
+
+        return build_mock_chat_model(purpose=purpose)
+
     p = resolve_llm_profile(settings, purpose=purpose)
     key = p.api_key
     if p.provider == "copilot_cli":

@@ -36,9 +36,14 @@ def build_search_provider(settings: Settings) -> SearchProvider | None:
 
     ``None`` の条件: ``web_research_enabled=False``、または選択プロバイダの接続情報未設定
     （tavily は API キー、firecrawl はベース URL か API キーのいずれか）。
+    ``MOCK_MODE`` かつ ``web_research_enabled`` のときは外部キーなしでモックプロバイダを返す。
     """
     if not settings.web_research_enabled:
         return None
+    if settings.mock_mode:
+        from vcenter_event_assistant.mocks.mock_search import MockSearchProvider
+
+        return MockSearchProvider()
     if settings.search_provider == "tavily" and settings.tavily_api_key:
         from vcenter_event_assistant.services.research.tavily_provider import (
             TavilySearchProvider,

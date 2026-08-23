@@ -25,6 +25,8 @@ def is_digest_llm_configured(settings: Settings) -> bool:
     """
     ダイジェスト LLM が呼べる設定か。
     """
+    if settings.mock_mode:
+        return True
     if (settings.llm_digest_api_key or "").strip():
         return True
     prof = resolve_llm_profile(settings, purpose="digest")
@@ -39,7 +41,10 @@ def is_chat_llm_configured(settings: Settings) -> bool:
 
     通常は ``effective_chat_api_key`` が非空。copilot_cli かつ
     ``llm_copilot_cli_session_auth`` のときはキーなしでも True（CLI 側ログイン前提）。
+    ``MOCK_MODE`` では外部キーなしでも True。
     """
+    if settings.mock_mode:
+        return True
     if effective_chat_api_key(settings):
         return True
     prof = resolve_llm_profile(settings, purpose="chat")

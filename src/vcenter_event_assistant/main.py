@@ -31,6 +31,7 @@ from vcenter_event_assistant.api.routes.ingest import router as ingest_router
 from vcenter_event_assistant.api.routes.incident_timeline import (
     router as incident_timeline_router,
 )
+from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
 from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter_password_storage
@@ -64,6 +65,7 @@ async def lifespan(app: FastAPI):
     await init_db(settings=settings)
     await ensure_vcenter_password_storage(settings=settings)
     await run_screenshot_e2e_seed_if_enabled()
+    await run_mock_mode_seed_if_enabled()
     if settings.scheduler_enabled:
         setup_scheduler(app, settings)
     yield

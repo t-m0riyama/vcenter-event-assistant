@@ -130,6 +130,13 @@ class AppLogSettingsMixin(BaseModel):
     scheduler_enabled: bool = Field(
         default=True, description="Disable for tests or one-shot runs"
     )
+    mock_mode: bool = Field(
+        default=False,
+        description=(
+            "デモ・開発用モックモード（`MOCK_MODE`）。"
+            "vCenter / SMTP / LLM / WEB 検索へ実接続せず、合成データと固定応答で動作する。"
+        ),
+    )
 
     @field_validator("log_level")
     @classmethod
