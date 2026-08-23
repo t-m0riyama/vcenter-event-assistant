@@ -26,10 +26,14 @@ class AlertRuleCreate(BaseModel):
             if "threshold" not in cfg or not isinstance(cfg.get("threshold"), (int, float)):
                 raise ValueError("metric_threshold config requires numeric threshold")
         elif self.rule_type == "event_score":
-            if "min_score" in cfg and not isinstance(cfg.get("min_score"), (int, float)):
-                raise ValueError("event_score config.min_score must be numeric when set")
-            if "event_type" in cfg and not isinstance(cfg.get("event_type"), str):
-                raise ValueError("event_score config.event_type must be a string when set")
+            threshold_raw = cfg.get("threshold", cfg.get("min_notable_score", 60))
+            if not isinstance(threshold_raw, (int, float)) or not 0 <= float(threshold_raw) <= 100:
+                raise ValueError("event_score config requires threshold (or min_notable_score) in 0..100")
+            if "cooldown_minutes" in cfg and (
+                not isinstance(cfg.get("cooldown_minutes"), (int, float))
+                or int(cfg["cooldown_minutes"]) < 1
+            ):
+                raise ValueError("event_score config.cooldown_minutes must be >= 1 when set")
         return self
 
 
