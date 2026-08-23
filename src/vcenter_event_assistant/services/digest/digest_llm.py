@@ -117,7 +117,7 @@ async def augment_digest_with_llm(
             dprof.timeout_seconds,
             dprof.model,
         )
-        if dprof.provider == "copilot_cli":
+        if dprof.provider == "copilot_cli" and not s.mock_mode:
             from vcenter_event_assistant.services.llm.copilot_cli_llm import run_copilot_cli_digest_completion
             summary = await run_copilot_cli_digest_completion(
                 s,

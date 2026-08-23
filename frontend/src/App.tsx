@@ -254,6 +254,11 @@ export default function App() {
               {retention.metric_retention_days} 日（サーバー設定）
             </p>
           )}
+          {retention?.mock_mode === true && (
+            <p className="mock-mode-banner" role="status">
+              モックモード: 外部サービス（vCenter / SMTP / LLM / WEB 検索）には接続しません
+            </p>
+          )}
         </header>
 
         {appErr && (

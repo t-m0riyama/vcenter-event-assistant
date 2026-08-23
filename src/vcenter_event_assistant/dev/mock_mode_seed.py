@@ -3,6 +3,7 @@
 
 投入内容: デモ vCenter・イベント種別ガイド・イベント・ホスト／Datastore メトリクス・
 簡易アラートルール。同一 vCenter 名が既にあれば何もしない（冪等）。
+ガイドの ``event_type`` は本番データと衝突しない ``MockDemo*`` 名を使う。
 """
 
 from __future__ import annotations
@@ -20,21 +21,22 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import require_settings
 
 logger = logging.getLogger(__name__)
 
 _MOCK_VC_NAME = "mock-demo-vc"
+# 実環境の event_type_guides と衝突しないデモ専用名
 _EVENT_TYPES = (
-    "vim.event.VmPoweredOnEvent",
-    "vim.event.AlarmStatusChangedEvent",
-    "vim.event.HostConnectionLostEvent",
+    "vim.event.MockDemoVmPoweredOnEvent",
+    "vim.event.MockDemoAlarmStatusChangedEvent",
+    "vim.event.MockDemoHostConnectionLostEvent",
 )
 
 
 async def run_mock_mode_seed_if_enabled() -> None:
     """``settings.mock_mode`` のとき、未シードならデモデータを挿入する。"""
-    settings = get_settings()
+    settings = require_settings()
     if not settings.mock_mode:
         return
 
@@ -55,31 +57,36 @@ async def run_mock_mode_seed_if_enabled() -> None:
         session.add(vc)
         await session.flush()
 
-        guides = (
-            EventTypeGuide(
-                event_type=_EVENT_TYPES[0],
-                general_meaning="（モック）仮想マシンの電源投入イベントです。",
-                typical_causes="（モック）管理者操作または自動化による起動。",
-                remediation="（モック）意図した起動か確認する。",
-                action_required=False,
-            ),
-            EventTypeGuide(
-                event_type=_EVENT_TYPES[1],
-                general_meaning="（モック）アラーム状態の変化です。",
-                typical_causes="（モック）しきい値超過や状態遷移。",
-                remediation="（モック）アラーム定義と対象オブジェクトを確認する。",
-                action_required=True,
-            ),
-            EventTypeGuide(
-                event_type=_EVENT_TYPES[2],
-                general_meaning="（モック）ホストとの接続が失われたことを示します。",
-                typical_causes="（モック）ネットワーク障害・ホスト停止・管理エージェント異常。",
-                remediation="（モック）ホストの電源・ネットワーク・vpxa/hostd を確認する。",
-                action_required=True,
-            ),
+        meanings = (
+            "（モック）仮想マシンの電源投入イベントです。",
+            "（モック）アラーム状態の変化です。",
+            "（モック）ホストとの接続が失われたことを示します。",
         )
-        for g in guides:
-            session.add(g)
+        causes = (
+            "（モック）管理者操作または自動化による起動。",
+            "（モック）しきい値超過や状態遷移。",
+            "（モック）ネットワーク障害・ホスト停止・管理エージェント異常。",
+        )
+        remediations = (
+            "（モック）意図した起動か確認する。",
+            "（モック）アラーム定義と対象オブジェクトを確認する。",
+            "（モック）ホストの電源・ネットワーク・vpxa/hostd を確認する。",
+        )
+        for i, et in enumerate(_EVENT_TYPES):
+            existing_guide = await session.execute(
+                select(EventTypeGuide).where(EventTypeGuide.event_type == et)
+            )
+            if existing_guide.scalar_one_or_none() is not None:
+                continue
+            session.add(
+                EventTypeGuide(
+                    event_type=et,
+                    general_meaning=meanings[i],
+                    typical_causes=causes[i],
+                    remediation=remediations[i],
+                    action_required=(i > 0),
+                ),
+            )
 
         now = datetime.now(timezone.utc)
         for i, et in enumerate(_EVENT_TYPES):
@@ -122,6 +129,17 @@ async def run_mock_mode_seed_if_enabled() -> None:
                     entity_name="esxi-mock-01",
                     metric_key="host.mem.usage_pct",
                     value=40.0 + wobble * 0.5,
+                ),
+            )
+            session.add(
+                MetricSample(
+                    vcenter_id=vc.id,
+                    sampled_at=sampled,
+                    entity_type="Datastore",
+                    entity_moid=ds_moid,
+                    entity_name="mock-datastore",
+                    metric_key="datastore.space.used_pct",
+                    value=55.0 + wobble * 0.25,
                 ),
             )
             session.add(

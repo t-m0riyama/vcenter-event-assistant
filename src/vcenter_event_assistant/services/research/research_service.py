@@ -199,7 +199,7 @@ async def _summarize_results(
     user_block = "\n".join(lines)
 
     try:
-        if profile.provider == "copilot_cli":
+        if profile.provider == "copilot_cli" and not settings.mock_mode:
             # LangChain ChatModel 非対応のため単発プロンプトの専用経路で要約する
             text = await run_copilot_cli_digest_completion(
                 settings,

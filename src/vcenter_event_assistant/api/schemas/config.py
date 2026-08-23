@@ -12,3 +12,4 @@ class AppConfigResponse(BaseModel):
     metric_retention_days: int
     perf_sample_interval_seconds: int
     chat_web_search_available: bool = False
+    mock_mode: bool = False

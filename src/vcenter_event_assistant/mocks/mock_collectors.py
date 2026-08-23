@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 _MOCK_EVENT_TYPES = (
-    "vim.event.VmPoweredOnEvent",
-    "vim.event.AlarmStatusChangedEvent",
-    "vim.event.HostConnectionLostEvent",
+    "vim.event.MockDemoVmPoweredOnEvent",
+    "vim.event.MockDemoAlarmStatusChangedEvent",
+    "vim.event.MockDemoHostConnectionLostEvent",
 )
 
 
@@ -18,15 +18,11 @@ def fetch_mock_events_blocking(
 ) -> tuple[list[dict[str, Any]], datetime | None]:
     """取り込み経路向けの合成イベントを返す。
 
-    ``since`` 以降（または直近）に 1〜2 件を生成する。``vmware_key`` は秒単位の時刻から
-    導出し、再実行で重複しやすい境界は ON CONFLICT で吸収される。
+    ``vmware_key`` は秒単位の時刻から導出し、再実行の重複は ON CONFLICT で吸収される。
+    ``since`` は実収集とのシグネチャ互換のため受け取る（モックでは常に直近 2 件を返す）。
     """
+    _ = since
     now = datetime.now(timezone.utc)
-    if since is not None and since.tzinfo is None:
-        since = since.replace(tzinfo=timezone.utc)
-    if since is not None and now <= since:
-        # カーソル直後の再取得では空でもよいが、デモでは最低 1 件を返す
-        pass
 
     key_base = int(now.timestamp())
     rows: list[dict[str, Any]] = [
