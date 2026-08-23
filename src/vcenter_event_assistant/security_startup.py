@@ -42,6 +42,10 @@ def validate_startup_settings(settings: Settings) -> None:
             raise SecurityConfigurationError(
                 "VEA_SECRET_KEY is required when APP_ENV=production"
             )
+        if settings.vea_allow_plaintext_passwords:
+            raise SecurityConfigurationError(
+                "VEA_ALLOW_PLAINTEXT_PASSWORDS must not be enabled when APP_ENV=production"
+            )
         if not settings.vcenter_allowed_host_suffix_list:
             raise SecurityConfigurationError(
                 "VCENTER_ALLOWED_HOST_SUFFIXES is required when APP_ENV=production"

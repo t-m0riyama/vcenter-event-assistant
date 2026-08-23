@@ -129,8 +129,24 @@ def validate_vcenter_host(host: str, *, allowed_suffixes: list[str] | None = Non
             "host is not allowed; configure VCENTER_ALLOWED_HOST_SUFFIXES for permitted domains"
         )
 
-    for resolved_ip in _resolve_host_ips(normalized):
-        if _is_blocked_ip(resolved_ip):
+    resolved_ips = _resolve_host_ips(normalized)
+    # Suffix 一致ホストはオンプレ向けに RFC1918 プライベート IP を許可する。
+    # メタデータ / ループバック / リンクローカル等は常に拒否。
+    for resolved_ip in resolved_ips:
+        if suffixes:
+            if (
+                str(resolved_ip) in _BLOCKED_IP_LITERALS
+                or resolved_ip.is_loopback
+                or resolved_ip.is_link_local
+                or resolved_ip.is_multicast
+                or resolved_ip.is_reserved
+                or resolved_ip.is_unspecified
+            ):
+                raise ValueError(
+                    "host DNS resolution points to a blocked IP range "
+                    "(loopback, link-local, metadata, or reserved)"
+                )
+        elif _is_blocked_ip(resolved_ip):
             raise ValueError(
                 "host DNS resolution points to a blocked IP range "
                 "(private, loopback, link-local, or metadata)"
