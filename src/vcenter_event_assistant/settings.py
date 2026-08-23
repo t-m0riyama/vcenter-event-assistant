@@ -105,6 +105,9 @@ class AppLogSettingsMixin(BaseModel):
     cors_origins: str = Field(
         default="http://localhost:5173", description="Comma-separated origins"
     )
+    rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=1000)
+    rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
+    rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
     vea_secret_key: str | None = Field(
         default=None,
         description=(
