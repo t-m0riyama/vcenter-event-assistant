@@ -37,10 +37,13 @@ def _ensure_password_storage_allowed(settings: Settings) -> None:
 
 
 def _validate_vcenter_host_for_settings(host: str, settings: Settings) -> str:
-    return validate_vcenter_host(
-        host,
-        allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
-    )
+    try:
+        return validate_vcenter_host(
+            host,
+            allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[VCenterRead])
