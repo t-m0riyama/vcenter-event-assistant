@@ -65,6 +65,7 @@ flowchart TB
 ## ドキュメント
 
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
+- **モックモード（デモ・開発）**（外部サービスなしで UI を試す）: [docs/user-guides/mock-mode.md](docs/user-guides/mock-mode.md)
 - **アラート機能（利用者向け）**（ルール・メール通知・通知履歴・タイムライン）: [docs/user-guides/alerts.md](docs/user-guides/alerts.md)
 - **スコアルール（利用者向け）**（要注目スコア・種別ごとの加算・JSON バックアップ）: [docs/user-guides/score-rules.md](docs/user-guides/score-rules.md)
 - **ダイジェスト（利用者向け）**（期間レポートの読み方・LLM 要約・画面操作）: [docs/user-guides/digests.md](docs/user-guides/digests.md)

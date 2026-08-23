@@ -44,7 +44,9 @@ worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレ
 
 ## モックモード（`MOCK_MODE=1`）
 
-外部の vCenter / SMTP / LLM / Tavily・Firecrawl なしでアプリを動かすデモ・開発用フラグ。
+**使い方（起動・画面・FAQ）の正本:** [user-guides/mock-mode.md](user-guides/mock-mode.md)
+
+外部の vCenter / SMTP / LLM / Tavily・Firecrawl なしでアプリを動かすデモ・開発用フラグ。実装上の挙動は次のとおり。
 
 | 項目 | 挙動 |
 | --- | --- |
@@ -59,7 +61,7 @@ worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレ
 MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db uv run vcenter-event-assistant
 ```
 
-Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併存可能。
+Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併存可能。テストは `tests/test_mock_mode.py`。
 
 ## 基本的な開発操作
 
