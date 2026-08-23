@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiDelete, apiGet, apiPatch, apiPost } from './api'
 
+const GENERIC = 'リクエストに失敗しました。時間をおいて再度お試しください。'
+
 describe('api', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -24,9 +26,9 @@ describe('api', () => {
     await expect(apiGet<{ x: number }>('/api/foo')).resolves.toEqual({ x: 1 })
   })
 
-  it('apiGet throws Error with status and body when not ok', async () => {
+  it('apiGet throws generic Error for 5xx (no raw body leak)', async () => {
     fetchMock().mockResolvedValueOnce(new Response('body text', { status: 503 }))
-    await expect(apiGet('/api/foo')).rejects.toThrow('503 body text')
+    await expect(apiGet('/api/foo')).rejects.toThrow(GENERIC)
   })
 
   it('apiPost returns undefined on 204', async () => {
@@ -44,9 +46,9 @@ describe('api', () => {
     await expect(apiPost<{ ok: boolean }>('/api/foo', { a: 1 })).resolves.toEqual({ ok: true })
   })
 
-  it('apiPost throws when not ok', async () => {
+  it('apiPost throws generic Error for 400', async () => {
     fetchMock().mockResolvedValueOnce(new Response('nope', { status: 400 }))
-    await expect(apiPost('/api/foo', {})).rejects.toThrow('400 nope')
+    await expect(apiPost('/api/foo', {})).rejects.toThrow(GENERIC)
   })
 
   it('apiPatch returns parsed JSON on success', async () => {
@@ -61,9 +63,9 @@ describe('api', () => {
     })
   })
 
-  it('apiPatch throws when not ok', async () => {
+  it('apiPatch surfaces 409 conflict body', async () => {
     fetchMock().mockResolvedValueOnce(new Response('bad', { status: 409 }))
-    await expect(apiPatch('/api/foo', {})).rejects.toThrow('409 bad')
+    await expect(apiPatch('/api/foo', {})).rejects.toThrow('bad')
   })
 
   it('apiDelete resolves on success', async () => {
@@ -71,8 +73,8 @@ describe('api', () => {
     await expect(apiDelete('/api/foo')).resolves.toBeUndefined()
   })
 
-  it('apiDelete throws when not ok', async () => {
+  it('apiDelete throws generic Error for 5xx', async () => {
     fetchMock().mockResolvedValueOnce(new Response('gone', { status: 500 }))
-    await expect(apiDelete('/api/foo')).rejects.toThrow('500 gone')
+    await expect(apiDelete('/api/foo')).rejects.toThrow(GENERIC)
   })
 })

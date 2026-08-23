@@ -64,7 +64,9 @@ describe('App error display', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('503 config fail')
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'リクエストに失敗しました。時間をおいて再度お試しください。',
+      )
     })
     expect(document.querySelector('.app-error-banner')).toBeInTheDocument()
   })
@@ -82,7 +84,9 @@ describe('App error display', () => {
     )
     render(<App />)
     await waitFor(() => {
-      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('500 bad')
+      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+        'リクエストに失敗しました。時間をおいて再度お試しください。',
+      )
     })
     expect(document.querySelector('.app-error-banner')).not.toBeInTheDocument()
   })
@@ -110,7 +114,9 @@ describe('App error display', () => {
     })
     fireEvent.click(within(tabNav()).getByRole('button', { name: 'イベント' }))
     await waitFor(() => {
-      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('502 no')
+      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+        'リクエストに失敗しました。時間をおいて再度お試しください。',
+      )
     })
   })
 
@@ -143,7 +149,9 @@ describe('App error display', () => {
       ),
     )
     await waitFor(() => {
-      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('503 vc fail')
+      expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+        'リクエストに失敗しました。時間をおいて再度お試しください。',
+      )
     })
   })
 
@@ -188,7 +196,9 @@ describe('App error display', () => {
         { timeout: 10_000 },
       )
       await waitFor(() => {
-        expect(within(mainRegion()).getByRole('alert')).toHaveTextContent('500 m err')
+        expect(within(mainRegion()).getByRole('alert')).toHaveTextContent(
+          'リクエストに失敗しました。時間をおいて再度お試しください。',
+        )
       })
     },
     20_000,
