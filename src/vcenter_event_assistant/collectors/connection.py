@@ -11,6 +11,9 @@ from urllib.parse import urlparse
 
 from pyVim.connect import Disconnect, SmartConnect
 
+from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
+from vcenter_event_assistant.settings_binding import require_settings
+
 
 @dataclass(frozen=True, slots=True)
 class ConnectionInfo:
@@ -58,12 +61,17 @@ def connect_vcenter(
     username: str,
     password: str,
     proxy_url: str | None = None,
-    verify_ssl: bool = False,
+    verify_ssl: bool = True,
     ca_bundle_path: str | None = None,
 ):
     """vCenter セッションを確立する。呼び出し元で ``Disconnect(si)`` すること。"""
     if protocol not in {"https", "http"}:
         raise ValueError("protocol must be 'https' or 'http'")
+    settings = require_settings()
+    validate_vcenter_host(
+        host,
+        allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
+    )
     proxy_host, proxy_port = parse_proxy_url(proxy_url)
     kwargs: dict = dict(host=host, user=username, pwd=password, port=port, protocol=protocol)
     if protocol == "https":

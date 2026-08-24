@@ -325,3 +325,17 @@ async def test_post_chat_preview_cpu_toggle_only_keeps_cpu_metrics_in_timeline(
     metric_titles = [entry.title for entry in entries if entry.kind == "metric"]
     assert any(title.startswith("esxi-01 host.cpu.usage_pct:") for title in metric_titles)
     assert not any(title.startswith("esxi-01 host.mem.usage_pct:") for title in metric_titles)
+
+
+@pytest.mark.asyncio
+async def test_post_chat_preview_disabled_in_production(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("VEA_SECRET_KEY", "prod-secret-key")
+    monkeypatch.setenv("CHAT_PREVIEW_ENABLED", "false")
+    get_settings.cache_clear()
+
+    resp = await client.post("/api/chat/preview", json=_chat_body())
+    assert resp.status_code == 404

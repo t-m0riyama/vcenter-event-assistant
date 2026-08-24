@@ -27,7 +27,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     port: 443,
     username: '',
     password: '',
-    verify_ssl: false,
+    verify_ssl: true,
     is_enabled: true,
   })
 
@@ -42,7 +42,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     port: 443,
     username: '',
     password: '',
-    verify_ssl: false,
+    verify_ssl: true,
     is_enabled: true,
   })
 
@@ -72,7 +72,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
         port: 443,
         username: '',
         password: '',
-        verify_ssl: false,
+        verify_ssl: true,
         is_enabled: true,
       })
       await load()

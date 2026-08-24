@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { chatMessageSchema, type ChatMessage } from '../api/schemas'
 
-/** チャットパネル状態を保存する localStorage キー。 */
+/** チャットパネル状態を保存する sessionStorage キー（共有端末向けに localStorage より安全）。 */
 export const CHAT_PANEL_STORAGE_KEY = 'vea.chat_panel.v1'
 
 export { DEFAULT_CHAT_MAX_STORED_MESSAGES } from './chatMaxStoredMessagesStorage'
@@ -62,10 +62,10 @@ function trimSnapshotMessages(snapshot: ChatPanelSnapshot, maxStoredMessages: nu
  * @param maxStoredMessages 会話メッセージの最大件数（ユーザー設定 0〜1000。0 は常に空配列）。
  */
 export function readChatPanelSnapshot(maxStoredMessages: number): ChatPanelSnapshot | null {
-  if (typeof localStorage === 'undefined') {
+  if (typeof sessionStorage === 'undefined') {
     return null
   }
-  const raw = localStorage.getItem(CHAT_PANEL_STORAGE_KEY)
+  const raw = sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)
   if (raw === null) {
     return null
   }
@@ -73,12 +73,12 @@ export function readChatPanelSnapshot(maxStoredMessages: number): ChatPanelSnaps
   try {
     parsed = JSON.parse(raw) as unknown
   } catch {
-    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     return null
   }
   const out = chatPanelSnapshotSchema.safeParse(parsed)
   if (!out.success) {
-    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     return null
   }
   return {
@@ -93,13 +93,13 @@ export function readChatPanelSnapshot(maxStoredMessages: number): ChatPanelSnaps
  * @returns 保存に成功したとき `true`。`localStorage` が無い・`setItem` が失敗したとき `false`。
  */
 export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot, maxStoredMessages: number): boolean {
-  if (typeof localStorage === 'undefined') {
+  if (typeof sessionStorage === 'undefined') {
     return false
   }
   try {
     const trimmed = trimSnapshotMessages(snapshot, maxStoredMessages)
     const v = chatPanelSnapshotSchema.parse(trimmed)
-    localStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(v))
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(v))
     return true
   } catch {
     return false
@@ -110,8 +110,8 @@ export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot, maxStoredMes
  * 保存したチャットパネル状態を削除する。
  */
 export function clearChatPanelSnapshot(): void {
-  if (typeof localStorage === 'undefined') {
+  if (typeof sessionStorage === 'undefined') {
     return
   }
-  localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+  sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
 }

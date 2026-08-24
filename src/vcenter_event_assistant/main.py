@@ -7,14 +7,17 @@ lifespan で DB 初期化と APScheduler を管理する。
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from vcenter_event_assistant.rate_limit import check_rate_limit
 
 from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
@@ -42,10 +45,18 @@ from vcenter_event_assistant.services.digest.legacy_settings_deprecation import 
 )
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
+from vcenter_event_assistant.security_startup import validate_startup_settings
 
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+_RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
+    "/api/chat": ("chat", 60),
+    "/api/chat/preview": ("chat_preview", 60),
+    "/api/ingest/run": ("ingest", 60),
+    "/api/digests/run": ("digests", 60),
+}
 
 
 def is_spa_fallback_reserved_path(full_path: str) -> bool:
@@ -80,6 +91,7 @@ def create_app() -> FastAPI:
     """
     settings = get_settings()
     bind_settings(settings)
+    validate_startup_settings(settings)
     configure_logging(settings)
     app = FastAPI(title="vCenter Event Assistant", lifespan=lifespan)
 
@@ -91,6 +103,31 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    class RateLimitMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            if os.environ.get("VEA_PYTEST") == "1":
+                return await call_next(request)
+            if request.method == "POST":
+                spec = _RATE_LIMITED_POST_PATHS.get(request.url.path)
+                if spec is not None:
+                    bucket, window = spec
+                    client_host = request.client.host if request.client else "unknown"
+                    key = f"{bucket}:{client_host}"
+                    limit = {
+                        "chat": settings.rate_limit_chat_per_minute,
+                        "chat_preview": settings.rate_limit_chat_per_minute * 2,
+                        "ingest": settings.rate_limit_ingest_per_minute,
+                        "digests": settings.rate_limit_digests_per_minute,
+                    }[bucket]
+                    if not check_rate_limit(key, limit=limit, window_seconds=window):
+                        return JSONResponse(
+                            status_code=429,
+                            content={"detail": "Too many requests"},
+                        )
+            return await call_next(request)
+
+    app.add_middleware(RateLimitMiddleware)
 
     class NoStoreApiCacheMiddleware(BaseHTTPMiddleware):
         """動的 API の GET が中間キャッシュ・ブラウザに残らないよう ``Cache-Control: no-store`` を付与する。"""

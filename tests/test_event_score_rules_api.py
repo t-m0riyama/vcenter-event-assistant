@@ -168,7 +168,7 @@ async def test_event_score_rules_import_skip_overwrite_keeps_delta(client: Async
 
 
 @pytest.mark.asyncio
-async def test_event_score_rules_import_empty_file_deletes_all_when_flag(client: AsyncClient) -> None:
+async def test_event_score_rules_import_empty_file_rejected_with_delete_flag(client: AsyncClient) -> None:
     await client.post("/api/event-score-rules", json={"event_type": "t.only", "score_delta": 1})
     imp = await client.post(
         "/api/event-score-rules/import",
@@ -178,7 +178,4 @@ async def test_event_score_rules_import_empty_file_deletes_all_when_flag(client:
             "rules": [],
         },
     )
-    assert imp.status_code == 200
-    assert imp.json()["rules_count"] == 0
-    lst = await client.get("/api/event-score-rules")
-    assert lst.json() == []
+    assert imp.status_code == 422

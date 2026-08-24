@@ -11,5 +11,12 @@ def main() -> None:
     import uvicorn
 
     from vcenter_event_assistant.main import create_app
+    from vcenter_event_assistant.settings import get_settings
 
-    uvicorn.run(create_app, factory=True, host="0.0.0.0", port=8000)
+    settings = get_settings()
+    uvicorn.run(
+        create_app,
+        factory=True,
+        host=settings.uvicorn_host,
+        port=settings.uvicorn_port,
+    )

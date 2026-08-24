@@ -169,7 +169,7 @@ async def test_event_type_guides_import_skip_overwrite_keeps_text(client: AsyncC
 
 
 @pytest.mark.asyncio
-async def test_event_type_guides_import_empty_file_deletes_all_when_flag(client: AsyncClient) -> None:
+async def test_event_type_guides_import_empty_file_rejected_with_delete_flag(client: AsyncClient) -> None:
     await client.post("/api/event-type-guides", json={"event_type": "t.only", "general_meaning": "x"})
     imp = await client.post(
         "/api/event-type-guides/import",
@@ -179,10 +179,7 @@ async def test_event_type_guides_import_empty_file_deletes_all_when_flag(client:
             "guides": [],
         },
     )
-    assert imp.status_code == 200
-    assert imp.json()["guides_count"] == 0
-    lst = await client.get("/api/event-type-guides")
-    assert lst.json() == []
+    assert imp.status_code == 422
 
 
 @pytest.mark.asyncio
