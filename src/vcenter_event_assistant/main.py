@@ -42,6 +42,7 @@ from vcenter_event_assistant.services.digest.legacy_settings_deprecation import 
 )
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
+from vcenter_event_assistant.security_startup import validate_startup_settings
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     """
     settings = get_settings()
     bind_settings(settings)
+    validate_startup_settings(settings)
     configure_logging(settings)
     app = FastAPI(title="vCenter Event Assistant", lifespan=lifespan)
 

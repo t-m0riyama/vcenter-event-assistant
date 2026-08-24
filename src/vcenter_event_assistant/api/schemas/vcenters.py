@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vcenter_event_assistant.db.encrypted_string import ENC_PREFIX
+from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
 
 
 def _reject_storage_prefix_password(value: str) -> str:
@@ -19,6 +20,11 @@ def _reject_storage_prefix_password(value: str) -> str:
     return value
 
 
+def _validate_host_field(value: str) -> str:
+    # スキーマ層では DNS 解決しない（サフィックス設定はルート／接続時に適用）。
+    return validate_vcenter_host(value, resolve_dns=False)
+
+
 class VCenterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     host: str = Field(min_length=1, max_length=512)
@@ -26,8 +32,13 @@ class VCenterCreate(BaseModel):
     port: int = Field(default=443, ge=1, le=65535)
     username: str = Field(min_length=1, max_length=512)
     password: str = Field(min_length=1, max_length=2048)
-    verify_ssl: bool = False
+    verify_ssl: bool = True
     is_enabled: bool = True
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        return _validate_host_field(value)
 
     @field_validator("password")
     @classmethod
@@ -44,6 +55,13 @@ class VCenterUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=1, max_length=2048)
     verify_ssl: bool | None = None
     is_enabled: bool | None = None
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_host_field(value)
 
     @field_validator("password")
     @classmethod
