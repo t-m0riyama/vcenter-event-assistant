@@ -193,7 +193,7 @@ async def run_chat_with_web_search(
             searches_used += 1
             args = tool_call.get("args") or {}
             query = sanitize_search_query(str(args.get("query") or ""))
-            logger.info("chat web search query=%r", query)
+            logger.debug("chat web search query=%r", query)
             try:
                 results = await provider.search(
                     query, max_results=settings.search_max_results
@@ -239,7 +239,7 @@ def build_copilot_web_search_tool(
             return _SEARCH_LIMIT_MESSAGE
         searches_used += 1
         query = sanitize_search_query(params.query)
-        logger.info("chat web search (copilot) query=%r", query)
+        logger.debug("chat web search (copilot) query=%r", query)
         try:
             results = await provider.search(
                 query, max_results=settings.search_max_results
