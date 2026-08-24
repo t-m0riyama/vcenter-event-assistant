@@ -427,7 +427,9 @@ describe(
       await waitFor(() => {
         expect(onError).toHaveBeenCalled()
       })
-      expect(onError.mock.calls.at(-1)?.[0]).toEqual(expect.stringContaining('500'))
+      expect(onError.mock.calls.at(-1)?.[0]).toBe(
+        'リクエストに失敗しました。時間をおいて再度お試しください。',
+      )
       expect(screen.queryByText('インシデント統合タイムライン')).not.toBeInTheDocument()
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'タイムラインを生成' })).toBeEnabled()
