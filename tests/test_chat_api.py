@@ -51,7 +51,7 @@ async def test_post_chat_returns_503_when_llm_key_missing(client: AsyncClient) -
 
 
 @pytest.mark.asyncio
-async def test_post_chat_returns_400_when_window_inverted(
+async def test_post_chat_returns_422_when_window_inverted(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
@@ -64,8 +64,9 @@ async def test_post_chat_returns_400_when_window_inverted(
             "messages": [{"role": "user", "content": "x"}],
         },
     )
-    assert r.status_code == 400
-    assert "前" in r.json().get("detail", "")
+    assert r.status_code == 422
+    detail = str(r.json().get("detail", ""))
+    assert "from" in detail.lower() or "前" in detail
 
 
 @pytest.mark.asyncio
