@@ -274,6 +274,7 @@ async def test_get_app_config_reports_chat_web_search_availability(
     assert r.json()["chat_web_search_available"] is False
 
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("WEB_RESEARCH_ENABLED", "1")
     get_settings.cache_clear()
     r = await client.get("/api/config")
     assert r.status_code == 200
