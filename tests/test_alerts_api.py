@@ -16,7 +16,7 @@ async def test_alerts_rules_crud(client: AsyncClient):
         "name": "High CPU Test",
         "rule_type": "metric_threshold",
         "alert_level": "error",
-        "config": {"threshold": 90},
+        "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90},
     })
     assert resp.status_code == 201
     rule_id = resp.json()["id"]
@@ -102,7 +102,7 @@ async def test_alerts_rules_patch_name_conflict_returns_409(client: AsyncClient)
             "name": "Patch Conflict B",
             "rule_type": "metric_threshold",
             "alert_level": "error",
-            "config": {"threshold": 90},
+            "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90},
         },
     )
     assert second_resp.status_code == 201
@@ -130,7 +130,7 @@ async def test_alerts_rules_patch_config_updates_config_only(client: AsyncClient
             "name": "Patch Config Rule",
             "rule_type": "metric_threshold",
             "alert_level": "critical",
-            "config": {"threshold": 90, "window_minutes": 5},
+            "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90, "window_minutes": 5},
         },
     )
     assert create_resp.status_code == 201
@@ -138,12 +138,12 @@ async def test_alerts_rules_patch_config_updates_config_only(client: AsyncClient
 
     patch_resp = await client.patch(
         f"/api/alerts/rules/{rule_id}",
-        json={"config": {"threshold": 95}},
+        json={"config": {"metric_key": "host.cpu.usage_pct", "threshold": 95}},
     )
     assert patch_resp.status_code == 200
     body = patch_resp.json()
     assert body["id"] == rule_id
-    assert body["config"] == {"threshold": 95}
+    assert body["config"] == {"metric_key": "host.cpu.usage_pct", "threshold": 95}
     assert body["name"] == "Patch Config Rule"
     assert body["rule_type"] == "metric_threshold"
     assert body["alert_level"] == "critical"
@@ -208,7 +208,7 @@ async def test_alert_rules_import_duplicate_name_returns_400(client: AsyncClient
                     "name": "Dup Rule",
                     "rule_type": "metric_threshold",
                     "alert_level": "error",
-                    "config": {"threshold": 90},
+                    "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90},
                 },
             ],
         },
@@ -240,7 +240,7 @@ async def test_alert_rules_import_overwrite_existing_updates_fields(client: Asyn
                     "name": "Overwrite Target",
                     "rule_type": "metric_threshold",
                     "alert_level": "critical",
-                    "config": {"threshold": 95, "window_minutes": 5},
+                    "config": {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5},
                 },
             ],
         },
@@ -254,7 +254,7 @@ async def test_alert_rules_import_overwrite_existing_updates_fields(client: Asyn
     target = by_name["Overwrite Target"]
     assert target["rule_type"] == "metric_threshold"
     assert target["alert_level"] == "critical"
-    assert target["config"] == {"threshold": 95, "window_minutes": 5}
+    assert target["config"] == {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5}
 
 
 @pytest.mark.asyncio
@@ -290,7 +290,7 @@ async def test_alert_rules_import_delete_not_in_file_removes_orphans(client: Asy
                     "name": "Keep Rule",
                     "rule_type": "metric_threshold",
                     "alert_level": "critical",
-                    "config": {"threshold": 99},
+                    "config": {"metric_key": "host.cpu.usage_pct", "threshold": 99},
                 },
             ],
         },
