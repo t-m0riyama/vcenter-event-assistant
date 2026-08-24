@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
     settings = get_settings()
     warn_if_legacy_digest_settings_in_use(settings)
+    if settings.is_production and settings.langsmith_tracing_enabled:
+        logger.warning(
+            "LangSmith tracing is enabled in production; LLM prompts may be sent to external services."
+        )
     await init_db(settings=settings)
     await ensure_vcenter_password_storage(settings=settings)
     await run_screenshot_e2e_seed_if_enabled()
