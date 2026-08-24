@@ -460,7 +460,7 @@ async def test_post_incident_timeline_passes_original_request_model(
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_returns_400_when_from_equals_to(
+async def test_post_incident_timeline_returns_422_when_from_equals_to(
     client: AsyncClient,
 ) -> None:
     r = await client.post(
@@ -472,12 +472,13 @@ async def test_post_incident_timeline_returns_400_when_from_equals_to(
             }
         ),
     )
-    assert r.status_code == 400
-    assert "前" in r.json().get("detail", "")
+    assert r.status_code == 422
+    detail = str(r.json().get("detail", ""))
+    assert "from" in detail.lower() or "前" in detail
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_returns_400_when_from_after_to(
+async def test_post_incident_timeline_returns_422_when_from_after_to(
     client: AsyncClient,
 ) -> None:
     r = await client.post(
@@ -489,8 +490,9 @@ async def test_post_incident_timeline_returns_400_when_from_after_to(
             }
         ),
     )
-    assert r.status_code == 400
-    assert "前" in r.json().get("detail", "")
+    assert r.status_code == 422
+    detail = str(r.json().get("detail", ""))
+    assert "from" in detail.lower() or "前" in detail
 
 
 @pytest.mark.asyncio

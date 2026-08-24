@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
+AppEnv = Literal["development", "production"]
 
 
 def _settings_env_file() -> str | None:
@@ -30,7 +31,7 @@ class DatabaseSettingsMixin(BaseModel):
     """Database and data retention settings."""
 
     database_url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/vcenter_event_assistant",
+        default="sqlite+aiosqlite:///./data/vea.dev.db",
         description=(
             "Async SQLAlchemy URL. Supported: "
             "PostgreSQL: postgresql+asyncpg://user:pass@host:5432/dbname; "
@@ -89,6 +90,32 @@ class DatabaseSettingsMixin(BaseModel):
 class AppLogSettingsMixin(BaseModel):
     """Logging and scheduler execution settings."""
 
+    app_env: AppEnv = Field(
+        default="development",
+        description=(
+            "実行環境（``APP_ENV``）。``production`` では VEA_SECRET_KEY 等の本番必須設定を強制する。"
+        ),
+    )
+    vea_allow_plaintext_passwords: bool = Field(
+        default=False,
+        description=(
+            "``VEA_ALLOW_PLAINTEXT_PASSWORDS``。True のとき VEA_SECRET_KEY 未設定でも vCenter パスワードを平文保存可能（開発専用）。"
+        ),
+    )
+    vcenter_allowed_host_suffixes: str = Field(
+        default="",
+        description=(
+            "vCenter host に許可する FQDN サフィックス（カンマ区切り、`VCENTER_ALLOWED_HOST_SUFFIXES`）。"
+            "空のときはサフィックス制限なし（危険 IP は常に拒否）。"
+        ),
+    )
+    chat_preview_enabled: bool | None = Field(
+        default=None,
+        description=(
+            "``CHAT_PREVIEW_ENABLED``。未設定時は development のみ有効、production では無効。"
+        ),
+    )
+
     log_level: str = Field(
         default="INFO",
         description="ルート・アプリ・uvicorn ロガーのレベル（`LOG_LEVEL`）。",
@@ -108,6 +135,8 @@ class AppLogSettingsMixin(BaseModel):
     rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=1000)
     rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
+    uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
+    uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
         default=None,
         description=(
@@ -140,6 +169,23 @@ class AppLogSettingsMixin(BaseModel):
             "vCenter / SMTP / LLM / WEB 検索へ実接続せず、合成データと固定応答で動作する。"
         ),
     )
+
+    @property
+    def is_production(self) -> bool:
+        """本番環境かどうか（``APP_ENV=production``）。"""
+        return self.app_env == "production"
+
+    @property
+    def vcenter_allowed_host_suffix_list(self) -> list[str]:
+        """``VCENTER_ALLOWED_HOST_SUFFIXES`` をリスト化。"""
+        return [s.strip() for s in self.vcenter_allowed_host_suffixes.split(",") if s.strip()]
+
+    @property
+    def effective_chat_preview_enabled(self) -> bool:
+        """チャットプレビュー API の実効有効フラグ。"""
+        if self.chat_preview_enabled is not None:
+            return self.chat_preview_enabled
+        return not self.is_production
 
     @field_validator("log_level")
     @classmethod
@@ -331,7 +377,7 @@ class ResearchSettingsMixin(BaseModel):
     """WEB 調査（event_type 単位の原因・対処情報の検索と要約）設定。"""
 
     web_research_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "WEB 調査機能のマスタースイッチ（`WEB_RESEARCH_ENABLED`）。"
             "検索プロバイダの API キー未設定時は、この値に関わらず機能は無効。"

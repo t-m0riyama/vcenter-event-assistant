@@ -10,6 +10,50 @@ from httpx import AsyncClient
 
 from vcenter_event_assistant.db.models import EventRecord
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings_binding import bind_settings
+
+
+@pytest.mark.asyncio
+async def test_vcenter_create_rejects_private_ip_host(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "ssrf",
+            "host": "169.254.169.254",
+            "protocol": "https",
+            "port": 443,
+            "username": "admin",
+            "password": "secret",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_vcenter_create_rejects_without_password_storage_allowed(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("VEA_ALLOW_PLAINTEXT_PASSWORDS", raising=False)
+    monkeypatch.delenv("VEA_SECRET_KEY", raising=False)
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+
+    r = await client.post(
+        "/api/vcenters",
+        json={
+            "name": "no-key",
+            "host": "vc.example.local",
+            "protocol": "https",
+            "port": 443,
+            "username": "admin",
+            "password": "secret",
+            "is_enabled": True,
+        },
+    )
+    assert r.status_code == 503
 
 
 @pytest.mark.asyncio

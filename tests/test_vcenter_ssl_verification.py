@@ -128,7 +128,7 @@ async def test_vcenter_test_recommends_ssl_verification_when_disabled(
 
 
 @pytest.mark.asyncio
-async def test_vcenter_create_defaults_verify_ssl_to_false(client: AsyncClient) -> None:
+async def test_vcenter_create_defaults_verify_ssl_to_true(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={
@@ -141,4 +141,4 @@ async def test_vcenter_create_defaults_verify_ssl_to_false(client: AsyncClient) 
         },
     )
     assert r.status_code == 201
-    assert r.json()["verify_ssl"] is False
+    assert r.json()["verify_ssl"] is True

@@ -128,7 +128,7 @@ async def test_setup_scheduler_omits_web_research_job_without_provider() -> None
 @pytest.mark.asyncio
 async def test_setup_scheduler_adds_web_research_job_with_provider() -> None:
     app = MagicMock()
-    scheduler = setup_scheduler(app, Settings(tavily_api_key="tvly-test"))
+    scheduler = setup_scheduler(app, Settings(tavily_api_key="tvly-test", web_research_enabled=True))
     try:
         job = scheduler.get_job("web_research")
         assert job is not None

@@ -97,9 +97,15 @@ async def post_chat_preview(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
 ) -> ChatPreviewResponse:
+    if not settings.effective_chat_preview_enabled:
+        raise HTTPException(status_code=404, detail="Chat preview API is disabled")
+
     payloads = await build_chat_context_payloads(session, body)
 
     vc_anon = await load_all_vcenter_anonymization_strings(session)
+    preview_settings = settings
+    if settings.is_production:
+        preview_settings = settings.model_copy(update={"llm_anonymization_enabled": True})
     block, trimmed, meta = build_chat_preview(
         context=payloads.context,
         messages=list(body.messages),
@@ -107,7 +113,7 @@ async def post_chat_preview(
         event_time_buckets=payloads.event_time_buckets,
         incident_timeline=payloads.incident_timeline,
         extra_vcenter_strings=vc_anon,
-        settings=settings,
+        settings=preview_settings,
     )
     return ChatPreviewResponse(
         context_block=block,
