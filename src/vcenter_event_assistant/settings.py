@@ -115,6 +115,10 @@ class AppLogSettingsMixin(BaseModel):
             "``CHAT_PREVIEW_ENABLED``。未設定時は development のみ有効、production では無効。"
         ),
     )
+    enable_openapi_docs: bool = Field(
+        default=True,
+        description="OpenAPI /docs を有効化（本番では APP_ENV=production で自動無効）。",
+    )
 
     log_level: str = Field(
         default="INFO",

@@ -25,6 +25,14 @@ from vcenter_event_assistant.settings import Settings
 router = APIRouter(prefix="/vcenters", tags=["vcenters"])
 
 
+
+def _ensure_secure_protocol(protocol: str, settings: Settings) -> None:
+    if settings.is_production and protocol != "https":
+        raise HTTPException(
+            status_code=400,
+            detail="APP_ENV=production では vCenter protocol は https のみ許可されます",
+        )
+
 def _ensure_password_storage_allowed(settings: Settings) -> None:
     if not passwords_may_be_stored(settings):
         raise HTTPException(
@@ -61,6 +69,7 @@ async def create_vcenter(
     settings: Settings = Depends(get_app_settings),
 ) -> VCenter:
     _ensure_password_storage_allowed(settings)
+    _ensure_secure_protocol(body.protocol, settings)
     validated_host = _validate_vcenter_host_for_settings(body.host, settings)
     vc = VCenter(
         name=body.name,
@@ -104,6 +113,8 @@ async def update_vcenter(
     data = body.model_dump(exclude_unset=True)
     if "password" in data:
         _ensure_password_storage_allowed(settings)
+    if "protocol" in data and data["protocol"] is not None:
+        _ensure_secure_protocol(data["protocol"], settings)
     if "host" in data and data["host"] is not None:
         data["host"] = _validate_vcenter_host_for_settings(data["host"], settings)
     for k, v in data.items():

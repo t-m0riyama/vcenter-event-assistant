@@ -73,6 +73,10 @@ async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
     settings = get_settings()
     warn_if_legacy_digest_settings_in_use(settings)
+    if settings.is_production and settings.langsmith_tracing_enabled:
+        logger.warning(
+            "LangSmith tracing is enabled in production; LLM prompts may be sent to external services."
+        )
     await init_db(settings=settings)
     await ensure_vcenter_password_storage(settings=settings)
     await run_screenshot_e2e_seed_if_enabled()
@@ -93,16 +97,43 @@ def create_app() -> FastAPI:
     bind_settings(settings)
     validate_startup_settings(settings)
     configure_logging(settings)
-    app = FastAPI(title="vCenter Event Assistant", lifespan=lifespan)
+    docs_enabled = settings.enable_openapi_docs and not settings.is_production
+    app = FastAPI(
+        title="vCenter Event Assistant",
+        lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
 
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if settings.is_production and ("*" in origins or not origins):
+        origins = []
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins or ["http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Accept", "Content-Type", "Authorization", "X-Requested-With"],
     )
+
+    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            response = await call_next(request)
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+            response.headers.setdefault(
+                "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+            )
+            if settings.is_production:
+                response.headers.setdefault(
+                    "Content-Security-Policy-Report-Only",
+                    "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'",
+                )
+            return response
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     class RateLimitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
