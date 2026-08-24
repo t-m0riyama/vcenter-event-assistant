@@ -127,7 +127,7 @@ describe(
   },
   () => {
   beforeEach(() => {
-    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
     localStorage.removeItem(CHAT_WEB_SEARCH_PREFS_STORAGE_KEY)
   })
@@ -137,7 +137,7 @@ describe(
     localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
     localStorage.removeItem(CHAT_SAMPLE_PROMPTS_STORAGE_KEY)
     localStorage.removeItem(CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY)
-    localStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
     localStorage.removeItem(CHAT_WEB_SEARCH_PREFS_STORAGE_KEY)
   })
@@ -1003,8 +1003,8 @@ describe(
     })
   })
 
-  describe('localStorage 永続化', () => {
-    it('送信後にチャットパネル状態が localStorage に保存される', async () => {
+  describe('sessionStorage 永続化', () => {
+    it('送信後にチャットパネル状態が sessionStorage に保存される', async () => {
       const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         if (url.endsWith('/api/vcenters')) {
@@ -1034,7 +1034,7 @@ describe(
       })
 
       await waitFor(() => {
-        const raw = localStorage.getItem(CHAT_PANEL_STORAGE_KEY)
+        const raw = sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)
         expect(raw).toBeTruthy()
         const snap = JSON.parse(String(raw)) as { messages: { role: string; content: string }[] }
         const lastTwo = snap.messages.slice(-2)
@@ -1122,7 +1122,7 @@ describe(
       fireEvent.click(screen.getByRole('button', { name: '会話をクリア' }))
 
       await waitFor(() => {
-        expect(localStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
+        expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
       })
       confirmSpy.mockRestore()
     })

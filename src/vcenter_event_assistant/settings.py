@@ -136,6 +136,11 @@ class AppLogSettingsMixin(BaseModel):
     cors_origins: str = Field(
         default="http://localhost:5173", description="Comma-separated origins"
     )
+    rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=1000)
+    rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
+    rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
+    uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
+    uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
         default=None,
         description=(
@@ -376,7 +381,7 @@ class ResearchSettingsMixin(BaseModel):
     """WEB 調査（event_type 単位の原因・対処情報の検索と要約）設定。"""
 
     web_research_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "WEB 調査機能のマスタースイッチ（`WEB_RESEARCH_ENABLED`）。"
             "検索プロバイダの API キー未設定時は、この値に関わらず機能は無効。"

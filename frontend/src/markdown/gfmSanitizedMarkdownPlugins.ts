@@ -13,6 +13,8 @@ import remarkGfm from 'remark-gfm'
  */
 const markdownSanitizeSchema: Schema = {
   ...defaultSchema,
+  // 外部画像読み込み（プライバシー／トラッキング）を防ぐ
+  tagNames: (defaultSchema.tagNames ?? []).filter((name) => name !== 'img'),
   attributes: {
     ...defaultSchema.attributes,
     span: [

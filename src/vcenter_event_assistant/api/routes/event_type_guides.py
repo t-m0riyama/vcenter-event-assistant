@@ -7,6 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.import_guards import reject_empty_destructive_import
 from vcenter_event_assistant.api.schemas import (
     EventTypeGuideCreate,
     EventTypeGuideRead,
@@ -86,6 +87,11 @@ async def import_event_type_guides(
             existing.action_required = g.action_required
 
     if body.delete_guides_not_in_import:
+        reject_empty_destructive_import(
+            item_count=len(body.guides),
+            delete_not_in_import=True,
+            resource_label="event type guides",
+        )
         s = set(types_in_file)
         if not s:
             await session.execute(delete(EventTypeGuide))
