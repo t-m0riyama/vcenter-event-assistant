@@ -1,13 +1,14 @@
-# Collector plugins
+# コレクタプラグイン
 
-vCenter Event Assistant discovers collector plugins when the application starts. Built-in and
-external collectors use the same versioned contract. External plugins are trusted Python code and
-run with the same permissions as the application; install only packages you trust.
+vCenter Event Assistant は、アプリケーションの起動時にコレクタプラグインを検出します。組み込み
+コレクタと外部コレクタは、同じバージョン付きの契約を使用します。外部プラグインは信頼された
+Python コードであり、アプリケーションと同じ権限で動作します。信頼できるパッケージのみを
+インストールしてください。
 
-## Configuration
+## 設定
 
-Set `VEA_COLLECTOR_CONFIG_FILE` to a TOML file. Built-in collectors are enabled by default. External
-collectors are disabled unless their table sets `enabled = true`.
+`VEA_COLLECTOR_CONFIG_FILE` に TOML ファイルを指定します。組み込みコレクタは既定で有効です。
+外部コレクタは、テーブルで `enabled = true` を設定しない限り無効です。
 
 ```toml
 [collectors."builtin.vcenter.events"]
@@ -24,107 +25,113 @@ timeout_seconds = 60
 sensor = "system-board"
 ```
 
-Plugin-specific secrets should be read from environment variables owned and documented by that
-plugin. Common settings and simple plugin values may override TOML with
-`VEA_COLLECTOR__<NORMALIZED_PLUGIN_ID>__ENABLED`, `__INTERVAL_SECONDS`, `__TIMEOUT_SECONDS`, or
-`__<CONFIG_KEY>`; dots and hyphens in the ID become underscores. For example,
-`VEA_COLLECTOR__EXAMPLE_HOST_TEMPERATURE__SENSOR=cpu-package` overrides `config.sensor`.
-Secrets must not be placed in the TOML file. Invalid, missing, or incompatible plugins appear
-as `failed` in `GET /api/plugins/collectors`; they do not prevent the application from starting.
+プラグイン固有の機密値は、そのプラグインが所有し文書化した環境変数から読み取るべきです。共通
+設定と単純なプラグイン値は、`VEA_COLLECTOR__<正規化したプラグインID>__ENABLED`、
+`__INTERVAL_SECONDS`、`__TIMEOUT_SECONDS`、`__<設定キー>` により TOML を上書きできます。
+ID 中のドットとハイフンはアンダースコアになります。たとえば
+`VEA_COLLECTOR__EXAMPLE_HOST_TEMPERATURE__SENSOR=cpu-package` は `config.sensor` を上書きします。
+機密値を TOML ファイルに置いてはなりません。不正・欠落・非互換のプラグインは
+`GET /api/plugins/collectors` で `failed` として表示されます。アプリケーションの起動は妨げません。
 
-## Management screen
+## 管理画面
 
-The **Settings > Plugins** screen shows the effective common configuration and the latest execution
-status for each vCenter. It never exposes arbitrary plugin configuration values or secrets.
+**設定 > プラグイン**画面には、各 vCenter に対する実効の共通設定と最新の実行状況が表示されます。
+任意のプラグイン設定値や機密値は一切公開されません。
 
-The screen is read-only unless `VEA_PLUGIN_MANAGEMENT_ENABLED=true`. When management is enabled it
-can also enable/disable collectors, change interval and timeout, install and uninstall packages, and
-reload the registry without restarting the application.
+`VEA_PLUGIN_MANAGEMENT_ENABLED=true` でない限り、この画面は参照専用です。管理を有効にすると、
+コレクタの有効化・無効化、実行間隔とタイムアウトの変更、パッケージのインストールと
+アンインストール、アプリケーションを再起動せずにレジストリをリロードすることもできます。
 
-**Installing, uninstalling, and reloading plugins is effectively arbitrary code execution.** This
-application performs no authentication of its own, so enable management only when a reverse proxy
-enforces authentication for `/api/plugins`. The setting is disabled by default.
+**プラグインのインストール、アンインストール、リロードは、実質的に任意コード実行です。**
+本アプリケーションは独自の認証を持たないため、リバースプロキシが `/api/plugins` に対して認証を
+強制している場合のみ管理を有効にしてください。この設定は既定で無効です。
 
-## Example plugin
+## サンプルプラグイン
 
-[`examples/example-temperature-collector/`](../examples/example-temperature-collector/) is a
-runnable sample: a minimal metric collector plus a README covering build, install, enable, reload,
-and uninstall. It can also inject faults (`EXAMPLE_COLLECTOR_FAULT=hang|crash|raise`) so the
-process-isolation behaviour described above can be observed end to end. It is deliberately not a
-member of the uv workspace, so it is never installed into a development environment by accident.
+[`examples/example-temperature-collector/`](../examples/example-temperature-collector/) は実行可能な
+サンプルです。最小構成のメトリクスコレクタと、ビルド・インストール・有効化・リロード・
+アンインストールを網羅した README で構成されます。障害を注入することもできるため
+(`EXAMPLE_COLLECTOR_FAULT=hang|crash|raise`)、後述のプロセス分離の挙動を端から端まで観察できます。
+このパッケージは意図的に uv ワークスペースのメンバーに含めていないため、開発環境に誤って
+インストールされることはありません。
 
-## Package entry point
+## パッケージの entry point
 
-Plugins depend only on `vcenter-event-assistant-plugin-api` and publish a zero-argument factory:
+プラグインは `vcenter-event-assistant-plugin-api` のみに依存し、引数なしのファクトリを公開します。
 
 ```toml
 [project.entry-points."vcenter_event_assistant.collectors"]
 temperature = "example_temperature:build_collector"
 ```
 
-The factory returns an object implementing `CollectorPlugin`. Metric keys must be declared in the
-manifest and globally unique among installed collectors. The application validates each batch and
-owns database writes, event scoring, duplicate handling, and cursor commits.
+ファクトリは `CollectorPlugin` を実装したオブジェクトを返します。メトリクスキーはマニフェストで
+宣言し、インストール済みの全コレクタのあいだで一意である必要があります。各バッチの検証、および
+データベース書き込み、イベントスコアリング、重複処理、カーソルのコミットはアプリケーションが
+担います。
 
-## Configuration precedence
+## 設定の優先順位
 
-Effective values are resolved in this order, highest first:
+実効値は次の順（上が最優先）で解決されます。
 
-| Source | Scope | Notes |
+| 参照元 | 対象範囲 | 備考 |
 |---|---|---|
-| Environment variables | `enabled`, `interval_seconds`, `timeout_seconds`, plugin values | Always wins. Fields pinned here are reported as `env_locked_fields` and shown as read-only in the UI. |
-| Database | `enabled`, `interval_seconds`, `timeout_seconds` | Written by the management screen. `NULL` means "unset" and defers to lower sources. |
-| TOML file | everything | `VEA_COLLECTOR_CONFIG_FILE`. |
-| Manifest defaults | `default_interval_seconds` | Declared by the plugin. |
+| 環境変数 | `enabled`、`interval_seconds`、`timeout_seconds`、プラグイン値 | 常に優先されます。ここで固定されたフィールドは `env_locked_fields` として報告され、UI では読み取り専用として表示されます。 |
+| データベース | `enabled`、`interval_seconds`、`timeout_seconds` | 管理画面から書き込まれます。`NULL` は「未設定」を意味し、より低い参照元に委ねます。 |
+| TOML ファイル | すべて | `VEA_COLLECTOR_CONFIG_FILE`。 |
+| マニフェストの既定値 | `default_interval_seconds` | プラグインが宣言します。 |
 
-Secrets belong in environment variables owned by the plugin; they are never stored in the database
-or in the TOML file.
+機密値は、そのプラグインが所有する環境変数に置きます。データベースや TOML ファイルには
+保存されません。
 
-## Dynamic installation
+## 動的インストール
 
-Set `VEA_PLUGIN_DIR` (default `data/plugins`). Each distribution is installed in isolation with
-`uv pip install --target` into `<VEA_PLUGIN_DIR>/<distribution>/<version>/`, so uninstalling and
-rolling back are a directory removal. Install a package by uploading a `.whl` or `.tar.gz` from the
-management screen; uploads run with `--no-index` and do not reach the network.
+`VEA_PLUGIN_DIR`（既定 `data/plugins`）を設定します。各配布物は `uv pip install --target` により
+`<VEA_PLUGIN_DIR>/<配布物名>/<バージョン>/` へ分離してインストールされるため、アンインストールと
+ロールバックはディレクトリの削除で済みます。パッケージのインストールは、管理画面から `.whl` または
+`.tar.gz` をアップロードして行います。アップロードは `--no-index` で実行され、ネットワークへは
+到達しません。
 
-Installing by name from a package index requires `VEA_PLUGIN_ALLOW_INDEX_INSTALL=true` (and
-optionally `VEA_PLUGIN_INDEX_URL`). It is disabled by default because of the supply-chain risk.
-Requirements are restricted to `<name>` or `<name>==<version>`.
+パッケージインデックスから名前でインストールするには `VEA_PLUGIN_ALLOW_INDEX_INSTALL=true` が
+必要です（必要に応じて `VEA_PLUGIN_INDEX_URL` も）。サプライチェーンのリスクがあるため既定では
+無効です。要求指定は `<名前>` または `<名前>==<バージョン>` に限定されます。
 
-Offline uploads install the package alone (`--no-index --no-deps`), because without an index no
-dependency can be resolved. This is what allows a plugin that correctly declares
-`vcenter-event-assistant-plugin-api` to install at all: that package is a hard dependency of the
-application and is already visible on the worker's `sys.path`, so a second copy is unnecessary and
-would only risk a version mismatch. A plugin that needs *other* dependencies must either be
-installed from an index or vendor them; otherwise the post-install validation below fails with
-`ModuleNotFoundError` and the install is rolled back.
+オフラインのアップロードでは、インデックスがなく依存を解決できないため、パッケージ単体を
+インストールします（`--no-index --no-deps`）。これは、`vcenter-event-assistant-plugin-api` を正しく
+宣言したプラグインがそもそもインストールできる理由でもあります。このパッケージは
+アプリケーションの必須依存であり、ワーカーの `sys.path` 上に既に見えているため、2 つ目のコピーは
+不要であり、バージョン不整合のリスクだけをもたらします。*それ以外*の依存が必要なプラグインは、
+インデックス経由でインストールするか、依存を同梱する必要があります。そうでない場合、後述の
+インストール直後の検証が `ModuleNotFoundError` で失敗し、インストールはロールバックされます。
 
-After installation the package is validated in an isolated worker: if it provides no
-`vcenter_event_assistant.collectors` entry point, or the entry point fails to load, the install
-directory is removed and nothing is registered. Newly installed collectors appear as `disabled`;
-enable them and press **変更を反映** to apply.
+インストール後、パッケージは分離されたワーカー内で検証されます。`vcenter_event_assistant.collectors`
+の entry point を提供しない場合、または entry point の読み込みに失敗した場合、インストール
+ディレクトリは削除され、何も登録されません。新しくインストールされたコレクタは `disabled` として
+現れます。有効化してから**変更を反映**を押して適用してください。
 
-In containers, mount `VEA_PLUGIN_DIR` on a persistent volume — otherwise installed plugins are lost
-when the container is replaced. The `uv` binary must be present in the image (it already is).
+コンテナでは `VEA_PLUGIN_DIR` を永続ボリュームにマウントしてください。そうしないと、コンテナを
+入れ替えたときにインストール済みプラグインが失われます。`uv` バイナリがイメージ内に存在する
+必要があります（既に含まれています）。
 
-## Hot reload
+## ホットリロード
 
-`POST /api/plugins/collectors/reload` (the **変更を反映** button) rebuilds the registry, activates
-the new immutable snapshot atomically, reconciles the scheduler's collector jobs (adding, removing,
-and rescheduling them), and only then drains and stops the previous generation. Restarting the
-process is not required. The registry generation shown on the screen increments on every reload.
+`POST /api/plugins/collectors/reload`（**変更を反映**ボタン）は、レジストリを再構築し、新しい
+イミュータブルなスナップショットをアトミックに有効化し、スケジューラのコレクタジョブを
+再調整（追加・削除・再スケジュール）したうえで、はじめて前世代をドレインして停止します。
+プロセスの再起動は不要です。画面に表示されるレジストリ世代は、リロードごとに増加します。
 
-## Process isolation
+## プロセス分離
 
-External collectors run in a dedicated worker process per plugin, launched with the application's
-own interpreter and with the plugin install directories appended to `sys.path` (so application
-dependencies win over plugin-bundled ones). Built-in collectors continue to run in-process.
+外部コレクタは、プラグインごとの専用ワーカープロセスで動作します。ワーカーはアプリケーション
+自身のインタプリタで起動され、プラグインのインストールディレクトリは `sys.path` の末尾に
+追加されます（したがってアプリケーションの依存がプラグイン同梱のものより優先されます）。
+組み込みコレクタは引き続きインプロセスで動作します。
 
-The application opens the vCenter connection on the worker side and passes the plugin only the
-`open_vcenter_connection` factory, so the `CollectorPlugin` contract is unchanged. A plugin that
-exceeds `timeout_seconds` has its worker killed, and a plugin that crashes its worker is reported as
-`failed` without affecting the application or other plugins.
+vCenter への接続はワーカー側でアプリケーションが開き、プラグインには
+`open_vcenter_connection` ファクトリのみを渡すため、`CollectorPlugin` の契約は変わりません。
+`timeout_seconds` を超えたプラグインはワーカーが kill され、ワーカーをクラッシュさせた
+プラグインは、アプリケーションや他のプラグインに影響を与えることなく `failed` として
+報告されます。
 
-This isolates crashes, hangs, and dependency conflicts. It is **not** a sandbox against malicious
-code: a plugin shares its worker process with the credentials passed to that worker. Install only
-packages you trust.
+これによりクラッシュ、ハング、依存の衝突が分離されます。ただし悪意あるコードに対する
+サンドボックスでは**ありません**。プラグインは、そのワーカーに渡された認証情報とワーカー
+プロセスを共有します。信頼できるパッケージのみをインストールしてください。
