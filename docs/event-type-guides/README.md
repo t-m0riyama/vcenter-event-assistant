@@ -67,8 +67,7 @@ vCenter Server は、イベント種別ごとの公式な説明・メッセー�
 2. **イベントカタログ**（上記 `scripts/dump_event_catalog.py` の出力）で該当種別を引き、`description` / `fullFormat` / `longDescription` / `category` を確認する。**カタログに存在しない種別は、実在しない型名の可能性がある**ため、pyVmomi の型定義と照合する。
 3. カタログに `longDescription` がない種別は、Broadcom Developer の **vSphere Web Services API** で `vim.event.<名前>` のデータオブジェクトページを開き、**Data Object Description** とプロパティを確認する。
 4. 概念理解が必要なら、TechDocs の **Understanding Events**（Web Services SDK プログラミングガイド）を読む。
-5. 日本語の訳語に迷う場合は、[ManageEngine の VMware イベント対訳表](https://www.manageengine.jp/support/kb/OpManager/?p=461)（VMware 公式メッセージの日本語 46 件。**非公式の補助資料**）を照合に使う。
-6. 本文は要約し、参照 URL と参照日を、対象が第1弾なら [`citations-priority-v1.md`](./citations-priority-v1.md)、第2弾なら [`citations-priority-v2.md`](./citations-priority-v2.md) に追記する。
+5. 本文は要約し、参照 URL と参照日を、対象が第1弾なら [`citations-priority-v1.md`](./citations-priority-v1.md)、第2弾なら [`citations-priority-v2.md`](./citations-priority-v2.md) に追記する。
 
 ## レビュー観点
 

@@ -31,7 +31,6 @@
 | event_type | 参照元 | 参照日 | メモ |
 |------------|--------|--------|------|
 | （共通） | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-sdks-tools/8-0/web-services-sdk-programming-guide/events-and-alarms/understanding-events.html | 2026-09-13 | Event データオブジェクトの概要、永続化の考え方 |
-| （共通） | https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | VMware 公式の日本語メッセージ 46 件の対訳。**ManageEngine による非公式資料**のため、訳語の照合にのみ使用 |
 
 ## 第2弾（イベント種別ごと）
 
@@ -101,7 +100,7 @@
 | `vim.event.DatacenterEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DatacenterRenamedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DatastoreCapacityIncreasedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.DatastoreDestroyedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.DatastoreDestroyedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DatastoreDiscoveredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.DatastoreDuplicatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
 | `vim.event.DatastoreEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
@@ -111,9 +110,9 @@
 | `vim.event.DatastoreFileMovedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DatastoreIORMReconfiguredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DatastorePrincipalConfigured` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.DatastoreRemovedOnHostEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.DatastoreRenamedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.DatastoreRenamedOnHostEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.DatastoreRemovedOnHostEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
+| `vim.event.DatastoreRenamedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
+| `vim.event.DatastoreRenamedOnHostEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.DrsDisabledEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DrsEnabledEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DrsEnteredStandbyModeEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
@@ -128,7 +127,7 @@
 | `vim.event.DrsRuleComplianceEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DrsRuleViolationEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DrsSoftRuleViolationEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.DrsVmMigratedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.DrsVmMigratedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.DrsVmPoweredOnEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.DuplicateIpDetectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.DvpgImportEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
@@ -190,8 +189,8 @@
 | `vim.event.GhostDvsProxySwitchRemovedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.GlobalMessageChangedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.HealthStatusChangedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.HostAddFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.HostAddedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.HostAddFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
+| `vim.event.HostAddedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.HostAdminDisableEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`警告`。 |
 | `vim.event.HostAdminEnableEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`警告`。 |
 | `vim.event.HostCnxFailedAccountFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`エラー`。 |
@@ -210,7 +209,7 @@
 | `vim.event.HostComplianceCheckedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.HostCompliantEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.HostConfigAppliedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.HostConnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.HostConnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.HostConnectionLostEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`エラー`。 |
 | `vim.event.HostDasDisabledEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.HostDasDisablingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
@@ -269,20 +268,20 @@
 | `vim.event.LicenseRestrictedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.LicenseServerAvailableEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.LicenseServerUnavailableEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
-| `vim.event.LocalDatastoreCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.LocalDatastoreCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.LocalTSMEnabledEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.LockerMisconfiguredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。 |
 | `vim.event.LockerReconfiguredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.MigrationErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.MigrationErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.MigrationEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.MigrationHostErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.MigrationHostWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.MigrationResourceErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.MigrationResourceWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.MigrationWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.MigrationHostErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
+| `vim.event.MigrationHostWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。 |
+| `vim.event.MigrationResourceErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
+| `vim.event.MigrationResourceWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。 |
+| `vim.event.MigrationWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。 |
 | `vim.event.MtuMatchEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.MtuMismatchEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
-| `vim.event.NASDatastoreCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.NASDatastoreCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.NetworkRollbackEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
 | `vim.event.NoAccessUserEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.NoDatastoresConfiguredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
@@ -351,7 +350,7 @@
 | `vim.event.UserPasswordChanged` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.UserUnassignedFromGroup` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.UserUpgradeEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`ユーザー`。 |
-| `vim.event.VMFSDatastoreCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VMFSDatastoreCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VMFSDatastoreExpandedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VMFSDatastoreExtendedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VMotionLicenseExpiredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
@@ -365,17 +364,17 @@
 | `vim.event.VmAutoRenameEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmBeingClonedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmBeingClonedNoFolderEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.VmBeingCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmBeingCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmBeingDeployedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmBeingHotMigratedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmBeingMigratedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmBeingRelocatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmCloneEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmCloneFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`エラー`。 |
-| `vim.event.VmClonedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmClonedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmConfigMissingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`情報`。 |
-| `vim.event.VmConnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmConnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
+| `vim.event.VmCreatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmDasBeingResetEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`情報`。 |
 | `vim.event.VmDasBeingResetWithScreenshotEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`情報`。 |
 | `vim.event.VmDasResetFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。 |
@@ -383,32 +382,32 @@
 | `vim.event.VmDasUpdateOkEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmDateRolledBackEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
 | `vim.event.VmDeployFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
-| `vim.event.VmDeployedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmDisconnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmDeployedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
+| `vim.event.VmDisconnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmDiscoveredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.VmDiskFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmDiskFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmEmigratingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmEndRecordingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmEndReplayingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.VmFailedMigrateEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmFailedMigrateEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmFailedRelayoutEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmFailedRelayoutOnVmfs2DatastoreEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmFailedStartingSecondaryEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
-| `vim.event.VmFailedToPowerOffEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmFailedToPowerOnEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmFailedToRebootGuestEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmFailedToPowerOffEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
+| `vim.event.VmFailedToPowerOnEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
+| `vim.event.VmFailedToRebootGuestEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmFailedToResetEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmFailedToShutdownGuestEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmFailedToStandbyGuestEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
-| `vim.event.VmFailedToSuspendEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmFailedToSuspendEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
 | `vim.event.VmFailedUpdatingSecondaryConfig` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`エラー`。 |
-| `vim.event.VmFailoverFailed` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmFailoverFailed` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`警告`。 |
 | `vim.event.VmFaultToleranceStateChangedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmFaultToleranceTurnedOffEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmFaultToleranceVmTerminatedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`情報`。 |
 | `vim.event.VmGuestOSCrashedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
-| `vim.event.VmGuestRebootEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmGuestRebootEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmGuestStandbyEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmHealthMonitoringStateChangedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmInstanceUuidAssignedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
@@ -422,25 +421,25 @@
 | `vim.event.VmMessageErrorEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`エラー`。 |
 | `vim.event.VmMessageEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmMessageWarningEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`警告`。 |
-| `vim.event.VmMigratedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmMigratedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmNoCompatibleHostForSecondaryEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmNoNetworkAccessEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。 |
 | `vim.event.VmOrphanedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`警告`。 |
-| `vim.event.VmPowerOffOnIsolationEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmPowerOffOnIsolationEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmPoweringOnWithCustomizedDVPortEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.VmPrimaryFailoverEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmReconfiguredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmRegisteredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmPrimaryFailoverEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
+| `vim.event.VmReconfiguredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
+| `vim.event.VmRegisteredEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmRelayoutSuccessfulEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmRelayoutUpToDateEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmReloadFromPathEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmReloadFromPathFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
-| `vim.event.VmRelocateFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmRelocateFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmRelocateSpecEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmRemoteConsoleConnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmRemoteConsoleDisconnectedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
-| `vim.event.VmRemovedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmRenamedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmRemovedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
+| `vim.event.VmRenamedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。 |
 | `vim.event.VmRequirementsExceedCurrentEVCModeEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`警告`。 |
 | `vim.event.VmResettingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmResourcePoolMovedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
@@ -462,8 +461,8 @@
 | `vim.event.VmSuspendingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
 | `vim.event.VmTimedoutStartingSecondaryEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因・対処）。category=`エラー`。 |
 | `vim.event.VmUnsupportedStartingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`警告`。 |
-| `vim.event.VmUpgradeCompleteEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
-| `vim.event.VmUpgradeFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール）<br>https://www.manageengine.jp/support/kb/OpManager/?p=461 | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。日本語訳語を ManageEngine KB（**非公式の補助資料**）と照合。 |
+| `vim.event.VmUpgradeCompleteEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`情報`。 |
+| `vim.event.VmUpgradeFailedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `description` と `fullFormat`。category=`エラー`。 |
 | `vim.event.VmUpgradingEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmUuidAssignedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`情報`。 |
 | `vim.event.VmUuidChangedEvent` | vCenter イベントカタログ（`EventManager.description.eventInfo`, vSphere 8.0, ja ロケール） | 2026-09-13 | 公式の `longDescription`（説明・原因）。category=`警告`。 |
