@@ -1,5 +1,12 @@
-import { defineConfig } from 'vite'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+
+import { buildBackendProxyTarget } from './src/config/backendProxyTarget'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.join(__dirname, '..')
 
 /**
  * Rollup が node_modules をまとめすぎると単一チャンクが 500 kB を超え、
@@ -34,19 +41,24 @@ function manualChunks(id: string): string | undefined {
   return undefined
 }
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-      '/health': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-    },
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, repoRoot, 'UVICORN_')
+  const backendTarget = buildBackendProxyTarget(env.UVICORN_PORT)
+
+  return {
+    plugins: [react()],
+    server: {
+      proxy: {
+        '/api': { target: backendTarget, changeOrigin: true },
+        '/health': { target: backendTarget, changeOrigin: true },
       },
     },
-  },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks,
+        },
+      },
+    },
+  }
 })
