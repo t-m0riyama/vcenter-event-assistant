@@ -1,0 +1,15 @@
+[project]
+name = "example-temperature-collector"
+version = "0.1.0"
+description = "Sample collector plugin for vCenter Event Assistant"
+requires-python = ">=3.12"
+dependencies = [
+    "vcenter-event-assistant-plugin-api>=1.0.0,<2",
+]
+
+[project.entry-points."vcenter_event_assistant.collectors"]
+"example.host.temperature" = "example_temperature_collector:build_collector"
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"

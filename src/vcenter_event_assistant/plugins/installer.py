@@ -112,11 +112,17 @@ def _install_command(
     if from_index:
         if settings.plugin_index_url:
             command += ["--index-url", settings.plugin_index_url]
-    else:
-        # アップロード経路は既定でネットワークへ出ない。依存解決が必要な配布物は
-        # インデックス許可時のみ受け付ける。
-        if not settings.plugin_allow_index_install:
-            command.append("--no-index")
+    elif not settings.plugin_allow_index_install:
+        # アップロード経路は既定でネットワークへ出ないため、依存解決もできない。
+        # `--no-deps` を付けないと、正しく `vcenter-event-assistant-plugin-api` を
+        # 宣言したプラグインすら「解決できない」で失敗する。この API パッケージは
+        # アプリ本体の依存として必ず存在し、ワーカーの sys.path から見えるので、
+        # 再インストールする必要はない（別バージョンが載ると齟齬の元にもなる）。
+        #
+        # 他に依存を持つプラグインは、ここでは入らないまま素通りするが、直後の
+        # 検証で entry point の import が ModuleNotFoundError になり、
+        # ディレクトリごとロールバックされるため、黙って壊れた状態にはならない。
+        command += ["--no-index", "--no-deps"]
     return command + [source]
 
 
