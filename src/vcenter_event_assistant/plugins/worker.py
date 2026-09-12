@@ -18,12 +18,37 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
+import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from importlib.metadata import entry_points
 from typing import Any
 
 ENTRY_POINT_GROUP = "vcenter_event_assistant.collectors"
+
+logger = logging.getLogger(__name__)
+
+#: 例外メッセージを親プロセスへ通してよい型。
+#:
+#: 通す条件は「メッセージが import 名・entry point 名・設定キー名・バッチ構造だけから
+#: 生成され、認証情報やサーバ応答を含みえない」こと。``vim.fault.*``・``ssl.SSLError``・
+#: 汎用の ``RuntimeError`` はホスト名や応答本文、場合によっては資格情報を含みうるため
+#: 意図的に除外する（従来どおり型名のみが親へ渡る）。
+_SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
+    ImportError,
+    LookupError,
+    NotImplementedError,
+)
+
+
+def _safe_detail(exc: BaseException) -> str | None:
+    """allow-list に載る型に限り、メッセージを親へ渡せる形で返す。"""
+    if not isinstance(exc, _SAFE_DETAIL_TYPES):
+        return None
+    detail = str(exc).strip()
+    return detail[:1000] if detail else None
 
 
 def _extend_sys_path(plugin_paths: list[str]) -> None:
@@ -48,8 +73,18 @@ def _discover() -> list[dict[str, Any]]:
             found.append(
                 {"name": ep.name, "manifest": manifest_to_json(plugin.manifest)}
             )
+            logger.info("collector entry point loaded name=%s", ep.name)
         except Exception as exc:
-            found.append({"name": ep.name, "error": type(exc).__name__})
+            # 親へ渡るのは型名だけなので、どのモジュールが足りないのかは
+            # ここでしか分からない。オフライン（--no-deps）導入で最も多い失敗である。
+            logger.exception(
+                "collector entry point load failed name=%s value=%s", ep.name, ep.value
+            )
+            entry: dict[str, Any] = {"name": ep.name, "error": type(exc).__name__}
+            detail = _safe_detail(exc)
+            if detail is not None:
+                entry["detail"] = detail
+            found.append(entry)
     return found
 
 
@@ -132,7 +167,18 @@ async def _handle(host: _PluginHost, request: dict[str, Any]) -> Any:
             open_vcenter_connection=lambda: _open_connection(params),
             mock_mode=bool(raw_context.get("mock_mode", False)),
         )
+        started = time.monotonic()
         batch = await plugin.collect(context)
+        logger.info(
+            "collect finished entry_point=%s elapsed_ms=%d events=%d metrics=%d "
+            "had_cursor=%s advanced_cursor=%s",
+            entry_point_name,
+            int((time.monotonic() - started) * 1000),
+            len(batch.events),
+            len(batch.metrics),
+            context.previous_cursor is not None,
+            batch.next_cursor is not None,
+        )
         return {"batch": batch_to_json(batch)}
 
     raise ValueError(f"unknown op: {op}")
@@ -146,11 +192,25 @@ async def _serve(plugin_paths: list[str]) -> int:
     protocol_out = sys.stdout
     sys.stdout = sys.stderr
 
+    # ログの出力先は「今の」stderr に固定する。dictConfig は設定構築時に stream を
+    # 解決するので、この後プラグインが sys.stderr を差し替えても protocol_out へは
+    # 向かない。ここを sys.stdout 参照にするとプロトコルが壊れる。
+    log_stream = sys.stderr
+
+    from vcenter_event_assistant.logging_config import configure_worker_logging
     from vcenter_event_assistant.settings import get_settings
     from vcenter_event_assistant.settings_binding import bind_settings
 
+    settings = get_settings()
     # connect_vcenter は require_settings() を参照するため、束縛しておく。
-    bind_settings(get_settings())
+    bind_settings(settings)
+    configure_worker_logging(settings, stream=log_stream)
+
+    logger.info(
+        "collector worker ready pid=%s plugin_paths=%s",
+        os.getpid(),
+        plugin_paths or "(none)",
+    )
 
     host = _PluginHost()
     loop = asyncio.get_running_loop()
@@ -165,18 +225,26 @@ async def _serve(plugin_paths: list[str]) -> int:
         try:
             request = json.loads(line)
         except json.JSONDecodeError:
+            logger.warning("collector worker got a malformed request line; ignoring it")
             continue
         request_id = request.get("id")
         try:
             result = await _handle(host, request)
             response = {"id": request_id, "ok": True, "result": result}
         except Exception as exc:
-            # 詳細な例外文言は認証情報やレスポンス本文を含みうるため型名のみ返す。
-            print(
-                f"collector worker request failed op={request.get('op')!r}: {exc!r}",
-                file=sys.stderr,
+            # 完全な例外情報はこの stderr にだけ出す。運用者は見られるが、
+            # 親プロセス経由で API や UI に出ることはない。
+            logger.exception(
+                "collector worker request failed op=%s entry_point=%s: %r",
+                request.get("op"),
+                request.get("entry_point"),
+                exc,
             )
+            # 親へは型名のみ。allow-list に載る型だけメッセージも添える。
             response = {"id": request_id, "ok": False, "error": type(exc).__name__}
+            detail = _safe_detail(exc)
+            if detail is not None:
+                response["detail"] = detail
         protocol_out.write(json.dumps(response) + "\n")
         protocol_out.flush()
 
@@ -184,7 +252,8 @@ async def _serve(plugin_paths: list[str]) -> int:
         try:
             await plugin.stop()
         except Exception:  # pragma: no cover - 終了処理のベストエフォート
-            pass
+            logger.exception("collector plugin stop failed during worker shutdown")
+    logger.info("collector worker shutting down pid=%s", os.getpid())
     return 0
 
 

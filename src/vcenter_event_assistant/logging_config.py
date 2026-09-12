@@ -114,3 +114,58 @@ def build_logging_dict(settings: Settings) -> dict[str, Any]:
 def configure_logging(settings: Settings) -> None:
     """logging を上書き設定する（uvicorn 既定と衝突するため `force=True`）。"""
     logging.config.dictConfig(build_logging_dict(settings))
+
+
+#: 外部プラグインが使うロガーの名前空間。
+#: ``plugins.worker`` がこの配下だけレベルを切り替えられるよう固定する。
+PLUGIN_LOGGER_NAMESPACE = "vcenter_event_assistant.plugins.external"
+
+_LOG_FORMAT_WORKER = "%(levelname)s [collector-worker %(process)d] [%(name)s] %(message)s"
+
+
+def build_worker_logging_dict(settings: Settings, *, stream: Any) -> dict[str, Any]:
+    """コレクタワーカープロセス用の dictConfig を組み立てる。
+
+    アプリ本体の設定とは意図的に別物である。
+
+    - ハンドラは ``stream`` への `StreamHandler` 1 本だけにする。ワーカーで
+      `RotatingFileHandler` を開くと、親と子が同一ファイルをローテートして
+      リネームが競合し、親のログが失われる。ログの永続化は親のプロセス管理
+      （systemd / docker logs 等）に委ねる。
+    - ``stream`` は呼び出し側が明示的に渡す。ワーカーの stdout は JSON Lines
+      プロトコル専用であり、そこへ 1 バイトでも書くと通信が壊れるため、
+      ここで `sys.stdout` を参照してはならない。
+    """
+    level = settings.log_level
+    plugin_level = settings.collector_worker_log_level or level
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {"worker": {"format": _LOG_FORMAT_WORKER}},
+        "handlers": {
+            "stream": {
+                "class": "logging.StreamHandler",
+                "level": "NOTSET",
+                "formatter": "worker",
+                "stream": stream,
+            },
+        },
+        "loggers": {
+            # 外部プラグインだけをアプリ全体とは別のレベルで扱えるようにする。
+            PLUGIN_LOGGER_NAMESPACE: {
+                "handlers": [],
+                "level": plugin_level,
+                "propagate": True,
+            },
+        },
+        "root": {"handlers": ["stream"], "level": level},
+    }
+
+
+def configure_worker_logging(settings: Settings, *, stream: Any) -> None:
+    """コレクタワーカープロセスの logging を設定する。
+
+    ワーカーは従来これを一切行っておらず、プラグインの ``logger.info()`` は
+    ハンドラもレベルも持たないまま捨てられていた。
+    """
+    logging.config.dictConfig(build_worker_logging_dict(settings, stream=stream))
