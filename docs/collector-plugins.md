@@ -45,6 +45,14 @@ reload the registry without restarting the application.
 application performs no authentication of its own, so enable management only when a reverse proxy
 enforces authentication for `/api/plugins`. The setting is disabled by default.
 
+## Example plugin
+
+[`examples/example-temperature-collector/`](../examples/example-temperature-collector/) is a
+runnable sample: a minimal metric collector plus a README covering build, install, enable, reload,
+and uninstall. It can also inject faults (`EXAMPLE_COLLECTOR_FAULT=hang|crash|raise`) so the
+process-isolation behaviour described above can be observed end to end. It is deliberately not a
+member of the uv workspace, so it is never installed into a development environment by accident.
+
 ## Package entry point
 
 Plugins depend only on `vcenter-event-assistant-plugin-api` and publish a zero-argument factory:
@@ -82,6 +90,14 @@ management screen; uploads run with `--no-index` and do not reach the network.
 Installing by name from a package index requires `VEA_PLUGIN_ALLOW_INDEX_INSTALL=true` (and
 optionally `VEA_PLUGIN_INDEX_URL`). It is disabled by default because of the supply-chain risk.
 Requirements are restricted to `<name>` or `<name>==<version>`.
+
+Offline uploads install the package alone (`--no-index --no-deps`), because without an index no
+dependency can be resolved. This is what allows a plugin that correctly declares
+`vcenter-event-assistant-plugin-api` to install at all: that package is a hard dependency of the
+application and is already visible on the worker's `sys.path`, so a second copy is unnecessary and
+would only risk a version mismatch. A plugin that needs *other* dependencies must either be
+installed from an index or vendor them; otherwise the post-install validation below fails with
+`ModuleNotFoundError` and the install is rolled back.
 
 After installation the package is validated in an isolated worker: if it provides no
 `vcenter_event_assistant.collectors` entry point, or the entry point fails to load, the install

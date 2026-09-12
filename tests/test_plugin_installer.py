@@ -73,14 +73,18 @@ def build_wheel(
     distribution: str = "example-collector",
     version: str = "0.1.0",
     with_entry_point: bool = True,
+    requires: tuple[str, ...] = (),
+    module_body: str | None = None,
 ) -> bytes:
     """最小限の PEP 427 wheel をメモリ上に組み立てる。"""
     module_name = "example_collector"
     dist_info = f"{distribution.replace('-', '_')}-{version}.dist-info"
+    requires_lines = "".join(f"Requires-Dist: {item}\n" for item in requires)
     files: dict[str, bytes] = {
-        f"{module_name}.py": _COLLECTOR_MODULE.encode(),
+        f"{module_name}.py": (module_body or _COLLECTOR_MODULE).encode(),
         f"{dist_info}/METADATA": (
             f"Metadata-Version: 2.1\nName: {distribution}\nVersion: {version}\n"
+            f"{requires_lines}"
         ).encode(),
         f"{dist_info}/WHEEL": (
             b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
@@ -228,6 +232,44 @@ async def test_reinstalling_the_same_version_replaces_the_directory(
     )
     assert first.install_path == second.install_path
     assert plugin_search_paths(plugin_settings.plugin_dir) == [second.install_path]
+
+
+async def test_plugin_declaring_the_api_package_installs_offline(
+    plugin_settings, tmp_path
+) -> None:
+    """`vcenter-event-assistant-plugin-api` を宣言した正しいプラグインが、
+    ネットワーク無しのアップロード経路でインストールできること。
+
+    この API パッケージはアプリ本体の依存として必ず存在し、ワーカーの sys.path から
+    見えるため再インストールは不要である。依存解決を有効にしたままだとオフラインでは
+    解決できず、ドキュメントどおりに書かれたプラグインが一切入らなくなる。
+    """
+    wheel = tmp_path / "example_collector-0.1.0-py3-none-any.whl"
+    wheel.write_bytes(
+        build_wheel(requires=("vcenter-event-assistant-plugin-api>=1.0.0,<2",))
+    )
+    outcome = await install_plugin(
+        plugin_settings, source=str(wheel), from_index=False
+    )
+    assert outcome.collector_ids == ("example.temperature",)
+
+
+async def test_install_rolls_back_when_a_dependency_is_missing(
+    plugin_settings, tmp_path
+) -> None:
+    """オフラインでは依存を入れないため、本当に依存が要るプラグインは
+    インストール直後の検証で import に失敗し、ロールバックされる（黙って壊れない）。
+    """
+    wheel = tmp_path / "example_collector-0.1.0-py3-none-any.whl"
+    wheel.write_bytes(
+        build_wheel(
+            requires=("a-package-that-does-not-exist-anywhere",),
+            module_body="import a_package_that_does_not_exist_anywhere\n",
+        )
+    )
+    with pytest.raises(PluginInstallError, match="ModuleNotFoundError"):
+        await install_plugin(plugin_settings, source=str(wheel), from_index=False)
+    assert plugin_search_paths(plugin_settings.plugin_dir) == []
 
 
 async def test_index_install_is_refused_unless_explicitly_enabled(
