@@ -23,6 +23,10 @@ describe('parseAppHash', () => {
       tab: 'settings',
       settingsSubTab: 'score_rules',
     })
+    expect(parseAppHash('#/settings/plugins')).toEqual({
+      tab: 'settings',
+      settingsSubTab: 'plugins',
+    })
   })
 
   it('falls back for unknown paths', () => {
@@ -38,5 +42,6 @@ describe('buildAppHash', () => {
   it('builds main and settings hashes', () => {
     expect(buildAppHash('events')).toBe('#/events')
     expect(buildAppHash('settings', 'alerts')).toBe('#/settings/alerts')
+    expect(buildAppHash('settings', 'plugins')).toBe('#/settings/plugins')
   })
 })

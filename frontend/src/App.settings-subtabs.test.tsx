@@ -37,6 +37,7 @@ const SETTINGS_SUBTAB_LABELS = [
   'スコアルール',
   'イベント種別ガイド',
   'アラート',
+  'プラグイン',
   'チャット',
 ] as const
 
@@ -46,6 +47,7 @@ const SETTINGS_SUBTAB_INTRO_MARKERS: Record<(typeof SETTINGS_SUBTAB_LABELS)[numb
   スコアルール: '既存の取り込み済みイベントの再計算にも反映されます',
   イベント種別ガイド: '「対処が必要」をオンにすると',
   アラート: '判定対象になるのは有効化したルールだけです',
+  プラグイン: '設定は TOML または環境変数で変更し',
   チャット: '既定の行もここから編集・削除できます',
 }
 
@@ -71,6 +73,7 @@ describe('App 設定サブタブ', () => {
   })
 
   beforeEach(() => {
+    window.history.replaceState(null, '', '/')
     vi.stubGlobal('localStorage', localStorageMock)
     localStorage.clear()
     vi.clearAllMocks()
@@ -88,6 +91,9 @@ describe('App 設定サブタブ', () => {
           url.includes('/api/alerts/rules')
         ) {
           return Promise.resolve(jsonResponse([]))
+        }
+        if (url.includes('/api/plugins/collectors')) {
+          return Promise.resolve(jsonResponse({ generation: 1, collectors: [] }))
         }
         return Promise.resolve(new Response('not found', { status: 404 }))
       }),
@@ -107,6 +113,18 @@ describe('App 設定サブタブ', () => {
       expect(svgs[0]).toHaveAttribute('focusable', 'false')
     },
   )
+
+  it('プラグイン設定の URL を直接開ける', async () => {
+    window.history.replaceState(null, '', '/#/settings/plugins')
+    render(<App />)
+
+    const subNav = await screen.findByRole('navigation', { name: '設定' })
+    expect(within(subNav).getByRole('button', { name: 'プラグイン' }))
+      .toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText((content, element) => {
+      return element?.tagName === 'P' && content.includes('設定は TOML または環境変数で変更し')
+    })).toBeInTheDocument()
+  })
 
   it.each(SETTINGS_SUBTAB_LABELS)(
     '設定サブタブ「%s」は panel 直下の先頭に概要ヒントを表示する',

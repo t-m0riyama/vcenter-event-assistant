@@ -32,6 +32,13 @@ plugin. Common settings and simple plugin values may override TOML with
 Secrets must not be placed in the TOML file. Invalid, missing, or incompatible plugins appear
 as `failed` in `GET /api/plugins/collectors`; they do not prevent the application from starting.
 
+## Management screen
+
+The read-only **Settings > Plugins** screen shows the effective common configuration and the latest
+execution status for each vCenter. Change plugin configuration through TOML or environment variables,
+then restart the application to rebuild the collector registry. The screen does not expose arbitrary
+plugin configuration values or secrets.
+
 ## Package entry point
 
 Plugins depend only on `vcenter-event-assistant-plugin-api` and publish a zero-argument factory:

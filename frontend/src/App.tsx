@@ -12,6 +12,7 @@ import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
 import { AlertRulesPanel } from './panels/settings/AlertRulesPanel'
+import { PluginsPanel } from './panels/settings/PluginsPanel'
 import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { AlertHistoryPanel } from './panels/alerts/AlertHistoryPanel'
@@ -213,6 +214,12 @@ export default function App() {
         label: 'アラート',
         panelLabel: 'アラート設定',
         render: (onError) => <AlertRulesPanel onError={onError} />,
+      },
+      {
+        id: 'plugins',
+        label: 'プラグイン',
+        panelLabel: 'プラグイン管理',
+        render: (onError) => <PluginsPanel onError={onError} />,
       },
       {
         id: 'chat_samples',

@@ -36,6 +36,14 @@ test.describe('設定の全サブタブ', () => {
     await expect(page.getByRole('heading', { name: '追加' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '一覧' })).toBeVisible()
     await expectNoErrorBanner(page)
+
+    await page.getByRole('button', { name: 'プラグイン' }).click()
+    await expect(
+      page.getByText('コレクタプラグインの構成と実行状態を確認します。'),
+    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: '一覧' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '一覧を更新' })).toBeVisible()
+    await expectNoErrorBanner(page)
   })
 })
 
