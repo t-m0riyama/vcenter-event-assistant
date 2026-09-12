@@ -51,6 +51,17 @@ def validate_startup_settings(settings: Settings) -> None:
                 "VCENTER_ALLOWED_HOST_SUFFIXES is required when APP_ENV=production"
             )
         _validate_production_database_url(settings.database_url)
+        if settings.plugin_management_enabled:
+            logger.warning(
+                "VEA_PLUGIN_MANAGEMENT_ENABLED is enabled in production; "
+                "plugin install and reload APIs allow arbitrary code execution. "
+                "Ensure a reverse proxy enforces authentication for /api/plugins."
+            )
+            if settings.plugin_allow_index_install:
+                logger.warning(
+                    "VEA_PLUGIN_ALLOW_INDEX_INSTALL is enabled in production; "
+                    "plugins will be fetched from a package index at runtime."
+                )
     elif not settings.vea_secret_key and not settings.mock_mode:
         if not settings.vea_allow_plaintext_passwords:
             logger.warning(

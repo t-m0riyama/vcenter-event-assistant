@@ -27,6 +27,8 @@ from vcenter_event_assistant.db.models import (
 )
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.registry import CollectorRegistration
+from vcenter_event_assistant.plugins.remote import RemoteCollectorPlugin
+from vcenter_event_assistant.plugins.wire import ConnectionParams
 from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 from vcenter_event_assistant.services.ingestion import _insert_on_conflict_do_nothing
@@ -63,18 +65,32 @@ def _safe_error(exc: BaseException) -> str:
     return f"{type(exc).__name__}: collector execution failed"
 
 
-@asynccontextmanager
-async def _open_connection(vcenter: VCenter, settings: Settings):
-    si = await asyncio.to_thread(
-        connect_vcenter,
+def _connection_params(vcenter: VCenter, settings: Settings) -> ConnectionParams:
+    """インプロセス実行とワーカーへの転送で共有する接続パラメータ。"""
+    return ConnectionParams(
         host=vcenter.host,
         protocol=vcenter.protocol,
         port=vcenter.port,
         username=vcenter.username,
         password=vcenter.password,
-        proxy_url=settings.vcenter_http_proxy,
         verify_ssl=vcenter.verify_ssl,
+        proxy_url=settings.vcenter_http_proxy,
         ca_bundle_path=settings.vcenter_ca_bundle,
+    )
+
+
+@asynccontextmanager
+async def _open_connection(params: ConnectionParams):
+    si = await asyncio.to_thread(
+        connect_vcenter,
+        host=params.host,
+        protocol=params.protocol,
+        port=params.port,
+        username=params.username,
+        password=params.password,
+        proxy_url=params.proxy_url,
+        verify_ssl=params.verify_ssl,
+        ca_bundle_path=params.ca_bundle_path,
     )
     try:
         yield si
@@ -267,6 +283,7 @@ async def run_collector_for_vcenter(
                         )
                     )
                 ).scalar_one_or_none()
+                params = _connection_params(vc, settings)
                 context = CollectionContext(
                     target=VCenterTarget(
                         vc.id,
@@ -279,10 +296,19 @@ async def run_collector_for_vcenter(
                     ),
                     config=registration.config.values,
                     previous_cursor=state.cursor_value if state else None,
-                    open_vcenter_connection=lambda: _open_connection(vc, settings),
+                    open_vcenter_connection=lambda: _open_connection(params),
                     mock_mode=settings.mock_mode,
                 )
-                async with asyncio.timeout(registration.config.timeout_seconds):
+            # 収集は DB セッションの外で行う。外部プラグインは timeout まで走りうるため、
+            # その間 DB 接続を占有させない。
+            timeout_seconds = registration.config.timeout_seconds
+            if isinstance(registration.plugin, RemoteCollectorPlugin):
+                # ワーカーが自前でタイムアウトを監視し、超過時はプロセスごと kill する。
+                batch = await registration.plugin.collect_with_connection(
+                    context, params, timeout=timeout_seconds
+                )
+            else:
+                async with asyncio.timeout(timeout_seconds):
                     batch = await registration.plugin.collect(context)
             _validate_batch(registration, batch)
             events, metrics = await _persist_batch(

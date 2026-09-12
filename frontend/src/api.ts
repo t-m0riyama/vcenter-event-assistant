@@ -22,7 +22,7 @@ async function errorMessageFromResponse(r: Response): Promise<string> {
   if (r.status >= 500) {
     return GENERIC_API_ERROR
   }
-  if (r.status === 422 || r.status === 409) {
+  if (r.status === 422 || r.status === 409 || r.status === 413) {
     return text || GENERIC_API_ERROR
   }
   return GENERIC_API_ERROR
@@ -42,6 +42,23 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     method: 'POST',
     headers: mutationHeaders(),
     body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (r.status === 204) return undefined as T
+  return r.json() as Promise<T>
+}
+
+/**
+ * multipart/form-data POST（ファイルアップロード用）。
+ *
+ * ``Content-Type`` はブラウザに boundary 付きで設定させるため、明示的に指定しない。
+ */
+export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
+  const r = await fetch(path, {
+    ...fetchNoStore,
+    method: 'POST',
+    headers: { ...headers(), 'X-Requested-With': 'XMLHttpRequest' },
+    body,
   })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
   if (r.status === 204) return undefined as T

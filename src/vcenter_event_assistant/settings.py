@@ -139,6 +139,7 @@ class AppLogSettingsMixin(BaseModel):
     rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=1000)
     rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
+    rate_limit_plugins_per_minute: int = Field(default=10, ge=1, le=1000)
     uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
     uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
@@ -170,6 +171,48 @@ class AppLogSettingsMixin(BaseModel):
         default=None,
         validation_alias=AliasChoices("collector_config_file", "VEA_COLLECTOR_CONFIG_FILE"),
         description="Optional TOML configuration for collector plugins (VEA_COLLECTOR_CONFIG_FILE).",
+    )
+    plugin_dir: str = Field(
+        default="data/plugins",
+        validation_alias=AliasChoices("plugin_dir", "VEA_PLUGIN_DIR"),
+        description=(
+            "動的インストールしたコレクタプラグインの配置先ディレクトリ（``VEA_PLUGIN_DIR``）。"
+            "配下に ``<distribution>/<version>/`` 単位でインストールする。"
+        ),
+    )
+    plugin_management_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "plugin_management_enabled", "VEA_PLUGIN_MANAGEMENT_ENABLED"
+        ),
+        description=(
+            "プラグインの変更系 API（設定変更・リロード・インストール）を有効化する"
+            "（``VEA_PLUGIN_MANAGEMENT_ENABLED``）。実質的に任意コード実行を許すため既定は無効。"
+            "有効にする場合はリバースプロキシ等で認証を必須にすること。"
+        ),
+    )
+    plugin_allow_index_install: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "plugin_allow_index_install", "VEA_PLUGIN_ALLOW_INDEX_INSTALL"
+        ),
+        description=(
+            "パッケージインデックスからの名前指定インストールを許可する"
+            "（``VEA_PLUGIN_ALLOW_INDEX_INSTALL``）。サプライチェーンリスクのため既定は無効。"
+        ),
+    )
+    uv_bin: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("uv_bin", "VEA_UV_BIN"),
+        description=(
+            "プラグインインストールに使う ``uv`` 実行ファイルのパス（``VEA_UV_BIN``）。"
+            "未設定時は PATH から探索する。"
+        ),
+    )
+    plugin_index_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("plugin_index_url", "VEA_PLUGIN_INDEX_URL"),
+        description="インデックスインストール時に使用する index URL（``VEA_PLUGIN_INDEX_URL``）。",
     )
     mock_mode: bool = Field(
         default=False,
@@ -205,7 +248,14 @@ class AppLogSettingsMixin(BaseModel):
             raise ValueError(f"無効な log_level: {v!r}（例: DEBUG, INFO, WARNING）")
         return name
 
-    @field_validator("app_log_file", "uvicorn_log_file", "collector_config_file", mode="before")
+    @field_validator(
+        "app_log_file",
+        "uvicorn_log_file",
+        "collector_config_file",
+        "plugin_index_url",
+        "uv_bin",
+        mode="before",
+    )
     @classmethod
     def empty_log_path_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -71,6 +72,27 @@ def _job_options_for_cron(
     *, misfire_grace_time: int = _DIGEST_CRON_MISFIRE_GRACE_SECONDS
 ) -> dict[str, object]:
     return {**_BASE_JOB_OPTIONS, "misfire_grace_time": misfire_grace_time}
+
+
+# 最初の 2 コレクタはプラグイン化以前からのジョブ ID を保つ（既存ジョブストア互換のため）。
+_LEGACY_COLLECTOR_JOB_IDS = {
+    "builtin.vcenter.events": "poll_events",
+    "builtin.vcenter.host_quickstats": "poll_perf",
+}
+_COLLECTOR_JOB_ID_PREFIX = "collector:"
+
+
+def _collector_job_id(plugin_id: str) -> str:
+    """コレクタプラグインに対応する APScheduler ジョブ ID。"""
+    return _LEGACY_COLLECTOR_JOB_IDS.get(
+        plugin_id, f"{_COLLECTOR_JOB_ID_PREFIX}{plugin_id}"
+    )
+
+
+def _is_collector_job_id(job_id: str) -> bool:
+    return job_id in _LEGACY_COLLECTOR_JOB_IDS.values() or job_id.startswith(
+        _COLLECTOR_JOB_ID_PREFIX
+    )
 
 
 async def poll_events(settings: Settings) -> None:
@@ -248,10 +270,7 @@ def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> Asy
             run_registered_collector,
             "interval",
             seconds=interval,
-            id={
-                "builtin.vcenter.events": "poll_events",
-                "builtin.vcenter.host_quickstats": "poll_perf",
-            }.get(registration.plugin_id, f"collector:{registration.plugin_id}"),
+            id=_collector_job_id(registration.plugin_id),
             kwargs={"settings": settings, "plugin_id": registration.plugin_id},
             **_job_options_for_interval(interval),
         )
@@ -285,6 +304,56 @@ def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> Asy
     scheduler.start()
     app.state.scheduler = scheduler
     return scheduler
+
+
+def reconcile_collector_jobs(scheduler, settings: Settings, registry) -> dict[str, list[str]]:
+    """レジストリの新世代に合わせてコレクタジョブを差分更新する。
+
+    ``setup_scheduler`` はジョブを一度だけ登録するため、レジストリをホットスワップしても
+    ジョブ集合は自動では追従しない。リロード時に本関数で追加・削除・interval 変更を反映する。
+
+    Args:
+        scheduler: 稼働中の ``AsyncIOScheduler``。
+        settings: ジョブへ渡すアプリ設定。
+        registry: 新世代の ``CollectorRegistry``。
+
+    Returns:
+        ``added`` / ``removed`` / ``rescheduled`` の plugin_id 一覧。
+    """
+    desired = {
+        _collector_job_id(registration.plugin_id): registration
+        for registration in registry.enabled()
+        if registration.config is not None
+    }
+    existing = {
+        job.id: job for job in scheduler.get_jobs() if _is_collector_job_id(job.id)
+    }
+
+    changes: dict[str, list[str]] = {"added": [], "removed": [], "rescheduled": []}
+
+    for job_id in existing.keys() - desired.keys():
+        scheduler.remove_job(job_id)
+        changes["removed"].append(job_id)
+
+    for job_id, registration in desired.items():
+        interval = registration.config.interval_seconds
+        job = existing.get(job_id)
+        if job is None:
+            scheduler.add_job(
+                run_registered_collector,
+                "interval",
+                seconds=interval,
+                id=job_id,
+                kwargs={"settings": settings, "plugin_id": registration.plugin_id},
+                **_job_options_for_interval(interval),
+            )
+            changes["added"].append(registration.plugin_id)
+            continue
+        if getattr(job.trigger, "interval", None) != timedelta(seconds=interval):
+            scheduler.reschedule_job(job_id, trigger="interval", seconds=interval)
+            changes["rescheduled"].append(registration.plugin_id)
+
+    return changes
 
 
 def shutdown_scheduler(app: "FastAPI") -> None:

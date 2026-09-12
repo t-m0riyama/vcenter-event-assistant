@@ -343,6 +343,31 @@
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
+- プラグイン管理: `VEA_PLUGIN_MANAGEMENT_ENABLED`（既定 `false`）、`VEA_PLUGIN_ALLOW_INDEX_INSTALL`（既定 `false`）、`VEA_PLUGIN_DIR`
+
+## 4.1 プラグイン管理を有効化する場合
+
+`VEA_PLUGIN_MANAGEMENT_ENABLED=true` にすると、`/api/plugins` の変更系 API（設定変更・リロード・
+インストール・アンインストール）が開きます。**これは実質的に任意コード実行を許す操作です。**
+本アプリ単体は認証を行わないため、有効化する場合は次を必ず満たしてください。
+
+- リバースプロキシで `/api/plugins` に認証を必須にする（未認証アクセスを遮断する）
+- `VEA_PLUGIN_ALLOW_INDEX_INSTALL` は原則 `false` のままにし、アップロード経路のみを使う
+  （`true` にすると実行時に外部インデックスから取得するため、サプライチェーンリスクが増える）
+- `VEA_PLUGIN_DIR` を永続ボリュームに割り当てる（コンテナ入れ替えでインストール済みプラグインが消えないようにする）
+- 本番で有効化すると起動時に WARNING が出ます（`security_startup.py`）。ログで有効化を検知できます。
+
+運用手順:
+
+1. **Settings > プラグイン**でパッケージ（`.whl` / `.tar.gz`）をアップロードする
+2. 状態が「インストール済み」になるまで待つ（失敗時は同画面にエラーが出る）
+3. 対象プラグインを有効化し、必要なら実行間隔・タイムアウトを設定する
+4. **変更を反映**を押す（アプリの再起動は不要。レジストリ世代が 1 つ進む）
+5. `collector_run_states` またはプラグイン画面の実行状況で、収集が成功していることを確認する
+
+ロールバック: 対象プラグインを無効化して**変更を反映**、または削除して**変更を反映**。
+外部プラグインは専用ワーカープロセスで動くため、ハングしても `timeout_seconds` でワーカーが
+kill され、アプリ本体は停止しません。
 
 ## 5. 変更管理（実務向け最小）
 
@@ -351,6 +376,7 @@
 - 設定値変更（`.env`）
 - スケジューラ関連変更（周期・有効/無効）
 - LLM 関連変更（プロバイダ、キー、モデル、匿名化）
+- プラグイン変更（インストール・有効/無効・実行間隔）
 
 ### 5.2 変更前チェック
 
@@ -372,6 +398,9 @@
   - `daily digest job failed`
   - `weekly digest job failed`
   - `monthly digest job failed`
+  - `collector worker timed out`
+  - `collector plugin discovery failed`
+  - `plugin installation job failed`
 - 変更対象のAPIを1つ以上実行し、期待どおりか確認
 
 ### 5.4 ロールバック手順（最小）

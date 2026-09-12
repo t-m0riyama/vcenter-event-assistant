@@ -280,8 +280,11 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
         "data_kinds": [],
         "interval_seconds": None,
         "timeout_seconds": None,
+        "env_locked_fields": [],
         "runs": [],
     }
+    assert payload["management_enabled"] is False
+    assert payload["reload_required"] is False
     collector = payload["collectors"][1]
     assert collector["display_name"] == "Temperature"
     assert collector["data_kinds"] == ["metric"]
