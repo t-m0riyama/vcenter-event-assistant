@@ -18,6 +18,7 @@ export const SETTINGS_SUB_TAB_IDS: readonly SettingsSubTabId[] = [
   'score_rules',
   'event_type_guides',
   'alerts',
+  'plugins',
   'chat_samples',
 ] as const
 

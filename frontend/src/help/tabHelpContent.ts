@@ -55,7 +55,7 @@ export const MAIN_TAB_HELP: Record<MainTabId, TabHelpEntry> = {
   },
   settings: {
     summary:
-      '【設定】\nアプリケーションの動作環境を構成します。\n- 一般: リフレッシュ間隔やタイムゾーンの設定\n- vCenter: 接続先サーバーの管理\n- スコアルール: イベントの重要度判定ロジックの定義',
+      '【設定】\nアプリケーションの動作環境を構成します。\n- 一般: リフレッシュ間隔やタイムゾーンの設定\n- vCenter: 接続先サーバーの管理\n- スコアルール: イベントの重要度判定ロジックの定義\n- プラグイン: コレクタの構成と実行状態の確認',
     userGuideDoc: 'docs/frontend.md',
   },
 }
@@ -89,6 +89,11 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
       '【アラート設定】\nメール通知ルール（イベントスコア・メトリクス閾値）の作成と有効化を行います。',
     userGuideDoc: 'docs/user-guides/alerts.md',
     markerId: 'alerts',
+  },
+  plugins: {
+    summary:
+      '【プラグイン管理】\nコレクタプラグインの構成と vCenter 別の最新実行状態を確認します。\n- 設定変更は TOML または環境変数で行い、アプリを再起動して反映します。',
+    userGuideDoc: 'docs/collector-plugins.md',
   },
   chat_samples: {
     summary:

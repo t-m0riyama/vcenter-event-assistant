@@ -177,10 +177,84 @@ async def test_runtime_persists_declared_metric_cursor_and_state() -> None:
 async def test_collector_status_and_metric_catalog_api(client) -> None:
     plugin = SampleCollector()
     registration = CollectorRegistration(
-        plugin.manifest.id, plugin, "test", CollectorConfig(True, 300), "enabled"
+        plugin.manifest.id,
+        plugin,
+        "test",
+        CollectorConfig(True, 300, 45.0, {"private_token": "do-not-leak"}),
+        "enabled",
     )
+    missing = CollectorRegistration(
+        "aaa.missing",
+        None,
+        "configuration",
+        None,
+        "failed",
+        "configured plugin is not installed",
+    )
+    disabled_plugin = SampleCollector()
+    disabled_plugin.manifest = CollectorManifest(
+        "zzz.disabled",
+        "Disabled collector",
+        "1.0.0",
+        data_kinds=frozenset({"event"}),
+    )
+    disabled = CollectorRegistration(
+        disabled_plugin.manifest.id,
+        disabled_plugin,
+        "test",
+        CollectorConfig(False, 600),
+        "disabled",
+    )
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        beta = VCenter(
+            id=uuid.uuid4(),
+            name="Beta vCenter",
+            host="beta.example",
+            username="u",
+            password="p",
+        )
+        alpha = VCenter(
+            id=uuid.uuid4(),
+            name="Alpha vCenter",
+            host="alpha.example",
+            username="u",
+            password="p",
+        )
+        session.add_all([beta, alpha])
+        await session.flush()
+        session.add_all(
+            [
+                CollectorRunState(
+                    vcenter_id=beta.id,
+                    collector_id=plugin.manifest.id,
+                    collector_version=plugin.manifest.version,
+                    status="failed",
+                    last_started_at=now,
+                    last_failure_at=now,
+                    error_message="RuntimeError: collector execution failed",
+                ),
+                CollectorRunState(
+                    vcenter_id=alpha.id,
+                    collector_id=plugin.manifest.id,
+                    collector_version=plugin.manifest.version,
+                    status="ok",
+                    last_started_at=now,
+                    last_success_at=now,
+                    events_inserted=2,
+                    metrics_inserted=3,
+                ),
+            ]
+        )
     set_collector_registry(
-        CollectorRegistry({plugin.manifest.id: registration}, generation=7)
+        CollectorRegistry(
+            {
+                plugin.manifest.id: registration,
+                missing.plugin_id: missing,
+                disabled.plugin_id: disabled,
+            },
+            generation=7,
+        )
     )
     try:
         catalog = await client.get("/api/metrics/catalog")
@@ -188,5 +262,38 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
     finally:
         set_collector_registry(None)
     assert catalog.json()["metrics"][0]["key"] == "example.host.temperature_c"
-    assert status.json()["generation"] == 7
-    assert status.json()["collectors"][0]["id"] == "example.temperature"
+    payload = status.json()
+    assert payload["generation"] == 7
+    assert [item["id"] for item in payload["collectors"]] == [
+        "aaa.missing",
+        "example.temperature",
+        "zzz.disabled",
+    ]
+    assert payload["collectors"][0] == {
+        "id": "aaa.missing",
+        "display_name": None,
+        "source": "configuration",
+        "status": "failed",
+        "error": "configured plugin is not installed",
+        "version": None,
+        "api_version": None,
+        "data_kinds": [],
+        "interval_seconds": None,
+        "timeout_seconds": None,
+        "runs": [],
+    }
+    collector = payload["collectors"][1]
+    assert collector["display_name"] == "Temperature"
+    assert collector["data_kinds"] == ["metric"]
+    assert collector["interval_seconds"] == 300
+    assert collector["timeout_seconds"] == 45.0
+    assert [run["vcenter_name"] for run in collector["runs"]] == [
+        "Alpha vCenter",
+        "Beta vCenter",
+    ]
+    assert collector["runs"][0]["last_success_at"].endswith("Z")
+    assert collector["runs"][0]["events_inserted"] == 2
+    assert collector["runs"][0]["metrics_inserted"] == 3
+    assert payload["collectors"][2]["status"] == "disabled"
+    assert payload["collectors"][2]["data_kinds"] == ["event"]
+    assert "do-not-leak" not in status.text
