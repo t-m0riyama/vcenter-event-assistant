@@ -17,6 +17,7 @@ from vcenter_event_assistant_plugin_api import (
 
 from vcenter_event_assistant.plugins.config import (
     CollectorConfig,
+    apply_collector_database_overrides,
     apply_collector_environment,
     load_collector_config_file,
 )
@@ -139,9 +140,50 @@ def _validate_plugin(plugin: CollectorPlugin, *, source: str) -> str | None:
     return None
 
 
+def _discover_external_collectors(settings: Settings):
+    """外部プラグインをワーカープロセス経由で検出する。
+
+    親プロセスでプラグインを import すると分離が崩れるため、``ep.load()`` は行わず、
+    entry point 名の列挙（import を伴わない）だけで「検出すべきものがあるか」を判定し、
+    あるときに限って短命のワーカーを起動する。
+
+    Returns:
+        ``(RemoteCollectorPlugin 一覧, entry point 名 → 失敗理由, 全体の失敗理由 or None)``。
+    """
+    from vcenter_event_assistant.plugins.remote import (
+        build_remote_plugins,
+        plugin_search_paths,
+    )
+
+    try:
+        installed_names = [
+            ep.name for ep in entry_points(group="vcenter_event_assistant.collectors")
+        ]
+    except Exception:
+        logger.exception("collector entry point enumeration failed")
+        installed_names = []
+    if not installed_names and not plugin_search_paths(settings.plugin_dir):
+        return [], {}, None
+
+    try:
+        plugins, failures = build_remote_plugins(settings.plugin_dir)
+        return plugins, failures, None
+    except Exception as exc:
+        logger.exception("collector plugin discovery failed")
+        return [], {}, f"plugin discovery failed: {type(exc).__name__}"
+
+
 def build_collector_registry(
-    settings: Settings, *, generation: int = 1
+    settings: Settings,
+    *,
+    generation: int = 1,
+    db_overrides: Mapping[str, Mapping[str, object]] | None = None,
 ) -> CollectorRegistry:
+    """Discover, configure and validate collectors into one immutable snapshot.
+
+    設定の優先順位は 環境変数 > ``db_overrides`` > TOML > manifest 既定値 である。
+    ``db_overrides`` は呼び出し側が DB から読み出して渡す（本関数は I/O を行わない）。
+    """
     from vcenter_event_assistant.plugins.builtin import builtin_collectors
 
     config_error: str | None = None
@@ -155,30 +197,29 @@ def build_collector_registry(
         (p, "builtin", p.manifest.id) for p in builtin_collectors()
     ]
     load_failures: dict[str, CollectorRegistration] = {}
-    for ep in entry_points(group="vcenter_event_assistant.collectors"):
-        try:
-            plugin = ep.load()()
-            candidates.append((plugin, f"entry_point:{ep.name}", ep.name))
-        except Exception as exc:
-            plugin_id = (
-                f"invalid-entry-point:{ep.name}"
-                if ep.name.startswith("builtin.")
-                else ep.name
-            )
-            load_failures[plugin_id] = CollectorRegistration(
-                plugin_id,
-                None,
-                f"entry_point:{ep.name}",
-                None,
-                "failed",
-                f"load failed: {type(exc).__name__}",
-            )
-            logger.exception("collector plugin load failed entry_point=%s", ep.name)
+    remote_plugins, remote_failures, discovery_error = _discover_external_collectors(
+        settings
+    )
+    for plugin in remote_plugins:
+        candidates.append(
+            (plugin, f"entry_point:{plugin.entry_point}", plugin.entry_point)
+        )
+    for name, reason in remote_failures.items():
+        plugin_id = (
+            f"invalid-entry-point:{name}" if name.startswith("builtin.") else name
+        )
+        load_failures[plugin_id] = CollectorRegistration(
+            plugin_id, None, f"entry_point:{name}", None, "failed", reason
+        )
 
     registrations: dict[str, CollectorRegistration] = dict(load_failures)
     if config_error:
         registrations["configuration"] = CollectorRegistration(
             "configuration", None, "configuration", None, "failed", config_error
+        )
+    if discovery_error:
+        registrations["discovery"] = CollectorRegistration(
+            "discovery", None, "discovery", None, "failed", discovery_error
         )
     metric_owners: dict[str, str] = {}
     for plugin, source, candidate_id in candidates:
@@ -200,7 +241,13 @@ def build_collector_registry(
                 f"invalid plugin contract: {type(exc).__name__}",
             )
             continue
-        raw = apply_collector_environment(plugin_id, configured.get(plugin_id, {}))
+        raw = apply_collector_environment(
+            plugin_id,
+            apply_collector_database_overrides(
+                configured.get(plugin_id, {}),
+                (db_overrides or {}).get(plugin_id),
+            ),
+        )
         default_enabled = source == "builtin"
         enabled = bool(raw.get("enabled", default_enabled))
         try:

@@ -23,6 +23,7 @@ dependencies = [
     "langchain-openai>=1.1.12",
     "langsmith>=0.7.25",
     "pydantic-settings>=2.13.1",
+    "python-multipart>=0.0.20",
     "pyvmomi>=9.0.0.0",
     "sqlalchemy[asyncio]>=2.0.48",
     "tiktoken>=0.12.0",

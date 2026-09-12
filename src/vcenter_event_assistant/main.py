@@ -34,7 +34,10 @@ from vcenter_event_assistant.api.routes.ingest import router as ingest_router
 from vcenter_event_assistant.api.routes.incident_timeline import (
     router as incident_timeline_router,
 )
-from vcenter_event_assistant.api.routes.plugins import router as plugins_router
+from vcenter_event_assistant.api.routes.plugins import (
+    installed_router as plugins_installed_router,
+    router as plugins_router,
+)
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
@@ -48,12 +51,11 @@ from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 from vcenter_event_assistant.security_startup import validate_startup_settings
 from vcenter_event_assistant.plugins.registry import (
-    activate_collector_registry,
-    build_collector_registry,
+    get_collector_registry,
     set_collector_registry,
     shutdown_collector_registry,
-    start_collector_registry,
 )
+from vcenter_event_assistant.plugins.reload import build_initial_collector_registry
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,9 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     "/api/chat/preview": ("chat_preview", 60),
     "/api/ingest/run": ("ingest", 60),
     "/api/digests/run": ("digests", 60),
+    "/api/plugins/collectors/reload": ("plugins", 60),
+    "/api/plugins/installed": ("plugins", 60),
+    "/api/plugins/installed/upload": ("plugins", 60),
 }
 
 
@@ -87,15 +92,15 @@ async def lifespan(app: FastAPI):
         )
     await init_db(settings=settings)
     await ensure_vcenter_password_storage(settings=settings)
-    registry = await start_collector_registry(build_collector_registry(settings))
-    activate_collector_registry(registry)
+    registry = await build_initial_collector_registry(settings)
     await run_screenshot_e2e_seed_if_enabled()
     await run_mock_mode_seed_if_enabled()
     if settings.scheduler_enabled:
         setup_scheduler(app, settings, registry=registry)
     yield
     shutdown_scheduler(app)
-    await shutdown_collector_registry(registry)
+    # ホットリロード後は起動時のローカル変数が旧世代を指すため、現行スナップショットを引き直す。
+    await shutdown_collector_registry(get_collector_registry())
     set_collector_registry(None)
 
 
@@ -162,6 +167,7 @@ def create_app() -> FastAPI:
                         "chat_preview": settings.rate_limit_chat_per_minute * 2,
                         "ingest": settings.rate_limit_ingest_per_minute,
                         "digests": settings.rate_limit_digests_per_minute,
+                        "plugins": settings.rate_limit_plugins_per_minute,
                     }[bucket]
                     if not check_rate_limit(key, limit=limit, window_seconds=window):
                         return JSONResponse(
@@ -200,6 +206,7 @@ def create_app() -> FastAPI:
     api.include_router(alerts_router)
     api.include_router(ingest_router)
     api.include_router(plugins_router)
+    api.include_router(plugins_installed_router)
 
     app.include_router(api)
 

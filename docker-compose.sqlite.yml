@@ -11,6 +11,10 @@ services:
       # 生成例: openssl rand -base64 32
       APP_LOG_FILE: /var/log/vea/app.log
       UVICORN_LOG_FILE: /var/log/vea/uvicorn.log
+      # 動的インストールしたプラグインの配置先（read_only の rootfs 外に置く必要がある）
+      VEA_PLUGIN_DIR: /data/plugins
+      # uv のキャッシュも書き込み可能な場所へ（tmpfs の /tmp）
+      UV_CACHE_DIR: /tmp/uv-cache
     read_only: true
     cap_drop:
       - ALL

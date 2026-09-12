@@ -157,6 +157,49 @@ class CollectorRunState(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class CollectorPluginSetting(Base):
+    """Operator-managed collector configuration edited through the API.
+
+    NULL は「未設定」を意味し、下位の設定ソース（TOML → manifest 既定値）へ委譲する。
+    環境変数は常にこの層より優先される。
+    """
+
+    __tablename__ = "collector_plugin_settings"
+
+    plugin_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timeout_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    config_values: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class InstalledPlugin(Base):
+    """Record of one dynamically installed plugin distribution."""
+
+    __tablename__ = "installed_plugins"
+    __table_args__ = (
+        UniqueConstraint("distribution", name="uq_installed_plugin_distribution"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    distribution: Mapped[str] = mapped_column(String(255), index=True)
+    version: Mapped[str] = mapped_column(String(64), default="")
+    source: Mapped[str] = mapped_column(String(16))
+    origin: Mapped[str] = mapped_column(String(1024), default="")
+    install_path: Mapped[str] = mapped_column(String(1024), default="")
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    installed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class DigestRecord(Base):
     """バッチ生成した Markdown ダイジェスト（期間・種別ごとに 1 行）。同一期間の再実行は別行として蓄積可能。"""
 
