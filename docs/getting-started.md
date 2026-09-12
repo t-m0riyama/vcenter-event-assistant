@@ -39,8 +39,14 @@ cp .env.example .env
 
 ## 起動
 
-- **通常利用**: UI と API を **同一オリジン**（`http://localhost:8000`）で使う。Docker Compose、またはローカルでフロントをビルドしてからバックエンドを起動する。
-- **開発用途**: バックエンド（ポート 8000）と Vite 開発サーバー（既定はポート 5173）の **二窓**。ブラウザは Vite の URL を開き、`/api` などは開発サーバーがバックエンドへプロキシする。
+- **通常利用**: UI と API を **同一オリジン**（既定は `http://localhost:8000`）で使う。Docker Compose、またはローカルでフロントをビルドしてからバックエンドを起動する。
+- **開発用途**: バックエンド（既定はポート 8000）と Vite 開発サーバー（既定はポート 5173）の **二窓**。ブラウザは Vite の URL を開き、`/api` などは開発サーバーがバックエンドへプロキシする。
+
+バックエンドの待受ポートは、リポジトリルートの `.env` で `UVICORN_PORT` に 1〜65535 の値を指定して変更できる。未設定時は `8000`。この設定はローカル CLI、Docker Compose、Vite 開発プロキシで共通して使われる。
+
+```dotenv
+UVICORN_PORT=9000
+```
 
 ### 通常利用（UI をブラウザで使う）（本番ビルド済み UI）
 
@@ -50,7 +56,7 @@ cp .env.example .env
 
 前提: [Docker](https://docs.docker.com/get-docker/) および Docker Compose v2（`docker compose` コマンド）。
 
-1. リポジトリルートで `.env` を用意する（未作成なら `cp .env.example .env`）。Compose は `env_file` として参照する。
+1. リポジトリルートで `.env` を用意する（未作成なら `cp .env.example .env`）。Compose は `env_file` として参照する。待受ポートを変更する場合は、同じファイルに `UVICORN_PORT=9000` のように指定する。
 2. 利用する DB に合わせて、**テンプレートのいずれかを `docker-compose.yml` にコピー**する（このファイル名が Compose の既定である）。
    - **SQLite（単一コンテナ・名前付きボリューム）:** `cp docker-compose.sqlite.yml docker-compose.yml`
    - **PostgreSQL（`postgres` サービス付き）:** `cp docker-compose.postgres.yml docker-compose.yml` のうえ、`.env` に **`POSTGRES_PASSWORD`** を設定する（`postgres` コンテナと `app` の `DATABASE_URL` の両方で同じ値が使われる）。指定例は次のとおり。
@@ -64,7 +70,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/health` でもよい）。
+UI と API は既定で `http://localhost:8000`（動作確認は `http://localhost:8000/health` でもよい）。例えば `UVICORN_PORT=9000` の場合は `http://localhost:9000` となる。Compose は指定ポートをコンテナ内の待受と `127.0.0.1` の公開ポートの両方に適用する。
 
 **セキュリティ:** 本アプリ単体は認証を行わない。コンテナをインターネットに直接晒さず、必要に応じてリバースプロキシ側で TLS・認証・ネットワーク制限を行うこと。
 
@@ -74,7 +80,7 @@ UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/
 
 `frontend/dist` にビルド成果物があり `index.html` が存在するとき、FastAPI の `create_app()` が **同一プロセス**で SPA と API を配信する。`dist` が無い場合は API のみ応答し、ブラウザ用の UI は出ない。
 
-1. リポジトリルートで `.env` を用意する（未作成なら `cp .env.example .env`）。
+1. リポジトリルートで `.env` を用意する（未作成なら `cp .env.example .env`）。待受ポートを変更する場合は `UVICORN_PORT=9000` のように指定する。
 
 2. 初回または依存変更時: `frontend` で `npm install`
 
@@ -86,11 +92,8 @@ UI と API は `http://localhost:8000`（動作確認は `http://localhost:8000/
 
 ```bash
 (cd frontend; npm run build); uv run vcenter-event-assistant
-# または
-(cd frontend; npm run build); uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
-
 ```
-4. ブラウザで `http://localhost:8000` を開く。起動に成功すると概要タブが表示されます（下図は `MOCK_MODE=1` で取得した例。ヘッダ下にモックバナーが出ます）。
+4. ブラウザで既定の `http://localhost:8000`、または `UVICORN_PORT` で指定したポートを開く。起動に成功すると概要タブが表示されます（下図は `MOCK_MODE=1` で取得した例。ヘッダ下にモックバナーが出ます）。
 
 ![起動後の概要タブ](images/summary.png)
 
@@ -102,8 +105,6 @@ React / Vite のホットリロードで UI を開発する場合は **別ター
 
 ```bash
 uv run vcenter-event-assistant
-# または
-uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
 **ターミナル 2（フロント）** — `npm install` は初回または `package.json` 更新時。
@@ -112,7 +113,7 @@ uv run uvicorn vcenter_event_assistant.main:create_app --factory --host 0.0.0.0 
 cd frontend && npm install && npm run dev
 ```
 
-**ブラウザ**: 既定では `http://localhost:5173`（Vite が表示する URL でもよい）。`/api` と `/health` は開発サーバーが `http://127.0.0.1:8000` にプロキシする。フロントの npm スクリプト一覧は [frontend.md](frontend.md) を参照する。
+**ブラウザ**: 既定では `http://localhost:5173`（Vite が表示する URL でもよい）。`/api` と `/health` は、リポジトリルートの `.env` にある `UVICORN_PORT`（未設定時は 8000）を使ってバックエンドへプロキシする。フロントの npm スクリプト一覧は [frontend.md](frontend.md) を参照する。
 
 ### 起動後の主な画面例
 

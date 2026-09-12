@@ -16,11 +16,12 @@ services:
   app:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${UVICORN_PORT:-8000}:${UVICORN_PORT:-8000}"
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://vea:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vcenter_event_assistant
+      UVICORN_PORT: ${UVICORN_PORT:-8000}
       # 本番では .env の VEA_SECRET_KEY で vCenter パスワードを DB 暗号化（未設定時は平文 + 起動 WARNING）
       # 生成例: openssl rand -base64 32
       APP_LOG_FILE: /var/log/vea/app.log
