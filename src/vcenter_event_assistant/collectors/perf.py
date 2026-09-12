@@ -93,17 +93,8 @@ def sample_hosts_blocking(
         ca_bundle_path=ca_bundle_path,
     )
     try:
-        rows: list[dict[str, Any]] = []
-        for h in _iter_hosts(si):
-            try:
-                rows.extend(_host_metrics(h))
-                if _host_is_connected(h):
-                    rows.extend(collect_host_perf_metric_rows(si, h))
-            except Exception:
-                logger.exception(
-                    "host metric sampling failed host=%s",
-                    getattr(h, "name", h),
-                )
+        rows = sample_host_quickstats_from_connection_blocking(si)
+        rows.extend(sample_host_performance_from_connection_blocking(si))
         try:
             rows.extend(sample_datastore_metrics_blocking(si))
         except Exception:
@@ -111,3 +102,26 @@ def sample_hosts_blocking(
         return rows
     finally:
         disconnect(si)
+
+
+def sample_host_quickstats_from_connection_blocking(si: Any) -> list[dict[str, Any]]:
+    """Collect only host quickStats metrics from an existing session."""
+    rows: list[dict[str, Any]] = []
+    for host in _iter_hosts(si):
+        try:
+            rows.extend(_host_metrics(host))
+        except Exception:
+            logger.exception("host quickStats sampling failed host=%s", getattr(host, "name", host))
+    return rows
+
+
+def sample_host_performance_from_connection_blocking(si: Any) -> list[dict[str, Any]]:
+    """Collect only PerformanceManager metrics from an existing session."""
+    rows: list[dict[str, Any]] = []
+    for host in _iter_hosts(si):
+        try:
+            if _host_is_connected(host):
+                rows.extend(collect_host_perf_metric_rows(si, host))
+        except Exception:
+            logger.exception("host performance sampling failed host=%s", getattr(host, "name", host))
+    return rows

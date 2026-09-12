@@ -27,7 +27,14 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.48",
     "tiktoken>=0.12.0",
     "uvicorn[standard]>=0.42.0",
+    "vcenter-event-assistant-plugin-api",
 ]
+
+[tool.uv.sources]
+vcenter-event-assistant-plugin-api = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/plugin-api"]
 
 [project.scripts]
 vcenter-event-assistant = "vcenter_event_assistant:main"

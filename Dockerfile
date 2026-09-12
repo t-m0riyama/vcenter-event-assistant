@@ -14,6 +14,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
+COPY packages ./packages
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 RUN useradd --create-home --uid 1000 appuser \

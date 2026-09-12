@@ -1,11 +1,21 @@
 import { apiGet } from '../api'
 import { asArray } from '../utils/asArray'
-import { mergeMetricKeyOptions } from './knownMetricKeys'
+import {
+  installMetricCatalog,
+  mergeMetricKeyOptions,
+  type MetricCatalogDefinition,
+} from './knownMetricKeys'
 
 /**
  * `GET /api/metrics/keys` の結果をカタログとマージしたキー一覧を返す。
  */
 export async function fetchMetricKeysForVcenter(vcenterId: string): Promise<string[]> {
+  try {
+    const catalog = await apiGet<{ metrics?: MetricCatalogDefinition[] }>('/api/metrics/catalog')
+    installMetricCatalog(asArray<MetricCatalogDefinition>(catalog.metrics))
+  } catch {
+    // Older backends do not expose the catalog; retain the built-in fallback.
+  }
   const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
   const data = await apiGet<{ metric_keys?: unknown }>(`/api/metrics/keys${q}`)
   return mergeMetricKeyOptions(asArray<string>(data.metric_keys))

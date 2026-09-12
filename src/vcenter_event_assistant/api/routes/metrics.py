@@ -12,9 +12,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint, MetricSeriesResponse
+from vcenter_event_assistant.api.schemas.metrics import MetricCatalogResponse, MetricDefinitionRead
 from vcenter_event_assistant.db.models import MetricSample
+from vcenter_event_assistant.plugins.registry import get_collector_registry
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
+
+
+@router.get("/catalog", response_model=MetricCatalogResponse)
+async def metric_catalog() -> MetricCatalogResponse:
+    return MetricCatalogResponse(metrics=[
+        MetricDefinitionRead(collector_id=collector_id, key=d.key, display_name=d.display_name,
+                             unit=d.unit, entity_type=d.entity_type, series_mode=d.series_mode,
+                             category=d.category, description=d.description)
+        for collector_id, d in get_collector_registry().metric_catalog()
+    ])
 
 
 def _metric_filter_clauses(
@@ -89,6 +101,7 @@ async def list_metrics(
             entity_moid=r.entity_moid,
             metric_key=r.metric_key,
             vcenter_id=r.vcenter_id,
+            collector_id=r.collector_id,
         )
         for r in rows
     ]

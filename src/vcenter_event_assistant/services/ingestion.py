@@ -112,7 +112,7 @@ async def ingest_events_for_vcenter(
                 "notable_score": final_score,
                 "notable_tags": nr.tags,
             },
-            index_elements=["vcenter_id", "vmware_key"],
+            index_elements=["vcenter_id", "collector_id", "vmware_key"],
         )
         inserted += result.rowcount or 0
 

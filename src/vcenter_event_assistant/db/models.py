@@ -44,11 +44,12 @@ class VCenter(Base):
 class EventRecord(Base):
     __tablename__ = "events"
     __table_args__ = (
-        UniqueConstraint("vcenter_id", "vmware_key", name="uq_event_vcenter_vmware_key"),
+        UniqueConstraint("vcenter_id", "collector_id", "vmware_key", name="uq_event_collector_vmware_key"),
         Index("ix_events_vcenter_id_occurred_at", "vcenter_id", "occurred_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    collector_id: Mapped[str] = mapped_column(String(64), default="builtin.vcenter.events", index=True)
     vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     event_type: Mapped[str] = mapped_column(String(512), index=True)
@@ -111,6 +112,7 @@ class MetricSample(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    collector_id: Mapped[str] = mapped_column(String(64), default="builtin.vcenter.host_quickstats", index=True)
     vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     entity_type: Mapped[str] = mapped_column(String(128), index=True)
@@ -132,6 +134,27 @@ class IngestionState(Base):
     cursor_value: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     vcenter: Mapped["VCenter"] = relationship(back_populates="ingestion_states")
+
+
+class CollectorRunState(Base):
+    """Latest execution state for one collector and vCenter."""
+
+    __tablename__ = "collector_run_states"
+    __table_args__ = (
+        UniqueConstraint("vcenter_id", "collector_id", name="uq_collector_run_vcenter_plugin"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
+    collector_id: Mapped[str] = mapped_column(String(64), index=True)
+    collector_version: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    events_inserted: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_inserted: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class DigestRecord(Base):

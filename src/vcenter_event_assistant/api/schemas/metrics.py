@@ -19,11 +19,27 @@ class MetricPoint(BaseModel):
     entity_moid: str
     metric_key: str
     vcenter_id: uuid.UUID
+    collector_id: str
 
     @field_validator("sampled_at", mode="before")
     @classmethod
     def sampled_at_to_utc(cls, v: object) -> datetime:
         return _normalize_to_utc(v)
+
+
+class MetricDefinitionRead(BaseModel):
+    collector_id: str
+    key: str
+    display_name: str
+    unit: str
+    entity_type: str
+    series_mode: str
+    category: str
+    description: str
+
+
+class MetricCatalogResponse(BaseModel):
+    metrics: list[MetricDefinitionRead]
 
 
 class MetricSeriesResponse(BaseModel):

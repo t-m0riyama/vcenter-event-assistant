@@ -5,7 +5,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
@@ -166,6 +166,11 @@ class AppLogSettingsMixin(BaseModel):
     scheduler_enabled: bool = Field(
         default=True, description="Disable for tests or one-shot runs"
     )
+    collector_config_file: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("collector_config_file", "VEA_COLLECTOR_CONFIG_FILE"),
+        description="Optional TOML configuration for collector plugins (VEA_COLLECTOR_CONFIG_FILE).",
+    )
     mock_mode: bool = Field(
         default=False,
         description=(
@@ -200,7 +205,7 @@ class AppLogSettingsMixin(BaseModel):
             raise ValueError(f"無効な log_level: {v!r}（例: DEBUG, INFO, WARNING）")
         return name
 
-    @field_validator("app_log_file", "uvicorn_log_file", mode="before")
+    @field_validator("app_log_file", "uvicorn_log_file", "collector_config_file", mode="before")
     @classmethod
     def empty_log_path_to_none(cls, v: object) -> str | None:
         return _normalize_empty_to_none(v)

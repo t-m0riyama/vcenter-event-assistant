@@ -7,6 +7,7 @@ vCenter のイベントとホストメトリクス（CPU/メモリ利用率な�
 - vCenter の **イベント**を蓄積し、時系列で一覧・フィルタし、ルールに基づく **注目度（スコア）** で優先度付けして確認できる。
 - ESXi ホストの **CPU/メモリ利用率**（`quickStats` 由来）を定期サンプルし、**推移・ダッシュボード**で傾向を確認できる。
 - **複数 vCenter** を登録し、手動またはスケジュールされた **収集ジョブ**でデータを取り込める。
+- バージョン付きの **コレクタプラグインAPI** により、イベントやメトリクスの収集項目を外部Pythonパッケージとして追加できる。
 - 障害などの発生時、イベント（発生件数）とESXiホストの負荷情報の推移を1つのグラフに視覚化できる。
 - 期間を指定して、イベントとESXiホストの負荷情報のダイジェストを生成できる。環境設定により **LLM で要約・整形**できる。
 - 期間を指定して、イベントとESXiホストの負荷情報をLLMにコンテキストとして与え、**チャット形式で質問**できる。
@@ -74,6 +75,7 @@ flowchart TB
 - **イベントタブ（利用者向け）**（一覧・絞り込み・運用メモ・CSV 出力）: [docs/user-guides/events.md](docs/user-guides/events.md)
 - **グラフタブ（利用者向け）**（メトリクス時系列・イベント件数オーバーレイ・エクスポート）: [docs/user-guides/graph.md](docs/user-guides/graph.md)
 - **バックエンドガイド**（API・設定・運用）: [docs/backend.md](docs/backend.md)
+- **コレクタプラグイン**（契約・設定・外部パッケージ登録）: [docs/collector-plugins.md](docs/collector-plugins.md)
 - **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
 - **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
 - **チャット機能の活用**（概要・補助）: [docs/chat.md](docs/chat.md) — 利用者向け正本は [docs/user-guides/chat.md](docs/user-guides/chat.md)

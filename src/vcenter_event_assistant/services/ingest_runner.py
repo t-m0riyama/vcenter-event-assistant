@@ -20,6 +20,8 @@ from vcenter_event_assistant.services.ingestion import (
     list_enabled_vcenters,
 )
 from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.plugins.registry import get_collector_registry
+from vcenter_event_assistant.plugins.runtime import CollectorRunResult, run_collector_for_vcenter
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,17 @@ class IngestRunResult:
 
     events_inserted: int
     metrics_inserted: int
+    plugins: tuple[CollectorRunResult, ...] = ()
+
+
+async def run_registered_collector(settings: Settings, plugin_id: str) -> tuple[CollectorRunResult, ...]:
+    """Run one enabled collector for every enabled vCenter."""
+    registration = get_collector_registry().get(plugin_id)
+    if registration is None:
+        return (CollectorRunResult(plugin_id, "failed", error="collector not found"),)
+    async with session_scope(settings=settings) as session:
+        ids = [vc.id for vc in await list_enabled_vcenters(session)]
+    return tuple(await asyncio.gather(*(run_collector_for_vcenter(settings, registration, vid) for vid in ids)))
 
 
 @asynccontextmanager
@@ -104,12 +117,8 @@ async def run_ingest_events(settings: Settings) -> int | None:
         if not acquired:
             logger.debug("event ingest skipped: another ingest is running")
             return None
-        return await ingest_for_enabled_vcenters(
-            settings,
-            ingest_events_for_vcenter,
-            success_log="events ingested vcenter=%s count=%s",
-            failure_log="event poll failed vcenter_id=%s",
-        )
+        results = await run_registered_collector(settings, "builtin.vcenter.events")
+        return sum(result.events_inserted for result in results)
 
 
 async def run_ingest_metrics(settings: Settings) -> int | None:
@@ -118,12 +127,10 @@ async def run_ingest_metrics(settings: Settings) -> int | None:
         if not acquired:
             logger.debug("metrics ingest skipped: another ingest is running")
             return None
-        return await ingest_for_enabled_vcenters(
-            settings,
-            ingest_metrics_for_vcenter,
-            success_log="metrics ingested vcenter=%s count=%s",
-            failure_log="perf poll failed vcenter_id=%s",
-        )
+        registry = get_collector_registry()
+        ids = [r.plugin_id for r in registry.enabled() if r.plugin and "metric" in r.plugin.manifest.data_kinds]
+        results = [result for plugin_id in ids for result in await run_registered_collector(settings, plugin_id)]
+        return sum(result.metrics_inserted for result in results)
 
 
 async def run_ingest_all(settings: Settings) -> IngestRunResult:
@@ -133,19 +140,29 @@ async def run_ingest_all(settings: Settings) -> IngestRunResult:
         IngestBusyError: 別の取り込みが実行中。
     """
     async with _ingest_run_slot(policy="reject"):
-        events_inserted = await ingest_for_enabled_vcenters(
-            settings,
-            ingest_events_for_vcenter,
-            success_log="events ingested vcenter=%s count=%s",
-            failure_log="event poll failed vcenter_id=%s",
+        try:
+            registry = get_collector_registry()
+        except RuntimeError:
+            events_inserted = await ingest_for_enabled_vcenters(
+                settings, ingest_events_for_vcenter,
+                success_log="events ingested vcenter=%s count=%s",
+                failure_log="event poll failed vcenter_id=%s",
+            )
+            metrics_inserted = await ingest_for_enabled_vcenters(
+                settings, ingest_metrics_for_vcenter,
+                success_log="metrics ingested vcenter=%s count=%s",
+                failure_log="perf poll failed vcenter_id=%s",
+            )
+            return IngestRunResult(events_inserted, metrics_inserted)
+        plugin_results: tuple[CollectorRunResult, ...] = tuple(
+            result
+            for registration in registry.enabled()
+            for result in await run_registered_collector(settings, registration.plugin_id)
         )
-        metrics_inserted = await ingest_for_enabled_vcenters(
-            settings,
-            ingest_metrics_for_vcenter,
-            success_log="metrics ingested vcenter=%s count=%s",
-            failure_log="perf poll failed vcenter_id=%s",
-        )
+        events_inserted = sum(result.events_inserted for result in plugin_results)
+        metrics_inserted = sum(result.metrics_inserted for result in plugin_results)
     return IngestRunResult(
         events_inserted=events_inserted,
         metrics_inserted=metrics_inserted,
+        plugins=plugin_results,
     )
