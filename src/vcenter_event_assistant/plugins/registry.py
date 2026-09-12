@@ -1,0 +1,265 @@
+"""Discovery, validation, and immutable snapshots of collector plugins."""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass, replace
+from importlib.metadata import entry_points
+from types import MappingProxyType
+from typing import Mapping
+
+from vcenter_event_assistant_plugin_api import (
+    PLUGIN_API_VERSION,
+    CollectorPlugin,
+    MetricDefinition,
+)
+
+from vcenter_event_assistant.plugins.config import (
+    CollectorConfig,
+    apply_collector_environment,
+    load_collector_config_file,
+)
+from vcenter_event_assistant.settings import Settings
+
+logger = logging.getLogger(__name__)
+_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+
+@dataclass(frozen=True, slots=True)
+class CollectorRegistration:
+    plugin_id: str
+    plugin: CollectorPlugin | None
+    source: str
+    config: CollectorConfig | None
+    status: str
+    error: str | None = None
+
+
+class CollectorRegistry:
+    def __init__(
+        self, registrations: Mapping[str, CollectorRegistration], *, generation: int = 1
+    ):
+        self._registrations = MappingProxyType(dict(registrations))
+        self.generation = generation
+
+    @property
+    def registrations(self) -> Mapping[str, CollectorRegistration]:
+        return self._registrations
+
+    def enabled(self) -> tuple[CollectorRegistration, ...]:
+        return tuple(r for r in self._registrations.values() if r.status == "enabled")
+
+    def get(self, plugin_id: str) -> CollectorRegistration | None:
+        return self._registrations.get(plugin_id)
+
+    def metric_catalog(self) -> tuple[tuple[str, MetricDefinition], ...]:
+        return tuple(
+            (r.plugin_id, definition)
+            for r in self.enabled()
+            if r.plugin is not None
+            for definition in r.plugin.manifest.metric_definitions
+        )
+
+
+_registry: CollectorRegistry | None = None
+
+
+def set_collector_registry(registry: CollectorRegistry | None) -> None:
+    global _registry
+    _registry = registry
+
+
+def activate_collector_registry(registry: CollectorRegistry) -> None:
+    """Atomically replace the active immutable registry snapshot."""
+    set_collector_registry(registry)
+
+
+async def start_collector_registry(registry: CollectorRegistry) -> CollectorRegistry:
+    """Start enabled plugins, isolating lifecycle failures into a new snapshot."""
+    registrations = dict(registry.registrations)
+    for registration in registry.enabled():
+        assert registration.plugin is not None
+        try:
+            await registration.plugin.start()
+        except Exception as exc:
+            logger.exception(
+                "collector plugin start failed plugin_id=%s", registration.plugin_id
+            )
+            registrations[registration.plugin_id] = replace(
+                registration,
+                status="failed",
+                error=f"start failed: {type(exc).__name__}",
+            )
+    return CollectorRegistry(registrations, generation=registry.generation)
+
+
+async def shutdown_collector_registry(registry: CollectorRegistry) -> None:
+    """Stop a registry generation without allowing one plugin to block the others."""
+    from vcenter_event_assistant.plugins.runtime import drain_collector_runs
+
+    await drain_collector_runs(
+        {registration.plugin_id for registration in registry.enabled()}
+    )
+    for registration in registry.enabled():
+        assert registration.plugin is not None
+        try:
+            await registration.plugin.stop()
+        except Exception:
+            logger.exception(
+                "collector plugin stop failed plugin_id=%s", registration.plugin_id
+            )
+
+
+def get_collector_registry() -> CollectorRegistry:
+    if _registry is None:
+        raise RuntimeError("collector registry is not initialized")
+    return _registry
+
+
+def _validate_plugin(plugin: CollectorPlugin, *, source: str) -> str | None:
+    manifest = plugin.manifest
+    if not _ID_RE.fullmatch(manifest.id):
+        return "invalid plugin id"
+    if source != "builtin" and manifest.id.startswith("builtin."):
+        return "builtin.* is reserved"
+    if manifest.api_version != PLUGIN_API_VERSION:
+        return f"unsupported plugin API version {manifest.api_version}"
+    if manifest.default_interval_seconds < 10:
+        return "default interval must be at least 10 seconds"
+    if not manifest.data_kinds or not manifest.data_kinds <= {"event", "metric"}:
+        return "data_kinds must contain event and/or metric"
+    keys = [definition.key for definition in manifest.metric_definitions]
+    if len(keys) != len(set(keys)):
+        return "duplicate metric key in manifest"
+    if "metric" in manifest.data_kinds and not keys:
+        return "metric collector must declare metric definitions"
+    if any(not key or len(key) > 256 for key in keys):
+        return "metric keys must be 1..256 characters"
+    return None
+
+
+def build_collector_registry(
+    settings: Settings, *, generation: int = 1
+) -> CollectorRegistry:
+    from vcenter_event_assistant.plugins.builtin import builtin_collectors
+
+    config_error: str | None = None
+    try:
+        configured = load_collector_config_file(settings.collector_config_file)
+    except Exception as exc:
+        configured = {}
+        config_error = f"collector configuration load failed: {exc}"[:1000]
+        logger.exception("collector configuration load failed")
+    candidates: list[tuple[CollectorPlugin, str, str]] = [
+        (p, "builtin", p.manifest.id) for p in builtin_collectors()
+    ]
+    load_failures: dict[str, CollectorRegistration] = {}
+    for ep in entry_points(group="vcenter_event_assistant.collectors"):
+        try:
+            plugin = ep.load()()
+            candidates.append((plugin, f"entry_point:{ep.name}", ep.name))
+        except Exception as exc:
+            plugin_id = (
+                f"invalid-entry-point:{ep.name}"
+                if ep.name.startswith("builtin.")
+                else ep.name
+            )
+            load_failures[plugin_id] = CollectorRegistration(
+                plugin_id,
+                None,
+                f"entry_point:{ep.name}",
+                None,
+                "failed",
+                f"load failed: {type(exc).__name__}",
+            )
+            logger.exception("collector plugin load failed entry_point=%s", ep.name)
+
+    registrations: dict[str, CollectorRegistration] = dict(load_failures)
+    if config_error:
+        registrations["configuration"] = CollectorRegistration(
+            "configuration", None, "configuration", None, "failed", config_error
+        )
+    metric_owners: dict[str, str] = {}
+    for plugin, source, candidate_id in candidates:
+        try:
+            plugin_id = plugin.manifest.id
+            error = (
+                None
+                if isinstance(plugin, CollectorPlugin)
+                else "object does not implement CollectorPlugin"
+            )
+            error = error or _validate_plugin(plugin, source=source)
+        except Exception as exc:
+            registrations[candidate_id] = CollectorRegistration(
+                candidate_id,
+                None,
+                source,
+                None,
+                "failed",
+                f"invalid plugin contract: {type(exc).__name__}",
+            )
+            continue
+        raw = apply_collector_environment(plugin_id, configured.get(plugin_id, {}))
+        default_enabled = source == "builtin"
+        enabled = bool(raw.get("enabled", default_enabled))
+        try:
+            interval = int(
+                raw.get(
+                    "interval_seconds", _legacy_interval(settings, plugin_id, plugin)
+                )
+            )
+            timeout = float(raw.get("timeout_seconds", 300.0))
+            if interval < 10 or timeout <= 0:
+                raise ValueError("invalid interval_seconds or timeout_seconds")
+            values = raw.get("config", {})
+            if not isinstance(values, dict):
+                raise ValueError("config must be a TOML table")
+            config = CollectorConfig(enabled, interval, timeout, values)
+        except (TypeError, ValueError) as exc:
+            config = None
+            error = f"configuration error: {exc}"
+
+        if plugin_id in registrations:
+            error = "duplicate plugin id"
+            previous = registrations[plugin_id]
+            registrations[plugin_id] = CollectorRegistration(
+                plugin_id,
+                previous.plugin,
+                previous.source,
+                previous.config,
+                "failed",
+                error,
+            )
+            continue
+        for definition in plugin.manifest.metric_definitions if enabled else ():
+            owner = metric_owners.get(definition.key)
+            if owner is not None:
+                error = f"metric key {definition.key!r} is already owned by {owner}"
+                break
+            metric_owners[definition.key] = plugin_id
+        status = "failed" if error else ("enabled" if enabled else "disabled")
+        registrations[plugin_id] = CollectorRegistration(
+            plugin_id, plugin, source, config, status, error
+        )
+
+    for plugin_id in configured.keys() - registrations.keys():
+        registrations[plugin_id] = CollectorRegistration(
+            plugin_id,
+            None,
+            "configuration",
+            None,
+            "failed",
+            "configured plugin is not installed",
+        )
+    return CollectorRegistry(registrations, generation=generation)
+
+
+def _legacy_interval(
+    settings: Settings, plugin_id: str, plugin: CollectorPlugin
+) -> int:
+    if plugin_id == "builtin.vcenter.events":
+        return settings.event_poll_interval_seconds
+    if plugin_id.startswith("builtin.vcenter."):
+        return settings.perf_sample_interval_seconds
+    return plugin.manifest.default_interval_seconds

@@ -34,6 +34,7 @@ from vcenter_event_assistant.api.routes.ingest import router as ingest_router
 from vcenter_event_assistant.api.routes.incident_timeline import (
     router as incident_timeline_router,
 )
+from vcenter_event_assistant.api.routes.plugins import router as plugins_router
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
@@ -46,6 +47,13 @@ from vcenter_event_assistant.services.digest.legacy_settings_deprecation import 
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 from vcenter_event_assistant.security_startup import validate_startup_settings
+from vcenter_event_assistant.plugins.registry import (
+    activate_collector_registry,
+    build_collector_registry,
+    set_collector_registry,
+    shutdown_collector_registry,
+    start_collector_registry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +87,16 @@ async def lifespan(app: FastAPI):
         )
     await init_db(settings=settings)
     await ensure_vcenter_password_storage(settings=settings)
+    registry = await start_collector_registry(build_collector_registry(settings))
+    activate_collector_registry(registry)
     await run_screenshot_e2e_seed_if_enabled()
     await run_mock_mode_seed_if_enabled()
     if settings.scheduler_enabled:
-        setup_scheduler(app, settings)
+        setup_scheduler(app, settings, registry=registry)
     yield
     shutdown_scheduler(app)
+    await shutdown_collector_registry(registry)
+    set_collector_registry(None)
 
 
 def create_app() -> FastAPI:
@@ -187,6 +199,7 @@ def create_app() -> FastAPI:
     api.include_router(incident_timeline_router)
     api.include_router(alerts_router)
     api.include_router(ingest_router)
+    api.include_router(plugins_router)
 
     app.include_router(api)
 

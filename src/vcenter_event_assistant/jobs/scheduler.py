@@ -39,6 +39,11 @@ from vcenter_event_assistant.services.research.search_provider import (
     build_search_provider,
 )
 from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.plugins.registry import (
+    build_collector_registry,
+    set_collector_registry,
+)
+from vcenter_event_assistant.services.ingest_runner import run_registered_collector
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -221,7 +226,7 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
         )
 
 
-def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
+def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> AsyncIOScheduler:
     """APScheduler に定期ジョブを登録し、``app.state.scheduler`` に格納する。
 
     Args:
@@ -233,22 +238,23 @@ def setup_scheduler(app: "FastAPI", settings: Settings) -> AsyncIOScheduler:
     """
     scheduler = AsyncIOScheduler()
 
-    scheduler.add_job(
-        poll_events,
-        "interval",
-        seconds=settings.event_poll_interval_seconds,
-        id="poll_events",
-        kwargs={"settings": settings},
-        **_job_options_for_interval(settings.event_poll_interval_seconds),
-    )
-    scheduler.add_job(
-        poll_perf,
-        "interval",
-        seconds=settings.perf_sample_interval_seconds,
-        id="poll_perf",
-        kwargs={"settings": settings},
-        **_job_options_for_interval(settings.perf_sample_interval_seconds),
-    )
+    if registry is None:
+        registry = build_collector_registry(settings)
+        set_collector_registry(registry)
+    for registration in registry.enabled():
+        assert registration.config is not None
+        interval = registration.config.interval_seconds
+        scheduler.add_job(
+            run_registered_collector,
+            "interval",
+            seconds=interval,
+            id={
+                "builtin.vcenter.events": "poll_events",
+                "builtin.vcenter.host_quickstats": "poll_perf",
+            }.get(registration.plugin_id, f"collector:{registration.plugin_id}"),
+            kwargs={"settings": settings, "plugin_id": registration.plugin_id},
+            **_job_options_for_interval(interval),
+        )
     scheduler.add_job(
         evaluate_alerts,
         "interval",

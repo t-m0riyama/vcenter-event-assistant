@@ -39,6 +39,14 @@ describe('resolveEventApiRange', () => {
       expect(r.to).toBe('2025-06-15T23:59:59.000Z')
     }
   })
+
+  it('includes samples from the current partial end minute', () => {
+    const r = resolveEventApiRange('2025-06-15T09:00', '2025-06-15T10:12', 'UTC')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.to).toBe('2025-06-15T10:12:59.000Z')
+    }
+  })
 })
 
 describe('resolveMetricsGraphRange', () => {
@@ -59,7 +67,7 @@ describe('resolveMetricsGraphRange', () => {
     expect(r).toEqual({
       mode: 'range',
       from: '2025-06-15T00:00:00.000Z',
-      to: '2025-06-16T00:00:00.000Z',
+      to: '2025-06-16T00:00:59.000Z',
     })
   })
 })

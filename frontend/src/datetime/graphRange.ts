@@ -12,9 +12,9 @@ export type EventRangeResolve =
   | { ok: true; from?: string; to?: string }
   | { ok: false; message: string }
 
-/** `T23:59` の終了入力をその壁時計分の末尾（+59秒）まで含める。 */
+/** 分精度の終了入力をその壁時計分の末尾（+59秒）まで含める。 */
 function utcIsoThroughEndOfWallMinute(wallInput: string, utcIso: string): string {
-  if (!wallInput.endsWith('T23:59')) return utcIso
+  if (!/T\d{2}:\d{2}$/.test(wallInput)) return utcIso
   const ms = parseApiUtcInstantMs(utcIso)
   if (!Number.isFinite(ms)) return utcIso
   return new Date(ms + 59_000).toISOString()

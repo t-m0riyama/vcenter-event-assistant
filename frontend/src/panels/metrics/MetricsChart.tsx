@@ -29,8 +29,9 @@ import {
 } from './chartXAxisLayout'
 import { MetricsXAxisTick } from './MetricsXAxisTick'
 
-/** データ点はホバー時のみ表示して線を主役にする */
+/** 通常はホバー時のみ、1点しかないときは常時表示する。 */
 const LINE_CHART_ACTIVE_DOT = { r: 4, strokeWidth: 0 } as const
+const LINE_CHART_SINGLE_DOT = { r: 3, strokeWidth: 0 } as const
 
 type ChartColors = ReturnType<typeof useChartThemeColors>
 
@@ -84,6 +85,7 @@ export function MetricsChart({
   leftYAxisLabel,
   snapshotChartGuidelineMs,
 }: MetricsChartProps) {
+  const metricDot = chartData.length === 1 ? LINE_CHART_SINGLE_DOT : false
   const [chartWrapWidthPx, setChartWrapWidthPx] = useState(0)
   useLayoutEffect(() => {
     const el = chartWrapRef.current
@@ -246,7 +248,7 @@ export function MetricsChart({
                 stroke={chartColors.primary}
                 strokeWidth={2}
                 fill="url(#metricAreaFill)"
-                dot={false}
+                dot={metricDot}
                 activeDot={LINE_CHART_ACTIVE_DOT}
                 isAnimationActive={false}
                 hide={hiddenSeriesDataKeys.has('v')}
@@ -262,7 +264,7 @@ export function MetricsChart({
                   stroke={chartColors.series[i % chartColors.series.length]}
                   strokeWidth={2}
                   connectNulls
-                  dot={false}
+                  dot={metricDot}
                   activeDot={LINE_CHART_ACTIVE_DOT}
                   isAnimationActive={false}
                   hide={hiddenSeriesDataKeys.has(s.dataKey)}

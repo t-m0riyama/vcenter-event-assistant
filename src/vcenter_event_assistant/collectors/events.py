@@ -47,47 +47,58 @@ def fetch_events_blocking(
         ca_bundle_path=ca_bundle_path,
     )
     try:
-        content = si.RetrieveContent()
-        em = content.eventManager
-        filt = vim.event.EventFilterSpec()
-        filt.time = vim.event.EventFilterSpec.ByTime()
-        end = datetime.now(timezone.utc)
-        filt.time.endTime = end
-        if since:
-            filt.time.beginTime = _ensure_aware(since)
-        else:
-            filt.time.beginTime = end - timedelta(days=1)
-
-        collector = em.CreateCollectorForEvents(filt)
-        raw: list[Any] = []
-        try:
-            for _ in range(max_pages):
-                page = collector.ReadNextEvents(500)
-                if not page:
-                    break
-                raw.extend(page)
-            else:
-                logger.warning(
-                    "event fetch hit max_pages=%s (host=%s); more events may remain in vCenter",
-                    max_pages,
-                    host,
-                )
-        finally:
-            collector.DestroyCollector()
-
-        normalized: list[dict[str, Any]] = []
-        max_ts: datetime | None = None
-        for e in raw:
-            row = normalize_event(e)
-            if row is None:
-                continue
-            normalized.append(row)
-            ot = row["occurred_at"]
-            if max_ts is None or ot > max_ts:
-                max_ts = ot
-        return normalized, max_ts
+        return fetch_events_from_connection_blocking(si, since=since, max_pages=max_pages, host_label=host)
     finally:
         disconnect(si)
+
+
+def fetch_events_from_connection_blocking(
+    si: Any,
+    *,
+    since: datetime | None,
+    max_pages: int = 100,
+    host_label: str | None = None,
+) -> tuple[list[dict[str, Any]], datetime | None]:
+    """Collect events using an existing vCenter session."""
+    content = si.RetrieveContent()
+    em = content.eventManager
+    filt = vim.event.EventFilterSpec()
+    filt.time = vim.event.EventFilterSpec.ByTime()
+    end = datetime.now(timezone.utc)
+    filt.time.endTime = end
+    if since:
+        filt.time.beginTime = _ensure_aware(since)
+    else:
+        filt.time.beginTime = end - timedelta(days=1)
+
+    collector = em.CreateCollectorForEvents(filt)
+    raw: list[Any] = []
+    try:
+        for _ in range(max_pages):
+            page = collector.ReadNextEvents(500)
+            if not page:
+                break
+            raw.extend(page)
+        else:
+            logger.warning(
+                "event fetch hit max_pages=%s (host=%s); more events may remain in vCenter",
+                max_pages,
+                host_label or "unknown",
+            )
+    finally:
+        collector.DestroyCollector()
+
+    normalized: list[dict[str, Any]] = []
+    max_ts: datetime | None = None
+    for e in raw:
+        row = normalize_event(e)
+        if row is None:
+            continue
+        normalized.append(row)
+        ot = row["occurred_at"]
+        if max_ts is None or ot > max_ts:
+            max_ts = ot
+    return normalized, max_ts
 
 
 def normalize_event(e: Any) -> dict[str, Any] | None:

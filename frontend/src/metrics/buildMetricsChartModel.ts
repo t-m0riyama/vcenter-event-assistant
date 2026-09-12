@@ -1,6 +1,7 @@
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import type { MetricPoint } from './normalizeMetricSeriesResponse'
 import { bucketEpochUtcSec } from './metricCsv'
+import { metricSeriesMode } from './knownMetricKeys'
 
 /**
  * `host.*` メトリクスキーかどうか（ESXi ホスト単位の系列に分割する）。
@@ -17,7 +18,7 @@ export function isDatastoreMetricKey(metricKey: string): boolean {
 }
 
 function isEntitySplitMetricKey(metricKey: string): boolean {
-  return isHostMetricKey(metricKey) || isDatastoreMetricKey(metricKey)
+  return metricSeriesMode(metricKey) === 'entity'
 }
 
 /**

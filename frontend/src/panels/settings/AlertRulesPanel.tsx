@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../api'
 import {
   alertRuleRowSchema,
@@ -12,7 +12,12 @@ import {
   formatAlertRulesFileParseError,
   formatAlertRulesImportApiError,
 } from './alertRulesImportErrors'
-import { KNOWN_METRIC_KEYS } from '../../metrics/knownMetricKeys'
+import {
+  KNOWN_METRIC_KEYS,
+  installMetricCatalog,
+  mergeMetricKeyOptions,
+  type MetricCatalogDefinition,
+} from '../../metrics/knownMetricKeys'
 import { DEFAULT_ALERT_METRIC_KEY } from './alertRuleDefaults'
 import { ALERT_RULES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmDestructiveImport'
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
@@ -65,6 +70,17 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newMetricKey, setNewMetricKey] = useState<string>(DEFAULT_ALERT_METRIC_KEY)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [drafts, setDrafts] = useState<Record<number, EditDraft>>({})
+  const [metricKeyOptions, setMetricKeyOptions] = useState<string[]>([...KNOWN_METRIC_KEYS])
+
+  useEffect(() => {
+    void apiGet<{ metrics?: MetricCatalogDefinition[] }>('/api/metrics/catalog')
+      .then((data) => {
+        const definitions = Array.isArray(data.metrics) ? data.metrics : []
+        installMetricCatalog(definitions)
+        setMetricKeyOptions(mergeMetricKeyOptions([]))
+      })
+      .catch(() => undefined)
+  }, [])
 
   const importExport = useSettingsJsonImportExport({
     exportFilenamePrefix: 'vea-alert-rules',
@@ -253,7 +269,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         <button
           type="button"
           className="btn btn--filled"
-          onClick={importExport.openImportFilePicker}
+          onClick={() => importExport.openImportFilePicker()}
         >
           ファイルからインポート
         </button>
@@ -304,7 +320,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                   placeholder={DEFAULT_ALERT_METRIC_KEY}
                 />
                 <datalist id="alert-metric-key-options">
-                  {KNOWN_METRIC_KEYS.map((key) => (
+                  {metricKeyOptions.map((key) => (
                     <option key={key} value={key} />
                   ))}
                 </datalist>
