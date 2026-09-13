@@ -5,8 +5,8 @@ vCenter Event Assistant のコレクタプラグインのサンプルである�
 
 用途は 2 つある。
 
-- **プラグインを書くときの雛形**: entry point の宣言、`CollectorManifest`、`collect()` の実装、
-  `open_vcenter_connection()` の使い方、ブロッキング処理の逃がし方を最小構成で示す。
+- **プラグインを書くときの雛形**: `MetricCollector` の継承、entry point の宣言、
+  `sample()` の実装を最小構成で示す。
 - **動作確認**: 動的インストール・ホットリロード・プロセス分離が実際に効いているかを確かめる。
 
 本体のドキュメントは [`docs/collector-plugins.md`](../../docs/collector-plugins.md) を参照する。
@@ -98,16 +98,45 @@ curl -s -X DELETE $B/api/plugins/installed/example-temperature-collector
 curl -s -X POST $B/api/plugins/collectors/reload -d '{}' -H 'Content-Type: application/json'
 ```
 
+## 基底クラスが引き受けること
+
+`MetricCollector` を継承すると、実装するのは `sample()` **1 つだけ**になる。
+以下は書かなくてよい。書かないので間違えようがない。
+
+| 基底が持つ | 自分で書くと踏む罠 |
+|---|---|
+| クラス属性からの manifest 生成 | `frozenset({...})` と 1 要素タプルの末尾カンマ |
+| `data_kinds` の自動導出 | 書き忘れるとバッチが**丸ごと**拒否される |
+| `MOCK_MODE=true` の分岐と既定の合成データ | mock 経路を書き忘れて動かない |
+| vCenter 接続の open / close | `async with` の書き忘れ、接続リーク |
+| スレッドへの退避（`run_blocking`） | 素の `asyncio.to_thread` はタイムアウト時にセッションを取り残す |
+| 戻り値をスレッド内で確定 | ジェネレータ本体がイベントループ上で回る |
+| `CollectionBatch` の組み立て | `data_kinds` と実際の出力の食い違い |
+
+イベントを返すコレクタは `EventCollector` を継承し `fetch()` を実装する。
+カーソルの decode / オーバーラップ / 空バッチでの前進はすべて基底が行う。
+
+`MetricDefinition.at()` が `metric_key` と `entity_type` を宣言から補い、
+timezone-aware なタイムスタンプを入れる。キーを二度書く必要はなく、naive な
+datetime が混ざることもない。
+
 ## プラグインを書くときの注意
 
 - 依存は `vcenter-event-assistant-plugin-api` だけにする。アプリ本体を import してはならない。
+- entry point 名と `manifest.id`（= クラスの `id`）は一致させる。不一致はレジストリ検証で
+  初めて露見する。
 - `manifest.id` とメトリクスキーは、インストール済みの全コレクタで一意にする。衝突すると
   レジストリが `failed` として弾く。
-- vCenter へは `context.open_vcenter_connection()` 経由でのみ触れる。接続の確立と切断は
-  アプリ側が行うため、プラグインは認証情報を受け取らない。
+- vCenter へは基底が渡す `si` 経由でのみ触れる。接続の確立と切断はアプリ側が行うため、
+  プラグインは認証情報を受け取らない。`view.Destroy()` は自分で呼ぶこと。
+- 設定値は `config` ヘルパ経由で読む。環境変数由来は常に `str`、TOML 由来は TOML の型なので、
+  素で比較すると「TOML では動くが管理画面で設定すると壊れる」ことになる。
 - 機密値は、そのプラグインが所有・文書化した環境変数から読む。TOML や DB には置かない。
-- pyVmomi のような同期 API は `asyncio.to_thread` に逃がす。イベントループを止めると、
-  同じワーカープロセス上の他の処理まで巻き添えになる。
+- 出力は `print` ではなく `get_plugin_logger()` を使う。ワーカーの stdout は JSON Lines
+  プロトコル専用である。`VEA_COLLECTOR_WORKER_LOG_LEVEL` でレベルを上げられる。
+- バッチが受理されるかは手元で確認できる。`check_batch(collector.manifest, batch)` は
+  アプリと同じ規則で、拒否条件（error）と、拒否はされないが静かにデータが失われる条件
+  （warning: 列長超過、重複排除キーの衝突、`vmware_key` の 32bit 範囲外）を返す。
 - オフラインのアップロードでは依存パッケージは導入されない（`--no-index --no-deps`）。
   `vcenter-event-assistant-plugin-api` 以外の依存が必要なら、インデックス経由での
   インストールを有効にするか、依存を同梱すること。不足している場合はインストール直後の

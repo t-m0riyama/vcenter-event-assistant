@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any, Callable
 
 from vcenter_event_assistant_plugin_api import (
-    CollectionBatch,
     CollectionContext,
     CollectorManifest,
     EventInput,
     MetricDefinition,
     MetricSampleInput,
 )
-from vcenter_event_assistant_plugin_api.blocking import run_blocking
+from vcenter_event_assistant_plugin_api.collector import (
+    CollectorBase,
+    EventCollector,
+    MetricCollector,
+)
 
 
 def _metric(row: dict[str, Any]) -> MetricSampleInput:
@@ -27,21 +30,29 @@ def _metric(row: dict[str, Any]) -> MetricSampleInput:
     )
 
 
-# plugin-api 側の実装をそのまま使う。プラグイン作者にも同じものが公開されている。
-# 名前を残しているのは、テストが `@patch("...builtin._run_blocking")` のように
-# ドット文字列でこのモジュール属性を差し替えているため。
-_run_blocking = run_blocking
+def _event(row: dict[str, Any]) -> EventInput:
+    return EventInput(
+        occurred_at=row["occurred_at"],
+        event_type=row["event_type"],
+        message=row["message"],
+        vmware_key=int(row["vmware_key"]),
+        severity=row.get("severity"),
+        user_name=row.get("user_name"),
+        entity_name=row.get("entity_name"),
+        entity_type=row.get("entity_type"),
+        chain_id=row.get("chain_id"),
+    )
 
 
-class _BaseCollector:
-    async def start(self) -> None:
-        return None
+class EventsCollector(EventCollector):
+    """vCenter のイベント。
 
-    async def stop(self) -> None:
-        return None
+    カーソルの decode / 1 秒のオーバーラップ / 空バッチでの前進は基底が行う。
+    ``max_ts`` は基底が返却イベントの ``occurred_at`` の最大から求めるが、
+    ``fetch_events_from_connection_blocking`` が返していた ``max_ts`` も正規化済み行の
+    最大なので、同じ値になる。
+    """
 
-
-class EventsCollector(_BaseCollector):
     manifest = CollectorManifest(
         id="builtin.vcenter.events",
         display_name="vCenter Events",
@@ -50,50 +61,25 @@ class EventsCollector(_BaseCollector):
         default_interval_seconds=120,
     )
 
-    async def collect(self, context: CollectionContext) -> CollectionBatch:
-        since = (
-            datetime.fromisoformat(context.previous_cursor)
-            if context.previous_cursor
-            else None
+    def fetch(
+        self, si: Any, context: CollectionContext, *, since: datetime | None
+    ) -> tuple[EventInput, ...]:
+        from vcenter_event_assistant.collectors.events import (
+            fetch_events_from_connection_blocking,
         )
-        fetch_since = since - timedelta(seconds=1) if since else None
-        if context.mock_mode:
-            from vcenter_event_assistant.mocks.mock_collectors import (
-                fetch_mock_events_blocking,
-            )
 
-            rows, max_ts = await _run_blocking(
-                fetch_mock_events_blocking, since=fetch_since
-            )
-        else:
-            from vcenter_event_assistant.collectors.events import (
-                fetch_events_from_connection_blocking,
-            )
+        rows, _ = fetch_events_from_connection_blocking(si, since=since)
+        return tuple(_event(row) for row in rows)
 
-            async with context.open_vcenter_connection() as si:
-                rows, max_ts = await _run_blocking(
-                    fetch_events_from_connection_blocking, si, since=fetch_since
-                )
-        events = tuple(
-            EventInput(
-                occurred_at=row["occurred_at"],
-                event_type=row["event_type"],
-                message=row["message"],
-                vmware_key=int(row["vmware_key"]),
-                severity=row.get("severity"),
-                user_name=row.get("user_name"),
-                entity_name=row.get("entity_name"),
-                entity_type=row.get("entity_type"),
-                chain_id=row.get("chain_id"),
-            )
-            for row in rows
+    def fetch_mock(
+        self, context: CollectionContext, *, since: datetime | None
+    ) -> tuple[EventInput, ...]:
+        from vcenter_event_assistant.mocks.mock_collectors import (
+            fetch_mock_events_blocking,
         )
-        next_cursor = (
-            max_ts.isoformat()
-            if max_ts is not None
-            else (context.previous_cursor or datetime.now(timezone.utc).isoformat())
-        )
-        return CollectionBatch(events=events, next_cursor=next_cursor)
+
+        rows, _ = fetch_mock_events_blocking(since=since)
+        return tuple(_event(row) for row in rows)
 
 
 QUICKSTATS = (
@@ -137,22 +123,33 @@ DATASTORE = (
 )
 
 
-class _MetricCollector(_BaseCollector):
+class _MetricCollector(MetricCollector):
+    """組み込みのメトリクスコレクタに共通の形。
+
+    接続の開閉・スレッドへの退避・``mock_mode`` の分岐は基底が持つ。ここで足すのは
+    「行の辞書を返す既存のブロッキング関数を呼ぶ」ことだけである。
+    """
+
+    abstract = True
+
     blocking_function: Callable[[Any], list[dict[str, Any]]]
     mock_keys: frozenset[str]
 
-    async def collect(self, context: CollectionContext) -> CollectionBatch:
-        if context.mock_mode:
-            from vcenter_event_assistant.mocks.mock_collectors import (
-                sample_mock_hosts_blocking,
-            )
+    def sample(
+        self, si: Any, context: CollectionContext
+    ) -> tuple[MetricSampleInput, ...]:
+        return tuple(_metric(row) for row in self.blocking_function(si))
 
-            rows = await _run_blocking(sample_mock_hosts_blocking)
-            rows = [row for row in rows if row["metric_key"] in self.mock_keys]
-        else:
-            async with context.open_vcenter_connection() as si:
-                rows = await _run_blocking(self.blocking_function, si)
-        return CollectionBatch(metrics=tuple(_metric(row) for row in rows))
+    def sample_mock(self, context: CollectionContext) -> tuple[MetricSampleInput, ...]:
+        from vcenter_event_assistant.mocks.mock_collectors import (
+            sample_mock_hosts_blocking,
+        )
+
+        return tuple(
+            _metric(row)
+            for row in sample_mock_hosts_blocking()
+            if row["metric_key"] in self.mock_keys
+        )
 
 
 class HostQuickStatsCollector(_MetricCollector):
@@ -206,7 +203,7 @@ class DatastoreCapacityCollector(_MetricCollector):
     mock_keys = frozenset(d.key for d in DATASTORE)
 
 
-def builtin_collectors() -> tuple[_BaseCollector, ...]:
+def builtin_collectors() -> tuple[CollectorBase, ...]:
     return (
         EventsCollector(),
         HostQuickStatsCollector(),
