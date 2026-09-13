@@ -57,7 +57,7 @@ uv build --project examples/example-event-collector --out-dir dist/examples
 **Settings > プラグイン**から wheel をアップロードし、反映・有効化する。外部プラグインは
 既定で無効なので、アップロード後に有効化が必要である。手順の詳細は
 [`examples/example-temperature-collector/README.md`](../example-temperature-collector/README.md)
-と [`docs/collector-plugins.md`](../../docs/collector-plugins.md) を参照する。
+と [`docs/collector-plugin-authoring.md`](../../docs/collector-plugin-authoring.md) を参照する。
 
 ## 設定
 

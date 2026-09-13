@@ -485,7 +485,7 @@ uv build
 | `vmware_key` は情報源の自然キーを使う | ハッシュだと重複排除でイベントが静かに消える |
 
 詳細は
-[docs/collector-plugins.md](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugins.md)
+[docs/collector-plugin-authoring.md](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugin-authoring.md)
 を参照。
 ''')
 
