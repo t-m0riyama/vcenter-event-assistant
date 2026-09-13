@@ -70,6 +70,12 @@ from vcenter_event_assistant_plugin_api.validation import (
 )
 
 
+#: これらのいずれかを自クラスで宣言すると、マニフェストは組み立て直される。
+_MANIFEST_ATTRIBUTES = frozenset(
+    {"id", "display_name", "version", "default_interval_seconds", "data_kinds", "metrics"}
+)
+
+
 class CollectorBase:
     """任意の基底クラス。``start`` / ``stop`` は何もしない実装を持つ。
 
@@ -97,6 +103,14 @@ class CollectorBase:
         # 明示的に manifest を書いたクラス（従来の書き方）はそのまま使う。
         if "manifest" in cls.__dict__:
             validate_manifest(cls.manifest)
+            return
+        # 具象クラスを継承して、マニフェストに関わる宣言を一切足さずに振る舞いだけ
+        # 差し替えた場合（テストでよく書く形）は、親のマニフェストをそのまま引き継ぐ。
+        # 1 つでも宣言を足していれば作り直す。さもないと、`display_name` だけ変えた
+        # サブクラスがその変更を黙って失う。
+        if not _MANIFEST_ATTRIBUTES & cls.__dict__.keys() and (
+            getattr(cls, "manifest", None) is not None
+        ):
             return
         cls.manifest = cls._build_manifest()
         # クラス定義の時点で落とす。テストを 1 回走らせれば manifest の誤りに気づく。

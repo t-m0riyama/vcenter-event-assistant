@@ -27,11 +27,8 @@ EVENTS_ID = "builtin.vcenter.events"
 
 
 @pytest.fixture(autouse=True)
-def _no_entry_point_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_entry_point_plugins(no_external_collectors: None) -> None:
     """開発環境に入っている外部プラグインの影響を受けないようにする。"""
-    monkeypatch.setattr(
-        "vcenter_event_assistant.plugins.registry.entry_points", lambda **_: []
-    )
 
 
 def _write_toml(tmp_path, body: str) -> str:

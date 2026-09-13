@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
+from vcenter_event_assistant_plugin_api.testing import stub_plugin_source
 
 from vcenter_event_assistant.plugins.installer import (
     PluginInstallError,
@@ -27,40 +28,9 @@ from vcenter_event_assistant.plugins.remote import plugin_search_paths
 from vcenter_event_assistant.services.plugin_installs import wait_for_installs
 from vcenter_event_assistant.settings import Settings, get_settings
 
-_COLLECTOR_MODULE = '''
-from vcenter_event_assistant_plugin_api import (
-    CollectionBatch,
-    CollectorManifest,
-    MetricDefinition,
-)
-
-
-class Collector:
-    manifest = CollectorManifest(
-        "example.temperature",
-        "Example Temperature",
-        "0.1.0",
-        data_kinds=frozenset({"metric"}),
-        metric_definitions=(
-            MetricDefinition(
-                "example.host.temperature_c", "Temperature", "C", "HostSystem"
-            ),
-        ),
-    )
-
-    async def start(self):
-        return None
-
-    async def stop(self):
-        return None
-
-    async def collect(self, context):
-        return CollectionBatch()
-
-
-def build_collector():
-    return Collector()
-'''
+#: 配布物に入れるコレクタのソース。空のバッチを返すだけの最小実装。
+#: plugin-api 側に 1 つだけ置いてあるので、テスト間で細部がずれない。
+_COLLECTOR_MODULE = stub_plugin_source(emit_metric=False, next_cursor=None)
 
 
 def _record_line(name: str, data: bytes) -> str:

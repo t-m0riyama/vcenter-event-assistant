@@ -33,6 +33,10 @@ jobs:
           # 型情報を配布していること。
           unzip -l "${wheel}" | grep -q 'vcenter_event_assistant_plugin_api/py.typed'
 
+          # テストハーネスを同梱していること（作者が pip install だけで使える）。
+          unzip -l "${wheel}" | grep -q 'vcenter_event_assistant_plugin_api/testing/__init__.py'
+          unzip -l "${wheel}" | grep -q 'vcenter_event_assistant_plugin_api/testing/fixtures.py'
+
           # アプリのプロジェクトから切り離した環境で import できること
           # （= 必須依存が本当に無い）。同時に pyVmomi を引かないこと。
           uv run --isolated --no-project --with "${wheel}" python - <<'EOF'
@@ -50,6 +54,20 @@ jobs:
           assert api.PLUGIN_API_VERSION == 1, api.PLUGIN_API_VERSION
           leaked = sorted(m for m in sys.modules if m.split(".")[0] in {"pyVmomi", "pyVim"})
           assert leaked == [], f"pyVmomi must stay lazily imported, got {leaked}"
+
+          # テストハーネスは pytest 抜きで import できること。pytest の fixture は
+          # `testing.fixtures` に隔離され、pytest11 としては登録されていないこと。
+          import vcenter_event_assistant_plugin_api.testing as harness
+
+          pytest_loaded = sorted(m for m in sys.modules if m.split(".")[0] == "pytest")
+          assert pytest_loaded == [], f"the harness must not require pytest, got {pytest_loaded}"
+          assert harness.run_collect is not None
+          plugins = [
+              ep.value
+              for ep in metadata.entry_points(group="pytest11")
+              if "vcenter_event_assistant_plugin_api" in ep.value
+          ]
+          assert plugins == [], f"pytest11 must stay unregistered, got {plugins}"
           print("plugin-api", api.__version__, "verified standalone")
           EOF
       - name: Upload coverage reports

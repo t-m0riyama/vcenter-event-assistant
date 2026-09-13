@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import textwrap
-import uuid
 
 import pytest
-from vcenter_event_assistant_plugin_api import CollectionContext, VCenterTarget
+from vcenter_event_assistant_plugin_api import CollectionContext
+from vcenter_event_assistant_plugin_api.testing import (
+    make_context,
+    make_target,
+    stub_plugin_source,
+)
 
 from vcenter_event_assistant.plugins.remote import (
     CollectorWorkerError,
@@ -23,73 +27,18 @@ from vcenter_event_assistant.plugins.wire import ConnectionParams
 
 COLLECT_TIMEOUT = 30.0
 
-_PLUGIN_BODY = '''
-import asyncio
-import os
-from datetime import datetime, timezone
-
-from vcenter_event_assistant_plugin_api import (
-    CollectionBatch,
-    CollectorManifest,
-    MetricDefinition,
-    MetricSampleInput,
-)
-
-MODE = os.environ.get("VEA_TEST_PLUGIN_MODE", "ok")
-
-
-class Collector:
-    manifest = CollectorManifest(
-        "example.temperature",
-        "Example Temperature",
-        "0.1.0",
-        data_kinds=frozenset({"metric"}),
-        metric_definitions=(
-            MetricDefinition(
-                "example.host.temperature_c", "Temperature", "C", "HostSystem"
-            ),
-        ),
-    )
-
-    async def start(self) -> None:
-        return None
-
-    async def stop(self) -> None:
-        return None
-
-    async def collect(self, context) -> CollectionBatch:
-        if MODE == "hang":
-            await asyncio.sleep(3600)
-        if MODE == "crash":
-            os._exit(9)
-        if MODE == "raise":
-            raise RuntimeError("do-not-leak-secret-value")
-        print("stdout noise from the plugin")
-        return CollectionBatch(
-            metrics=(
-                MetricSampleInput(
-                    datetime.now(timezone.utc),
-                    "HostSystem",
-                    "host-1",
-                    context.target.name,
-                    "example.host.temperature_c",
-                    42.5,
-                ),
-            ),
-            next_cursor="cursor-1",
-        )
-
-
-def build_collector():
-    return Collector()
-'''
-
-
 def _install_test_plugin(root, *, distribution="example-collector", version="0.1.0"):
     """``<root>/<distribution>/<version>/`` に import 可能な配布物を書き出す。"""
     target = root / distribution / version
     target.mkdir(parents=True)
-    (target / "example_collector.py").write_text(_PLUGIN_BODY, encoding="utf-8")
+    (target / "example_collector.py").write_text(
+        stub_plugin_source(
+            fault_env_var="VEA_TEST_PLUGIN_MODE",
+            noisy_stdout=True,
+            raise_message="do-not-leak-secret-value",
+        ),
+        encoding="utf-8",
+    )
 
     dist_info = target / f"{distribution.replace('-', '_')}-{version}.dist-info"
     dist_info.mkdir()
@@ -120,15 +69,17 @@ def plugin_dir(tmp_path):
     return str(root)
 
 
-def _context() -> CollectionContext:
-    return CollectionContext(
-        target=VCenterTarget(
-            uuid.uuid4(), "Alpha", "vc.example.com", "https", 443, "user", True
-        ),
+def _context(*, mock_mode: bool = True) -> CollectionContext:
+    """ワーカーへ送る収集コンテキスト。
+
+    ``open_vcenter_connection`` はワーカー側で組み立て直される（親から子へ渡るのは
+    接続情報だけで、呼び出し可能オブジェクトは渡せない）ため、ここで指定するものは
+    使われない。
+    """
+    return make_context(
+        target=make_target(name="Alpha", host="vc.example.com", username="user"),
         config={"sensor": "system-board"},
-        previous_cursor=None,
-        open_vcenter_connection=lambda: None,
-        mock_mode=True,
+        mock_mode=mock_mode,
     )
 
 

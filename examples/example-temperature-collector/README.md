@@ -15,6 +15,32 @@ vCenter Event Assistant のコレクタプラグインのサンプルである�
 > 常時インストールされ、通常の開発中にも検出ワーカーが起動してしまうためである。
 > 使うときは下記のとおり明示的にビルドしてインストールする。
 
+## テスト
+
+アプリも vCenter も起動せずに、`pytest` だけで確認できる。
+
+```bash
+uv run pytest examples/example-temperature-collector/tests -q
+```
+
+`tests/test_temperature_collector.py` は `plugin_api.testing` のハーネスを使っている。
+
+```python
+si = FakeServiceInstance(
+    hosts=[fake_host("host-1", "esxi-a"), fake_host("host-2", "esxi-b", connected=False)]
+)
+batch = await run_collect(TemperatureCollector(), connection=si)
+assert [sample.entity_moid for sample in batch.metrics] == ["host-1"]
+```
+
+`run_collect()` は `start` → `collect` → `stop` を回したうえで、バッチをアプリと同一の
+規則で検証し（warning でも落ちる）、vCenter 接続のリークと `CreateContainerView` の
+`Destroy()` 漏れも検査する。詳細は
+[`docs/collector-plugins.md` の「テストの書き方」](../../docs/collector-plugins.md#テストの書き方)
+を参照する。
+
+下の「インストールと有効化」は、アプリと繋いだ end-to-end の確認手順である。
+
 ## ビルド
 
 ```bash
