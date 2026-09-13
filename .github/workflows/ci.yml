@@ -70,6 +70,28 @@ jobs:
           assert plugins == [], f"pytest11 must stay unregistered, got {plugins}"
           print("plugin-api", api.__version__, "verified standalone")
           EOF
+
+          # スキャフォールドの生成物が、plugin-api だけを入れた環境で pytest を通ること。
+          # 「アプリを起動せずにテストできる」は作者体験の中心なので、実環境で確かめる。
+          rm -rf dist/scaffold-ci
+          wheel_abs="$(cd "$(dirname "${wheel}")" && pwd)/$(basename "${wheel}")"
+          uv run --isolated --no-project \
+            --with "${wheel}" \
+            python -m vcenter_event_assistant_plugin_api.scaffold \
+              my-sensor-collector --kind metric --out dist/scaffold-ci/metric
+          uv run --isolated --no-project \
+            --with "${wheel}" \
+            python -m vcenter_event_assistant_plugin_api.scaffold \
+              acme-event-collector --kind event --out dist/scaffold-ci/event
+          for kind in metric event; do
+            (
+              cd "dist/scaffold-ci/${kind}"
+              PYTHONPATH=src uv run --isolated --no-project \
+                --with "${wheel_abs}[vmware]" \
+                --with pytest --with pytest-asyncio \
+                pytest -q -p no:cacheprovider tests
+            )
+          done
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:

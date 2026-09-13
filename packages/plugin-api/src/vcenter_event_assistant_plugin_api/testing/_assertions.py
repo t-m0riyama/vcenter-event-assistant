@@ -121,7 +121,7 @@ async def run_collect(
         log.assert_balanced()
         for service_instance in opened:
             if isinstance(service_instance, FakeServiceInstance):
-                service_instance.assert_all_views_destroyed()
+                service_instance.assert_no_leaks()
     if validate:
         assert_batch_valid(plugin.manifest, batch, allow_warnings=allow_warnings)
     return batch

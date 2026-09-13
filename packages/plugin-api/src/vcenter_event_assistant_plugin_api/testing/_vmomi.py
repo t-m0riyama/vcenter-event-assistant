@@ -11,20 +11,23 @@ from typing import Any
 
 __all__ = [
     "FakeContainerView",
+    "FakeEventCollector",
     "FakeManagedObject",
     "FakeServiceInstance",
     "ViewLeakError",
     "fake_datastore",
+    "fake_event",
     "fake_host",
     "fake_vm",
 ]
 
 
 class ViewLeakError(AssertionError):
-    """``CreateContainerView`` で作ったビューが ``Destroy()`` されていない。
+    """``CreateContainerView`` / ``CreateCollectorForEvents`` の後始末が漏れている。
 
-    本番では vCenter 側にビューが残り続けるが、手元では何も起きないため気づけない。
-    :func:`~vcenter_event_assistant_plugin_api.testing.run_collect` がこれを送出する。
+    本番では vCenter 側にビューやコレクタが残り続けるが、手元では何も起きないため
+    気づけない。:func:`~vcenter_event_assistant_plugin_api.testing.run_collect` が
+    これを送出する。
     """
 
 
@@ -93,6 +96,7 @@ class FakeServiceInstance:
         hosts: list[Any] | tuple[Any, ...] = (),
         datastores: list[Any] | tuple[Any, ...] = (),
         vms: list[Any] | tuple[Any, ...] = (),
+        events: list[Any] | tuple[Any, ...] = (),
         objects: dict[str, list[Any]] | None = None,
         about: Any | None = None,
     ) -> None:
@@ -103,8 +107,14 @@ class FakeServiceInstance:
         }
         for type_name, items in (objects or {}).items():
             self._objects.setdefault(type_name, []).extend(items)
+        #: ``eventManager`` が返すイベント。``createdTime`` で絞られる。
+        self.events: list[Any] = list(events)
         #: 作られたビュー。生成順に並ぶ。
         self.views: list[FakeContainerView] = []
+        #: 作られたイベントコレクタ。生成順に並ぶ。
+        self.event_collectors: list[FakeEventCollector] = []
+        #: ``CreateCollectorForEvents`` に渡されたフィルタの記録。
+        self.event_filters: list[Any] = []
         #: ``CreateContainerView`` の引数（root, 型名, recursive）の記録。
         self.view_calls: list[tuple[Any, tuple[str, ...], bool]] = []
         #: ``RetrieveContent`` の呼び出し回数。
@@ -130,6 +140,26 @@ class FakeServiceInstance:
                 "use vmware.container_view() or call view.Destroy() in a finally block"
             )
 
+    def assert_all_event_collectors_destroyed(self) -> None:
+        """未破棄のイベントコレクタがあれば :class:`ViewLeakError` を送出する。"""
+        leaked = [c for c in self.event_collectors if not c.destroyed]
+        if leaked:
+            raise ViewLeakError(
+                f"{len(leaked)} event collector(s) were not destroyed; "
+                "call DestroyCollector() in a finally block"
+            )
+
+    def assert_no_leaks(self) -> None:
+        """ビューとイベントコレクタの後始末をまとめて検査する。"""
+        self.assert_all_views_destroyed()
+        self.assert_all_event_collectors_destroyed()
+
+    def _create_event_collector(self, filter_spec: Any) -> FakeEventCollector:
+        self.event_filters.append(filter_spec)
+        collector = FakeEventCollector(_filter_events(self.events, filter_spec))
+        self.event_collectors.append(collector)
+        return collector
+
     def _create_view(self, root: Any, types: Any, recursive: bool) -> FakeContainerView:
         type_names = tuple(_type_name(item) for item in types)
         self.view_calls.append((root, type_names, bool(recursive)))
@@ -149,6 +179,7 @@ class _FakeContent:
         self.rootFolder = service_instance.root_folder  # noqa: N815 - pyVmomi の命名
         self.about = service_instance.about
         self.viewManager = _FakeViewManager(service_instance)  # noqa: N815
+        self.eventManager = _FakeEventManager(service_instance)  # noqa: N815
 
 
 class _FakeViewManager:
@@ -159,6 +190,109 @@ class _FakeViewManager:
         self, container: Any, type: Any, recursive: bool
     ) -> FakeContainerView:
         return self._si._create_view(container, type, recursive)
+
+
+class _FakeEventManager:
+    def __init__(self, service_instance: FakeServiceInstance) -> None:
+        self._si = service_instance
+
+    def CreateCollectorForEvents(  # noqa: N802 - pyVmomi の命名に合わせる
+        self, filter: Any
+    ) -> FakeEventCollector:
+        return self._si._create_event_collector(filter)
+
+
+class FakeEventCollector:
+    """``ReadNextEvents`` でページングし、``DestroyCollector`` を記録するコレクタ。"""
+
+    def __init__(self, events: list[Any]) -> None:
+        self._remaining = list(events)
+        self.destroy_count = 0
+        #: ``ReadNextEvents`` に渡されたページサイズの記録。
+        self.page_sizes: list[int] = []
+
+    @property
+    def destroyed(self) -> bool:
+        return self.destroy_count > 0
+
+    def ReadNextEvents(self, maxCount: int) -> list[Any]:  # noqa: N802, N803
+        self.page_sizes.append(maxCount)
+        page = self._remaining[:maxCount]
+        del self._remaining[:maxCount]
+        return page
+
+    def DestroyCollector(self) -> None:  # noqa: N802 - pyVmomi の命名に合わせる
+        self.destroy_count += 1
+
+
+def _filter_events(events: list[Any], filter_spec: Any) -> list[Any]:
+    """``EventFilterSpec.time`` の ``beginTime`` / ``endTime`` で絞る。
+
+    アプリと同じく ``createdTime`` を見る。カーソルが本当に効いているかを
+    テストで確かめられるようにするため、ここは手を抜かない。
+    """
+    time_filter = getattr(filter_spec, "time", None)
+    begin = getattr(time_filter, "beginTime", None) if time_filter else None
+    end = getattr(time_filter, "endTime", None) if time_filter else None
+    selected = []
+    for event in events:
+        created = getattr(event, "createdTime", None)
+        if created is not None:
+            if begin is not None and created < begin:
+                continue
+            if end is not None and created > end:
+                continue
+        selected.append(event)
+    return selected
+
+
+class _FakeEvent:
+    """イベントの基底。``type(event).__name__`` がイベント種別になる。
+
+    アプリの ``normalize_event`` はクラス名を ``event_type`` として使うため、
+    :func:`fake_event` は種別ごとに動的な型を作る。
+    """
+
+    def __init__(self, **attributes: Any) -> None:
+        self.__dict__.update(attributes)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(key={getattr(self, 'key', None)!r})"
+
+
+def fake_event(
+    key: int = 1,
+    *,
+    event_type: str = "VmPoweredOnEvent",
+    message: str = "Virtual machine powered on",
+    created_time: Any | None = None,
+    severity: str | None = "info",
+    user_name: str | None = "svc-collector@vsphere.local",
+    chain_id: int | None = None,
+    entity: Any | None = None,
+    **attributes: Any,
+) -> Any:
+    """vCenter のイベントを模したオブジェクト。
+
+    ``key`` は vCenter が振る**自然キー**であり、``EventInput.vmware_key`` に
+    そのまま使うべき値である（ハッシュで作ると重複排除で静かに消える）。
+
+    ``event_type`` はクラス名になる。アプリはイベント種別を ``type(event).__name__``
+    から取るため、文字列属性ではなく型を作る必要がある。
+    """
+    from vcenter_event_assistant_plugin_api.timeutils import now_utc
+
+    cls = type(event_type, (_FakeEvent,), {})
+    return cls(
+        key=key,
+        createdTime=created_time if created_time is not None else now_utc(),
+        fullFormattedMessage=message,
+        severity=severity,
+        userName=user_name,
+        chainId=chain_id if chain_id is not None else key,
+        entity=entity,
+        **attributes,
+    )
 
 
 def fake_host(
