@@ -10,10 +10,10 @@ from types import MappingProxyType
 from typing import Mapping
 
 from vcenter_event_assistant_plugin_api import (
-    PLUGIN_API_VERSION,
     CollectorPlugin,
     MetricDefinition,
 )
+from vcenter_event_assistant_plugin_api.validation import manifest_error_message
 
 from vcenter_event_assistant.plugins.config import (
     CollectorConfig,
@@ -119,25 +119,18 @@ def get_collector_registry() -> CollectorRegistry:
 
 
 def _validate_plugin(plugin: CollectorPlugin, *, source: str) -> str | None:
+    """manifest を検査し、最初の問題の文言を返す（問題なしなら ``None``）。
+
+    判定の本体は plugin-api 側の ``check_manifest`` にある。プラグイン作者が手元で
+    同じ関数を呼べるようにするためで、文言も一致させている。``builtin.*`` の予約だけは
+    プラグインの出自（``source``）に依存するのでここに残る。
+    """
     manifest = plugin.manifest
     if not _ID_RE.fullmatch(manifest.id):
         return "invalid plugin id"
     if source != "builtin" and manifest.id.startswith("builtin."):
         return "builtin.* is reserved"
-    if manifest.api_version != PLUGIN_API_VERSION:
-        return f"unsupported plugin API version {manifest.api_version}"
-    if manifest.default_interval_seconds < 10:
-        return "default interval must be at least 10 seconds"
-    if not manifest.data_kinds or not manifest.data_kinds <= {"event", "metric"}:
-        return "data_kinds must contain event and/or metric"
-    keys = [definition.key for definition in manifest.metric_definitions]
-    if len(keys) != len(set(keys)):
-        return "duplicate metric key in manifest"
-    if "metric" in manifest.data_kinds and not keys:
-        return "metric collector must declare metric definitions"
-    if any(not key or len(key) > 256 for key in keys):
-        return "metric keys must be 1..256 characters"
-    return None
+    return manifest_error_message(manifest)
 
 
 def _discover_external_collectors(settings: Settings):

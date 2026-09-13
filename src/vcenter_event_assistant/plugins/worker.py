@@ -26,6 +26,13 @@ from contextlib import asynccontextmanager
 from importlib.metadata import entry_points
 from typing import Any
 
+from vcenter_event_assistant_plugin_api.validation import (
+    BatchValidationError as _BatchValidationError,
+)
+from vcenter_event_assistant_plugin_api.validation import (
+    ManifestValidationError as _ManifestValidationError,
+)
+
 ENTRY_POINT_GROUP = "vcenter_event_assistant.collectors"
 
 logger = logging.getLogger(__name__)
@@ -54,6 +61,10 @@ _SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
     ImportError,
     EntryPointNotFound,
     NotImplementedError,
+    # 検証エラー。メッセージは静的な文言と manifest 由来のメトリクスキーだけで作られる
+    # （vCenter 由来のデータは warning 側にしか入れていない）。
+    _BatchValidationError,
+    _ManifestValidationError,
 )
 
 

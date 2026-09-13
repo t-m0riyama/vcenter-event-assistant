@@ -300,3 +300,91 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
     assert payload["collectors"][2]["status"] == "disabled"
     assert payload["collectors"][2]["data_kinds"] == ["event"]
     assert "do-not-leak" not in status.text
+
+
+class _NaiveTimestampCollector(SampleCollector):
+    """検証に落ちるバッチを返すコレクタ。naive な datetime は最も多い取り違え。"""
+
+    async def collect(self, context) -> CollectionBatch:
+        return CollectionBatch(
+            metrics=(
+                MetricSampleInput(
+                    datetime(2026, 1, 1),  # tzinfo なし
+                    "HostSystem",
+                    "host-1",
+                    "esxi-1",
+                    "example.host.temperature_c",
+                    42.5,
+                ),
+            )
+        )
+
+
+class _UndeclaredKeyCollector(SampleCollector):
+    async def collect(self, context) -> CollectionBatch:
+        return CollectionBatch(
+            metrics=(
+                MetricSampleInput(
+                    datetime.now(timezone.utc),
+                    "HostSystem",
+                    "host-1",
+                    "esxi-1",
+                    "example.host.humidity_pct",  # manifest に無い
+                    42.5,
+                ),
+            )
+        )
+
+
+async def _run_one(plugin) -> object:
+    registration = CollectorRegistration(
+        plugin.manifest.id, plugin, "test", CollectorConfig(True, 300), "enabled"
+    )
+    async with session_scope() as session:
+        vcenter = VCenter(
+            id=uuid.uuid4(),
+            name="validation-vc",
+            host="vc.example",
+            username="u",
+            password="p",
+        )
+        session.add(vcenter)
+        await session.flush()
+        vcenter_id = vcenter.id
+    return await run_collector_for_vcenter(
+        Settings(mock_mode=True), registration, vcenter_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_validation_failure_names_the_rule_that_was_violated() -> None:
+    """従来は `ValueError: collector execution failed` で、理由が分からなかった。"""
+    result = await _run_one(_NaiveTimestampCollector())
+
+    assert result.status == "failed"
+    assert result.error == (
+        "BatchValidationError: metric sampled_at must be timezone-aware"
+    )
+    async with session_scope() as session:
+        state = (await session.execute(select(CollectorRunState))).scalar_one()
+    assert state.error_message == result.error
+
+
+@pytest.mark.asyncio
+async def test_undeclared_metric_key_is_named_in_the_error() -> None:
+    result = await _run_one(_UndeclaredKeyCollector())
+
+    assert result.status == "failed"
+    assert result.error == (
+        "BatchValidationError: undeclared metric key: example.host.humidity_pct"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_batch_still_persists_nothing() -> None:
+    """拒否はバッチ丸ごとに及ぶ。部分保存もカーソル前進も起こらないこと。"""
+    await _run_one(_NaiveTimestampCollector())
+
+    async with session_scope() as session:
+        assert (await session.execute(select(MetricSample))).scalars().all() == []
+        assert (await session.execute(select(IngestionState))).scalars().all() == []

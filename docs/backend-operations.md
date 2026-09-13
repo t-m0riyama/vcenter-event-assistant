@@ -375,9 +375,9 @@ kill され、アプリ本体は停止しません。
 
 プラグイン画面および `GET /api/plugins/collectors` の `error_message` は、既定では
 **例外の型名と定型句だけ**です（例外文言は認証情報やサーバの応答本文を含みうるため）。
-`ImportError` 系・entry point 不明・`NotImplementedError` のように、メッセージが import 機構か
-ワーカー自身からしか生成されない型に限り、メッセージも表示されます。`KeyError` のように
-メッセージがデータそのものになる型は対象外です。
+`ImportError` 系・entry point 不明・`NotImplementedError`・バッチと manifest の検証エラーの
+ように、メッセージが import 機構かワーカー自身からしか生成されない型に限り、メッセージも
+表示されます。`KeyError` のようにメッセージがデータそのものになる型は対象外です。
 
 **完全な情報はコレクタワーカープロセスの stderr にあります。** ワーカーの stderr は
 親プロセスへ継承されるので、アプリのログをそのまま見れば含まれています。行頭が
@@ -393,7 +393,7 @@ kill され、アプリ本体は停止しません。
 | `ModuleNotFoundError: No module named '...'` | プラグインの依存が入っていない | アップロード導入は `--no-index --no-deps` で実行されるため依存が解決されない。インデックス経由での導入を許可するか、依存を同梱したパッケージを作り直す |
 | `load failed: ...` | entry point の読み込みに失敗 | ワーカーの stderr にトレースバックが出ている |
 | `TimeoutError: collector execution failed` | `timeout_seconds` 超過でワーカーを kill | 実行間隔とタイムアウトを見直す。ワーカーは次回実行で作り直される |
-| `ValueError: collector execution failed` | バッチ検証で拒否（naive datetime、未宣言のメトリクスキー、非有限値など） | ワーカーの stderr にどの検証に落ちたかが出ている |
+| `BatchValidationError: ...` | バッチ検証で拒否。違反した規則がそのまま表示される | プラグイン側の修正が必要。条件の一覧は `docs/collector-plugins.md` の「バッチが拒否される条件」 |
 
 ## 5. 変更管理（実務向け最小）
 
