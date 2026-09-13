@@ -136,6 +136,7 @@ build_collector = TemperatureCollector   # クラス自体が引数なしファ�
 | `blocking` | `run_blocking()`。`asyncio.to_thread` と違い、タイムアウトでキャンセルされてもスレッドと vCenter セッションを取り残さない |
 | `logs` | `get_plugin_logger()`。`VEA_COLLECTOR_WORKER_LOG_LEVEL` が効くロガー名を返す |
 | `vmware` | pyVmomi でのインベントリ走査。`container_view()` が `Destroy()` を保証する |
+| `testing` | アプリを起動せずにコレクタを回すテストハーネス（下記参照） |
 
 `MetricDefinition.at()` を使うと、メトリクスキーと `entity_type` を宣言から補い、
 `sampled_at` に timezone-aware な現在時刻を入れた `MetricSampleInput` を作れます。
@@ -179,6 +180,69 @@ with vmware.container_view(si, ["VirtualMachine"]) as vms:
 `vcenter-event-assistant-plugin-api` を extra なしで宣言すれば十分で、オフラインの
 `--no-deps` 導入でも動きます。アプリの外でプラグイン単体をテストする場合だけ、
 `vcenter-event-assistant-plugin-api[vmware]` を入れてください。
+
+## テストの書き方
+
+`testing` サブモジュールを使うと、**アプリを一度も起動せずに** `pytest` でコレクタを
+検証できます。
+
+```python
+from vcenter_event_assistant_plugin_api.testing import (
+    FakeServiceInstance,
+    fake_host,
+    run_collect,
+)
+
+
+async def test_samples_every_connected_host():
+    si = FakeServiceInstance(
+        hosts=[
+            fake_host("host-1", "esxi-a"),
+            fake_host("host-2", "esxi-b", connected=False),
+        ]
+    )
+    batch = await run_collect(TemperatureCollector(), connection=si)
+    assert [sample.entity_moid for sample in batch.metrics] == ["host-1"]
+
+
+async def test_mock_mode_works():
+    batch = await run_collect(TemperatureCollector(), mock_mode=True)
+    assert batch.metrics
+```
+
+`run_collect()` はアプリが本番で行うことを再現し、さらに手元でしか気づけないことを
+検査します。
+
+| `run_collect()` が確かめること | 見逃すとどうなるか |
+|---|---|
+| `start` → `collect` → `stop` を回す（`collect` が失敗しても `stop` は呼ぶ） | 後片付けが漏れる |
+| バッチをアプリと**同一の規則**で検証する | 本番でバッチが丸ごと拒否される |
+| warning も既定で失敗させる | 列長超過や重複キーで**データが静かに消える** |
+| vCenter 接続の開閉が釣り合っているか | セッションが溜まり続ける |
+| `CreateContainerView` のビューが `Destroy()` されたか | ビューが vCenter 側に残り続ける |
+
+主な道具は次のとおりです。
+
+| 名前 | 用途 |
+|---|---|
+| `run_collect(plugin, ...)` | 上記をまとめて行う。1 行のスモークテスト |
+| `make_context(...)` / `make_target(...)` | `CollectionContext` を組み立てる。**既定で動く接続**が入る |
+| `FakeServiceInstance` / `fake_host` / `fake_datastore` / `fake_vm` | インベントリを模す |
+| `failing_connection(exc)` | `mock_mode=True` が接続を開いていないことを確かめる |
+| `assert_batch_valid(manifest, batch)` | バッチだけを個別に検証する |
+| `StubCollector` / `stub_manifest()` | 正しく振る舞うコレクタのスタブ |
+
+pytest の fixture（`target` / `service_instance` / `context` / `mock_context`）も
+用意していますが、**opt-in** です。`pytest11` の entry point は登録していないので、
+使うときは `conftest.py` に次を書いてください。
+
+```python
+pytest_plugins = ["vcenter_event_assistant_plugin_api.testing.fixtures"]
+```
+
+なお `FakeServiceInstance` を `vmware` ヘルパ経由で使う場合は、型名の解決に pyVmomi が
+必要です（`vcenter-event-assistant-plugin-api[vmware]`）。ハーネス本体は pytest にも
+pyVmomi にも依存していません。
 
 ## バッチが拒否される条件
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Sample collector plugin for vCenter Event Assistant"
 requires-python = ">=3.12"
 dependencies = [
-    "vcenter-event-assistant-plugin-api>=1.0.0,<2",
+    "vcenter-event-assistant-plugin-api>=1.1.0,<2",
 ]
 
 [project.entry-points."vcenter_event_assistant.collectors"]

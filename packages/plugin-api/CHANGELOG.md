@@ -54,6 +54,18 @@
   `ensure_aware` は naive に付与するだけ、`to_utc` は aware も変換する。
 - `blocking.run_blocking()`: キャンセルされてもスレッドと vCenter セッションを
   取り残さないスレッド退避。素の `asyncio.to_thread` の代わりに使う。
+- `testing`: アプリを起動せずにコレクタを検証するハーネス。`run_collect()` が
+  `start` → `collect` → `stop` を回し、バッチをアプリと同一の規則で検証し
+  （既定では warning でも落とす）、vCenter 接続のリークと `CreateContainerView` の
+  `Destroy()` 漏れも検査する。`make_context()` は**既定で動く**接続ファクトリを張る
+  （`lambda: None` を置くと非 mock 経路がそもそも試せない）。`FakeServiceInstance` /
+  `fake_host` / `fake_datastore` でインベントリを模し、`StubCollector` /
+  `stub_manifest()` / `stub_plugin_source()` でコレクタのスタブを得る。
+  **pytest には依存しない**（stdlib のみ）。pytest の fixture は
+  `testing.fixtures` に隔離されており、`pytest11` としては**登録していない**
+  （登録するとこのパッケージを入れた全ての pytest セッションに載ってしまう）。
+  使うには `pytest_plugins = ["vcenter_event_assistant_plugin_api.testing.fixtures"]`
+  と明示的に書く。
 - `logs.get_plugin_logger()`: `VEA_COLLECTOR_WORKER_LOG_LEVEL` が効く名前空間の
   ロガーを返す。
 - `MetricDefinition.at()`: 定義から `metric_key` / `entity_type` / `sampled_at` を
@@ -62,6 +74,13 @@
 - `py.typed`（型情報を配布する）、`__version__`、パッケージメタデータ一式。
 - `__all__` に `ConnectionFactory` / `DataKind` / `SeriesMode` を追加（従来は定義済みだが
   未公開で、作者が自分の型注釈に使えなかった）。
+
+### Changed
+
+- 具象コレクタを継承して**振る舞いだけ**差し替えたサブクラス（テストでよく書く形）は、
+  親のマニフェストをそのまま引き継ぐ。`id` などマニフェストに関わる宣言を 1 つでも
+  足していれば作り直すので、`display_name` だけ変えた場合にその変更が黙って
+  失われることはない。
 
 ### Notes
 

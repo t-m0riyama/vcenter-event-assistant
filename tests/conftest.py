@@ -82,6 +82,18 @@ async def _db_setup() -> None:
 
 
 @pytest.fixture
+def no_external_collectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """entry point の走査を空にして、組み込みコレクタだけのレジストリにする。
+
+    開発 venv に外部プラグインが入っていると、レジストリの件数を見るテストが
+    環境依存で落ちる。プラグイン検出そのものを試すテストでは使わない。
+    """
+    monkeypatch.setattr(
+        "vcenter_event_assistant.plugins.registry.entry_points", lambda **_: []
+    )
+
+
+@pytest.fixture
 async def client() -> AsyncClient:
     app = create_app()
     transport = ASGITransport(app=app)

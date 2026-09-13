@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
@@ -13,7 +15,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from vcenter_event_assistant_plugin_api import (
+    CollectionBatch,
     CollectionContext,
+    CollectorManifest,
     EventInput,
     ManifestValidationError,
     MetricDefinition,
@@ -367,3 +371,54 @@ async def test_fetch_must_be_implemented() -> None:
 
     with pytest.raises(NotImplementedError, match="must implement fetch"):
         await Unimplemented().collect(make_context())
+
+
+class TestSubclassingAConcreteCollector:
+    """具象コレクタを継承して振る舞いだけ差し替える形（テストでよく書く）。"""
+
+    def test_a_behaviour_only_subclass_inherits_the_manifest(self) -> None:
+        class Parent(MetricCollector):
+            id = "example.parent"
+            display_name = "Parent"
+            version = "1.0.0"
+            metrics = (MetricDefinition("example.k", "K", "C", "HostSystem"),)
+
+        class Child(Parent):
+            async def collect(self, context: Any) -> CollectionBatch:
+                return CollectionBatch()
+
+        assert Child.manifest is Parent.manifest
+
+    def test_declaring_anything_rebuilds_the_manifest(self) -> None:
+        """`display_name` だけ変えた場合に、その変更が黙って失われないこと。"""
+
+        class Parent(MetricCollector):
+            id = "example.parent2"
+            display_name = "Parent"
+            version = "1.0.0"
+            metrics = (MetricDefinition("example.k2", "K", "C", "HostSystem"),)
+
+        class Child(Parent):
+            display_name = "Child"
+
+        assert Child.manifest.display_name == "Child"
+        assert Child.manifest.id == "example.parent2"
+
+    def test_a_subclass_of_an_explicit_manifest_class_inherits_it(self) -> None:
+        explicit = CollectorManifest(
+            "example.explicit", "Explicit", "1.0.0", data_kinds=frozenset({"event"})
+        )
+
+        class Parent(CollectorBase):
+            manifest = explicit
+
+        class Child(Parent):
+            pass
+
+        assert Child.manifest is explicit
+
+    def test_a_subclass_that_declares_nothing_and_has_no_manifest_still_fails(self) -> None:
+        with pytest.raises(ManifestValidationError, match="must define 'id'"):
+
+            class Nameless(MetricCollector):
+                pass

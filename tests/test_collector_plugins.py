@@ -8,10 +8,9 @@ from sqlalchemy import select
 
 from vcenter_event_assistant_plugin_api import (
     CollectionBatch,
-    CollectorManifest,
-    MetricDefinition,
     MetricSampleInput,
 )
+from vcenter_event_assistant_plugin_api.testing import StubCollector, stub_manifest
 
 from vcenter_event_assistant.db.models import (
     CollectorRunState,
@@ -32,47 +31,19 @@ from vcenter_event_assistant.plugins.runtime import run_collector_for_vcenter
 from vcenter_event_assistant.settings import Settings
 
 
-class SampleCollector:
-    manifest = CollectorManifest(
-        "example.temperature",
-        "Temperature",
-        "2.1.0",
-        data_kinds=frozenset({"metric"}),
-        metric_definitions=(
-            MetricDefinition(
-                "example.host.temperature_c", "Temperature", "C", "HostSystem"
-            ),
-        ),
-    )
+class SampleCollector(StubCollector):
+    """メトリクス 1 件と `cursor-1` を返すコレクタ。
 
-    async def start(self) -> None:
-        return None
+    中身は `plugin_api.testing.StubCollector` である（同じ偽コレクタがテスト間で
+    ずれないように、plugin-api 側に 1 つだけ置いてある）。
+    """
 
-    async def stop(self) -> None:
-        return None
-
-    async def collect(self, context) -> CollectionBatch:
-        return CollectionBatch(
-            metrics=(
-                MetricSampleInput(
-                    datetime.now(timezone.utc),
-                    "HostSystem",
-                    "host-1",
-                    "esxi-1",
-                    "example.host.temperature_c",
-                    42.5,
-                ),
-            ),
-            next_cursor="cursor-1",
-        )
+    manifest = stub_manifest(display_name="Temperature", version="2.1.0")
 
 
 def test_registry_contains_four_builtin_collectors(
-    monkeypatch: pytest.MonkeyPatch,
+    no_external_collectors: None,
 ) -> None:
-    monkeypatch.setattr(
-        "vcenter_event_assistant.plugins.registry.entry_points", lambda **_: []
-    )
     registry = build_collector_registry(Settings())
     assert {item.plugin_id for item in registry.enabled()} == {
         "builtin.vcenter.events",
@@ -87,7 +58,7 @@ def test_registry_contains_four_builtin_collectors(
 
 
 def test_registry_toml_can_disable_builtin_and_reports_missing_plugin(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path, no_external_collectors: None
 ) -> None:
     config = tmp_path / "collectors.toml"
     config.write_text(
@@ -95,16 +66,13 @@ def test_registry_toml_can_disable_builtin_and_reports_missing_plugin(
         '[collectors."missing.plugin"]\nenabled = true\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        "vcenter_event_assistant.plugins.registry.entry_points", lambda **_: []
-    )
     registry = build_collector_registry(Settings(collector_config_file=str(config)))
     assert registry.get("builtin.vcenter.host_performance").status == "disabled"
     assert registry.get("missing.plugin").status == "failed"
 
 
 def test_collector_environment_overrides_toml(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path, monkeypatch: pytest.MonkeyPatch, no_external_collectors: None
 ) -> None:
     config = tmp_path / "collectors.toml"
     config.write_text(
@@ -113,9 +81,6 @@ def test_collector_environment_overrides_toml(
     )
     monkeypatch.setenv("VEA_COLLECTOR__BUILTIN_VCENTER_EVENTS__ENABLED", "true")
     monkeypatch.setenv("VEA_COLLECTOR__BUILTIN_VCENTER_EVENTS__INTERVAL_SECONDS", "45")
-    monkeypatch.setattr(
-        "vcenter_event_assistant.plugins.registry.entry_points", lambda **_: []
-    )
     registration = build_collector_registry(
         Settings(collector_config_file=str(config))
     ).get("builtin.vcenter.events")
@@ -191,12 +156,14 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
         "failed",
         "configured plugin is not installed",
     )
-    disabled_plugin = SampleCollector()
-    disabled_plugin.manifest = CollectorManifest(
-        "zzz.disabled",
-        "Disabled collector",
-        "1.0.0",
-        data_kinds=frozenset({"event"}),
+    disabled_plugin = SampleCollector(
+        stub_manifest(
+            id="zzz.disabled",
+            display_name="Disabled collector",
+            version="1.0.0",
+            data_kinds=frozenset({"event"}),
+            metric_definitions=(),
+        )
     )
     disabled = CollectorRegistration(
         disabled_plugin.manifest.id,

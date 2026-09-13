@@ -120,3 +120,57 @@ def test_all_exports_the_type_aliases_authors_need() -> None:
     """従来 `ConnectionFactory` などは定義済みなのに未公開で、型注釈に使えなかった。"""
     for name in ("ConnectionFactory", "DataKind", "SeriesMode", "CollectionContext"):
         assert name in api.__all__
+
+
+def test_only_the_fixtures_module_imports_pytest() -> None:
+    """``testing`` 本体は stdlib だけで動く。
+
+    本体が pytest を引くと、pytest を使わない作者（unittest や素のスクリプト）が
+    使えなくなるうえ、依存ゼロの約束も崩れる。
+    """
+    offenders: list[str] = []
+    for path in SOURCE_FILES:
+        if path.name == "fixtures.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            if any(name.split(".")[0] in {"pytest", "_pytest"} for name in names):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
+
+
+def test_importing_the_test_harness_does_not_pull_pytest() -> None:
+    """新しいインタプリタで確かめる（このセッションでは既に pytest が読まれている）。"""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, vcenter_event_assistant_plugin_api.testing\n"
+            "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'pytest', '_pytest'})\n"
+            "print(loaded)",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "[]", completed.stdout
+
+
+def test_no_pytest11_entry_point_is_registered() -> None:
+    """登録すると、このパッケージを入れた全ての pytest セッションに載ってしまう。
+
+    作者は ``pytest_plugins = [...]`` で明示的に読み込む。
+    """
+    registered = [
+        ep.value
+        for ep in metadata.entry_points(group="pytest11")
+        if "vcenter_event_assistant_plugin_api" in ep.value
+    ]
+    assert registered == []
