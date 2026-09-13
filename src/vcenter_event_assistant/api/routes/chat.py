@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
+    ChatAttachment,
     ChatPreviewResponse,
     ChatRequest,
     ChatResponse,
@@ -33,6 +34,36 @@ from vcenter_event_assistant.settings import Settings
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+def _accepted_attachments(
+    body: ChatRequest, settings: Settings
+) -> list[ChatAttachment]:
+    """設定上の上限を適用した添付リストを返す。
+
+    件数超過は 422。テキストの文字数超過は切り詰めて受け付ける
+    （通常はクライアント側で済んでいる。API を直接叩く経路への保険）。
+    """
+    attachments = list(body.attachments)
+    if not attachments:
+        return []
+    max_files = settings.chat_attachment_max_files
+    if max_files <= 0:
+        raise HTTPException(status_code=422, detail="ファイルの添付は無効化されています")
+    if len(attachments) > max_files:
+        raise HTTPException(
+            status_code=422,
+            detail=f"添付できるファイルは {max_files} 件までです（{len(attachments)} 件）",
+        )
+
+    max_chars = settings.chat_attachment_max_text_chars
+    out: list[ChatAttachment] = []
+    for a in attachments:
+        if a.kind == "text" and a.text is not None and len(a.text) > max_chars:
+            out.append(a.model_copy(update={"text": a.text[:max_chars], "truncated": True}))
+        else:
+            out.append(a)
+    return out
+
+
 @router.post("", response_model=ChatResponse)
 async def post_chat(
     body: ChatRequest,
@@ -48,6 +79,7 @@ async def post_chat(
             ),
         )
 
+    attachments = _accepted_attachments(body, settings)
     payloads = await build_chat_context_payloads(session, body)
 
     llm_cfg = build_llm_runnable_config(
@@ -68,6 +100,7 @@ async def post_chat(
         enable_web_search=body.enable_web_search,
         web_search_scope=body.web_search_scope,
         web_search_aggressiveness=body.web_search_aggressiveness,
+        attachments=attachments,
     )
 
     # 関連調査情報は LLM 応答の後にサーバ側で連結する（LLM プロンプトには混ぜない）。
@@ -100,6 +133,7 @@ async def post_chat_preview(
     if not settings.effective_chat_preview_enabled:
         raise HTTPException(status_code=404, detail="Chat preview API is disabled")
 
+    attachments = _accepted_attachments(body, settings)
     payloads = await build_chat_context_payloads(session, body)
 
     vc_anon = await load_all_vcenter_anonymization_strings(session)
@@ -114,6 +148,7 @@ async def post_chat_preview(
         incident_timeline=payloads.incident_timeline,
         extra_vcenter_strings=vc_anon,
         settings=preview_settings,
+        attachments=attachments,
     )
     return ChatPreviewResponse(
         context_block=block,

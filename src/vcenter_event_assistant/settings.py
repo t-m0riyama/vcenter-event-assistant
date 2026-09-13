@@ -585,6 +585,25 @@ class LlmSettingsMixin(BaseModel):
     llm_chat_timeout_seconds: float | None = Field(default=None, ge=5.0, le=7200.0)
     llm_chat_max_input_tokens: int = Field(default=32_000, ge=512, le=256_000)
 
+    chat_attachment_max_files: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description="チャット 1 送信あたりに添付できるファイル数（0 で添付を無効化）",
+    )
+    chat_attachment_max_file_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1024,
+        le=10 * 1024 * 1024,
+        description="添付 1 ファイルの上限バイト数（クライアント側の受付判定に用いる）",
+    )
+    chat_attachment_max_text_chars: int = Field(
+        default=100_000,
+        ge=1_000,
+        le=200_000,
+        description="テキスト添付 1 ファイルあたりの文字数上限（超過分は切り詰め）",
+    )
+
     llm_copilot_cli_path: str | None = Field(default=None)
     llm_copilot_cli_session_auth: bool = Field(default=False)
     llm_anonymization_enabled: bool = Field(default=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 
 import pytest
@@ -657,3 +658,126 @@ async def test_post_chat_passes_enable_web_search_to_llm(
         json=_chat_body(enable_web_search=True, web_search_scope="unknown"),
     )
     assert bad.status_code == 422
+
+
+# --- 添付ファイル ---
+
+_PNG_B64 = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
+
+
+def _text_attachment(name: str = "vmkernel.log", body: str = "line") -> dict:
+    return {
+        "kind": "text",
+        "filename": name,
+        "media_type": "text/plain",
+        "text": body,
+    }
+
+
+def _image_attachment() -> dict:
+    return {
+        "kind": "image",
+        "filename": "shot.png",
+        "media_type": "image/png",
+        "data_base64": _PNG_B64,
+    }
+
+
+def _spy_run_period_chat(
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, object]
+) -> None:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
+        _ = a
+        captured.update(k)
+        return ("ok", None, None, None, None)
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat", _fake_run
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_chat_forwards_attachments(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+    _spy_run_period_chat(monkeypatch, captured)
+
+    r = await client.post(
+        "/api/chat",
+        json=_chat_body(attachments=[_text_attachment(), _image_attachment()]),
+    )
+    assert r.status_code == 200
+    attachments = captured["attachments"]
+    assert isinstance(attachments, list)
+    assert [a.filename for a in attachments] == ["vmkernel.log", "shot.png"]
+
+
+@pytest.mark.asyncio
+async def test_post_chat_returns_422_when_too_many_attachments(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    monkeypatch.setenv("CHAT_ATTACHMENT_MAX_FILES", "2")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+    _spy_run_period_chat(monkeypatch, captured)
+
+    r = await client.post(
+        "/api/chat",
+        json=_chat_body(attachments=[_text_attachment(f"{i}.log") for i in range(3)]),
+    )
+    assert r.status_code == 422
+    assert "2 件" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_post_chat_returns_422_when_attachments_disabled(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    monkeypatch.setenv("CHAT_ATTACHMENT_MAX_FILES", "0")
+    get_settings.cache_clear()
+    _spy_run_period_chat(monkeypatch, {})
+
+    r = await client.post("/api/chat", json=_chat_body(attachments=[_text_attachment()]))
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_chat_returns_422_for_unsupported_image_type(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    _spy_run_period_chat(monkeypatch, {})
+
+    bad = {**_image_attachment(), "media_type": "image/gif"}
+    r = await client.post("/api/chat", json=_chat_body(attachments=[bad]))
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_chat_truncates_attachment_text_over_configured_limit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API を直接叩いて上限超のテキストを送っても、切り詰めて受け付ける。"""
+    monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
+    monkeypatch.setenv("CHAT_ATTACHMENT_MAX_TEXT_CHARS", "1000")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+    _spy_run_period_chat(monkeypatch, captured)
+
+    r = await client.post(
+        "/api/chat",
+        json=_chat_body(attachments=[_text_attachment(body="x" * 5_000)]),
+    )
+    assert r.status_code == 200
+    attachments = captured["attachments"]
+    assert isinstance(attachments, list)
+    assert len(attachments[0].text) == 1_000
+    assert attachments[0].truncated is True

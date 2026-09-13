@@ -92,6 +92,10 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         webSearchAvailable={c.webSearchAvailable}
         enableWebSearch={c.enableWebSearch}
         setEnableWebSearch={c.setEnableWebSearch}
+        attachments={c.attachments}
+        attachmentLimits={c.attachmentLimits}
+        onAddAttachments={c.addAttachmentFiles}
+        onRemoveAttachment={c.removeAttachment}
       />
 
       {c.previewData && c.isPreviewModalOpen && (
