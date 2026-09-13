@@ -11,6 +11,7 @@ const pluginResponse = {
     {
       id: 'example.temperature',
       display_name: 'Temperature',
+      description: 'ホストの温度を集めるサンプル。',
       source: 'entry_point:temperature',
       status: 'enabled',
       error: null,
@@ -85,6 +86,7 @@ describe('PluginsPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
 
+    expect(screen.getByText('ホストの温度を集めるサンプル。')).toBeInTheDocument()
     expect(screen.getByText('entry_point:temperature')).toBeInTheDocument()
     expect(screen.getByText('Tokyo vCenter')).toBeInTheDocument()
     expect(screen.getByText('成功')).toBeInTheDocument()
@@ -103,6 +105,8 @@ describe('PluginsPanel', () => {
 
     expect(screen.getByText(/configured plugin is not installed/)).toBeInTheDocument()
     expect(screen.getByText('実行記録はありません。')).toBeInTheDocument()
+    // 応答に description が無くてもパースは通り、説明の段落は出ない。
+    expect(document.querySelector('.plugin-description')).toBeNull()
   })
 
   it('手動更新中はボタンを無効化し、失敗しても取得済み一覧を保持する', async () => {

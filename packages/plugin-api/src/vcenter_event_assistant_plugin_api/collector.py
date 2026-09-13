@@ -18,6 +18,7 @@ TEMPERATURE = MetricDefinition(
 class TemperatureCollector(MetricCollector):
     id = "example.host.temperature"
     display_name = "Example Host Temperature"
+    description = "ESXi ホストごとの温度を 1 点ずつ収集する。"  # 管理画面の詳細行に出る
     version = "0.1.0"
     metrics = (TEMPERATURE,)
 
@@ -72,7 +73,15 @@ from vcenter_event_assistant_plugin_api.validation import (
 
 #: これらのいずれかを自クラスで宣言すると、マニフェストは組み立て直される。
 _MANIFEST_ATTRIBUTES = frozenset(
-    {"id", "display_name", "version", "default_interval_seconds", "data_kinds", "metrics"}
+    {
+        "id",
+        "display_name",
+        "description",
+        "version",
+        "default_interval_seconds",
+        "data_kinds",
+        "metrics",
+    }
 )
 
 
@@ -80,6 +89,8 @@ class CollectorBase:
     """任意の基底クラス。``start`` / ``stop`` は何もしない実装を持つ。
 
     具象クラスは :attr:`id` / :attr:`display_name` / :attr:`version` を定義する。
+    :attr:`description` は任意だが、書いておくと管理画面の詳細行に表示され、運用者が
+    「このコレクタを無効にすると何が止まるのか」を判断できる。
     中間の抽象クラスを自分で作る場合は ``abstract = True`` を置くこと。
     """
 
@@ -89,6 +100,8 @@ class CollectorBase:
 
     id: ClassVar[str]
     display_name: ClassVar[str]
+    #: 運用者向けの説明。管理画面の詳細行に出る。空なら何も表示されない。
+    description: ClassVar[str] = ""
     version: ClassVar[str]
     default_interval_seconds: ClassVar[int] = 300
     #: サブクラスが宣言する。:class:`MetricCollector` などが設定する。
@@ -132,6 +145,7 @@ class CollectorBase:
             data_kinds=cls.data_kinds,
             default_interval_seconds=cls.default_interval_seconds,
             metric_definitions=cls._metric_definitions(),
+            description=cls.description,
         )
 
     @classmethod

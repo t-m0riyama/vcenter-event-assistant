@@ -41,6 +41,8 @@ IssueKind = Literal["event", "metric", "manifest"]
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 _MAX_METRIC_KEY = 256
+#: 説明文の上限。DB には入らないが、API 応答と管理画面へ素通しで出るため頭を押さえる。
+_MAX_DESCRIPTION = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +111,15 @@ def iter_manifest_issues(manifest: CollectorManifest) -> Iterator[Issue]:
             "default interval must be at least 10 seconds",
             kind="manifest",
             field="default_interval_seconds",
+        )
+        return
+    if len(manifest.description) > _MAX_DESCRIPTION:
+        yield Issue(
+            "description_too_long",
+            f"description is {len(manifest.description)} characters, "
+            f"over the {_MAX_DESCRIPTION} allowed",
+            kind="manifest",
+            field="description",
         )
         return
     if not manifest.data_kinds or not manifest.data_kinds <= {"event", "metric"}:

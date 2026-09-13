@@ -66,6 +66,13 @@
   background: var(--color-background-secondary);
 }
 
+.plugin-description {
+  margin: 0 0 var(--spacing-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-footnote);
+  overflow-wrap: anywhere;
+}
+
 .plugin-detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

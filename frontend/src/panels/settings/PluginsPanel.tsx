@@ -570,6 +570,9 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
                     {expanded ? (
                       <tr id={detailsId} className="plugin-detail-row">
                         <td colSpan={6}>
+                          {collector.description ? (
+                            <p className="plugin-description">{collector.description}</p>
+                          ) : null}
                           <dl className="plugin-detail-grid">
                             <div>
                               <dt>API バージョン</dt>

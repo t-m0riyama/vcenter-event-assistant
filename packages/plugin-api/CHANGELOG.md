@@ -33,6 +33,21 @@
 
 `workflow_dispatch` から `dry_run` で起動すると、公開せずにビルドと検証だけを行える。
 
+## [1.2.0]
+
+契約（データクラスと `CollectorPlugin` Protocol）は壊していない。`PLUGIN_API_VERSION`
+は `1` のままである。既存のプラグインは何も変えずに動く（`description` 未設定は空文字）。
+
+### Added
+
+- `CollectorManifest.description` と、それに対応する `CollectorBase.description`
+  クラス属性。運用者向けの説明文で、アプリの**設定 → プラグイン**の詳細行にそのまま
+  表示される。1〜2 文で「何を集めるか」「無効にすると何が止まるか」を書く。
+  位置引数での構築を壊さないよう、データクラスの**末尾**に追加している。
+- `validation`: `description` が 1000 文字を超えるマニフェストを
+  `description_too_long` として拒否する。DB には入らないが、API 応答と画面へ
+  素通しで出るため頭を押さえる。
+
 ## [1.1.0]
 
 契約（データクラスと `CollectorPlugin` Protocol）は変更していない。`PLUGIN_API_VERSION`

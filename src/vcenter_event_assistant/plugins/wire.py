@@ -120,6 +120,7 @@ def manifest_to_json(manifest: CollectorManifest) -> dict[str, Any]:
         "metric_definitions": [
             metric_definition_to_json(d) for d in manifest.metric_definitions
         ],
+        "description": manifest.description,
     }
 
 
@@ -134,6 +135,8 @@ def manifest_from_json(raw: dict[str, Any]) -> CollectorManifest:
         metric_definitions=tuple(
             metric_definition_from_json(d) for d in raw.get("metric_definitions", ())
         ),
+        # 古いワーカー（description を知らない版）からの応答でも壊れないよう欠落を許す。
+        description=str(raw.get("description", "")),
     )
 
 

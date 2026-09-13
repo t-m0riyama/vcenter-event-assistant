@@ -17,6 +17,8 @@ export const collectorRunStatusSchema = z.object({
 export const collectorStatusSchema = z.object({
   id: z.string(),
   display_name: z.string().nullable(),
+  // 説明文。未設定のプラグインと、説明を知らない旧バージョンの応答では null。
+  description: z.string().nullable().default(null),
   source: z.string(),
   status: z.enum(['enabled', 'disabled', 'failed']),
   error: z.string().nullable(),

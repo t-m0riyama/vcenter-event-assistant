@@ -23,7 +23,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 #: 配布パッケージのバージョン（SemVer）。機能検出に使える。
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 #: 契約世代。アプリが ``manifest.api_version`` と突き合わせる。**安易に上げないこと。**
 PLUGIN_API_VERSION = 1
@@ -81,6 +81,9 @@ class CollectorManifest:
     data_kinds: frozenset[DataKind] = field(default_factory=frozenset)
     default_interval_seconds: int = 300
     metric_definitions: tuple[MetricDefinition, ...] = ()
+    #: 運用者向けの説明。管理画面の詳細行にそのまま出る。1〜2 文で「何を集めるか」を書く。
+    #: 位置引数で構築している既存プラグインを壊さないよう、必ず末尾に置く。
+    description: str = ""
 
 
 @dataclass(frozen=True, slots=True)
