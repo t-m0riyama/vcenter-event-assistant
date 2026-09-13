@@ -72,3 +72,49 @@ export function ChatPreviewSvg(): ReactElement {
   )
 }
 
+
+/**
+ * ファイル添付用の装飾 SVG（`currentColor`）。クリップ形状を 24×24 座標で取る。
+ */
+export function ChatAttachSvg(): ReactElement {
+  return (
+    <svg
+      className="chat-panel__icon-svg"
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable={false}
+    >
+      <path d="M20 11.5 12.3 19.2a4.5 4.5 0 0 1-6.4-6.4l7.7-7.7a3 3 0 0 1 4.3 4.3l-7.7 7.7a1.5 1.5 0 0 1-2.2-2.2l7.1-7.1" />
+    </svg>
+  )
+}
+
+/**
+ * 添付を外すボタンの装飾 SVG（`currentColor`）。
+ */
+export function ChatRemoveSvg(): ReactElement {
+  return (
+    <svg
+      className="chat-panel__icon-svg"
+      viewBox="0 0 16 16"
+      width={16}
+      height={16}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={STROKE}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable={false}
+    >
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
+  )
+}

@@ -30,6 +30,13 @@ import { asArray } from '../utils/asArray'
 import { toErrorMessage } from '../utils/errors'
 import { randomId } from '../utils/randomId'
 import { usePeriodMetricThresholdFields } from './usePeriodMetricThresholdFields'
+import { hasBlockingChatAttachment } from '../panels/chat/attachments/buildChatAttachmentPayloads'
+import { useChatAttachments } from '../panels/chat/attachments/useChatAttachments'
+import {
+  DEFAULT_CHAT_ATTACHMENT_LIMITS,
+  type ChatAttachmentLimits,
+  type ChatAttachmentPayload,
+} from '../panels/chat/attachments/chatAttachmentTypes'
 
 /** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
@@ -58,6 +65,9 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const [includePeriodMetricsNetworkIo, setIncludePeriodMetricsNetworkIo] = useState(false)
   const [enableWebSearch, setEnableWebSearch] = useState(false)
   const [webSearchAvailable, setWebSearchAvailable] = useState(false)
+  const [attachmentLimits, setAttachmentLimits] = useState<ChatAttachmentLimits>(
+    DEFAULT_CHAT_ATTACHMENT_LIMITS,
+  )
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [storageHydrated, setStorageHydrated] = useState(false)
   const [debouncedDraft, setDebouncedDraft] = useState('')
@@ -66,6 +76,14 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const skipMaxTrimOnMountRef = useRef(true)
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null)
   const sendInFlightRef = useRef(false)
+  const {
+    attachments,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
+    restoreAttachments,
+    attachmentPayloads,
+  } = useChatAttachments(attachmentLimits)
 
   useEffect(() => {
     void (async () => {
@@ -79,13 +97,25 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   }, [onError])
 
   useEffect(() => {
-    // WEB 検索の利用可否（取得失敗時は静かに無効のまま = トグル非表示）
+    // WEB 検索の利用可否と添付の上限（取得失敗時は静かに既定のまま）
     void (async () => {
       try {
         const raw = (await apiGet<unknown>('/api/config')) as {
           chat_web_search_available?: boolean
+          chat_attachment_images_available?: boolean
+          chat_attachment_max_files?: number
+          chat_attachment_max_file_bytes?: number
+          chat_attachment_max_text_chars?: number
         }
         setWebSearchAvailable(raw?.chat_web_search_available === true)
+        setAttachmentLimits({
+          maxFiles: raw?.chat_attachment_max_files ?? DEFAULT_CHAT_ATTACHMENT_LIMITS.maxFiles,
+          maxFileBytes:
+            raw?.chat_attachment_max_file_bytes ?? DEFAULT_CHAT_ATTACHMENT_LIMITS.maxFileBytes,
+          maxTextChars:
+            raw?.chat_attachment_max_text_chars ?? DEFAULT_CHAT_ATTACHMENT_LIMITS.maxTextChars,
+          imagesAvailable: raw?.chat_attachment_images_available === true,
+        })
       } catch {
         setWebSearchAvailable(false)
       }
@@ -166,7 +196,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   ])
 
   const buildChatRequestBody = useCallback(
-    (nextMessages: ChatMessage[]) => {
+    (nextMessages: ChatMessage[], nextAttachments: ChatAttachmentPayload[] = []) => {
       const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(rangeParts)
       const resolved = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
       if (!resolved.ok) {
@@ -199,6 +229,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
                 web_search_aggressiveness: webSearchPrefs.aggressiveness,
               }
             : {}),
+          ...(nextAttachments.length > 0 ? { attachments: nextAttachments } : {}),
           messages: trimChatMessagesToMax(nextMessages, CHAT_LLM_CONTEXT_MAX_MESSAGES).map(
             ({ role, content, created_at, latency_ms, token_per_sec }) => ({
               role,
@@ -233,7 +264,13 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const send = useCallback(async () => {
     const text = draft.trim()
     if (!text || sendInFlightRef.current) return
+    if (hasBlockingChatAttachment(attachments)) {
+      onError('添付ファイルの読み取りが終わっていないか、エラーがあります。')
+      return
+    }
 
+    const payloads = attachmentPayloads()
+    const restorable = attachments
     const requestId = randomId()
     const nextMessages = trimChatMessagesToMax(
       [
@@ -243,11 +280,14 @@ export function useChatPanelController(onError: (e: string | null) => void) {
           content: text,
           created_at: new Date().toISOString(),
           client_request_id: requestId,
+          ...(payloads.length > 0
+            ? { attachment_names: payloads.map((a) => a.filename) }
+            : {}),
         },
       ],
       chatMaxStoredMessages,
     )
-    const built = buildChatRequestBody(nextMessages)
+    const built = buildChatRequestBody(nextMessages, payloads)
     if (!built.ok) {
       onError(built.message)
       return
@@ -257,6 +297,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     setMessages(nextMessages)
     setDraft('')
     setDebouncedDraft('')
+    // 添付は送信したターン限り。失敗時は下のロールバックで戻す
+    clearAttachments()
     sendInFlightRef.current = true
     setLoading(true)
     try {
@@ -299,11 +341,22 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     } catch (e) {
       onError(toErrorMessage(e))
       setMessages((m) => m.filter((msg) => msg.client_request_id !== requestId))
+      restoreAttachments(restorable)
     } finally {
       sendInFlightRef.current = false
       setLoading(false)
     }
-  }, [draft, messages, onError, buildChatRequestBody, chatMaxStoredMessages])
+  }, [
+    draft,
+    messages,
+    onError,
+    buildChatRequestBody,
+    chatMaxStoredMessages,
+    attachments,
+    attachmentPayloads,
+    clearAttachments,
+    restoreAttachments,
+  ])
 
   const previewPrompt = useCallback(async () => {
     const text = draft.trim()
@@ -313,7 +366,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       [...messages, { role: 'user', content: text }],
       chatMaxStoredMessages,
     )
-    const built = buildChatRequestBody(nextMessages)
+    const built = buildChatRequestBody(nextMessages, attachmentPayloads())
     if (!built.ok) {
       onError(built.message)
       return
@@ -331,7 +384,14 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     } finally {
       setPreviewing(false)
     }
-  }, [draft, messages, onError, buildChatRequestBody, chatMaxStoredMessages])
+  }, [
+    draft,
+    messages,
+    onError,
+    buildChatRequestBody,
+    chatMaxStoredMessages,
+    attachmentPayloads,
+  ])
 
   const copyAssistantMessageContent = useCallback(
     async (content: string) => {
@@ -383,6 +443,10 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     enableWebSearch,
     setEnableWebSearch,
     webSearchAvailable,
+    attachments,
+    attachmentLimits,
+    addAttachmentFiles: addFiles,
+    removeAttachment,
     lastLlmContext,
     draftTextareaRef,
     ...thresholdFields,

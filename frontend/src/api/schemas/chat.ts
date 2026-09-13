@@ -14,6 +14,20 @@ export const chatMessageSchema = z.object({
   token_per_sec: z.number().nullable().optional(),
   /** クライアント側の送信トラッキング用（API には送らない） */
   client_request_id: z.string().optional(),
+  /** そのターンに添付したファイル名（表示用。API には送らない） */
+  attachment_names: z.array(z.string()).optional(),
+})
+
+/** 送信ターン限りの添付 1 件（backend ChatAttachment と整合） */
+export const chatAttachmentSchema = z.object({
+  kind: z.enum(['text', 'image']),
+  filename: z.string().min(1).max(255),
+  media_type: z.string().min(1).max(100),
+  /** kind='text' のときの本文 */
+  text: z.string().optional(),
+  /** kind='image' のときの base64（データ URL 接頭辞なし） */
+  data_base64: z.string().optional(),
+  truncated: z.boolean().optional(),
 })
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
@@ -22,6 +36,8 @@ export const chatRequestSchema = z.object({
   from: isoUtcDateTimeSchema,
   to: isoUtcDateTimeSchema,
   messages: z.array(chatMessageSchema).min(1),
+  /** この送信ターンにのみ添付するファイル（サーバーは保存しない） */
+  attachments: z.array(chatAttachmentSchema).optional(),
   vcenter_id: z.string().uuid().optional(),
   top_notable_min_score: z.number().int().min(0).max(100).optional(),
   include_period_metrics_cpu: z.boolean().optional(),
@@ -50,6 +66,10 @@ export const chatLlmContextMetaSchema = z.object({
   estimated_input_tokens: z.number(),
   max_input_tokens: z.number(),
   message_turns: z.number(),
+  attachment_count: z.number().optional(),
+  attachment_text_chars: z.number().optional(),
+  attachment_truncated: z.boolean().optional(),
+  attachments_dropped_reason: z.string().nullable().optional(),
 })
 
 export type ChatLlmContextMeta = z.infer<typeof chatLlmContextMetaSchema>

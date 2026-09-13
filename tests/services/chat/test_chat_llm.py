@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from vcenter_event_assistant.api.schemas import ChatMessage
+from vcenter_event_assistant.api.schemas import ChatAttachment, ChatMessage
 from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
     EventTimeBucketsPayload,
 )
@@ -800,3 +801,192 @@ async def test_run_period_chat_web_search_ignored_without_provider(
     assert isinstance(lc[0], SystemMessage)
     assert lc[0].content == _CHAT_SYSTEM_PROMPT
     assert "【WEB 検索ツール】" not in str(lc[0].content)
+
+
+# --- 添付ファイル ---
+
+_PNG_B64 = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
+
+
+def _text_attachment(body: str = "kernel panic at 03:00") -> ChatAttachment:
+    return ChatAttachment(
+        kind="text", filename="vmkernel.log", media_type="text/plain", text=body
+    )
+
+
+def _image_attachment() -> ChatAttachment:
+    return ChatAttachment(
+        kind="image", filename="shot.png", media_type="image/png", data_base64=_PNG_B64
+    )
+
+
+def _openai_settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "database_url": "sqlite+aiosqlite:///:memory:",
+        "llm_digest_api_key": "sk-test",
+        "llm_digest_provider": "openai_compatible",
+        "llm_digest_base_url": "https://api.openai.com/v1",
+        "llm_digest_model": "gpt-4o-mini",
+        "llm_anonymization_enabled": False,
+    }
+    base.update(overrides)
+    return Settings(**base)  # type: ignore[arg-type]
+
+
+def _spy_langchain(
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, object]
+) -> None:
+    async def _spy_stream(
+        model: object, messages: object, *, config: object = None
+    ) -> tuple[str, int | None, float | None]:
+        captured["lc_messages"] = messages
+        return "回答", None, None
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.build_chat_model",
+        lambda _s, *, purpose=None, config=None: object(),
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.stream_chat_to_text",
+        _spy_stream,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_sends_text_attachment_as_its_own_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = _openai_settings()
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+    captured: dict[str, object] = {}
+    _spy_langchain(monkeypatch, captured)
+
+    _out, err, meta, _, _ = await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="何が起きた？")],
+        attachments=[_text_attachment()],
+    )
+    assert err is None
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    # system, 集約 JSON, 添付, 質問
+    assert len(lc) == 4
+    assert isinstance(lc[2], HumanMessage)
+    assert "vmkernel.log" in lc[2].content
+    assert "kernel panic at 03:00" in lc[2].content
+    assert meta is not None
+    assert meta.attachment_count == 1
+    assert meta.attachments_dropped_reason is None
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_puts_image_on_last_user_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = _openai_settings()
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+    captured: dict[str, object] = {}
+    _spy_langchain(monkeypatch, captured)
+
+    _out, err, meta, _, _ = await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[
+            ChatMessage(role="user", content="前の質問"),
+            ChatMessage(role="assistant", content="前の答え"),
+            ChatMessage(role="user", content="この画面は？"),
+        ],
+        attachments=[_image_attachment()],
+    )
+    assert err is None
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    last = lc[-1]
+    assert isinstance(last, HumanMessage)
+    assert last.content == [
+        {"type": "text", "text": "この画面は？"},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_PNG_B64}"}},
+    ]
+    # 過去の user メッセージは素のテキストのまま
+    assert lc[-3].content == "前の質問"
+    assert meta is not None
+    assert meta.attachment_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_drops_images_for_copilot_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_digest_provider="copilot_cli",
+        llm_copilot_cli_session_auth=True,
+        llm_anonymization_enabled=False,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+    captured: dict[str, object] = {}
+
+    async def _fake_copilot(
+        _s: Settings, *, system_prompt: str, block: str, messages: object
+    ) -> str:
+        captured["block"] = block
+        return "CLI からの回答"
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.run_copilot_cli_chat_completion",
+        _fake_copilot,
+    )
+
+    out, err, meta, _, _ = await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="この画面は？")],
+        attachments=[_image_attachment(), _text_attachment()],
+    )
+    assert err is None
+    assert meta is not None
+    assert meta.attachments_dropped_reason is not None
+    assert "画像" in meta.attachments_dropped_reason
+    # 画像は落ちるがテキスト添付はプロンプトに載る
+    assert meta.attachment_count == 1
+    assert "vmkernel.log" in str(captured["block"])
+    # 利用者に無視した旨を伝える
+    assert meta.attachments_dropped_reason in out
+    assert "CLI からの回答" in out
+
+
+@pytest.mark.asyncio
+async def test_run_period_chat_anonymizes_attachment_text_with_conversation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """添付本文と会話本文が同一の匿名化トークンになる。"""
+    s = _openai_settings(llm_anonymization_enabled=True)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
+        lambda: s,
+    )
+    captured: dict[str, object] = {}
+    _spy_langchain(monkeypatch, captured)
+
+    await run_period_chat(
+        context=_minimal_ctx(),
+        messages=[ChatMessage(role="user", content="10.1.2.3 で何が起きた？")],
+        attachments=[_text_attachment(body="host 10.1.2.3 down")],
+        extra_vcenter_strings=None,
+    )
+    lc = captured["lc_messages"]
+    assert isinstance(lc, list)
+    attachment_text = str(lc[2].content)
+    question_text = str(lc[3].content)
+    assert "10.1.2.3" not in attachment_text
+    assert "10.1.2.3" not in question_text
+    token = "__LM_IP_001__"
+    assert token in attachment_text
+    assert token in question_text

@@ -223,6 +223,118 @@
 }
 
 
+/* --- 添付ファイル --- */
+
+.chat-panel__attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: 100%;
+  max-width: min(100%, 960px);
+}
+
+.chat-panel__attachment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+/* ボタン経由でのみ開くので、input 自体は隠す（display:none だと一部 AT が辿れない） */
+.chat-panel__attachment-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  min-height: 0;
+}
+
+.chat-panel__attachment-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-height: 44px;
+}
+
+.chat-panel__attachment-limits {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+.chat-panel__attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-panel__attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  max-width: min(100%, 22rem);
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-background-elevated);
+}
+
+.chat-panel__attachment-chip--error {
+  border-color: var(--color-error-border);
+}
+
+.chat-panel__attachment-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.chat-panel__attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__attachment-meta {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}
+
+.chat-panel__attachment-chip--error .chat-panel__attachment-meta {
+  color: var(--color-error);
+  white-space: normal;
+}
+
+.chat-panel__attachment-remove {
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.chat-panel__attachment-warning {
+  margin: 0;
+}
+
+.chat-panel__msg-attachments {
+  margin: var(--spacing-1) 0 0;
+}
+
+/* ドラッグ中の投下先を明示する */
+.chat-panel__composer--dragover .chat-panel__composer-field textarea {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: 2px;
+}
+
 @media (max-width: 768px) {
   .chat-panel__composer {
     flex-direction: column;
@@ -238,4 +350,7 @@
     align-self: stretch;
   }
 
+  .chat-panel__attachment-chip {
+    max-width: 100%;
+  }
 }

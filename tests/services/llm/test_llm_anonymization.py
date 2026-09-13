@@ -136,7 +136,7 @@ def test_anonymize_chat_for_llm_extra_vcenter_strings_in_messages() -> None:
     payload = {"digest_context": {"total_events": 0}}
     contents = ["MyDisplay と vcenter02.lab.local を確認"]
     extra = ["MyDisplay", "vcenter02.lab.local", "vcenter02"]
-    _pl, out_contents, rev = anonymize_chat_for_llm(
+    _pl, out_contents, _att, rev = anonymize_chat_for_llm(
         payload,
         contents,
         extra_vcenter_strings=extra,
@@ -165,7 +165,7 @@ def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqd
         },
     }
     contents = ["mini5のCPU使用率が最も高い時間帯を教えて。"]
-    _pl, out_contents, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
+    _pl, out_contents, _att, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
     assert "mini5" not in out_contents[0]
     assert "mini5.moriyama.internal" not in str(_pl)
     tok_in_json = _pl["period_metrics"]["cpu"][0]["entity_name"]
