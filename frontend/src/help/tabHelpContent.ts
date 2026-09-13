@@ -92,8 +92,9 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
   },
   plugins: {
     summary:
-      '【プラグイン管理】\nコレクタプラグインの構成と vCenter 別の最新実行状態を確認します。\n- 設定変更は TOML または環境変数で行い、アプリを再起動して反映します。',
-    userGuideDoc: 'docs/collector-plugins.md',
+      '【プラグイン管理】\nコレクタプラグインの構成と vCenter 別の最新実行状態を確認します。\n- 管理機能が有効な場合は、画面から有効/無効・実行間隔の変更やパッケージの追加を行い、「変更を反映」で適用します（アプリの再起動は不要です）。\n- 管理機能が無効な場合は参照専用です。設定は TOML または環境変数で変更し、アプリを再起動して反映します。',
+    userGuideDoc: 'docs/user-guides/plugins.md',
+    markerId: 'plugins',
   },
   chat_samples: {
     summary:

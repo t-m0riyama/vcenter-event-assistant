@@ -74,6 +74,7 @@ flowchart TB
 - **概要タブ（利用者向け）**（直近24h ダッシュボード・要注意一覧・自動更新）: [docs/user-guides/summary.md](docs/user-guides/summary.md)
 - **イベントタブ（利用者向け）**（一覧・絞り込み・運用メモ・CSV 出力）: [docs/user-guides/events.md](docs/user-guides/events.md)
 - **グラフタブ（利用者向け）**（メトリクス時系列・イベント件数オーバーレイ・エクスポート）: [docs/user-guides/graph.md](docs/user-guides/graph.md)
+- **プラグイン（利用者向け）**（画面の見方・導入手順・実行状況の確認・切り分け）: [docs/user-guides/plugins.md](docs/user-guides/plugins.md)
 - **バックエンドガイド**（API・設定・運用）: [docs/backend.md](docs/backend.md)
 - **コレクタプラグイン**（設定・管理画面・動的インストール・トラブルシュート）: [docs/collector-plugins.md](docs/collector-plugins.md)
 - **コレクタプラグインの開発**（ひな形の生成・実装・テスト・配布）: [docs/collector-plugin-authoring.md](docs/collector-plugin-authoring.md)
