@@ -57,6 +57,11 @@ class PowerEventCollector(EventCollector):
 
     id = PLUGIN_ID
     display_name = "Example VM Power Events"
+    description = (
+        "【サンプル】仮想マシンの電源操作イベント（起動・停止・サスペンドなど）だけを"
+        "取り込みます。プラグインの書き方と動作確認のための例であり、運用目的の"
+        "ものではありません。"
+    )
     version = "0.1.0"
     default_interval_seconds = 120
 

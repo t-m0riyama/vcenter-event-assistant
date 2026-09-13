@@ -40,6 +40,8 @@ class CollectorStatusRead(BaseModel):
 
     id: str
     display_name: str | None
+    #: マニフェストの説明文。未設定のプラグインと、読み込みに失敗した登録は ``None``。
+    description: str | None = None
     source: str
     status: Literal["enabled", "disabled", "failed"]
     error: str | None

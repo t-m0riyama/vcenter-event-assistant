@@ -31,6 +31,7 @@ TEMPERATURE = MetricDefinition(
 class TemperatureCollector(MetricCollector):
     id = "example.host.temperature"
     display_name = "Example Host Temperature"
+    description = "ESXi ホストごとの温度を 1 点ずつ収集する。"  # 管理画面の詳細行に出る
     version = "0.1.0"
     metrics = (TEMPERATURE,)
 

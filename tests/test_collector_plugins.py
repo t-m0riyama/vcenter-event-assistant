@@ -38,7 +38,11 @@ class SampleCollector(StubCollector):
     ずれないように、plugin-api 側に 1 つだけ置いてある）。
     """
 
-    manifest = stub_manifest(display_name="Temperature", version="2.1.0")
+    manifest = stub_manifest(
+        display_name="Temperature",
+        version="2.1.0",
+        description="ホストの温度を集めるサンプル。",
+    )
 
 
 def test_registry_contains_four_builtin_collectors(
@@ -239,6 +243,7 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
     assert payload["collectors"][0] == {
         "id": "aaa.missing",
         "display_name": None,
+        "description": None,
         "source": "configuration",
         "status": "failed",
         "error": "configured plugin is not installed",
@@ -254,6 +259,7 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
     assert payload["reload_required"] is False
     collector = payload["collectors"][1]
     assert collector["display_name"] == "Temperature"
+    assert collector["description"] == "ホストの温度を集めるサンプル。"
     assert collector["data_kinds"] == ["metric"]
     assert collector["interval_seconds"] == 300
     assert collector["timeout_seconds"] == 45.0
@@ -355,3 +361,22 @@ async def test_a_rejected_batch_still_persists_nothing() -> None:
     async with session_scope() as session:
         assert (await session.execute(select(MetricSample))).scalars().all() == []
         assert (await session.execute(select(IngestionState))).scalars().all() == []
+
+
+def test_manifest_survives_the_worker_round_trip() -> None:
+    """ワーカーはマニフェストを JSON で返す。説明が落ちると画面から消える。"""
+    from vcenter_event_assistant.plugins.wire import manifest_from_json, manifest_to_json
+
+    manifest = stub_manifest(description="ホストの温度を集めるサンプル。")
+
+    assert manifest_from_json(manifest_to_json(manifest)) == manifest
+
+
+def test_a_manifest_without_a_description_is_still_accepted() -> None:
+    """説明を知らない版のワーカーからの応答でも壊れないこと。"""
+    from vcenter_event_assistant.plugins.wire import manifest_from_json, manifest_to_json
+
+    raw = manifest_to_json(stub_manifest())
+    del raw["description"]
+
+    assert manifest_from_json(raw).description == ""

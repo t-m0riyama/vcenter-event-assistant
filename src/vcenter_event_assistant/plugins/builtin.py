@@ -59,6 +59,12 @@ class EventsCollector(EventCollector):
         version="1.0.0",
         data_kinds=frozenset({"event"}),
         default_interval_seconds=120,
+        description=(
+            "vCenter のイベント（タスク・アラーム・ログインなど）を、前回取り込んだ"
+            "続きから取得します。イベントタブ・要注目スコア・アラート・ダイジェスト・"
+            "チャットのすべてがこのデータを使うため、無効にするとイベント側の情報が"
+            "更新されなくなります。"
+        ),
     )
 
     def fetch(
@@ -165,6 +171,11 @@ class HostQuickStatsCollector(_MetricCollector):
         "1.0.0",
         data_kinds=frozenset({"metric"}),
         metric_definitions=QUICKSTATS,
+        description=(
+            "ESXi ホストの CPU 利用率とメモリ利用率を vCenter の quickStats から"
+            "取得します。負荷の軽い呼び出しで、グラフタブと概要ダッシュボードの"
+            "基本指標になります。"
+        ),
     )
     mock_keys = frozenset(d.key for d in QUICKSTATS)
 
@@ -182,6 +193,11 @@ class HostPerformanceCollector(_MetricCollector):
         "1.0.0",
         data_kinds=frozenset({"metric"}),
         metric_definitions=PERFORMANCE,
+        description=(
+            "ESXi ホストのネットワーク（送受信エラー・破棄・スループット）とディスク"
+            "（使用率・読み書きスループット）の統計を PerformanceManager から取得します。"
+            "quickStats より項目が多く、ネットワークやストレージの不調を追うときに使います。"
+        ),
     )
     mock_keys = frozenset(d.key for d in PERFORMANCE)
 
@@ -199,6 +215,10 @@ class DatastoreCapacityCollector(_MetricCollector):
         "1.0.0",
         data_kinds=frozenset({"metric"}),
         metric_definitions=DATASTORE,
+        description=(
+            "データストアの使用容量を、使用率（%）と使用バイト数の 2 つで取得します。"
+            "空き容量の逼迫を監視するアラートやグラフの元データになります。"
+        ),
     )
     mock_keys = frozenset(d.key for d in DATASTORE)
 

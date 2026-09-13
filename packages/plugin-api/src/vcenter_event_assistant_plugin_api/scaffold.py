@@ -174,6 +174,8 @@ class $class_name(MetricCollector):
 
     id = PLUGIN_ID
     display_name = "$display_name"
+    #: 管理画面の詳細行に出る。運用者が有効/無効を判断できる粒度で書く。
+    description = "TODO: describe what this collector gathers."
     version = "0.1.0"
     metrics = ($metric_constant,)
     default_interval_seconds = 300
@@ -248,6 +250,8 @@ class $class_name(EventCollector):
 
     id = PLUGIN_ID
     display_name = "$display_name"
+    #: 管理画面の詳細行に出る。運用者が有効/無効を判断できる粒度で書く。
+    description = "TODO: describe what this collector gathers."
     version = "0.1.0"
     default_interval_seconds = 120
 

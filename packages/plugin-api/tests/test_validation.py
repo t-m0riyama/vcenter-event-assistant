@@ -111,6 +111,10 @@ def _codes(issues, severity=None):
             {"metric_definitions": (MetricDefinition("", "A", "C", "H"),)},
             "metric keys must be 1..256 characters",
         ),
+        (
+            {"description": "あ" * 1001},
+            "description is 1001 characters, over the 1000 allowed",
+        ),
     ],
 )
 def test_manifest_error_messages_are_fixed(overrides, message) -> None:
@@ -126,6 +130,10 @@ def test_validate_manifest_carries_the_issues() -> None:
     with pytest.raises(ManifestValidationError) as excinfo:
         validate_manifest(_manifest(api_version=2))
     assert excinfo.value.issues[0].code == "unsupported_api_version"
+
+
+def test_a_description_at_the_limit_is_accepted() -> None:
+    assert manifest_error_message(_manifest(description="あ" * 1000)) is None
 
 
 def test_event_only_manifest_needs_no_metric_definitions() -> None:

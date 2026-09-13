@@ -89,6 +89,7 @@ TEMPERATURE = MetricDefinition(
 class TemperatureCollector(MetricCollector):
     id = "example.host.temperature"
     display_name = "Example Host Temperature"
+    description = "ESXi ホストごとの温度を 1 点ずつ収集する。"
     version = "0.1.0"
     metrics = (TEMPERATURE,)
 
@@ -103,6 +104,12 @@ class TemperatureCollector(MetricCollector):
 
 build_collector = TemperatureCollector   # クラス自体が引数なしファクトリになる
 ```
+
+`description` は任意ですが、**書いてください**。アプリの**設定 → プラグイン**で行を開いた
+ときにそのまま表示され、運用担当者が「このコレクタは何を集めていて、無効にすると何が
+止まるのか」を判断する唯一の材料になります。1〜2 文、1000 文字以内です（超えると
+`description_too_long` でプラグインごと拒否されます）。表示先が日本語の画面なら日本語で
+書いて構いません。
 
 基底が引き受けるものは次のとおりです。いずれも間違えると静かに壊れる箇所です。
 

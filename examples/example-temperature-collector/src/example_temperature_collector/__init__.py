@@ -79,6 +79,11 @@ class TemperatureCollector(MetricCollector):
 
     id = PLUGIN_ID
     display_name = "Example Host Temperature"
+    description = (
+        "【サンプル】ESXi ホストごとに合成の温度メトリクスを 1 点だけ返します。"
+        "実際のセンサーは読みません。プラグインの書き方と、ホットリロードや"
+        "プロセス分離の動作確認のための例です。"
+    )
     version = "0.1.0"
     metrics = (TEMPERATURE,)
     default_interval_seconds = 300

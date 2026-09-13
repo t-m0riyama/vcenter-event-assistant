@@ -92,6 +92,11 @@ def test_manifest_is_built_from_class_attributes() -> None:
     assert manifest.metric_definitions == (TEMPERATURE,)
 
 
+def test_description_defaults_to_empty() -> None:
+    """説明は任意。書かなければ空文字で、画面には何も出ない。"""
+    assert Temperature.manifest.description == ""
+
+
 def test_data_kinds_is_derived_from_the_base_class() -> None:
     """書き忘れるとバッチが丸ごと拒否される宣言。手で書かせない。"""
     assert Temperature.manifest.data_kinds == frozenset({"metric"})
@@ -403,6 +408,21 @@ class TestSubclassingAConcreteCollector:
 
         assert Child.manifest.display_name == "Child"
         assert Child.manifest.id == "example.parent2"
+
+    def test_declaring_only_a_description_rebuilds_the_manifest(self) -> None:
+        """`description` だけ足した場合に、その宣言が黙って失われないこと。"""
+
+        class Parent(MetricCollector):
+            id = "example.parent3"
+            display_name = "Parent"
+            version = "1.0.0"
+            metrics = (MetricDefinition("example.k3", "K", "C", "HostSystem"),)
+
+        class Child(Parent):
+            description = "ホストの温度を集める。"
+
+        assert Child.manifest.description == "ホストの温度を集める。"
+        assert Child.manifest.id == "example.parent3"
 
     def test_a_subclass_of_an_explicit_manifest_class_inherits_it(self) -> None:
         explicit = CollectorManifest(

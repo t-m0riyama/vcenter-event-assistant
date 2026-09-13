@@ -102,6 +102,7 @@ def _collector_reads(
             CollectorStatusRead(
                 id=registration.plugin_id,
                 display_name=manifest.display_name if manifest else None,
+                description=(manifest.description or None) if manifest else None,
                 source=registration.source,
                 status=registration.status,
                 error=registration.error,
