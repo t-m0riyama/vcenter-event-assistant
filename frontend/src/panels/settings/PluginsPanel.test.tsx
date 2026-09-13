@@ -194,7 +194,36 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
     expect(screen.queryByText('インストール済みプラグイン')).not.toBeInTheDocument()
   })
 
-  it('トグル操作で PATCH を送り、未反映バナーを表示する', async () => {
+  it('チェックを変えただけでは保存せず、未保存であることを知らせる', async () => {
+    const calls: Array<unknown> = []
+    vi.stubGlobal(
+      'fetch',
+      routedFetch(
+        {
+          '/api/plugins/collectors': managedResponse,
+          '/api/plugins/installed': installedResponse,
+        },
+        (_url, init) => {
+          if (init?.method === 'PATCH') calls.push(init.body)
+        },
+      ),
+    )
+    renderPanel()
+
+    await screen.findByText('Temperature')
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
+
+    // 変更がないあいだは保存できない。
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+
+    fireEvent.click(screen.getByLabelText('有効にする'))
+
+    expect(screen.getByText('未保存の変更があります。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+    expect(calls).toHaveLength(0)
+  })
+
+  it('保存で PATCH を送り、未反映バナーを表示する', async () => {
     const patched = { ...managedResponse, reload_required: true }
     const calls: Array<{ url: string; body: unknown }> = []
     const fetchMock = routedFetch(
@@ -215,11 +244,18 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
     await screen.findByText('Temperature')
     fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
     fireEvent.click(screen.getByLabelText('有効にする'))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0]?.url).toBe('/api/plugins/collectors/example.temperature')
-    expect(calls[0]?.body).toEqual({ enabled: false })
+    expect(calls[0]?.body).toEqual({
+      enabled: false,
+      interval_seconds: 300,
+      timeout_seconds: 45,
+    })
     expect(await screen.findByText(/未反映の変更があります/)).toBeInTheDocument()
+    // 未反映のあいだは、次に押すべきボタンとして強調する。
+    expect(screen.getByRole('button', { name: '変更を反映' })).toHaveClass('btn--filled')
   })
 
   it('実行間隔の保存で PATCH に数値を送る', async () => {
@@ -245,7 +281,7 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ interval_seconds: 600, timeout_seconds: 45 })
+    expect(calls[0]).toEqual({ enabled: true, interval_seconds: 600, timeout_seconds: 45 })
   })
 
   it('環境変数でロックされた項目は編集できない', async () => {
@@ -256,12 +292,19 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
         managedResponse.collectors[1],
       ],
     }
+    const calls: Array<unknown> = []
     vi.stubGlobal(
       'fetch',
-      routedFetch({
-        '/api/plugins/collectors': locked,
-        '/api/plugins/installed': installedResponse,
-      }),
+      routedFetch(
+        {
+          '/api/plugins/collectors': locked,
+          '/api/plugins/installed': installedResponse,
+          'PATCH /api/plugins/collectors/example.temperature': locked,
+        },
+        (_url, init) => {
+          if (init?.method === 'PATCH') calls.push(JSON.parse(String(init.body)))
+        },
+      ),
     )
     renderPanel()
 
@@ -272,6 +315,13 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
     expect(screen.getByLabelText('実行間隔（秒）')).toBeDisabled()
     expect(screen.getByLabelText('タイムアウト（秒）')).toBeEnabled()
     expect(screen.getAllByText(/環境変数で固定されているため/).length).toBeGreaterThan(0)
+
+    // ロックされた項目は保存対象から外れる。
+    fireEvent.change(screen.getByLabelText('タイムアウト（秒）'), { target: { value: '60' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ timeout_seconds: 60 })
   })
 
   it('「変更を反映」で reload を呼び、新しい世代を知らせる', async () => {

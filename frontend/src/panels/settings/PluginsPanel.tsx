@@ -144,30 +144,40 @@ function CollectorSettingsForm({
     values: { enabled?: boolean; interval_seconds?: number; timeout_seconds?: number },
   ) => Promise<void>
 }) {
+  const savedEnabled = collector.status === 'enabled'
+  const [enabled, setEnabled] = useState(savedEnabled)
   const [interval, setInterval] = useState(String(collector.interval_seconds ?? ''))
   const [timeout, setTimeout] = useState(String(collector.timeout_seconds ?? ''))
 
+  // 一覧を取り直したとき・行を開き直したときは、サーバの値へ戻す。
   useEffect(() => {
+    setEnabled(savedEnabled)
     setInterval(String(collector.interval_seconds ?? ''))
     setTimeout(String(collector.timeout_seconds ?? ''))
-  }, [collector.interval_seconds, collector.timeout_seconds])
+  }, [savedEnabled, collector.interval_seconds, collector.timeout_seconds])
 
   const locked = new Set(collector.env_locked_fields)
   const enabledLocked = locked.has('enabled')
   const intervalLocked = locked.has('interval_seconds')
   const timeoutLocked = locked.has('timeout_seconds')
 
+  // 保存対象はこの 3 つ。ロックされた項目は送らないので、変更の判定からも外す。
+  const dirty =
+    (!enabledLocked && enabled !== savedEnabled) ||
+    (!intervalLocked && interval !== String(collector.interval_seconds ?? '')) ||
+    (!timeoutLocked && timeout !== String(collector.timeout_seconds ?? ''))
+
   return (
     <div className="plugin-settings-form">
-      <h3>設定</h3>
+      <h3>設定（① 保存 → ② 変更を反映）</h3>
       <div className="plugin-settings-row">
         <label>
           <input
             type="checkbox"
-            checked={collector.status === 'enabled'}
+            checked={enabled}
             disabled={disabled || enabledLocked}
             title={enabledLocked ? ENV_LOCK_HINT : undefined}
-            onChange={(event) => void onSave({ enabled: event.target.checked })}
+            onChange={(event) => setEnabled(event.target.checked)}
           />
           有効にする
         </label>
@@ -197,12 +207,22 @@ function CollectorSettingsForm({
           title={timeoutLocked ? ENV_LOCK_HINT : undefined}
           onChange={(event) => setTimeout(event.target.value)}
         />
+      </div>
+
+      {/* 保存はフォーム全体（有効/無効・実行間隔・タイムアウト）が対象。
+          入力欄と同じ行に置くと、その行だけが対象だと読めてしまう。 */}
+      <div className="plugin-settings-actions">
         <button
           type="button"
-          className="btn"
-          disabled={disabled || (intervalLocked && timeoutLocked)}
+          className="btn btn--filled"
+          disabled={disabled || !dirty}
           onClick={() => {
-            const values: { interval_seconds?: number; timeout_seconds?: number } = {}
+            const values: {
+              enabled?: boolean
+              interval_seconds?: number
+              timeout_seconds?: number
+            } = {}
+            if (!enabledLocked) values.enabled = enabled
             if (!intervalLocked && interval !== '') values.interval_seconds = Number(interval)
             if (!timeoutLocked && timeout !== '') values.timeout_seconds = Number(timeout)
             void onSave(values)
@@ -210,10 +230,16 @@ function CollectorSettingsForm({
         >
           保存
         </button>
+        {dirty ? <span className="plugin-unsaved">未保存の変更があります。</span> : null}
       </div>
+
       {intervalLocked || timeoutLocked ? (
         <p className="plugin-env-lock">{ENV_LOCK_HINT}</p>
       ) : null}
+      <p className="plugin-settings-note">
+        <strong>保存</strong>はこのプラグインの設定を保存するだけです。稼働中の構成に適用するには、
+        一覧の右上にある<strong>変更を反映</strong>を押してください（アプリの再起動は不要です）。
+      </p>
     </div>
   )
 }
@@ -429,7 +455,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
           values,
         )
         setData(collectorStatusListSchema.parse(response))
-      }, '設定を保存しました。「変更を反映」で稼働中の構成に適用します。')
+      }, '設定を保存しました。稼働中の構成に適用するには「変更を反映」を押してください。')
     },
     [runMutation],
   )
@@ -471,7 +497,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
         await apiDelete(`/api/plugins/installed/${encodeURIComponent(distribution)}`)
         const response = await apiGet<unknown>('/api/plugins/installed')
         setInstalled(installedPluginListSchema.parse(response))
-      }, 'アンインストールしました。「変更を反映」で稼働中の構成に適用します。')
+      }, 'アンインストールしました。稼働中の構成に適用するには「変更を反映」を押してください。')
     },
     [runMutation],
   )
@@ -492,7 +518,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
 
       {managementEnabled && data?.reload_required ? (
         <p className="plugin-reload-banner" role="status">
-          未反映の変更があります。「変更を反映」を押すと稼働中の構成に適用されます。
+          未反映の変更があります。一覧の右上にある「変更を反映」を押すと、稼働中の構成に適用されます。
         </p>
       ) : null}
 
@@ -508,7 +534,13 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
           {loading ? '更新中…' : '一覧を更新'}
         </button>
         {managementEnabled ? (
-          <button type="button" className="btn" disabled={busy} onClick={() => void reload()}>
+          <button
+            type="button"
+            // 未反映の変更があるあいだは、次に押すべきボタンとして強調する。
+            className={data?.reload_required ? 'btn btn--filled' : 'btn btn--gray'}
+            disabled={busy}
+            onClick={() => void reload()}
+          >
             {busy ? '処理中…' : '変更を反映'}
           </button>
         ) : null}
