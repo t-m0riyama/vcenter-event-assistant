@@ -393,7 +393,7 @@ kill され、アプリ本体は停止しません。
 | `ModuleNotFoundError: No module named '...'` | プラグインの依存が入っていない | アップロード導入は `--no-index --no-deps` で実行されるため依存が解決されない。インデックス経由での導入を許可するか、依存を同梱したパッケージを作り直す |
 | `load failed: ...` | entry point の読み込みに失敗 | ワーカーの stderr にトレースバックが出ている |
 | `TimeoutError: collector execution failed` | `timeout_seconds` 超過でワーカーを kill | 実行間隔とタイムアウトを見直す。ワーカーは次回実行で作り直される |
-| `BatchValidationError: ...` | バッチ検証で拒否。違反した規則がそのまま表示される | プラグイン側の修正が必要。条件の一覧は `docs/collector-plugins.md` の「バッチが拒否される条件」 |
+| `BatchValidationError: ...` | バッチ検証で拒否。違反した規則がそのまま表示される | プラグイン側の修正が必要。条件の一覧は `docs/collector-plugin-authoring.md` の「バッチが拒否される条件」 |
 
 ## 5. 変更管理（実務向け最小）
 

@@ -9,7 +9,9 @@ vCenter Event Assistant のコレクタプラグインのサンプルである�
   `sample()` の実装を最小構成で示す。
 - **動作確認**: 動的インストール・ホットリロード・プロセス分離が実際に効いているかを確かめる。
 
-本体のドキュメントは [`docs/collector-plugins.md`](../../docs/collector-plugins.md) を参照する。
+書き方のガイドは
+[`docs/collector-plugin-authoring.md`](../../docs/collector-plugin-authoring.md)、
+運用側は [`docs/collector-plugins.md`](../../docs/collector-plugins.md) を参照する。
 
 > このパッケージは uv ワークスペースのメンバーに**含めていない**。含めると開発環境の venv に
 > 常時インストールされ、通常の開発中にも検出ワーカーが起動してしまうためである。
@@ -36,7 +38,7 @@ assert [sample.entity_moid for sample in batch.metrics] == ["host-1"]
 `run_collect()` は `start` → `collect` → `stop` を回したうえで、バッチをアプリと同一の
 規則で検証し（warning でも落ちる）、vCenter 接続のリークと `CreateContainerView` の
 `Destroy()` 漏れも検査する。詳細は
-[`docs/collector-plugins.md` の「テストの書き方」](../../docs/collector-plugins.md#テストの書き方)
+[`docs/collector-plugin-authoring.md` の「テストの書き方」](../../docs/collector-plugin-authoring.md#テストの書き方)
 を参照する。
 
 下の「インストールと有効化」は、アプリと繋いだ end-to-end の確認手順である。

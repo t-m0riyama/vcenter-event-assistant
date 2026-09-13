@@ -31,7 +31,7 @@ vmware = ["pyvmomi>=9.0.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/t-m0riyama/vcenter-event-assistant"
-Documentation = "https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugins.md"
+Documentation = "https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugin-authoring.md"
 Changelog = "https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/packages/plugin-api/CHANGELOG.md"
 Issues = "https://github.com/t-m0riyama/vcenter-event-assistant/issues"
 

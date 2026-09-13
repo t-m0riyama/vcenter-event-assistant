@@ -1,0 +1,113 @@
+# plugin-api を PyPI へ公開する。
+#
+# 発火は `plugin-api-v<バージョン>` というタグである（アプリ本体のリリースとは分離する）。
+#
+#     git tag plugin-api-v1.1.0 && git push origin plugin-api-v1.1.0
+#
+# 認証は PyPI の Trusted Publishing（OIDC）を使う。API トークンをシークレットに置かない。
+# PyPI 側で次の publisher を登録しておくこと。
+#
+#     Owner: t-m0riyama / Repository: vcenter-event-assistant
+#     Workflow: release-plugin-api.yml / Environment: (空欄)
+#
+# 公開前に、タグとパッケージのバージョンが一致することを必ず確認する。ここがずれると
+# 意図しないバージョンが世に出て、取り消せない。
+name: Release plugin API
+
+on:
+  push:
+    tags: ["plugin-api-v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify without publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # Trusted Publishing の OIDC トークンを取るために必要。
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.15"
+
+      - name: Check the tag against the package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#plugin-api-v}"
+          # pyproject.toml を直接読む（uv のサブコマンドの有無に依存しないため）。
+          package_version="$(python3 -c "
+          import tomllib
+          with open('packages/plugin-api/pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          ")"
+          echo "tag=${tag_version} package=${package_version}"
+          if [ "${tag_version}" != "${package_version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match the package version ${package_version}" >&2
+            exit 1
+          fi
+
+      - name: Test the package on its own
+        run: |
+          set -euo pipefail
+          uv sync --all-groups
+          uv run pytest packages/plugin-api/tests -q
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          rm -rf dist/plugin-api-release
+          uv build --package vcenter-event-assistant-plugin-api \
+            --out-dir dist/plugin-api-release
+
+      - name: Verify the artifacts
+        run: |
+          set -euo pipefail
+          wheel="$(ls dist/plugin-api-release/*.whl)"
+          ls -l dist/plugin-api-release
+
+          # 型情報とテストハーネスを同梱していること。
+          unzip -l "${wheel}" | grep -q 'vcenter_event_assistant_plugin_api/py.typed'
+          unzip -l "${wheel}" | grep -q 'vcenter_event_assistant_plugin_api/testing/__init__.py'
+
+          # 依存ゼロであること、pyVmomi を遅延 import に閉じていること、
+          # 契約世代を安易に上げていないこと。CI と同じ検査を公開直前にもう一度行う。
+          uv run --isolated --no-project --with "${wheel}" python - <<'EOF'
+          import sys
+          from importlib import metadata
+
+          import vcenter_event_assistant_plugin_api as api
+
+          required = [
+              r
+              for r in (metadata.requires("vcenter-event-assistant-plugin-api") or [])
+              if "extra ==" not in r
+          ]
+          assert required == [], f"unexpected runtime dependencies: {required}"
+          assert api.PLUGIN_API_VERSION == 1, api.PLUGIN_API_VERSION
+          leaked = sorted(m for m in sys.modules if m.split(".")[0] in {"pyVmomi", "pyVim"})
+          assert leaked == [], f"pyVmomi must stay lazily imported, got {leaked}"
+          print("verified", api.__version__)
+          EOF
+
+      - name: Publish to PyPI
+        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        # `always` にして、OIDC が取れないときに黙って別の方法へ落ちないようにする。
+        run: uv publish --trusted-publishing always dist/plugin-api-release/*
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-api-dist
+          path: dist/plugin-api-release/*
+          if-no-files-found: error

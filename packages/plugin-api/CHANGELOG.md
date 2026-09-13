@@ -14,6 +14,25 @@
   **契約を壊すときだけ**上げる。ヘルパの追加で上げてはならない。上げた時点で
   既存の全プラグインが一斉に動かなくなる。
 
+## リリース手順
+
+公開は CI が行う。手元でビルドした wheel をアップロードしない。
+
+1. `packages/plugin-api/pyproject.toml` の `version` と `__init__.py` の `__version__`
+   を揃えて上げ、この CHANGELOG に項目を書く。
+2. main にマージする。
+3. タグを打つ。
+
+   ```bash
+   git tag plugin-api-v1.1.0 && git push origin plugin-api-v1.1.0
+   ```
+
+`.github/workflows/release-plugin-api.yml` が発火し、**タグとパッケージのバージョンが
+一致すること**を確認したうえでビルド・検証し、PyPI の Trusted Publishing（OIDC）で
+公開する。API トークンはシークレットに置かない。
+
+`workflow_dispatch` から `dry_run` で起動すると、公開せずにビルドと検証だけを行える。
+
 ## [1.1.0]
 
 契約（データクラスと `CollectorPlugin` Protocol）は変更していない。`PLUGIN_API_VERSION`
