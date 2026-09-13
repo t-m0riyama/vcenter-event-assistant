@@ -21,6 +21,19 @@
 
 ### Added
 
+- `collector`: 宣言的な基底クラス。`MetricCollector` / `EventCollector` を継承すると、
+  実装するのは同期のメソッド 1 つ（`sample()` / `fetch()`）だけになる。マニフェストは
+  クラス属性から組み立てられ、**クラス定義の時点で**検証される。接続の開閉、
+  `run_blocking` でのスレッド退避、`mock_mode` の分岐、`CollectionBatch` の組み立て、
+  カーソルの decode と前進は基底が引き受ける。`data_kinds` は基底クラスから導出される
+  （書き忘れるとバッチが丸ごと拒否される宣言なので、手で書かせない）。
+  既存の `manifest = CollectorManifest(...)` を明示するスタイルもそのまま動く。
+- `cursors.TimestampCursor`: タイムスタンプ 1 つをカーソルとして扱う規則。
+  取得範囲を既定 1 秒だけ戻して境界のイベントを取りこぼさず、**空のバッチでも必ず前進する**
+  （前進しないと同じ範囲を永久に読み直す）。壊れたカーソルは初回として扱う。
+- `config`: `get_str` / `get_int` / `get_float` / `get_bool` / `get_str_list` /
+  `require_str`。環境変数由来の値は常に `str`、TOML 由来は TOML の型という非対称を吸収する。
+  エラーメッセージにはキー名と型だけを含め、値は含めない。
 - `validation`: アプリと同一の検査規則。`check_batch()` / `check_manifest()` は問題を
   `Issue` の列として返し、`validate_batch()` / `validate_manifest()` は送出する。
   `severity` が `"error"` のものはアプリが実際に拒否する条件と一致する。`"warning"` は

@@ -150,12 +150,26 @@ class CollectorPlugin(Protocol):
 # 契約の定義が揃ったあとにサブモジュールを読む。サブモジュール側はこのパッケージから
 # データクラスを import するため、この順序でないと循環する。
 # pyVmomi を必要とする `vmware` と、pytest を触りうる `testing` はここでは読まない。
+from vcenter_event_assistant_plugin_api import config as config  # noqa: E402
+from vcenter_event_assistant_plugin_api import cursors as cursors  # noqa: E402
 from vcenter_event_assistant_plugin_api import limits as limits  # noqa: E402
 from vcenter_event_assistant_plugin_api import logs as logs  # noqa: E402
 from vcenter_event_assistant_plugin_api import timeutils as timeutils  # noqa: E402
 from vcenter_event_assistant_plugin_api import validation as validation  # noqa: E402
 from vcenter_event_assistant_plugin_api.blocking import (  # noqa: E402
     run_blocking as run_blocking,
+)
+from vcenter_event_assistant_plugin_api.collector import (  # noqa: E402
+    CollectorBase as CollectorBase,
+)
+from vcenter_event_assistant_plugin_api.collector import (  # noqa: E402
+    EventCollector as EventCollector,
+)
+from vcenter_event_assistant_plugin_api.collector import (  # noqa: E402
+    MetricCollector as MetricCollector,
+)
+from vcenter_event_assistant_plugin_api.cursors import (  # noqa: E402
+    TimestampCursor as TimestampCursor,
 )
 from vcenter_event_assistant_plugin_api.logs import (  # noqa: E402
     PLUGIN_LOGGER_NAMESPACE as PLUGIN_LOGGER_NAMESPACE,
@@ -194,20 +208,26 @@ __all__ = [
     "BatchValidationError",
     "CollectionBatch",
     "CollectionContext",
+    "CollectorBase",
     "CollectorManifest",
     "CollectorPlugin",
     "ConnectionFactory",
     "DataKind",
+    "EventCollector",
     "EventInput",
     "Issue",
     "ManifestValidationError",
+    "MetricCollector",
     "MetricDefinition",
     "MetricSampleInput",
     "SeriesMode",
+    "TimestampCursor",
     "VCenterTarget",
     "__version__",
     "check_batch",
     "check_manifest",
+    "config",
+    "cursors",
     "ensure_aware",
     "get_plugin_logger",
     "limits",

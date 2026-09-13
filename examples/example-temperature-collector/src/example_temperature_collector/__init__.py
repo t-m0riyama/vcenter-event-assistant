@@ -1,51 +1,62 @@
 """Sample collector plugin for vCenter Event Assistant.
 
-ホストごとに合成の温度メトリクスを 1 点だけ返す最小のコレクタである。
+ESXi ホストごとに合成の温度メトリクスを 1 点だけ返す最小のコレクタである。
 プラグインを書くときの雛形と、ホットリロード／プロセス分離の動作確認を兼ねる。
 
-実装として押さえている点:
+``MetricCollector`` を継承すると、実装するのは :meth:`TemperatureCollector.sample` だけに
+なる。以下はすべて基底が引き受ける。
 
-- 依存は ``vcenter-event-assistant-plugin-api`` だけであり、アプリ本体を import しない。
-- entry point は ``vcenter_event_assistant.collectors`` グループの引数なしファクトリ。
-- ``manifest.id`` と ``metric_definitions[].key`` は、インストール済みの全コレクタの
-  あいだで一意である必要がある（衝突するとレジストリが ``failed`` として弾く）。
-- vCenter へは ``context.open_vcenter_connection()`` 経由でのみ触れる。接続の確立と
-  切断はアプリ側が行うため、プラグインは認証情報を受け取らない。
-- ``context.mock_mode`` が真のときは実接続せず合成値を返す（``MOCK_MODE=true`` での確認用）。
-- ブロッキング処理は ``asyncio.to_thread`` に逃がす。イベントループを止めると、
-  同じワーカープロセス上の他の処理まで巻き添えになる。
+- クラス属性からの ``CollectorManifest`` の生成（``data_kinds`` の導出を含む）
+- vCenter 接続の open / close
+- ブロッキング処理のスレッド退避（キャンセルされてもセッションを取り残さない）
+- ``MOCK_MODE=true`` のときの合成データ
+- ``CollectionBatch`` の組み立て
+
+依存は ``vcenter-event-assistant-plugin-api`` だけであり、アプリ本体は import しない。
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import random
-from datetime import datetime, timezone
+import time
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 from vcenter_event_assistant_plugin_api import (
-    CollectionBatch,
     CollectionContext,
-    CollectorManifest,
+    MetricCollector,
     MetricDefinition,
     MetricSampleInput,
+    config,
+    get_plugin_logger,
 )
 
-METRIC_KEY = "example.host.temperature_c"
+PLUGIN_ID = "example.host.temperature"
+
+#: メトリクスの宣言。``at()`` がここから ``metric_key`` / ``entity_type`` /
+#: timezone-aware なタイムスタンプを補うので、キーを二度書く必要はない。
+TEMPERATURE = MetricDefinition(
+    key="example.host.temperature_c",
+    display_name="Host temperature",
+    unit="C",
+    entity_type="HostSystem",
+    series_mode="entity",
+    category="hardware",
+    description="Synthetic host temperature emitted by the sample plugin.",
+)
 
 #: 障害注入モード。プロセス分離の確認用であり、通常運用では設定しない。
 #: ``hang`` = 応答しない / ``crash`` = ワーカーを即死させる / ``raise`` = 例外送出。
 FAULT_ENV_VAR = "EXAMPLE_COLLECTOR_FAULT"
 
-
-def _synthetic_hosts() -> list[tuple[str, str]]:
-    return [("host-1", "esxi-01"), ("host-2", "esxi-02")]
+logger = get_plugin_logger(PLUGIN_ID)
 
 
-def _read_hosts_blocking(si) -> list[tuple[str, str]]:
+def _read_hosts_blocking(si: Any) -> list[tuple[str, str]]:
     """接続済みセッションから HostSystem の (moid, name) を読む。
 
-    pyVmomi の呼び出しは同期 API なので、必ずスレッドへ逃がして呼ぶこと。
+    ``view.Destroy()` を必ず呼ぶこと。基底は接続を閉じるが、ビューまでは面倒を見ない。
     """
     content = si.RetrieveContent()
     view = content.viewManager.CreateContainerView(
@@ -63,11 +74,11 @@ def _read_temperature(entity_moid: str, sensor: str) -> float:
     return round(30.0 + rng.random() * 20.0, 1)
 
 
-async def _inject_fault_if_requested() -> None:
+def _inject_fault_if_requested() -> None:
     fault = os.environ.get(FAULT_ENV_VAR, "").strip().lower()
     if fault == "hang":
         # timeout_seconds を超えると、アプリ側がワーカーごと kill する。
-        await asyncio.sleep(3600)
+        time.sleep(3600)
     elif fault == "crash":
         # ワーカープロセスの異常終了。アプリ本体は生き続ける。
         os._exit(9)
@@ -76,64 +87,50 @@ async def _inject_fault_if_requested() -> None:
         raise RuntimeError("synthetic failure with a secret-looking value")
 
 
-class TemperatureCollector:
+class TemperatureCollector(MetricCollector):
     """ESXi ホストの温度を模した合成メトリクスを返すサンプルコレクタ。"""
 
-    manifest = CollectorManifest(
-        id="example.host.temperature",
-        display_name="Example Host Temperature",
-        version="0.1.0",
-        data_kinds=frozenset({"metric"}),
-        default_interval_seconds=300,
-        metric_definitions=(
-            MetricDefinition(
-                key=METRIC_KEY,
-                display_name="Host temperature",
-                unit="C",
-                entity_type="HostSystem",
-                series_mode="entity",
-                category="hardware",
-                description="Synthetic host temperature emitted by the sample plugin.",
-            ),
-        ),
-    )
+    id = PLUGIN_ID
+    display_name = "Example Host Temperature"
+    version = "0.1.0"
+    metrics = (TEMPERATURE,)
+    default_interval_seconds = 300
 
-    async def start(self) -> None:
-        """ワーカー起動後、最初の collect の前に 1 度だけ呼ばれる。"""
-        return None
+    def sample(
+        self, si: Any, context: CollectionContext
+    ) -> Iterator[MetricSampleInput]:
+        """接続済みの vCenter から 1 回分のサンプルを返す。**同期でよい。**
 
-    async def stop(self) -> None:
-        """無効化・リロード・アンインストール時に呼ばれる。"""
-        return None
+        基底がスレッドへ逃がし、戻り値をスレッド内で確定させる。
+        """
+        _inject_fault_if_requested()
 
-    async def collect(self, context: CollectionContext) -> CollectionBatch:
-        await _inject_fault_if_requested()
+        # 設定値は TOML / 環境変数 / 管理画面から与えられる。経路によって型が違うので
+        # （環境変数由来は常に str）、必ず config ヘルパ経由で読む。
+        # 機密はプラグインが所有する環境変数から読むこと。
+        sensor = config.get_str(context.config, "sensor", "system-board")
+        assert sensor is not None
 
-        # 設定値は TOML / 環境変数 / 管理画面から与えられる（機密は環境変数で受けること）。
-        sensor = str(context.config.get("sensor", "system-board"))
-
-        if context.mock_mode:
-            hosts = _synthetic_hosts()
-        else:
-            async with context.open_vcenter_connection() as si:
-                hosts = await asyncio.to_thread(_read_hosts_blocking, si)
-
-        sampled_at = datetime.now(timezone.utc)
-        metrics = tuple(
-            MetricSampleInput(
-                sampled_at=sampled_at,
-                entity_type="HostSystem",
+        hosts = _read_hosts_blocking(si)
+        logger.info("sampling %d host(s) sensor=%s", len(hosts), sensor)
+        for moid, name in hosts:
+            yield TEMPERATURE.at(
                 entity_moid=moid,
                 entity_name=name,
-                metric_key=METRIC_KEY,
                 value=_read_temperature(moid, sensor),
             )
-            for moid, name in hosts
-        )
-        # メトリクスのみのコレクタはカーソルを持たないため next_cursor は返さない。
-        return CollectionBatch(metrics=metrics)
+
+    def sample_mock(
+        self, context: CollectionContext
+    ) -> Iterable[MetricSampleInput]:
+        """``MOCK_MODE=true`` のときの合成データ。
+
+        宣言した ``metrics`` から決定的な値を作る既定の実装で足りるので、ここでは
+        障害注入だけを挟んで基底に委ねる。合成データを自前で用意する必要はない。
+        """
+        _inject_fault_if_requested()
+        return super().sample_mock(context)
 
 
-def build_collector() -> TemperatureCollector:
-    """entry point から呼ばれる引数なしファクトリ。"""
-    return TemperatureCollector()
+#: entry point から呼ばれる引数なしファクトリ。クラス自体がそのまま使える。
+build_collector = TemperatureCollector

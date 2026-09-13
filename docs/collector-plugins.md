@@ -69,6 +69,63 @@ temperature = "example_temperature:build_collector"
 データベース書き込み、イベントスコアリング、重複処理、カーソルのコミットはアプリケーションが
 担います。
 
+## コレクタの書き方
+
+`MetricCollector` または `EventCollector` を継承すると、実装するのは**同期のメソッド 1 つ**
+だけになります。マニフェストはクラス属性から組み立てられ、クラス定義の時点で検証されます。
+
+```python
+from vcenter_event_assistant_plugin_api import MetricCollector, MetricDefinition, config
+
+TEMPERATURE = MetricDefinition(
+    key="example.host.temperature_c",
+    display_name="Host temperature",
+    unit="C",
+    entity_type="HostSystem",
+)
+
+
+class TemperatureCollector(MetricCollector):
+    id = "example.host.temperature"
+    display_name = "Example Host Temperature"
+    version = "0.1.0"
+    metrics = (TEMPERATURE,)
+
+    # 同期でよい。基底がスレッドへ逃がし、接続の開閉も行う。
+    def sample(self, si, context):
+        sensor = config.get_str(context.config, "sensor", "system-board")
+        for moid, name in read_hosts(si):
+            yield TEMPERATURE.at(
+                entity_moid=moid, entity_name=name, value=read_temperature(moid, sensor)
+            )
+
+
+build_collector = TemperatureCollector   # クラス自体が引数なしファクトリになる
+```
+
+基底が引き受けるものは次のとおりです。いずれも間違えると静かに壊れる箇所です。
+
+| 基底が持つ | 自分で書くと踏む罠 |
+|---|---|
+| クラス属性からのマニフェスト生成 | `frozenset({...})` と 1 要素タプルの末尾カンマ |
+| `data_kinds` の自動導出 | 書き忘れるとバッチが**丸ごと**拒否される |
+| `MOCK_MODE=true` の分岐と既定の合成データ | mock 経路を書き忘れて動かない |
+| vCenter 接続の open / close | `async with` の書き忘れ、接続リーク |
+| スレッドへの退避 | 素の `asyncio.to_thread` はタイムアウト時にセッションを取り残す |
+| 戻り値をスレッド内で確定 | ジェネレータ本体がイベントループ上で回る |
+| カーソルの decode / 前進 | 空バッチで前進せず同じ範囲を読み続ける、境界の取りこぼし |
+
+イベントを返す場合は `EventCollector` を継承し、`fetch(si, context, *, since)` を実装します。
+`since` は前回のカーソルから 1 秒戻した時刻で（境界のイベントを取りこぼさないため）、
+`None` なら初回です。次のカーソルは基底が組み立て、**空のバッチでも必ず前進します**。
+
+`vmware_key` は情報源が持つ**自然キー**を使ってください（詳細は「バッチが拒否される条件」）。
+
+既に `manifest = CollectorManifest(...)` と書いているプラグインは、そのまま基底クラスだけを
+使うこともできます。宣言的な書き方へ一度に移行する必要はありません。
+
+## ヘルパ
+
 プラグイン API には、どのコレクタでも必要になるヘルパが入っています。
 
 | モジュール | 用途 |
