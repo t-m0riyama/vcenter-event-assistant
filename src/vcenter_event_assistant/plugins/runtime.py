@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +14,11 @@ from vcenter_event_assistant_plugin_api import (
     CollectionBatch,
     CollectionContext,
     VCenterTarget,
+)
+from vcenter_event_assistant_plugin_api.validation import (
+    BatchValidationError,
+    check_batch,
+    raise_for_issues,
 )
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
@@ -75,6 +79,9 @@ async def drain_collector_runs(plugin_ids: set[str]) -> None:
 _SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
     ImportError,
     NotImplementedError,
+    # メッセージは静的な文言と、manifest で宣言されたメトリクスキーだけから作られる。
+    # vCenter 由来のデータ（エンティティ名や値）は warning 側にしか入れていない。
+    BatchValidationError,
 )
 
 
@@ -176,23 +183,26 @@ async def _mark_failed(
 def _validate_batch(
     registration: CollectorRegistration, batch: CollectionBatch
 ) -> None:
+    """バッチを受理するかを決める。
+
+    規則そのものは plugin-api 側にあり、プラグイン作者も同じ関数を呼べる。
+    二重実装にしないことで、作者が手元で見る判定と本番の判定が必ず一致する。
+    """
     assert registration.plugin is not None
-    manifest = registration.plugin.manifest
-    if batch.events and "event" not in manifest.data_kinds:
-        raise ValueError("collector emitted undeclared event data")
-    if batch.metrics and "metric" not in manifest.data_kinds:
-        raise ValueError("collector emitted undeclared metric data")
-    declared = {definition.key for definition in manifest.metric_definitions}
-    for sample in batch.metrics:
-        if sample.metric_key not in declared:
-            raise ValueError(f"undeclared metric key: {sample.metric_key}")
-        if not math.isfinite(sample.value):
-            raise ValueError(f"non-finite metric value: {sample.metric_key}")
-        if sample.sampled_at.tzinfo is None:
-            raise ValueError("metric sampled_at must be timezone-aware")
-    for event in batch.events:
-        if event.occurred_at.tzinfo is None:
-            raise ValueError("event occurred_at must be timezone-aware")
+    issues = check_batch(registration.plugin.manifest, batch)
+    raise_for_issues(issues)
+
+    # warning は受理を妨げないが、放置すると静かにデータが失われる（列長超過、
+    # vmware_key の 32 bit 範囲外、バッチ内の重複排除キー衝突）。運用者が気づけるよう
+    # ログにだけ出す。
+    warnings = [issue for issue in issues if issue.severity == "warning"]
+    if warnings:
+        logger.warning(
+            "collector batch has %d warning(s) plugin_id=%s: %s",
+            len(warnings),
+            registration.plugin_id,
+            "; ".join(f"{issue.code}({issue.kind}[{issue.index}])" for issue in warnings[:10]),
+        )
 
 
 async def _persist_batch(

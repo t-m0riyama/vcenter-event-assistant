@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -14,6 +13,7 @@ from vcenter_event_assistant_plugin_api import (
     MetricDefinition,
     MetricSampleInput,
 )
+from vcenter_event_assistant_plugin_api.blocking import run_blocking
 
 
 def _metric(row: dict[str, Any]) -> MetricSampleInput:
@@ -27,14 +27,10 @@ def _metric(row: dict[str, Any]) -> MetricSampleInput:
     )
 
 
-async def _run_blocking(function, *args, **kwargs):
-    """Keep the backing thread/session alive until a cancelled call actually returns."""
-    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError:
-        await task
-        raise
+# plugin-api 側の実装をそのまま使う。プラグイン作者にも同じものが公開されている。
+# 名前を残しているのは、テストが `@patch("...builtin._run_blocking")` のように
+# ドット文字列でこのモジュール属性を差し替えているため。
+_run_blocking = run_blocking
 
 
 class _BaseCollector:

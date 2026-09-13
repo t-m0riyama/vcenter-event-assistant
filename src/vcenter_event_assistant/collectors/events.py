@@ -7,16 +7,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pyVmomi import vim
+from vcenter_event_assistant_plugin_api.timeutils import ensure_aware
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_aware(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+# plugin-api 側の実装を使う。naive に UTC を付与するだけで、aware な値は変換しない
+# （`to_utc` と取り違えると既存イベントの時刻がずれる）。名前を残しているのは、
+# テストがこのモジュール属性をドット文字列で差し替えているため。
+_ensure_aware = ensure_aware
 
 
 def fetch_events_blocking(
