@@ -135,6 +135,7 @@ build_collector = TemperatureCollector   # クラス自体が引数なしファ�
 | `timeutils` | `now_utc()` / `ensure_aware()` / `to_utc()`。naive な datetime はバッチ全体の拒否につながる |
 | `blocking` | `run_blocking()`。`asyncio.to_thread` と違い、タイムアウトでキャンセルされてもスレッドと vCenter セッションを取り残さない |
 | `logs` | `get_plugin_logger()`。`VEA_COLLECTOR_WORKER_LOG_LEVEL` が効くロガー名を返す |
+| `vmware` | pyVmomi でのインベントリ走査。`container_view()` が `Destroy()` を保証する |
 
 `MetricDefinition.at()` を使うと、メトリクスキーと `entity_type` を宣言から補い、
 `sampled_at` に timezone-aware な現在時刻を入れた `MetricSampleInput` を作れます。
@@ -150,6 +151,34 @@ TEMPERATURE = MetricDefinition(
 
 sample = TEMPERATURE.at(entity_moid="host-1", entity_name="esxi-01", value=31.5)
 ```
+
+### pyVmomi ヘルパ
+
+`vmware` サブモジュールは、インベントリ走査の定型を引き受けます。型を
+**名前の文字列**で受け取るので、プラグイン側で `from pyVmomi import vim` を書く必要は
+ありません。
+
+```python
+from vcenter_event_assistant_plugin_api import vmware
+
+hosts = vmware.iter_hosts(si)                 # 切断中のホストは既定で除かれる
+for host in hosts:
+    entity_moid = vmware.moid(host)           # private な `_moId` を直接触らない
+
+with vmware.container_view(si, ["VirtualMachine"]) as vms:
+    ...                                       # 抜けるときに必ず Destroy() される
+```
+
+`CreateContainerView` は `Destroy()` を呼ばないと vCenter 側にビューが残り続けます。
+`container_view()` は例外が出た場合も含めて必ず破棄します。`iter_hosts()` /
+`iter_datastores()` も内部でこれを使います。
+
+**pyVmomi の入手について。** このサブモジュールは import された時点では pyVmomi を
+読み込まず、関数の中で遅延 import します。コレクタワーカーの `sys.path` にはアプリ本体の
+依存として pyVmomi が既に見えているため、プラグイン側は
+`vcenter-event-assistant-plugin-api` を extra なしで宣言すれば十分で、オフラインの
+`--no-deps` 導入でも動きます。アプリの外でプラグイン単体をテストする場合だけ、
+`vcenter-event-assistant-plugin-api[vmware]` を入れてください。
 
 ## バッチが拒否される条件
 

@@ -2,56 +2,23 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Any
 
 from pyVmomi import vim
+from vcenter_event_assistant_plugin_api.limits import (
+    composite_entity_moid,
+    composite_entity_name,
+)
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_REALTIME_INTERVAL_SEC = 20
 
-# `MetricSample.entity_moid` の上限（複合 ID 用にホスト MOID + サフィックスを収める）
-_MAX_ENTITY_MOID_LEN = 256
-_MAX_ENTITY_NAME_LEN = 1024
-
-
-def _sanitize_perf_instance_for_moid(instance: str, *, host_moid_len: int) -> str:
-    """
-    インスタンス名を `entity_moid` のサフィックスとして安全な短い文字列にする。
-    長い NAA 等はハッシュで短縮する。
-    """
-    raw = (instance or "").strip()
-    safe = re.sub(r"[^a-zA-Z0-9]+", "_", raw).strip("_")
-    if not safe:
-        safe = "instance"
-    # "host_moid:" + suffix が _MAX_ENTITY_MOID_LEN 以下
-    max_suffix = max(8, _MAX_ENTITY_MOID_LEN - host_moid_len - 1)
-    if len(safe) > max_suffix:
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-        prefix_len = max(0, max_suffix - 1 - len(digest))
-        safe = f"{safe[:prefix_len]}_{digest}" if prefix_len else digest
-        if len(safe) > max_suffix:
-            safe = safe[:max_suffix]
-    return safe
-
-
-def _composite_entity_moid(host_moid: str, instance: str) -> str:
-    suffix = _sanitize_perf_instance_for_moid(instance, host_moid_len=len(host_moid))
-    out = f"{host_moid}:{suffix}"
-    if len(out) <= _MAX_ENTITY_MOID_LEN:
-        return out
-    return out[:_MAX_ENTITY_MOID_LEN]
-
-
-def _composite_entity_name(host_name: str, instance: str) -> str:
-    s = f"{host_name} / {instance}"
-    if len(s) <= _MAX_ENTITY_NAME_LEN:
-        return s
-    return s[: _MAX_ENTITY_NAME_LEN - 1] + "…"
+# `entity_moid` / `entity_name` の組み立ては plugin-api 側の実装を使う。列長の上限は
+# `limits.MAX_ENTITY_MOID` / `limits.MAX_ENTITY_NAME` として公開されている。
+# 生成規則はメトリクスの重複排除キーの一部なので、変更すると時系列が分断される。
 
 # (metric_key, perf group, counter name, rollup)
 _TARGET_SPECS: tuple[tuple[str, str, str, int], ...] = (
@@ -192,8 +159,8 @@ def parse_perf_query_result_rows(
             emoid = entity_moid
             ename = entity_name
         else:
-            emoid = _composite_entity_moid(entity_moid, inst)
-            ename = _composite_entity_name(entity_name, inst)
+            emoid = composite_entity_moid(entity_moid, inst)
+            ename = composite_entity_name(entity_name, inst)
         rows.append(
             {
                 "sampled_at": sampled_at,

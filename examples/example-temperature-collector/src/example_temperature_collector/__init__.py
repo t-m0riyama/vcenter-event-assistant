@@ -8,6 +8,7 @@ ESXi ホストごとに合成の温度メトリクスを 1 点だけ返す最小
 
 - クラス属性からの ``CollectorManifest`` の生成（``data_kinds`` の導出を含む）
 - vCenter 接続の open / close
+- ContainerView の走査と ``Destroy()``（``vmware`` ヘルパ経由）
 - ブロッキング処理のスレッド退避（キャンセルされてもセッションを取り残さない）
 - ``MOCK_MODE=true`` のときの合成データ
 - ``CollectionBatch`` の組み立て
@@ -30,6 +31,7 @@ from vcenter_event_assistant_plugin_api import (
     MetricSampleInput,
     config,
     get_plugin_logger,
+    vmware,
 )
 
 PLUGIN_ID = "example.host.temperature"
@@ -51,21 +53,6 @@ TEMPERATURE = MetricDefinition(
 FAULT_ENV_VAR = "EXAMPLE_COLLECTOR_FAULT"
 
 logger = get_plugin_logger(PLUGIN_ID)
-
-
-def _read_hosts_blocking(si: Any) -> list[tuple[str, str]]:
-    """接続済みセッションから HostSystem の (moid, name) を読む。
-
-    ``view.Destroy()` を必ず呼ぶこと。基底は接続を閉じるが、ビューまでは面倒を見ない。
-    """
-    content = si.RetrieveContent()
-    view = content.viewManager.CreateContainerView(
-        content.rootFolder, ["HostSystem"], True
-    )
-    try:
-        return [(host._moId, host.name) for host in view.view]
-    finally:
-        view.Destroy()
 
 
 def _read_temperature(entity_moid: str, sensor: str) -> float:
@@ -111,13 +98,17 @@ class TemperatureCollector(MetricCollector):
         sensor = config.get_str(context.config, "sensor", "system-board")
         assert sensor is not None
 
-        hosts = _read_hosts_blocking(si)
+        # `vmware.iter_hosts` が ContainerView の生成と `Destroy()` を引き受け、
+        # 切断中のホストも除く（切断中は統計を返さないか、属性アクセスで失敗する）。
+        # 型は文字列で指定されるので、プラグインは pyVmomi を import しなくてよい。
+        hosts = vmware.iter_hosts(si)
         logger.info("sampling %d host(s) sensor=%s", len(hosts), sensor)
-        for moid, name in hosts:
+        for host in hosts:
+            entity_moid = vmware.moid(host)
             yield TEMPERATURE.at(
-                entity_moid=moid,
-                entity_name=name,
-                value=_read_temperature(moid, sensor),
+                entity_moid=entity_moid,
+                entity_name=host.name,
+                value=_read_temperature(entity_moid, sensor),
             )
 
     def sample_mock(

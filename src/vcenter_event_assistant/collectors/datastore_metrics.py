@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from pyVmomi import vim
+from vcenter_event_assistant_plugin_api import vmware
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +63,7 @@ def datastore_space_rows_from_datastores(
 def sample_datastore_metrics_blocking(si: Any) -> list[dict[str, Any]]:
     """Return flattened metric sample dicts for all datastores in the inventory."""
     now = datetime.now(timezone.utc)
-    content = si.RetrieveContent()
-    view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Datastore], True)
-    try:
-        return datastore_space_rows_from_datastores(view.view, sampled_at=now)
-    finally:
-        view.Destroy()
+    # accessible_only は使わない。`datastore_space_rows_from_datastores` が capacity の
+    # 欠落・ゼロを個別にスキップしており、ここで絞ると除外条件が二重になる。
+    with vmware.container_view(si, ["Datastore"]) as datastores:
+        return datastore_space_rows_from_datastores(datastores, sampled_at=now)

@@ -40,7 +40,16 @@
   アプリは拒否しないが放置するとデータが静かに失われるもの（列長超過、`vmware_key` の
   32 bit 範囲外、バッチ内の重複排除キー衝突、空の `entity_moid`）。
 - `limits`: DB の列長、`vmware_key` の範囲、`truncate()`、`stable_int63()` /
-  `stable_int31()`。
+  `stable_int31()`、`composite_entity_moid()` / `composite_entity_name()`
+  （1 ホストが NIC やディスクごとに複数系列を持つ場合の複合 ID）。
+- `vmware`: pyVmomi でのインベントリ走査。`container_view()` は例外時も含めて
+  必ず `Destroy()` する。`iter_hosts()` は切断中のホストを既定で除き、
+  `iter_datastores()` はアクセス不能なデータストアを除く。`moid()` が private な
+  `_moId` への参照を 1 箇所に閉じる。型は **名前の文字列**で指定するので、
+  プラグインは `from pyVmomi import vim` を書かなくてよい。
+  **pyVmomi はモジュールの import 時には読み込まれない**（関数内で遅延 import する）
+  ため、コアの依存ゼロは保たれている。アプリの外で使う場合のみ extra
+  `vcenter-event-assistant-plugin-api[vmware]` が要る。
 - `timeutils`: `now_utc()` / `is_aware()` / `ensure_aware()` / `to_utc()`。
   `ensure_aware` は naive に付与するだけ、`to_utc` は aware も変換する。
 - `blocking.run_blocking()`: キャンセルされてもスレッドと vCenter セッションを
