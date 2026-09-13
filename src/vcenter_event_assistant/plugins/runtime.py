@@ -65,13 +65,15 @@ async def drain_collector_runs(plugin_ids: set[str]) -> None:
 
 #: 例外メッセージを ``error_message`` として表に出してよい型。
 #:
-#: ``plugins.worker._SAFE_DETAIL_TYPES`` と同じ基準（メッセージが import 名・
-#: 設定キー名・バッチ構造だけから生成され、認証情報やサーバ応答を含みえない）で選ぶ。
-#: インプロセスで動く組み込みコレクタ用であり、外部プラグインは
-#: ``CollectorWorkerError.detail`` の経路を通る。
+#: ``plugins.worker._SAFE_DETAIL_TYPES`` と同じ基準（メッセージが import 機構か
+#: コード自身からのみ生成され、認証情報・サーバ応答・扱っているデータを含みえない）で選ぶ。
+#: ``KeyError`` のようにメッセージがデータそのものになる型は含めない（``LookupError`` を
+#: そのまま載せると ``KeyError`` まで通ってしまう）。
+#:
+#: これはインプロセスで動く組み込みコレクタ用であり、外部プラグインは
+#: ``CollectorWorkerError.detail`` の経路を通る（ワーカー側で同じ判定を済ませている）。
 _SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
     ImportError,
-    LookupError,
     NotImplementedError,
 )
 

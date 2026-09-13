@@ -100,6 +100,37 @@ def build_collector():
     raise AssertionError("unreachable")
 """
 
+# KeyError のメッセージは「見つからなかったキー」そのもの。allow-list の境界確認用。
+_KEYERROR_PLUGIN_BODY = '''
+from vcenter_event_assistant_plugin_api import CollectorManifest, MetricDefinition
+
+
+class Collector:
+    manifest = CollectorManifest(
+        "example.keyerror",
+        "Example KeyError",
+        "0.1.0",
+        data_kinds=frozenset({"metric"}),
+        metric_definitions=(
+            MetricDefinition("example.keyerror.value", "Value", "n", "HostSystem"),
+        ),
+    )
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+    async def collect(self, context):
+        # 秘密の値でルックアップして失敗する、という筋の悪いが起こりうるコード。
+        {}["do-not-leak-secret-key"]
+
+
+def build_collector():
+    return Collector()
+'''
+
 
 def _install(root, module_body: str, *, entry_point: str, distribution: str):
     """``<root>/<distribution>/0.1.0/`` に import 可能な配布物を書き出す。"""
@@ -301,6 +332,60 @@ def test_plugin_logs_reach_stderr_and_stdout_stays_protocol_only(tmp_path) -> No
     assert "do-not-leak-secret-value" not in completed.stderr
 
 
+def test_a_plugin_keyerror_does_not_leak_the_key_through_the_protocol(tmp_path) -> None:
+    """``KeyError`` のメッセージは見つからなかったキー自身なので通してはならない。
+
+    ``LookupError`` を allow-list に載せると ``KeyError`` まで通る。秘密の値で辞書を
+    引いているプラグインでは、その値が管理画面に出てしまう。
+    """
+    root = tmp_path / "plugins"
+    root.mkdir()
+    _install(
+        root,
+        _KEYERROR_PLUGIN_BODY,
+        entry_point="example.keyerror",
+        distribution="example-keyerror",
+    )
+    target = str((root / "example-keyerror" / "0.1.0").resolve())
+
+    completed = _run_worker(
+        target, [_collect_request("example.keyerror", request_id=1)]
+    )
+
+    response = json.loads(
+        [line for line in completed.stdout.splitlines() if line.strip()][-1]
+    )
+    assert response["ok"] is False
+    assert response["error"] == "KeyError"
+    # 型名だけ。detail は付かない。
+    assert "detail" not in response
+    assert "do-not-leak-secret-key" not in completed.stdout
+
+
+def test_unknown_entry_point_still_names_itself(tmp_path) -> None:
+    """専用型に絞っても、ワーカー自身のメッセージは通り続ける。"""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    _install(
+        root,
+        _LOGGING_PLUGIN_BODY,
+        entry_point="example.logging",
+        distribution="example-logging",
+    )
+    target = str((root / "example-logging" / "0.1.0").resolve())
+
+    completed = _run_worker(
+        target, [{"id": 1, "op": "start", "entry_point": "example.absent"}]
+    )
+
+    response = json.loads(
+        [line for line in completed.stdout.splitlines() if line.strip()][-1]
+    )
+    assert response["ok"] is False
+    assert response["error"] == "EntryPointNotFound"
+    assert response["detail"] == "entry point not found: example.absent"
+
+
 def test_debug_logs_are_dropped_unless_the_worker_level_allows_them(tmp_path) -> None:
     root = tmp_path / "plugins"
     root.mkdir()
@@ -391,6 +476,13 @@ def test_safe_error_keeps_the_plugin_exception_type_without_detail() -> None:
 def test_safe_error_hides_messages_of_types_outside_the_allow_list() -> None:
     exc = RuntimeError("do-not-leak-secret-value")
     assert _safe_error(exc) == "RuntimeError: collector execution failed"
+    assert "do-not-leak" not in _safe_error(exc)
+
+
+def test_safe_error_hides_keyerror_messages() -> None:
+    """``KeyError`` のメッセージはキー自身なので、``LookupError`` ごと通してはならない。"""
+    exc = KeyError("do-not-leak-secret-key")
+    assert _safe_error(exc) == "KeyError: collector execution failed"
     assert "do-not-leak" not in _safe_error(exc)
 
 

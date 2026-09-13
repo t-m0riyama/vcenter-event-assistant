@@ -162,9 +162,13 @@ vCenter への接続はワーカー側でアプリケーションが開き、プ
 **例外の型名と定型句だけ**です。例外文言は認証情報やサーバの応答本文を含みうるため、
 そのまま外へ出しません。
 
-例外的に、メッセージが import 名・entry point 名・設定キー名からしか生成されない型
-（`ImportError` 系、`LookupError`、`NotImplementedError`）に限り、メッセージも表示します。
-`vim.fault.*`、`ssl.SSLError`、汎用の `RuntimeError` は対象外です。
+例外的に、メッセージがワーカー自身か import 機構からしか生成されない型に限り、メッセージも
+表示します。具体的には `ImportError` 系（メッセージはモジュール名）、entry point が見つからない
+場合、`NotImplementedError` です。
+
+`vim.fault.*`、`ssl.SSLError`、汎用の `RuntimeError` は対象外です。`KeyError` のように
+**メッセージがデータそのものになる型**も対象外です（`KeyError` の文言は見つからなかった
+キー自身なので、プラグインが秘密の値で辞書を引いていると、その値が表に出てしまいます）。
 
 **完全な情報は常にワーカーの stderr にあります。**
 

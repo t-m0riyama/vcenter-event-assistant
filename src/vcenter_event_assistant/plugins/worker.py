@@ -30,15 +30,29 @@ ENTRY_POINT_GROUP = "vcenter_event_assistant.collectors"
 
 logger = logging.getLogger(__name__)
 
+class EntryPointNotFound(LookupError):
+    """要求された entry point がこのワーカーから見えない。
+
+    ``LookupError`` そのものを allow-list に載せると ``KeyError`` まで通ってしまう
+    （``KeyError`` のメッセージは見つからなかったキー自身なので、プラグインが秘密の値で
+    辞書を引いていると、その値が親へ渡ってしまう）。通してよいのはワーカー自身が
+    組み立てたこのメッセージだけなので、専用の型にしている。
+    """
+
+
 #: 例外メッセージを親プロセスへ通してよい型。
 #:
-#: 通す条件は「メッセージが import 名・entry point 名・設定キー名・バッチ構造だけから
-#: 生成され、認証情報やサーバ応答を含みえない」こと。``vim.fault.*``・``ssl.SSLError``・
-#: 汎用の ``RuntimeError`` はホスト名や応答本文、場合によっては資格情報を含みうるため
-#: 意図的に除外する（従来どおり型名のみが親へ渡る）。
+#: 通す条件は「メッセージがワーカー自身か import 機構だけから生成され、
+#: 認証情報やサーバ応答・プラグインが扱うデータを含みえない」こと。
+#: ``ImportError`` はモジュール名、``EntryPointNotFound`` は entry point 名、
+#: ``NotImplementedError`` は作者が書いた文言である。
+#:
+#: ``vim.fault.*``・``ssl.SSLError``・汎用の ``RuntimeError``、および ``KeyError`` のように
+#: **メッセージにデータが混ざる型**は意図的に除外する（従来どおり型名のみが親へ渡る）。
+#: 広い stdlib 基底クラスを信頼しないこと。
 _SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
     ImportError,
-    LookupError,
+    EntryPointNotFound,
     NotImplementedError,
 )
 
@@ -103,7 +117,7 @@ class _PluginHost:
                 plugin = ep.load()()
                 self._plugins[entry_point_name] = plugin
                 return plugin
-        raise LookupError(f"entry point not found: {entry_point_name}")
+        raise EntryPointNotFound(f"entry point not found: {entry_point_name}")
 
     def loaded(self) -> list[Any]:
         return list(self._plugins.values())

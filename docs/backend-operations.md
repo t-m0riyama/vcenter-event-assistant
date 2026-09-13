@@ -375,8 +375,9 @@ kill され、アプリ本体は停止しません。
 
 プラグイン画面および `GET /api/plugins/collectors` の `error_message` は、既定では
 **例外の型名と定型句だけ**です（例外文言は認証情報やサーバの応答本文を含みうるため）。
-`ImportError` 系・`LookupError`・`NotImplementedError` のように、メッセージが
-import 名や entry point 名からしか生成されない型に限り、メッセージも表示されます。
+`ImportError` 系・entry point 不明・`NotImplementedError` のように、メッセージが import 機構か
+ワーカー自身からしか生成されない型に限り、メッセージも表示されます。`KeyError` のように
+メッセージがデータそのものになる型は対象外です。
 
 **完全な情報はコレクタワーカープロセスの stderr にあります。** ワーカーの stderr は
 親プロセスへ継承されるので、アプリのログをそのまま見れば含まれています。行頭が
