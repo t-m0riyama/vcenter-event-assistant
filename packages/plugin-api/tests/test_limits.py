@@ -49,3 +49,46 @@ def test_metric_and_event_entity_type_limits_differ() -> None:
     """取り違えやすいので明示的に固定する。"""
     assert limits.MAX_METRIC_ENTITY_TYPE == 128
     assert limits.MAX_EVENT_ENTITY_TYPE == 256
+
+
+class TestCompositeEntityIdentifiers:
+    """`composite_entity_moid` / `composite_entity_name` の性質。
+
+    `entity_moid` はメトリクスの重複排除キー
+    `(vcenter_id, sampled_at, entity_moid, metric_key)` の一部なので、生成規則が
+    変わると既存の時系列が分断される。ここは仕様を固定するためのテストである。
+    """
+
+    def test_composes_host_moid_and_instance(self) -> None:
+        assert limits.composite_entity_moid("host-1", "vmnic0") == "host-1:vmnic0"
+
+    def test_replaces_unsafe_characters(self) -> None:
+        assert limits.composite_entity_moid("host-1", "naa.60:0a/0b") == "host-1:naa_60_0a_0b"
+
+    def test_uses_a_placeholder_for_an_empty_instance(self) -> None:
+        assert limits.composite_entity_moid("host-1", "") == "host-1:instance"
+        assert limits.composite_entity_moid("host-1", "   ") == "host-1:instance"
+        assert limits.composite_entity_moid("host-1", "///") == "host-1:instance"
+
+    def test_stays_within_the_column_limit(self) -> None:
+        out = limits.composite_entity_moid("host-1", "x" * 1000)
+        assert len(out) <= limits.MAX_ENTITY_MOID
+        assert out.startswith("host-1:")
+
+    def test_stays_within_the_limit_even_for_a_long_host_moid(self) -> None:
+        out = limits.composite_entity_moid("h" * 400, "vmnic0")
+        assert len(out) <= limits.MAX_ENTITY_MOID
+
+    def test_is_deterministic_and_distinguishes_long_instances(self) -> None:
+        first = limits.composite_entity_moid("host-1", "naa." + "a" * 500)
+        second = limits.composite_entity_moid("host-1", "naa." + "b" * 500)
+        assert first == limits.composite_entity_moid("host-1", "naa." + "a" * 500)
+        assert first != second
+
+    def test_name_joins_with_a_separator(self) -> None:
+        assert limits.composite_entity_name("esxi-a", "vmnic0") == "esxi-a / vmnic0"
+
+    def test_name_is_truncated_to_the_column_limit(self) -> None:
+        out = limits.composite_entity_name("e" * 2000, "vmnic0")
+        assert len(out) == limits.MAX_ENTITY_NAME
+        assert out.endswith("…")

@@ -202,6 +202,10 @@ from vcenter_event_assistant_plugin_api.validation import (  # noqa: E402
     validate_manifest as validate_manifest,
 )
 
+# pyVmomi ヘルパ。import してもここでは pyVmomi を読み込まない（関数内で遅延 import する）ので、
+# コアの依存ゼロは保たれる。
+from vcenter_event_assistant_plugin_api import vmware as vmware  # noqa: E402
+
 __all__ = [
     "PLUGIN_API_VERSION",
     "PLUGIN_LOGGER_NAMESPACE",
@@ -239,4 +243,5 @@ __all__ = [
     "validate_batch",
     "validate_manifest",
     "validation",
+    "vmware",
 ]

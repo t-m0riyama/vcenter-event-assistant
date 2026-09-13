@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from pyVmomi import vim
+from vcenter_event_assistant_plugin_api import vmware
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
 from vcenter_event_assistant.collectors.datastore_metrics import sample_datastore_metrics_blocking
@@ -15,20 +15,19 @@ from vcenter_event_assistant.collectors.host_perf_counters import collect_host_p
 logger = logging.getLogger(__name__)
 
 
+# plugin-api 側のヘルパへ委譲する。ラッパ関数の形を保っているのは、
+# `tests/test_perf_sampling.py` がこのモジュール属性をドット文字列で差し替えるため。
+#
+# ここで `connected_only` を使ってはならない。切断ホストの除外は呼び出し側の
+# `_host_metrics` が行っており、両方でやると二重適用になる。
+
+
 def _iter_hosts(si) -> list[Any]:
-    content = si.RetrieveContent()
-    view = content.viewManager.CreateContainerView(content.rootFolder, [vim.HostSystem], True)
-    try:
-        return list(view.view)
-    finally:
-        view.Destroy()
+    return vmware.iter_hosts(si, connected_only=False)
 
 
 def _host_is_connected(host) -> bool:
-    runtime = getattr(host, "runtime", None)
-    if runtime is None:
-        return False
-    return runtime.connectionState == vim.HostSystem.ConnectionState.connected
+    return vmware.host_is_connected(host)
 
 
 def _host_metrics(host) -> list[dict[str, Any]]:
