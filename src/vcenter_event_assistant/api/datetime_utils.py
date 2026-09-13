@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from vcenter_event_assistant_plugin_api.timeutils import to_utc as to_utc
 
+# 実装は plugin-api 側にある（`timeutils.to_utc`）。プラグイン作者もアプリと同じ
+# 正規化を使えるようにするための一元化で、ここは既存の import 経路を保つための再公開。
+#
+# 注意: naive を UTC 扱いし、aware は UTC へ**変換する**。naive に付与するだけの
+# `ensure_aware` とは別物である。
 
-def to_utc(dt: datetime) -> datetime:
-    """
-    Normalize query datetimes for comparisons against ``DateTime(timezone=True)`` columns.
-
-    Naive values are treated as UTC (matching :func:`event_rate_series`). Offset-aware values
-    are converted to UTC.
-    """
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+__all__ = ["to_utc"]

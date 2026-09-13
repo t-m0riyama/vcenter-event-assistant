@@ -55,8 +55,8 @@ dev = [
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src/vcenter_event_assistant"]
-mypy_path = ["src"]
+files = ["src/vcenter_event_assistant", "packages/plugin-api/src"]
+mypy_path = ["src", "packages/plugin-api/src"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 pretty = true
@@ -64,6 +64,14 @@ show_error_codes = true
 
 # 初回導入ベースライン（architecture-improvement-plan 1-1）。
 # 既存コードの一括修正は行わず、モジュール単位で段階的に disable を解除する。
+# 公開契約は最初から厳格に見る。下の `vcenter_event_assistant.*` 向けベースラインは
+# モジュール名が違うのでここには適用されない。
+[[tool.mypy.overrides]]
+module = ["vcenter_event_assistant_plugin_api.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
 [[tool.mypy.overrides]]
 module = ["vcenter_event_assistant.*"]
 disable_error_code = [

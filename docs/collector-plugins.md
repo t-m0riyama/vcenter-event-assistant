@@ -69,6 +69,70 @@ temperature = "example_temperature:build_collector"
 データベース書き込み、イベントスコアリング、重複処理、カーソルのコミットはアプリケーションが
 担います。
 
+プラグイン API には、どのコレクタでも必要になるヘルパが入っています。
+
+| モジュール | 用途 |
+|---|---|
+| `validation` | アプリと**同一**の検証規則。`check_batch()` を自分のテストで呼べる（下記参照） |
+| `limits` | DB の列長、`vmware_key` の範囲、安定キー生成 |
+| `timeutils` | `now_utc()` / `ensure_aware()` / `to_utc()`。naive な datetime はバッチ全体の拒否につながる |
+| `blocking` | `run_blocking()`。`asyncio.to_thread` と違い、タイムアウトでキャンセルされてもスレッドと vCenter セッションを取り残さない |
+| `logs` | `get_plugin_logger()`。`VEA_COLLECTOR_WORKER_LOG_LEVEL` が効くロガー名を返す |
+
+`MetricDefinition.at()` を使うと、メトリクスキーと `entity_type` を宣言から補い、
+`sampled_at` に timezone-aware な現在時刻を入れた `MetricSampleInput` を作れます。
+宣言とサンプルでキーを二重に書く必要がなくなります。
+
+```python
+TEMPERATURE = MetricDefinition(
+    key="example.host.temperature_c",
+    display_name="Host temperature",
+    unit="C",
+    entity_type="HostSystem",
+)
+
+sample = TEMPERATURE.at(entity_moid="host-1", entity_name="esxi-01", value=31.5)
+```
+
+## バッチが拒否される条件
+
+アプリは各バッチを検証し、違反があれば**丸ごと**拒否します。部分保存もカーソル前進も
+起こらないため、1 件の不正で収集全体が失敗します。
+
+| 条件 | `error_message` |
+|---|---|
+| `data_kinds` に `event` が無いのにイベントを返した | `collector emitted undeclared event data` |
+| `data_kinds` に `metric` が無いのにメトリクスを返した | `collector emitted undeclared metric data` |
+| manifest で宣言していないメトリクスキー | `undeclared metric key: <キー>` |
+| `NaN` / `inf` | `non-finite metric value: <キー>` |
+| `sampled_at` が timezone-naive | `metric sampled_at must be timezone-aware` |
+| `occurred_at` が timezone-naive | `event occurred_at must be timezone-aware` |
+
+**同じ判定を手元で実行できます。** 規則は `vcenter-event-assistant-plugin-api` の
+`validation` モジュールにあり、アプリはそれを呼んでいるだけです。
+
+```python
+from vcenter_event_assistant_plugin_api.validation import check_batch
+
+for issue in check_batch(collector.manifest, batch):
+    print(issue.severity, issue.code, issue.message, issue.index)
+```
+
+`check_batch` は、アプリが拒否しない**警告**も返します。いずれも放置すると
+**エラーもログもなくデータが失われる**ものです。
+
+| 警告 | 何が起きるか |
+|---|---|
+| `field_too_long` | DB の列長を超過。収集時に DB エラーになる（列長は `limits` モジュールで公開） |
+| `duplicate_dedup_key` | 重複排除キーがバッチ内で衝突。`ON CONFLICT DO NOTHING` により 1 件だけ残り、残りは黙って捨てられる |
+| `vmware_key_out_of_int32_range` | `vmware_key` は `Integer` 列。PostgreSQL では失敗する（SQLite では通るので気づきにくい） |
+| `empty_entity_moid` | `entity_moid` はメトリクスの重複排除キーの一部 |
+| `unused_metric_definitions` | メトリクスを宣言しているが `data_kinds` に `metric` が無い |
+
+`vmware_key` は**情報源が持つ自然キー**（vCenter の `Event.key` など）を使ってください。
+ハッシュを 31 bit に押し込むと、約 4.6 万件で 50% の確率で誕生日衝突が起き、衝突した
+イベントが静かに消えます。
+
 ## 設定の優先順位
 
 実効値は次の順（上が最優先）で解決されます。
@@ -164,7 +228,9 @@ vCenter への接続はワーカー側でアプリケーションが開き、プ
 
 例外的に、メッセージがワーカー自身か import 機構からしか生成されない型に限り、メッセージも
 表示します。具体的には `ImportError` 系（メッセージはモジュール名）、entry point が見つからない
-場合、`NotImplementedError` です。
+場合、`NotImplementedError`、そしてバッチ・manifest の検証エラー（`BatchValidationError` /
+`ManifestValidationError`。文言は静的なメッセージと、プラグインが宣言したメトリクスキーだけから
+作られます）です。
 
 `vim.fault.*`、`ssl.SSLError`、汎用の `RuntimeError` は対象外です。`KeyError` のように
 **メッセージがデータそのものになる型**も対象外です（`KeyError` の文言は見つからなかった
@@ -179,5 +245,5 @@ vCenter への接続はワーカー側でアプリケーションが開き、プ
 | `ModuleNotFoundError: No module named '...'` | プラグインの依存が入っていない | アップロード導入は `--no-index --no-deps` なので依存は解決されません。インデックス経由の導入を許可するか、依存を同梱してください |
 | `load failed: ...` | entry point の読み込みに失敗 | ワーカーの stderr にトレースバックが出ています |
 | `TimeoutError: collector execution failed` | `timeout_seconds` を超過してワーカーを kill した | 実行間隔とタイムアウトを見直してください。ワーカーは次回実行で作り直されます |
-| `ValueError: collector execution failed` | バッチ検証で拒否された（naive datetime、未宣言のメトリクスキー、非有限値、宣言していない `data_kinds`） | ワーカーの stderr にどの検証に落ちたかが出ています |
+| `BatchValidationError: ...` | バッチ検証で拒否された。**どの規則に違反したかがそのまま出ます**（例: `metric sampled_at must be timezone-aware`、`undeclared metric key: example.host.humidity_pct`） | 下記「バッチが拒否される条件」を参照。拒否はバッチ丸ごとに及び、部分保存もカーソル前進も起こりません |
 | `configured plugin is not installed` | TOML に書いたプラグイン ID に対応する配布物がない | ID の綴りとインストール済み一覧を確認してください |

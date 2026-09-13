@@ -19,6 +19,39 @@ jobs:
           uv run ruff check src packages/plugin-api/src tests examples
           uv run mypy
           uv run pytest --cov=vcenter_event_assistant --cov-report=xml --cov-report=html
+
+      # plugin-api は第三者が単体で pip install する公開パッケージである。
+      # 「依存ゼロ」「アプリなしで import できる」は口約束にせず毎 PR で確かめる。
+      - name: Build and verify the plugin API package
+        run: |
+          set -euo pipefail
+          rm -rf dist/plugin-api-ci
+          uv build --package vcenter-event-assistant-plugin-api --out-dir dist/plugin-api-ci
+          wheel="$(ls dist/plugin-api-ci/*.whl)"
+          echo "built: ${wheel}"
+
+          # 型情報を配布していること。
+          unzip -l "${wheel}" | grep -q 'vcenter_event_assistant_plugin_api/py.typed'
+
+          # アプリのプロジェクトから切り離した環境で import できること
+          # （= 必須依存が本当に無い）。同時に pyVmomi を引かないこと。
+          uv run --isolated --no-project --with "${wheel}" python - <<'EOF'
+          import sys
+          from importlib import metadata
+
+          import vcenter_event_assistant_plugin_api as api
+
+          required = [
+              r
+              for r in (metadata.requires("vcenter-event-assistant-plugin-api") or [])
+              if "extra ==" not in r
+          ]
+          assert required == [], f"unexpected runtime dependencies: {required}"
+          assert api.PLUGIN_API_VERSION == 1, api.PLUGIN_API_VERSION
+          leaked = sorted(m for m in sys.modules if m.split(".")[0] in {"pyVmomi", "pyVim"})
+          assert leaked == [], f"pyVmomi must stay lazily imported, got {leaked}"
+          print("plugin-api", api.__version__, "verified standalone")
+          EOF
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:

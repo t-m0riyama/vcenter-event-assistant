@@ -1,8 +1,39 @@
 [project]
 name = "vcenter-event-assistant-plugin-api"
-version = "1.0.0"
+version = "1.1.0"
 description = "Stable collector contracts for vCenter Event Assistant plugins"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
+authors = [
+    { name = "Takeyuki Moriyama", email = "3154232+t-m0riyama@users.noreply.github.com" }
+]
+keywords = ["vmware", "vcenter", "collector", "plugin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
+
+# 依存は意図的に空である。`import vcenter_event_assistant_plugin_api` が第三者
+# パッケージを引かないことを CI で機械的に検証している。
+dependencies = []
+
+[project.optional-dependencies]
+# `vmware` サブモジュールをアプリの外（作者のローカルテスト等）で使う場合のみ必要。
+# プラグイン自身は extra なしで宣言すればよい。実行時はワーカーの sys.path 上にある
+# アプリ本体の pyVmomi が使われる。
+vmware = ["pyvmomi>=9.0.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/t-m0riyama/vcenter-event-assistant"
+Documentation = "https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugins.md"
+Changelog = "https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/packages/plugin-api/CHANGELOG.md"
+Issues = "https://github.com/t-m0riyama/vcenter-event-assistant/issues"
 
 [build-system]
 requires = ["uv_build>=0.10.4,<0.11.0"]

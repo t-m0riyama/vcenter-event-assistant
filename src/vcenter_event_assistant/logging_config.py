@@ -7,6 +7,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from vcenter_event_assistant_plugin_api.logs import (
+    PLUGIN_LOGGER_NAMESPACE as _PLUGIN_LOGGER_NAMESPACE,
+)
+
 from vcenter_event_assistant.settings import Settings
 
 _LOG_FORMAT_CONSOLE = "%(levelname)s [%(name)s] %(message)s"
@@ -117,8 +121,11 @@ def configure_logging(settings: Settings) -> None:
 
 
 #: 外部プラグインが使うロガーの名前空間。
-#: ``plugins.worker`` がこの配下だけレベルを切り替えられるよう固定する。
-PLUGIN_LOGGER_NAMESPACE = "vcenter_event_assistant.plugins.external"
+#:
+#: 定義は plugin-api 側（``logs.PLUGIN_LOGGER_NAMESPACE``）にある。プラグインは
+#: ``get_plugin_logger()`` でこの配下のロガーを取り、ワーカーはこの配下だけレベルを
+#: 切り替える。両者が同じ定数を見ていなければ機能しないので、再公開で一元化する。
+PLUGIN_LOGGER_NAMESPACE = _PLUGIN_LOGGER_NAMESPACE
 
 _LOG_FORMAT_WORKER = "%(levelname)s [collector-worker %(process)d] [%(name)s] %(message)s"
 

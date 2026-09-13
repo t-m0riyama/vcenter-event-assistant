@@ -1883,8 +1883,17 @@ dev = [
 
 [[package]]
 name = "vcenter-event-assistant-plugin-api"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "packages/plugin-api" }
+
+[package.optional-dependencies]
+vmware = [
+    { name = "pyvmomi" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyvmomi", marker = "extra == 'vmware'", specifier = ">=9.0.0.0" }]
+provides-extras = ["vmware"]
 
 [[package]]
 name = "watchfiles"
