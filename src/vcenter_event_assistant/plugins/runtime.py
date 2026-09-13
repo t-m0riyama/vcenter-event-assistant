@@ -27,7 +27,10 @@ from vcenter_event_assistant.db.models import (
 )
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.registry import CollectorRegistration
-from vcenter_event_assistant.plugins.remote import RemoteCollectorPlugin
+from vcenter_event_assistant.plugins.remote import (
+    CollectorWorkerError,
+    RemoteCollectorPlugin,
+)
 from vcenter_event_assistant.plugins.wire import ConnectionParams
 from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
@@ -60,8 +63,39 @@ async def drain_collector_runs(plugin_ids: set[str]) -> None:
         lock.release()
 
 
+#: 例外メッセージを ``error_message`` として表に出してよい型。
+#:
+#: ``plugins.worker._SAFE_DETAIL_TYPES`` と同じ基準（メッセージが import 機構か
+#: コード自身からのみ生成され、認証情報・サーバ応答・扱っているデータを含みえない）で選ぶ。
+#: ``KeyError`` のようにメッセージがデータそのものになる型は含めない（``LookupError`` を
+#: そのまま載せると ``KeyError`` まで通ってしまう）。
+#:
+#: これはインプロセスで動く組み込みコレクタ用であり、外部プラグインは
+#: ``CollectorWorkerError.detail`` の経路を通る（ワーカー側で同じ判定を済ませている）。
+_SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
+    ImportError,
+    NotImplementedError,
+)
+
+
 def _safe_error(exc: BaseException) -> str:
-    # Detailed plugin exceptions can contain credentials or response bodies.
+    """`CollectorRunState.error_message` に載せる文字列を作る。
+
+    詳細な例外文言は認証情報やレスポンス本文を含みうるため、既定では型名と定型句だけを
+    返す。ただし型名すら分からないと運用者が何も追えないため、ワーカー越しの失敗では
+    プラグイン側の型名を、さらに安全だと分かっている型ではメッセージも通す。
+    完全な情報はコレクタワーカーの stderr にある。
+    """
+    if isinstance(exc, CollectorWorkerError):
+        # str(exc) はワーカーが返したプラグイン側の例外型名。
+        plugin_error = str(exc) or type(exc).__name__
+        if exc.detail:
+            return f"{plugin_error}: {exc.detail}"[:1000]
+        return f"{plugin_error}: collector execution failed"
+    if isinstance(exc, _SAFE_DETAIL_TYPES):
+        detail = str(exc).strip()
+        if detail:
+            return f"{type(exc).__name__}: {detail}"[:1000]
     return f"{type(exc).__name__}: collector execution failed"
 
 

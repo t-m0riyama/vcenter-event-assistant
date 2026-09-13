@@ -214,6 +214,17 @@ class AppLogSettingsMixin(BaseModel):
         validation_alias=AliasChoices("plugin_index_url", "VEA_PLUGIN_INDEX_URL"),
         description="インデックスインストール時に使用する index URL（``VEA_PLUGIN_INDEX_URL``）。",
     )
+    collector_worker_log_level: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "collector_worker_log_level", "VEA_COLLECTOR_WORKER_LOG_LEVEL"
+        ),
+        description=(
+            "コレクタワーカープロセスのログレベル（``VEA_COLLECTOR_WORKER_LOG_LEVEL``）。"
+            "未設定時は ``log_level`` を継承する。外部プラグインのログだけを "
+            "``DEBUG`` にしたい場合に使う。"
+        ),
+    )
     mock_mode: bool = Field(
         default=False,
         description=(
@@ -248,12 +259,21 @@ class AppLogSettingsMixin(BaseModel):
             raise ValueError(f"無効な log_level: {v!r}（例: DEBUG, INFO, WARNING）")
         return name
 
+    @field_validator("collector_worker_log_level")
+    @classmethod
+    def validate_collector_worker_log_level(cls, v: str | None) -> str | None:
+        """未設定（``None``）は ``log_level`` の継承を意味する。"""
+        if v is None:
+            return None
+        return cls.validate_log_level(v)
+
     @field_validator(
         "app_log_file",
         "uvicorn_log_file",
         "collector_config_file",
         "plugin_index_url",
         "uv_bin",
+        "collector_worker_log_level",
         mode="before",
     )
     @classmethod

@@ -345,6 +345,7 @@
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
 - プラグイン管理: `VEA_PLUGIN_MANAGEMENT_ENABLED`（既定 `false`）、`VEA_PLUGIN_ALLOW_INDEX_INSTALL`（既定 `false`）、`VEA_PLUGIN_DIR`
+- コレクタワーカーのログ: `VEA_COLLECTOR_WORKER_LOG_LEVEL`（未設定時は `LOG_LEVEL` を継承）
 
 ## 4.1 プラグイン管理を有効化する場合
 
@@ -369,6 +370,30 @@
 ロールバック: 対象プラグインを無効化して**変更を反映**、または削除して**変更を反映**。
 外部プラグインは専用ワーカープロセスで動くため、ハングしても `timeout_seconds` でワーカーが
 kill され、アプリ本体は停止しません。
+
+### 4.1.1 プラグインの失敗を調べる
+
+プラグイン画面および `GET /api/plugins/collectors` の `error_message` は、既定では
+**例外の型名と定型句だけ**です（例外文言は認証情報やサーバの応答本文を含みうるため）。
+`ImportError` 系・entry point 不明・`NotImplementedError` のように、メッセージが import 機構か
+ワーカー自身からしか生成されない型に限り、メッセージも表示されます。`KeyError` のように
+メッセージがデータそのものになる型は対象外です。
+
+**完全な情報はコレクタワーカープロセスの stderr にあります。** ワーカーの stderr は
+親プロセスへ継承されるので、アプリのログをそのまま見れば含まれています。行頭が
+`[collector-worker <pid>]` になっているものがワーカー由来です。
+
+詳細を出したいときは `VEA_COLLECTOR_WORKER_LOG_LEVEL=DEBUG` にします。アプリ全体の
+`LOG_LEVEL` は変えずに、外部プラグインのログだけを詳細化できます。
+
+よくある失敗:
+
+| `error_message` | 意味 | 対処 |
+|---|---|---|
+| `ModuleNotFoundError: No module named '...'` | プラグインの依存が入っていない | アップロード導入は `--no-index --no-deps` で実行されるため依存が解決されない。インデックス経由での導入を許可するか、依存を同梱したパッケージを作り直す |
+| `load failed: ...` | entry point の読み込みに失敗 | ワーカーの stderr にトレースバックが出ている |
+| `TimeoutError: collector execution failed` | `timeout_seconds` 超過でワーカーを kill | 実行間隔とタイムアウトを見直す。ワーカーは次回実行で作り直される |
+| `ValueError: collector execution failed` | バッチ検証で拒否（naive datetime、未宣言のメトリクスキー、非有限値など） | ワーカーの stderr にどの検証に落ちたかが出ている |
 
 ## 5. 変更管理（実務向け最小）
 

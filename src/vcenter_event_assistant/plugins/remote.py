@@ -31,7 +31,16 @@ _SHUTDOWN_GRACE_SECONDS = 5.0
 
 
 class CollectorWorkerError(RuntimeError):
-    """ワーカーが要求を処理できなかった。"""
+    """ワーカーが要求を処理できなかった。
+
+    ``str()`` はプラグイン側の例外型名（ワーカーが返した ``error``）であり、
+    従来からこの形を保っている。``detail`` はワーカーが allow-list に載る型に
+    限って添えてくるメッセージで、無い場合は ``None``。
+    """
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 def plugin_search_paths(plugin_dir: str | None) -> list[str]:
@@ -133,7 +142,11 @@ class CollectorWorker:
                 await self.kill()
                 raise CollectorWorkerError("worker sent malformed response") from exc
             if not response.get("ok"):
-                raise CollectorWorkerError(str(response.get("error", "unknown error")))
+                detail = response.get("detail")
+                raise CollectorWorkerError(
+                    str(response.get("error", "unknown error")),
+                    detail=str(detail) if detail else None,
+                )
             return response.get("result") or {}
 
     async def kill(self) -> None:
@@ -226,6 +239,18 @@ def discover_remote_collectors(plugin_dir: str | None) -> list[dict[str, Any]]:
     return discover_collectors_at(plugin_search_paths(plugin_dir))
 
 
+def _log_discovery_output(stderr: str, level: int) -> None:
+    """検出ワーカーの stderr を親のログへ転記する。
+
+    ``discover_collectors_at`` は ``capture_output=True`` でワーカーを起こすため、
+    そのままでは entry point 読み込み失敗のトレースバックが捨てられてしまう。
+    """
+    text = (stderr or "").strip()
+    if not text:
+        return
+    logger.log(level, "collector plugin discovery worker output:\n%s", text)
+
+
 def discover_collectors_at(paths: list[str]) -> list[dict[str, Any]]:
     """短命のワーカーで、指定パスの entry point と manifest を列挙する（同期）。
 
@@ -260,8 +285,20 @@ def discover_collectors_at(paths: list[str]) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             continue
         if not response.get("ok"):
-            raise CollectorWorkerError(str(response.get("error", "discovery failed")))
-        return list(response.get("result", {}).get("plugins", []))
+            _log_discovery_output(completed.stderr, logging.WARNING)
+            raise CollectorWorkerError(
+                str(response.get("error", "discovery failed")),
+                detail=str(response["detail"]) if response.get("detail") else None,
+            )
+        plugins = list(response.get("result", {}).get("plugins", []))
+        # 検出ワーカーは capture_output で起動するため、その stderr は親に継承されない。
+        # 読み込みに失敗した entry point のトレースバックはそこにしかないので、
+        # 失敗があったときだけ親のログへ転記する。
+        failed = any("manifest" not in item for item in plugins)
+        _log_discovery_output(
+            completed.stderr, logging.WARNING if failed else logging.DEBUG
+        )
+        return plugins
 
     logger.error(
         "collector plugin discovery produced no response rc=%s", completed.returncode
@@ -284,7 +321,13 @@ def build_remote_plugins(
     for item in discovered:
         name = str(item.get("name", ""))
         if "manifest" not in item:
-            failures[name] = f"load failed: {item.get('error', 'unknown')}"
+            # detail はワーカーが allow-list（import 名など機密を含みえない型）に
+            # 限って付けてくる。付いていれば失敗理由として表に出す。
+            detail = item.get("detail")
+            reason = f"{item.get('error', 'unknown')}"
+            if detail:
+                reason = f"{reason}: {detail}"
+            failures[name] = f"load failed: {reason}"
             continue
         try:
             manifest = manifest_from_json(item["manifest"])
