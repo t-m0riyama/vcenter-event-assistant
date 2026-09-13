@@ -66,6 +66,17 @@
   （登録するとこのパッケージを入れた全ての pytest セッションに載ってしまう）。
   使うには `pytest_plugins = ["vcenter_event_assistant_plugin_api.testing.fixtures"]`
   と明示的に書く。
+- `scaffold`: `python -m vcenter_event_assistant_plugin_api.scaffold <配布名>` で、
+  そのまま動くプラグインのプロジェクトを生成する CLI。`--kind metric|event`。
+  生成物は宣言的な基底クラス・`config` 経由の設定読み・`vmware` ヘルパ・
+  `get_plugin_logger` を使い、`testing.run_collect` のテストが**最初から通る**。
+  `manifest.id` は entry point 名・マニフェスト・メトリクスキーの 3 箇所に現れ、
+  不一致は本番で初めて露見するので、生成して一致を保証する。
+  cookiecutter などの外部ツールは使わない（`string.Template` のみ）。
+- `testing.fake_event()` と `FakeServiceInstance(events=[...])`: イベントコレクタを
+  テストできるようにする。`eventManager.CreateCollectorForEvents` の
+  `beginTime` / `endTime` を実際に解釈するので、カーソルが効いているかを確かめられる。
+  `DestroyCollector()` 漏れは `run_collect()` が検出する。
 - `logs.get_plugin_logger()`: `VEA_COLLECTOR_WORKER_LOG_LEVEL` が効く名前空間の
   ロガーを返す。
 - `MetricDefinition.at()`: 定義から `metric_key` / `entity_type` / `sampled_at` を

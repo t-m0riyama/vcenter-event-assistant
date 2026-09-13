@@ -73,10 +73,12 @@ from vcenter_event_assistant_plugin_api.testing._stubs import (
 )
 from vcenter_event_assistant_plugin_api.testing._vmomi import (
     FakeContainerView,
+    FakeEventCollector,
     FakeManagedObject,
     FakeServiceInstance,
     ViewLeakError,
     fake_datastore,
+    fake_event,
     fake_host,
     fake_vm,
 )
@@ -87,6 +89,7 @@ __all__ = [
     "ConnectionLeakError",
     "ConnectionLog",
     "FakeContainerView",
+    "FakeEventCollector",
     "FakeManagedObject",
     "FakeServiceInstance",
     "StubCollector",
@@ -95,6 +98,7 @@ __all__ = [
     "assert_manifest_valid",
     "fake_connection",
     "fake_datastore",
+    "fake_event",
     "fake_host",
     "fake_vm",
     "failing_connection",

@@ -55,6 +55,16 @@ ID 中のドットとハイフンはアンダースコアになります。た�
 このパッケージは意図的に uv ワークスペースのメンバーに含めていないため、開発環境に誤って
 インストールされることはありません。
 
+[`examples/example-event-collector/`](../examples/example-event-collector/) はイベント側の
+サンプルです。**イベント側はメトリクス側より罠が多い**ため（カーソルの前進、`vmware_key` の
+一意性と 2^31 の上限、列長）、正解の形を別に置いています。
+
+どちらのサンプルも、アプリを起動せずに `pytest` だけでテストが通ります。
+
+```bash
+uv run pytest examples/example-temperature-collector/tests examples/example-event-collector/tests -q
+```
+
 ## パッケージの entry point
 
 プラグインは `vcenter-event-assistant-plugin-api` のみに依存し、引数なしのファクトリを公開します。
@@ -68,6 +78,34 @@ temperature = "example_temperature:build_collector"
 宣言し、インストール済みの全コレクタのあいだで一意である必要があります。各バッチの検証、および
 データベース書き込み、イベントスコアリング、重複処理、カーソルのコミットはアプリケーションが
 担います。
+
+## 新しいプラグインを作る
+
+スキャフォールドが、そのまま動くプロジェクトを生成します。
+
+```bash
+python -m vcenter_event_assistant_plugin_api.scaffold my-sensor-collector --kind metric
+cd my-sensor-collector
+uv sync
+uv run pytest -q
+```
+
+生成されるのは `pyproject.toml` / `src/<package>/__init__.py` / `tests/test_collector.py` /
+`README.md` / `.gitignore` の 5 つです。テストは**最初から通ります**。作者が埋めるのは
+`sample()`（または `--kind event` なら `fetch()`）の中身だけです。
+
+| オプション | 既定 | 意味 |
+|---|---|---|
+| `--kind metric\|event` | `metric` | メトリクスを出すか、イベントを出すか |
+| `--id` | 配布名 | `manifest.id` と entry point 名 |
+| `--name` | 配布名から生成 | 管理画面に出る表示名 |
+| `--out` | `./<配布名>` | 出力先 |
+| `--force` | — | 既存ファイルを上書きする |
+
+生成を勧めるのは、書く量が減るからだけではありません。`manifest.id` は
+**entry point 名・マニフェスト・メトリクスキーの 3 箇所**に現れ、不一致は
+`configured plugin is not installed` という遠い文言になって初めて露見します。生成すれば
+一致が保証されます。
 
 ## コレクタの書き方
 
@@ -137,6 +175,7 @@ build_collector = TemperatureCollector   # クラス自体が引数なしファ�
 | `logs` | `get_plugin_logger()`。`VEA_COLLECTOR_WORKER_LOG_LEVEL` が効くロガー名を返す |
 | `vmware` | pyVmomi でのインベントリ走査。`container_view()` が `Destroy()` を保証する |
 | `testing` | アプリを起動せずにコレクタを回すテストハーネス（下記参照） |
+| `scaffold` | そのまま動くプラグインのひな形を生成する CLI（上記参照） |
 
 `MetricDefinition.at()` を使うと、メトリクスキーと `entity_type` を宣言から補い、
 `sampled_at` に timezone-aware な現在時刻を入れた `MetricSampleInput` を作れます。

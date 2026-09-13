@@ -1,0 +1,16 @@
+[project]
+name = "example-event-collector"
+version = "0.1.0"
+description = "Sample event collector plugin for vCenter Event Assistant"
+requires-python = ">=3.12"
+dependencies = [
+    "vcenter-event-assistant-plugin-api>=1.1.0,<2",
+]
+
+# entry point 名は manifest.id と一致していなければならない。
+[project.entry-points."vcenter_event_assistant.collectors"]
+"example.vcenter.power_events" = "example_event_collector:build_collector"
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
