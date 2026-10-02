@@ -11,7 +11,7 @@ const row = {
 }
 const response = (data: unknown) => Promise.resolve(new Response(JSON.stringify(data), { status: 200 }))
 
-afterEach(() => { vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
+afterEach(() => { localStorage.removeItem('vea.displayTimeZone'); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
 describe('LogsPanel', () => {
   it('keeps saved log search usable when the latest collection failed', async () => {
@@ -30,6 +30,7 @@ describe('LogsPanel', () => {
     }))
     render(<TimeZoneProvider><LogsPanel onError={onError} /></TimeZoneProvider>)
     await waitFor(() => expect(screen.getByText('Storage error')).toBeInTheDocument())
+    expect(screen.getByLabelText('ログ収集状況').closest('details')).toBeNull()
     expect(screen.getByLabelText('ログ収集状況')).toHaveTextContent('保存済みログの検索は引き続き利用できます')
     expect(screen.getByText(/vcenter8-01: ValueError/)).toBeInTheDocument()
     expect(screen.getByText(/期間を広げても、サーバーの過去ログを追加取得/)).toBeInTheDocument()
@@ -53,7 +54,112 @@ describe('LogsPanel', () => {
     expect(url.searchParams.get('from')).toBe('2026-10-02T09:55:25Z')
     expect(url.searchParams.get('vcenter_id')).toBe('vc-1')
     expect(screen.getByText('同じ期間のイベント').getAttribute('href')).toContain('#/events?')
+    fireEvent.click(screen.getByText('絞り込み条件'))
     fireEvent.change(screen.getByLabelText('本文（含む）'), { target: { value: 'Storage' } })
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes('message_contains=Storage'))).toBe(true))
   })
+
+  it('summarizes collapsed filters and resets pagination when filters or the range change', async () => {
+    localStorage.setItem('vea.displayTimeZone', 'UTC')
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vcenters')) return response([{ id: 'vc-1', name: 'Lab' }])
+      if (url.includes('/api/plugins')) return response({ generation: 1, collectors: [] })
+      return response({ items: [row], total: 101 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
+    await waitFor(() => expect(screen.getByText('全 101 件中 1–50 件を表示')).toBeInTheDocument())
+    const summary = screen.getByText('絞り込み条件').closest('summary')!
+    const details = summary.closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    expect(summary).toHaveTextContent('開始指定なし ～ 終了指定なし')
+    expect(summary).toHaveTextContent('条件なし')
+
+    const lastLogRequest = () => new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/logs')).at(-1)![0]), 'http://test')
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(screen.getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('offset')).toBe('50')
+    fireEvent.click(summary)
+    expect(details).toHaveAttribute('open')
+    fireEvent.change(screen.getByLabelText('接続先ID'), { target: { value: 'esxi-1' } })
+    fireEvent.change(screen.getByLabelText('ログ種別'), { target: { value: 'hostd' } })
+    fireEvent.change(screen.getByLabelText('重大度'), { target: { value: 'error' } })
+    fireEvent.change(screen.getByLabelText('本文（含む）'), { target: { value: 'Storage' } })
+    await waitFor(() => expect(lastLogRequest().searchParams.get('message_contains')).toBe('Storage'))
+    expect(lastLogRequest().searchParams.get('offset')).toBe('0')
+    expect(lastLogRequest().searchParams.get('source_id')).toBe('esxi-1')
+    expect(lastLogRequest().searchParams.get('log_kind')).toBe('hostd')
+    expect(lastLogRequest().searchParams.get('severity')).toBe('error')
+    fireEvent.click(summary)
+    expect(details).not.toHaveAttribute('open')
+    expect(summary).toHaveTextContent('接続先ID「esxi-1」 · 種別「hostd」 · 重大度「error」 · 本文「Storage」')
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '次へ' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(screen.getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
+    fireEvent.click(summary)
+    fireEvent.click(screen.getByRole('button', { name: '過去 24 時間' }))
+    await waitFor(() => expect(lastLogRequest().searchParams.has('from')).toBe(true))
+    expect(lastLogRequest().searchParams.has('to')).toBe(true)
+    expect(lastLogRequest().searchParams.get('offset')).toBe('0')
+    expect(summary).not.toHaveTextContent('開始指定なし')
+    fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-01' } })
+    await waitFor(() => expect(lastLogRequest().searchParams.get('from')).toContain('2026-01-01'))
+  })
+
+  it('uses the selected page size for fetching, pagination and the final page', async () => {
+    window.history.replaceState(null, '', '#/logs?vcenter_id=vc-1&from=2026-10-02T09%3A55%3A25Z&to=2026-10-02T10%3A05%3A25Z')
+    let total = 101
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vcenters')) return response([{ id: 'vc-1', name: 'Lab' }])
+      if (url.includes('/api/plugins')) return response({ generation: 1, collectors: [] })
+      return response({ items: [row], total })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
+    const lastLogRequest = () => new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/logs')).at(-1)![0]), 'http://test')
+    await waitFor(() => expect(screen.getByText('全 101 件中 1–50 件を表示')).toBeInTheDocument())
+    expect(screen.getByLabelText('表示件数')).toHaveValue('50')
+    expect(lastLogRequest().searchParams.get('limit')).toBe('50')
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(screen.getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '20' } })
+    await waitFor(() => expect(screen.getByText('全 101 件中 1–20 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('limit')).toBe('20')
+    expect(lastLogRequest().searchParams.get('offset')).toBe('0')
+    expect(lastLogRequest().searchParams.get('vcenter_id')).toBe('vc-1')
+    expect(lastLogRequest().searchParams.get('from')).toBe('2026-10-02T09:55:25Z')
+    expect(lastLogRequest().searchParams.get('to')).toBe('2026-10-02T10:05:25Z')
+    expect(screen.getByRole('button', { name: '前へ' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(screen.getByText('全 101 件中 21–40 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('offset')).toBe('20')
+
+    total = 15
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(screen.getByText('全 15 件中 1–15 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('offset')).toBe('0')
+    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+
+    total = 101
+    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '100' } })
+    await waitFor(() => expect(screen.getByText('全 101 件中 1–100 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('limit')).toBe('100')
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(screen.getByText('全 101 件中 101–101 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('offset')).toBe('100')
+    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '前へ' }))
+    await waitFor(() => expect(screen.getByText('全 101 件中 1–100 件を表示')).toBeInTheDocument())
+    expect(lastLogRequest().searchParams.get('offset')).toBe('0')
+
+    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '200' } })
+    await waitFor(() => expect(lastLogRequest().searchParams.get('limit')).toBe('200'))
+    await waitFor(() => expect(screen.getByText('全 101 件中 1–101 件を表示')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+  })
+
 })

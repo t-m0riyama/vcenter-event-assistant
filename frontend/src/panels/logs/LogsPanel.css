@@ -1,5 +1,74 @@
-.logs-panel small { display: block; color: var(--text-muted); margin-top: .35rem; }
-.logs-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; font-size: .8rem; }
-.logs-panel summary { cursor: pointer; overflow-wrap: anywhere; }
-.logs-panel td { vertical-align: top; }
-.logs-panel td:last-child { max-width: 50vw; }
+.logs-panel .toolbar__filters-details {
+  min-width: 0;
+  width: 100%;
+}
+
+.logs-panel .toolbar > label,
+.logs-panel .toolbar__filters label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.logs-panel input,
+.logs-panel select {
+  max-width: 100%;
+}
+
+.logs-panel__event-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.logs-panel__collection-status {
+  margin-bottom: var(--spacing-4);
+}
+
+.logs-panel__table-scroll {
+  overflow-x: auto;
+}
+
+.logs-panel .table {
+  min-width: 44rem;
+  table-layout: fixed;
+}
+
+.logs-panel th:first-child {
+  width: 22%;
+}
+
+.logs-panel th:nth-child(2) {
+  width: 18%;
+}
+
+.logs-panel th:nth-child(3),
+.logs-panel th:nth-child(4) {
+  width: 10%;
+}
+
+.logs-panel td {
+  overflow-wrap: anywhere;
+}
+
+.logs-panel small {
+  display: block;
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-1);
+  font-size: var(--font-size-caption2);
+}
+
+.logs-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 32rem;
+  overflow: auto;
+  padding: var(--spacing-2);
+  border-radius: var(--radius-control);
+  background: var(--color-background-secondary);
+  font-size: var(--font-size-footnote);
+}
+
+.logs-panel td summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
