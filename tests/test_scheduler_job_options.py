@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 
+from vcenter_event_assistant.db.models import VCenter
+from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler
 from vcenter_event_assistant.services.ingest_runner import ingest_for_enabled_vcenters
 from vcenter_event_assistant.settings import Settings
@@ -73,46 +76,57 @@ async def test_setup_scheduler_purge_uses_purge_interval_hours() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ingest_for_enabled_vcenters_uses_gather_with_semaphore() -> None:
+async def test_ingest_for_enabled_vcenters_limits_concurrency() -> None:
     settings = Settings(ingestion_concurrency=2)
-    ingest_fn = AsyncMock(return_value=1)
+    active = 0
+    peak = 0
+    started: list[int] = []
+    two_started = asyncio.Event()
+    release = asyncio.Event()
 
-    class _Vc:
-        def __init__(self, vid: int, name: str) -> None:
-            self.id = vid
-            self.name = name
+    async with session_scope(settings=settings) as session:
+        session.add_all(
+            [
+                VCenter(
+                    name=str(vid), host=f"vc{vid}.example", username="u", password="p"
+                )
+                for vid in (1, 2, 3)
+            ]
+        )
 
-    with (
-        patch(
-            "vcenter_event_assistant.services.ingest_runner.list_enabled_vcenters",
-            new=AsyncMock(return_value=[_Vc(1, "a"), _Vc(2, "b"), _Vc(3, "c")]),
-        ),
-        patch(
-            "vcenter_event_assistant.services.ingest_runner.session_scope",
-        ) as mock_session_scope,
-        patch(
-            "vcenter_event_assistant.services.ingest_runner.asyncio.gather",
-            new=AsyncMock(return_value=[1, 1, 1]),
-        ) as mock_gather,
-        patch(
-            "vcenter_event_assistant.services.ingest_runner.asyncio.Semaphore",
-        ) as mock_semaphore,
-    ):
-        mock_session = AsyncMock()
-        mock_session_scope.return_value.__aenter__.return_value = mock_session
-        mock_session_scope.return_value.__aexit__.return_value = None
+    async def ingest_fn(session, vc, *, settings):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        started.append(int(vc.name))
+        if active == 2:
+            two_started.set()
+        try:
+            await release.wait()
+            return int(vc.name)
+        finally:
+            active -= 1
 
-        total = await ingest_for_enabled_vcenters(
+    task = asyncio.create_task(
+        ingest_for_enabled_vcenters(
             settings,
             ingest_fn,
             success_log="ok vcenter=%s count=%s",
             failure_log="fail vcenter_id=%s",
         )
+    )
+    try:
+        await asyncio.wait_for(two_started.wait(), timeout=2)
+        assert len(started) == 2
+        assert peak == 2
+    finally:
+        release.set()
+        total = await asyncio.wait_for(task, timeout=2)
 
-    mock_semaphore.assert_called_once_with(2)
-    mock_gather.assert_awaited_once()
-    assert len(mock_gather.call_args.args) == 3
-    assert total == 3
+    assert sorted(started) == [1, 2, 3]
+    assert peak == 2
+    assert active == 0
+    assert total == 6
 
 
 @pytest.mark.asyncio
@@ -128,7 +142,9 @@ async def test_setup_scheduler_omits_web_research_job_without_provider() -> None
 @pytest.mark.asyncio
 async def test_setup_scheduler_adds_web_research_job_with_provider() -> None:
     app = MagicMock()
-    scheduler = setup_scheduler(app, Settings(tavily_api_key="tvly-test", web_research_enabled=True))
+    scheduler = setup_scheduler(
+        app, Settings(tavily_api_key="tvly-test", web_research_enabled=True)
+    )
     try:
         job = scheduler.get_job("web_research")
         assert job is not None
