@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LogsPanel } from './LogsPanel'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
@@ -11,9 +11,88 @@ const row = {
 }
 const response = (data: unknown) => Promise.resolve(new Response(JSON.stringify(data), { status: 200 }))
 
-afterEach(() => { localStorage.removeItem('vea.displayTimeZone'); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
+afterEach(() => { localStorage.removeItem('vea.displayTimeZone'); vi.useRealTimers(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
+
+function collectorResponse(status: 'failed' | 'ok') {
+  return response({ generation: 1, collectors: [{
+    id: 'vea.remote.logs', display_name: 'VEA Remote Logs', source: 'external', status: 'enabled',
+    error: null, version: '0.2.0', api_version: 1, data_kinds: ['log'], interval_seconds: 60, timeout_seconds: 45,
+    runs: [{ vcenter_id: 'vc-1', vcenter_name: 'vcenter8-01', status, collector_version: '0.2.0',
+      last_started_at: null, last_success_at: null, last_failure_at: null,
+      events_inserted: 0, metrics_inserted: 0, logs_inserted: 0,
+      error: status === 'failed' ? 'worker exited before responding: collector execution failed' : null,
+    }],
+  }] })
+}
 
 describe('LogsPanel', () => {
+  it('clears recovered collection errors on polling without reloading log pages and stops on unmount', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let status: 'failed' | 'ok' = 'failed'
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vcenters')) return response([])
+      if (url.includes('/api/plugins')) return collectorResponse(status)
+      return response({ items: [row], total: 1 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { unmount } = render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
+    await screen.findByText(/worker exited before responding/)
+    await screen.findByText('Storage error')
+    const logRequests = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/logs')).length
+    const before = logRequests()
+    status = 'ok'
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(screen.queryByLabelText('ログ収集状況')).not.toBeInTheDocument()
+    expect(logRequests()).toBe(before)
+    const total = fetchMock.mock.calls.length
+    unmount()
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    fireEvent(window, new Event('focus'))
+    expect(fetchMock.mock.calls).toHaveLength(total)
+  })
+
+  it('refreshes collection errors on focus and keeps saved logs usable when status fetching fails', async () => {
+    let fail = true
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vcenters')) return response([])
+      if (url.includes('/api/plugins')) return fail ? Promise.reject(new Error('offline')) : collectorResponse('ok')
+      return response({ items: [row], total: 1 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
+    await screen.findByText('Storage error')
+    await screen.findByText('収集状況を更新できません: offline')
+    expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled()
+    fail = false
+    fireEvent(window, new Event('focus'))
+    await waitFor(() => expect(screen.queryByLabelText('ログ収集状況')).not.toBeInTheDocument())
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/logs'))).toHaveLength(1)
+  })
+
+  it('pauses collection status requests on another tab and refreshes when returning', async () => {
+    let status: 'failed' | 'ok' = 'failed'
+    const onError = vi.fn()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vcenters')) return response([])
+      if (url.includes('/api/plugins')) return collectorResponse(status)
+      return response({ items: [row], total: 1 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { rerender } = render(<TimeZoneProvider><LogsPanel onError={onError} active /></TimeZoneProvider>)
+    await screen.findByText(/worker exited before responding/)
+    rerender(<TimeZoneProvider><LogsPanel onError={onError} active={false} /></TimeZoneProvider>)
+    const before = fetchMock.mock.calls.length
+    fireEvent(window, new Event('focus'))
+    expect(fetchMock.mock.calls).toHaveLength(before)
+    status = 'ok'
+    rerender(<TimeZoneProvider><LogsPanel onError={onError} active /></TimeZoneProvider>)
+    await waitFor(() => expect(screen.queryByLabelText('ログ収集状況')).not.toBeInTheDocument())
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/logs'))).toHaveLength(1)
+  })
+
   it('keeps saved log search usable when the latest collection failed', async () => {
     const onError = vi.fn()
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {

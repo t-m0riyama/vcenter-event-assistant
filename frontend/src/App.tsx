@@ -37,7 +37,7 @@ type MainTabConfig = {
   readonly id: MainTabId
   readonly label: string
   readonly panelLabel: string
-  readonly render: (onError: (message: string | null) => void) => ReactNode
+  readonly render: (onError: (message: string | null) => void, active: boolean) => ReactNode
 }
 
 type SettingsSubTabConfig = {
@@ -131,7 +131,7 @@ export default function App() {
         id: 'logs',
         label: 'ログ',
         panelLabel: 'ログ検索',
-        render: (onError) => <LogsPanel onError={onError} />,
+        render: (onError, active) => <LogsPanel onError={onError} active={active} />,
       },
       {
         id: 'metrics',
@@ -357,7 +357,7 @@ export default function App() {
               t.id !== 'settings' && (
                 <div key={t.id} hidden={tab !== t.id} aria-hidden={tab !== t.id}>
                   <PanelShell panelLabel={t.panelLabel}>
-                    {(onError) => t.render(onError)}
+                    {(onError) => t.render(onError, tab === t.id)}
                   </PanelShell>
                 </div>
               ),
