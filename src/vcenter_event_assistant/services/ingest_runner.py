@@ -40,6 +40,7 @@ class IngestRunResult:
     events_inserted: int
     metrics_inserted: int
     plugins: tuple[CollectorRunResult, ...] = ()
+    logs_inserted: int = 0
 
 
 async def run_registered_collector(settings: Settings, plugin_id: str) -> tuple[CollectorRunResult, ...]:
@@ -165,4 +166,5 @@ async def run_ingest_all(settings: Settings) -> IngestRunResult:
         events_inserted=events_inserted,
         metrics_inserted=metrics_inserted,
         plugins=plugin_results,
+        logs_inserted=sum(result.logs_inserted for result in plugin_results),
     )

@@ -86,3 +86,10 @@ export async function apiDelete(path: string): Promise<void> {
   })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
 }
+
+/** JSON PUT. */
+export async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(path, { ...fetchNoStore, method: 'PUT', headers: mutationHeaders(), body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  return r.json() as Promise<T>
+}

@@ -18,6 +18,7 @@ from vcenter_event_assistant_plugin_api import CollectionBatch, CollectorManifes
 
 from vcenter_event_assistant.plugins.wire import (
     ConnectionParams,
+    MAX_RESPONSE_BYTES,
     batch_from_json,
     context_to_json,
     manifest_from_json,
@@ -97,6 +98,7 @@ class CollectorWorker:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=None,
+            limit=MAX_RESPONSE_BYTES + 1,
         )
         logger.info(
             "collector worker started label=%s pid=%s", self._label, self._process.pid
@@ -129,13 +131,16 @@ class CollectorWorker:
                 )
                 await self.kill()
                 raise
-            except (BrokenPipeError, ConnectionResetError) as exc:
+            except (BrokenPipeError, ConnectionResetError, ValueError) as exc:
                 await self.kill()
                 raise CollectorWorkerError("worker pipe is closed") from exc
 
             if not line:
                 await self.kill()
                 raise CollectorWorkerError("worker exited before responding")
+            if len(line) > MAX_RESPONSE_BYTES:
+                await self.kill()
+                raise CollectorWorkerError("worker response exceeds size limit")
             try:
                 response = json.loads(line)
             except json.JSONDecodeError as exc:
@@ -157,7 +162,9 @@ class CollectorWorker:
         try:
             await asyncio.wait_for(process.wait(), timeout=_SHUTDOWN_GRACE_SECONDS)
         except asyncio.TimeoutError:  # pragma: no cover - kill 後も残る異常系
-            logger.error("collector worker did not exit after kill label=%s", self._label)
+            logger.error(
+                "collector worker did not exit after kill label=%s", self._label
+            )
 
     async def shutdown(self) -> None:
         """stdin を閉じて自然終了を待ち、猶予を過ぎたら kill する。"""
@@ -220,6 +227,19 @@ class RemoteCollectorPlugin:
         )
         return batch_from_json(result["batch"])
 
+    async def setup_with_connection(self, context, params, action, *, timeout):
+        result = await self._worker.request(
+            {
+                "op": "setup",
+                "entry_point": self.entry_point,
+                "context": context_to_json(context),
+                "connection": params.to_json(),
+                "action": action,
+            },
+            timeout=timeout,
+        )
+        return result["setup"]
+
     async def stop(self) -> None:
         try:
             await self._worker.request(
@@ -251,7 +271,9 @@ def _log_discovery_output(stderr: str, level: int) -> None:
     logger.log(level, "collector plugin discovery worker output:\n%s", text)
 
 
-def discover_collectors_at(paths: list[str]) -> list[dict[str, Any]]:
+def discover_collectors_at(
+    paths: list[str], *, include_environment: bool = False
+) -> list[dict[str, Any]]:
     """短命のワーカーで、指定パスの entry point と manifest を列挙する（同期）。
 
     親プロセスでプラグインを import すると分離が崩れるため、検出もワーカー経由で行う。
@@ -263,7 +285,16 @@ def discover_collectors_at(paths: list[str]) -> list[dict[str, Any]]:
     """
     import subprocess
 
-    request = json.dumps({"id": 1, "op": "discover"}) + "\n"
+    request = (
+        json.dumps(
+            {
+                "id": 1,
+                "op": "discover",
+                **({} if include_environment else {"paths": paths}),
+            }
+        )
+        + "\n"
+    )
     try:
         completed = subprocess.run(
             _worker_command(paths),
@@ -308,13 +339,17 @@ def discover_collectors_at(paths: list[str]) -> list[dict[str, Any]]:
 
 def build_remote_plugins(
     plugin_dir: str | None,
+    *,
+    include_environment: bool = True,
 ) -> tuple[list[RemoteCollectorPlugin], dict[str, str]]:
     """検出結果からプロキシ群を組み立てる。
 
     Returns:
         ``(プロキシ一覧, entry point 名 → 失敗理由)``。
     """
-    discovered = discover_remote_collectors(plugin_dir)
+    discovered = discover_collectors_at(
+        plugin_search_paths(plugin_dir), include_environment=include_environment
+    )
     paths = plugin_search_paths(plugin_dir)
     plugins: list[RemoteCollectorPlugin] = []
     failures: dict[str, str] = {}

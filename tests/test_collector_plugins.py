@@ -241,6 +241,7 @@ async def test_collector_status_and_metric_catalog_api(client) -> None:
         "zzz.disabled",
     ]
     assert payload["collectors"][0] == {
+        "configuration_available": False,
         "id": "aaa.missing",
         "display_name": None,
         "description": None,

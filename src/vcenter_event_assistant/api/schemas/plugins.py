@@ -23,6 +23,7 @@ class CollectorRunStatusRead(BaseModel):
     last_failure_at: datetime | None
     events_inserted: int
     metrics_inserted: int
+    logs_inserted: int = 0
     error: str | None
 
     @field_validator(
@@ -42,12 +43,13 @@ class CollectorStatusRead(BaseModel):
     display_name: str | None
     #: マニフェストの説明文。未設定のプラグインと、読み込みに失敗した登録は ``None``。
     description: str | None = None
+    configuration_available: bool = False
     source: str
     status: Literal["enabled", "disabled", "failed"]
     error: str | None
     version: str | None
     api_version: int | None
-    data_kinds: list[Literal["event", "metric"]]
+    data_kinds: list[Literal["event", "metric", "log"]]
     interval_seconds: int | None
     timeout_seconds: float | None
     # 環境変数で固定され、DB 設定より優先されるため UI で編集させない共通フィールド。

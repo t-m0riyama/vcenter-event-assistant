@@ -23,7 +23,7 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from importlib.metadata import entry_points
+from importlib.metadata import entry_points, distributions
 from typing import Any
 
 from vcenter_event_assistant_plugin_api.validation import (
@@ -36,6 +36,7 @@ from vcenter_event_assistant_plugin_api.validation import (
 ENTRY_POINT_GROUP = "vcenter_event_assistant.collectors"
 
 logger = logging.getLogger(__name__)
+
 
 class EntryPointNotFound(LookupError):
     """要求された entry point がこのワーカーから見えない。
@@ -87,12 +88,22 @@ def _extend_sys_path(plugin_paths: list[str]) -> None:
             sys.path.append(path)
 
 
-def _discover() -> list[dict[str, Any]]:
+def _discover(paths=None) -> list[dict[str, Any]]:
     """entry point を列挙し、manifest だけを返す（プラグイン実体は親へ渡さない）。"""
     from vcenter_event_assistant.plugins.wire import manifest_to_json
 
     found: list[dict[str, Any]] = []
-    for ep in entry_points(group=ENTRY_POINT_GROUP):
+    entries = (
+        entry_points(group=ENTRY_POINT_GROUP)
+        if paths is None
+        else [
+            ep
+            for dist in distributions(path=paths)
+            for ep in dist.entry_points
+            if ep.group == ENTRY_POINT_GROUP
+        ]
+    )
+    for ep in entries:
         try:
             plugin = ep.load()()
             found.append(
@@ -171,7 +182,7 @@ async def _handle(host: _PluginHost, request: dict[str, Any]) -> Any:
     if op == "ping":
         return {"ok": True}
     if op == "discover":
-        return {"plugins": _discover()}
+        return {"plugins": _discover(request.get("paths"))}
 
     entry_point_name = str(request["entry_point"])
     plugin = host.load(entry_point_name)
@@ -182,7 +193,7 @@ async def _handle(host: _PluginHost, request: dict[str, Any]) -> Any:
     if op == "stop":
         await plugin.stop()
         return {}
-    if op == "collect":
+    if op in {"collect", "setup"}:
         raw_context = request["context"]
         params = ConnectionParams.from_json(request["connection"])
         context = CollectionContext(
@@ -192,6 +203,12 @@ async def _handle(host: _PluginHost, request: dict[str, Any]) -> Any:
             open_vcenter_connection=lambda: _open_connection(params),
             mock_mode=bool(raw_context.get("mock_mode", False)),
         )
+        if op == "setup":
+            from dataclasses import asdict
+
+            if request["action"] not in {a.id for a in plugin.manifest.setup_actions}:
+                raise NotImplementedError("undeclared setup action")
+            return {"setup": asdict(await plugin.setup(context, request["action"]))}
         started = time.monotonic()
         batch = await plugin.collect(context)
         logger.info(
@@ -270,7 +287,15 @@ async def _serve(plugin_paths: list[str]) -> int:
             detail = _safe_detail(exc)
             if detail is not None:
                 response["detail"] = detail
-        protocol_out.write(json.dumps(response) + "\n")
+        from vcenter_event_assistant.plugins.wire import MAX_RESPONSE_BYTES
+
+        encoded = json.dumps(response) + "\n"
+        if len(encoded.encode("utf-8")) > MAX_RESPONSE_BYTES:
+            encoded = (
+                json.dumps({"id": request_id, "ok": False, "error": "ResponseTooLarge"})
+                + "\n"
+            )
+        protocol_out.write(encoded)
         protocol_out.flush()
 
     for plugin in host.loaded():

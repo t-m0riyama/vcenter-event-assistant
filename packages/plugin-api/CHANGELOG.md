@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0
+
+- Optional JSON Schema configuration and setup action declarations on CollectorManifest.
+- SetupAction, SetupCheck, SetupResult, and optional CollectorSetupPlugin diagnostics.
+- CollectorBase supports the new declarations; existing constructors and contract generation remain compatible.
+
+
 このパッケージのバージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
 ## バージョニング規約
@@ -32,6 +39,12 @@
 公開する。API トークンはシークレットに置かない。
 
 `workflow_dispatch` から `dry_run` で起動すると、公開せずにビルドと検証だけを行える。
+
+## [1.3.0] - 2026-10-02
+
+- Add `LogRecordInput`, `CollectionBatch.logs`, and `DataKind="log"` with shared validation.
+- Add `CollectorManifest.default_timeout_seconds` (default 300) so external collectors can declare a timeout without changing existing defaults.
+- Existing positional arguments and contract generation (`PLUGIN_API_VERSION = 1`) remain compatible.
 
 ## [1.2.0]
 

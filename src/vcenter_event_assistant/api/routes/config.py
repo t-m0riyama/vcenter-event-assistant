@@ -21,6 +21,7 @@ async def get_app_config(
     return AppConfigResponse(
         event_retention_days=settings.event_retention_days,
         metric_retention_days=settings.metric_retention_days,
+        log_retention_days=settings.log_retention_days,
         perf_sample_interval_seconds=settings.perf_sample_interval_seconds,
         chat_web_search_available=chat_web_search_available(settings),
         mock_mode=settings.mock_mode,

@@ -2,6 +2,7 @@
  * UI のフィルタ入力（`GET /api/events` と共通）。
  */
 export type EventListFilterFields = {
+  readonly vcenterId?: string
   readonly minScore: string
   readonly filterEventType: string
   readonly filterSeverity: string
@@ -29,6 +30,7 @@ export function buildEventListSearchParams(args: {
   })
   const { minScore, filterEventType, filterSeverity, filterMessage, filterComment } =
     args.filters
+  if (args.filters.vcenterId) q.set('vcenter_id', args.filters.vcenterId)
   if (minScore) q.set('min_score', minScore)
   const et = filterEventType.trim()
   if (et) q.set('event_type_contains', et)

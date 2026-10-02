@@ -20,12 +20,15 @@ from vcenter_event_assistant_plugin_api import (
     CollectionBatch,
     CollectorManifest,
     EventInput,
+    LogRecordInput,
     MetricDefinition,
     MetricSampleInput,
     VCenterTarget,
+    SetupAction,
 )
 
 PROTOCOL_VERSION = 1
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +124,9 @@ def manifest_to_json(manifest: CollectorManifest) -> dict[str, Any]:
             metric_definition_to_json(d) for d in manifest.metric_definitions
         ],
         "description": manifest.description,
+        "default_timeout_seconds": manifest.default_timeout_seconds,
+        "configuration_schema": manifest.configuration_schema,
+        "setup_actions": [{"id": a.id, "title": a.title, "required_for_enable": a.required_for_enable} for a in manifest.setup_actions],
     }
 
 
@@ -137,6 +143,9 @@ def manifest_from_json(raw: dict[str, Any]) -> CollectorManifest:
         ),
         # 古いワーカー（description を知らない版）からの応答でも壊れないよう欠落を許す。
         description=str(raw.get("description", "")),
+        default_timeout_seconds=float(raw.get("default_timeout_seconds", 300.0)),
+        configuration_schema=raw.get("configuration_schema"),
+        setup_actions=tuple(SetupAction(**a) for a in raw.get("setup_actions", ())),
     )
 
 
@@ -201,6 +210,14 @@ def batch_to_json(batch: CollectionBatch) -> dict[str, Any]:
             }
             for sample in batch.metrics
         ],
+        "logs": [
+            {"source_id": r.source_id, "host": r.host, "log_kind": r.log_kind,
+             "file_generation": r.file_generation, "byte_offset": r.byte_offset,
+             "collected_at": _dt_to_json(r.collected_at), "message": r.message,
+             "occurred_at": _dt_to_json(r.occurred_at) if r.occurred_at else None,
+             "severity": r.severity}
+            for r in batch.logs
+        ],
         "next_cursor": batch.next_cursor,
     }
 
@@ -233,4 +250,11 @@ def batch_from_json(raw: dict[str, Any]) -> CollectionBatch:
             for sample in raw.get("metrics", ())
         ),
         next_cursor=raw.get("next_cursor"),
+        logs=tuple(LogRecordInput(
+            source_id=str(r["source_id"]), host=str(r["host"]), log_kind=str(r["log_kind"]),
+            file_generation=str(r["file_generation"]), byte_offset=int(r["byte_offset"]),
+            collected_at=_dt_from_json(r["collected_at"]), message=str(r["message"]),
+            occurred_at=_dt_from_json(r["occurred_at"]) if r.get("occurred_at") else None,
+            severity=r.get("severity"),
+        ) for r in raw.get("logs", ())),
     )

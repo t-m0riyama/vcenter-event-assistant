@@ -27,6 +27,7 @@ from vcenter_event_assistant.plugins.wire import ConnectionParams
 
 COLLECT_TIMEOUT = 30.0
 
+
 def _install_test_plugin(root, *, distribution="example-collector", version="0.1.0"):
     """``<root>/<distribution>/<version>/`` に import 可能な配布物を書き出す。"""
     target = root / distribution / version
@@ -106,7 +107,7 @@ def test_plugin_search_paths_lists_distribution_versions(plugin_dir, tmp_path) -
 def test_discovery_returns_manifest_without_importing_in_parent(plugin_dir) -> None:
     import sys
 
-    plugins, failures = build_remote_plugins(plugin_dir)
+    plugins, failures = build_remote_plugins(plugin_dir, include_environment=False)
     assert failures == {}
     assert [p.manifest.id for p in plugins] == ["example.temperature"]
     manifest = plugins[0].manifest
@@ -117,7 +118,7 @@ def test_discovery_returns_manifest_without_importing_in_parent(plugin_dir) -> N
 
 
 async def test_remote_collect_round_trip(plugin_dir) -> None:
-    plugins, _ = build_remote_plugins(plugin_dir)
+    plugins, _ = build_remote_plugins(plugin_dir, include_environment=False)
     plugin = plugins[0]
     await plugin.start()
     try:
@@ -139,7 +140,7 @@ async def test_remote_collect_round_trip(plugin_dir) -> None:
 
 async def test_plugin_stdout_does_not_corrupt_the_protocol(plugin_dir) -> None:
     """プラグインの print で stdout が汚れても応答は壊れない。"""
-    plugins, _ = build_remote_plugins(plugin_dir)
+    plugins, _ = build_remote_plugins(plugin_dir, include_environment=False)
     plugin = plugins[0]
     try:
         first = await plugin.collect_with_connection(
@@ -157,7 +158,7 @@ async def test_hanging_plugin_times_out_and_worker_is_killed(
     plugin_dir, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VEA_TEST_PLUGIN_MODE", "hang")
-    plugins, _ = build_remote_plugins(plugin_dir)
+    plugins, _ = build_remote_plugins(plugin_dir, include_environment=False)
     plugin = plugins[0]
     with pytest.raises(asyncio.TimeoutError):
         await plugin.collect_with_connection(_context(), _params(), timeout=2)
@@ -169,7 +170,7 @@ async def test_worker_recovers_after_being_killed(
 ) -> None:
     """kill 後も、次の実行で新しいワーカーが起動して復帰する。"""
     monkeypatch.setenv("VEA_TEST_PLUGIN_MODE", "hang")
-    plugins, _ = build_remote_plugins(plugin_dir)
+    plugins, _ = build_remote_plugins(plugin_dir, include_environment=False)
     plugin = plugins[0]
     with pytest.raises(asyncio.TimeoutError):
         await plugin.collect_with_connection(_context(), _params(), timeout=2)
@@ -188,7 +189,7 @@ async def test_crashing_worker_surfaces_an_error(
     plugin_dir, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VEA_TEST_PLUGIN_MODE", "crash")
-    plugins, _ = build_remote_plugins(plugin_dir)
+    plugins, _ = build_remote_plugins(plugin_dir, include_environment=False)
     plugin = plugins[0]
     with pytest.raises(CollectorWorkerError):
         await plugin.collect_with_connection(
@@ -201,7 +202,7 @@ async def test_plugin_exception_does_not_leak_details(
     plugin_dir, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VEA_TEST_PLUGIN_MODE", "raise")
-    plugins, _ = build_remote_plugins(plugin_dir)
+    plugins, _ = build_remote_plugins(plugin_dir, include_environment=False)
     plugin = plugins[0]
     try:
         with pytest.raises(CollectorWorkerError) as excinfo:
@@ -231,7 +232,7 @@ def test_broken_entry_point_is_reported_as_a_failure(tmp_path) -> None:
     )
     (dist_info / "RECORD").write_text("", encoding="utf-8")
 
-    plugins, failures = build_remote_plugins(str(root))
+    plugins, failures = build_remote_plugins(str(root), include_environment=False)
     assert plugins == []
     assert "broken.collector" in failures
     assert "ModuleNotFoundError" in failures["broken.collector"]
@@ -313,3 +314,75 @@ def test_connection_params_repr_hides_the_password() -> None:
     text = repr(_params())
     assert "do-not-leak-secret-value" not in text
     assert "password=***" in text
+
+
+@pytest.mark.parametrize("message_size", [128 * 1024, 9 * 1024 * 1024])
+async def test_log_responses_above_old_line_limit_and_over_new_limit(
+    plugin_dir, message_size
+):
+    """Use a real worker pipe, including response envelope and JSON encoding."""
+    from pathlib import Path
+
+    target = Path(plugin_search_paths(plugin_dir)[0])
+    module = target / "example_collector.py"
+    module.write_text(
+        textwrap.dedent(f"""
+        from datetime import datetime, timezone
+        from vcenter_event_assistant_plugin_api import CollectionBatch, CollectorManifest, LogRecordInput
+        class Collector:
+            manifest = CollectorManifest("example.temperature", "Logs", "1", data_kinds=frozenset({{"log"}}))
+            async def start(self): pass
+            async def stop(self): pass
+            async def collect(self, context):
+                return CollectionBatch(logs=(LogRecordInput("s", "host", "vmkernel", "g", 0,
+                    datetime.now(timezone.utc), "x" * {message_size}),))
+        build_collector = Collector
+    """)
+    )
+    plugins, failures = build_remote_plugins(plugin_dir, include_environment=False)
+    assert not failures
+    plugin = plugins[0]
+    try:
+        if message_size > 8 * 1024 * 1024:
+            with pytest.raises(CollectorWorkerError, match="ResponseTooLarge"):
+                await plugin.collect_with_connection(
+                    _context(), _params(), timeout=COLLECT_TIMEOUT
+                )
+        else:
+            batch = await plugin.collect_with_connection(
+                _context(), _params(), timeout=COLLECT_TIMEOUT
+            )
+            assert len(batch.logs[0].message) == message_size
+    finally:
+        await plugin.stop()
+
+
+async def test_optional_setup_contract_executes_in_worker(plugin_dir):
+    from pathlib import Path
+    from vcenter_event_assistant_plugin_api.testing import make_context
+
+    path = next(Path(plugin_dir).glob("*/*/example_collector.py"))
+    source = path.read_text()
+    source += """
+from dataclasses import replace
+from vcenter_event_assistant_plugin_api import SetupAction, SetupCheck, SetupResult
+_original_factory = build_collector
+async def _setup(self, context, action):
+    return SetupResult((SetupCheck("setting", "設定", True),), samples=({"sensor": "board"},))
+def build_collector():
+    plugin = _original_factory()
+    plugin.manifest = replace(plugin.manifest, configuration_schema={"type": "object", "properties": {}}, setup_actions=(SetupAction("test", "接続テスト"),))
+    type(plugin).setup = _setup
+    return plugin
+"""
+    path.write_text(source)
+    plugins, failures = build_remote_plugins(plugin_dir, include_environment=False)
+    assert not failures and plugins[0].manifest.setup_actions[0].id == "test"
+    plugin = plugins[0]
+    try:
+        result = await plugin.setup_with_connection(
+            make_context(), _params(), "test", timeout=30
+        )
+        assert result["checks"][0]["ok"] and result["samples"] == [{"sensor": "board"}]
+    finally:
+        await plugin.stop()

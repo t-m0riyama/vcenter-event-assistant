@@ -83,6 +83,7 @@ async def _run_statuses_by_plugin(
                 last_failure_at=state.last_failure_at,
                 events_inserted=state.events_inserted,
                 metrics_inserted=state.metrics_inserted,
+                logs_inserted=state.logs_inserted,
                 error=state.error_message,
             )
         )
@@ -103,6 +104,9 @@ def _collector_reads(
                 id=registration.plugin_id,
                 display_name=manifest.display_name if manifest else None,
                 description=(manifest.description or None) if manifest else None,
+                configuration_available=bool(
+                    manifest and manifest.configuration_schema
+                ),
                 source=registration.source,
                 status=registration.status,
                 error=registration.error,
@@ -122,9 +126,7 @@ def _collector_reads(
     return collectors
 
 
-def _reload_required(
-    registry: CollectorRegistry, overrides: dict[str, dict]
-) -> bool:
+def _reload_required(registry: CollectorRegistry, overrides: dict[str, dict]) -> bool:
     """DB の保存値が稼働中の世代に未反映かどうか。
 
     環境変数でロックされたフィールドは DB 値が適用されないのが正しい挙動なので、
@@ -178,6 +180,47 @@ async def update_collector(
     registry = get_collector_registry()
     if registry.get(plugin_id) is None:
         raise HTTPException(status_code=404, detail="collector is not registered")
+    current = registry.get(plugin_id)
+    if (
+        payload.enabled is True
+        and current.plugin
+        and current.plugin.manifest.configuration_schema
+    ):
+        from vcenter_event_assistant.db.models import (
+            CollectorPluginSetting,
+            PluginConfigurationDraft,
+        )
+        from vcenter_event_assistant.services.ssh_management import reference_digest
+
+        saved = await session.get(CollectorPluginSetting, plugin_id)
+        if saved and saved.configuration_managed:
+            draft = await session.get(PluginConfigurationDraft, plugin_id)
+            if draft is None or draft.config_values != saved.config_values:
+                raise HTTPException(422, "導入画面で設定を検証して適用してください。")
+            try:
+                digest = await reference_digest(
+                    session,
+                    saved.config_values,
+                    current.plugin.manifest.configuration_schema,
+                )
+            except ValueError:
+                raise HTTPException(
+                    422, "SSH接続先の承認とテストをやり直してください。"
+                ) from None
+            for action in current.plugin.manifest.setup_actions:
+                test = draft.tests.get(action.id, {})
+                if action.required_for_enable and (
+                    not test.get("ok")
+                    or test.get("digest") != digest
+                    or test.get("version") != current.plugin.manifest.version
+                ):
+                    raise HTTPException(
+                        422, "現在の設定で接続テストを完了してください。"
+                    )
+        elif not current.config.values:
+            raise HTTPException(
+                422, "設定を始めるから接続テストと設定の適用を行ってください。"
+            )
     try:
         await update_collector_setting(
             session,

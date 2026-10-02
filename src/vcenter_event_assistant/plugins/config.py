@@ -52,12 +52,14 @@ def apply_collector_database_overrides(
         if value is not None:
             merged[field_name] = value
     config_values = overrides.get("config_values")
-    if isinstance(config_values, dict) and config_values:
+    if isinstance(config_values, dict) and (config_values or overrides.get("replace_config")):
         values = (
             dict(merged.get("config", {}))
             if isinstance(merged.get("config"), dict)
             else {}
         )
+        if overrides.get("replace_config"):
+            values = {}
         values.update(config_values)
         merged["config"] = values
     return merged

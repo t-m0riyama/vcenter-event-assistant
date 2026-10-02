@@ -1,0 +1,21 @@
+.plugin-setup-panel { margin-block: var(--spacing-4); padding: var(--spacing-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-background-elevated); }
+.plugin-setup-panel fieldset { margin-block: var(--spacing-3); padding: var(--spacing-3); min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.plugin-setup-panel label { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-2); margin-block: var(--spacing-2); }
+.plugin-setup-panel input:not([type='checkbox']), .plugin-setup-panel select { max-width: 100%; padding: var(--spacing-1); }
+.plugin-setup-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; }
+.plugin-setup-panel code { overflow-wrap: anywhere; }
+.plugin-setup-panel [role='alert'] { color: var(--color-error); }
+.plugin-setup-panel .btn { margin: var(--spacing-1); }
+.plugin-setup-steps { display: flex; flex-wrap: wrap; gap: .75rem; list-style: none; padding: 0; margin: 0 0 1.5rem; }
+.plugin-setup-steps li { display: flex; align-items: center; gap: .5rem; color: var(--text-muted); font-size: .85rem; }
+.plugin-setup-steps li span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border: 1px solid var(--color-border); border-radius: 50%; }
+.plugin-setup-steps li[aria-current='step'] { color: var(--color-text); font-weight: 600; }
+.plugin-setup-steps li[aria-current='step'] span { background: var(--color-primary, #2563eb); color: white; border-color: transparent; }
+.plugin-setup-panel > h3 { outline: none; font-size: 1.25rem; }
+.plugin-setup-panel details { margin-block: .75rem; }
+.plugin-setup-panel summary { cursor: pointer; padding-block: .5rem; }
+.plugin-setup-footer { display: flex; justify-content: flex-end; gap: .5rem; padding: 1rem 0 .5rem; margin-top: 1rem; border-top: 1px solid var(--color-border); position: sticky; bottom: 0; background: var(--color-background-elevated); z-index: 1; }
+.plugin-setup-footer .btn { min-height: 44px; min-width: 100px; }
+.plugin-setup-extra { color: var(--text-muted); }
+.plugin-setup-check-state { padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+@media (max-width: 600px) { .plugin-setup-steps { gap: .5rem; } .plugin-setup-steps li { font-size: .75rem; } .plugin-setup-footer .btn { flex: 1; } }

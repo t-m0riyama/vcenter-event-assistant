@@ -35,7 +35,7 @@ from vcenter_event_assistant_plugin_api import (
 from vcenter_event_assistant_plugin_api import limits as _limits
 
 Severity = Literal["error", "warning"]
-IssueKind = Literal["event", "metric", "manifest"]
+IssueKind = Literal["event", "metric", "log", "manifest"]
 
 #: ``registry._validate_plugin`` と同じプラグイン ID の形。
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -105,6 +105,9 @@ def iter_manifest_issues(manifest: CollectorManifest) -> Iterator[Issue]:
             field="api_version",
         )
         return
+    if not math.isfinite(manifest.default_timeout_seconds) or manifest.default_timeout_seconds <= 0:
+        yield Issue("invalid_timeout", "default timeout must be positive and finite", kind="manifest", field="default_timeout_seconds")
+        return
     if manifest.default_interval_seconds < 10:
         yield Issue(
             "interval_too_small",
@@ -122,10 +125,10 @@ def iter_manifest_issues(manifest: CollectorManifest) -> Iterator[Issue]:
             field="description",
         )
         return
-    if not manifest.data_kinds or not manifest.data_kinds <= {"event", "metric"}:
+    if not manifest.data_kinds or not manifest.data_kinds <= {"event", "metric", "log"}:
         yield Issue(
             "invalid_data_kinds",
-            "data_kinds must contain event and/or metric",
+            "data_kinds must contain event, metric and/or log",
             kind="manifest",
             field="data_kinds",
         )
@@ -236,6 +239,21 @@ def _batch_errors(
             "collector emitted undeclared metric data",
             kind="metric",
         )
+    if batch.logs and "log" not in manifest.data_kinds:
+        yield Issue("undeclared_log_kind", "collector emitted undeclared log data", kind="log")
+    for index, record in enumerate(batch.logs):
+        for name, maximum in (("source_id", 128), ("host", 512), ("log_kind", 64), ("file_generation", 128)):
+            value = getattr(record, name)
+            if not value or len(value) > maximum:
+                yield Issue("invalid_log_field", f"log {name} must be 1..{maximum} characters", kind="log", index=index)
+        if record.severity is not None and len(record.severity) > 64:
+            yield Issue("invalid_log_severity", "log severity exceeds 64 characters", kind="log", index=index)
+        if record.byte_offset < 0 or record.byte_offset > 2**63 - 1:
+            yield Issue("invalid_log_offset", "log byte_offset must fit a non-negative int64", kind="log", index=index)
+        for name in ("collected_at", "occurred_at"):
+            value = getattr(record, name)
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                yield Issue("naive_log_timestamp", f"log {name} must be timezone-aware", kind="log", index=index)
     declared = {definition.key for definition in manifest.metric_definitions}
     for index, sample in enumerate(batch.metrics):
         if sample.metric_key not in declared:

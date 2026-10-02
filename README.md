@@ -87,3 +87,6 @@ flowchart TB
 ## ライセンス
 
 本リポジトリは [Apache License 2.0](LICENSE) の下で提供される。著作権表示は [NOTICE](NOTICE) を参照する。
+
+- **プラグインの画面導入仕様**（共通フォーム・接続テスト・SSH管理）: [docs/plugin-onboarding.md](docs/plugin-onboarding.md)
+- **リモートログ収集・検索**（ESXi・vCenterのSSHログプラグイン）: [docs/remote-log-collector.md](docs/remote-log-collector.md)

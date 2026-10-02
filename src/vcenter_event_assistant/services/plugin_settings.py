@@ -32,8 +32,10 @@ async def load_collector_db_overrides(
             values["interval_seconds"] = row.interval_seconds
         if row.timeout_seconds is not None:
             values["timeout_seconds"] = row.timeout_seconds
-        if row.config_values:
+        if row.config_values is not None:
             values["config_values"] = dict(row.config_values)
+            if row.configuration_managed:
+                values["replace_config"] = True
         if values:
             overrides[row.plugin_id] = values
     return overrides

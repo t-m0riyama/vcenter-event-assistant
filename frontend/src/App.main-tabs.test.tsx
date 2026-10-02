@@ -54,6 +54,7 @@ function tabNav(): HTMLElement {
 const MAIN_TAB_LABELS = [
   '概要',
   'イベント',
+  'ログ',
   'グラフ',
   'ダイジェスト',
   '通知履歴',

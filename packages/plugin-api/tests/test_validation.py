@@ -85,10 +85,10 @@ def _codes(issues, severity=None):
             {"default_interval_seconds": 9},
             "default interval must be at least 10 seconds",
         ),
-        ({"data_kinds": frozenset()}, "data_kinds must contain event and/or metric"),
+        ({"data_kinds": frozenset()}, "data_kinds must contain event, metric and/or log"),
         (
             {"data_kinds": frozenset({"alarm"})},
-            "data_kinds must contain event and/or metric",
+            "data_kinds must contain event, metric and/or log",
         ),
         (
             {

@@ -11,6 +11,7 @@ export const collectorRunStatusSchema = z.object({
   last_failure_at: isoOffsetDateTimeSchema.nullable(),
   events_inserted: z.number().int(),
   metrics_inserted: z.number().int(),
+  logs_inserted: z.number().int().default(0),
   error: z.string().nullable(),
 })
 
@@ -19,12 +20,13 @@ export const collectorStatusSchema = z.object({
   display_name: z.string().nullable(),
   // 説明文。未設定のプラグインと、説明を知らない旧バージョンの応答では null。
   description: z.string().nullable().default(null),
+  configuration_available: z.boolean().default(false),
   source: z.string(),
   status: z.enum(['enabled', 'disabled', 'failed']),
   error: z.string().nullable(),
   version: z.string().nullable(),
   api_version: z.number().int().nullable(),
-  data_kinds: z.array(z.enum(['event', 'metric'])),
+  data_kinds: z.array(z.enum(['event', 'metric', 'log'])),
   interval_seconds: z.number().int().nullable(),
   timeout_seconds: z.number().nullable(),
   // 環境変数で固定され、DB 設定より優先されるため編集できない共通フィールド。

@@ -4,6 +4,7 @@ import type { SettingsSubTabId } from '../components/settings-subtab-icons'
 export const MAIN_TAB_IDS: readonly MainTabId[] = [
   'summary',
   'events',
+  'logs',
   'metrics',
   'digests',
   'alerts',
@@ -43,7 +44,7 @@ function isSettingsSubTabId(value: string): value is SettingsSubTabId {
  * 無効・空のときは概要タブへフォールバックする。
  */
 export function parseAppHash(hash: string): ParsedAppHash {
-  const raw = hash.replace(/^#/, '').replace(/^\//, '')
+  const raw = hash.split('?', 1)[0].replace(/^#/, '').replace(/^\//, '')
   const segments = raw.split('/').filter(Boolean)
 
   if (segments.length === 0) {

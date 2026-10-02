@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { readCorrelationRange } from '../routing/correlationRange'
 import { apiGet } from '../api'
 import type { EventRow, VCenter } from '../api/schemas'
 import { normalizeEventListPayload } from '../api/schemas'
@@ -7,6 +8,7 @@ import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
 import {
   EMPTY_ZONED_RANGE_PARTS,
+  zonedRangePartsFromUtcIsoEndpoints,
   zonedRangePartsToCombinedInputs,
   type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
@@ -30,6 +32,17 @@ export type EventsPanelPageSize = (typeof EVENT_PAGE_SIZES)[number]
  */
 export function useEventsPanelController(onError: (e: string | null) => void) {
   const { timeZone } = useTimeZone()
+  const initialLink = readCorrelationRange('events')
+  const [linkedRange, setLinkedRange] = useState(initialLink)
+  const [vcenterId, setVcenterId] = useState(initialLink?.vcenterId ?? '')
+  const [vcenters, setVcenters] = useState<VCenter[]>([])
+  useEffect(() => {
+    let cancelled = false
+    apiGet<unknown>('/api/vcenters').then((raw) => {
+      if (!cancelled) setVcenters(asArray<VCenter>(raw))
+    }).catch((e) => { if (!cancelled) onError(toErrorMessage(e)) })
+    return () => { cancelled = true }
+  }, [onError])
   const [rows, setRows] = useState<EventRow[]>([])
   const [total, setTotal] = useState(0)
   const [minScore, setMinScore] = useState('')
@@ -40,7 +53,20 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
   const [pageSize, setPageSize] = useState<EventsPanelPageSize>(50)
   const [page, setPage] = useState(1)
   const [exporting, setExporting] = useState(false)
-  const [rangeParts, setRangeParts] = useState<ZonedRangeParts>(EMPTY_ZONED_RANGE_PARTS)
+  const [rangeParts, setRangePartsState] = useState<ZonedRangeParts>(() => initialLink
+    ? zonedRangePartsFromUtcIsoEndpoints(initialLink.from, initialLink.to, timeZone) : EMPTY_ZONED_RANGE_PARTS)
+  const setRangeParts = (next: ZonedRangeParts) => { setLinkedRange(null); setRangePartsState(next) }
+  useEffect(() => {
+    const sync = () => {
+      const link = readCorrelationRange('events')
+      if (!link) return
+      setLinkedRange(link); setVcenterId(link.vcenterId)
+      setRangePartsState(zonedRangePartsFromUtcIsoEndpoints(link.from, link.to, timeZone))
+      setPage(1); setMinScore(''); setFilterEventType(''); setFilterSeverity(''); setFilterMessage(''); setFilterComment('')
+    }
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [timeZone])
   const { rangeFromInput, rangeToInput } = useMemo(
     () => zonedRangePartsToCombinedInputs(rangeParts),
     [rangeParts],
@@ -48,13 +74,14 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
 
   const filters = useMemo(
     () => ({
+      vcenterId,
       minScore,
       filterEventType,
       filterSeverity,
       filterMessage,
       filterComment,
     }),
-    [minScore, filterEventType, filterSeverity, filterMessage, filterComment],
+    [vcenterId, minScore, filterEventType, filterSeverity, filterMessage, filterComment],
   )
 
   const commentEdit = useEventCommentEdit({ onError, setRows })
@@ -80,7 +107,7 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
         limit: pageSize,
         offset: (page - 1) * pageSize,
         filters,
-        range: { from: range.from, to: range.to },
+        range: { from: linkedRange?.from ?? range.from, to: linkedRange?.to ?? range.to },
       })
       const raw = await apiGet<unknown>(`/api/events?${q.toString()}`)
       const { items, total: nextTotal } = normalizeEventListPayload(raw)
@@ -94,6 +121,7 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
     }
   }, [
     filters,
+    linkedRange,
     onError,
     page,
     pageSize,
@@ -138,7 +166,7 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
       const all = await fetchAllEventsForExport(
         (q) => apiGet<unknown>(`/api/events?${q.toString()}`),
         filters,
-        { from: range.from, to: range.to },
+        { from: linkedRange?.from ?? range.from, to: linkedRange?.to ?? range.to },
       )
       all.sort(
         (a, b) =>
@@ -159,10 +187,13 @@ export function useEventsPanelController(onError: (e: string | null) => void) {
     } finally {
       setExporting(false)
     }
-  }, [filters, onError, rangeFromInput, rangeToInput, timeZone])
+  }, [filters, linkedRange, onError, rangeFromInput, rangeToInput, timeZone])
 
   return {
     load,
+    vcenterId,
+    setVcenterId,
+    vcenters,
     timeZone,
     rows,
     total,

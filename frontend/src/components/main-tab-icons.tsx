@@ -8,6 +8,7 @@ import { TabButtonSvgIcon } from './tab-svg-icon'
 export type MainTabId =
   | 'summary'
   | 'events'
+  | 'logs'
   | 'metrics'
   | 'digests'
   | 'alerts'
@@ -28,6 +29,7 @@ export function MainTabIcon({ tabId }: { readonly tabId: MainTabId }): ReactElem
           <rect x="9" y="7" width="5" height="7" rx="0.75" />
         </TabButtonSvgIcon>
       )
+    case 'logs':
     case 'events':
       return (
         <TabButtonSvgIcon>

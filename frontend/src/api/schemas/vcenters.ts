@@ -18,6 +18,7 @@ export type VCenter = z.infer<typeof vcenterSchema>
 
 export const appConfigSchema = z.object({
   event_retention_days: z.number(),
+  log_retention_days: z.number().default(7),
   metric_retention_days: z.number(),
   perf_sample_interval_seconds: z.number(),
   /** チャットの WEB 検索（検索プロバイダ構成済み + 対応 LLM）が使えるか（旧サーバ互換で optional） */

@@ -1,0 +1,18 @@
+[project]
+name = "vea-remote-log-collector"
+version = "0.2.0"
+description = "VEA Remote Logs: SSH log collector for ESXi and vCenter 8"
+requires-python = ">=3.12"
+readme = "README.md"
+license = "Apache-2.0"
+dependencies = ["vcenter-event-assistant-plugin-api>=1.4,<2", "asyncssh>=2.24,<3"]
+
+[project.entry-points."vcenter_event_assistant.collectors"]
+"vea.remote.logs" = "vea_remote_log_collector:build_collector"
+
+[dependency-groups]
+dev = ["pytest>=9", "pytest-asyncio>=1"]
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11"]
+build-backend = "uv_build"

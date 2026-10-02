@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -65,6 +65,27 @@ class EventRecord(Base):
     user_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     vcenter: Mapped["VCenter"] = relationship(back_populates="events")
+
+
+class LogRecord(Base):
+    __tablename__ = "log_records"
+    __table_args__ = (
+        UniqueConstraint("vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset", name="uq_log_source_position"),
+        Index("ix_log_vcenter_effective_time", "vcenter_id", "effective_at", "id"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
+    collector_id: Mapped[str] = mapped_column(String(64))
+    source_id: Mapped[str] = mapped_column(String(128), index=True)
+    host: Mapped[str] = mapped_column(String(512))
+    log_kind: Mapped[str] = mapped_column(String(64), index=True)
+    file_generation: Mapped[str] = mapped_column(String(128))
+    byte_offset: Mapped[int] = mapped_column(BigInteger)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    severity: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    message: Mapped[str] = mapped_column(Text)
 
 
 class EventScoreRule(Base):
@@ -154,6 +175,7 @@ class CollectorRunState(Base):
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     events_inserted: Mapped[int] = mapped_column(Integer, default=0)
     metrics_inserted: Mapped[int] = mapped_column(Integer, default=0)
+    logs_inserted: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -171,6 +193,7 @@ class CollectorPluginSetting(Base):
     interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     timeout_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     config_values: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    configuration_managed: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -328,3 +351,32 @@ class IncidentTimelineManualSnapshot(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class PluginConfigurationDraft(Base):
+    __tablename__ = "plugin_configuration_drafts"
+    plugin_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    config_values: Mapped[dict] = mapped_column(JSON, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    tests: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class SSHCredential(Base):
+    __tablename__ = "ssh_credentials"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255))
+    private_key: Mapped[str] = mapped_column(EncryptedString(65536))
+    public_key: Mapped[str] = mapped_column(Text)
+
+
+class SSHConnection(Base):
+    __tablename__ = "ssh_connections"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255))
+    host: Mapped[str] = mapped_column(String(512))
+    port: Mapped[int] = mapped_column(Integer, default=22)
+    username: Mapped[str] = mapped_column(String(512))
+    credential_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("ssh_credentials.id"))
+    candidate_key: Mapped[str | None] = mapped_column(Text)
+    approved_key: Mapped[str | None] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
