@@ -229,7 +229,7 @@ uv run pytest -q
 uv run pytest --cov=vcenter_event_assistant --cov-report=term-missing:skip-covered -q  # カバレッジ確認
 ```
 
-**バックエンド単体カバレッジ baseline（2026-07 時点）:** lines **~78%**（閾値ゲートなし。CI ジョブ `python` で `coverage.xml` と HTML を artifact 保存）。
+**バックエンド単体カバレッジ baseline（2026-07 時点）:** lines **~78%**（閾値ゲートなし）。CI ジョブ `python` は通常の単体テストを実行し、カバレッジ計測・レポート保存は行わない。必要時にローカルで上記のカバレッジ確認コマンドを実行する。
 
 フロントエンド単体テスト（Vitest）:
 
@@ -239,7 +239,7 @@ npm run test              # 単体テスト
 npm run test:coverage     # カバレッジ付き（HTML: frontend/coverage/index.html）
 ```
 
-**フロント単体カバレッジ baseline（2026-07 時点）:** lines **~79%**（閾値ゲートなし。CI ジョブ `frontend-unit` で `coverage-summary.json` と HTML を artifact 保存）。
+**フロント単体カバレッジ baseline（2026-07 時点）:** lines **~79%**（閾値ゲートなし）。CI ジョブ `frontend-unit` は通常の単体テストを実行し、カバレッジ計測・レポート保存は行わない。必要時にローカルで `npm run test:coverage` を実行する。
 
 ### PR 前のローカルチェック
 
@@ -249,7 +249,7 @@ CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗
 |----------|--------|---------------------|
 | `tests/` を触った | `uv run ruff check tests/` | `uv run ruff check src tests` + `uv run mypy` |
 | `src/` のみ | `uv run ruff check src` + `uv run mypy` | `uv run ruff check src tests` + `uv run mypy` |
-| `frontend/` を触った | `cd frontend && npm run test` | `cd frontend && npm run test:coverage` |
+| `frontend/` を触った | `cd frontend && npm run test` | `cd frontend && npm run test` |
 | 広く変更 | — | `uv run ruff check src tests` + `uv run mypy` |
 
 あわせて関連 pytest を実行する（例: `uv run pytest tests/test_alert_eval_events.py -q`）。
