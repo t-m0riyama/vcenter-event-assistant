@@ -75,7 +75,7 @@ Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併�
 - `session.py` 等に手書きの `_ensure_*` 列追加関数を足す
 - モデルだけ変更して Alembic を更新しない
 
-モデルを [`src/vcenter_event_assistant/db/models.py`](../src/vcenter_event_assistant/db/models.py) で変更したら、必ず `alembic/versions/` にリビジョンを追加し、PR では **モデルとマイグレーションをセット**でレビューする。起動時は [`init_db()`](../src/vcenter_event_assistant/db/session.py) が Alembic **`upgrade head` のみ**を実行する。
+モデルを [`src/vcenter_event_assistant/db/models.py`](../src/vcenter_event_assistant/db/models.py) で変更したら、必ず `alembic/versions/` にリビジョンを追加し、PR では **モデルとマイグレーションをセット**でレビューする。起動時は [`init_db()`](../src/vcenter_event_assistant/db/session.py) が 排他制御・SQLite バックアップ付きで Alembic **`upgrade head`** を実行する。
 
 #### 起動時の `init_db()` の挙動
 
@@ -90,12 +90,28 @@ fingerprint は次の 3 列の有無で stamp 先を推定する（[`alembic_run
 
 | `events.user_comment` | `event_type_guides.action_required` | `alert_states.last_notified_at` | stamp 先リビジョン |
 | --- | --- | --- | --- |
-| あり | あり | あり | `k4l5m6n7o8p9`（head） |
+| あり | あり | あり | `k4l5m6n7o8p9`（旧リビジョン） |
 | あり | あり | なし | `j3k4l5m6n7o8` |
 | あり | なし | なし | `b2c3d4e5f6a7` |
 | なし | なし | なし | `c4d27748ae50` |
 
 上記以外の組み合わせは自動 stamp できない。**バックアップから復元**するか、スキーマを確認のうえ手動で `alembic stamp` する（下記「トラブルシューティング」）。
+
+#### 自動移行の設定と排他制御
+
+通常の更新では、アプリ起動だけで未適用のマイグレーションを適用する。Docker イメージには `alembic.ini` と `alembic/` を同梱している。
+
+- `VEA_DB_AUTO_MIGRATE=true`（既定）: 起動時に移行する。`false` は手動移行用で、DB が head の場合だけ起動できる。空 DB・旧 DB では停止する。
+- `VEA_DB_MIGRATION_LOCK_TIMEOUT_SECS=300`（既定）: ロック待機の上限秒数。0 は即時取得のみ。負数は設定エラー。
+- `VEA_DB_BACKUP_GENERATIONS=5`（既定）: SQLite 自動バックアップの保持世代数。0 は無制限。負数は設定エラー。
+
+SQLite ファイルは DB 隣の `<DB名>.migrate.lock` の `flock`、PostgreSQL は session advisory lock で同時起動を直列化する。待機後にリビジョンを読み直し、先行プロセスが更新済みならスキップする。SQLite のメモリ DB はプロセスごとに独立するためファイルロックとバックアップは不要。SQLite ファイルの排他制御は Linux/macOS が対象で、ロック機構がない環境では起動を停止する。ロックファイルはプロセス終了後も存在してよい。稼働中に削除しないこと。
+
+移行が必要な既存 SQLite DB は、stamp より前に SQLite backup API で WAL 内の書き込みを含めて退避する。保存先は DB 隣の `backups/<DB名>.<UTC日時>.<一意ID>.pre-migrate.bak`、権限は所有者のみ読み書き可能な `0600`。空 DB・head 到達済み DB は退避しない。成功後に同じ DB の自動バックアップだけを世代整理する。失敗時のバックアップと手動バックアップは保持する。PostgreSQL のバックアップは運用側で取得する。
+
+ログには `DB_MIGRATION_STARTED`、`DB_MIGRATION_BACKUP_CREATED`、`DB_MIGRATION_COMPLETED`、`DB_MIGRATION_SKIPPED`、`DB_MIGRATION_FAILED` を出す。DB 接続 URL や認証情報は出力しない。バックアップ失敗・移行失敗・ロック待ち超過では API 受付とスケジューラ開始前に停止する。自動 downgrade や自動復元は行わない。
+
+ロックは起動処理同士の排他制御であり、稼働中の旧アプリへのアクセスを停止するものではない。更新時は旧アプリを停止してから新しいアプリを起動する。手動の Alembic コマンドもアプリ停止後に実行する。
 
 #### モデル変更の開発手順
 
@@ -171,12 +187,20 @@ pg_dump -h localhost -U user -d vcenter_event_assistant -Fc -f "./backup/vea-$(d
 
 1. 上記のとおり **バックアップ**を取る。
 2. 新しいイメージ／コードをデプロイし、アプリを起動する（lifespan 内の `init_db()` が `upgrade head` を実行）。
-3. 起動ログに `LegacySchemaStampError` が無いことを確認する。
+3. 起動ログで `DB_MIGRATION_COMPLETED` または `DB_MIGRATION_SKIPPED` を確認する。
 4. 必要なら `GET /health` および主要画面で DB 参照が成功することを確認する。
 
 手動のみ適用する場合は、バックアップ後に `DATABASE_URL` を設定して `uv run alembic upgrade head` を実行してから起動してもよい。
 
 #### トラブルシューティング
+
+**起動ログに `DB_MIGRATION_FAILED` が出る**
+
+アプリを停止して原因を解消してから再起動する。ロック待ち超過は先行プロセスの状態を確認し、必要なら待機上限を延ばす。バックアップ失敗は DB 隣のディレクトリへの書き込み権限・空き容量を確認する。未知リビジョンや複数 head はイメージ／コードと DB の履歴を照合し、安易に head へ stamp しない。
+
+SQLite の移行途中で失敗した場合は、全アプリを停止し、DB 本体と `-wal` / `-shm` があればまとめて別の場所へ退避してから、移行前バックアップを DB 本体へ戻す。古い WAL を復元した DB に適用しないこと。失敗原因を直してから起動する。PostgreSQL は運用側のバックアップから復旧する。
+
+自動適用を止める場合は `VEA_DB_AUTO_MIGRATE=false` を設定し、アプリ停止・バックアップ後に `uv run alembic upgrade head`（Docker は `docker compose run --rm app alembic upgrade head`）を実行する。更新前の DB のままでは起動できない。旧 DB の stamp が必要な場合は次の手順も参照する。
 
 **起動時に `LegacySchemaStampError`（fingerprint 曖昧）**
 

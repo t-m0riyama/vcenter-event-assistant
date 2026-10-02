@@ -40,6 +40,10 @@ class DatabaseSettingsMixin(BaseModel):
         ),
     )
 
+    vea_db_auto_migrate: bool = Field(default=True)
+    vea_db_migration_lock_timeout_secs: int = Field(default=300, ge=0)
+    vea_db_backup_generations: int = Field(default=5, ge=0)
+
     event_poll_interval_seconds: int = Field(default=120, ge=10)
     perf_sample_interval_seconds: int = Field(default=300, ge=60)
     event_rate_max_buckets: int = Field(

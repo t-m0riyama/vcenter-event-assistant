@@ -8,6 +8,19 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      migration-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: migration_test
+          POSTGRES_DB: vea_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vea_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -19,6 +32,11 @@ jobs:
           uv run ruff check src packages/plugin-api/src packages/plugin-api/tests tests examples
           uv run mypy
           uv run pytest --cov=vcenter_event_assistant --cov-report=xml --cov-report=html
+
+      - name: PostgreSQL startup migration integration tests
+        env:
+          VEA_TEST_POSTGRES_URL: postgresql+asyncpg://postgres:migration_test@localhost:5432/vea_migration_test
+        run: uv run pytest tests/test_startup_migration.py -k postgres -q
 
       # plugin-api は第三者が単体で pip install する公開パッケージである。
       # 「依存ゼロ」「アプリなしで import できる」は口約束にせず毎 PR で確かめる。
