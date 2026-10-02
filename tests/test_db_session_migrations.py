@@ -15,6 +15,8 @@ from vcenter_event_assistant.db.session import init_db, reset_db
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 
+pytestmark = pytest.mark.real_db_init
+
 
 async def _alert_states_column_names(engine: AsyncEngine) -> list[str]:
     async with engine.connect() as conn:

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import os
 import socket
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import aiosqlite
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 # Settings の `.env` 読み込みを無効化（`src/.../settings.py` の `_settings_env_file` 参照）
 os.environ["VEA_PYTEST"] = "1"
@@ -26,13 +30,49 @@ os.environ.setdefault(
     str(Path(__file__).resolve().parent / "fixtures" / "tiktoken_cache"),
 )
 
-from vcenter_event_assistant.db.session import init_db, reset_db
+from vcenter_event_assistant.db.session import get_engine, init_db, reset_db
+from vcenter_event_assistant.db.startup_migration import run_startup_migration
 from vcenter_event_assistant.main import create_app
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings, get_settings
 from vcenter_event_assistant.settings_binding import bind_settings, clear_settings_binding
 
 get_settings.cache_clear()
 bind_settings(get_settings())
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--test-db-setup",
+        choices=("template", "migrate"),
+        default="template",
+        help="Prepare each application test DB from a migrated template or run migrations.",
+    )
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Each pytest worker owns a fresh, fully migrated database for this run."""
+    path = tmp_path_factory.mktemp("db-template") / "empty.db"
+    settings = Settings(_env_file=None, database_url=f"sqlite+aiosqlite:///{path}")
+    engine = create_async_engine(settings.database_url)
+    try:
+        await run_startup_migration(engine, settings=settings)
+    finally:
+        await engine.dispose()
+    return path
+
+
+@pytest.fixture
+def load_db_template(db_template: Path) -> Callable[[AsyncEngine], Awaitable[None]]:
+    async def load(engine: AsyncEngine) -> None:
+        async with engine.connect() as connection:
+            raw = await connection.get_raw_connection()
+            async with aiosqlite.connect(
+                f"{db_template.as_uri()}?mode=ro", uri=True
+            ) as source:
+                await source.backup(raw.driver_connection)
+
+    return load
 
 
 def _fake_vcenter_getaddrinfo(
@@ -70,15 +110,30 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(autouse=True)
-async def _db_setup() -> None:
+async def _db_setup(
+    request: pytest.FixtureRequest,
+    load_db_template: Callable[[AsyncEngine], Awaitable[None]],
+) -> None:
     await reset_db()
     get_settings.cache_clear()
-    bind_settings(get_settings())
-    await init_db(settings=get_settings())
-    yield
-    await reset_db()
-    get_settings.cache_clear()
-    clear_settings_binding()
+    settings = get_settings()
+    bind_settings(settings)
+    try:
+        engine = get_engine(settings=settings)
+        if (
+            request.config.getoption("--test-db-setup") == "migrate"
+            or request.node.get_closest_marker("real_db_init") is not None
+            or engine.url.get_backend_name() != "sqlite"
+            or engine.url.database != ":memory:"
+        ):
+            await init_db(settings=settings)
+        else:
+            await load_db_template(engine)
+        yield
+    finally:
+        await reset_db()
+        get_settings.cache_clear()
+        clear_settings_binding()
 
 
 @pytest.fixture

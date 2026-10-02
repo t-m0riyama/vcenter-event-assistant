@@ -34,6 +34,8 @@ from vcenter_event_assistant.db.startup_migration import (
 )
 from vcenter_event_assistant.settings import Settings
 
+pytestmark = pytest.mark.real_db_init
+
 WORKER = """
 import asyncio, os
 from sqlalchemy.ext.asyncio import create_async_engine

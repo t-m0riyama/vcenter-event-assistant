@@ -48,16 +48,23 @@ async def test_run_ingest_returns_409_when_busy(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_run_ingest_all_passes_settings_to_ingest_functions() -> None:
-    """オーケストレータが settings を取り込みバッチに渡すことを確認する。"""
+    """レジストリ未初期化時に settings を取り込みバッチへ渡すことを確認する。"""
     from vcenter_event_assistant.settings import Settings
     from vcenter_event_assistant.services.ingest_runner import run_ingest_all
 
     settings = Settings()
 
-    with patch(
-        "vcenter_event_assistant.services.ingest_runner.ingest_for_enabled_vcenters",
-        new=AsyncMock(side_effect=[2, 4]),
-    ) as mock_batch:
+    # レジストリの初期化状態を他のテストの実行順序に依存させない。
+    with (
+        patch(
+            "vcenter_event_assistant.services.ingest_runner.get_collector_registry",
+            side_effect=RuntimeError("registry is not initialized"),
+        ),
+        patch(
+            "vcenter_event_assistant.services.ingest_runner.ingest_for_enabled_vcenters",
+            new=AsyncMock(side_effect=[2, 4]),
+        ) as mock_batch,
+    ):
         result = await run_ingest_all(settings)
 
     assert result == IngestRunResult(events_inserted=2, metrics_inserted=4)

@@ -226,8 +226,36 @@ stamp は「この DB は既にそのリビジョン相当のスキーマであ�
 uv run ruff check src tests
 uv run mypy
 uv run pytest -q
+uv run pytest --durations=30  # 逐次実行で遅いテストと setup / teardown を確認
+uv run pytest -n 2 --dist loadfile --durations=30  # CI と同じ2プロセス並列実行
+uv run pytest --test-db-setup=migrate -n 2 --dist loadfile --durations=30  # 従来の DB 準備と比較
+uv run pytest -m digest_heavy -n 2 --dist loadfile  # 通常は除外するダイジェストテスト
 uv run pytest --cov=vcenter_event_assistant --cov-report=term-missing:skip-covered -q  # カバレッジ確認
 ```
+
+CI の `python` ジョブは依存導入・Ruff・mypy・pytest を個別のステップで実行する。pytest は `pytest-xdist` で2プロセスに分け、同じファイルのテストは同じプロセスに割り当てる。ローカルの `uv run pytest` は従来どおり逐次実行で、`digest_heavy` の既定除外とテストごとの DB 分離は両方の実行方法で共通である。
+
+**テスト用 DB の準備:** 既定の `--test-db-setup=template` は worker ごとに一度、pytest の一時ディレクトリに全マイグレーションを適用した空 DB を作成する。接続を閉じたテンプレートを読み取り専用で開き、各テストの新しいインメモリ DB へ SQLite backup API で複製する。テンプレートを実行間で使い回さず、テストのデータやスキーマ変更を次のテストへ持ち越さない。設定の bind／解除、外部キー有効化、エンジンの dispose は従来どおりで、本体の `init_db()` は変更・モックしていない。
+
+`--test-db-setup=migrate` は従来の各テストでマイグレーションする方式に切り替える。`real_db_init` マーカーはこのオプションより優先して実際の `init_db()` を実行し、起動時マイグレーション・DB 移行・複合インデックスの検証モジュールに付与している。fixture の DB がインメモリ SQLite 以外の場合も実際の初期化を使う。
+
+DB 準備の短縮効果は、同一コミットの2プロセス実行で `--test-db-setup=template` と `--test-db-setup=migrate` を各3回比較する。pytest・`python` ジョブ・CI 全体の中央値、テストの対象と成功・スキップ件数を記録し、複製方式の3回すべての成功と実測での短縮を確認する。
+
+**DB 準備の比較結果（2026-10-03、日本時間）:** 同一コミット `6e236c0b72200a7519295005aafbb3cef9b429e3` の比較専用ブランチで、`ubuntu-latest`・2プロセス実行を各3回計測した。全6回の Python テストが対象972件・成功970件・スキップ2件で一致し、追加したDB複製の回帰テスト3件も含む。中央値は pytest **106.13秒 → 51.39秒**、`python` ジョブ **143秒 → 85秒**、CI 全体 **177秒 → 89秒（49.7%短縮）**。複製方式のCIは3回すべて成功し、追加25%短縮の目標を達成した。通常は除外するダイジェストテストも、ローカルで両方式とも52件成功した。
+
+- 従来方式の実行ログ: [1回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37070909664)、[2回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37070910356)、[3回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37070909749)。
+- 複製方式の実行ログ: [1回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37070909867)、[2回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37070909932)、[3回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37070910480)。
+
+従来方式の2回目は `frontend-unit` の `LogsPanel.test.tsx` で、ページング後の offset が期待値 `0` に対して `40` となり失敗した。Python ジョブは成功し、全体の終了時刻もPythonジョブで決まっている。失敗した実行も計測に含め、修正や再試行はしていない。CI 全体の時間はrunner待ち時間を含む作成から完了までで、実行時間にもばらつきがあるため、短縮率はこの各3回の観測結果として扱う。
+
+CI の短縮効果を比較するときは、アプリ・テスト・依存関係が同じコードと同等の GitHub runner を使い、pytest コマンドだけを逐次／並列で切り替えて各3回実行する。pytest の実行時間、`python` ジョブの開始から終了まで、CI 全体の作成から完了までの時間の中央値を比較する。実行対象と成功・スキップ・除外件数が一致し、並列の3回すべてが成功することを確認する。CI 全体の25%以上の短縮を目標とし、失敗を隠す再試行は追加しない。
+
+**比較結果（2026-10-03、日本時間）:** 同一コミット `5e73f6c8c77391241e48ae6172aa056d8a4cb0c1` の比較専用ブランチで、`ubuntu-latest`・Python 3.12.3 を使い、push 時の全3ジョブを各3回実行した。すべて成功し、pytest の対象969件・成功967件・スキップ2件は一致した（`digest_heavy` 52件を除外。xdist の集約表示には除外件数が出ない）。中央値は pytest **176.71秒 → 139.14秒**、`python` ジョブ **206秒 → 178秒**、CI 全体 **209秒 → 181秒（13.4%短縮）**。目標25%には未達。逐次の pytest は162.33〜239.15秒、並列は137.81〜140.44秒で、実行時間のばらつきもあるため、3回の比較結果として扱う。
+
+- 逐次の実行ログ: [1回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37069113106)、[2回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37069113226)、[3回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37069113743)。
+- 並列の実行ログ: [1回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37069111976)、[2回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37069112364)、[3回目](https://github.com/t-m0riyama/vcenter-event-assistant/actions/runs/37069112501)。
+
+初回の並列比較では `test_run_ingest_all_passes_settings_to_ingest_functions` がレジストリの初期化状態に依存し、3回中2回で失敗した。このテストが検証するレジストリ未初期化時の経路を明示的にモックして、実行順序への依存を解消したうえで上記6回を計測した。実処理や DB fixture は変更していない。
 
 **バックエンド単体カバレッジ baseline（2026-07 時点）:** lines **~78%**（閾値ゲートなし）。CI ジョブ `python` は通常の単体テストを実行し、カバレッジ計測・レポート保存は行わない。必要時にローカルで上記のカバレッジ確認コマンドを実行する。
 
