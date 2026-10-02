@@ -18,7 +18,7 @@ jobs:
           uv sync --all-groups
           uv run ruff check src packages/plugin-api/src packages/plugin-api/tests tests examples
           uv run mypy
-          uv run pytest --cov=vcenter_event_assistant --cov-report=xml --cov-report=html
+          uv run pytest
 
       # plugin-api は第三者が単体で pip install する公開パッケージである。
       # 「依存ゼロ」「アプリなしで import できる」は口約束にせず毎 PR で確かめる。
@@ -92,14 +92,6 @@ jobs:
                 pytest -q -p no:cacheprovider tests
             )
           done
-      - name: Upload coverage reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-coverage
-          path: |
-            coverage.xml
-            htmlcov/index.html
-          if-no-files-found: error
 
   frontend-unit:
     runs-on: ubuntu-latest
@@ -118,19 +110,10 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Unit tests and coverage
+      - name: Unit tests
         if: github.event_name == 'push' || steps.changes.outputs.frontend == 'true'
         working-directory: frontend
-        run: npm ci && npm run test:coverage
-      - name: Upload coverage reports
-        if: github.event_name == 'push' || steps.changes.outputs.frontend == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-coverage
-          path: |
-            frontend/coverage/coverage-summary.json
-            frontend/coverage/index.html
-          if-no-files-found: error
+        run: npm ci && npm run test
 
   e2e:
     runs-on: ubuntu-latest
