@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import { Profiler } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LogsPanel } from './LogsPanel'
@@ -219,6 +220,7 @@ describe('LogsPanel', () => {
 
     total = 15
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(lastLogRequest().searchParams.get('offset')).toBe('0'))
     await waitFor(() => expect(screen.getByText('全 15 件中 1–15 件を表示')).toBeInTheDocument())
     expect(lastLogRequest().searchParams.get('offset')).toBe('0')
     expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
@@ -239,6 +241,124 @@ describe('LogsPanel', () => {
     await waitFor(() => expect(lastLogRequest().searchParams.get('limit')).toBe('200'))
     await waitFor(() => expect(screen.getByText('全 101 件中 1–101 件を表示')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+  })
+
+  async function startPageCorrection(total: number) {
+    const pending: { params: URLSearchParams; resolve: (value: Response) => void; reject: (reason: Error) => void }[] = []
+    const statuses: (string | null)[] = []
+    const onError = vi.fn()
+    let deferLogs = false
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vcenters')) return response([])
+      if (url.includes('/api/plugins')) return response({ generation: 1, collectors: [] })
+      if (!deferLogs) return response({ items: [row], total: 101 })
+      return new Promise<Response>((resolve, reject) => {
+        pending.push({ params: new URL(url, 'http://test').searchParams, resolve, reject })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TimeZoneProvider><Profiler id="logs" onRender={() => {
+      statuses.push(screen.getByRole('status').textContent)
+    }}><LogsPanel onError={onError} /></Profiler></TimeZoneProvider>)
+    await screen.findByText('全 101 件中 1–50 件を表示')
+    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '20' } })
+    await screen.findByText('全 101 件中 1–20 件を表示')
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await screen.findByText('全 101 件中 21–40 件を表示')
+    deferLogs = true
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(pending).toHaveLength(1))
+    expect(pending[0].params.get('offset')).toBe('40')
+    statuses.length = 0
+    await act(async () => {
+      pending[0].resolve(await response({ items: [{ ...row, message: 'Out-of-range response' }], total }))
+    })
+    await waitFor(() => expect(pending).toHaveLength(2))
+    return { pending, statuses, onError }
+  }
+
+  it.each([
+    { total: 15, offset: '0', text: '全 15 件中 1–15 件を表示' },
+    { total: 35, offset: '20', text: '全 35 件中 21–35 件を表示' },
+    { total: 0, offset: '0', text: '全 0 件' },
+  ])('keeps loading until the corrected page completes when total becomes $total', async ({ total, offset, text }) => {
+    const { pending, statuses } = await startPageCorrection(total)
+    expect(pending[1].params.get('offset')).toBe(offset)
+    expect(pending[1].params.get('limit')).toBe('20')
+    // Inspect every committed render, including the handoff between requests.
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(statuses.every((status) => status === '読み込み中…')).toBe(true)
+    expect(screen.queryByText('Out-of-range response', { selector: 'summary' })).not.toBeInTheDocument()
+    expect(screen.queryByText(text)).not.toBeInTheDocument()
+    for (const name of ['前へ', '次へ', 'CSVをダウンロード']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled()
+    }
+    await act(async () => {
+      pending[1].resolve(await response({ items: total ? [{ ...row, message: 'Corrected page' }] : [], total }))
+    })
+    await screen.findByText(text)
+    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+    if (total) {
+      expect(screen.getByText('Corrected page', { selector: 'summary' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled()
+    } else {
+      expect(screen.getByText('条件に一致するログはありません')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeDisabled()
+    }
+    const previous = screen.getByRole('button', { name: '前へ' })
+    if (offset === '0') expect(previous).toBeDisabled()
+    else expect(previous).toBeEnabled()
+    expect(pending).toHaveLength(2)
+  })
+
+  it('reports a corrected-page failure and leaves loading', async () => {
+    const { pending, onError } = await startPageCorrection(15)
+    await act(async () => { pending[1].reject(new Error('corrected page offline')) })
+    expect(onError).toHaveBeenCalledWith('corrected page offline')
+    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Out-of-range response', { selector: 'summary' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled()
+  })
+
+  it('ignores a stale corrected response without clearing the newer request loading state', async () => {
+    const { pending, onError } = await startPageCorrection(15)
+    fireEvent.click(screen.getByText('絞り込み条件'))
+    fireEvent.change(screen.getByLabelText('本文（含む）'), { target: { value: 'new filter' } })
+    await waitFor(() => expect(pending).toHaveLength(3))
+    expect(pending[2].params.get('message_contains')).toBe('new filter')
+    expect(pending[2].params.get('offset')).toBe('0')
+    await act(async () => {
+      pending[1].resolve(await response({ items: [{ ...row, message: 'Stale corrected page' }], total: 15 }))
+    })
+    expect(screen.getByText('読み込み中…')).toBeInTheDocument()
+    expect(screen.queryByText('Stale corrected page', { selector: 'summary' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeDisabled()
+    await act(async () => {
+      pending[2].resolve(await response({ items: [{ ...row, message: 'New filtered page' }], total: 1 }))
+    })
+    expect(screen.getByText('New filtered page', { selector: 'summary' })).toBeInTheDocument()
+    expect(screen.getByText('全 1 件中 1–1 件を表示')).toBeInTheDocument()
+    expect(onError).not.toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it('clears loading for an invalid range and ignores a pending corrected response', async () => {
+    const { pending, onError } = await startPageCorrection(15)
+    fireEvent.click(screen.getByText('絞り込み条件'))
+    fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-02' } })
+    await waitFor(() => expect(pending).toHaveLength(3))
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2026-01-01' } })
+    await waitFor(() => expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument())
+    expect(onError).toHaveBeenCalledWith(expect.any(String))
+    expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeDisabled()
+    await act(async () => {
+      for (const request of pending.slice(1)) {
+        request.resolve(await response({ items: [{ ...row, message: 'Stale range page' }], total: 15 }))
+      }
+    })
+    expect(screen.queryByText('Stale range page', { selector: 'summary' })).not.toBeInTheDocument()
+    expect(pending).toHaveLength(3)
   })
 
 })

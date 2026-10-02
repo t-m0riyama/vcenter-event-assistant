@@ -132,20 +132,26 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
     let cancelled = false
     void (async () => {
       const filters = getFilters()
-      if (!filters || cancelled) return
+      if (cancelled) return
+      if (!filters) { setLoading(false); return }
       const params = buildLogListSearchParams(filters, pageSize, page * pageSize)
       setLoading(true); onError(null)
+      let correctingPage = false
       try {
         const raw = await apiGet<unknown>(`/api/logs?${params}`)
         if (cancelled) return
         const next = pageSchema.parse(raw)
+        if (page > 0 && page * pageSize >= next.total) {
+          // Keep loading until the corrected page has been fetched.
+          correctingPage = true
+          setPage(Math.max(0, Math.ceil(next.total / pageSize) - 1))
+          return
+        }
         setData(next)
-        if (page > 0 && page * pageSize >= next.total) setPage(Math.max(0, Math.ceil(next.total / pageSize) - 1))
-
       } catch (e) {
         if (!cancelled) onError(toErrorMessage(e))
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && !correctingPage) setLoading(false)
       }
     })()
     return () => { cancelled = true }
