@@ -53,6 +53,16 @@ def is_chat_llm_configured(settings: Settings) -> bool:
     )
 
 
+def chat_provider_supports_images(settings: Settings) -> bool:
+    """チャット LLM に画像を渡せるプロバイダか。
+
+    Copilot CLI は単一のプロンプト文字列しか受け取れないため画像を渡せない。
+    """
+    if settings.mock_mode:
+        return True
+    return resolve_llm_profile(settings, purpose="chat").provider != "copilot_cli"
+
+
 def effective_chat_api_key(settings: Settings) -> str:
     """
     チャット API で用いる実効 API キー（strip 済み）。

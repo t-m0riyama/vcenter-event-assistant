@@ -4,12 +4,24 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Literal
 
 import tiktoken
 
-from vcenter_event_assistant.api.schemas import ChatLlmContextMeta, ChatMessage
+from vcenter_event_assistant.api.schemas import (
+    ChatAttachment,
+    ChatLlmContextMeta,
+    ChatMessage,
+)
+from vcenter_event_assistant.services.chat.chat_attachments import (
+    ATTACHMENT_TRUNCATION_SUFFIX,
+    estimate_image_tokens,
+    image_attachments,
+    render_attachment_text_block,
+    text_attachments,
+)
 from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
 from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
@@ -177,17 +189,28 @@ def _trim_json_raw(raw: str, max_chars: int) -> str:
     return raw[:max_chars] + _JSON_TRUNCATION_SUFFIX
 
 
-def estimate_chat_input_tokens(block: str, trimmed: list[ChatMessage]) -> int:
+def estimate_chat_input_tokens(
+    block: str,
+    trimmed: list[ChatMessage],
+    attachment_block: str | None = None,
+    image_count: int = 0,
+) -> int:
     """
-    システムプロンプト + コンテキストブロック + 会話のトークン数の目安。
+    システムプロンプト + コンテキストブロック + 会話 + 添付のトークン数の目安。
 
     OpenAI 互換・Gemini ともに同一の文字列集合を想定した近似（Gemini 公式とは一致しない）。
+    画像は tiktoken で測れないため 1 枚あたりの定数で加算する。
     """
     enc = _chat_token_encoding()
     n = len(enc.encode(CHAT_SYSTEM_PROMPT)) + len(enc.encode(block))
     for m in trimmed:
         n += len(enc.encode(m.content))
-    n += _CHAT_MESSAGE_OVERHEAD_TOKENS_PER_TURN * (2 + len(trimmed))
+    turns = 2 + len(trimmed)
+    if attachment_block:
+        n += len(enc.encode(attachment_block))
+        turns += 1
+    n += estimate_image_tokens(image_count)
+    n += _CHAT_MESSAGE_OVERHEAD_TOKENS_PER_TURN * turns
     return n
 
 
@@ -195,6 +218,8 @@ def _best_json_string_for_budget(
     raw_json: str,
     trimmed: list[ChatMessage],
     max_tokens: int,
+    attachment_block: str | None = None,
+    image_count: int = 0,
 ) -> tuple[str, bool]:
     """
     `raw_json` を短くしつつ、推定トークンが `max_tokens` 以下になるよう調整する。
@@ -204,7 +229,7 @@ def _best_json_string_for_budget(
     """
     full = raw_json
     block = merged_context_user_block(full)
-    if estimate_chat_input_tokens(block, trimmed) <= max_tokens:
+    if estimate_chat_input_tokens(block, trimmed, attachment_block, image_count) <= max_tokens:
         return full, False
 
     lo, hi = 1, max(1, len(full) - 1)
@@ -213,7 +238,7 @@ def _best_json_string_for_budget(
         mid = (lo + hi) // 2
         ctx = _trim_json_raw(full, mid)
         blk = merged_context_user_block(ctx)
-        if estimate_chat_input_tokens(blk, trimmed) <= max_tokens:
+        if estimate_chat_input_tokens(blk, trimmed, attachment_block, image_count) <= max_tokens:
             best = ctx
             lo = mid + 1
         else:
@@ -224,36 +249,101 @@ def _best_json_string_for_budget(
     return best, True
 
 
+def _best_attachment_block_for_budget(
+    attachment_block: str,
+    block: str,
+    trimmed: list[ChatMessage],
+    max_tokens: int,
+    image_count: int,
+) -> tuple[str | None, bool]:
+    """添付ブロックを予算に収まる長さまで切り詰める。
+
+    Returns:
+        (attachment_block, truncated)。どれだけ削っても収まらないときは (None, True)。
+    """
+
+    def fits(candidate: str | None) -> bool:
+        return (
+            estimate_chat_input_tokens(block, trimmed, candidate, image_count) <= max_tokens
+        )
+
+    if fits(attachment_block):
+        return attachment_block, False
+
+    lo, hi = 1, max(1, len(attachment_block) - 1)
+    best: str | None = None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        candidate = attachment_block[:mid] + ATTACHMENT_TRUNCATION_SUFFIX
+        if fits(candidate):
+            best = candidate
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    if best is None:
+        return None, True
+    return best, True
+
+
 def fit_chat_payload_to_token_budget(
     payload: dict[str, Any],
     messages: list[ChatMessage],
     *,
     settings: Settings | None = None,
-) -> tuple[str, list[ChatMessage], bool]:
+    attachment_block: str | None = None,
+    image_count: int = 0,
+) -> tuple[str, list[ChatMessage], bool, str | None, bool]:
     """
-    集約 JSON と会話を `llm_chat_max_input_tokens` 以下に収める。
+    集約 JSON・会話・添付を `llm_chat_max_input_tokens` 以下に収める。
 
-    先に JSON を短くし、足りなければ古い会話から削る。
+    削る順序は ① JSON ② 古い会話（最後のターンは残す） ③ 添付テキスト。
+    添付は利用者がいま尋ねている対象なので最後まで残す。
 
     Returns:
-        (ctx_json, trimmed_messages, json_truncated)
+        (ctx_json, trimmed_messages, json_truncated, attachment_block, attachment_truncated)
     """
     settings = settings or require_settings()
     max_tokens = settings.llm_chat_max_input_tokens
     trimmed = messages[-MAX_CHAT_MESSAGES:]
     json_truncated = False
+    attachment_truncated = False
 
     while True:
         raw_json = json.dumps(payload, ensure_ascii=False)
-        ctx_json, jtrunc = _best_json_string_for_budget(raw_json, trimmed, max_tokens)
+        ctx_json, jtrunc = _best_json_string_for_budget(
+            raw_json, trimmed, max_tokens, attachment_block, image_count
+        )
         json_truncated = json_truncated or jtrunc
         block = merged_context_user_block(ctx_json)
-        if estimate_chat_input_tokens(block, trimmed) <= max_tokens:
-            return ctx_json, trimmed, json_truncated
-        if not trimmed:
-            ctx_json = _trim_context_json(payload, max_chars=1)
-            return ctx_json, [], True
-        trimmed = trimmed[1:]
+        if (
+            estimate_chat_input_tokens(block, trimmed, attachment_block, image_count)
+            <= max_tokens
+        ):
+            return ctx_json, trimmed, json_truncated, attachment_block, attachment_truncated
+        if len(trimmed) > 1:
+            trimmed = trimmed[1:]
+            continue
+        if attachment_block:
+            attachment_block, attachment_truncated = _best_attachment_block_for_budget(
+                attachment_block, block, trimmed, max_tokens, image_count
+            )
+            if (
+                estimate_chat_input_tokens(block, trimmed, attachment_block, image_count)
+                <= max_tokens
+            ):
+                return (
+                    ctx_json,
+                    trimmed,
+                    json_truncated,
+                    attachment_block,
+                    attachment_truncated,
+                )
+        if trimmed:
+            trimmed = []
+            continue
+        ctx_json = _trim_context_json(payload, max_chars=1)
+        return ctx_json, [], True, attachment_block, attachment_truncated
 
 
 def merged_context_user_block(ctx_json: str) -> str:
@@ -279,11 +369,14 @@ def prepare_chat_payload(
     extra_vcenter_strings: Sequence[str] | None,
     *,
     settings: Settings | None = None,
-) -> tuple[dict[str, Any], list[ChatMessage], dict[str, str]]:
+    attachments: Sequence[ChatAttachment] | None = None,
+) -> tuple[dict[str, Any], list[ChatMessage], str | None, dict[str, str]]:
     """digest_context から high_cpu/mem を除外 → payload 構築 → 匿名化。
 
+    添付テキストは会話本文と同一の匿名化トークン体系に載せる（画像は匿名化できない）。
+
     Returns:
-        (payload, trimmed_messages, reverse_map)
+        (payload, trimmed_messages, attachment_block, reverse_map)
     """
     settings = settings or require_settings()
     digest_obj = context.model_dump(mode="json")
@@ -298,19 +391,46 @@ def prepare_chat_payload(
         payload["incident_timeline"] = incident_timeline.model_dump(mode="json")
 
     trimmed_msgs = messages[-MAX_CHAT_MESSAGES:]
+    attachment_list = list(attachments or [])
+    attachment_bodies = [a.text or "" for a in text_attachments(attachment_list)]
     reverse_map: dict[str, str] = {}
     if settings.llm_anonymization_enabled:
-        pl, contents, reverse_map = anonymize_chat_for_llm(
+        pl, contents, attachment_bodies, reverse_map = anonymize_chat_for_llm(
             payload,
             [m.content for m in trimmed_msgs],
             extra_vcenter_strings=extra_vcenter_strings,
+            attachment_texts=attachment_bodies,
         )
         payload = pl
         trimmed_msgs = [
             ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
         ]
 
-    return payload, trimmed_msgs, reverse_map
+    attachment_block = render_attachment_text_block(attachment_list, attachment_bodies)
+    return payload, trimmed_msgs, attachment_block, reverse_map
+
+
+@dataclass(frozen=True)
+class ChatLlmContext:
+    """LLM 呼び出し直前に確定する入力一式。"""
+
+    block: str
+    """集約 JSON のユーザーブロック。"""
+
+    trimmed: list[ChatMessage]
+    """トークン予算適用後の会話履歴。"""
+
+    attachment_block: str | None
+    """テキスト添付のユーザーブロック（無ければ None）。"""
+
+    images: list[ChatAttachment]
+    """LLM に渡す画像添付（プロバイダ非対応時は空）。"""
+
+    meta: ChatLlmContextMeta
+    """トークン予算・切り詰めの統計。"""
+
+    reverse_map: dict[str, str]
+    """匿名化トークン → 原文。"""
 
 
 def build_chat_llm_context(
@@ -322,10 +442,16 @@ def build_chat_llm_context(
     extra_vcenter_strings: Sequence[str] | None,
     *,
     settings: Settings | None = None,
-) -> tuple[str, list[ChatMessage], ChatLlmContextMeta, dict[str, str]]:
-    """LLM 呼び出し前のコンテキストブロック・会話・メタデータを構築する。"""
+    attachments: Sequence[ChatAttachment] | None = None,
+    supports_images: bool = True,
+) -> ChatLlmContext:
+    """LLM 呼び出し前のコンテキストブロック・会話・添付・メタデータを構築する。
+
+    ``supports_images`` が偽のとき、画像添付は渡さずメタに理由を残す。
+    """
     settings = settings or require_settings()
-    payload, trimmed_msgs, reverse_map = prepare_chat_payload(
+    attachment_list = list(attachments or [])
+    payload, trimmed_msgs, attachment_block, reverse_map = prepare_chat_payload(
         context,
         messages,
         period_metrics,
@@ -333,18 +459,44 @@ def build_chat_llm_context(
         incident_timeline,
         extra_vcenter_strings,
         settings=settings,
+        attachments=attachment_list,
     )
-    ctx_json, trimmed, json_truncated = fit_chat_payload_to_token_budget(
-        payload,
-        trimmed_msgs,
-        settings=settings,
+
+    dropped_reason: str | None = None
+    images = image_attachments(attachment_list)
+    if images and not supports_images:
+        dropped_reason = (
+            "現在の LLM プロバイダは画像を扱えないため、画像の添付は無視しました"
+        )
+        images = []
+
+    ctx_json, trimmed, json_truncated, attachment_block, attachment_truncated = (
+        fit_chat_payload_to_token_budget(
+            payload,
+            trimmed_msgs,
+            settings=settings,
+            attachment_block=attachment_block,
+            image_count=len(images),
+        )
     )
     block = merged_context_user_block(ctx_json)
-    est_tokens = estimate_chat_input_tokens(block, trimmed)
+    est_tokens = estimate_chat_input_tokens(block, trimmed, attachment_block, len(images))
+    text_count = len(text_attachments(attachment_list)) if attachment_block else 0
     meta = ChatLlmContextMeta(
         json_truncated=json_truncated,
         estimated_input_tokens=est_tokens,
         max_input_tokens=settings.llm_chat_max_input_tokens,
         message_turns=len(trimmed),
+        attachment_count=text_count + len(images),
+        attachment_text_chars=len(attachment_block or ""),
+        attachment_truncated=attachment_truncated,
+        attachments_dropped_reason=dropped_reason,
     )
-    return block, trimmed, meta, reverse_map
+    return ChatLlmContext(
+        block=block,
+        trimmed=trimmed,
+        attachment_block=attachment_block,
+        images=images,
+        meta=meta,
+        reverse_map=reverse_map,
+    )

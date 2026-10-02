@@ -242,11 +242,17 @@ def anonymize_chat_for_llm(
     message_contents: list[str],
     *,
     extra_vcenter_strings: Sequence[str] | None = None,
-) -> tuple[dict[str, Any], list[str], dict[str, str]]:
+    attachment_texts: Sequence[str] | None = None,
+) -> tuple[dict[str, Any], list[str], list[str], dict[str, str]]:
     """
-    チャット用: マージ済みペイロードと会話本文を同一 ``LlmAnonymizer`` で匿名化する。
+    チャット用: マージ済みペイロード・会話本文・添付本文を同一 ``LlmAnonymizer`` で匿名化する。
 
     ``extra_vcenter_strings`` により登録済み vCenter 名を会話本文からもトークン化する。
+    ``attachment_texts`` は添付ファイルの本文。会話と同じトークン体系に載せるため、
+    別インスタンスを作らずここでまとめて処理する（画像は匿名化できない）。
+
+    Returns:
+        (payload, message_contents, attachment_texts, reverse_map)
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(payload, pairs)
@@ -257,4 +263,5 @@ def anonymize_chat_for_llm(
     _apply_entity_fqdn_short_aliases(a, pairs)
     out_payload = _anonymize_node(payload, a)
     out_contents = [anonymize_plain_text(c, a) for c in message_contents]
-    return out_payload, out_contents, a.reverse_map
+    out_attachments = [anonymize_plain_text(t, a) for t in (attachment_texts or [])]
+    return out_payload, out_contents, out_attachments, a.reverse_map

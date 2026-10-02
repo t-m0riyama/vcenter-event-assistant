@@ -9,6 +9,9 @@ from vcenter_event_assistant.api.schemas import AppConfigResponse
 from vcenter_event_assistant.services.chat.chat_web_search import (
     chat_web_search_available,
 )
+from vcenter_event_assistant.services.llm.llm_profile import (
+    chat_provider_supports_images,
+)
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -23,5 +26,9 @@ async def get_app_config(
         metric_retention_days=settings.metric_retention_days,
         perf_sample_interval_seconds=settings.perf_sample_interval_seconds,
         chat_web_search_available=chat_web_search_available(settings),
+        chat_attachment_images_available=chat_provider_supports_images(settings),
+        chat_attachment_max_files=settings.chat_attachment_max_files,
+        chat_attachment_max_file_bytes=settings.chat_attachment_max_file_bytes,
+        chat_attachment_max_text_chars=settings.chat_attachment_max_text_chars,
         mock_mode=settings.mock_mode,
     )

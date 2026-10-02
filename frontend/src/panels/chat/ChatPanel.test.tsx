@@ -27,6 +27,21 @@ import {
 } from './chatMessagesListScroll'
 import { ChatPanel } from './ChatPanel'
 
+// 画像の縮小は canvas 依存で happy-dom では動かないため、変換だけ差し替える
+vi.mock('./attachments/downscaleImageAttachment', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('./attachments/downscaleImageAttachment')>()
+  return {
+    ...actual,
+    downscaleImageAttachment: async (file: File) => ({
+      kind: 'image' as const,
+      filename: file.name,
+      media_type: 'image/jpeg',
+      data_base64: 'QUFB',
+    }),
+  }
+})
+
 const CHAT_PANEL_TEST_TIMEOUT_MS = 20_000
 
 function jsonResponse(data: unknown, status = 200) {
@@ -1356,6 +1371,161 @@ describe(
     })
     expect(screen.queryByText('インシデント統合タイムライン')).not.toBeInTheDocument()
     expect(screen.queryByText('重大アラート')).not.toBeInTheDocument()
+  })
+
+  describe('ファイル添付', () => {
+    /** 添付ができる構成（画像対応・上限あり）を返す /api/config のモック。 */
+    function attachmentFetchMock(
+      onChatPost: (body: Record<string, unknown>) => Response,
+      config: Record<string, unknown> = {},
+    ) {
+      return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) {
+          return Promise.resolve(jsonResponse([]))
+        }
+        if (url.endsWith('/api/config')) {
+          return Promise.resolve(
+            jsonResponse({
+              chat_web_search_available: false,
+              chat_attachment_images_available: true,
+              chat_attachment_max_files: 5,
+              chat_attachment_max_file_bytes: 10 * 1024 * 1024,
+              chat_attachment_max_text_chars: 100_000,
+              ...config,
+            }),
+          )
+        }
+        if (url.endsWith('/api/chat') && init?.method === 'POST') {
+          return Promise.resolve(onChatPost(JSON.parse(String(init.body))))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+    }
+
+    function selectFiles(files: File[]) {
+      const input = document.querySelector<HTMLInputElement>('.chat-panel__attachment-input')
+      if (!input) throw new Error('添付の file input が見つかりません')
+      fireEvent.change(input, { target: { files } })
+    }
+
+    it('テキストファイルを添付して送信すると attachments が POST され、送信後にクリアされる', async () => {
+      const bodies: Record<string, unknown>[] = []
+      const fetchMock = attachmentFetchMock((body) => {
+        bodies.push(body)
+        return jsonResponse({ assistant_content: 'モック回答', error: null })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+      selectFiles([new File(['kernel panic'], 'vmkernel.log', { type: 'text/plain' })])
+      // 読み取り完了（サイズ表示に変わる）まで待つ
+      await waitFor(() => {
+        expect(screen.getByText('12B')).toBeInTheDocument()
+      })
+
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+        target: { value: 'このログは？' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+      await waitFor(() => expect(bodies.length).toBe(1))
+      const attachments = bodies[0].attachments as Record<string, unknown>[]
+      expect(attachments).toEqual([
+        {
+          kind: 'text',
+          filename: 'vmkernel.log',
+          media_type: 'text/plain',
+          text: 'kernel panic',
+          truncated: false,
+        },
+      ])
+
+      // 添付は送信したターン限り
+      await waitFor(() => {
+        expect(screen.getByText('添付 1 件: vmkernel.log')).toBeInTheDocument()
+      })
+      expect(
+        document.querySelector('.chat-panel__attachment-list'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('画像を添付すると匿名化されない旨を警告する', async () => {
+      const fetchMock = attachmentFetchMock(() =>
+        jsonResponse({ assistant_content: 'ok', error: null }),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+      selectFiles([new File(['x'], 'shot.png', { type: 'image/png' })])
+
+      await waitFor(() => {
+        expect(screen.getByText(/画像は匿名化されず/)).toBeInTheDocument()
+      })
+    })
+
+    it('対応外の形式はエラーとして表示し、送信を止める', async () => {
+      const onError = vi.fn()
+      const bodies: Record<string, unknown>[] = []
+      const fetchMock = attachmentFetchMock((body) => {
+        bodies.push(body)
+        return jsonResponse({ assistant_content: 'ok', error: null })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat(onError)
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+      selectFiles([new File(['x'], 'manual.pdf', { type: 'application/pdf' })])
+      await waitFor(() => {
+        expect(screen.getByText(/対応していない形式です/)).toBeInTheDocument()
+      })
+
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
+        target: { value: '見て' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+      await waitFor(() => {
+        expect(onError).toHaveBeenCalledWith(expect.stringContaining('添付ファイル'))
+      })
+      expect(bodies).toHaveLength(0)
+    })
+
+    it('添付を外せる', async () => {
+      const fetchMock = attachmentFetchMock(() =>
+        jsonResponse({ assistant_content: 'ok', error: null }),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+      selectFiles([new File(['x'], 'a.log', { type: 'text/plain' })])
+      await waitFor(() => expect(screen.getByText('a.log')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: '添付「a.log」を外す' }))
+      await waitFor(() => expect(screen.queryByText('a.log')).not.toBeInTheDocument())
+    })
+
+    it('添付が無効化された構成では添付欄を出さない', async () => {
+      const fetchMock = attachmentFetchMock(
+        () => jsonResponse({ assistant_content: 'ok', error: null }),
+        { chat_attachment_max_files: 0 },
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderChat()
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /ファイルを添付/ })).not.toBeInTheDocument()
+      })
+    })
   })
   },
 )

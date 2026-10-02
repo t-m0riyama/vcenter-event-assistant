@@ -1,4 +1,7 @@
 from __future__ import annotations
+import base64
+import binascii
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -7,12 +10,87 @@ from vcenter_event_assistant.services.chat.chat_incident_timeline import (
     IncidentTimelinePayload,
 )
 
+# 添付の上限。設定 (CHAT_ATTACHMENT_*) はこの範囲内でのみ絞り込める
+MAX_CHAT_ATTACHMENTS = 20
+MAX_ATTACHMENT_TEXT_CHARS = 200_000
+MAX_ATTACHMENT_IMAGE_BYTES = 10 * 1024 * 1024
+
+ALLOWED_ATTACHMENT_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
+    {"image/png", "image/jpeg"},
+)
+
+# ファイル名はプロンプトに埋め込むため、行やコードフェンスを壊す文字を落とす
+_UNSAFE_FILENAME_CHARS_RE = re.compile(r"[\x00-\x1f\x7f`]")
+
+
+def sanitize_attachment_filename(name: str) -> str:
+    """プロンプトへ埋め込んでも構造を壊さないファイル名にする。"""
+    cleaned = _UNSAFE_FILENAME_CHARS_RE.sub("", name).strip()
+    # パス成分は表示に不要（ブラウザは付けないが、API 直叩きを想定）
+    cleaned = cleaned.replace("\\", "/").rsplit("/", 1)[-1]
+    return cleaned or "attachment"
+
 
 class ChatMessage(BaseModel):
     """チャット 1 ターン（クライアント送受信・LLM 呼び出しの両方で使用）。"""
 
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=200_000)
+
+
+class ChatAttachment(BaseModel):
+    """送信ターンに添付された 1 ファイル（サーバには保存しない）。
+
+    抽出はクライアント側で済ませて渡す規約:
+    テキストは ``text`` に文字列、画像は ``data_base64`` に縮小済みの base64。
+    """
+
+    kind: Literal["text", "image"]
+    filename: str = Field(min_length=1, max_length=255)
+    media_type: str = Field(min_length=1, max_length=100)
+    text: str | None = Field(
+        default=None,
+        max_length=MAX_ATTACHMENT_TEXT_CHARS,
+        description="kind='text' のときの本文",
+    )
+    data_base64: str | None = Field(
+        default=None,
+        description="kind='image' のときの base64（データ URL 接頭辞なし）",
+    )
+    truncated: bool = Field(
+        default=False,
+        description="クライアント側で文字数上限により切り詰めたか",
+    )
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> ChatAttachment:
+        self.filename = sanitize_attachment_filename(self.filename)
+        if self.kind == "text":
+            if self.data_base64 is not None:
+                raise ValueError("kind='text' に data_base64 は指定できません")
+            if not self.text:
+                raise ValueError("kind='text' には text が必要です")
+            return self
+
+        if self.text is not None:
+            raise ValueError("kind='image' に text は指定できません")
+        if not self.data_base64:
+            raise ValueError("kind='image' には data_base64 が必要です")
+        if self.media_type not in ALLOWED_ATTACHMENT_IMAGE_MEDIA_TYPES:
+            allowed = ", ".join(sorted(ALLOWED_ATTACHMENT_IMAGE_MEDIA_TYPES))
+            raise ValueError(f"対応していない画像形式です（対応: {allowed}）")
+        try:
+            raw = base64.b64decode(self.data_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("data_base64 が base64 として不正です") from exc
+        if len(raw) > MAX_ATTACHMENT_IMAGE_BYTES:
+            limit_mb = MAX_ATTACHMENT_IMAGE_BYTES // (1024 * 1024)
+            raise ValueError(f"画像が大きすぎます（上限 {limit_mb}MB）")
+        return self
+
+    def data_url(self) -> str:
+        """マルチモーダル入力用のデータ URL（``kind='image'`` のみ）。"""
+        return f"data:{self.media_type};base64,{self.data_base64}"
 
 
 class ChatRequest(BaseModel):
@@ -23,6 +101,14 @@ class ChatRequest(BaseModel):
     from_time: datetime = Field(alias="from")
     to_time: datetime = Field(alias="to")
     messages: list[ChatMessage] = Field(min_length=1)
+    attachments: list[ChatAttachment] = Field(
+        default_factory=list,
+        max_length=MAX_CHAT_ATTACHMENTS,
+        description=(
+            "この送信ターンにのみ添付されるファイル。保存はされず、"
+            "以降のターンには引き継がれない"
+        ),
+    )
     vcenter_id: uuid.UUID | None = None
     top_notable_min_score: int = Field(default=1, ge=0, le=100)
     include_period_metrics_cpu: bool = Field(
@@ -236,6 +322,19 @@ class ChatLlmContextMeta(BaseModel):
         description="設定上の上限（LLM_CHAT_MAX_INPUT_TOKENS）"
     )
     message_turns: int = Field(description="上限適用後の会話ターン数")
+    attachment_count: int = Field(
+        default=0, description="LLM に渡した添付ファイル数（無視した分を除く）"
+    )
+    attachment_text_chars: int = Field(
+        default=0, description="LLM に渡した添付テキストの文字数（切り詰め後）"
+    )
+    attachment_truncated: bool = Field(
+        default=False, description="添付テキストがトークン上限のため切り詰められたか"
+    )
+    attachments_dropped_reason: str | None = Field(
+        default=None,
+        description="添付の一部を渡せなかった理由（例: プロバイダが画像非対応）",
+    )
 
 
 class TriggerEvidence(BaseModel):

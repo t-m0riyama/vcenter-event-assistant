@@ -1,7 +1,12 @@
-import type { RefObject } from 'react'
+import { useState, type ClipboardEvent, type DragEvent, type RefObject } from 'react'
 import type { ChatSamplePromptRow } from './chatSamplePromptTypes'
 import { appendChatSampleTextToDraft } from './appendChatSampleTextToDraft'
+import { ChatAttachmentBar } from './ChatAttachmentBar'
 import { ChatPreviewSvg, ChatSendSvg } from './chatPanelIcons'
+import type {
+  ChatAttachmentDraft,
+  ChatAttachmentLimits,
+} from './attachments/chatAttachmentTypes'
 
 type ChatInputBarProps = {
   loading: boolean
@@ -18,6 +23,10 @@ type ChatInputBarProps = {
   webSearchAvailable: boolean
   enableWebSearch: boolean
   setEnableWebSearch: (value: boolean) => void
+  attachments: readonly ChatAttachmentDraft[]
+  attachmentLimits: ChatAttachmentLimits
+  onAddAttachments: (files: readonly File[]) => void
+  onRemoveAttachment: (id: string) => void
 }
 
 /** チャットメッセージ入力バー。 */
@@ -35,7 +44,39 @@ export function ChatInputBar({
   webSearchAvailable,
   enableWebSearch,
   setEnableWebSearch,
+  attachments,
+  attachmentLimits,
+  onAddAttachments,
+  onRemoveAttachment,
 }: ChatInputBarProps) {
+  const [dragOver, setDragOver] = useState(false)
+  const attachmentsEnabled = attachmentLimits.maxFiles > 0
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled) return
+    const files = Array.from(e.dataTransfer?.files ?? [])
+    if (files.length === 0) return
+    e.preventDefault()
+    setDragOver(false)
+    onAddAttachments(files)
+  }
+
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled) return
+    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  /** スクリーンショットを Cmd+V でそのまま添付できるようにする。 */
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!attachmentsEnabled) return
+    const files = Array.from(e.clipboardData?.files ?? [])
+    if (files.length === 0) return
+    e.preventDefault()
+    onAddAttachments(files)
+  }
+
   return (
     <div className="chat-panel__composer-stack">
       {webSearchAvailable && (
@@ -73,7 +114,19 @@ export function ChatInputBar({
           </button>
         ))}
       </div>
-      <div className="chat-panel__composer">
+      <ChatAttachmentBar
+        attachments={attachments}
+        limits={attachmentLimits}
+        loading={loading}
+        onAddFiles={onAddAttachments}
+        onRemove={onRemoveAttachment}
+      />
+      <div
+        className={`chat-panel__composer${dragOver ? ' chat-panel__composer--dragover' : ''}`}
+        onDragOver={onDragOver}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+      >
         <div className="chat-panel__composer-field">
           <label className="chat-panel__composer-label">
             メッセージ
@@ -92,6 +145,7 @@ export function ChatInputBar({
                 e.preventDefault()
                 void onSend()
               }}
+              onPaste={onPaste}
               rows={3}
               disabled={loading}
               placeholder="質問を入力…"

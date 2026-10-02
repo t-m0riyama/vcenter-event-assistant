@@ -93,6 +93,11 @@ export function ChatMessagesList({
           <div className="chat-panel__bubble">
             <ChatMarkdownContent markdown={m.content} />
           </div>
+          {m.attachment_names && m.attachment_names.length > 0 && (
+            <p className="hint chat-panel__msg-attachments">
+              添付 {m.attachment_names.length} 件: {m.attachment_names.join('、')}
+            </p>
+          )}
           {m.role === 'assistant' && (
             <div className="chat-panel__msg-actions">
               <button
