@@ -72,6 +72,7 @@ class LogRecord(Base):
     __table_args__ = (
         UniqueConstraint("vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset", name="uq_log_source_position"),
         Index("ix_log_vcenter_effective_time", "vcenter_id", "effective_at", "id"),
+        Index("ix_log_effective_time_id", "effective_at", "id"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))

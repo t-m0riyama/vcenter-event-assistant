@@ -1,9 +1,4 @@
 import { z } from 'zod'
-import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
-import { escapeCsvField } from '../../metrics/metricCsv'
-import { formatMetricsDownloadTimestamp } from '../../metrics/export/downloadChartSvg'
-export { downloadEventListCsv as downloadLogListCsv } from '../../events/eventCsv'
-
 export const logSchema = z.object({
   id: z.number(), vcenter_id: z.string(), source_id: z.string(), host: z.string(), log_kind: z.string(),
   file_generation: z.string(), byte_offset: z.number(), occurred_at: z.string().nullable(),
@@ -29,38 +24,27 @@ export function buildLogListSearchParams(filters: LogFilters, limit: number, off
   return params
 }
 
-export async function fetchAllLogsForExport(
-  fetchPage: (params: URLSearchParams) => Promise<unknown>,
-  filters: LogFilters,
-): Promise<LogRow[]> {
-  const all: LogRow[] = []
-  for (;;) {
-    const { items, total } = logPageSchema.parse(await fetchPage(buildLogListSearchParams(filters, 200, all.length)))
-    all.push(...items)
-    if (items.length === 0 || all.length >= total) return all
+/** Capture only search conditions and the selected zone, without list pagination. */
+export function buildLogExportUrl(filters: LogFilters, timeZone: string): string {
+  const params = new URLSearchParams({ time_zone: timeZone })
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value)
   }
+  return `/api/logs/export.csv?${params}`
 }
 
-const HEADER = [
-  'id', 'vcenter_id', 'vcenter_name', 'source_id', 'host', 'log_kind',
-  'effective_at', 'occurred_at', 'collected_at', 'severity', 'message', 'file_generation', 'byte_offset',
-] as const
-
-export function logRowsToCsv(rows: LogRow[], vcenterNames: ReadonlyMap<string, string>, timeZone: string): string {
-  const lines = [HEADER.join(',')]
-  for (const row of rows) {
-    const fields = {
-      ...row,
-      vcenter_name: vcenterNames.get(row.vcenter_id) ?? row.vcenter_id,
-      effective_at: formatIsoInTimeZone(row.effective_at, timeZone),
-      occurred_at: row.occurred_at === null ? '' : formatIsoInTimeZone(row.occurred_at, timeZone),
-      collected_at: formatIsoInTimeZone(row.collected_at, timeZone),
-    }
-    lines.push(HEADER.map((key) => escapeCsvField(String(fields[key] ?? ''))).join(','))
+/** Hand the response directly to the browser; never buffer the file in JS. */
+export function downloadLogCsv(url: string): void {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = ''
+  // An HTTP error can be shown without replacing the application page.
+  link.target = '_blank'
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  try {
+    link.click()
+  } finally {
+    link.remove()
   }
-  return `${lines.join('\r\n')}\r\n`
-}
-
-export function buildLogExportFilename(date = new Date()): string {
-  return `logs-${formatMetricsDownloadTimestamp(date)}.csv`
 }

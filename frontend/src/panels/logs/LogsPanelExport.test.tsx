@@ -2,10 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TimeZoneProvider, TimeZoneSelect } from '../../datetime/TimeZoneProvider'
 import { LogsPanel } from './LogsPanel'
-import { downloadLogListCsv, logRowsToCsv } from './logExport'
+import { downloadLogCsv } from './logExport'
 
 vi.mock('./logExport', async (importOriginal) => ({
-  ...await importOriginal<typeof import('./logExport')>(), downloadLogListCsv: vi.fn(),
+  ...await importOriginal<typeof import('./logExport')>(), downloadLogCsv: vi.fn(),
 }))
 
 const row = {
@@ -35,25 +35,13 @@ afterEach(() => {
 })
 
 describe('LogsPanel CSV', () => {
-  it('exports all filtered pages from offset zero and freezes conditions and time zone', async () => {
+  it('starts a native download with captured filters and zone, without JSON export requests', async () => {
     localStorage.setItem('vea.displayTimeZone', 'Asia/Tokyo')
     window.history.replaceState(null, '', linkedUrl)
-    let finishFirst!: (response: Response) => void
-    const firstPage = new Promise<Response>((resolve) => { finishFirst = resolve })
-    const exportQueries: URLSearchParams[] = []
-    const firstRows = Array.from({ length: 200 }, (_, i) => ({ ...row, id: 201 - i }))
-    mockFetch((params) => {
-      if (params.get('limit') !== '200') return response({ items: [row], total: 201 })
-      exportQueries.push(params)
-      return params.get('offset') === '0' ? firstPage : response({ items: [row], total: 201 })
-    })
+    const fetchMock = mockFetch(() => response({ items: [row], total: 201 }))
     render(<TimeZoneProvider><TimeZoneSelect /><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
     const button = screen.getByRole('button', { name: 'CSVをダウンロード' })
     await waitFor(() => expect(button).toBeEnabled())
-    expect(button.previousElementSibling).toHaveClass('toolbar__meta')
-    expect(button).toHaveClass('btn', 'btn--gray')
-    const toolbar = button.closest('.toolbar')!
-    expect([...toolbar.children].indexOf(button)).toBeLessThan([...toolbar.children].indexOf(toolbar.querySelector('details')!))
     fireEvent.click(screen.getByText('絞り込み条件'))
     fireEvent.change(screen.getByLabelText('接続先ID'), { target: { value: 'esxi-1' } })
     fireEvent.change(screen.getByLabelText('ログ種別'), { target: { value: 'vmkernel' } })
@@ -62,43 +50,33 @@ describe('LogsPanel CSV', () => {
     await waitFor(() => expect(button).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
     await waitFor(() => expect(screen.getByText('全 201 件中 51–100 件を表示')).toBeInTheDocument())
+    const requests = fetchMock.mock.calls.length
     fireEvent.click(button)
-    expect(screen.getByRole('button', { name: '出力中…' })).toBeDisabled()
-    fireEvent.click(button)
-    expect(exportQueries).toHaveLength(1)
-    fireEvent.change(screen.getByLabelText('本文（含む）'), { target: { value: 'changed' } })
-    fireEvent.change(screen.getByLabelText('表示タイムゾーン'), { target: { value: 'UTC' } })
-    await act(async () => { finishFirst(await response({ items: firstRows, total: 201 })) })
-    await waitFor(() => expect(downloadLogListCsv).toHaveBeenCalledTimes(1))
-    expect(exportQueries.map((q) => Object.fromEntries(q))).toEqual([0, 200].map((offset) => ({
-      limit: '200', offset: String(offset), vcenter_id: 'vc-1', source_id: 'esxi-1', log_kind: 'vmkernel',
+    expect(fetchMock.mock.calls).toHaveLength(requests)
+    expect(downloadLogCsv).toHaveBeenCalledTimes(1)
+    const url = new URL(vi.mocked(downloadLogCsv).mock.calls[0][0], 'http://test')
+    expect(url.pathname).toBe('/api/logs/export.csv')
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      time_zone: 'Asia/Tokyo', vcenter_id: 'vc-1', source_id: 'esxi-1', log_kind: 'vmkernel',
       severity: 'error', message_contains: 'Storage', from: '2026-10-02T09:55:25Z', to: '2026-10-02T10:05:25Z',
-    })))
-    expect(downloadLogListCsv).toHaveBeenCalledWith(
-      logRowsToCsv([...firstRows, row], new Map([['vc-1', 'Lab']]), 'Asia/Tokyo'),
-      expect.stringMatching(/^logs-\d{8}-\d{6}\.csv$/),
-    )
-    await waitFor(() => expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled())
+    })
+    expect(screen.getByText(/ダウンロードを開始しました/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('表示タイムゾーン'), { target: { value: 'UTC' } })
+    expect(url.searchParams.get('time_zone')).toBe('Asia/Tokyo')
   })
 
-  it('reports a later-page failure without downloading partial CSV and allows retry', async () => {
+  it('reports a failure to start a download and permits retry', async () => {
     const onError = vi.fn()
-    let fail = true
-    mockFetch((params) => {
-      if (params.get('limit') !== '200') return response({ items: [row], total: 2 })
-      if (params.get('offset') === '0') return response({ items: [row], total: fail ? 2 : 1 })
-      return Promise.reject(new Error('offline'))
-    })
+    mockFetch(() => response({ items: [row], total: 1 }))
+    vi.mocked(downloadLogCsv).mockImplementationOnce(() => { throw new Error('download blocked') })
     render(<TimeZoneProvider><LogsPanel onError={onError} /></TimeZoneProvider>)
     const button = screen.getByRole('button', { name: 'CSVをダウンロード' })
     await waitFor(() => expect(button).toBeEnabled())
     fireEvent.click(button)
-    await waitFor(() => expect(onError).toHaveBeenCalledWith('offline'))
-    expect(downloadLogListCsv).not.toHaveBeenCalled()
-    expect(button).toBeEnabled()
-    fail = false
+    expect(onError).toHaveBeenCalledWith('download blocked')
+    expect(screen.queryByText(/ダウンロードを開始しました/)).not.toBeInTheDocument()
     fireEvent.click(button)
-    await waitFor(() => expect(downloadLogListCsv).toHaveBeenCalledTimes(1))
+    expect(screen.getByText(/ダウンロードを開始しました/)).toBeInTheDocument()
   })
 
   it('disables export during loading, for empty results and for an invalid range', async () => {
@@ -120,6 +98,6 @@ describe('LogsPanel CSV', () => {
     fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-02' } })
     expect(button).toBeDisabled()
     fireEvent.click(button)
-    expect(downloadLogListCsv).not.toHaveBeenCalled()
+    expect(downloadLogCsv).not.toHaveBeenCalled()
   })
 })

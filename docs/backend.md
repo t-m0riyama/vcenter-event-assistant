@@ -58,6 +58,12 @@
   イベント種別一覧。
 - `GET /api/events/rate-series`  
   指定イベント種別の時系列件数。
+- `GET /api/logs`
+  保存済みログのフィルタ付き一覧（`limit` は最大200件、`offset` と `total` あり）。
+- `GET /api/logs/export.csv`
+  同じフィルタに一致する全ログを1回のHTTPリクエストでCSVダウンロード。`time_zone` はIANAタイムゾーン（省略時UTC、画面からは表示設定のTZを送信）。2,000件ずつ時刻・IDのカーソルで取得し、COUNTや深いOFFSETを使わず送信する。
+  CSVはUTF-8 BOM・CRLF。日時列は選択TZの `YYYY/MM/DD HH:mm:ss`、末尾の `time_zone` と `utc_offset` にTZ名と発生基準時刻 `effective_at` 時点のオフセットを記録する。
+  開始後の追加ログを除外し、取得前に削除されたログは許容する。各バッチ取得後にDBセッションを閉じる。途中障害では転送を終了し、部分ファイルが残る場合は再ダウンロードする。
 - `GET /api/metrics/keys`  
   メトリクスキー一覧。
 - `GET /api/metrics`  
