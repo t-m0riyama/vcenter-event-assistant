@@ -99,9 +99,9 @@ async def session_scope(settings: Settings | None = None) -> AsyncIterator[Async
 
 
 async def init_db(settings: Settings | None = None) -> None:
-    """Alembic でスキーマを最新化する。
+    """排他制御・SQLite バックアップ付きで Alembic スキーマを最新化する。
 
-    - ``alembic_version`` あり: ``upgrade head`` のみ
+    - 最新 DB: 変更なし。それ以外の ``alembic_version`` あり DB: ``upgrade head``
     - 空 DB: ``upgrade head``（新規作成）
     - 旧 DB（``alembic_version`` なし）: 列 fingerprint で ``stamp`` 後 ``upgrade head``
       （曖昧な場合は :class:`LegacySchemaStampError` で起動 abort）
@@ -109,19 +109,7 @@ async def init_db(settings: Settings | None = None) -> None:
     Args:
         settings: 未指定時は ``require_settings()``（bind 済み Settings）を使用する。
     """
-    import vcenter_event_assistant.db.models  # noqa: F401
+    from vcenter_event_assistant.db.startup_migration import run_startup_migration
 
-    from vcenter_event_assistant.db.alembic_runner import (
-        alembic_stamp,
-        alembic_upgrade_head,
-        get_applied_alembic_revision,
-        infer_legacy_stamp_revision,
-    )
-
-    engine = get_engine(settings=settings)
-    applied = await get_applied_alembic_revision(engine)
-    if applied is None:
-        stamp_revision = await infer_legacy_stamp_revision(engine)
-        if stamp_revision is not None:
-            await alembic_stamp(engine, stamp_revision, settings=settings)
-    await alembic_upgrade_head(engine, settings=settings)
+    s = settings or require_settings()
+    await run_startup_migration(get_engine(settings=s), settings=s)

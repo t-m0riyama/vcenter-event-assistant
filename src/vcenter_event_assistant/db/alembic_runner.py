@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from alembic.runtime.migration import MigrationContext
 from sqlalchemy import inspect, text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
@@ -24,7 +26,7 @@ def alembic_config(*, settings: Settings | None = None) -> Config:
     """``DATABASE_URL`` を反映した Alembic 設定を返す。"""
     s = settings or require_settings()
     cfg = Config(str(_PROJECT_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", s.database_url)
+    cfg.set_main_option("sqlalchemy.url", s.database_url.replace("%", "%%"))
     return cfg
 
 
@@ -48,23 +50,31 @@ def _run_with_connection(sync_conn: object, cfg: Config, fn) -> None:
     fn(cfg)
 
 
-async def get_applied_alembic_revision(engine: AsyncEngine) -> str | None:
+@asynccontextmanager
+async def _connection(engine: AsyncEngine | AsyncConnection, *, transactional: bool = False):
+    """起動時はロックを保持した接続を再利用し、既存の engine API も維持する。"""
+    if isinstance(engine, AsyncConnection):
+        if transactional:
+            async with engine.begin():
+                yield engine
+        else:
+            yield engine
+    else:
+        async with (engine.begin() if transactional else engine.connect()) as conn:
+            yield conn
+
+
+async def get_applied_alembic_revision(engine: AsyncEngine | AsyncConnection) -> str | None:
     """``alembic_version.version_num`` を返す。テーブルが無ければ ``None``。"""
 
     def sync_read(sync_conn) -> str | None:
-        insp = inspect(sync_conn)
-        if not insp.has_table("alembic_version"):
-            return None
-        row = sync_conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
-        if row is None:
-            return None
-        return str(row[0])
+        return MigrationContext.configure(sync_conn).get_current_revision()
 
-    async with engine.connect() as conn:
+    async with _connection(engine) as conn:
         return await conn.run_sync(sync_read)
 
 
-async def infer_legacy_stamp_revision(engine: AsyncEngine) -> str | None:
+async def infer_legacy_stamp_revision(engine: AsyncEngine | AsyncConnection) -> str | None:
     """``alembic_version`` 未作成 DB の stamp 先を推定する。
 
     Returns:
@@ -112,15 +122,15 @@ async def infer_legacy_stamp_revision(engine: AsyncEngine) -> str | None:
             raise LegacySchemaStampError(msg)
         return revision
 
-    async with engine.connect() as conn:
+    async with _connection(engine) as conn:
         return await conn.run_sync(sync_infer)
 
 
-async def alembic_stamp(engine: AsyncEngine, revision: str, *, settings: Settings | None = None) -> None:
+async def alembic_stamp(engine: AsyncEngine | AsyncConnection, revision: str, *, settings: Settings | None = None) -> None:
     """指定リビジョンで ``alembic_version`` を stamp する。"""
     cfg = alembic_config(settings=settings)
 
-    async with engine.begin() as conn:
+    async with _connection(engine, transactional=True) as conn:
 
         def sync_stamp(sync_conn) -> None:
             _run_with_connection(sync_conn, cfg, lambda c: command.stamp(c, revision))
@@ -128,11 +138,11 @@ async def alembic_stamp(engine: AsyncEngine, revision: str, *, settings: Setting
         await conn.run_sync(sync_stamp)
 
 
-async def alembic_upgrade_head(engine: AsyncEngine, *, settings: Settings | None = None) -> None:
+async def alembic_upgrade_head(engine: AsyncEngine | AsyncConnection, *, settings: Settings | None = None) -> None:
     """``upgrade head`` を実行する。"""
     cfg = alembic_config(settings=settings)
 
-    async with engine.begin() as conn:
+    async with _connection(engine, transactional=True) as conn:
 
         def sync_upgrade(sync_conn) -> None:
             _run_with_connection(sync_conn, cfg, lambda c: command.upgrade(c, "head"))

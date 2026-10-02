@@ -72,6 +72,8 @@ docker compose up --build
 
 UI と API は既定で `http://localhost:8000`（動作確認は `http://localhost:8000/health` でもよい）。例えば `UVICORN_PORT=9000` の場合は `http://localhost:9000` となる。Compose は指定ポートをコンテナ内の待受と `127.0.0.1` の公開ポートの両方に適用する。
 
+DB は起動時に自動で最新のスキーマへ更新する。既存 SQLite DB の変更前には DB 隣の `backups/` にバックアップを保存する。PostgreSQL は更新前に運用側でバックアップを取得する。更新時は旧 app を停止してから新しい app を起動する。設定・失敗時の復旧方法は [開発者向け手順](development.md#自動移行の設定と排他制御) を参照する。
+
 **セキュリティ:** 本アプリ単体は認証を行わない。コンテナをインターネットに直接晒さず、必要に応じてリバースプロキシ側で TLS・認証・ネットワーク制限を行うこと。
 
 テンプレートはリポジトリで `docker-compose.sqlite.yml` / `docker-compose.postgres.yml` として管理し、コピーで生成した `docker-compose.yml` は `.gitignore` により追跡しない。

@@ -13,13 +13,15 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /usr/local/bin/uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY src ./src
 COPY packages ./packages
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 RUN useradd --create-home --uid 1000 appuser \
-    && mkdir -p /var/log/vea \
-    && chown -R appuser:appuser /app /var/log/vea
+    && mkdir -p /var/log/vea /data \
+    && chown -R appuser:appuser /app /var/log/vea /data
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 USER appuser
