@@ -155,11 +155,10 @@ async def run_ingest_all(settings: Settings) -> IngestRunResult:
                 failure_log="perf poll failed vcenter_id=%s",
             )
             return IngestRunResult(events_inserted, metrics_inserted)
-        plugin_results: tuple[CollectorRunResult, ...] = tuple(
-            result
-            for registration in registry.enabled()
-            for result in await run_registered_collector(settings, registration.plugin_id)
-        )
+        results: list[CollectorRunResult] = []
+        for registration in registry.enabled():
+            results.extend(await run_registered_collector(settings, registration.plugin_id))
+        plugin_results = tuple(results)
         events_inserted = sum(result.events_inserted for result in plugin_results)
         metrics_inserted = sum(result.metrics_inserted for result in plugin_results)
     return IngestRunResult(
