@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 
+pytestmark = pytest.mark.real_db_init
+
 EVENTS_INDEX = "ix_events_vcenter_id_occurred_at"
 METRICS_INDEX = "ix_metric_samples_vcenter_entity_metric_sampled"
 

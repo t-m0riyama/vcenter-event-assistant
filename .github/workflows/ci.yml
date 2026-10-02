@@ -13,12 +13,14 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.8.15"
-      - name: Sync and test
-        run: |
-          uv sync --all-groups
-          uv run ruff check src packages/plugin-api/src packages/plugin-api/tests tests examples
-          uv run mypy
-          uv run pytest
+      - name: Sync Python dependencies
+        run: uv sync --all-groups
+      - name: Ruff
+        run: uv run ruff check src packages/plugin-api/src packages/plugin-api/tests tests examples
+      - name: Mypy
+        run: uv run mypy
+      - name: Python tests
+        run: uv run pytest -n 2 --dist loadfile --durations=30
 
       # plugin-api は第三者が単体で pip install する公開パッケージである。
       # 「依存ゼロ」「アプリなしで import できる」は口約束にせず毎 PR で確かめる。
