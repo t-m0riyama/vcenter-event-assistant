@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   METRICS_DEFAULT_ROLLING_DURATION_MS,
   presetRelativeRangeWallPartsWithUtcFallback,
@@ -20,25 +20,21 @@ export function useRollingZonedRangeParts(timeZone: string) {
       timeZone,
     ),
   )
-  const prevTimeZoneRef = useRef<string | null>(null)
+  const [previousTimeZone, setPreviousTimeZone] = useState(timeZone)
 
   const setRangeParts = useCallback((next: ZonedRangeParts) => {
     setRangeFollowMode('manual')
     setRangePartsState(next)
   }, [])
 
-  useEffect(() => {
-    if (prevTimeZoneRef.current === null) {
-      prevTimeZoneRef.current = timeZone
-      return
+  if (previousTimeZone !== timeZone) {
+    setPreviousTimeZone(timeZone)
+    if (rangeFollowMode === 'rolling') {
+      setRangePartsState(
+        presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone),
+      )
     }
-    if (prevTimeZoneRef.current === timeZone) return
-    prevTimeZoneRef.current = timeZone
-    if (rangeFollowMode !== 'rolling') return
-    setRangePartsState(
-      presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone),
-    )
-  }, [timeZone, rangeFollowMode, rollingDurationMs])
+  }
 
   return { rangeParts, setRangeParts }
 }

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import PluginSetupPanel from './PluginSetupPanel'
+import PluginSetupPanel, { SchemaFields } from './PluginSetupPanel'
 import { apiGet, apiPost, apiPut } from '../../api'
 
 vi.mock('../../api', () => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiPut: vi.fn(), apiDelete: vi.fn() }))
@@ -113,4 +113,27 @@ describe('共通のプラグイン導入画面', () => {
     expect(screen.getByLabelText('センサー')).toHaveValue('board')
     expect(screen.queryByRole('button', { name: '接続テスト' })).not.toBeInTheDocument()
   })
+})
+
+
+it('clears host candidates on vCenter changes and ignores a response from the previous selection', async () => {
+  let finishOld!: (value: unknown) => void
+  get.mockImplementation(path => path.includes('/vc1/')
+    ? new Promise(resolve => { finishOld = resolve })
+    : Promise.resolve([{ id: 'host2', name: 'New ESXi', host: 'new.example.net' }]))
+  const schema = { type: 'string', 'x-vea-widget': 'esxi-host', 'x-vea-vcenter-field': 'vc' }
+  const vcenters = [...vcs, { id: 'vc2', name: 'Second vCenter', host: 'vc2.example.net', is_enabled: true }]
+  const onChange = vi.fn()
+  const { rerender } = render(<SchemaFields schema={schema} value="" onChange={onChange} vcenters={vcenters} siblings={{ vc: 'vc1' }} />)
+  fireEvent.click(screen.getByRole('button', { name: 'ESXi一覧を取得・再試行' }))
+  expect(screen.getByRole('button', { name: 'ESXi一覧を取得・再試行' })).toBeDisabled()
+  rerender(<SchemaFields schema={schema} value="" onChange={onChange} vcenters={vcenters} siblings={{ vc: 'vc2' }} />)
+  expect(screen.getByRole('button', { name: 'ESXi一覧を取得・再試行' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'ESXi一覧を取得・再試行' }))
+  await screen.findByRole('option', { name: 'New ESXi' })
+  await act(async () => { finishOld([{ id: 'host1', name: 'Old ESXi', host: 'old.example.net' }]) })
+  expect(screen.queryByRole('option', { name: 'Old ESXi' })).not.toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'New ESXi' })).toBeInTheDocument()
+  rerender(<SchemaFields schema={schema} value="" onChange={onChange} vcenters={vcenters} siblings={{ vc: 'vc1' }} />)
+  expect(screen.queryByRole('option', { name: 'New ESXi' })).not.toBeInTheDocument()
 })

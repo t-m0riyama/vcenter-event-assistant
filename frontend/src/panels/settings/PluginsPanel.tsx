@@ -152,13 +152,6 @@ function CollectorSettingsForm({
   const [interval, setInterval] = useState(String(collector.interval_seconds ?? ''))
   const [timeout, setTimeout] = useState(String(collector.timeout_seconds ?? ''))
 
-  // 一覧を取り直したとき・行を開き直したときは、サーバの値へ戻す。
-  useEffect(() => {
-    setEnabled(savedEnabled)
-    setInterval(String(collector.interval_seconds ?? ''))
-    setTimeout(String(collector.timeout_seconds ?? ''))
-  }, [savedEnabled, collector.interval_seconds, collector.timeout_seconds])
-
   const locked = new Set(collector.env_locked_fields)
   const enabledLocked = locked.has('enabled')
   const intervalLocked = locked.has('interval_seconds')
@@ -634,6 +627,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
                           </> : null}
                           {managementEnabled && collector.status !== 'failed' && setupId !== collector.id ? (
                             <CollectorSettingsForm
+                              key={JSON.stringify([collector.status === 'enabled', collector.interval_seconds, collector.timeout_seconds])}
                               collector={collector}
                               disabled={busy}
                               onSave={(values) => saveCollector(collector.id, values)}

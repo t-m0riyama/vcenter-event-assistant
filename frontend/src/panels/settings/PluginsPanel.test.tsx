@@ -224,7 +224,11 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
   })
 
   it('保存で PATCH を送り、未反映バナーを表示する', async () => {
-    const patched = { ...managedResponse, reload_required: true }
+    const patched = {
+      ...managedResponse, reload_required: true,
+      collectors: managedResponse.collectors.map(collector => collector.id === 'example.temperature'
+        ? { ...collector, status: 'disabled' } : collector),
+    }
     const calls: Array<{ url: string; body: unknown }> = []
     const fetchMock = routedFetch(
       {
@@ -254,6 +258,9 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
       timeout_seconds: 45,
     })
     expect(await screen.findByText(/未反映の変更があります/)).toBeInTheDocument()
+    expect(screen.getByLabelText('有効にする')).not.toBeChecked()
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+    expect(screen.queryByText('未保存の変更があります。')).not.toBeInTheDocument()
     // 未反映のあいだは、次に押すべきボタンとして強調する。
     expect(screen.getByRole('button', { name: '変更を反映' })).toHaveClass('btn--filled')
   })

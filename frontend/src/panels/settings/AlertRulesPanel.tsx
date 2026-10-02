@@ -82,7 +82,11 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       .catch(() => undefined)
   }, [])
 
-  const importExport = useSettingsJsonImportExport({
+  const {
+    overwriteExisting, setOverwriteExisting,
+    deleteNotInImport, setDeleteNotInImport,
+    exportToFile, fileInputRef, onImportFileChange, openImportFilePicker,
+  } = useSettingsJsonImportExport({
     exportFilenamePrefix: 'vea-alert-rules',
     buildExportPayload: () => buildAlertRulesExportPayload(rules),
     fileSchema: alertRulesFileSchema,
@@ -237,8 +241,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
           <label className="check">
             <input
               type="checkbox"
-              checked={importExport.overwriteExisting}
-              onChange={(event) => importExport.setOverwriteExisting(event.target.checked)}
+              checked={overwriteExisting}
+              onChange={(event) => setOverwriteExisting(event.target.checked)}
               aria-label="既存の同一ルール名を上書き"
             />
             既存の同一ルール名を上書き
@@ -246,8 +250,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
           <label className="check">
             <input
               type="checkbox"
-              checked={importExport.deleteNotInImport}
-              onChange={(event) => importExport.setDeleteNotInImport(event.target.checked)}
+              checked={deleteNotInImport}
+              onChange={(event) => setDeleteNotInImport(event.target.checked)}
               aria-label="ファイルに含まれないアラートルールを削除"
             />
             ファイルに含まれないアラートルールを削除
@@ -255,21 +259,21 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         </div>
       </fieldset>
       <div className="score-rules-file-actions">
-        <button type="button" className="btn btn--gray" onClick={importExport.exportToFile}>
+        <button type="button" className="btn btn--gray" onClick={exportToFile}>
           ファイルにエクスポート
         </button>
         <input
-          ref={importExport.fileInputRef}
+          ref={fileInputRef}
           type="file"
           accept="application/json,.json"
           className="hidden-file-input"
           aria-label="アラートルール JSON を選択"
-          onChange={(event) => void importExport.onImportFileChange(event)}
+          onChange={(event) => void onImportFileChange(event)}
         />
         <button
           type="button"
           className="btn btn--filled"
-          onClick={() => importExport.openImportFilePicker()}
+          onClick={() => openImportFilePicker()}
         >
           ファイルからインポート
         </button>

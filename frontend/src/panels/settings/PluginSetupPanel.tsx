@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../api'
 import { toErrorMessage } from '../../utils/errors'
+import { initialValue, type ConfigurationSchema } from './pluginConfiguration'
 import './PluginSetupPanel.css'
 
+export type { ConfigurationSchema } from './pluginConfiguration'
+
 type Values = Record<string, unknown>
-export type ConfigurationSchema = {
-  type: string; title?: string; description?: string; default?: unknown; enum?: unknown[]
-  properties?: Record<string, ConfigurationSchema>; items?: ConfigurationSchema
-  minimum?: number; maximum?: number; minLength?: number; maxLength?: number; maxItems?: number
-  minItems?: number; required?: string[]
-  'x-vea-widget'?: string; 'x-vea-generated-id'?: boolean; 'x-vea-vcenter-field'?: string; 'x-vea-host-field'?: string
-}
 type Action = { id: string; title: string; required_for_enable: boolean }
 type Draft = { config_values: Values; revision: number; tests: Record<string, { ok: boolean }> }
 type Definition = { schema: ConfigurationSchema; unavailable_reason: string | null; actions: Action[]; env_locked_fields: string[]; draft: Draft | null }
@@ -18,16 +14,6 @@ type VCenter = { id: string; name: string; host: string; is_enabled: boolean }
 type Key = { id: string; name: string; public_key: string }
 type Connection = { id: string; name: string; host: string; port: number; username: string; credential_id: string; revision: number; approved: boolean; fingerprint: string | null; candidate_fingerprint: string | null }
 type Result = { ok: boolean; checks: { id: string; label: string; ok: boolean; message: string }[]; warnings: string[]; samples: Values[]; elapsed_seconds: number; draft: Draft }
-
-export function initialValue(schema: ConfigurationSchema): unknown {
-  if (schema['x-vea-generated-id']) return typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('')
-  if (schema.default !== undefined) return schema.default
-  if (schema.type === 'object') return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([k, s]) => [k, initialValue(s)]))
-  if (schema.type === 'array') return []
-  if (schema.type === 'boolean') return false
-  if (schema.type === 'number' || schema.type === 'integer') return schema.minimum ?? 0
-  return ''
-}
 
 function errorText(error: unknown) {
   const text = toErrorMessage(error)
@@ -131,7 +117,6 @@ function HostField({ value, onChange, vcenterId, vcenters }: { value: unknown; o
   const [hosts, setHosts] = useState<{ id: string; name: string; host: string }[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { setHosts([]); setError('') }, [vcenterId])
   const vc = vcenters.find(v => v.id === vcenterId)
   return <div>
     <button type="button" className="btn btn--gray" disabled={!vc || busy} onClick={() => {
@@ -168,7 +153,7 @@ export function SchemaFields({ schema, value, onChange, vcenters, siblings = {},
   const widget = schema['x-vea-widget']
   if (widget === 'ssh-connection') return phase === 'target' ? null : <div><h4>{title}</h4><SSHField phase={phase} value={value} onChange={onChange} hostHint={String(siblings[schema['x-vea-host-field'] ?? 'host'] ?? '')} /></div>
   if (phase === 'ssh' || phase === 'trust') return null
-  if (widget === 'esxi-host') return <div><h4>{title}</h4><HostField value={value} onChange={onChange} vcenters={vcenters} vcenterId={String(siblings[schema['x-vea-vcenter-field'] ?? 'vcenter_id'] ?? '')} /></div>
+  if (widget === 'esxi-host') return <div><h4>{title}</h4><HostField key={String(siblings[schema['x-vea-vcenter-field'] ?? 'vcenter_id'] ?? '')} value={value} onChange={onChange} vcenters={vcenters} vcenterId={String(siblings[schema['x-vea-vcenter-field'] ?? 'vcenter_id'] ?? '')} /></div>
   if (widget === 'vcenter') return <label>{title}<select value={String(value ?? '')} onChange={e => onChange(e.target.value)}><option value="">vCenterを選択</option>{vcenters.filter(v => v.is_enabled).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
   if (schema.enum) return <label>{title}<select value={String(value ?? '')} onChange={e => onChange(schema.enum!.find(v => String(v) === e.target.value))}><option value="">選択してください</option>{schema.enum.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}</select></label>
   if (schema.type === 'boolean') return <label><input type="checkbox" checked={Boolean(value)} onChange={e => onChange(e.target.checked)} />{title}</label>

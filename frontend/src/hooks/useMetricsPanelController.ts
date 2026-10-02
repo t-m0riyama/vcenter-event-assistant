@@ -32,6 +32,12 @@ export function useMetricsPanelController(
   } | null>(null)
   const seriesFetchEffectGenerationRef = useRef(0)
   const [snapshotChartGuidelineMs, setSnapshotChartGuidelineMs] = useState<number | null>(null)
+  const snapshotItem = snapshotReplay?.item
+  const snapshotNonce = snapshotReplay?.nonce
+  const [appliedSnapshot, setAppliedSnapshot] = useState<{
+    item: MetricsSnapshotReplayInput['item'] | undefined
+    nonce: number | undefined
+  }>({ item: undefined, nonce: undefined })
 
   const invalidateSeriesCache = useCallback(() => {
     lastSeriesFetchRef.current = null
@@ -72,29 +78,30 @@ export function useMetricsPanelController(
     onError,
   })
 
-  useEffect(() => {
-    if (!snapshotReplay?.item || snapshotReplay.nonce < 1) {
+  if (appliedSnapshot.item !== snapshotItem || appliedSnapshot.nonce !== snapshotNonce) {
+    setAppliedSnapshot({ item: snapshotItem, nonce: snapshotNonce })
+    if (!snapshotItem || snapshotNonce === undefined || snapshotNonce < 1) {
       setSnapshotChartGuidelineMs(null)
-      return
+    } else {
+      const br = snapshotItem.build_request_payload
+      const gc = snapshotItem.graph_context
+      const vid = gc?.vcenter_id ?? br.vcenter_id
+      setVcenterId(vid && String(vid).length > 0 ? String(vid) : '')
+      setMetricKey(gc?.metric_key ?? '')
+      setChartEventType(gc?.chart_event_type ?? '')
+      const markerSrc = gc?.marker_timestamp_utc ?? snapshotItem.timestamp_utc
+      setSnapshotChartGuidelineMs(parseApiUtcInstantMs(String(markerSrc)))
+      setChartResetKey((k) => k + 1)
     }
-    const { item } = snapshotReplay
-    const br = item.build_request_payload
-    const gc = item.graph_context
-    const vid = gc?.vcenter_id ?? br.vcenter_id
-    setVcenterId(vid && String(vid).length > 0 ? String(vid) : '')
-    setMetricKey(gc?.metric_key ?? '')
-    setChartEventType(gc?.chart_event_type ?? '')
-    const markerSrc = gc?.marker_timestamp_utc ?? item.timestamp_utc
-    setSnapshotChartGuidelineMs(parseApiUtcInstantMs(String(markerSrc)))
-    invalidateSeriesCache()
-    setChartResetKey((k) => k + 1)
-  }, [snapshotReplay?.item, snapshotReplay?.nonce, invalidateSeriesCache])
+  } else if (!metricKey && metricKeys.length > 0) {
+    setMetricKey(metricKeys[0])
+  }
 
   useEffect(() => {
-    if (!metricKey && metricKeys.length > 0) {
-      setMetricKey(metricKeys[0])
+    if (snapshotItem && snapshotNonce !== undefined && snapshotNonce > 0) {
+      invalidateSeriesCache()
     }
-  }, [metricKeys, metricKey])
+  }, [snapshotItem, snapshotNonce, invalidateSeriesCache])
 
   useEffect(() => {
     const q = vcenterId ? `?vcenter_id=${encodeURIComponent(vcenterId)}` : ''
