@@ -1,0 +1,5 @@
+.logs-panel small { display: block; color: var(--text-muted); margin-top: .35rem; }
+.logs-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; font-size: .8rem; }
+.logs-panel summary { cursor: pointer; overflow-wrap: anywhere; }
+.logs-panel td { vertical-align: top; }
+.logs-panel td:last-child { max-width: 50vw; }

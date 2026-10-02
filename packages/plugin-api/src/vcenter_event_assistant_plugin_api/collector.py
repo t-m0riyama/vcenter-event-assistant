@@ -62,6 +62,7 @@ from vcenter_event_assistant_plugin_api import (
     EventInput,
     MetricDefinition,
     MetricSampleInput,
+    SetupAction,
 )
 from vcenter_event_assistant_plugin_api.blocking import run_blocking
 from vcenter_event_assistant_plugin_api.cursors import TimestampCursor
@@ -81,6 +82,8 @@ _MANIFEST_ATTRIBUTES = frozenset(
         "default_interval_seconds",
         "data_kinds",
         "metrics",
+        "configuration_schema",
+        "setup_actions",
     }
 )
 
@@ -103,6 +106,8 @@ class CollectorBase:
     #: 運用者向けの説明。管理画面の詳細行に出る。空なら何も表示されない。
     description: ClassVar[str] = ""
     version: ClassVar[str]
+    configuration_schema: ClassVar[dict[str, Any] | None] = None
+    setup_actions: ClassVar[tuple[SetupAction, ...]] = ()
     default_interval_seconds: ClassVar[int] = 300
     #: サブクラスが宣言する。:class:`MetricCollector` などが設定する。
     data_kinds: ClassVar[frozenset[DataKind]] = frozenset()
@@ -134,9 +139,7 @@ class CollectorBase:
         for attribute in ("id", "display_name", "version"):
             if not getattr(cls, attribute, None):
                 raise ManifestValidationError(
-                    (
-                        _missing_attribute_issue(cls.__name__, attribute),
-                    )
+                    (_missing_attribute_issue(cls.__name__, attribute),)
                 )
         return CollectorManifest(
             id=cls.id,
@@ -146,6 +149,8 @@ class CollectorBase:
             default_interval_seconds=cls.default_interval_seconds,
             metric_definitions=cls._metric_definitions(),
             description=cls.description,
+            configuration_schema=cls.configuration_schema,
+            setup_actions=cls.setup_actions,
         )
 
     @classmethod

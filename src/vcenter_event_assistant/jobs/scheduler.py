@@ -32,6 +32,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_alert_history,
     purge_old_digest_records,
     purge_old_events,
+    purge_old_logs,
     purge_old_incident_timeline_snapshots,
     purge_old_metrics,
 )
@@ -109,6 +110,7 @@ async def purge_retention(settings: Settings) -> None:
     """保持期間を超えたイベント・メトリクス・履歴系データを削除する。"""
     try:
         async with session_scope(settings=settings) as session:
+            await purge_old_logs(session, settings=settings)
             n_ev = await purge_old_events(session, settings=settings)
             if n_ev:
                 logger.info("purged old events count=%s", n_ev)

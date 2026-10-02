@@ -24,6 +24,10 @@ export const MAIN_TAB_HELP: Record<MainTabId, TabHelpEntry> = {
     userGuideDoc: 'docs/user-guides/events.md',
     markerId: 'events',
   },
+  logs: {
+    summary: "【ログ検索】\nSSHで収集したログを期間・接続先・種別・重大度・本文で検索します。未解析の発生時刻は取得時刻で表示します。イベントの前後5分のログへ移動できます。",
+    userGuideDoc: "docs/remote-log-collector.md",
+  },
   metrics: {
     summary:
       '【グラフ】\nパフォーマンスメトリクスを可視化します。\n- ESXi ホストや仮想マシンの統計推移を確認できます。\n- 表示期間やリフレッシュ間隔を調整可能です。',

@@ -420,3 +420,9 @@ pyVmomi は**実行時にはアプリ本体の依存としてワーカーの `sy
 uv run pytest examples/example-temperature-collector/tests examples/example-event-collector/tests -q
 ```
 
+
+## 画面での設定と接続テスト（plugin-api 1.4）
+
+TOMLの手入力に加え、共通フォーム・vCenter選択・SSH接続管理・読取専用の導入アクションを宣言できます。
+詳細は [プラグイン共通導入仕様](plugin-onboarding.md) を参照してください。
+設定スキーマを宣言しない既存プラグインは引き続き従来の方式で利用できます。

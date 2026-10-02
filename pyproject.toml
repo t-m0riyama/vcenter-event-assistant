@@ -28,14 +28,17 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.48",
     "tiktoken>=0.12.0",
     "uvicorn[standard]>=0.42.0",
-    "vcenter-event-assistant-plugin-api",
+    "vcenter-event-assistant-plugin-api>=1.4,<2",
+    "vea-remote-log-collector>=0.2,<1",
+    "jsonschema>=4.23,<5",
 ]
 
 [tool.uv.sources]
 vcenter-event-assistant-plugin-api = { workspace = true }
+vea-remote-log-collector = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/plugin-api"]
+members = ["packages/plugin-api", "packages/remote-log-collector"]
 
 [project.scripts]
 vcenter-event-assistant = "vcenter_event_assistant:main"

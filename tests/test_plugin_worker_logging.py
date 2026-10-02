@@ -421,7 +421,7 @@ def test_missing_dependency_names_the_module_in_the_failure_reason(tmp_path) -> 
         distribution="example-broken",
     )
 
-    plugins, failures = build_remote_plugins(str(root))
+    plugins, failures = build_remote_plugins(str(root), include_environment=False)
 
     assert plugins == []
     reason = failures["example.broken"]
@@ -443,7 +443,7 @@ def test_discovery_worker_stderr_is_transcribed_on_failure(
     )
 
     with caplog.at_level(logging.WARNING, logger="vcenter_event_assistant.plugins.remote"):
-        build_remote_plugins(str(root))
+        build_remote_plugins(str(root), include_environment=False)
 
     transcribed = "\n".join(
         record.getMessage()

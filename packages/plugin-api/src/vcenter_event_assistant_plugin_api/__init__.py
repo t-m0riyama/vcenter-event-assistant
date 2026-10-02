@@ -23,11 +23,11 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 #: 配布パッケージのバージョン（SemVer）。機能検出に使える。
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 
 #: 契約世代。アプリが ``manifest.api_version`` と突き合わせる。**安易に上げないこと。**
 PLUGIN_API_VERSION = 1
-DataKind = Literal["event", "metric"]
+DataKind = Literal["event", "metric", "log"]
 SeriesMode = Literal["entity", "single"]
 
 
@@ -73,6 +73,28 @@ class MetricDefinition:
 
 
 @dataclass(frozen=True, slots=True)
+class SetupAction:
+    id: str
+    title: str
+    required_for_enable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SetupCheck:
+    id: str
+    label: str
+    ok: bool
+    message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SetupResult:
+    checks: tuple[SetupCheck, ...] = ()
+    warnings: tuple[str, ...] = ()
+    samples: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class CollectorManifest:
     id: str
     display_name: str
@@ -84,6 +106,9 @@ class CollectorManifest:
     #: 運用者向けの説明。管理画面の詳細行にそのまま出る。1〜2 文で「何を集めるか」を書く。
     #: 位置引数で構築している既存プラグインを壊さないよう、必ず末尾に置く。
     description: str = ""
+    default_timeout_seconds: float = 300.0
+    configuration_schema: Mapping[str, Any] | None = None
+    setup_actions: tuple[SetupAction, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,10 +135,24 @@ class MetricSampleInput:
 
 
 @dataclass(frozen=True, slots=True)
+class LogRecordInput:
+    source_id: str
+    host: str
+    log_kind: str
+    file_generation: str
+    byte_offset: int
+    collected_at: datetime
+    message: str
+    occurred_at: datetime | None = None
+    severity: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CollectionBatch:
     events: tuple[EventInput, ...] = ()
     metrics: tuple[MetricSampleInput, ...] = ()
     next_cursor: str | None = None
+    logs: tuple[LogRecordInput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +187,12 @@ class CollectorPlugin(Protocol):
     async def collect(self, context: CollectionContext) -> CollectionBatch: ...
 
     async def stop(self) -> None: ...
+
+
+@runtime_checkable
+class CollectorSetupPlugin(Protocol):
+    """Optional read-only diagnostics. Must not persist records or advance cursors."""
+    async def setup(self, context: CollectionContext, action: str) -> SetupResult: ...
 
 
 # 契約の定義が揃ったあとにサブモジュールを読む。サブモジュール側はこのパッケージから
@@ -214,10 +259,15 @@ __all__ = [
     "PLUGIN_LOGGER_NAMESPACE",
     "BatchValidationError",
     "CollectionBatch",
+    "LogRecordInput",
     "CollectionContext",
     "CollectorBase",
     "CollectorManifest",
     "CollectorPlugin",
+    "CollectorSetupPlugin",
+    "SetupAction",
+    "SetupCheck",
+    "SetupResult",
     "ConnectionFactory",
     "DataKind",
     "EventCollector",

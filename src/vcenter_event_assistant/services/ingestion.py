@@ -241,3 +241,10 @@ async def list_enabled_vcenters(session: AsyncSession) -> list[VCenter]:
     """
     q = await session.execute(select(VCenter).where(VCenter.is_enabled.is_(True)))
     return list(q.scalars().all())
+
+
+async def purge_old_logs(session: AsyncSession, *, settings: Settings) -> int:
+    from vcenter_event_assistant.db.models import LogRecord
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.log_retention_days)
+    result = await session.execute(delete(LogRecord).where(LogRecord.effective_at < cutoff))
+    return result.rowcount or 0

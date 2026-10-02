@@ -25,11 +25,12 @@ async def run_ingest_now(
         "status": "partial" if any(item.status == "failed" for item in result.plugins) else "ok",
         "events_inserted": result.events_inserted,
         "metrics_inserted": result.metrics_inserted,
+        "logs_inserted": result.logs_inserted,
     }
     if result.plugins:
         response["plugins"] = [
             {"plugin_id": item.plugin_id, "status": item.status,
-             "events_inserted": item.events_inserted, "metrics_inserted": item.metrics_inserted,
+             "events_inserted": item.events_inserted, "metrics_inserted": item.metrics_inserted, "logs_inserted": item.logs_inserted,
              "error": item.error}
             for item in result.plugins
         ]

@@ -65,7 +65,7 @@ def test_a_generated_plugin_is_discovered_with_its_manifest(
     root.mkdir()
     _install_generated_plugin(root, kind, plugin_id="acme.sensor")
 
-    plugins, failures = build_remote_plugins(str(root))
+    plugins, failures = build_remote_plugins(str(root), include_environment=False)
 
     assert failures == {}
     assert [plugin.manifest.id for plugin in plugins] == ["acme.sensor"]

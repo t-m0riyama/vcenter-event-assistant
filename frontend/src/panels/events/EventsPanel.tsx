@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import './EventsPanel.css'
 
+import { logsAroundEvent } from '../../routing/correlationRange'
 import type { EventRow } from '../../api/schemas'
 import {
   formatIsoInTimeZone,
@@ -33,6 +34,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
   return (
     <div className="panel">
       <div className="toolbar">
+        <label>vCenter<select value={c.vcenterId} onChange={(e) => { c.setVcenterId(e.target.value); c.setPage(1) }}><option value="">全て</option>{c.vcenters.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
         <label>
           最小スコア
           <input
@@ -214,7 +216,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
               <td>
                 <ScoreBadge score={e.notable_score} />
               </td>
-              <td className="msg">{e.message}</td>
+              <td className="msg">{e.message}<p><a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a></p></td>
               <td className="event-comment-cell">
                 {c.editingCommentId === e.id ? (
                   <div className="event-comment-edit">

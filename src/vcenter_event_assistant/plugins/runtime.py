@@ -27,6 +27,7 @@ from vcenter_event_assistant.db.models import (
     EventRecord,
     IngestionState,
     MetricSample,
+    LogRecord,
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
@@ -53,6 +54,7 @@ class CollectorRunResult:
     events_inserted: int = 0
     metrics_inserted: int = 0
     error: str | None = None
+    logs_inserted: int = 0
 
 
 async def drain_collector_runs(plugin_ids: set[str]) -> None:
@@ -210,7 +212,7 @@ async def _persist_batch(
     vcenter_id,
     registration: CollectorRegistration,
     batch: CollectionBatch,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     assert registration.plugin is not None
     async with session_scope(settings=settings) as session:
         deltas = await load_event_score_delta_map(session) if batch.events else {}
@@ -267,6 +269,19 @@ async def _persist_batch(
                 ],
             )
             metrics_inserted += result.rowcount or 0
+        logs_inserted = 0
+        for record in batch.logs:
+            result = await _insert_on_conflict_do_nothing(
+                session, LogRecord,
+                {"vcenter_id": vcenter_id, "collector_id": registration.plugin_id,
+                 "source_id": record.source_id, "host": record.host, "log_kind": record.log_kind,
+                 "file_generation": record.file_generation, "byte_offset": record.byte_offset,
+                 "occurred_at": record.occurred_at, "collected_at": record.collected_at,
+                 "effective_at": record.occurred_at or record.collected_at,
+                 "severity": record.severity, "message": record.message},
+                index_elements=["vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset"],
+            )
+            logs_inserted += result.rowcount or 0
         if batch.next_cursor is not None:
             state_result = await session.execute(
                 select(IngestionState).where(
@@ -286,8 +301,9 @@ async def _persist_batch(
         run_state.last_success_at = datetime.now(timezone.utc)
         run_state.events_inserted = events_inserted
         run_state.metrics_inserted = metrics_inserted
+        run_state.logs_inserted = logs_inserted
         run_state.error_message = None
-        return events_inserted, metrics_inserted
+        return events_inserted, metrics_inserted, logs_inserted
 
 
 async def run_collector_for_vcenter(
@@ -346,19 +362,23 @@ async def run_collector_for_vcenter(
             # 収集は DB セッションの外で行う。外部プラグインは timeout まで走りうるため、
             # その間 DB 接続を占有させない。
             timeout_seconds = registration.config.timeout_seconds
-            if isinstance(registration.plugin, RemoteCollectorPlugin):
-                # ワーカーが自前でタイムアウトを監視し、超過時はプロセスごと kill する。
-                batch = await registration.plugin.collect_with_connection(
-                    context, params, timeout=timeout_seconds
-                )
-            else:
-                async with asyncio.timeout(timeout_seconds):
-                    batch = await registration.plugin.collect(context)
+            from dataclasses import replace
+            from vcenter_event_assistant.services.ssh_management import materialize_ssh
+            async with materialize_ssh(settings, dict(context.config), registration.plugin.manifest.configuration_schema, vcenter_id) as resolved:
+                context = replace(context, config=resolved)
+                if isinstance(registration.plugin, RemoteCollectorPlugin):
+                    # ワーカーが自前でタイムアウトを監視し、超過時はプロセスごと kill する。
+                    batch = await registration.plugin.collect_with_connection(
+                        context, params, timeout=timeout_seconds
+                    )
+                else:
+                    async with asyncio.timeout(timeout_seconds):
+                        batch = await registration.plugin.collect(context)
             _validate_batch(registration, batch)
-            events, metrics = await _persist_batch(
+            events, metrics, logs = await _persist_batch(
                 settings, vcenter_id, registration, batch
             )
-            return CollectorRunResult(registration.plugin_id, "ok", events, metrics)
+            return CollectorRunResult(registration.plugin_id, "ok", events, metrics, logs_inserted=logs)
         except Exception as exc:
             logger.exception(
                 "collector execution failed plugin_id=%s vcenter_id=%s",

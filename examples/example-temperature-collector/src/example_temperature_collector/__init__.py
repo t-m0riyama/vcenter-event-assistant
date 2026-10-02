@@ -29,6 +29,9 @@ from vcenter_event_assistant_plugin_api import (
     MetricCollector,
     MetricDefinition,
     MetricSampleInput,
+    SetupAction,
+    SetupCheck,
+    SetupResult,
     config,
     get_plugin_logger,
     vmware,
@@ -86,6 +89,43 @@ class TemperatureCollector(MetricCollector):
     )
     version = "0.1.0"
     metrics = (TEMPERATURE,)
+    configuration_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "sensor": {
+                "type": "string",
+                "title": "センサー名",
+                "default": "system-board",
+                "minLength": 1,
+            }
+        },
+        "required": ["sensor"],
+    }
+    setup_actions = (SetupAction("preview", "合成データの試し読み"),)
+
+    async def setup(self, context: CollectionContext, action: str) -> SetupResult:
+        sensor = config.get_str(context.config, "sensor", "system-board")
+        return SetupResult(
+            checks=(
+                SetupCheck(
+                    "sensor",
+                    "センサー設定",
+                    bool(sensor),
+                    "合成値の生成設定を確認しました。",
+                ),
+            ),
+            samples=(
+                {
+                    "sensor": sensor,
+                    "synthetic_temperature_c": _read_temperature(
+                        "example", sensor or ""
+                    ),
+                },
+            ),
+            warnings=("サンプルプラグインのため、実際のセンサーは読みません。",),
+        )
+
     default_interval_seconds = 300
 
     def sample(
@@ -116,9 +156,7 @@ class TemperatureCollector(MetricCollector):
                 value=_read_temperature(entity_moid, sensor),
             )
 
-    def sample_mock(
-        self, context: CollectionContext
-    ) -> Iterable[MetricSampleInput]:
+    def sample_mock(self, context: CollectionContext) -> Iterable[MetricSampleInput]:
         """``MOCK_MODE=true`` のときの合成データ。
 
         宣言した ``metrics`` から決定的な値を作る既定の実装で足りるので、ここでは

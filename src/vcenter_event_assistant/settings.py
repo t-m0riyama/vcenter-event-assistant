@@ -62,6 +62,7 @@ class DatabaseSettingsMixin(BaseModel):
         ge=1,
         description="Delete events older than this many days (occurred_at).",
     )
+    log_retention_days: int = Field(default=7, ge=1)
     metric_retention_days: int = Field(
         default=7,
         ge=1,

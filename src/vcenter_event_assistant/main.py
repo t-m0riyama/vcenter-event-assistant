@@ -26,6 +26,7 @@ from vcenter_event_assistant.api.routes.digests import router as digests_router
 from vcenter_event_assistant.api.routes.event_score_rules import router as event_score_rules_router
 from vcenter_event_assistant.api.routes.event_type_guides import router as event_type_guides_router
 from vcenter_event_assistant.api.routes.events import router as events_router
+from vcenter_event_assistant.api.routes.logs import router as logs_router
 from vcenter_event_assistant.api.routes.health import router as health_router
 from vcenter_event_assistant.api.routes.metrics import router as metrics_router
 from vcenter_event_assistant.api.routes.vcenters import router as vcenters_router
@@ -90,6 +91,8 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "LangSmith tracing is enabled in production; LLM prompts may be sent to external services."
         )
+    from vcenter_event_assistant.services.ssh_management import cleanup_stale_ssh_files
+    cleanup_stale_ssh_files()
     await init_db(settings=settings)
     await ensure_vcenter_password_storage(settings=settings)
     registry = await build_initial_collector_registry(settings)
@@ -130,7 +133,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=origins or ["http://localhost:5173"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Accept", "Content-Type", "Authorization", "X-Requested-With"],
     )
 
@@ -198,6 +201,7 @@ def create_app() -> FastAPI:
     api.include_router(event_type_guides_router)
     api.include_router(vcenters_router)
     api.include_router(events_router)
+    api.include_router(logs_router)
     api.include_router(metrics_router)
     api.include_router(dashboard_router)
     api.include_router(digests_router)
@@ -207,6 +211,8 @@ def create_app() -> FastAPI:
     api.include_router(ingest_router)
     api.include_router(plugins_router)
     api.include_router(plugins_installed_router)
+    from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
+    api.include_router(plugin_setup_router)
 
     app.include_router(api)
 

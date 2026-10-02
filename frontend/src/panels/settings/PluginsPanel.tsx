@@ -14,6 +14,7 @@ import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
 import './PluginsPanel.css'
+import PluginSetupPanel from './PluginSetupPanel'
 
 const COLLECTOR_STATUS_LABELS: Record<string, string> = {
   enabled: '有効',
@@ -63,13 +64,15 @@ function dataKindsLabel(dataKinds: readonly string[]): string {
     .map((kind) => {
       if (kind === 'event') return 'イベント'
       if (kind === 'metric') return 'メトリクス'
+      if (kind === 'log') return 'ログ'
       return kind
     })
     .join(' / ')
 }
 
-function sourceLabel(source: string): string {
+function sourceLabel(source: string, pluginId?: string): string {
   if (source === 'builtin') return '組み込み'
+  if (source === 'entry_point:vea.remote.logs' && pluginId === 'vea.remote.logs') return 'VEA提供・標準同梱'
   if (source.startsWith('entry_point:')) return '外部'
   if (source === 'configuration') return '設定のみ'
   if (source === 'discovery') return '検出'
@@ -121,7 +124,7 @@ function RunsTable({ runs, timeZone }: { readonly runs: CollectorRunStatus[]; re
               <td><RunDate value={run.last_success_at} timeZone={timeZone} /></td>
               <td><RunDate value={run.last_failure_at} timeZone={timeZone} /></td>
               <td>
-                イベント {run.events_inserted} / メトリクス {run.metrics_inserted}
+                イベント {run.events_inserted} / メトリクス {run.metrics_inserted} / ログ {run.logs_inserted}
               </td>
               <td className="plugin-error-cell">{run.error || '—'}</td>
             </tr>
@@ -383,6 +386,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const managementEnabled = data?.management_enabled ?? false
+  const [setupId, setSetupId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     onError(null)
@@ -595,7 +599,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
                         </span>
                       </td>
                       <td>{dataKindsLabel(collector.data_kinds)}</td>
-                      <td>{sourceLabel(collector.source)}</td>
+                      <td>{sourceLabel(collector.source, collector.id)}</td>
                       <td>{collector.version || '—'}</td>
                       <td>{secondsLabel(collector.interval_seconds)}</td>
                     </tr>
@@ -616,7 +620,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
                             </div>
                             <div>
                               <dt>登録元</dt>
-                              <dd className="plugin-source-value">{collector.source}</dd>
+                              <dd className="plugin-source-value">{sourceLabel(collector.source, collector.id) === 'VEA提供・標準同梱' ? 'VEA提供・標準同梱（ワーカーで実行）' : collector.source}</dd>
                             </div>
                           </dl>
                           {collector.error ? (
@@ -624,7 +628,11 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
                               <strong>構成エラー:</strong> {collector.error}
                             </p>
                           ) : null}
-                          {managementEnabled && collector.status !== 'failed' ? (
+                          {managementEnabled && collector.configuration_available ? <>
+                            <button type="button" className={setupId === collector.id ? 'btn btn--gray' : 'btn'} onClick={() => setSetupId(setupId === collector.id ? null : collector.id)}>{setupId === collector.id ? '導入設定を閉じる' : '設定を始める'}</button>
+                            {setupId === collector.id && <PluginSetupPanel pluginId={collector.id} onApplied={load} onClose={() => setSetupId(null)} dataKinds={collector.data_kinds} />}
+                          </> : null}
+                          {managementEnabled && collector.status !== 'failed' && setupId !== collector.id ? (
                             <CollectorSettingsForm
                               collector={collector}
                               disabled={busy}

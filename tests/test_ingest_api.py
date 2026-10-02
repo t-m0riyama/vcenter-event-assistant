@@ -25,6 +25,7 @@ async def test_run_ingest_returns_counts(client: AsyncClient) -> None:
         "status": "ok",
         "events_inserted": 3,
         "metrics_inserted": 5,
+        "logs_inserted": 0,
     }
     mock_run.assert_awaited_once()
     settings_arg = mock_run.await_args.args[0]

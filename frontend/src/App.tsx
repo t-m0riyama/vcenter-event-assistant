@@ -4,6 +4,7 @@ import { useAppConfig } from './hooks/useAppConfig'
 import { useAttentionStatus } from './hooks/useAttentionStatus'
 import { useAppTabHashSync } from './hooks/useAppTabHashSync'
 import { parseAppHash } from './routing/appHashRouting'
+import { LogsPanel } from './panels/logs/LogsPanel'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
 import { ChatWebSearchPrefsPanel } from './panels/settings/ChatWebSearchPrefsPanel'
@@ -125,6 +126,12 @@ export default function App() {
         label: 'イベント',
         panelLabel: 'イベント一覧',
         render: (onError) => <EventsPanel onError={onError} />,
+      },
+      {
+        id: 'logs',
+        label: 'ログ',
+        panelLabel: 'ログ検索',
+        render: (onError) => <LogsPanel onError={onError} />,
       },
       {
         id: 'metrics',
@@ -258,7 +265,7 @@ export default function App() {
           {retention && (
             <p className="retention-hint">
               データ保持: イベント {retention.event_retention_days} 日 / メトリクス{' '}
-              {retention.metric_retention_days} 日（サーバー設定）
+              {retention.metric_retention_days} 日 / ログ {retention.log_retention_days} 日（サーバー設定）
             </p>
           )}
           {retention?.mock_mode === true && (

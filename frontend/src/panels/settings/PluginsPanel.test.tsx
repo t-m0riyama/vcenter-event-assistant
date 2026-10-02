@@ -90,7 +90,7 @@ describe('PluginsPanel', () => {
     expect(screen.getByText('entry_point:temperature')).toBeInTheDocument()
     expect(screen.getByText('Tokyo vCenter')).toBeInTheDocument()
     expect(screen.getByText('成功')).toBeInTheDocument()
-    expect(screen.getByText('イベント 2 / メトリクス 3')).toBeInTheDocument()
+    expect(screen.getByText('イベント 2 / メトリクス 3 / ログ 0')).toBeInTheDocument()
     expect(screen.getByText(/10:00:05 AM/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Temperature の詳細を閉じる' }))
       .toHaveAttribute('aria-expanded', 'true')
