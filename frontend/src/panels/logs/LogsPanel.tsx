@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { apiGet } from '../../api'
 import { SeverityBadge } from '../../components/badges'
@@ -11,14 +11,9 @@ import { EMPTY_ZONED_RANGE_PARTS, zonedRangePartsFromUtcIsoEndpoints, zonedRange
 import { resolveEventApiRange } from '../../datetime/graphRange'
 import { correlationHash, readCorrelationRange } from '../../routing/correlationRange'
 import { toErrorMessage } from '../../utils/errors'
+import { buildLogExportFilename, buildLogListSearchParams, downloadLogListCsv, fetchAllLogsForExport, logPageSchema as pageSchema, logRowsToCsv } from './logExport'
 import './LogsPanel.css'
 
-const logSchema = z.object({
-  id: z.number(), vcenter_id: z.string(), source_id: z.string(), host: z.string(), log_kind: z.string(),
-  file_generation: z.string(), byte_offset: z.number(), occurred_at: z.string().nullable(),
-  collected_at: z.string(), effective_at: z.string(), severity: z.string().nullable(), message: z.string(),
-})
-const pageSchema = z.object({ items: z.array(logSchema), total: z.number().int() })
 const vcentersSchema = z.array(z.object({ id: z.string(), name: z.string() }))
 
 export function LogsPanel({ onError }: { onError: (message: string | null) => void }) {
@@ -37,6 +32,8 @@ export function LogsPanel({ onError }: { onError: (message: string | null) => vo
   const [vcenters, setVcenters] = useState<z.infer<typeof vcentersSchema>>([])
   const [problems, setProblems] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const exportInProgress = useRef(false)
   const inputs = zonedRangePartsToCombinedInputs(range)
   const resolvedRange = resolveEventApiRange(inputs.rangeFromInput, inputs.rangeToInput, timeZone)
   const eventRange = resolvedRange.ok ? { vcenterId: vcenter, from: linkedRange?.from ?? resolvedRange.from, to: linkedRange?.to ?? resolvedRange.to } : null
@@ -72,28 +69,45 @@ export function LogsPanel({ onError }: { onError: (message: string | null) => vo
     return () => { cancelled = true }
   }, [onError])
 
-  const load = useCallback(async () => {
+  const getFilters = useCallback(() => {
     const inputs = zonedRangePartsToCombinedInputs(range)
     const resolved = resolveEventApiRange(inputs.rangeFromInput, inputs.rangeToInput, timeZone)
     if (!resolved.ok) { onError(resolved.message); return }
     const from = linkedRange?.from ?? resolved.from
     const to = linkedRange?.to ?? resolved.to
-    const params = new URLSearchParams({ limit: String(pageSize), offset: String(page * pageSize) })
-    for (const [key, value] of Object.entries({ vcenter_id: vcenter, source_id: source, log_kind: kind, severity, message_contains: message, from, to })) {
-      if (value) params.set(key, value)
+    return { vcenter_id: vcenter, source_id: source, log_kind: kind, severity, message_contains: message, from, to }
+  }, [range, timeZone, linkedRange, vcenter, source, kind, severity, message, onError])
+
+  const downloadCsv = async () => {
+    if (exportInProgress.current || loading || data.total === 0) return
+    const filters = getFilters()
+    if (!filters) return
+    const exportTimeZone = timeZone
+    const names = new Map(vcenters.map((v) => [v.id, v.name]))
+    exportInProgress.current = true
+    setExporting(true)
+    onError(null)
+    try {
+      const rows = await fetchAllLogsForExport((params) => apiGet<unknown>(`/api/logs?${params}`), filters)
+      downloadLogListCsv(logRowsToCsv(rows, names, exportTimeZone), buildLogExportFilename())
+    } catch (e) {
+      onError(toErrorMessage(e))
+    } finally {
+      exportInProgress.current = false
+      setExporting(false)
     }
-    return { params, vcenter }
-  }, [range, timeZone, linkedRange, page, pageSize, vcenter, source, kind, severity, message, onError])
+  }
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const request = await load()
-      if (!request || cancelled) return
+      const filters = getFilters()
+      if (!filters || cancelled) return
+      const params = buildLogListSearchParams(filters, pageSize, page * pageSize)
       setLoading(true); onError(null)
       try {
         const [raw, status] = await Promise.all([
-          apiGet<unknown>(`/api/logs?${request.params}`), apiGet<unknown>('/api/plugins/collectors'),
+          apiGet<unknown>(`/api/logs?${params}`), apiGet<unknown>('/api/plugins/collectors'),
         ])
         if (cancelled) return
         const next = pageSchema.parse(raw)
@@ -103,7 +117,7 @@ export function LogsPanel({ onError }: { onError: (message: string | null) => vo
         setProblems(collectors.flatMap((c) => [
           ...(c.status === 'failed' ? [`${c.display_name ?? c.id}: ${c.error ?? '収集設定エラー'}`] : []),
           ...(c.status === 'disabled' ? [`${c.display_name ?? c.id}: 収集は無効です`] : []),
-          ...c.runs.filter((r) => r.status === 'failed' && (!request.vcenter || r.vcenter_id === request.vcenter)).map((r) => `${r.vcenter_name}: ${r.error ?? '収集失敗'}`),
+          ...c.runs.filter((r) => r.status === 'failed' && (!filters.vcenter_id || r.vcenter_id === filters.vcenter_id)).map((r) => `${r.vcenter_name}: ${r.error ?? '収集失敗'}`),
         ]))
       } catch (e) {
         if (!cancelled) onError(toErrorMessage(e))
@@ -112,7 +126,7 @@ export function LogsPanel({ onError }: { onError: (message: string | null) => vo
       }
     })()
     return () => { cancelled = true }
-  }, [load, onError, page, pageSize])
+  }, [getFilters, onError, page, pageSize])
 
   return <div className="panel logs-panel">
     <div className="toolbar" aria-label="ログの操作">
@@ -133,6 +147,9 @@ export function LogsPanel({ onError }: { onError: (message: string | null) => vo
       <span className="toolbar__meta" role="status">
         {loading ? '読み込み中…' : data.total === 0 ? '全 0 件' : `全 ${data.total} 件中 ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, data.total)} 件を表示`}
       </span>
+      <button type="button" className="btn btn--gray" disabled={loading || exporting || !resolvedRange.ok || data.total === 0} onClick={() => void downloadCsv()}>
+        {exporting ? '出力中…' : 'CSVをダウンロード'}
+      </button>
       {eventRange?.vcenterId && eventRange.from && eventRange.to && <a className="btn btn--gray logs-panel__event-link" href={correlationHash('events', { vcenterId: eventRange.vcenterId, from: eventRange.from, to: eventRange.to })}>同じ期間のイベント</a>}
       <details className="toolbar__filters-details">
         <summary className="toolbar__filters-summary">
