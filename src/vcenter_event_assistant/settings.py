@@ -5,7 +5,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
@@ -324,6 +324,18 @@ class AlertSettingsMixin(BaseModel):
     alert_eval_interval_seconds: int = Field(
         default=60, ge=10, description="Alert evaluation job interval."
     )
+    alert_delivery_interval_seconds: int = Field(default=10, ge=1)
+    alert_delivery_batch_size: int = Field(default=20, ge=1, le=1000)
+    alert_retry_initial_seconds: int = Field(default=60, ge=1)
+    alert_retry_max_seconds: int = Field(default=3600, ge=1)
+    alert_retry_ttl_seconds: int = Field(default=86400, ge=1)
+
+    @model_validator(mode="after")
+    def validate_alert_retry_intervals(self) -> "AlertSettingsMixin":
+        if not self.alert_retry_initial_seconds <= self.alert_retry_max_seconds <= self.alert_retry_ttl_seconds:
+            raise ValueError("alert retry intervals require initial <= max <= ttl")
+        return self
+
     alert_snapshot_lookback_hours: int = Field(
         default=2,
         ge=1,

@@ -205,7 +205,7 @@
 | ingest DB リース | multi-worker / レプリカ向けの同時実行ガード |
 | CI PostgreSQL | M-1 統合テストの本番 DB 再現（暫定はステージング手動） |
 | event_score 自動 resolve | lookback 内に該当イベントがなくなったら `resolved` |
-| 通知再送キュー | commit 後の SMTP 失敗に対する非同期リトライ |
+| 通知再送キュー | 2026-10-03 実装: 状態と同時保存する outbox、独立配送ジョブ、最大24時間再送、履歴表示。詳細は [修正記録](plans/2026-10-03-smtp-notification-outbox.md) |
 | `vmware_key` 本対応 | nullable + 代替ユニークキー（頻度が高い場合） |
 | SMTP 専用 executor | `to_thread` 飽和対策 |
 | `aiosmtplib` 移行 | H-3 中期 |

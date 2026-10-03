@@ -330,7 +330,36 @@ class AlertHistory(Base):
     success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    delivery_status: Mapped[str] = mapped_column(
+        String(16), nullable=False,
+        default=lambda ctx: ("skipped" if ctx.get_current_parameters().get("success") is None
+                             else "succeeded" if ctx.get_current_parameters()["success"] else "failed"),
+    )
+    attempt_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     rule: Mapped["AlertRule"] = relationship(back_populates="history")
+
+
+class AlertNotificationOutbox(Base):
+    """One durable delivery intent per history row; contains no SMTP credentials."""
+
+    __tablename__ = "alert_notification_outbox"
+    __table_args__ = (Index("ix_alert_outbox_due", "next_attempt_at", "created_at"),)
+
+    history_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("alert_history.id", ondelete="CASCADE"), primary_key=True,
+    )
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    from_address: Mapped[str] = mapped_column(Text)
+    to_address: Mapped[str] = mapped_column(Text)
+    message_id: Mapped[str] = mapped_column(String(255), unique=True)
+    notification: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class IncidentTimelineManualSnapshot(Base):

@@ -47,3 +47,37 @@ def test_alert_settings_empty_str_normalization(monkeypatch):
     settings = Settings()
     assert settings.smtp_host is None
     assert settings.alert_email_to is None
+
+
+def test_delivery_settings_defaults():
+    settings = Settings()
+    assert settings.alert_delivery_interval_seconds == 10
+    assert settings.alert_delivery_batch_size == 20
+    assert settings.alert_retry_initial_seconds == 60
+    assert settings.alert_retry_max_seconds == 3600
+    assert settings.alert_retry_ttl_seconds == 86400
+
+
+def test_delivery_settings_validate_intervals_and_positive_values():
+    import pytest
+    from pydantic import ValidationError
+    for kwargs in (
+        {"alert_delivery_interval_seconds": 0}, {"alert_delivery_batch_size": 0},
+        {"alert_retry_initial_seconds": 0}, {"alert_retry_max_seconds": 0},
+        {"alert_retry_ttl_seconds": 0}, {"alert_retry_initial_seconds": 3601},
+        {"alert_retry_ttl_seconds": 3599},
+    ):
+        with pytest.raises(ValidationError):
+            Settings(**kwargs)
+
+
+def test_delivery_settings_environment(monkeypatch):
+    monkeypatch.setenv("ALERT_DELIVERY_INTERVAL_SECONDS", "15")
+    monkeypatch.setenv("ALERT_DELIVERY_BATCH_SIZE", "30")
+    monkeypatch.setenv("ALERT_RETRY_INITIAL_SECONDS", "120")
+    monkeypatch.setenv("ALERT_RETRY_MAX_SECONDS", "1800")
+    monkeypatch.setenv("ALERT_RETRY_TTL_SECONDS", "7200")
+    settings = Settings()
+    assert (settings.alert_delivery_interval_seconds, settings.alert_delivery_batch_size,
+            settings.alert_retry_initial_seconds, settings.alert_retry_max_seconds,
+            settings.alert_retry_ttl_seconds) == (15, 30, 120, 1800, 7200)

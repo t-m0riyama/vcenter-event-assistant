@@ -39,7 +39,7 @@ async def evaluate_event_score_rule(
     firings = 0
     resolutions = 0
 
-    async with session_scope() as session:
+    async with session_scope(settings=deps.settings) as session:
         res = await session.execute(
             select(
                 EventRecord.event_type,
@@ -120,5 +120,7 @@ async def evaluate_event_score_rule(
                 firings += 1
             elif current and current.state == "firing":
                 current.fired_at = last_at
+
+        await deps.persist_pending(session)
 
     return firings, resolutions

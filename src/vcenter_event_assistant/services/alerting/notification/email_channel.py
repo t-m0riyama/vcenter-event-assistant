@@ -45,6 +45,10 @@ class EmailChannel(NotificationChannel):
         state: AlertState,
         subject: str,
         body: str,
+        *,
+        from_address: str | None = None,
+        to_address: str | None = None,
+        message_id: str | None = None,
     ) -> NotificationDeliveryOutcome:
         """件名・本文を SMTP で送信する。
 
@@ -73,8 +77,10 @@ class EmailChannel(NotificationChannel):
         msg = EmailMessage()
         msg.set_content(body)
         msg["Subject"] = subject
-        msg["From"] = settings.alert_email_from
-        msg["To"] = settings.alert_email_to
+        msg["From"] = from_address if from_address is not None else settings.alert_email_from
+        msg["To"] = to_address if to_address is not None else settings.alert_email_to
+        if message_id is not None:
+            msg["Message-ID"] = message_id
 
         try:
             await asyncio.to_thread(_send_smtp_message, settings, msg)

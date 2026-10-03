@@ -141,3 +141,9 @@
 .alert-history-action + .alert-history-action {
   margin-left: var(--spacing-2);
 }
+
+.delivery-attempts, .delivery-next-attempt {
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  color: var(--color-text-secondary);
+}

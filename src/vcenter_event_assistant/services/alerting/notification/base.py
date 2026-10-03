@@ -21,6 +21,10 @@ class NotificationChannel(ABC):
         state: AlertState,
         subject: str,
         body: str,
+        *,
+        from_address: str | None = None,
+        to_address: str | None = None,
+        message_id: str | None = None,
     ) -> NotificationDeliveryOutcome:
         """通知を送信する。失敗した場合は例外を投げる。"""
         pass

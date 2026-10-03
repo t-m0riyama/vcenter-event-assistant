@@ -68,8 +68,11 @@ async def test_alert_history_records_none_channel_when_smtp_unconfigured(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_evaluate_all_commits_state_before_notification() -> None:
-    """通知前に AlertState が DB に commit されている。"""
+async def test_evaluate_all_commits_state_before_notification(monkeypatch) -> None:
+    """配送ジョブが通知する前に AlertState とキューが commit されている。"""
+    monkeypatch.setenv("SMTP_HOST", "smtp.test")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
+    get_settings.cache_clear()
     async with session_scope() as session:
         vc = VCenter(name="vc_order", host="vc_order", username="u", password="p")
         session.add(vc)
@@ -107,7 +110,14 @@ async def test_evaluate_all_commits_state_before_notification() -> None:
             ).scalars().all()
             seen.append(states[0].state if states else "missing")
 
-    with patch.object(evaluator, "_deliver_notification", side_effect=_capture_notify):
-        await evaluator.evaluate_all()
+    from vcenter_event_assistant.services.alerting.notification.email_channel import EmailChannel
+    from vcenter_event_assistant.services.alerting.notification.delivery_outcome import NotificationDeliveryOutcome
+    from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
+    await evaluator.evaluate_all()
+    async def capture(*args, **kwargs):
+        await _capture_notify()
+        return NotificationDeliveryOutcome(channel="email", success=True)
+    with patch.object(EmailChannel, "notify", side_effect=capture):
+        await deliver_notifications(get_settings())
 
     assert seen == ["firing"]
