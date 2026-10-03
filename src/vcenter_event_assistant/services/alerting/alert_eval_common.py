@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from vcenter_event_assistant.db.models import AlertRule, AlertState
@@ -47,7 +50,7 @@ def as_utc(dt: datetime) -> datetime:
 
 @dataclass(frozen=True)
 class PendingAlertNotification:
-    """state 確定後に送る通知（セッション外で利用するスナップショット）。"""
+    """状態と同時に永続化する通知内容のスナップショット。"""
 
     rule_id: int
     rule_name: str
@@ -65,6 +68,9 @@ class AlertEvaluationDeps:
     """ルール種別ごとの評価関数が明示的に受け取る依存。"""
 
     settings: Settings
+    enqueue: (
+        Callable[[PendingAlertNotification, AsyncSession], Awaitable[None]] | None
+    ) = None
     _pending: list[PendingAlertNotification] = field(default_factory=list)
 
     def queue_notify(
@@ -88,6 +94,18 @@ class AlertEvaluationDeps:
                 extra_context=extra_context,
             )
         )
+
+    async def persist_pending(self, session: AsyncSession) -> None:
+        """State and all notifications for this rule commit or roll back together."""
+        from vcenter_event_assistant.services.alerting.notification_outbox import (
+            enqueue_notification,
+        )
+
+        for pending in self.drain_pending():
+            if self.enqueue is not None:
+                await self.enqueue(pending, session)
+            else:
+                await enqueue_notification(session, self.settings, pending)
 
     def drain_pending(self) -> list[PendingAlertNotification]:
         """キューに積んだ通知を取り出してクリアする。"""

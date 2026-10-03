@@ -30,6 +30,10 @@ interface AlertHistory {
   channel: string
   success: boolean | null
   error_message: string | null
+  delivery_status: 'pending' | 'retrying' | 'succeeded' | 'failed' | 'skipped'
+  attempt_count: number | null
+  last_attempt_at: string | null
+  next_attempt_at: string | null
   can_resolve: boolean
 }
 
@@ -67,7 +71,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     const label = item.rule_name || `Rule #${item.rule_id}`
     if (
       !confirm(
-        `「${label}」の対象「${item.context_key}」を解消しますか？\n回復メールが送信され、再通知が止まります。`,
+        `「${label}」の対象「${item.context_key}」を解消しますか？\n回復通知を登録します。登録済みの発火通知は引き続き配送されます。`,
       )
     ) {
       return
@@ -84,7 +88,11 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
   }
 
   const handleDelete = async (item: AlertHistory) => {
-    if (!confirm('この通知履歴行を削除しますか？（発火状態自体は変わりません）')) return
+    const queued = item.delivery_status === 'pending' || item.delivery_status === 'retrying'
+    const message = queued
+      ? 'この通知履歴行を削除しますか？待機中の通知も取り消します。送信開始済みのメールは取り消せません。（発火状態自体は変わりません）'
+      : 'この通知履歴行を削除しますか？（発火状態自体は変わりません）'
+    if (!confirm(message)) return
     try {
       await apiDelete(`/api/alerts/history/${item.id}`)
       await fetchHistory()
@@ -103,6 +111,9 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
         <h2>通知履歴</h2>
         <p className="alert-history-note">
           event_score 型はイベント発生を点で検知するため、自動では「回復済み」になりません。解消ボタンで手動 resolve してください。
+        </p>
+        <p className="alert-history-note">
+          日時は配送待ちでは登録時刻、試行後は最新の試行時刻です。失敗した通知は最大24時間（サーバー設定で変更可）再送します。
         </p>
         <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
           一覧を更新
@@ -142,16 +153,24 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                   </td>
                   <td className="col-context">{h.context_key}</td>
                   <td className="col-status">
-                    {h.channel === 'none' || h.success === null ? (
+                    {h.delivery_status === 'pending' || h.delivery_status === 'retrying' ? (
+                      <span className="skipped-tag" title={h.error_message || undefined}>
+                        {h.delivery_status === 'pending' ? '配送待ち' : '再送待ち'}
+                      </span>
+                    ) : h.delivery_status === 'skipped' ? (
                       <span className="skipped-tag" title={h.error_message || 'SMTP 未設定'}>
                         未送信
                       </span>
-                    ) : h.success ? (
+                    ) : h.delivery_status === 'succeeded' ? (
                       <span className="success-tag">成功</span>
                     ) : (
                       <span className="error-tag" title={h.error_message || '不明なエラー'}>
-                        失敗
+                        {h.attempt_count !== null && (h.attempt_count > 0 || h.error_message?.startsWith('retry deadline exceeded')) ? '打ち切り' : '失敗'}
                       </span>
+                    )}
+                    <div className="delivery-attempts">試行: {h.attempt_count ?? '不明'}回</div>
+                    {h.next_attempt_at && (
+                      <div className="delivery-next-attempt">次回: {formatIsoInTimeZone(h.next_attempt_at, timeZone)}</div>
                     )}
                   </td>
                   <td className="col-actions">

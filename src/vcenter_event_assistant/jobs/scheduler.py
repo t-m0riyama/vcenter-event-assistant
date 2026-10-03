@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
 from vcenter_event_assistant.services.digest.digest_run import run_digest_once
 from vcenter_event_assistant.services.digest.digest_timezone import (
     resolve_digest_timezone,
@@ -139,6 +140,14 @@ async def evaluate_alerts(settings: Settings) -> None:
         await evaluator.evaluate_all()
     except Exception:
         logger.exception("alert evaluation job failed")
+
+
+async def deliver_alert_notifications(settings: Settings) -> None:
+    """SMTP retries are independent of rule evaluation."""
+    try:
+        await deliver_notifications(settings)
+    except Exception:
+        logger.exception("alert notification delivery job failed")
 
 
 async def run_web_research(settings: Settings) -> None:
@@ -283,6 +292,14 @@ def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> Asy
         id="evaluate_alerts",
         kwargs={"settings": settings},
         **_job_options_for_interval(settings.alert_eval_interval_seconds),
+    )
+    scheduler.add_job(
+        deliver_alert_notifications,
+        "interval",
+        seconds=settings.alert_delivery_interval_seconds,
+        id="deliver_alert_notifications",
+        kwargs={"settings": settings},
+        **_job_options_for_interval(settings.alert_delivery_interval_seconds),
     )
     purge_interval_seconds = settings.purge_interval_hours * 3600
     scheduler.add_job(

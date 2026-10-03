@@ -26,8 +26,12 @@ class LoggingEmailChannel(NotificationChannel):
         state: AlertState,
         subject: str,
         body: str,
+        *,
+        from_address: str | None = None,
+        to_address: str | None = None,
+        message_id: str | None = None,
     ) -> NotificationDeliveryOutcome:
-        to_addr = self._settings.alert_email_to or "(unset)"
+        to_addr = to_address or self._settings.alert_email_to or "(unset)"
         logger.info(
             "MOCK_MODE email notification (not sent): to=%s rule=%s subject=%s body_chars=%s",
             to_addr,

@@ -6,16 +6,12 @@ from vcenter_event_assistant.settings import get_settings
 
 import logging
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from vcenter_event_assistant.db.models import AlertRule, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
-from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
-    NotificationDeliveryOutcome,
-)
 
 
 @pytest.mark.asyncio
@@ -56,13 +52,7 @@ async def test_evaluate_metric_firing_increments_summary_count(caplog: pytest.Lo
 
     caplog.set_level(logging.INFO, logger="vcenter_event_assistant.services.alerting.alert_eval")
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(
-        evaluator.email_channel,
-        "notify",
-        new_callable=AsyncMock,
-        return_value=NotificationDeliveryOutcome(channel="email", success=True),
-    ):
-        summary = await evaluator.evaluate_all()
+    summary = await evaluator.evaluate_all()
 
     assert summary.rules_enabled == 1
     assert summary.firings == 1

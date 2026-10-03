@@ -164,10 +164,15 @@ async def test_mock_mode_alert_notify_skips_smtp(
     with patch("smtplib.SMTP") as mock_smtp:
         evaluator = AlertEvaluator(settings)
         summary = await evaluator.evaluate_all()
+        from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
+        await deliver_notifications(settings)
         mock_smtp.assert_not_called()
 
     assert summary.rules_enabled >= 1
-    assert evaluator.email_channel.__class__.__name__ == "LoggingEmailChannel"
+    async with session_scope() as session:
+        from vcenter_event_assistant.db.models import AlertHistory
+        rows = (await session.scalars(select(AlertHistory))).all()
+        assert rows and all(row.channel == 'mock' and row.delivery_status == 'succeeded' for row in rows)
 
 
 @pytest.mark.asyncio

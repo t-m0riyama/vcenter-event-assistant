@@ -32,7 +32,7 @@ async def evaluate_metric_threshold_rule(
     staleness = timedelta(seconds=deps.settings.effective_metric_staleness_window_seconds)
     cutoff = datetime.now(timezone.utc) - staleness
 
-    async with session_scope() as session:
+    async with session_scope(settings=deps.settings) as session:
         rank_subq = (
             select(
                 MetricSample.id,
@@ -140,5 +140,7 @@ async def evaluate_metric_threshold_rule(
                     ),
                 },
             )
+
+        await deps.persist_pending(session)
 
     return firings, resolutions

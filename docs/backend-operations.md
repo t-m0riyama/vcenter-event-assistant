@@ -180,22 +180,32 @@
 
 設定（環境変数名の例）:
 
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `SMTP_TIMEOUT_SECONDS`
 - `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`
 
-監視の考え方:
+配送と再送:
 
-- メール送信は `src/vcenter_event_assistant/services/alerting/notification/email_channel.py` が担当する
-- `SMTP_HOST` 未設定、または `ALERT_EMAIL_TO` 未設定の場合は送信をスキップし、警告ログが出る
-  - `SMTP_HOST is not set. Skipping email notification.`
-  - `ALERT_EMAIL_TO is not set. Skipping email notification.`
-- スキップ時は通知履歴に `channel=none`, `success=null`（未送信）として記録される
-- 送信失敗時はエラーログが出る
-  - `Failed to send email notification: ...`
+- 評価・手動解消は、アラート状態、通知履歴、送信予定（outbox）を同じトランザクションで保存する。SMTP は独立した配送ジョブで実行する。
+- `SCHEDULER_ENABLED=true` が配送にも必要。単一アプリプロセス・単一スケジューラで運用する（複数 worker／レプリカの配送排他は未対応）。
+- `ALERT_DELIVERY_INTERVAL_SECONDS=10`、`ALERT_DELIVERY_BATCH_SIZE=20`。期日の来た通知を作成順に直列配送し、SMTP通信中にDBトランザクションは保持しない。
+- SMTP送信例外（認証エラーを含む）は、`ALERT_RETRY_INITIAL_SECONDS=60` から倍増、`ALERT_RETRY_MAX_SECONDS=3600` を上限に再送する。作成から `ALERT_RETRY_TTL_SECONDS=86400`（24時間）で打ち切る。設定値は正数で `initial <= max <= ttl`。
+- `SMTP_TIMEOUT_SECONDS=10` は個々のブロッキング操作のタイムアウトであり、メール1件の総所要時間の上限ではない。
+- 件名・本文・From/To・Message-ID は登録時に固定する。接続先と認証情報は配送時の設定を使う。環境変数の変更は再起動で反映する。
+- SMTP または宛先未設定は `channel=none`, `success=null`, `delivery_status=skipped`（未送信）。再送対象にしない。既存の待機通知も配送時に設定が未完備なら未送信で終了する。
+- テンプレート描画エラーは失敗履歴を残し、再送しない。スナップショット保存失敗はメール配送を止めずログに残す。メール未設定でも自動スナップショットの保存を試みる。
+- SMTP受理後の切断、または送信後の結果保存失敗では重複メールが起こり得る。固定 Message-ID は追跡用であり、重複排除を保証しない。
+- 回復・ルール無効化後も確定済みの発火通知は配送する。履歴／ルールの削除は待機中通知も削除するが、送信開始済みメールは取り消せない。
+- 再送はアラート状態や event_score の cooldown を更新しない。旧バージョンの失敗履歴は自動再送しない。
 
-運用上の注意:
+監視:
 
-- メール未設定でもアプリは動くため、「アラートをメールで必ず届けたい」運用では、上記警告が継続しないことを監視対象に含める
+- 通知履歴の `delivery_status` は `pending`（配送待ち）、`retrying`（再送待ち）、`succeeded`、`failed`、`skipped`。再送しても1通知1行を更新する。
+- `success` は配送待ち・未送信で null、再送待ち・最終失敗で false、成功で true。`attempt_count`、`last_attempt_at`、`next_attempt_at` を確認する。旧履歴の試行回数は不明（null）。
+- `notified_at` は配送待ちでは登録時刻、試行後は最新試行時刻。待機通知は保持期間パージから除外する。
+- `alert delivery complete queued=... oldest_age_seconds=... succeeded=... retrying=... failed=... skipped=...` で残件数・最古の待機時間・サイクル内結果を確認する。`failed > 0` は打ち切りの調査対象。
+- `Alert delivery failed history_id=...; continuing batch` は配送途中のDB等の異常。後続の配送を続行し、残った送信予定は再試行する。
+- `alert notification delivery job failed` と `alert evaluation job failed` はジョブ全体の異常。SMTP未設定の警告も、メール必須運用では監視する。
+- 本文・宛先は未配送の間DBに保存される。配送終了時にoutboxを削除し、本文を含まない結果履歴は従来の保持期間で管理する。
 
 ## 3. 障害対応 Runbook
 
@@ -335,7 +345,7 @@
 
 確認:
 
-- ログに次が出ていないか（`src/vcenter_event_assistant/services/notification/email_channel.py`）
+- ログに次が出ていないか（`src/vcenter_event_assistant/services/alerting/notification/email_channel.py`）
   - `SMTP_HOST is not set. Skipping email notification.`
   - `ALERT_EMAIL_TO is not set. Skipping email notification.`
   - `Failed to send email notification: ...`
@@ -343,8 +353,9 @@
 
 対処の例:
 
-- SMTP 設定を正す
-- 認証情報・TLS設定・宛先を正す
+- 通知履歴で配送状態・エラー・試行回数・次回時刻を確認する。配送待ちが増える場合はスケジューラの有効化と配送ジョブログも確認する。
+- SMTP 接続先・認証情報・TLS設定を正し、再起動する。再送待ちの通知は期限内なら自動再送される。登録済みの宛先は変更されない。
+- 未送信／描画失敗／期限超過は自動再送されない。受信が必須の場合は履歴を確認し、運用者が別経路で内容を伝達する。手動再送APIは未提供。
 
 ## 4. 運用設定チェックリスト
 

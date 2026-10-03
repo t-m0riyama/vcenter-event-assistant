@@ -175,6 +175,10 @@ def _history_item_to_read(
         channel=item.channel,
         success=item.success,
         error_message=item.error_message,
+        delivery_status=item.delivery_status,
+        attempt_count=item.attempt_count,
+        last_attempt_at=item.last_attempt_at,
+        next_attempt_at=item.next_attempt_at,
         can_resolve=can_resolve,
     )
 

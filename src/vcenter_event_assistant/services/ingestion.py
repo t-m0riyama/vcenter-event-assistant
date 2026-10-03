@@ -202,7 +202,10 @@ async def purge_old_alert_history(session: AsyncSession, *, settings: Settings) 
     if days <= 0:
         return 0
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    res = await session.execute(delete(AlertHistory).where(AlertHistory.notified_at < cutoff))
+    res = await session.execute(delete(AlertHistory).where(
+        AlertHistory.notified_at < cutoff,
+        AlertHistory.delivery_status.notin_(["pending", "retrying"]),
+    ))
     return res.rowcount or 0
 
 

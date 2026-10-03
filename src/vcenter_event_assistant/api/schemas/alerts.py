@@ -84,6 +84,10 @@ class AlertHistoryRead(BaseModel):
     channel: str
     success: bool | None
     error_message: str | None
+    delivery_status: Literal["pending", "retrying", "succeeded", "failed", "skipped"]
+    attempt_count: int | None = None
+    last_attempt_at: datetime | None = None
+    next_attempt_at: datetime | None = None
     can_resolve: bool = False
 
     @model_validator(mode="before")

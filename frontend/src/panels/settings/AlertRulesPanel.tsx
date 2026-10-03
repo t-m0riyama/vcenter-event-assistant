@@ -148,7 +148,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('このアラートルールを削除しますか？')) return
+    if (!confirm('このアラートルールを削除しますか？通知履歴と待機中の通知も削除されます。送信開始済みのメールは取り消せません。')) return
     try {
       await apiDelete(`/api/alerts/rules/${id}`)
       fetchRules()
