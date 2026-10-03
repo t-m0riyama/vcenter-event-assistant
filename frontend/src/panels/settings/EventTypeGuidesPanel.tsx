@@ -64,7 +64,11 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
     rowsToDrafts,
   })
 
-  const importExport = useSettingsJsonImportExport({
+  const {
+    overwriteExisting, setOverwriteExisting,
+    deleteNotInImport, setDeleteNotInImport,
+    exportToFile, fileInputRef, onImportFileChange, openImportFilePicker,
+  } = useSettingsJsonImportExport({
     exportFilenamePrefix: 'vea-event-type-guides',
     buildExportPayload: () => buildEventTypeGuidesExportPayload(list),
     fileSchema: eventTypeGuidesFileSchema,
@@ -153,8 +157,8 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
           <label className="check">
             <input
               type="checkbox"
-              checked={importExport.overwriteExisting}
-              onChange={(ev) => importExport.setOverwriteExisting(ev.target.checked)}
+              checked={overwriteExisting}
+              onChange={(ev) => setOverwriteExisting(ev.target.checked)}
               aria-label="既存の同一イベント種別を上書き"
             />
             既存の同一イベント種別を上書き
@@ -162,8 +166,8 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
           <label className="check">
             <input
               type="checkbox"
-              checked={importExport.deleteNotInImport}
-              onChange={(ev) => importExport.setDeleteNotInImport(ev.target.checked)}
+              checked={deleteNotInImport}
+              onChange={(ev) => setDeleteNotInImport(ev.target.checked)}
               aria-label="ファイルに含まれないイベント種別のガイドを削除"
             />
             ファイルに含まれないイベント種別のガイドを削除
@@ -171,21 +175,21 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
         </div>
       </fieldset>
       <div className="score-rules-file-actions">
-        <button type="button" className="btn btn--gray" onClick={importExport.exportToFile}>
+        <button type="button" className="btn btn--gray" onClick={exportToFile}>
           ファイルにエクスポート
         </button>
         <input
-          ref={importExport.fileInputRef}
+          ref={fileInputRef}
           type="file"
           accept="application/json,.json"
           className="hidden-file-input"
           aria-label="イベント種別ガイド JSON を選択"
-          onChange={(ev) => void importExport.onImportFileChange(ev)}
+          onChange={(ev) => void onImportFileChange(ev)}
         />
         <button
           type="button"
           className="btn btn--filled"
-          onClick={importExport.openImportFilePicker}
+          onClick={openImportFilePicker}
         >
           ファイルからインポート
         </button>

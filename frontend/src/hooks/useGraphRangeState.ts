@@ -45,22 +45,43 @@ export function useGraphRangeState(
     ),
   )
   const prevTimeZoneRef = useRef<string | null>(null)
+  const [previousTimeZone, setPreviousTimeZone] = useState(timeZone)
+  const snapshotItem = snapshotReplay?.item
+  const snapshotNonce = snapshotReplay?.nonce
+  const [appliedSnapshot, setAppliedSnapshot] = useState<{
+    item: MetricsSnapshotReplayInput['item'] | undefined
+    nonce: number | undefined
+    timeZone: string
+  }>({ item: undefined, nonce: undefined, timeZone })
+  const onRollingRangeInvalidated = options?.onRollingRangeInvalidated
 
   const { rangeFromInput, rangeToInput } = useMemo(
     () => zonedRangePartsToCombinedInputs(rangeParts),
     [rangeParts],
   )
 
-  useEffect(() => {
-    if (!snapshotReplay?.item || snapshotReplay.nonce < 1) return
-    const { item } = snapshotReplay
-    const br = item.build_request_payload
-    const gc = item.graph_context
-    setGraphRangeFollowMode('manual')
-    const fromIso = gc?.captured_range?.from ?? br.from
-    const toIso = gc?.captured_range?.to ?? br.to
-    setRangeParts(zonedRangePartsFromUtcIsoEndpoints(fromIso, toIso, timeZone))
-  }, [snapshotReplay?.item, snapshotReplay?.nonce, timeZone])
+  if (previousTimeZone !== timeZone) {
+    setPreviousTimeZone(timeZone)
+    if (graphRangeFollowMode === 'rolling') {
+      setRangeParts(presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone))
+    }
+  }
+
+  if (
+    appliedSnapshot.item !== snapshotItem ||
+    appliedSnapshot.nonce !== snapshotNonce ||
+    appliedSnapshot.timeZone !== timeZone
+  ) {
+    setAppliedSnapshot({ item: snapshotItem, nonce: snapshotNonce, timeZone })
+    if (snapshotItem && snapshotNonce !== undefined && snapshotNonce > 0) {
+      const br = snapshotItem.build_request_payload
+      const gc = snapshotItem.graph_context
+      setGraphRangeFollowMode('manual')
+      const fromIso = gc?.captured_range?.from ?? br.from
+      const toIso = gc?.captured_range?.to ?? br.to
+      setRangeParts(zonedRangePartsFromUtcIsoEndpoints(fromIso, toIso, timeZone))
+    }
+  }
 
   const onGraphRangeFieldsChange = useCallback((next: ZonedRangeParts) => {
     setGraphRangeFollowMode('manual')
@@ -84,13 +105,11 @@ export function useGraphRangeState(
     if (prevTimeZoneRef.current === timeZone) return
     prevTimeZoneRef.current = timeZone
     if (graphRangeFollowMode !== 'rolling') return
-    setRangeParts(presetRelativeRangeWallPartsWithUtcFallback(rollingDurationMs, timeZone))
-    options?.onRollingRangeInvalidated?.()
+    onRollingRangeInvalidated?.()
   }, [
     timeZone,
     graphRangeFollowMode,
-    rollingDurationMs,
-    options?.onRollingRangeInvalidated,
+    onRollingRangeInvalidated,
   ])
 
   const graphRangeForOverlay = useMemo(

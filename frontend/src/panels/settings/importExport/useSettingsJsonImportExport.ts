@@ -84,7 +84,7 @@ export function useSettingsJsonImportExport<TFile>(
     } catch (err) {
       onError(toErrorMessage(err))
     }
-  }, [buildExportPayload, downloadJsonFileFn, exportFilenamePrefix, formatImportApiError, onError])
+  }, [buildExportPayload, downloadJsonFileFn, exportFilenamePrefix, onError])
 
   const onImportFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {

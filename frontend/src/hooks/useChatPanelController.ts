@@ -144,7 +144,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       setIncludePeriodMetricsNetworkIo(snap.includePeriodMetricsNetworkIo)
     }
     setStorageHydrated(true)
-  }, [])
+  }, [setRangeParts])
 
   useEffect(() => {
     if (skipMaxTrimOnMountRef.current) {

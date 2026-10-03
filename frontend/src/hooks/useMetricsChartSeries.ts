@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { LegendPayload } from 'recharts'
 import type { VCenter } from '../api/schemas'
 import type { MetricPoint } from '../metrics/normalizeMetricSeriesResponse'
@@ -109,8 +109,6 @@ export function useMetricsChartSeries({
     ],
   )
 
-  const [hiddenSeriesDataKeys, setHiddenSeriesDataKeys] = useState<Set<string>>(() => new Set())
-
   const seriesIdentityKey = useMemo(
     () =>
       buildMetricsChartSeriesIdentityKey({
@@ -122,14 +120,19 @@ export function useMetricsChartSeries({
     [metricKey, chartModel, showEventLine],
   )
 
-  useEffect(() => {
-    setHiddenSeriesDataKeys(new Set())
-  }, [seriesIdentityKey])
+  const [visibility, setVisibility] = useState(() => ({
+    identity: seriesIdentityKey,
+    hidden: new Set<string>(),
+  }))
+  if (visibility.identity !== seriesIdentityKey) {
+    setVisibility({ identity: seriesIdentityKey, hidden: new Set<string>() })
+  }
+  const hiddenSeriesDataKeys = visibility.hidden
 
   const onMetricsLegendClick = useCallback((data: LegendPayload) => {
     const key = legendDataKeyToString(data.dataKey)
     if (key === null) return
-    setHiddenSeriesDataKeys((prev) => toggleHiddenSeriesDataKey(prev, key))
+    setVisibility((prev) => ({ ...prev, hidden: toggleHiddenSeriesDataKey(prev.hidden, key) }))
   }, [])
 
   const chartData = chartModel.rows

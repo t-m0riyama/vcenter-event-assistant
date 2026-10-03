@@ -39,7 +39,7 @@ export type BuildMetricsChartSeriesIdentityKeyParams = {
 
 /**
  * 系列構成が変わったときに非表示状態をリセットするための安定キー。
- * 文字列が変われば `useEffect` で hidden をクリアする。
+ * 文字列が変われば系列の非表示状態をクリアする。
  */
 export function buildMetricsChartSeriesIdentityKey(
   params: BuildMetricsChartSeriesIdentityKeyParams,
