@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import io
+from datetime import timedelta
 
 import pytest
+from sqlalchemy import update
 
 from vcenter_event_assistant.auth import cli
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError, verify_password
 from vcenter_event_assistant.auth.users import LastAdminError, get_local_user
+from vcenter_event_assistant.auth.sessions import SessionPolicy, create_session, resolve_session
+from vcenter_event_assistant.db.models import User
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -48,6 +52,24 @@ async def test_create_reset_role_unlock_list(monkeypatch: pytest.MonkeyPatch) ->
     await _run(monkeypatch, ["set-role", "ops", "viewer"])
     listing = await _run(monkeypatch, ["list-users"])
     assert "root" in listing and "viewer" in listing
+
+
+async def test_unlock_reactivation_revokes_old_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+    await _run(
+        monkeypatch, ["create-user", "back", "--password-stdin"], "back long password\n"
+    )
+    policy = SessionPolicy(idle_timeout=timedelta(hours=1), absolute_timeout=timedelta(hours=12))
+    async with session_scope() as db:
+        user = await get_local_user(db, "back")
+        assert user is not None
+        token = await create_session(db, user, policy)
+        # セッションを残したまま無効化された状態（DB の直接操作などを想定）
+        await db.execute(update(User).where(User.id == user.id).values(is_active=False))
+    await _run(monkeypatch, ["unlock", "back"])
+    async with session_scope() as db:
+        assert await resolve_session(db, token, policy) is None
+        user = await get_local_user(db, "back")
+        assert user is not None and user.is_active
 
 
 async def test_cannot_demote_last_admin(monkeypatch: pytest.MonkeyPatch) -> None:

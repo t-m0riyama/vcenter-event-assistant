@@ -23,7 +23,7 @@ from vcenter_event_assistant.auth.sessions import (
     revoke_all_for_user,
     revoke_session,
 )
-from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.tokens import hash_token
 from vcenter_event_assistant.auth.users import _admin_change_lock as admin_change_guard_lock
 from vcenter_event_assistant.auth.users import (
@@ -144,6 +144,29 @@ async def test_short_idle_timeout_is_extended_by_activity() -> None:
         assert await resolve_session(db, token, policy, now=now + timedelta(seconds=361)) is None
 
 
+async def test_session_touch_never_moves_backwards() -> None:
+    """遅れて確定したリクエストが、新しい last_seen_at を古い時刻で上書きしない。"""
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="touchy", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+    async with session_scope() as slow:
+        # 先に始まった遅いリクエストが、更新前の行を読み込んで保持している
+        # （参照を持たないと identity map から外れ、後で最新値を読み直してしまう）
+        stale_row = await slow.scalar(select(AuthSession))
+        assert stale_row is not None
+        async with session_scope() as fast:
+            assert await resolve_session(fast, token, POLICY, now=t0 + timedelta(minutes=10)) is not None
+        resolved = await resolve_session(slow, token, POLICY, now=t0 + timedelta(minutes=5))
+        assert resolved is not None and resolved.session is stale_row
+    async with session_scope() as db:
+        row = await db.scalar(select(AuthSession))
+        assert row is not None
+        assert as_utc(row.last_seen_at) == t0 + timedelta(minutes=10)
+
+
 async def test_inactive_user_session_is_rejected() -> None:
     async with session_scope() as db:
         user = await create_local_user(
@@ -153,6 +176,9 @@ async def test_inactive_user_session_is_rejected() -> None:
         user.is_active = False
     async with session_scope() as db:
         assert await resolve_session(db, token, POLICY) is None
+    async with session_scope() as db:
+        # 再び有効にしても古いセッションが復活しないよう、行は削除されている
+        assert (await db.scalars(select(AuthSession))).all() == []
 
 
 async def test_password_change_revokes_other_sessions() -> None:
