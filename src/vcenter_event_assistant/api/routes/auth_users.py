@@ -27,9 +27,11 @@ from vcenter_event_assistant.auth.sessions import revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
+    LastAdminError,
     UserError,
-    count_active_admins,
+    admin_change_guard,
     create_local_user,
+    ensure_not_last_admin,
     set_local_password,
     unlock_user,
 )
@@ -66,18 +68,15 @@ def _bad_request(message: str) -> HTTPException:
 
 
 async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
-    user = await db.get(User, user_id)
+    # 認証時に同じセッションへ読み込まれた行が古いまま返らないよう、DB から読み直す
+    user = await db.get(User, user_id, populate_existing=True)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません。")
     return user
 
 
-async def _ensure_not_last_admin(db: AsyncSession, user: User) -> None:
-    if user.role == Role.ADMIN.value and user.is_active and await count_active_admins(db) <= 1:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="最後の有効な admin は降格・無効化・削除できません。",
-        )
+def _conflict(exc: LastAdminError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
 def _actor(principal: Principal) -> str:
@@ -120,34 +119,38 @@ async def update_user(
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ) -> UserRead:
-    user = await _get_user(db, user_id)
     changes = body.model_dump(exclude_unset=True)
     revoke = False
+    try:
+        async with admin_change_guard(db):
+            user = await _get_user(db, user_id)
+            new_role = changes.get("role")
+            if new_role is not None and Role(new_role).value != user.role:
+                if user.realm_key != LOCAL_REALM:
+                    raise _bad_request("ディレクトリのユーザーのロールはグループの対応表で決まります。")
+                if new_role != Role.ADMIN:
+                    await ensure_not_last_admin(db, user)
+                user.role = Role(new_role).value
+                revoke = True
 
-    new_role = changes.get("role")
-    if new_role is not None and Role(new_role).value != user.role:
-        if user.realm_key != LOCAL_REALM:
-            raise _bad_request("ディレクトリのユーザーのロールはグループの対応表で決まります。")
-        if new_role != Role.ADMIN:
-            await _ensure_not_last_admin(db, user)
-        user.role = Role(new_role).value
-        revoke = True
+            new_active = changes.get("is_active")
+            if new_active is not None and new_active != user.is_active:
+                if not new_active:
+                    await ensure_not_last_admin(db, user)
+                    revoke = True
+                user.is_active = new_active
 
-    if "is_active" in changes and changes["is_active"] is not None and changes["is_active"] != user.is_active:
-        if not changes["is_active"]:
-            await _ensure_not_last_admin(db, user)
-            revoke = True
-        user.is_active = changes["is_active"]
+            if "display_name" in changes:
+                user.display_name = changes["display_name"] or None
+            if "email" in changes:
+                user.email = changes["email"] or None
 
-    if "display_name" in changes:
-        user.display_name = changes["display_name"] or None
-    if "email" in changes:
-        user.email = changes["email"] or None
-
-    user.updated_at = utcnow()
-    if revoke:
-        await revoke_all_for_user(db, user.id)
-    await db.flush()
+            user.updated_at = utcnow()
+            if revoke:
+                await revoke_all_for_user(db, user.id)
+            await db.flush()
+    except LastAdminError as exc:
+        raise _conflict(exc) from None
     audit(
         "user_updated",
         actor=_actor(principal),
@@ -165,13 +168,17 @@ async def delete_user(
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ) -> Response:
-    user = await _get_user(db, user_id)
-    if principal.user_id == user.id:
+    if principal.user_id == user_id:
         raise _bad_request("自分自身は削除できません。")
-    await _ensure_not_last_admin(db, user)
-    username = user.username
-    await db.delete(user)
-    await db.flush()
+    try:
+        async with admin_change_guard(db):
+            user = await _get_user(db, user_id)
+            await ensure_not_last_admin(db, user)
+            username = user.username
+            await db.delete(user)
+            await db.flush()
+    except LastAdminError as exc:
+        raise _conflict(exc) from None
     audit("user_deleted", actor=_actor(principal), username=username)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

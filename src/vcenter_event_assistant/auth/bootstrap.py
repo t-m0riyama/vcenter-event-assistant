@@ -11,7 +11,12 @@ import logging
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError
 from vcenter_event_assistant.auth.roles import Role
-from vcenter_event_assistant.auth.users import UserError, count_users, create_local_user
+from vcenter_event_assistant.auth.users import (
+    DuplicateUserError,
+    UserError,
+    count_users,
+    create_local_user,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings import Settings
 
@@ -23,6 +28,14 @@ class BootstrapError(RuntimeError):
 
 
 async def ensure_bootstrap_admin(settings: Settings) -> None:
+    try:
+        await _ensure_bootstrap_admin(settings)
+    except DuplicateUserError:
+        # 複数ワーカーが同時に起動し、別のプロセスが先に作った場合
+        logger.info("Initial admin user was created by another process.")
+
+
+async def _ensure_bootstrap_admin(settings: Settings) -> None:
     username = settings.bootstrap_admin_username
     password = (
         settings.bootstrap_admin_password.get_secret_value()
@@ -47,6 +60,8 @@ async def ensure_bootstrap_admin(settings: Settings) -> None:
                     role=Role.ADMIN,
                     password_min_length=settings.password_min_length,
                 )
+            except DuplicateUserError:
+                raise
             except (PasswordPolicyError, UserError) as exc:
                 raise BootstrapError(
                     f"初期 admin を作成できません（VEA_BOOTSTRAP_ADMIN_*）: {exc}"

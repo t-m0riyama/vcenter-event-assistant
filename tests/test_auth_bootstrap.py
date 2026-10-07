@@ -88,12 +88,44 @@ async def test_no_users_without_bootstrap(monkeypatch: pytest.MonkeyPatch) -> No
     await ensure_bootstrap_admin(_settings(monkeypatch, VEA_AUTH_ENABLED="false"))
 
 
-def test_child_process_env_withholds_bootstrap_password(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("VEA_BOOTSTRAP_ADMIN_PASSWORD", "secret")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "VEA_BOOTSTRAP_ADMIN_PASSWORD",
+        "vea_bootstrap_admin_password",
+        "BOOTSTRAP_ADMIN_PASSWORD",
+        "bootstrap_admin_password",
+    ],
+)
+def test_child_process_env_withholds_bootstrap_password(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    # Settings が受け付ける綴りはすべて除外する
+    monkeypatch.setenv(name, "secret")
     monkeypatch.setenv("SOME_OTHER_VAR", "kept")
+    get_settings.cache_clear()
+    assert get_settings().bootstrap_admin_password is not None
     env = child_process_env()
-    assert "VEA_BOOTSTRAP_ADMIN_PASSWORD" not in env
+    assert "secret" not in env.values()
     assert env["SOME_OTHER_VAR"] == "kept"
+
+
+async def test_concurrent_bootstrap_by_another_process_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """別プロセスが先に初期 admin を作っていても（一意制約違反）、起動は止めない。"""
+    settings = _settings(
+        monkeypatch,
+        VEA_BOOTSTRAP_ADMIN_USERNAME="root",
+        VEA_BOOTSTRAP_ADMIN_PASSWORD=BOOT_PASSWORD,
+    )
+    await ensure_bootstrap_admin(settings)
+
+    async def zero(db):
+        return 0
+
+    async def not_found(db, username):
+        return None
+
+    monkeypatch.setattr("vcenter_event_assistant.auth.bootstrap.count_users", zero)
+    monkeypatch.setattr("vcenter_event_assistant.auth.users.get_local_user", not_found)
+    await ensure_bootstrap_admin(settings)
 
 
 async def test_purge_retention_removes_expired_sessions() -> None:

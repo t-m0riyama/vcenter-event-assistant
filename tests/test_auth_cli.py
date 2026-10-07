@@ -8,7 +8,7 @@ import pytest
 
 from vcenter_event_assistant.auth import cli
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError, verify_password
-from vcenter_event_assistant.auth.users import get_local_user
+from vcenter_event_assistant.auth.users import LastAdminError, get_local_user
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -54,7 +54,7 @@ async def test_cannot_demote_last_admin(monkeypatch: pytest.MonkeyPatch) -> None
         monkeypatch, ["create-user", "solo", "--role", "admin", "--password-stdin"],
         "solo long password\n",
     )
-    with pytest.raises(cli.CliError):
+    with pytest.raises(LastAdminError):
         await _run(monkeypatch, ["set-role", "solo", "viewer"])
 
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+
+import pytest
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -162,3 +165,34 @@ async def test_unknown_user_is_404(client: AsyncClient) -> None:
     missing = "00000000-0000-0000-0000-00000000dead"
     assert (await client.patch(f"/api/auth/users/{missing}", json={})).status_code == 404
     assert (await client.delete(f"/api/auth/users/{missing}")).status_code == 404
+
+
+async def test_concurrent_mutual_deletion_keeps_one_admin(open_client) -> None:
+    """2 人の admin が同時に互いを削除しても、admin が 0 人にならない。"""
+    async with open_client("admin", username="admin-a") as a, open_client("admin", username="admin-b") as b:
+        users = {u["username"]: u["id"] for u in (await a.get("/api/auth/users")).json()}
+        resp_a, resp_b = await asyncio.gather(
+            a.delete(f"/api/auth/users/{users['admin-b']}"),
+            b.delete(f"/api/auth/users/{users['admin-a']}"),
+        )
+    codes = sorted([resp_a.status_code, resp_b.status_code])
+    # 先に確定した削除で相手のセッションが消えるため、後の要求は 401 か 409 になる
+    assert codes[0] == 204 and codes[1] in (401, 409), codes
+    async with session_scope() as db:
+        admins = (await db.scalars(select(User).where(User.role == "admin"))).all()
+        assert len(admins) == 1
+
+
+async def test_concurrent_duplicate_create_is_400(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """事前確認をすり抜けた同名作成（一意制約違反）も 500 ではなく 400 にする。"""
+    await _create(client, "race")
+
+    async def not_found(db, username):
+        return None
+
+    monkeypatch.setattr("vcenter_event_assistant.auth.users.get_local_user", not_found)
+    resp = await client.post(
+        "/api/auth/users", json={"username": "RACE", "password": PASSWORD, "role": "viewer"}
+    )
+    assert resp.status_code == 400
+    assert "既に存在" in resp.json()["detail"]
