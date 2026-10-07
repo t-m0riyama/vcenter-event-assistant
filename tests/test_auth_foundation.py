@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -24,6 +25,7 @@ from vcenter_event_assistant.auth.sessions import (
 )
 from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.auth.tokens import hash_token
+from vcenter_event_assistant.auth.users import _admin_change_lock as admin_change_guard_lock
 from vcenter_event_assistant.auth.users import (
     UserError,
     create_local_user,
@@ -232,3 +234,13 @@ async def test_deleting_user_cascades_sessions() -> None:
         await db.delete(user)
     async with session_scope() as db:
         assert (await db.scalars(select(AuthSession))).all() == []
+
+
+@pytest.mark.parametrize("round_", [1, 2])
+async def test_admin_change_lock_works_in_each_event_loop(round_: int) -> None:
+    """ロックが前のテストのイベントループに束縛されて例外にならない（テストごとに別ループ）。"""
+    async def hold() -> None:
+        async with admin_change_guard_lock():
+            await asyncio.sleep(0)
+
+    await asyncio.gather(hold(), hold())
