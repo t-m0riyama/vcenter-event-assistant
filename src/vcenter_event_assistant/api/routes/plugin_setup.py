@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireAdmin
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.routes.plugins import _require_management_enabled
 from vcenter_event_assistant.db.models import (
@@ -80,7 +81,8 @@ class SafeSetupRoute(APIRoute):
 router = APIRouter(
     prefix="/plugins",
     tags=["plugin setup"],
-    dependencies=[Depends(management_gate)],
+    # 存在を伏せる 404 gate を先に評価し、そのうえで admin を要求する。
+    dependencies=[Depends(management_gate), RequireAdmin],
     route_class=SafeSetupRoute,
 )
 

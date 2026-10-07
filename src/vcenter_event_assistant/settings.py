@@ -720,6 +720,12 @@ class AuthSettingsMixin(BaseModel):
         validation_alias=AliasChoices("login_lockout_minutes", "VEA_LOGIN_LOCKOUT_MINUTES"),
         description="ロックアウトの継続分数（``VEA_LOGIN_LOCKOUT_MINUTES``）。",
     )
+    rate_limit_login_per_minute: int = Field(
+        default=10,
+        ge=1,
+        le=1000,
+        description="接続元 IP ごとのログイン試行の上限（1 分あたり、``RATE_LIMIT_LOGIN_PER_MINUTE``）。",
+    )
     password_min_length: int = Field(
         default=12,
         ge=8,
@@ -754,6 +760,13 @@ class AuthSettingsMixin(BaseModel):
             "（``VEA_DIRECTORY_ALLOW_INSECURE_TLS``）。false にすると全ディレクトリで検証を強制する。"
         ),
     )
+
+    @property
+    def effective_session_cookie_secure(self) -> bool:
+        """Cookie の Secure 属性。未指定なら本番だけ付ける。"""
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return getattr(self, "app_env", "development") == "production"
 
     @field_validator("bootstrap_admin_username", mode="before")
     @classmethod

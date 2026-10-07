@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireViewer
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas.plugins import (
     CollectorReloadResponse,
@@ -152,7 +153,7 @@ def _reload_required(registry: CollectorRegistry, overrides: dict[str, dict]) ->
     return False
 
 
-@router.get("", response_model=CollectorStatusListResponse)
+@router.get("", dependencies=[RequireViewer], response_model=CollectorStatusListResponse)
 async def list_collectors(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
@@ -168,7 +169,7 @@ async def list_collectors(
     )
 
 
-@router.patch("/{plugin_id}", response_model=CollectorStatusListResponse)
+@router.patch("/{plugin_id}", dependencies=[RequireAdmin], response_model=CollectorStatusListResponse)
 async def update_collector(
     plugin_id: str,
     payload: CollectorSettingUpdate,
@@ -242,7 +243,7 @@ async def update_collector(
     )
 
 
-@router.post("/reload", response_model=CollectorReloadResponse)
+@router.post("/reload", dependencies=[RequireAdmin], response_model=CollectorReloadResponse)
 async def reload_collectors(
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -279,7 +280,7 @@ def _installed_reads(rows) -> list[InstalledPluginRead]:
     ]
 
 
-@installed_router.get("", response_model=InstalledPluginListResponse)
+@installed_router.get("", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse)
 async def list_installed(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
@@ -294,7 +295,7 @@ async def list_installed(
     )
 
 
-@installed_router.post("", response_model=InstalledPluginListResponse, status_code=202)
+@installed_router.post("", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse, status_code=202)
 async def install_from_index(
     payload: PluginInstallRequest,
     session: AsyncSession = Depends(get_session),
@@ -330,7 +331,7 @@ async def install_from_index(
 
 
 @installed_router.post(
-    "/upload", response_model=InstalledPluginListResponse, status_code=202
+    "/upload", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse, status_code=202
 )
 async def install_from_upload(
     file: UploadFile = File(...),
@@ -378,7 +379,7 @@ async def install_from_upload(
     )
 
 
-@installed_router.delete("/{distribution}", response_model=InstalledPluginListResponse)
+@installed_router.delete("/{distribution}", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse)
 async def uninstall(
     distribution: str,
     session: AsyncSession = Depends(get_session),

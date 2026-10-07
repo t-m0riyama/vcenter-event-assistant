@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireOperator
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
     ChatAttachment,
@@ -64,7 +65,7 @@ def _accepted_attachments(
     return out
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("", dependencies=[RequireOperator], response_model=ChatResponse)
 async def post_chat(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
@@ -124,7 +125,7 @@ async def post_chat(
     )
 
 
-@router.post("/preview", response_model=ChatPreviewResponse)
+@router.post("/preview", dependencies=[RequireOperator], response_model=ChatPreviewResponse)
 async def post_chat_preview(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),

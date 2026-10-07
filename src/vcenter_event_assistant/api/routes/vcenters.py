@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireOperator, RequireViewer
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
 from vcenter_event_assistant.collectors.connection import (
@@ -54,7 +55,7 @@ def _validate_vcenter_host_for_settings(host: str, settings: Settings) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("", response_model=list[VCenterRead])
+@router.get("", dependencies=[RequireViewer], response_model=list[VCenterRead])
 async def list_vcenters(
     session: AsyncSession = Depends(get_session),
 ) -> list[VCenter]:
@@ -62,7 +63,7 @@ async def list_vcenters(
     return list(res.scalars().all())
 
 
-@router.post("", response_model=VCenterRead, status_code=status.HTTP_201_CREATED)
+@router.post("", dependencies=[RequireAdmin], response_model=VCenterRead, status_code=status.HTTP_201_CREATED)
 async def create_vcenter(
     body: VCenterCreate,
     session: AsyncSession = Depends(get_session),
@@ -87,7 +88,7 @@ async def create_vcenter(
     return vc
 
 
-@router.get("/{vcenter_id}", response_model=VCenterRead)
+@router.get("/{vcenter_id}", dependencies=[RequireViewer], response_model=VCenterRead)
 async def get_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -99,7 +100,7 @@ async def get_vcenter(
     return vc
 
 
-@router.patch("/{vcenter_id}", response_model=VCenterRead)
+@router.patch("/{vcenter_id}", dependencies=[RequireAdmin], response_model=VCenterRead)
 async def update_vcenter(
     vcenter_id: uuid.UUID,
     body: VCenterUpdate,
@@ -124,7 +125,7 @@ async def update_vcenter(
     return vc
 
 
-@router.delete("/{vcenter_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{vcenter_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
 async def delete_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -136,7 +137,7 @@ async def delete_vcenter(
     await session.delete(vc)
 
 
-@router.get("/{vcenter_id}/test")
+@router.get("/{vcenter_id}/test", dependencies=[RequireOperator])
 async def test_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),

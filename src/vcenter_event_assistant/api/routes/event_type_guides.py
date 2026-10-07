@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireViewer
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.import_guards import reject_empty_destructive_import
 from vcenter_event_assistant.api.schemas import (
@@ -20,7 +21,7 @@ from vcenter_event_assistant.db.models import EventTypeGuide
 router = APIRouter(prefix="/event-type-guides", tags=["event-type-guides"])
 
 
-@router.get("", response_model=list[EventTypeGuideRead])
+@router.get("", dependencies=[RequireViewer], response_model=list[EventTypeGuideRead])
 async def list_event_type_guides(
     session: AsyncSession = Depends(get_session),
 ) -> list[EventTypeGuide]:
@@ -28,7 +29,7 @@ async def list_event_type_guides(
     return list(res.scalars().all())
 
 
-@router.post("", response_model=EventTypeGuideRead, status_code=status.HTTP_201_CREATED)
+@router.post("", dependencies=[RequireAdmin], response_model=EventTypeGuideRead, status_code=status.HTTP_201_CREATED)
 async def create_event_type_guide(
     body: EventTypeGuideCreate,
     session: AsyncSession = Depends(get_session),
@@ -54,7 +55,7 @@ async def create_event_type_guide(
     return row
 
 
-@router.post("/import", response_model=EventTypeGuidesImportResponse)
+@router.post("/import", dependencies=[RequireAdmin], response_model=EventTypeGuidesImportResponse)
 async def import_event_type_guides(
     body: EventTypeGuidesImportRequest,
     session: AsyncSession = Depends(get_session),
@@ -106,7 +107,7 @@ async def import_event_type_guides(
     return EventTypeGuidesImportResponse(guides_count=guides_count)
 
 
-@router.patch("/{guide_id}", response_model=EventTypeGuideRead)
+@router.patch("/{guide_id}", dependencies=[RequireAdmin], response_model=EventTypeGuideRead)
 async def patch_event_type_guide(
     guide_id: int,
     body: EventTypeGuideUpdate,
@@ -123,7 +124,7 @@ async def patch_event_type_guide(
     return row
 
 
-@router.delete("/{guide_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{guide_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event_type_guide(
     guide_id: int,
     session: AsyncSession = Depends(get_session),

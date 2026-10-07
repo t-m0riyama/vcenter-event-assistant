@@ -87,13 +87,13 @@ async def test_run_digest_with_explicit_window(client: AsyncClient) -> None:
 async def test_post_run_explicit_window_normalizes_kind_for_weekly_template(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    open_client,
 ) -> None:
     """``kind`` が ``Weekly`` でも週次専用テンプレに載る（小文字正規化）。"""
     tpl = tmp_path / "weekly_only.j2"
     tpl.write_text("# BRANCH_WEEKLY_ONLY\n", encoding="utf-8")
     monkeypatch.setenv("DIGEST_TEMPLATE_WEEKLY_PATH", str(tpl))
 
-    from httpx import ASGITransport, AsyncClient
 
     from vcenter_event_assistant.main import create_app
     from vcenter_event_assistant.settings import get_settings
@@ -101,7 +101,7 @@ async def test_post_run_explicit_window_normalizes_kind_for_weekly_template(
     get_settings.cache_clear()
     app = create_app()
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with open_client(app=app) as ac:
             r = await ac.post(
                 "/api/digests/run",
                 json={

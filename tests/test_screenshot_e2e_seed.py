@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, MetricSample, VCenter
@@ -15,6 +14,7 @@ from vcenter_event_assistant.main import create_app
 @pytest.mark.asyncio
 async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
     monkeypatch: pytest.MonkeyPatch,
+    open_client,
 ) -> None:
     monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
     await run_screenshot_e2e_seed_if_enabled()
@@ -30,8 +30,7 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
     assert n_m >= 1
 
     app = create_app()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with open_client(app=app) as ac:
         resp = await ac.get("/api/events?limit=20")
     assert resp.status_code == 200
     items = resp.json()["items"]
