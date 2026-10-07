@@ -19,8 +19,9 @@ from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.sessions import revoke_all_for_user
 from vcenter_event_assistant.auth.users import (
     UserError,
-    count_active_admins,
+    admin_change_guard,
     create_local_user,
+    ensure_not_last_admin,
     get_local_user,
     set_local_password,
     unlock_user,
@@ -79,15 +80,10 @@ async def _reset_password(settings: Settings, args: argparse.Namespace) -> str:
 
 
 async def _set_role(settings: Settings, args: argparse.Namespace) -> str:
-    async with session_scope(settings) as db:
+    async with session_scope(settings) as db, admin_change_guard(db):
         user = await _get_user_or_fail(db, args.username)
-        if (
-            user.role == Role.ADMIN.value
-            and args.role != Role.ADMIN.value
-            and user.is_active
-            and await count_active_admins(db) <= 1
-        ):
-            raise CliError("最後の有効な admin のロールは変更できません。")
+        if args.role != Role.ADMIN.value:
+            await ensure_not_last_admin(db, user)
         user.role = Role(args.role).value
         await revoke_all_for_user(db, user.id)
         return f"ユーザー '{user.username}' のロールを {user.role} にしました。"

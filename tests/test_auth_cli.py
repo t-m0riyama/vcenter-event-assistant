@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 
 import pytest
 
 from vcenter_event_assistant.auth import cli
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError, verify_password
-from vcenter_event_assistant.auth.users import get_local_user
+from vcenter_event_assistant.auth.users import LastAdminError, get_local_user
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -54,8 +55,26 @@ async def test_cannot_demote_last_admin(monkeypatch: pytest.MonkeyPatch) -> None
         monkeypatch, ["create-user", "solo", "--role", "admin", "--password-stdin"],
         "solo long password\n",
     )
-    with pytest.raises(cli.CliError):
+    with pytest.raises(LastAdminError):
         await _run(monkeypatch, ["set-role", "solo", "viewer"])
+
+
+async def test_concurrent_demotion_keeps_one_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """2 人の admin を同時に降格しても、有効な admin が 0 人にならない。"""
+    for name in ("adm1", "adm2"):
+        await _run(
+            monkeypatch, ["create-user", name, "--role", "admin", "--password-stdin"],
+            f"{name} long password\n",
+        )
+    results = await asyncio.gather(
+        _run(monkeypatch, ["set-role", "adm1", "viewer"]),
+        _run(monkeypatch, ["set-role", "adm2", "viewer"]),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(r, LastAdminError) for r in results) == 1, results
+    async with session_scope() as db:
+        roles = {name: (await get_local_user(db, name)).role for name in ("adm1", "adm2")}
+    assert sorted(roles.values()) == ["admin", "viewer"]
 
 
 async def test_create_user_rejects_weak_password(monkeypatch: pytest.MonkeyPatch) -> None:

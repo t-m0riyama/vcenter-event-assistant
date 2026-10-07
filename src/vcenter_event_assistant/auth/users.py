@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import unicodedata
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.auth.passwords import (
@@ -23,6 +27,49 @@ USERNAME_MAX_LENGTH = 256
 
 class UserError(ValueError):
     """ユーザー操作の入力エラー（日本語メッセージ）。"""
+
+
+class DuplicateUserError(UserError):
+    """同じ realm に同じユーザーが既にいる。"""
+
+    def __init__(self) -> None:
+        super().__init__("同じユーザー名のローカルユーザーが既に存在します。")
+
+
+class LastAdminError(UserError):
+    """最後の有効な admin を降格・無効化・削除しようとした。"""
+
+    def __init__(self) -> None:
+        super().__init__("最後の有効な admin は降格・無効化・削除できません。")
+
+
+_admin_change_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def admin_change_guard(db: AsyncSession) -> AsyncIterator[None]:
+    """有効な admin の人数に影響する変更を直列化する。
+
+    「人数を数えてから変更する」間に別の変更が割り込むと、admin が 0 人になり得る。
+    プロセス内は ``asyncio.Lock`` で、PostgreSQL では有効な admin 行を ``FOR UPDATE``
+    でロックして他プロセスとも直列化する（SQLite は書き込みが DB 単位で直列）。
+    ブロックの最後で commit し、ロックを放す前に変更を確定させる。
+    """
+    async with _admin_change_lock:
+        await db.execute(
+            select(User.id)
+            .where(User.role == Role.ADMIN.value, User.is_active.is_(True))
+            .order_by(User.id)
+            .with_for_update()
+        )
+        yield
+        await db.commit()
+
+
+async def ensure_not_last_admin(db: AsyncSession, user: User) -> None:
+    """``admin_change_guard`` の中で呼ぶこと。"""
+    if user.role == Role.ADMIN.value and user.is_active and await count_active_admins(db) <= 1:
+        raise LastAdminError()
 
 
 def normalize_username(username: str) -> str:
@@ -75,7 +122,7 @@ async def create_local_user(
     name = normalize_username(username)
     validate_password_policy(password, min_length=password_min_length)
     if await get_local_user(db, name) is not None:
-        raise UserError("同じユーザー名のローカルユーザーが既に存在します。")
+        raise DuplicateUserError()
     now = utcnow()
     user = User(
         realm_key=LOCAL_REALM,
@@ -92,7 +139,11 @@ async def create_local_user(
         updated_at=now,
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # 事前確認の後に同名ユーザーが同時に作られた場合。呼び出し側でロールバックすること。
+        raise DuplicateUserError() from None
     return user
 
 

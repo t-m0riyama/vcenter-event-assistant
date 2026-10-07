@@ -14,6 +14,7 @@ from vcenter_event_assistant.auth.tokens import hash_token, new_session_token
 from vcenter_event_assistant.db.models import AuthSession, User
 
 # last_seen_at の更新はこの間隔より古いときだけ行う（毎リクエストの書き込みを避ける）。
+# 無操作タイムアウトが短い設定でも、アクセスが続く限り失効しないよう ``touch_interval`` で縮める。
 TOUCH_INTERVAL = timedelta(seconds=60)
 
 _CLIENT_IP_MAX = 64
@@ -24,6 +25,11 @@ _USER_AGENT_MAX = 256
 class SessionPolicy:
     idle_timeout: timedelta
     absolute_timeout: timedelta
+
+    @property
+    def touch_interval(self) -> timedelta:
+        """無操作タイムアウトの半分を上限にする（1 分の設定でも 30 秒ごとに延長される）。"""
+        return min(TOUCH_INTERVAL, self.idle_timeout / 2)
 
 
 @dataclass(frozen=True)
@@ -86,7 +92,7 @@ async def resolve_session(
     user = await db.get(User, row.user_id)
     if user is None or not user.is_active:
         return None
-    if now - as_utc(row.last_seen_at) >= TOUCH_INTERVAL:
+    if now - as_utc(row.last_seen_at) >= policy.touch_interval:
         row.last_seen_at = now
         await db.flush()
     return ResolvedSession(session=row, user=user)
