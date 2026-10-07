@@ -5,7 +5,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
@@ -662,6 +662,112 @@ class LlmSettingsMixin(BaseModel):
         return _normalize_empty_to_none(v)
 
 
+class AuthSettingsMixin(BaseModel):
+    """認証・認可（ログイン、セッション、ロックアウト、初期 admin）の設定。"""
+
+    auth_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("auth_enabled", "VEA_AUTH_ENABLED"),
+        description=(
+            "アプリ内蔵の認証・認可を有効にする（``VEA_AUTH_ENABLED``）。"
+            "無効時は全リクエストを admin として扱う（従来の動作）。"
+        ),
+    )
+    session_idle_timeout_minutes: int = Field(
+        default=60,
+        ge=1,
+        le=7 * 24 * 60,
+        validation_alias=AliasChoices(
+            "session_idle_timeout_minutes", "VEA_SESSION_IDLE_TIMEOUT_MINUTES"
+        ),
+        description="無操作でセッションが失効するまでの分数（``VEA_SESSION_IDLE_TIMEOUT_MINUTES``）。",
+    )
+    session_absolute_timeout_hours: int = Field(
+        default=12,
+        ge=1,
+        le=30 * 24,
+        validation_alias=AliasChoices(
+            "session_absolute_timeout_hours", "VEA_SESSION_ABSOLUTE_TIMEOUT_HOURS"
+        ),
+        description="ログインから強制失効までの時間（``VEA_SESSION_ABSOLUTE_TIMEOUT_HOURS``）。",
+    )
+    session_cookie_secure: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("session_cookie_secure", "VEA_SESSION_COOKIE_SECURE"),
+        description=(
+            "セッション Cookie に Secure 属性を付けるか（``VEA_SESSION_COOKIE_SECURE``）。"
+            "未設定時は本番環境でのみ付ける。"
+        ),
+    )
+    local_login_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("local_login_enabled", "VEA_LOCAL_LOGIN_ENABLED"),
+        description="ローカル DB ユーザーでのログインを許可する（``VEA_LOCAL_LOGIN_ENABLED``）。",
+    )
+    login_max_failed_attempts: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+        validation_alias=AliasChoices(
+            "login_max_failed_attempts", "VEA_LOGIN_MAX_FAILED_ATTEMPTS"
+        ),
+        description="ローカルユーザーをロックするまでの連続失敗回数（``VEA_LOGIN_MAX_FAILED_ATTEMPTS``）。",
+    )
+    login_lockout_minutes: int = Field(
+        default=15,
+        ge=1,
+        le=24 * 60,
+        validation_alias=AliasChoices("login_lockout_minutes", "VEA_LOGIN_LOCKOUT_MINUTES"),
+        description="ロックアウトの継続分数（``VEA_LOGIN_LOCKOUT_MINUTES``）。",
+    )
+    password_min_length: int = Field(
+        default=12,
+        ge=8,
+        le=128,
+        validation_alias=AliasChoices("password_min_length", "VEA_PASSWORD_MIN_LENGTH"),
+        description="ローカルユーザーのパスワード最小長（``VEA_PASSWORD_MIN_LENGTH``）。",
+    )
+    bootstrap_admin_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "bootstrap_admin_username", "VEA_BOOTSTRAP_ADMIN_USERNAME"
+        ),
+        description=(
+            "ユーザーが 1 人もいないときに作成する初期 admin のユーザー名"
+            "（``VEA_BOOTSTRAP_ADMIN_USERNAME``）。"
+        ),
+    )
+    bootstrap_admin_password: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "bootstrap_admin_password", "VEA_BOOTSTRAP_ADMIN_PASSWORD"
+        ),
+        description="初期 admin のパスワード（``VEA_BOOTSTRAP_ADMIN_PASSWORD``）。",
+    )
+    directory_allow_insecure_tls: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "directory_allow_insecure_tls", "VEA_DIRECTORY_ALLOW_INSECURE_TLS"
+        ),
+        description=(
+            "AD / LDAP 接続でサーバ証明書の検証を無効にする設定を許可する"
+            "（``VEA_DIRECTORY_ALLOW_INSECURE_TLS``）。false にすると全ディレクトリで検証を強制する。"
+        ),
+    )
+
+    @field_validator("bootstrap_admin_username", mode="before")
+    @classmethod
+    def empty_bootstrap_admin_username_to_none(cls, v: object) -> str | None:
+        return _normalize_empty_to_none(v)
+
+    @field_validator("bootstrap_admin_password", mode="before")
+    @classmethod
+    def empty_bootstrap_admin_password_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+
 class Settings(
     BaseSettings,
     DatabaseSettingsMixin,
@@ -670,6 +776,7 @@ class Settings(
     DigestSettingsMixin,
     ResearchSettingsMixin,
     LlmSettingsMixin,
+    AuthSettingsMixin,
 ):
     """アプリケーション設定（各 Mixin を合成した単一 Settings モデル）。"""
 
