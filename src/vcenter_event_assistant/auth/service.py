@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.auth.audit import audit
@@ -14,7 +16,7 @@ from vcenter_event_assistant.auth.passwords import (
     hash_password,
     verify_password,
 )
-from vcenter_event_assistant.auth.sessions import SessionPolicy
+from vcenter_event_assistant.auth.sessions import SessionPolicy, credential_marker
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
@@ -80,26 +82,72 @@ async def _authenticate_local(
         await verify_password(None, password)
         return LoginOutcome(None, "locked")
 
+    generation = credential_marker(user)
     result = await verify_password(user.password_hash, password)
     if not result.ok:
-        user.failed_login_count = (user.failed_login_count or 0) + 1
-        if user.failed_login_count >= settings.login_max_failed_attempts:
-            user.locked_until = now + timedelta(minutes=settings.login_lockout_minutes)
-            user.failed_login_count = 0
+        if await _record_failure(db, settings, user.id, now):
             audit("login_lockout", level=logging.WARNING, realm=LOCAL_REALM, username=user.username)
-        await db.flush()
         return LoginOutcome(None, "bad_password")
 
     if not user.is_active:
         return LoginOutcome(None, "inactive")
 
+    await db.refresh(user)
+    if credential_marker(user) != generation or not user.is_active:
+        # 検証している間にパスワード変更・無効化が確定した。これより後の変更は
+        # セッションの世代照合（sessions.credential_marker）で無効になる。
+        return LoginOutcome(None, "credential_changed")
+    if not await _record_success(db, user.id, now):
+        # 検証している間に、並行した失敗でロックされた
+        return LoginOutcome(None, "locked")
     if result.needs_rehash:
         user.password_hash = await hash_password(password)
-    user.failed_login_count = 0
-    user.locked_until = None
-    user.last_login_at = now
-    await db.flush()
+        await db.flush()
     return LoginOutcome(user, "ok")
+
+
+# 失敗回数は読み込み済みの値から加算せず、DB 上で原子的に更新する。
+# 並行した失敗が互いの加算を上書きすると、複数 IP からの試行でロックアウトを回避できるため。
+_NO_SYNC = {"synchronize_session": False}
+
+
+async def _record_failure(
+    db: AsyncSession, settings: Settings, user_id: uuid.UUID, now: datetime
+) -> bool:
+    """失敗回数を 1 増やし、閾値に達したらロックする。ロックしたら ``True``。"""
+    count = await db.scalar(
+        update(User)
+        .where(User.id == user_id)
+        .values(failed_login_count=User.failed_login_count + 1)
+        .returning(User.failed_login_count)
+        .execution_options(**_NO_SYNC)
+    )
+    if count is None or count < settings.login_max_failed_attempts:
+        return False
+    locked = await db.execute(
+        update(User)
+        .where(User.id == user_id, User.failed_login_count >= settings.login_max_failed_attempts)
+        .values(
+            locked_until=now + timedelta(minutes=settings.login_lockout_minutes),
+            failed_login_count=0,
+        )
+        .execution_options(**_NO_SYNC)
+    )
+    return bool(locked.rowcount)
+
+
+async def _record_success(db: AsyncSession, user_id: uuid.UUID, now: datetime) -> bool:
+    """ロックされていなければ失敗回数を戻して ``True``。ロック中なら ``False``。"""
+    done = await db.execute(
+        update(User)
+        .where(
+            User.id == user_id,
+            or_(User.locked_until.is_(None), User.locked_until <= now),
+        )
+        .values(failed_login_count=0, locked_until=None, last_login_at=now)
+        .execution_options(**_NO_SYNC)
+    )
+    return bool(done.rowcount)
 
 
 async def authenticate(
