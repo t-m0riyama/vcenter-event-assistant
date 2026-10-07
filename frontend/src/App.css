@@ -18,6 +18,19 @@
 
 .header__logo {
   flex-shrink: 0;
+  /* タイトル文字と釣り合う大きさにする */
+  width: calc(var(--font-size-large-title) * 1.3);
+  height: calc(var(--font-size-large-title) * 1.3);
+}
+
+/* テーマに合わせてアイコンを切り替える（data-theme は ThemeProvider が設定） */
+.header__logo--dark,
+html[data-theme='dark'] .header__logo--light {
+  display: none;
+}
+
+html[data-theme='dark'] .header__logo--dark {
+  display: block;
 }
 
 .header h1 {

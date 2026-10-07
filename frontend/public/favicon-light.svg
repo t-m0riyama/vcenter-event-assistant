@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Event monitoring assistant icon (light)</title>
+  <desc id="desc">Rounded light square icon with circular status ring, event graph, status list, and warning symbol.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e9ee"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a4f57"/>
+      <stop offset="0.46" stop-color="#6b7079"/>
+      <stop offset="0.52" stop-color="#ff9a3c"/>
+      <stop offset="0.78" stop-color="#d9752f"/>
+      <stop offset="1" stop-color="#a8897a"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef0f3"/>
+    </linearGradient>
+    <linearGradient id="warn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff665d"/>
+      <stop offset="1" stop-color="#f0443e"/>
+    </linearGradient>
+</defs>
+
+  <!-- Base -->
+  <rect x="4" y="4" width="504" height="504" rx="92" fill="url(#bg)" stroke="#d3d7de" stroke-width="2"/>
+
+  <!-- Circular status ring -->
+  <circle cx="256" cy="256" r="195" fill="none" stroke="url(#ring)" stroke-width="42" stroke-linecap="butt"/>
+  <!-- light gap on upper-right / inner contrast -->
+  <path d="M 352 89 A 195 195 0 0 1 447 221" fill="none" stroke="#f1f3f6" stroke-width="43"/>
+  <!-- subtle lower-left break -->
+  <path d="M 112 383 A 195 195 0 0 1 86 349" fill="none" stroke="#eceff3" stroke-width="44"/>
+
+  <!-- Graph area -->
+  <g transform="translate(0,-2)">
+    <path d="M114 261 L156 233 L216 197 L267 244 L309 198 L339 160" fill="none" stroke="#2b2f36" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="#2b2f36" stroke="#ffffff" stroke-width="3">
+      <circle cx="156" cy="233" r="15"/>
+      <circle cx="216" cy="197" r="15"/>
+      <circle cx="267" cy="244" r="15"/>
+      <circle cx="309" cy="198" r="12"/>
+      <circle cx="339" cy="160" r="15"/>
+    </g>
+    <g stroke="#b8bdc5" stroke-width="5" opacity=".8">
+      <line x1="156" y1="248" x2="156" y2="287"/>
+      <line x1="216" y1="212" x2="216" y2="287"/>
+      <line x1="267" y1="259" x2="267" y2="287"/>
+      <line x1="309" y1="210" x2="309" y2="287"/>
+      <line x1="339" y1="176" x2="339" y2="287"/>
+    </g>
+    <line x1="112" y1="260" x2="118" y2="260" stroke="#6b7079" stroke-width="9" stroke-linecap="round"/>
+  </g>
+
+  <!-- Event list panel -->
+  <g>
+    <path d="M119 279 H330 Q343 279 350 290 L371 328 L331 423 Q328 433 315 436 H132 Q116 436 116 420 V295 Q116 279 119 279 Z" fill="url(#panel)" stroke="#c5cad2" stroke-width="2"/>
+    <circle cx="154" cy="312" r="16" fill="#34c26a"/>
+    <circle cx="154" cy="356" r="16" fill="#f5bf1f"/>
+    <circle cx="154" cy="401" r="16" fill="#f0443e"/>
+    <g stroke="#c2c7cf" stroke-width="17" stroke-linecap="round">
+      <line x1="201" y1="312" x2="293" y2="312"/>
+      <line x1="201" y1="356" x2="311" y2="356"/>
+      <line x1="201" y1="401" x2="294" y2="401"/>
+    </g>
+  </g>
+
+  <!-- Warning triangle -->
+  <g>
+    <path d="M401 211 Q412 211 420 225 L481 316 Q488 328 481 340 Q474 351 460 351 H344 Q331 351 324 340 Q317 328 324 316 L385 225 Q393 211 401 211 Z" fill="url(#warn)" stroke="#e5352f" stroke-width="2"/>
+    <rect x="389" y="239" width="25" height="58" rx="12" fill="#fff"/>
+    <circle cx="402" cy="319" r="13" fill="#fff"/>
+  </g>
+</svg>
