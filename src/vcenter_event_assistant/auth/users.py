@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import unicodedata
 import uuid
+import weakref
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -43,7 +44,19 @@ class LastAdminError(UserError):
         super().__init__("最後の有効な admin は降格・無効化・削除できません。")
 
 
-_admin_change_lock = asyncio.Lock()
+# asyncio.Lock は最初に競合したイベントループに束縛されるため、ループごとに用意する
+# （本番のループは 1 つだが、テストはテストごとに別のループで動く）。
+_admin_change_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _admin_change_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _admin_change_locks.get(loop)
+    if lock is None:
+        lock = _admin_change_locks[loop] = asyncio.Lock()
+    return lock
 
 
 @asynccontextmanager
@@ -55,7 +68,7 @@ async def admin_change_guard(db: AsyncSession) -> AsyncIterator[None]:
     でロックして他プロセスとも直列化する（SQLite は書き込みが DB 単位で直列）。
     ブロックの最後で commit し、ロックを放す前に変更を確定させる。
     """
-    async with _admin_change_lock:
+    async with _admin_change_lock():
         await db.execute(
             select(User.id)
             .where(User.role == Role.ADMIN.value, User.is_active.is_(True))
