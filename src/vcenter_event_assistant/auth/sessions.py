@@ -32,6 +32,17 @@ class SessionPolicy:
         return min(TOUCH_INTERVAL, self.idle_timeout / 2)
 
 
+def credential_marker(user: User) -> str | None:
+    """パスワードの世代を表す値。変更されるたびに変わる（ディレクトリユーザーは ``None``）。
+
+    ログイン中にパスワードが変更された場合でも、古いパスワードで認証したセッションは
+    この値が一致しなくなるため、どの順序で処理が割り込んでも有効にならない。
+    """
+    if user.password_changed_at is None:
+        return None
+    return as_utc(user.password_changed_at).isoformat()
+
+
 @dataclass(frozen=True)
 class ResolvedSession:
     session: AuthSession
@@ -59,6 +70,7 @@ async def create_session(
             expires_at=now + policy.absolute_timeout,
             client_ip=(client_ip or None) and client_ip[:_CLIENT_IP_MAX],
             user_agent=(user_agent or None) and user_agent[:_USER_AGENT_MAX],
+            credential_marker=credential_marker(user),
         )
     )
     await db.flush()
@@ -91,6 +103,10 @@ async def resolve_session(
         return None
     user = await db.get(User, row.user_id)
     if user is None or not user.is_active:
+        return None
+    if row.credential_marker != credential_marker(user):
+        await db.delete(row)
+        await db.flush()
         return None
     if now - as_utc(row.last_seen_at) >= policy.touch_interval:
         row.last_seen_at = now

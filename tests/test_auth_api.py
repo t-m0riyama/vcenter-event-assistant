@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from vcenter_event_assistant.auth.service import GENERIC_LOGIN_ERROR
-from vcenter_event_assistant.auth.users import create_local_user, get_local_user
+from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.auth.users import create_local_user, get_local_user, set_local_password
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.rate_limit import _rate_limiter
@@ -259,3 +262,75 @@ async def test_login_is_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         _rate_limiter._hits.clear()
     assert codes == [401, 401, 429]
+
+
+class TestLoginRaces:
+    """パスワード検証（スレッドで実行される待ち時間）に他の処理が割り込む競合。"""
+
+    @staticmethod
+    def _pause_verification(monkeypatch: pytest.MonkeyPatch, during) -> None:
+        """実ハッシュの検証が終わった直後に ``during()`` を割り込ませる。"""
+        from vcenter_event_assistant.auth import service
+
+        original = service.verify_password
+
+        async def paused(password_hash, password):
+            result = await original(password_hash, password)
+            if password_hash is not None:
+                await during()
+            return result
+
+        monkeypatch.setattr(service, "verify_password", paused)
+
+    async def test_password_change_during_login_invalidates_new_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        await _make_user()
+
+        async def change_password() -> None:
+            async with session_scope() as db:
+                user = await get_local_user(db, "alice")
+                assert user is not None
+                await set_local_password(db, user, "changed long password", password_min_length=12)
+
+        self._pause_verification(monkeypatch, change_password)
+        async with _raw_client() as ac:
+            resp = await _login(ac)
+            assert resp.status_code == 401
+            assert (await ac.get("/api/auth/me")).status_code == 401
+
+    async def test_concurrent_failures_reach_lockout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VEA_LOGIN_MAX_FAILED_ATTEMPTS", "2")
+        get_settings.cache_clear()
+        await _make_user()
+
+        both_verified = asyncio.Barrier(2)
+
+        async def wait_for_other() -> None:
+            # 2 件とも失敗回数を読み込み・検証し終えてから加算させる
+            await both_verified.wait()
+
+        self._pause_verification(monkeypatch, wait_for_other)
+        async with _raw_client() as a, _raw_client() as b:
+            results = await asyncio.gather(
+                _login(a, password="wrong password!!"), _login(b, password="wrong password!!")
+            )
+        assert [r.status_code for r in results] == [401, 401]
+        async with session_scope() as db:
+            user = await get_local_user(db, "alice")
+            assert user is not None and user.locked_until is not None
+
+    async def test_lock_set_during_verification_rejects_login(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        await _make_user()
+
+        async def lock_account() -> None:
+            async with session_scope() as db:
+                user = await get_local_user(db, "alice")
+                assert user is not None
+                user.locked_until = utcnow() + timedelta(minutes=15)
+
+        self._pause_verification(monkeypatch, lock_account)
+        async with _raw_client() as ac:
+            assert (await _login(ac)).status_code == 401
