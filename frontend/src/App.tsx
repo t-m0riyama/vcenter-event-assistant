@@ -250,7 +250,8 @@ export default function App() {
       <div className="app">
         <header className="header">
           <div className="header__row">
-            <img src="/favicon.svg" alt="" className="header__logo" width={30} height={30} />
+            <img src="/favicon-small-light.svg" alt="" className="header__logo header__logo--light" width={44} height={44} />
+            <img src="/favicon-small.svg" alt="" className="header__logo header__logo--dark" width={44} height={44} />
             <h1>vCenter Event Assistant</h1>
             <button
               type="button"
