@@ -101,17 +101,28 @@ async def resolve_session(
     if _is_expired(row, policy, now):
         if await _delete_if_still_expired(db, row, policy, now):
             return None
-        if await db.scalar(select(AuthSession.id).where(AuthSession.id == row.id)) is None:
-            # 重なった別のリクエスト（期限切れ処理やログアウト）が先に削除していた
+        # 削除されなかったのは、読み込んだ後に別のリクエストが last_seen_at を進めたか、
+        # 先に削除したため。行がなければ None になる 1 回の SELECT で読み直す
+        # （存在確認と refresh を分けると、その間に削除されたとき例外になる）。
+        fresh = await db.scalar(
+            select(AuthSession)
+            .where(AuthSession.id == row.id)
+            .execution_options(populate_existing=True)
+        )
+        if fresh is None:
             db.expunge(row)
             return None
-        # 読み込んだ後に別のリクエストが last_seen_at を進めていた。最新の行で判定し直す
-        await db.refresh(row)
+        row = fresh
     user = await db.get(User, row.user_id)
     if user is None or not user.is_active or row.credential_marker != credential_marker(user):
-        # 無効化されたユーザーのセッションも消す（再度有効にしたときに復活させないため）
-        await db.delete(row)
-        await db.flush()
+        # 無効化されたユーザーのセッションも消す（再度有効にしたときに復活させないため）。
+        # 重なったリクエストが先に消していても失敗しないよう、件数を問わない DELETE にする
+        await db.execute(
+            delete(AuthSession)
+            .where(AuthSession.id == row.id)
+            .execution_options(synchronize_session=False)
+        )
+        db.expunge(row)
         return None
     if now - as_utc(row.last_seen_at) >= policy.touch_interval:
         await _touch(db, row, now)
