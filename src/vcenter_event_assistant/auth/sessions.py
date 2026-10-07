@@ -101,6 +101,10 @@ async def resolve_session(
     if _is_expired(row, policy, now):
         if await _delete_if_still_expired(db, row, policy, now):
             return None
+        if await db.scalar(select(AuthSession.id).where(AuthSession.id == row.id)) is None:
+            # 重なった別のリクエスト（期限切れ処理やログアウト）が先に削除していた
+            db.expunge(row)
+            return None
         # 読み込んだ後に別のリクエストが last_seen_at を進めていた。最新の行で判定し直す
         await db.refresh(row)
     user = await db.get(User, row.user_id)
