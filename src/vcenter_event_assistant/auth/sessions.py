@@ -99,9 +99,10 @@ async def resolve_session(
     if row is None:
         return None
     if _is_expired(row, policy, now):
-        await db.delete(row)
-        await db.flush()
-        return None
+        if await _delete_if_still_expired(db, row, policy, now):
+            return None
+        # 読み込んだ後に別のリクエストが last_seen_at を進めていた。最新の行で判定し直す
+        await db.refresh(row)
     user = await db.get(User, row.user_id)
     if user is None or not user.is_active or row.credential_marker != credential_marker(user):
         # 無効化されたユーザーのセッションも消す（再度有効にしたときに復活させないため）
@@ -111,6 +112,31 @@ async def resolve_session(
     if now - as_utc(row.last_seen_at) >= policy.touch_interval:
         await _touch(db, row, now)
     return ResolvedSession(session=row, user=user)
+
+
+async def _delete_if_still_expired(
+    db: AsyncSession, row: AuthSession, policy: SessionPolicy, now: datetime
+) -> bool:
+    """期限切れの条件を DB 上で再評価して削除する。削除したら ``True``。
+
+    読み込んだ値だけで判断して主キーで消すと、その間に重なったリクエストが確定させた
+    更新ごと、使用中のセッションを消してしまうため。
+    """
+    done = await db.execute(
+        delete(AuthSession)
+        .where(
+            AuthSession.id == row.id,
+            or_(
+                AuthSession.expires_at <= now,
+                AuthSession.last_seen_at <= now - policy.idle_timeout,
+            ),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if done.rowcount:
+        db.expunge(row)
+        return True
+    return False
 
 
 async def _touch(db: AsyncSession, row: AuthSession, now: datetime) -> None:
