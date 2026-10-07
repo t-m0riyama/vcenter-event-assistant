@@ -8,7 +8,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,9 +17,9 @@ from vcenter_event_assistant.auth.passwords import (
     validate_password_policy,
 )
 from vcenter_event_assistant.auth.roles import Role
-from vcenter_event_assistant.auth.sessions import revoke_all_for_user
+from vcenter_event_assistant.auth.sessions import credential_marker, revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import utcnow
-from vcenter_event_assistant.db.models import User
+from vcenter_event_assistant.db.models import AuthSession, User
 
 LOCAL_REALM = "local"
 USERNAME_MAX_LENGTH = 256
@@ -164,6 +164,13 @@ async def set_local_password(
     user.failed_login_count = 0
     user.locked_until = None
     await revoke_all_for_user(db, user.id, except_session_id=keep_session_id)
+    if keep_session_id is not None:
+        # 変更操作をしたセッションだけは新しい世代に付け替えて残す
+        await db.execute(
+            update(AuthSession)
+            .where(AuthSession.id == keep_session_id, AuthSession.user_id == user.id)
+            .values(credential_marker=credential_marker(user))
+        )
     await db.flush()
 
 

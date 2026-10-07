@@ -180,6 +180,34 @@ async def test_password_change_revokes_other_sessions() -> None:
         assert await resolve_session(db, keep, POLICY) is None
 
 
+async def test_session_from_stale_credentials_is_rejected() -> None:
+    """パスワード検証中に変更が確定しても、古い世代で作ったセッションは使えない。
+
+    ログイン処理がユーザーを読み込んだ後に別トランザクションでパスワードが変更され、
+    その全セッション削除の後でセッションが作られる競合を再現する。
+    """
+    async with session_scope() as db:
+        await create_local_user(
+            db, username="race", password=PASSWORD, role="admin", password_min_length=12
+        )
+    async with session_scope() as login_db:
+        stale = await get_local_user(login_db, "race")  # ログイン処理が読み込んだ時点の行
+        assert stale is not None
+        async with session_scope() as change_db:
+            fresh = await get_local_user(change_db, "race")
+            assert fresh is not None
+            await set_local_password(change_db, fresh, "changed long password", password_min_length=12)
+        token = await create_session(login_db, stale, POLICY)
+    async with session_scope() as db:
+        assert await resolve_session(db, token, POLICY) is None
+        # 新しいパスワードでのセッションは有効
+        user = await get_local_user(db, "race")
+        assert user is not None
+        token2 = await create_session(db, user, POLICY)
+    async with session_scope() as db:
+        assert await resolve_session(db, token2, POLICY) is not None
+
+
 async def test_purge_expired_sessions() -> None:
     now = utcnow()
     async with session_scope() as db:
