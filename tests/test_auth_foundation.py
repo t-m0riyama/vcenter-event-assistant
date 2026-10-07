@@ -97,6 +97,29 @@ async def test_username_rejected_when_casefold_overflows_subject() -> None:
         assert len(ok.subject) == 256
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("display_name", "x" * 257), ("email", "a" * 321), ("display_name", "bad\x1bname")],
+)
+async def test_profile_fields_are_validated(field: str, value: str) -> None:
+    async with session_scope() as db:
+        with pytest.raises(UserError):
+            await create_local_user(
+                db, username="prof", password=PASSWORD, role="viewer", password_min_length=12,
+                **{field: value},
+            )
+
+
+async def test_profile_fields_are_trimmed() -> None:
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="trim", password=PASSWORD, role="viewer", password_min_length=12,
+            display_name="  Trim User ", email="  ",
+        )
+        assert user.display_name == "Trim User"
+        assert user.email is None
+
+
 async def test_session_lifecycle_stores_only_hash() -> None:
     async with session_scope() as db:
         user = await create_local_user(
@@ -200,6 +223,32 @@ async def test_expiry_is_rechecked_before_deleting() -> None:
         assert resolved is not None
     async with session_scope() as db:
         assert len((await db.scalars(select(AuthSession))).all()) == 1
+
+
+async def test_expired_session_removed_concurrently_resolves_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """期限切れと判断した直後に、重なった別のリクエストが先に削除していても例外にしない。"""
+    from vcenter_event_assistant.auth import sessions as sessions_module
+
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="gone", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+
+    original = sessions_module._delete_if_still_expired
+
+    async def removed_first(db, row, policy, now):
+        # 行を読み込んで期限切れと判断した後、削除する前に別のリクエストが消した
+        async with session_scope() as other:
+            await revoke_session(other, token)
+        return await original(db, row, policy, now)
+
+    monkeypatch.setattr(sessions_module, "_delete_if_still_expired", removed_first)
+    async with session_scope() as db:
+        assert await resolve_session(db, token, POLICY, now=t0 + timedelta(minutes=61)) is None
 
 
 async def test_inactive_user_session_is_rejected() -> None:

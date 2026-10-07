@@ -25,6 +25,9 @@ from vcenter_event_assistant.db.models import AuthSession, User
 
 LOCAL_REALM = "local"
 USERNAME_MAX_LENGTH = 256
+# User.display_name / User.email の列長
+DISPLAY_NAME_MAX_LENGTH = 256
+EMAIL_MAX_LENGTH = 320
 # User.subject の列長。大文字小文字の統一（casefold）で文字数が増えるため、統一後の長さも検査する
 SUBJECT_MAX_LENGTH = 512
 
@@ -110,6 +113,23 @@ def normalize_username(username: str) -> str:
     return value
 
 
+def normalize_optional_text(value: str | None, *, max_length: int, label: str) -> str | None:
+    """表示名・メールなど任意項目の正規化。空は ``None``、長すぎる値と制御文字は拒否。
+
+    SQLite は VARCHAR の長さを強制しないため、DB に任せず列長をここで検査する。
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if len(text) > max_length:
+        raise UserError(f"{label}は {max_length} 文字以下にしてください。")
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in text):
+        raise UserError(f"{label}に制御文字は使えません。")
+    return text
+
+
 def local_subject(username: str) -> str:
     return normalize_username(username).casefold()
 
@@ -146,6 +166,10 @@ async def create_local_user(
     email: str | None = None,
 ) -> User:
     name = normalize_username(username)
+    display_name = normalize_optional_text(
+        display_name, max_length=DISPLAY_NAME_MAX_LENGTH, label="表示名"
+    )
+    email = normalize_optional_text(email, max_length=EMAIL_MAX_LENGTH, label="メールアドレス")
     validate_password_policy(password, min_length=password_min_length)
     if await get_local_user(db, name) is not None:
         raise DuplicateUserError()
