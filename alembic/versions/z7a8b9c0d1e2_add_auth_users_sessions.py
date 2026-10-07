@@ -63,6 +63,7 @@ def _create_auth_sessions() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("client_ip", sa.String(64), nullable=True),
         sa.Column("user_agent", sa.String(256), nullable=True),
+        sa.Column("credential_marker", sa.String(64), nullable=True),
     )
     op.create_index("ix_auth_sessions_user_id", "auth_sessions", ["user_id"])
     op.create_index("ix_auth_sessions_expires_at", "auth_sessions", ["expires_at"])
