@@ -124,6 +124,24 @@ async def test_session_idle_and_absolute_expiry() -> None:
         assert await resolve_session(db, token2, POLICY, now=now + timedelta(minutes=61)) is None
 
 
+async def test_short_idle_timeout_is_extended_by_activity() -> None:
+    """無操作タイムアウトの最小値（1 分）でも、アクセスが続く限り失効しない。"""
+    policy = SessionPolicy(idle_timeout=timedelta(minutes=1), absolute_timeout=timedelta(hours=12))
+    now = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="busy", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, policy, now=now)
+    for seconds in range(10, 301, 10):
+        async with session_scope() as db:
+            at = now + timedelta(seconds=seconds)
+            assert await resolve_session(db, token, policy, now=at) is not None, seconds
+    async with session_scope() as db:
+        # アクセスが途絶えれば 1 分で失効する
+        assert await resolve_session(db, token, policy, now=now + timedelta(seconds=361)) is None
+
+
 async def test_inactive_user_session_is_rejected() -> None:
     async with session_scope() as db:
         user = await create_local_user(
