@@ -83,6 +83,20 @@ async def test_create_local_user_is_case_insensitive_unique() -> None:
         assert found is not None and found.role == "operator"
 
 
+async def test_username_rejected_when_casefold_overflows_subject() -> None:
+    """NFKC 後は 256 文字でも、casefold で subject の列長を超える名前は入力エラーにする。"""
+    assert len("\u0390".casefold()) == 3
+    async with session_scope() as db:
+        with pytest.raises(UserError):
+            await create_local_user(
+                db, username="\u0390" * 256, password=PASSWORD, role="viewer", password_min_length=12
+            )
+        ok = await create_local_user(
+            db, username="a" * 256, password=PASSWORD, role="viewer", password_min_length=12
+        )
+        assert len(ok.subject) == 256
+
+
 async def test_session_lifecycle_stores_only_hash() -> None:
     async with session_scope() as db:
         user = await create_local_user(
@@ -165,6 +179,27 @@ async def test_session_touch_never_moves_backwards() -> None:
         row = await db.scalar(select(AuthSession))
         assert row is not None
         assert as_utc(row.last_seen_at) == t0 + timedelta(minutes=10)
+
+
+async def test_expiry_is_rechecked_before_deleting() -> None:
+    """古い last_seen_at で期限切れと判断しても、その間に更新されたセッションは消さない。"""
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="edge", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+    async with session_scope() as slow:
+        stale_row = await slow.scalar(select(AuthSession))  # 更新前の行を保持している
+        assert stale_row is not None
+        async with session_scope() as fast:
+            # 無操作タイムアウトの直前に、別のリクエストが使用を記録した
+            assert await resolve_session(fast, token, POLICY, now=t0 + timedelta(minutes=59)) is not None
+        # 古い値（t0）から見ると 61 分経過しているが、実際は 2 分前に使われている
+        resolved = await resolve_session(slow, token, POLICY, now=t0 + timedelta(minutes=61))
+        assert resolved is not None
+    async with session_scope() as db:
+        assert len((await db.scalars(select(AuthSession))).all()) == 1
 
 
 async def test_inactive_user_session_is_rejected() -> None:

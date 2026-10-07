@@ -24,6 +24,8 @@ from vcenter_event_assistant.db.models import AuthSession, User
 
 LOCAL_REALM = "local"
 USERNAME_MAX_LENGTH = 256
+# User.subject の列長。大文字小文字の統一（casefold）で文字数が増えるため、統一後の長さも検査する
+SUBJECT_MAX_LENGTH = 512
 
 
 class UserError(ValueError):
@@ -94,6 +96,9 @@ def normalize_username(username: str) -> str:
         raise UserError(f"ユーザー名は {USERNAME_MAX_LENGTH} 文字以下にしてください。")
     if any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
         raise UserError("ユーザー名に制御文字は使えません。")
+    if len(value.casefold()) > SUBJECT_MAX_LENGTH:
+        # 例: U+0390 は casefold で 3 文字になる
+        raise UserError("ユーザー名が長すぎます。")
     return value
 
 
