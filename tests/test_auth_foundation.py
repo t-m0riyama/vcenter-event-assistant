@@ -6,7 +6,7 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from vcenter_event_assistant.auth.passwords import (
     PasswordPolicyError,
@@ -247,6 +247,34 @@ async def test_expired_session_removed_concurrently_resolves_to_none(
         return await original(db, row, policy, now)
 
     monkeypatch.setattr(sessions_module, "_delete_if_still_expired", removed_first)
+    async with session_scope() as db:
+        assert await resolve_session(db, token, POLICY, now=t0 + timedelta(minutes=61)) is None
+
+
+async def test_session_touched_then_removed_during_expiry_resolves_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """条件付き削除が「更新された」ために空振りした後、読み直す前に削除されても例外にしない。"""
+    from vcenter_event_assistant.auth import sessions as sessions_module
+
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="flip", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+
+    original = sessions_module._delete_if_still_expired
+
+    async def touched_then_revoked(db, row, policy, now):
+        async with session_scope() as other:
+            await other.execute(update(AuthSession).values(last_seen_at=now))
+        deleted = await original(db, row, policy, now)  # 更新されたので消えない
+        async with session_scope() as other:
+            await revoke_session(other, token)  # その直後にログアウトされた
+        return deleted
+
+    monkeypatch.setattr(sessions_module, "_delete_if_still_expired", touched_then_revoked)
     async with session_scope() as db:
         assert await resolve_session(db, token, POLICY, now=t0 + timedelta(minutes=61)) is None
 
