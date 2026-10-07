@@ -208,3 +208,22 @@ async def test_route_enforces_role(open_client, key: tuple[str, str], required: 
     async with open_client(required, username=f"u-{required}") as c:
         resp = await _call(c, method, path)
         assert resp.status_code not in (401, 403), resp.text
+
+
+_MANAGEMENT_GATED = sorted(
+    k
+    for k in EXPECTED
+    if k[1].startswith("/api/plugins/") and k != ("GET", "/api/plugins/collectors")
+)
+
+
+@pytest.mark.parametrize("key", _MANAGEMENT_GATED, ids=lambda x: str(x))
+@pytest.mark.parametrize("role", [None, VIEWER, ADMIN])
+async def test_disabled_plugin_management_is_hidden_before_auth(
+    open_client, key: tuple[str, str], role: str | None
+) -> None:
+    """管理が無効なら、未ログインでもロール不足でも 401/403 ではなく 404 を返す（存在を伏せる）。"""
+    method, path = key
+    async with open_client(role, username=f"hidden-{role}") as c:
+        resp = await _call(c, method, path)
+    assert resp.status_code == 404, resp.text
