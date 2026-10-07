@@ -21,6 +21,7 @@ from vcenter_event_assistant.rate_limit import check_rate_limit
 
 from vcenter_event_assistant.api.auth_deps import get_current_principal
 from vcenter_event_assistant.api.routes.auth import router as auth_router
+from vcenter_event_assistant.api.routes.auth_users import router as auth_users_router
 from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
@@ -41,6 +42,7 @@ from vcenter_event_assistant.api.routes.plugins import (
     installed_router as plugins_installed_router,
     router as plugins_router,
 )
+from vcenter_event_assistant.auth.bootstrap import ensure_bootstrap_admin
 from vcenter_event_assistant.auth.csrf import CsrfMiddleware
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
@@ -98,6 +100,7 @@ async def lifespan(app: FastAPI):
     from vcenter_event_assistant.services.ssh_management import cleanup_stale_ssh_files
     cleanup_stale_ssh_files()
     await init_db(settings=settings)
+    await ensure_bootstrap_admin(settings)
     await ensure_vcenter_password_storage(settings=settings)
     registry = await build_initial_collector_registry(settings)
     await run_screenshot_e2e_seed_if_enabled()
@@ -205,6 +208,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
 
     app.include_router(auth_router)
+    app.include_router(auth_users_router)
 
     # ``/api`` 配下は全 route でログインを必須にし、各 route が最低ロールを宣言する。
     api = APIRouter(prefix="/api", dependencies=[Depends(get_current_principal)])

@@ -19,6 +19,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from vcenter_event_assistant.plugins.subprocess_env import child_process_env
 from vcenter_event_assistant.plugins.remote import discover_collectors_at
 from vcenter_event_assistant.settings import Settings
 
@@ -137,6 +138,7 @@ async def _run_install(command: list[str]) -> None:
         *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        env=child_process_env(),
     )
     try:
         stdout, _ = await asyncio.wait_for(
