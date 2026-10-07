@@ -7,12 +7,18 @@ import logging
 from datetime import timedelta
 
 import pytest
+from argon2 import PasswordHasher
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select, update
 
-from vcenter_event_assistant.auth.service import GENERIC_LOGIN_ERROR
+from vcenter_event_assistant.auth.passwords import verify_password
+from vcenter_event_assistant.auth.service import GENERIC_LOGIN_ERROR, session_policy
+from vcenter_event_assistant.auth.sessions import create_session
 from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.auth.users import create_local_user, get_local_user, set_local_password
+from vcenter_event_assistant.db.models import AuthSession
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.jobs.scheduler import purge_retention
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.rate_limit import _rate_limiter
 from vcenter_event_assistant.settings import get_settings
@@ -343,3 +349,132 @@ class TestLoginRaces:
         self._pause_verification(monkeypatch, lock_account)
         async with _raw_client() as ac:
             assert (await _login(ac)).status_code == 401
+
+
+class TestCredentialOverwriteRaces:
+    """検証済みの古いパスワードで、後から確定した新しいパスワードを上書きしない。"""
+
+    async def test_concurrent_own_password_change_does_not_overwrite(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        await _make_user()
+        from vcenter_event_assistant.api.routes import auth as auth_routes
+
+        original = auth_routes.verify_password
+
+        async def paused(password_hash, password):
+            result = await original(password_hash, password)
+            # 現在のパスワードの検証中に、正規の利用者が別途パスワードを変更した
+            async with session_scope() as db:
+                user = await get_local_user(db, "alice")
+                assert user is not None
+                await set_local_password(db, user, "owner chosen password", password_min_length=12)
+            return result
+
+        async with _raw_client() as ac:
+            assert (await _login(ac)).status_code == 200
+            monkeypatch.setattr(auth_routes, "verify_password", paused)
+            resp = await ac.post(
+                "/api/auth/me/password",
+                json={"current_password": PASSWORD, "new_password": "attacker chosen password"},
+                headers=XHR,
+            )
+        assert resp.status_code == 409
+        async with session_scope() as db:
+            user = await get_local_user(db, "alice")
+            assert user is not None
+            assert (await verify_password(user.password_hash, "owner chosen password")).ok
+            assert not (await verify_password(user.password_hash, "attacker chosen password")).ok
+
+    async def test_login_rehash_does_not_restore_old_password(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # パラメータが古いハッシュで作り、ログイン時の再ハッシュを発生させる
+        weak_hash = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(PASSWORD)
+        await _make_user()
+        async with session_scope() as db:
+            user = await get_local_user(db, "alice")
+            assert user is not None
+            user.password_hash = weak_hash
+
+        from vcenter_event_assistant.auth import service
+
+        original = service.hash_password
+
+        async def paused(password: str) -> str:
+            new_hash = await original(password)
+            # 再ハッシュの計算中にパスワード変更が確定した
+            async with session_scope() as db:
+                user = await get_local_user(db, "alice")
+                assert user is not None
+                await set_local_password(db, user, "changed long password", password_min_length=12)
+            return new_hash
+
+        monkeypatch.setattr(service, "hash_password", paused)
+        async with _raw_client() as ac:
+            await _login(ac)
+            # 古い世代で作られたセッションは使えない
+            assert (await ac.get("/api/auth/me")).status_code == 401
+        async with session_scope() as db:
+            user = await get_local_user(db, "alice")
+            assert user is not None
+            assert (await verify_password(user.password_hash, "changed long password")).ok
+            assert not (await verify_password(user.password_hash, PASSWORD)).ok
+
+
+async def test_login_rehashes_outdated_hash() -> None:
+    weak_hash = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(PASSWORD)
+    await _make_user()
+    async with session_scope() as db:
+        user = await get_local_user(db, "alice")
+        assert user is not None
+        user.password_hash = weak_hash
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        assert (await ac.get("/api/auth/me")).status_code == 200
+    async with session_scope() as db:
+        user = await get_local_user(db, "alice")
+        assert user is not None and user.password_hash != weak_hash
+        assert (await verify_password(user.password_hash, PASSWORD)).ok
+
+
+async def test_expired_session_row_is_deleted_on_401() -> None:
+    await _make_user()
+    async with _raw_client() as ac:
+        await _login(ac)
+        async with session_scope() as db:
+            await db.execute(update(AuthSession).values(expires_at=utcnow() - timedelta(seconds=1)))
+        assert (await ac.get("/api/auth/me")).status_code == 401
+    async with session_scope() as db:
+        assert (await db.scalars(select(AuthSession))).all() == []
+
+
+async def test_purge_retention_removes_expired_sessions() -> None:
+    settings = get_settings()
+    now = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="sess", password="session long pw", role="viewer", password_min_length=12
+        )
+        await create_session(db, user, session_policy(settings), now=now - timedelta(days=2))
+        await create_session(db, user, session_policy(settings), now=now)
+    await purge_retention(settings)
+    async with session_scope() as db:
+        assert len((await db.scalars(select(AuthSession))).all()) == 1
+
+
+async def test_audit_log_escapes_control_characters(caplog) -> None:
+    async with _raw_client() as ac:
+        audit_logger = logging.getLogger("vcenter_event_assistant.audit")
+        audit_logger.addHandler(caplog.handler)
+        try:
+            await ac.post(
+                "/api/auth/login",
+                json={"username": "evil\x1b[31m\x00name", "password": "x", "realm": "loc\x07al"},
+                headers=XHR,
+            )
+        finally:
+            audit_logger.removeHandler(caplog.handler)
+    line = next(r.getMessage() for r in caplog.records if "login_failure" in r.getMessage())
+    assert not any(ch in line for ch in ("\x1b", "\x00", "\x07"))
+    assert "\\x1b" in line and "\\x00" in line and "\\x07" in line

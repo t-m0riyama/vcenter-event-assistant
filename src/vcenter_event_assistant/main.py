@@ -134,6 +134,8 @@ def create_app() -> FastAPI:
     if settings.is_production and ("*" in origins or not origins):
         origins = []
     allowed_origins = origins or ["http://localhost:5173"]
+    # 認証は同一オリジン専用（SameSite=Strict の Cookie）。資格情報付き CORS は有効にしないので、
+    # 別オリジンの UI からはログインできない。UI は同一オリジンかプロキシ経由で配信する前提。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

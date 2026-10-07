@@ -12,8 +12,9 @@ audit_logger = logging.getLogger("vcenter_event_assistant.audit")
 
 def _fmt(value: object) -> str:
     text = str(value)
-    # ログインジェクション対策: 改行や空白を含む値は repr で 1 行に収める
-    if not text or any(c.isspace() for c in text) or '"' in text:
+    # ログインジェクション対策: 空白・引用符・制御文字（NUL、ESC による ANSI エスケープ等）を
+    # 含む値は repr でエスケープして 1 行に収める
+    if not text or any(c.isspace() or not c.isprintable() or c in "\"'" for c in text):
         return repr(text)
     return text
 

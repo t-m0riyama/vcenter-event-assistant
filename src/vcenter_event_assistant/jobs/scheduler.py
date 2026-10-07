@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from vcenter_event_assistant.auth.service import session_policy
+from vcenter_event_assistant.auth.sessions import purge_expired_sessions
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
@@ -129,6 +131,9 @@ async def purge_retention(settings: Settings) -> None:
             )
             if n_sn:
                 logger.info("purged old incident timeline snapshots count=%s", n_sn)
+            n_ss = await purge_expired_sessions(session, session_policy(settings))
+            if n_ss:
+                logger.info("purged expired login sessions count=%s", n_ss)
     except Exception:
         logger.exception("purge failed")
 

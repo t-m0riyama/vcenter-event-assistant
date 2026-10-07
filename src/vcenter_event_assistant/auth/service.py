@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.passwords import (
@@ -100,9 +101,8 @@ async def _authenticate_local(
     if not await _record_success(db, user.id, now):
         # 検証している間に、並行した失敗でロックされた
         return LoginOutcome(None, "locked")
-    if result.needs_rehash:
-        user.password_hash = await hash_password(password)
-        await db.flush()
+    if result.needs_rehash and user.password_hash is not None:
+        await _rehash(db, user, password)
     return LoginOutcome(user, "ok")
 
 
@@ -134,6 +134,24 @@ async def _record_failure(
         .execution_options(**_NO_SYNC)
     )
     return bool(locked.rowcount)
+
+
+async def _rehash(db: AsyncSession, user: User, password: str) -> None:
+    """パラメータが古いハッシュを作り直す。
+
+    検証したハッシュがまだ現在のものであるときだけ書き込む。ハッシュ計算中に確定した
+    パスワード変更を、検証済みの古いパスワードで上書きしないため。
+    """
+    verified_hash = user.password_hash
+    new_hash = await hash_password(password)
+    done = await db.execute(
+        update(User)
+        .where(User.id == user.id, User.password_hash == verified_hash)
+        .values(password_hash=new_hash)
+        .execution_options(**_NO_SYNC)
+    )
+    if done.rowcount:
+        set_committed_value(user, "password_hash", new_hash)
 
 
 async def _record_success(db: AsyncSession, user_id: uuid.UUID, now: datetime) -> bool:
