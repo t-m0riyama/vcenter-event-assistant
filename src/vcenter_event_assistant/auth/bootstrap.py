@@ -14,6 +14,7 @@ from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.users import (
     DuplicateUserError,
     UserError,
+    count_active_admins,
     count_users,
     create_local_user,
 )
@@ -49,6 +50,14 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
                     "VEA_BOOTSTRAP_ADMIN_PASSWORD is set but users already exist; it is ignored. "
                     "Remove it from the environment."
                 )
+            if await count_active_admins(db) == 0:
+                # 例: CLI の create-user を既定ロール（viewer）で実行しただけの状態
+                _report_missing_admin(
+                    settings,
+                    "認証が有効ですが有効な admin がいません。"
+                    "vcenter-event-assistant-admin set-role <ユーザー名> admin で既存ユーザーを昇格するか、"
+                    "vcenter-event-assistant-admin create-user <ユーザー名> --role admin で作成してください。",
+                )
             return
 
         if username and password:
@@ -79,13 +88,18 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
                 "VEA_BOOTSTRAP_ADMIN_USERNAME と VEA_BOOTSTRAP_ADMIN_PASSWORD は両方設定してください。"
             )
 
+    _report_missing_admin(
+        settings,
+        "認証が有効ですがユーザーが 1 人もいません。VEA_BOOTSTRAP_ADMIN_USERNAME / "
+        "VEA_BOOTSTRAP_ADMIN_PASSWORD を設定するか、"
+        "vcenter-event-assistant-admin create-user <ユーザー名> --role admin で作成してください。",
+    )
+
+
+def _report_missing_admin(settings: Settings, message: str) -> None:
+    """認証が有効なのに admin がいない。本番では起動を止め、開発環境では警告だけ出す。"""
     if not settings.auth_enabled:
         return
-    message = (
-        "認証が有効ですがユーザーが 1 人もいません。VEA_BOOTSTRAP_ADMIN_USERNAME / "
-        "VEA_BOOTSTRAP_ADMIN_PASSWORD を設定するか、vcenter-event-assistant-admin create-user "
-        "で admin を作成してください。"
-    )
     if settings.is_production:
         raise BootstrapError(message)
     logger.warning(message)

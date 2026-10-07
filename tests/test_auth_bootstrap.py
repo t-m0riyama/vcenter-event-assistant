@@ -82,9 +82,30 @@ async def test_no_users_without_bootstrap(monkeypatch: pytest.MonkeyPatch) -> No
         VEA_SECRET_KEY="prod-secret-key",
         VCENTER_ALLOWED_HOST_SUFFIXES="example.com",
     )
-    with pytest.raises(BootstrapError):
+    with pytest.raises(BootstrapError, match="--role admin"):
         await ensure_bootstrap_admin(prod)
     # 認証が無効なら何もしない
+    await ensure_bootstrap_admin(_settings(monkeypatch, VEA_AUTH_ENABLED="false"))
+
+
+async def test_users_without_active_admin_are_reported(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    """CLI の create-user を既定ロールで実行しただけの状態（admin 不在）も検出する。"""
+    async with session_scope() as db:
+        await create_local_user(
+            db, username="only-viewer", password="viewer long pw", role="viewer", password_min_length=12
+        )
+    caplog.set_level("WARNING", logger="vcenter_event_assistant.auth.bootstrap")
+    await ensure_bootstrap_admin(_settings(monkeypatch))
+    assert "--role admin" in caplog.text and "set-role" in caplog.text
+
+    prod = _settings(
+        monkeypatch,
+        APP_ENV="production",
+        VEA_SECRET_KEY="prod-secret-key",
+        VCENTER_ALLOWED_HOST_SUFFIXES="example.com",
+    )
+    with pytest.raises(BootstrapError, match="--role admin"):
+        await ensure_bootstrap_admin(prod)
     await ensure_bootstrap_admin(_settings(monkeypatch, VEA_AUTH_ENABLED="false"))
 
 
