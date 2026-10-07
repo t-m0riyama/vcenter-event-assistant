@@ -305,16 +305,25 @@ class TestLoginRaces:
         await _make_user()
 
         both_verified = asyncio.Barrier(2)
+        first_finished = asyncio.Event()
+        arrival = iter(range(2))
 
         async def wait_for_other() -> None:
-            # 2 件とも失敗回数を読み込み・検証し終えてから加算させる
+            # 2 件とも失敗回数を読み込み・検証し終えた状態にする（競合の本質）
             await both_verified.wait()
+            # 書き込みは 1 件ずつ確定させる。テストの DB は 1 本の接続を共有しており、
+            # 先に終わったリクエストの後始末（ROLLBACK）が他方の未確定の書き込みを消すため。
+            if next(arrival) == 1:
+                await first_finished.wait()
+
+        async def attempt(ac: AsyncClient):
+            resp = await _login(ac, password="wrong password!!")
+            first_finished.set()
+            return resp
 
         self._pause_verification(monkeypatch, wait_for_other)
         async with _raw_client() as a, _raw_client() as b:
-            results = await asyncio.gather(
-                _login(a, password="wrong password!!"), _login(b, password="wrong password!!")
-            )
+            results = await asyncio.gather(attempt(a), attempt(b))
         assert [r.status_code for r in results] == [401, 401]
         async with session_scope() as db:
             user = await get_local_user(db, "alice")
