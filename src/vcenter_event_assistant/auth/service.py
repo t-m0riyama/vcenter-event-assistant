@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -93,7 +93,13 @@ async def _authenticate_local(
     if not user.is_active:
         return LoginOutcome(None, "inactive")
 
-    await db.refresh(user)
+    # refresh() は検証中に削除された行で例外になるため、無ければ None になる SELECT で読み直す
+    fresh = await db.scalar(
+        select(User).where(User.id == user.id).execution_options(populate_existing=True)
+    )
+    if fresh is None:
+        return LoginOutcome(None, "user_deleted")
+    user = fresh
     if credential_marker(user) != generation or not user.is_active:
         # 検証している間にパスワード変更・無効化が確定した。これより後の変更は
         # セッションの世代照合（sessions.credential_marker）で無効になる。

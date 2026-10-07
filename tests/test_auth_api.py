@@ -305,6 +305,21 @@ class TestLoginRaces:
             assert resp.status_code == 401
             assert (await ac.get("/api/auth/me")).status_code == 401
 
+    async def test_user_deleted_during_login_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        await _make_user()
+
+        async def delete_user() -> None:
+            async with session_scope() as db:
+                user = await get_local_user(db, "alice")
+                assert user is not None
+                await db.delete(user)
+
+        self._pause_verification(monkeypatch, delete_user)
+        async with _raw_client() as ac:
+            assert (await _login(ac)).status_code == 401
+
     async def test_concurrent_failures_reach_lockout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VEA_LOGIN_MAX_FAILED_ATTEMPTS", "2")
         get_settings.cache_clear()
