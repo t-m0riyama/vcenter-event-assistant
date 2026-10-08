@@ -58,6 +58,15 @@ router = APIRouter(
 )
 
 # 空文字を「未設定」として扱う任意の文字列項目
+# 変えても、ログイン中のユーザーの認証・ロールの根拠には影響しない項目。
+# これ以外（接続先・TLS・ユーザー検索・グループの調べ方）が変わったら、ログイン中のセッションを失効させる
+_SESSION_NEUTRAL_FIELDS = frozenset(
+    {"name", "sort_order", "timeout_seconds", "bind_password", "display_name_attribute", "email_attribute"}
+)
+_IDENTITY_FIELDS = tuple(
+    name for name in DirectoryUpdate.model_fields if name not in _SESSION_NEUTRAL_FIELDS | {"is_enabled", "clear_bind_password"}
+)
+
 _OPTIONAL_TEXT_FIELDS = (
     "ca_cert_pem",
     "bind_dn",
@@ -318,6 +327,7 @@ async def update_directory(
     async with admin_change_guard(db):
         config = await _load(db, directory_id)
         was_enabled = config.is_enabled
+        identity_before = {name: getattr(config, name) for name in _IDENTITY_FIELDS}
         if "name" in changes:
             name = (changes["name"] or "").strip()
             if not name:
@@ -350,6 +360,11 @@ async def update_directory(
             if await _other_admin_sources(db, settings, config.id) == 0:
                 raise _no_admin_left("このディレクトリを無効にする")
             # 無効にしたディレクトリのユーザーは、使用中のセッションも使えなくする
+            await _touch(db, config)
+            await _revoke_directory_sessions(db, config.id)
+        elif any(getattr(config, name) != value for name, value in identity_before.items()):
+            # 接続先や検索・グループの条件が変わったら、古い条件で認証・ロールを決めたセッションは使わせない
+            # （新しい条件ではユーザーが見つからない・ロールが変わることがある）。次のログインで決め直す
             await _touch(db, config)
             await _revoke_directory_sessions(db, config.id)
         config.updated_at = utcnow()

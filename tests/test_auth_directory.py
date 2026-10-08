@@ -755,3 +755,27 @@ async def test_login_is_refused_if_the_mappings_changed_during_authentication(
     monkeypatch.setattr(service, "run_directory_call", original)
     resp, me = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
     assert resp.status_code == 200 and me is not None and me.json()["role"] == "viewer"
+
+
+async def test_identity_changes_revoke_directory_sessions(client, directory: FakeDirectory) -> None:
+    """接続先や検索条件を変えたらログイン中のセッションを失効させ、名前や表示順だけの変更では保つ。"""
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    _rate_limiter._hits.clear()
+    async with _raw_client() as ac:
+        await ac.post(
+            "/api/auth/login",
+            json={"username": "alice", "password": "alice-secret", "realm": realm},
+            headers=XHR,
+        )
+        assert (await ac.get("/api/auth/me")).status_code == 200
+        resp = await client.patch(
+            f"/api/auth/directories/{directory_id}", json={"name": "Renamed", "sort_order": 5}
+        )
+        assert resp.status_code == 200
+        assert (await ac.get("/api/auth/me")).status_code == 200
+        resp = await client.patch(
+            f"/api/auth/directories/{directory_id}", json={"user_search_base": "ou=Other,dc=example,dc=com"}
+        )
+        assert resp.status_code == 200
+        assert (await ac.get("/api/auth/me")).status_code == 401
