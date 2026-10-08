@@ -370,7 +370,7 @@ export function DirectoriesPanel({
               <fieldset className="directories-panel__group">
                 <legend>接続試験（保存しません）</legend>
                 <p className="hint">
-                  編集中の値で試します。ユーザー名を入れると検索まで、パスワードも入れると本人としての認証とロールの判定まで試します。
+                  編集中の値で試します。ユーザー名を入れると、検索・ID 属性・グループの判定（どのロールになるか）まで試します。パスワードも入れると、本人としての認証も試します。
                 </p>
                 <div className="form-grid">
                   <label>

@@ -347,7 +347,8 @@ export function DirectoryForm({
                   value={value.group_member_value}
                   onChange={(e) => set('group_member_value', e.target.value as DirectoryFormState['group_member_value'])}
                 >
-                  <option value="">既定（属性に合わせる）</option>
+                  {/* サーバは「ユーザー名」を選んだときだけユーザー名で探し、それ以外は DN で探す */}
+                  <option value="">既定（ユーザーの DN）</option>
                   <option value="dn">ユーザーの DN</option>
                   <option value="username">ユーザー名（memberUid）</option>
                 </select>

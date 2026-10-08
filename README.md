@@ -67,6 +67,7 @@ flowchart TB
 
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
 - **ログインとロール**（初期 admin・ユーザー管理・権限）: [docs/user-guides/authentication.md](docs/user-guides/authentication.md)
+- **AD / LDAP でのログイン**（認証ディレクトリの設定手順・対応表・締め出しの防止と復旧）: [docs/user-guides/directory-auth.md](docs/user-guides/directory-auth.md)
 - **モックモード（デモ・開発）**（外部サービスなしで UI を試す）: [docs/user-guides/mock-mode.md](docs/user-guides/mock-mode.md)
 - **アラート機能（利用者向け）**（ルール・メール通知・通知履歴・タイムライン）: [docs/user-guides/alerts.md](docs/user-guides/alerts.md)
 - **スコアルール（利用者向け）**（要注目スコア・種別ごとの加算・JSON バックアップ）: [docs/user-guides/score-rules.md](docs/user-guides/score-rules.md)
