@@ -207,9 +207,10 @@ def _find_ad_qualified(conn: Connection, spec: DirectorySpec, domain: str, sam: 
         spec.user_search_base,
         _ad_sam_only_filter(sam),
         attributes=_user_attributes(spec),
-        size_limit=AD_QUALIFIED_CANDIDATES_LIMIT,
+        # 1 件多く求め、上限ちょうどの完全な結果と、上限を超える結果を見分ける
+        size_limit=AD_QUALIFIED_CANDIDATES_LIMIT + 1,
     )
-    if len(candidates) >= AD_QUALIFIED_CANDIDATES_LIMIT:
+    if len(candidates) > AD_QUALIFIED_CANDIDATES_LIMIT:
         # 候補が上限を超えて残りを確かめられないので、一意とは言えない
         raise DirectoryAuthFailed("同じ名前のユーザーが多すぎます。", reason="ambiguous_user")
     expected = f"{domain}\\{sam}".casefold()

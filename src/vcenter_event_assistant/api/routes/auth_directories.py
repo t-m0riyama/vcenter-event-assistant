@@ -148,6 +148,10 @@ def _validate(config: DirectoryConfig, settings: Settings) -> None:
         raise _invalid("group_search ではグループの検索ベースを指定してください。")
 
 
+# DirectoryGroupRoleMapping.group_dn_normalized の列長
+GROUP_DN_NORMALIZED_MAX_LENGTH = 1024
+
+
 def _mapping_rows(mappings: list[GroupRoleMappingIn]) -> list[DirectoryGroupRoleMapping]:
     """対応表の行を作る（DN の重複は正規化した値で判定する）。"""
     seen: set[str] = set()
@@ -160,6 +164,9 @@ def _mapping_rows(mappings: list[GroupRoleMappingIn]) -> list[DirectoryGroupRole
         if not is_valid_dn(group_dn):
             raise _invalid(f"グループの DN の形式が正しくありません: {group_dn}")
         normalized = normalize_dn(group_dn)
+        if len(normalized) > GROUP_DN_NORMALIZED_MAX_LENGTH:
+            # 大文字小文字をそろえると文字数が増えることがある（例: U+0390 は 3 文字になる）
+            raise _invalid(f"グループの DN が長すぎます: {group_dn[:100]}")
         if normalized in seen:
             raise _invalid(f"同じグループが重複しています: {group_dn}")
         seen.add(normalized)

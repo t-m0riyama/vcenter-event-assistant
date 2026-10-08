@@ -840,7 +840,7 @@ def test_user_search_truncated_by_the_server_is_not_treated_as_unique() -> None:
 
 def test_too_many_domain_qualified_candidates_are_ambiguous() -> None:
     """``DOMAIN\\user`` の候補が上限に達したら、残りを確かめられないので一意とみなさない。"""
-    conn = _TruncatingConnection(backend.AD_QUALIFIED_CANDIDATES_LIMIT)
+    conn = _TruncatingConnection(backend.AD_QUALIFIED_CANDIDATES_LIMIT + 1)
     spec = _spec(kind="ad", group_mode="ad_nested")
     with pytest.raises(DirectoryAuthFailed) as exc:
         backend.find_user(conn, spec, "CORP\\alice")  # type: ignore[arg-type]
@@ -885,3 +885,48 @@ async def test_bind_password_is_limited_by_utf8_bytes(
     """暗号化後に列の長さを超えないよう、bind パスワードは UTF-8 のバイト数で制限する。"""
     resp = await client.post("/api/auth/directories", json=_directory_body(bind_password=password))
     assert (resp.status_code == 201) is ok, resp.text
+
+
+class _QualifiedCandidates:
+    """sAMAccountName が同じアカウントを ``count`` 件（完全な結果として）返し、msDS-PrincipalName も返す接続。"""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.response: list[dict[str, Any]] = []
+        self.result: dict[str, Any] = {}
+
+    def search(self, base: str, search_filter: str, *, search_scope: Any = None, **kwargs: Any) -> bool:
+        if search_filter == "(objectClass=*)":
+            domain = "CORP" if base.startswith("cn=u0,") else f"D{base.split(',')[0]}"
+            self.response = [
+                {
+                    "type": "searchResEntry",
+                    "dn": base,
+                    "attributes": {"msDS-PrincipalName": f"{domain}\\alice"},
+                    "raw_attributes": {},
+                }
+            ]
+        else:
+            self.response = [
+                {"type": "searchResEntry", "dn": f"cn=u{i},{base}", "attributes": {}, "raw_attributes": {}}
+                for i in range(self.count)
+            ]
+        self.result = {"result": 0, "description": "success"}
+        return True
+
+
+def test_domain_qualified_candidates_exactly_at_the_limit_are_resolved() -> None:
+    """候補がちょうど上限の件数で、検索が完全に終わっていれば、msDS-PrincipalName で絞り込める。"""
+    conn = _QualifiedCandidates(backend.AD_QUALIFIED_CANDIDATES_LIMIT)
+    spec = _spec(kind="ad", group_mode="ad_nested")
+    entry = backend.find_user(conn, spec, "CORP\\alice")  # type: ignore[arg-type]
+    assert entry.dn.startswith("cn=u0,")
+
+
+async def test_group_dn_too_long_after_normalization_is_rejected(client, directory: FakeDirectory) -> None:
+    """正規化（casefold）で列の長さを超える DN は、DB エラーではなく 422 にする。"""
+    group_dn = "cn=" + "\u0390" * 400 + ",dc=example"
+    assert len(group_dn) <= 1024 and len(normalize_dn(group_dn)) > 1024
+    body = _directory_body(mappings=[{"group_dn": group_dn, "role": "admin"}])
+    assert (await client.post("/api/auth/directories", json=body)).status_code == 422
+
