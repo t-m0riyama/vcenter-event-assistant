@@ -17,14 +17,13 @@
 | 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ済み [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。Issue #258 は閉じた。Issue #254 は画面が残るので PR7 で閉じる） |
 | 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ済み [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし） |
 | 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ済み [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし） |
-| 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | マージ待ち [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263)（Codex の指摘 2 件に対応し、再レビューで指摘なし。CI 成功） |
+| 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | マージ済み [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263)（Codex の指摘 2 件に対応し、再レビューで指摘なし。CI 成功） |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263)（PR 7b）のマージ。Issue #254 はマージで閉じる
-2. [Issue #262](https://github.com/t-m0riyama/vcenter-event-assistant/issues/262): ドキュメントだけの変更では CI を実行しない。**PR8 に着手する前に対応する**（利用者の判断）。PR8 は実機確認の結果を計画書やユーザーガイドに書き足すコミットが多くなるので、そのたびに CI を待たないようにする
-3. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
+1. [Issue #262](https://github.com/t-m0riyama/vcenter-event-assistant/issues/262): ドキュメントだけの変更では CI を実行しない（[PR #264](https://github.com/t-m0riyama/vcenter-event-assistant/pull/264) で対応中。push で増えたコミットがドキュメントだけなら、`changes` ジョブの判定で後続のジョブを省く）。**PR8 に着手する前に対応する**（利用者の判断）。PR8 は実機確認の結果を計画書やユーザーガイドに書き足すコミットが多くなるので、そのたびに CI を待たないようにする
+2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
 
 ### PR6 のレビューの経過
 
