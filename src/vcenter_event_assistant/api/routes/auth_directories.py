@@ -415,10 +415,12 @@ async def update_directory(
             unique_id_before
         ) and await db.scalar(select(func.count()).select_from(User).where(User.directory_id == config.id)):
             # ID 属性を変えると全員の subject が変わり、無効にしたユーザーが新しい有効な行として作り直される。
+            # ディレクトリのユーザーは個別に削除できない（無効化で止める）ので、ディレクトリの作り直しを案内する。
             # 変更を書き込んで（行をロックして）から数えるので、並行するログインは先に確定していれば数に入り、
             # 後なら設定の変更（updated_at）を見て拒否される
             raise _invalid(
-                "このディレクトリのユーザーがいるため、ID 属性は変更できません。先にユーザーを削除してください。"
+                "このディレクトリのユーザーがいるため、ID 属性は変更できません。変えるには、ディレクトリを無効にして"
+                "削除し、作り直してください（配下のユーザーとグループの対応表も削除されます）。"
             )
         if was_enabled and not config.is_enabled:
             if await _other_admin_sources(db, settings, config.id) == 0:

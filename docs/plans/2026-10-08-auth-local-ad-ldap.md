@@ -104,6 +104,7 @@
 - **`directory_configs`**（PR6、revision `a8b9c0d1e2f3`。`unique_id_attribute` は #253 で追加、revision `b9c0d1e2f3a4`）
   - `unique_id_attribute` は LDAP のみ（AD で指定すると 422）。属性名か数字の OID
   - そのディレクトリのユーザー行がある間は変更できない（422）。変えると全員の subject が変わり、無効化をすり抜けられるため。未設定と `entryUUID` の明示は同じとみなす
+  - ディレクトリのユーザーは個別に削除できないので、変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）。ユーザーの一括削除の操作は、無効化の情報まで消えてすり抜けの経路になるので用意しない（利用者の判断）
   - 基本: name(unique), kind(`ad`|`ldap`), is_enabled, sort_order
   - 接続: server_uris(JSON), transport_security(`ldaps`|`starttls`|`none`), tls_verify(既定 true), ca_cert_pem, bind_dn, bind_password(EncryptedString), timeout_seconds
   - ユーザー検索: user_search_base, user_search_filter, username_attribute, ad_upn_suffix, display_name_attribute, email_attribute
@@ -183,7 +184,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - PR4・PR5 で実装済み: `frontend/src/auth/`（AuthProvider、useAuth、AuthGate、LoginScreen、UserMenu、ChangePasswordDialog）、`panels/settings/UsersPanel.tsx`
 - ユーザー管理画面では、ディレクトリのユーザーにはパスワード再設定と削除のボタンを出さず、ロールは編集できない（対応表で決まるため）
 - PR7 で作るもの:
-  - LDAP のときだけ「ID 属性」の入力欄（空なら entryUUID。例: 389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。ユーザーがいるディレクトリでは編集できないようにし、理由を出す（API も 422 で断る）
+  - LDAP のときだけ「ID 属性」の入力欄（空なら entryUUID。例: 389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。ユーザーがいるディレクトリでは編集できないようにし、理由と「変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）」ことを出す（API も 422 で断る）
   - 設定のサブタブ「認証ディレクトリ」（admin のみ）。`DirectoriesPanel.tsx`、`DirectoryForm.tsx`、`GroupRoleMappingsEditor.tsx`、`DirectoryTestResult.tsx`
   - `DirectoryForm` に「サーバ証明書を検証する」トグル（既定オン）。オフにするときは確認ダイアログを出し、オフの間はフォームと一覧に警告バッジ（「証明書を検証しません（中間者攻撃に弱い状態です）」）を出す。全体で禁止されているときは操作できないようにし、理由を表示する
   - ログイン画面の realm の選択肢（有効な realm が 2 件以上のときだけ表示）。`/api/auth/realms` は、方針で接続を拒否されるディレクトリを返さない
@@ -232,7 +233,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - 対応表の DN の書き方（大文字小文字・空白・OID の扱い、エスケープの表記）
 - 設定を変えるとログイン中のユーザーが失効すること（どの項目で失効するか）
 - ディレクトリのユーザーは削除ではなく無効化で止めること
-- ユーザーの ID に使う属性の選び方（OpenLDAP は entryUUID、389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。サービスアカウントにその属性の読み取り権限が要ること。DN は ID にしないこと、ユーザーがいる間は変えられないこと
+- ユーザーの ID に使う属性の選び方（OpenLDAP は entryUUID、389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。サービスアカウントにその属性の読み取り権限が要ること。DN は ID にしないこと、ユーザーがいる間は変えられないこと（変えるにはディレクトリを作り直す。最初の設定時に接続試験で ID が取れることを確かめる）
 - 「使える admin」の数え方と、409 になる操作
 - 監査レポートへの対応記録
 

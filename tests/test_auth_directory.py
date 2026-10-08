@@ -1327,6 +1327,16 @@ async def test_unique_id_attribute_cannot_change_once_users_exist(client, direct
     assert (await client.patch(url, json={"unique_id_attribute": "entryUUID"})).status_code == 200
     assert (await client.patch(url, json={"unique_id_attribute": None})).status_code == 200
 
+    # 案内のとおり、無効にして削除すれば、別の ID 属性で作り直せる
+    assert "作り直" in resp.json()["detail"]
+    assert (await client.patch(url, json={"is_enabled": False})).status_code == 200
+    assert (await client.delete(url)).status_code == 204
+    directory.entries[ALICE_DN]["nsUniqueId"] = "alice-ns"
+    recreated = await client.post("/api/auth/directories", json=_directory_body(unique_id_attribute="nsUniqueId"))
+    assert recreated.status_code == 201, recreated.text
+    resp, me = await _dir_login(f"dir:{recreated.json()['id']}", "alice", "alice-secret")
+    assert resp.status_code == 200 and me is not None
+
 
 def test_custom_unique_ids_keep_exact_bytes(directory: FakeDirectory) -> None:
     """前後の空白だけが違う値（Octet String など完全一致の構文）を同じユーザーにしない。"""
