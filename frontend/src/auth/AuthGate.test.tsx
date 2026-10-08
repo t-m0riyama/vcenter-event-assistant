@@ -208,6 +208,30 @@ describe('AuthGate', () => {
     expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
   })
 
+  it('再確認の途中で別のタブがログインし直したら、そのセッションを追い出さない', async () => {
+    // 1 回目の再確認は古いセッションの Cookie で送られて 401、その間に別タブが新しいセッションを作った
+    let meCalls = 0
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        meCalls += 1
+        return meCalls === 2 ? json({ detail: 'ログインが必要です。' }, 401) : json(ADMIN_ME)
+      }
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      if (url === '/api/protected') return json({ detail: 'ログインが必要です。' }, 401)
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '保護された API' }))
+    await waitFor(() => expect(meCalls).toBe(3))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)

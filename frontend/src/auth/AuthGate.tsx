@@ -23,9 +23,12 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   const [state, setState] = useState<State>({ status: 'loading' })
   const authenticatedRef = useRef(false)
   const checkingRef = useRef(false)
+  // 認証状態が変わるたびに進む世代。非同期の確認結果が古い状態に対するものかを見分ける
+  const generationRef = useRef(0)
   useEffect(() => {
     authenticatedRef.current = state.status === 'authenticated'
-  }, [state.status])
+    generationRef.current += 1
+  }, [state])
 
   const showLogin = useCallback(async (notice: string | null) => {
     // 認証先の取得を待つ間もアプリ本体（前の利用者のデータ）を表示し続けないよう、先に外す
@@ -63,16 +66,27 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
         // 401 が前のセッションで出した要求の遅れた応答かもしれない（ログインし直した後に届くことがある）。
         // 今のセッションが有効かを確かめ、無効なときだけログイン画面へ戻す。同時に何件 401 が来ても確認は 1 回
         checkingRef.current = true
-        void (async () => {
-          let stillValid = false
+        const generation = generationRef.current
+        const sessionIsValid = async () => {
           try {
-            stillValid = (await fetchMe()) !== null
+            return (await fetchMe()) !== null
           } catch {
-            stillValid = false
+            return false
+          }
+        }
+        void (async () => {
+          let stillValid: boolean
+          try {
+            stillValid = await sessionIsValid()
+            // 確認中に別のタブがログインして Cookie が替わった場合に備え、無効なら 1 回だけ確かめ直す
+            if (!stillValid && generationRef.current === generation) {
+              stillValid = await sessionIsValid()
+            }
           } finally {
             checkingRef.current = false
           }
-          if (stillValid || !authenticatedRef.current) return
+          // 確認中にこのタブでログイン・ログアウトなどが起きていたら、結果は古いので使わない
+          if (stillValid || generationRef.current !== generation || !authenticatedRef.current) return
           authenticatedRef.current = false
           await showLogin(SESSION_EXPIRED_MESSAGE)
         })()
