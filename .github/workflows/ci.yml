@@ -6,7 +6,87 @@ on:
   pull_request:
 
 jobs:
+  # ドキュメントだけの変更（計画書の更新など）では、後続のジョブを省く（Issue #262）。
+  # on.paths は pull_request では PR 全体の差分で判定するため、コードを含む PR に後から
+  # ドキュメントだけのコミットを push しても省けない。ここではその push で増えたコミットだけを見る。
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read  # 前の先頭の CI の結果を読む
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          # 前の先頭の CI を探すときに、同じ種類の実行（PR ならこの PR のブランチ）に絞る
+          RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # push の前の先頭を起点にできるか。祖先で、かつその先頭の CI が成功していること
+          # （失敗・中断・実行中のコードの後にドキュメントだけを push して、未検証のまま省かないため）
+          # 照会に失敗したら検証済みとみなさない（空の結果を成功と取り違えないため）。
+          # 成功の後に main が進んでいても省く（利用者の判断）。push がなくても GitHub は main の前進で
+          # PR の CI を走らせ直さないので今より弱くはならず、マージ後の main への push では全部走る
+          verified_before() {
+            git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null || return 1
+            local count
+            count="$(gh run list --workflow ci.yml --commit "$BEFORE" --branch "$RUN_BRANCH" --event "$EVENT" \
+              --status success --json databaseId --jq length)" || return 1
+            [ "$count" -gt 0 ] 2>/dev/null
+          }
+          # 比べる起点。PR への追加の push はその push の前の先頭、それ以外の PR は main との分岐点、
+          # main への push は push の前の先頭。前の先頭を起点にできず、決められないときは全部走らせる
+          from=""
+          if [ "$EVENT" = pull_request ] && [ "$ACTION" = synchronize ] && verified_before; then
+            from="$BEFORE"
+          elif [ "$EVENT" = pull_request ]; then
+            from="$(git merge-base "$BASE" "$AFTER" 2>/dev/null)" || from=""
+          elif verified_before; then
+            from="$BEFORE"
+          fi
+          if [ -z "$from" ]; then
+            echo "変更の範囲を決められないので、すべて走らせる"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 改名は削除と追加として扱う（参照されている元のパスを見落とさないため）。
+          # 差分を取れなければ、省かずに全部走らせる
+          if ! files="$(git diff --name-only --no-renames "$from" "$AFTER")"; then
+            echo "差分を取れないので、すべて走らせる"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=false
+          while IFS= read -r file; do
+            case "$file" in
+              "") ;;
+              # テストやビルドが読む Markdown は対象に戻す:
+              # - docs/user-guides/: 利用者向けガイド（ヘルプのリンク先）
+              # - README.md: パッケージのメタデータ（pyproject.toml の readme）として読まれる
+              docs/user-guides/* | README.md | packages/*/README.md) code=true ;;
+              # ヘルプが参照するドキュメント（docs/backend.md など）は、tabHelpContent.test.ts が
+              # 存在と見出しを確かめるので走らせる。参照先はファイル名を並べず、ヘルプの定義から引く
+              docs/* | *.md)
+                if grep -qF -e "'$file'" -e "\"$file\"" frontend/src/help/tabHelpContent.ts; then code=true; fi ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "変更の範囲: $from..$AFTER → code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   python:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,6 +176,8 @@ jobs:
           done
 
   frontend-unit:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,6 +200,8 @@ jobs:
         run: npm ci && npm run test
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -17,14 +17,13 @@
 | 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ済み [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。Issue #258 は閉じた。Issue #254 は画面が残るので PR7 で閉じる） |
 | 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ済み [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし） |
 | 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ済み [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし） |
-| 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | レビュー中 [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263) |
+| 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | マージ済み [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263)（Codex の指摘 2 件に対応し、再レビューで指摘なし。CI 成功） |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. PR 7b: 保存前の確認の画面（PR 6.5 の 409 と `X-VEA-Error-Code` を使う）。量が多いので 7a と分けた（利用者の判断）
+1. [Issue #262](https://github.com/t-m0riyama/vcenter-event-assistant/issues/262): ドキュメントだけの変更では CI を実行しない（[PR #264](https://github.com/t-m0riyama/vcenter-event-assistant/pull/264) で対応中。push で増えたコミットがドキュメントだけなら、`changes` ジョブの判定で後続のジョブを省く）。**PR8 に着手する前に対応する**（利用者の判断）。PR8 は実機確認の結果を計画書やユーザーガイドに書き足すコミットが多くなるので、そのたびに CI を待たないようにする
 2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
-3. [Issue #262](https://github.com/t-m0riyama/vcenter-event-assistant/issues/262): ドキュメントだけの変更では CI を実行しない（計画書の更新のたびに CI を待たないため。認証の PR とは別に進める）
 
 ### PR6 のレビューの経過
 
@@ -55,6 +54,7 @@
 - PR 作成時のレビューで 2 件（P2）。どちらも妥当なので修正した
   - 画面は対応表を並び順も含めた生の値で比べ、サーバは DN を正規化して集合で比べるので、並べ替えや DN の表記の違いだけの変更を「自分もログアウトされる」と判断して、失効していないのにパネルを閉じたままにしていた。対応表は順序を無視して比べ、保存の後に `/api/auth/me` で自分のセッションが実際に失効したかを確かめる（失効していればログイン画面へ、生きていれば一覧を読み直す）。DN の正規化（RFC 4518）は画面では再現しない
   - 資格情報を送った後もダイアログを閉じられ、キャンセルしたつもりの変更が保存され得た。確かめている間は「×」「キャンセル」と Esc を止めた
+- 観点を添えて再レビューを依頼し（`939bccd`）、指摘なし
 
 ### PR6 からの持ち越し（Issue）
 
@@ -254,7 +254,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `tests/test_startup_migration.py`: ディレクトリの migration の downgrade
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
 - PostgreSQL 固有の挙動（行ロック・デッドロック）は CI の SQLite では再現できない
-- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）
+- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）。応答の利用者（`X-VEA-Principal`）を受け取る `onPrincipalSeen` のリスナーも effect で登録するので、それに頼るテストは表示を待った後に `flushEffects` してから操作する（PR #264 の CI でまれに取りこぼした）
 
 ## 確認方法
 - テスト: `uv run pytest -n auto`、`cd frontend && npm test && npm run e2e`、ruff、mypy
