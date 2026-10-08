@@ -1637,3 +1637,25 @@ async def test_verification_is_required_if_the_other_admin_path_disappears_befor
     assert resp.status_code == 409, resp.text
     assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
     assert (await _stored_directory(directory_id))["user_search_filter"] is None
+
+
+async def test_service_account_password_changes_must_be_verified(client, directory: FakeDirectory) -> None:
+    """bind パスワードはセッションを失効させないが、誤るとこの後のログインがすべて失敗するので確かめる。"""
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        resp = await alice.patch(url, json={"bind_password": "wrong"})
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
+        resp = await alice.patch(url, json={"bind_password": "wrong", "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
+        resp = await alice.patch(url, json={"timeout_seconds": 3})
+        assert resp.headers.get(VERIFICATION_HEADER) == "directory_verification_required"
+
+        # 確かめられれば保存でき、ログイン中のセッションは残す（認証・ロールの根拠は変わらない）
+        resp = await alice.patch(url, json={"bind_password": "svc-secret", "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 200, resp.text
+        assert (await alice.get("/api/auth/me")).status_code == 200
+    resp, _ = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
+    assert resp.status_code == 200

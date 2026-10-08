@@ -81,6 +81,8 @@ _SESSION_NEUTRAL_FIELDS = frozenset(
 _IDENTITY_FIELDS = tuple(
     name for name in DirectoryChanges.model_fields if name not in _SESSION_NEUTRAL_FIELDS | {"is_enabled", "clear_bind_password"}
 )
+# セッションは失効させないが、誤るとこの後のログインがすべて失敗する項目（保存の前の確認の対象には含める）
+_LOGIN_CRITICAL_NEUTRAL_FIELDS = ("bind_password", "timeout_seconds")
 _COLUMN_KEYS = tuple(attr.key for attr in sa_inspect(DirectoryConfig).column_attrs)
 
 # 409 の理由を画面が見分けるためのヘッダ（detail は文字列のまま返す）
@@ -430,6 +432,17 @@ def _identity_changed(config: DirectoryConfig, draft: DirectoryConfig) -> bool:
     ) != _mapping_set(config.mappings)
 
 
+def _login_affected(config: DirectoryConfig, draft: DirectoryConfig) -> bool:
+    """この後のログインの成否が変わり得るか（保存の前に確かめるかの判断に使う）。
+
+    セッションを失効させる変更に加え、サービスアカウントのパスワードとタイムアウトも含める。
+    これらは失効させないが、誤るとログアウトや期限切れの後に誰もログインできなくなる。
+    """
+    return _identity_changed(config, draft) or any(
+        getattr(draft, name) != getattr(config, name) for name in _LOGIN_CRITICAL_NEUTRAL_FIELDS
+    )
+
+
 def _acting_in(principal: Principal, config: DirectoryConfig) -> bool:
     """操作している admin が、このディレクトリのユーザーとしてログインしているか。"""
     return principal.realm == realm_key_for(config.id)
@@ -463,14 +476,15 @@ async def _verification_needed(
 ) -> bool:
     """保存の前に、新しい設定で admin としてログインできるか確かめる必要があるか。
 
-    認証に関わる変更（有効化を含む）で、次のどちらかに当たるとき:
-    (a) 操作している admin がこのディレクトリのユーザー（自分のセッションも失効する）
+    ログインの成否に関わる変更（有効化を含む。``_login_affected``）で、次のどちらかに当たるとき:
+    (a) 操作している admin がこのディレクトリのユーザー（自分のセッションが失効する、または今のセッションが
+        切れた後にログインし直せなくなる）
     (b) 設定上、ほかに admin の経路がない。ほかの経路の数え方は設定と方針しか見ず、サーバが落ちている・
         グループが存在しないなど実際には使えない経路も数えるので、(b) だけでは締め出しを防げない
     """
     if not draft.is_enabled:
         return False
-    if config.is_enabled and not _identity_changed(config, draft):
+    if config.is_enabled and not _login_affected(config, draft):
         return False
     return _acting_in(principal, config) or await _other_admin_sources(db, settings, config.id) == 0
 
