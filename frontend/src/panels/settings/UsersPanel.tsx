@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
 import { managedUserListSchema, type ManagedUser, type Role } from '../../api/schemas'
 import { ROLE_LABELS } from '../../auth/roles'
@@ -74,13 +74,20 @@ export function UsersPanel({
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({ password: '', confirm: '' })
   const [notice, setNotice] = useState<string | null>(null)
 
+  // 一覧の読み込みと操作の通し番号。後から届いた古い読み込みの結果で、操作後の一覧や
+  // 新しいエラー表示を上書きしないため、最新のものだけを反映する
+  const sequenceRef = useRef(0)
+
   const load = useCallback(async () => {
+    const sequence = ++sequenceRef.current
     try {
       const data = await apiGet<unknown>('/api/auth/users')
+      if (sequence !== sequenceRef.current) return
       setList(managedUserListSchema.parse(data))
       // 前の読み込みの失敗表示を消す（タブを開き直しての再試行が成功した場合も）
       onError(null)
     } catch (e) {
+      if (sequence !== sequenceRef.current) return
       onError(toErrorMessage(e))
     }
   }, [onError])
@@ -93,6 +100,8 @@ export function UsersPanel({
 
   /** 操作を実行し、成功したら一覧を読み直してお知らせを出す。 */
   const run = async (action: () => Promise<unknown>, done: string): Promise<boolean> => {
+    // 実行中の読み込みの結果は捨てる（操作前の一覧で上書きしたり、操作のエラーを消したりしないため）
+    sequenceRef.current += 1
     onError(null)
     setNotice(null)
     try {

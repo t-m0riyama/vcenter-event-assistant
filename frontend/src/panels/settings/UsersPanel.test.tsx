@@ -308,4 +308,46 @@ describe('UsersPanel', () => {
     await screen.findByText('alice')
     expect(onError).toHaveBeenLastCalledWith(null)
   })
+
+  it('操作より前に始まった読み込みが後から届いても、操作後の一覧を上書きしない', async () => {
+    let releaseStale: () => void = () => {}
+    let gets = 0
+    const calls = stubApi((call) => {
+      if (call.url === '/api/auth/users' && call.method === 'GET') {
+        gets += 1
+        if (gets === 2) {
+          // 2 回目（再読み込み）は遅れて、操作前の一覧を返す
+          return undefined
+        }
+        if (gets >= 3) return json(USERS.filter((u) => u.id !== 'u-alice'))
+      }
+      if (call.method === 'DELETE') return new Response(null, { status: 204 })
+      return undefined
+    })
+    // 2 回目の GET だけ保留する
+    const originalFetch = globalThis.fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const pending = originalFetch(input, init)
+        if (String(input) === '/api/auth/users' && (init?.method ?? 'GET') === 'GET' && gets === 2) {
+          return new Promise<Response>((resolve) => {
+            releaseStale = () => void pending.then(resolve)
+          })
+        }
+        return pending
+      }),
+    )
+    renderPanel()
+    await screen.findByText('alice')
+    fireEvent.click(screen.getByRole('button', { name: '再読み込み' })) // 遅れる読み込み
+    await waitFor(() => expect(gets).toBe(2))
+    fireEvent.click(within(row('alice')).getByRole('button', { name: '削除' }))
+    await screen.findByText('alice を削除しました。')
+    expect(screen.queryByText('alice')).not.toBeInTheDocument()
+    releaseStale()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByText('alice')).not.toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(true)
+  })
 })
