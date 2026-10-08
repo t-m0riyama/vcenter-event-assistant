@@ -60,6 +60,8 @@ async def get_current_principal(
     token = request.cookies.get(session_cookie_name(settings))
     resolved = await resolve_session(db, token, session_policy(settings))
     if resolved is None:
+        # 期限切れ・世代不一致で削除した行を確定させる（例外で get_session がロールバックするため）
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="ログインが必要です。",

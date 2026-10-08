@@ -31,7 +31,12 @@ from vcenter_event_assistant.auth.service import (
     session_policy,
 )
 from vcenter_event_assistant.auth.sessions import create_session, revoke_session
-from vcenter_event_assistant.auth.users import LOCAL_REALM, UserError, set_local_password
+from vcenter_event_assistant.auth.users import (
+    LOCAL_REALM,
+    PasswordChangedConcurrentlyError,
+    UserError,
+    set_local_password,
+)
 from vcenter_event_assistant.db.models import User
 from vcenter_event_assistant.settings import Settings
 
@@ -177,7 +182,9 @@ async def change_own_password(
     user = await db.get(User, principal.user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="ログインが必要です。")
-    if not (await verify_password(user.password_hash, body.current_password)).ok:
+    # この値を条件に更新するので、検証中に別の変更が確定していたら上書きしない
+    verified_hash = user.password_hash
+    if not (await verify_password(verified_hash, body.current_password)).ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="現在のパスワードが正しくありません。",
@@ -194,7 +201,10 @@ async def change_own_password(
             body.new_password,
             password_min_length=settings.password_min_length,
             keep_session_id=principal.session_id,
+            expected_hash=verified_hash,
         )
+    except PasswordChangedConcurrentlyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
     except (PasswordPolicyError, UserError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
     audit("password_changed", username=user.username, ip=_client_ip(request))

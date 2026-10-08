@@ -139,7 +139,12 @@ class AppLogSettingsMixin(BaseModel):
     )
 
     cors_origins: str = Field(
-        default="http://localhost:5173", description="Comma-separated origins"
+        default="http://localhost:5173",
+        description=(
+            "CORS で許可するオリジン（カンマ区切り）。"
+            "認証（VEA_AUTH_ENABLED）のセッション Cookie は同一オリジン専用で、資格情報付きの CORS は"
+            "許可しない。UI は API と同じオリジンで配信するか、開発時の Vite のようにプロキシ経由にすること。"
+        ),
     )
     rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=1000)
     rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)

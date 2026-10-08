@@ -6,8 +6,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.tokens import hash_token, new_session_token
@@ -98,20 +99,75 @@ async def resolve_session(
     if row is None:
         return None
     if _is_expired(row, policy, now):
-        await db.delete(row)
-        await db.flush()
-        return None
+        if await _delete_if_still_expired(db, row, policy, now):
+            return None
+        # 削除されなかったのは、読み込んだ後に別のリクエストが last_seen_at を進めたか、
+        # 先に削除したため。行がなければ None になる 1 回の SELECT で読み直す
+        # （存在確認と refresh を分けると、その間に削除されたとき例外になる）。
+        fresh = await db.scalar(
+            select(AuthSession)
+            .where(AuthSession.id == row.id)
+            .execution_options(populate_existing=True)
+        )
+        if fresh is None:
+            db.expunge(row)
+            return None
+        row = fresh
     user = await db.get(User, row.user_id)
-    if user is None or not user.is_active:
-        return None
-    if row.credential_marker != credential_marker(user):
-        await db.delete(row)
-        await db.flush()
+    if user is None or not user.is_active or row.credential_marker != credential_marker(user):
+        # 無効化されたユーザーのセッションも消す（再度有効にしたときに復活させないため）。
+        # 重なったリクエストが先に消していても失敗しないよう、件数を問わない DELETE にする
+        await db.execute(
+            delete(AuthSession)
+            .where(AuthSession.id == row.id)
+            .execution_options(synchronize_session=False)
+        )
+        db.expunge(row)
         return None
     if now - as_utc(row.last_seen_at) >= policy.touch_interval:
-        row.last_seen_at = now
-        await db.flush()
+        await _touch(db, row, now)
     return ResolvedSession(session=row, user=user)
+
+
+async def _delete_if_still_expired(
+    db: AsyncSession, row: AuthSession, policy: SessionPolicy, now: datetime
+) -> bool:
+    """期限切れの条件を DB 上で再評価して削除する。削除したら ``True``。
+
+    読み込んだ値だけで判断して主キーで消すと、その間に重なったリクエストが確定させた
+    更新ごと、使用中のセッションを消してしまうため。
+    """
+    done = await db.execute(
+        delete(AuthSession)
+        .where(
+            AuthSession.id == row.id,
+            or_(
+                AuthSession.expires_at <= now,
+                AuthSession.last_seen_at <= now - policy.idle_timeout,
+            ),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if done.rowcount:
+        db.expunge(row)
+        return True
+    return False
+
+
+async def _touch(db: AsyncSession, row: AuthSession, now: datetime) -> None:
+    """``last_seen_at`` を進める。DB 上の値より新しいときだけ書き込み、巻き戻さない。
+
+    同じトークンのリクエストが重なると、遅れて確定した側が古い時刻で上書きし、
+    使用中のセッションが早く無操作タイムアウトになり得るため。
+    """
+    done = await db.execute(
+        update(AuthSession)
+        .where(AuthSession.id == row.id, AuthSession.last_seen_at < now)
+        .values(last_seen_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if done.rowcount:
+        set_committed_value(row, "last_seen_at", now)
 
 
 async def revoke_session(db: AsyncSession, token: str | None) -> None:

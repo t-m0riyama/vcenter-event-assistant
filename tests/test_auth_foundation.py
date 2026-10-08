@@ -6,7 +6,7 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from vcenter_event_assistant.auth.passwords import (
     PasswordPolicyError,
@@ -23,7 +23,7 @@ from vcenter_event_assistant.auth.sessions import (
     revoke_all_for_user,
     revoke_session,
 )
-from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.tokens import hash_token
 from vcenter_event_assistant.auth.users import _admin_change_lock as admin_change_guard_lock
 from vcenter_event_assistant.auth.users import (
@@ -81,6 +81,43 @@ async def test_create_local_user_is_case_insensitive_unique() -> None:
     async with session_scope() as db:
         found = await get_local_user(db, "alice")
         assert found is not None and found.role == "operator"
+
+
+async def test_username_rejected_when_casefold_overflows_subject() -> None:
+    """NFKC 後は 256 文字でも、casefold で subject の列長を超える名前は入力エラーにする。"""
+    assert len("\u0390".casefold()) == 3
+    async with session_scope() as db:
+        with pytest.raises(UserError):
+            await create_local_user(
+                db, username="\u0390" * 256, password=PASSWORD, role="viewer", password_min_length=12
+            )
+        ok = await create_local_user(
+            db, username="a" * 256, password=PASSWORD, role="viewer", password_min_length=12
+        )
+        assert len(ok.subject) == 256
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("display_name", "x" * 257), ("email", "a" * 321), ("display_name", "bad\x1bname")],
+)
+async def test_profile_fields_are_validated(field: str, value: str) -> None:
+    async with session_scope() as db:
+        with pytest.raises(UserError):
+            await create_local_user(
+                db, username="prof", password=PASSWORD, role="viewer", password_min_length=12,
+                **{field: value},
+            )
+
+
+async def test_profile_fields_are_trimmed() -> None:
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="trim", password=PASSWORD, role="viewer", password_min_length=12,
+            display_name="  Trim User ", email="  ",
+        )
+        assert user.display_name == "Trim User"
+        assert user.email is None
 
 
 async def test_session_lifecycle_stores_only_hash() -> None:
@@ -144,6 +181,104 @@ async def test_short_idle_timeout_is_extended_by_activity() -> None:
         assert await resolve_session(db, token, policy, now=now + timedelta(seconds=361)) is None
 
 
+async def test_session_touch_never_moves_backwards() -> None:
+    """遅れて確定したリクエストが、新しい last_seen_at を古い時刻で上書きしない。"""
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="touchy", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+    async with session_scope() as slow:
+        # 先に始まった遅いリクエストが、更新前の行を読み込んで保持している
+        # （参照を持たないと identity map から外れ、後で最新値を読み直してしまう）
+        stale_row = await slow.scalar(select(AuthSession))
+        assert stale_row is not None
+        async with session_scope() as fast:
+            assert await resolve_session(fast, token, POLICY, now=t0 + timedelta(minutes=10)) is not None
+        resolved = await resolve_session(slow, token, POLICY, now=t0 + timedelta(minutes=5))
+        assert resolved is not None and resolved.session is stale_row
+    async with session_scope() as db:
+        row = await db.scalar(select(AuthSession))
+        assert row is not None
+        assert as_utc(row.last_seen_at) == t0 + timedelta(minutes=10)
+
+
+async def test_expiry_is_rechecked_before_deleting() -> None:
+    """古い last_seen_at で期限切れと判断しても、その間に更新されたセッションは消さない。"""
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="edge", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+    async with session_scope() as slow:
+        stale_row = await slow.scalar(select(AuthSession))  # 更新前の行を保持している
+        assert stale_row is not None
+        async with session_scope() as fast:
+            # 無操作タイムアウトの直前に、別のリクエストが使用を記録した
+            assert await resolve_session(fast, token, POLICY, now=t0 + timedelta(minutes=59)) is not None
+        # 古い値（t0）から見ると 61 分経過しているが、実際は 2 分前に使われている
+        resolved = await resolve_session(slow, token, POLICY, now=t0 + timedelta(minutes=61))
+        assert resolved is not None
+    async with session_scope() as db:
+        assert len((await db.scalars(select(AuthSession))).all()) == 1
+
+
+async def test_expired_session_removed_concurrently_resolves_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """期限切れと判断した直後に、重なった別のリクエストが先に削除していても例外にしない。"""
+    from vcenter_event_assistant.auth import sessions as sessions_module
+
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="gone", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+
+    original = sessions_module._delete_if_still_expired
+
+    async def removed_first(db, row, policy, now):
+        # 行を読み込んで期限切れと判断した後、削除する前に別のリクエストが消した
+        async with session_scope() as other:
+            await revoke_session(other, token)
+        return await original(db, row, policy, now)
+
+    monkeypatch.setattr(sessions_module, "_delete_if_still_expired", removed_first)
+    async with session_scope() as db:
+        assert await resolve_session(db, token, POLICY, now=t0 + timedelta(minutes=61)) is None
+
+
+async def test_session_touched_then_removed_during_expiry_resolves_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """条件付き削除が「更新された」ために空振りした後、読み直す前に削除されても例外にしない。"""
+    from vcenter_event_assistant.auth import sessions as sessions_module
+
+    t0 = utcnow()
+    async with session_scope() as db:
+        user = await create_local_user(
+            db, username="flip", password=PASSWORD, role="viewer", password_min_length=12
+        )
+        token = await create_session(db, user, POLICY, now=t0)
+
+    original = sessions_module._delete_if_still_expired
+
+    async def touched_then_revoked(db, row, policy, now):
+        async with session_scope() as other:
+            await other.execute(update(AuthSession).values(last_seen_at=now))
+        deleted = await original(db, row, policy, now)  # 更新されたので消えない
+        async with session_scope() as other:
+            await revoke_session(other, token)  # その直後にログアウトされた
+        return deleted
+
+    monkeypatch.setattr(sessions_module, "_delete_if_still_expired", touched_then_revoked)
+    async with session_scope() as db:
+        assert await resolve_session(db, token, POLICY, now=t0 + timedelta(minutes=61)) is None
+
+
 async def test_inactive_user_session_is_rejected() -> None:
     async with session_scope() as db:
         user = await create_local_user(
@@ -153,6 +288,9 @@ async def test_inactive_user_session_is_rejected() -> None:
         user.is_active = False
     async with session_scope() as db:
         assert await resolve_session(db, token, POLICY) is None
+    async with session_scope() as db:
+        # 再び有効にしても古いセッションが復活しないよう、行は削除されている
+        assert (await db.scalars(select(AuthSession))).all() == []
 
 
 async def test_password_change_revokes_other_sessions() -> None:

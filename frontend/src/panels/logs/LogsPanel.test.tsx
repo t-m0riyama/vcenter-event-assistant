@@ -188,59 +188,83 @@ describe('LogsPanel', () => {
     await waitFor(() => expect(lastLogRequest().searchParams.get('from')).toContain('2026-01-01'))
   })
 
-  it('uses the selected page size for fetching, pagination and the final page', async () => {
+  async function renderPagination() {
     window.history.replaceState(null, '', '#/logs?vcenter_id=vc-1&from=2026-10-02T09%3A55%3A25Z&to=2026-10-02T10%3A05%3A25Z')
-    let total = 101
+    const data = { total: 101 }
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/vcenters')) return response([{ id: 'vc-1', name: 'Lab' }])
       if (url.includes('/api/plugins')) return response({ generation: 1, collectors: [] })
-      return response({ items: [row], total })
+      return response({ items: [row], total: data.total })
     })
     vi.stubGlobal('fetch', fetchMock)
     render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
+    await screen.findByText('全 101 件中 1–50 件を表示')
+    // These controls keep their identity across page updates. Query each only once.
+    const pageSize = screen.getByLabelText('表示件数')
+    const next = screen.getByRole('button', { name: '次へ' })
+    const previous = screen.getByRole('button', { name: '前へ' })
+    const status = screen.getByRole('status')
     const lastLogRequest = () => new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/logs')).at(-1)![0]), 'http://test')
-    await waitFor(() => expect(screen.getByText('全 101 件中 1–50 件を表示')).toBeInTheDocument())
-    expect(screen.getByLabelText('表示件数')).toHaveValue('50')
-    expect(lastLogRequest().searchParams.get('limit')).toBe('50')
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(screen.getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
+    const expectPage = async (text: string) => {
+      await waitFor(() => expect(status).toHaveTextContent(text))
+    }
+    return { data, pageSize, next, previous, lastLogRequest, expectPage }
+  }
 
-    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '20' } })
-    await waitFor(() => expect(screen.getByText('全 101 件中 1–20 件を表示')).toBeInTheDocument())
+  it('resets pagination and preserves linked filters when selecting a smaller page size', async () => {
+    const { pageSize, next, previous, lastLogRequest, expectPage } = await renderPagination()
+    expect(pageSize).toHaveValue('50')
+    expect(lastLogRequest().searchParams.get('limit')).toBe('50')
+    fireEvent.click(next)
+    await expectPage('全 101 件中 51–100 件を表示')
+
+    fireEvent.change(pageSize, { target: { value: '20' } })
+    await expectPage('全 101 件中 1–20 件を表示')
     expect(lastLogRequest().searchParams.get('limit')).toBe('20')
     expect(lastLogRequest().searchParams.get('offset')).toBe('0')
     expect(lastLogRequest().searchParams.get('vcenter_id')).toBe('vc-1')
     expect(lastLogRequest().searchParams.get('from')).toBe('2026-10-02T09:55:25Z')
     expect(lastLogRequest().searchParams.get('to')).toBe('2026-10-02T10:05:25Z')
-    expect(screen.getByRole('button', { name: '前へ' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(screen.getByText('全 101 件中 21–40 件を表示')).toBeInTheDocument())
+    expect(previous).toBeDisabled()
+    fireEvent.click(next)
+    await expectPage('全 101 件中 21–40 件を表示')
     expect(lastLogRequest().searchParams.get('offset')).toBe('20')
+  })
 
-    total = 15
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(lastLogRequest().searchParams.get('offset')).toBe('0'))
-    await waitFor(() => expect(screen.getByText('全 15 件中 1–15 件を表示')).toBeInTheDocument())
+  it('corrects the requested offset when the total shrinks below the selected page size', async () => {
+    const { data, pageSize, next, previous, lastLogRequest, expectPage } = await renderPagination()
+    fireEvent.change(pageSize, { target: { value: '20' } })
+    await expectPage('全 101 件中 1–20 件を表示')
+    fireEvent.click(next)
+    await expectPage('全 101 件中 21–40 件を表示')
+
+    data.total = 15
+    fireEvent.click(next)
+    await expectPage('全 15 件中 1–15 件を表示')
+    expect(lastLogRequest().searchParams.get('limit')).toBe('20')
     expect(lastLogRequest().searchParams.get('offset')).toBe('0')
-    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+    expect(previous).toBeDisabled()
+    expect(next).toBeDisabled()
+  })
 
-    total = 101
-    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '100' } })
-    await waitFor(() => expect(screen.getByText('全 101 件中 1–100 件を表示')).toBeInTheDocument())
+  it('navigates the final page and disables next when a larger page size covers all results', async () => {
+    const { pageSize, next, previous, lastLogRequest, expectPage } = await renderPagination()
+    fireEvent.change(pageSize, { target: { value: '100' } })
+    await expectPage('全 101 件中 1–100 件を表示')
     expect(lastLogRequest().searchParams.get('limit')).toBe('100')
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(screen.getByText('全 101 件中 101–101 件を表示')).toBeInTheDocument())
+    fireEvent.click(next)
+    await expectPage('全 101 件中 101–101 件を表示')
     expect(lastLogRequest().searchParams.get('offset')).toBe('100')
-    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: '前へ' }))
-    await waitFor(() => expect(screen.getByText('全 101 件中 1–100 件を表示')).toBeInTheDocument())
+    expect(next).toBeDisabled()
+    fireEvent.click(previous)
+    await expectPage('全 101 件中 1–100 件を表示')
     expect(lastLogRequest().searchParams.get('offset')).toBe('0')
 
-    fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '200' } })
-    await waitFor(() => expect(lastLogRequest().searchParams.get('limit')).toBe('200'))
-    await waitFor(() => expect(screen.getByText('全 101 件中 1–101 件を表示')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+    fireEvent.change(pageSize, { target: { value: '200' } })
+    await expectPage('全 101 件中 1–101 件を表示')
+    expect(lastLogRequest().searchParams.get('limit')).toBe('200')
+    expect(next).toBeDisabled()
   })
 
   async function startPageCorrection(total: number) {

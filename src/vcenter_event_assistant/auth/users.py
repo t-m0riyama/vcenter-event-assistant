@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from vcenter_event_assistant.auth.passwords import (
     hash_password,
@@ -24,6 +25,11 @@ from vcenter_event_assistant.db.models import AuthSession, User
 
 LOCAL_REALM = "local"
 USERNAME_MAX_LENGTH = 256
+# User.display_name / User.email の列長
+DISPLAY_NAME_MAX_LENGTH = 256
+EMAIL_MAX_LENGTH = 320
+# User.subject の列長。大文字小文字の統一（casefold）で文字数が増えるため、統一後の長さも検査する
+SUBJECT_MAX_LENGTH = 512
 
 
 class UserError(ValueError):
@@ -35,6 +41,13 @@ class DuplicateUserError(UserError):
 
     def __init__(self) -> None:
         super().__init__("同じユーザー名のローカルユーザーが既に存在します。")
+
+
+class PasswordChangedConcurrentlyError(UserError):
+    """検証した時点のパスワードが、更新する前に別の操作で変更されていた。"""
+
+    def __init__(self) -> None:
+        super().__init__("パスワードが他の操作で変更されました。もう一度ログインしてください。")
 
 
 class LastAdminError(UserError):
@@ -94,7 +107,27 @@ def normalize_username(username: str) -> str:
         raise UserError(f"ユーザー名は {USERNAME_MAX_LENGTH} 文字以下にしてください。")
     if any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
         raise UserError("ユーザー名に制御文字は使えません。")
+    if len(value.casefold()) > SUBJECT_MAX_LENGTH:
+        # 例: U+0390 は casefold で 3 文字になる
+        raise UserError("ユーザー名が長すぎます。")
     return value
+
+
+def normalize_optional_text(value: str | None, *, max_length: int, label: str) -> str | None:
+    """表示名・メールなど任意項目の正規化。空は ``None``、長すぎる値と制御文字は拒否。
+
+    SQLite は VARCHAR の長さを強制しないため、DB に任せず列長をここで検査する。
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if len(text) > max_length:
+        raise UserError(f"{label}は {max_length} 文字以下にしてください。")
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in text):
+        raise UserError(f"{label}に制御文字は使えません。")
+    return text
 
 
 def local_subject(username: str) -> str:
@@ -133,6 +166,10 @@ async def create_local_user(
     email: str | None = None,
 ) -> User:
     name = normalize_username(username)
+    display_name = normalize_optional_text(
+        display_name, max_length=DISPLAY_NAME_MAX_LENGTH, label="表示名"
+    )
+    email = normalize_optional_text(email, max_length=EMAIL_MAX_LENGTH, label="メールアドレス")
     validate_password_policy(password, min_length=password_min_length)
     if await get_local_user(db, name) is not None:
         raise DuplicateUserError()
@@ -167,15 +204,31 @@ async def set_local_password(
     *,
     password_min_length: int,
     keep_session_id: uuid.UUID | None = None,
+    expected_hash: str | None = None,
 ) -> None:
-    """パスワードを変更し、ロックを解除して他のセッションを全部失効させる。"""
+    """パスワードを変更し、ロックを解除して他のセッションを全部失効させる。
+
+    ``expected_hash`` を渡すと、DB 上のハッシュがまだその値のときだけ更新する。現在のパスワードを
+    検証してから変更する場合に使う（検証中に別の変更が確定していたら上書きせず
+    ``PasswordChangedConcurrentlyError``）。
+    """
     if user.realm_key != LOCAL_REALM:
         raise UserError("ディレクトリ由来のユーザーのパスワードは変更できません。")
     validate_password_policy(password, min_length=password_min_length)
-    user.password_hash = await hash_password(password)
-    user.password_changed_at = utcnow()
-    user.failed_login_count = 0
-    user.locked_until = None
+    values = {
+        "password_hash": await hash_password(password),
+        "password_changed_at": utcnow(),
+        "failed_login_count": 0,
+        "locked_until": None,
+    }
+    stmt = update(User).where(User.id == user.id)
+    if expected_hash is not None:
+        stmt = stmt.where(User.password_hash == expected_hash)
+    result = await db.execute(stmt.values(**values).execution_options(synchronize_session=False))
+    if not result.rowcount:
+        raise PasswordChangedConcurrentlyError()
+    for key, value in values.items():
+        set_committed_value(user, key, value)
     await revoke_all_for_user(db, user.id, except_session_id=keep_session_id)
     if keep_session_id is not None:
         # 変更操作をしたセッションだけは新しい世代に付け替えて残す

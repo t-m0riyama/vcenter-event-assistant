@@ -40,6 +40,8 @@ from vcenter_event_assistant.api.routes.incident_timeline import (
 )
 from vcenter_event_assistant.api.routes.plugins import (
     installed_router as plugins_installed_router,
+    management_gate as plugins_management_gate,
+    management_router as plugins_management_router,
     router as plugins_router,
 )
 from vcenter_event_assistant.auth.bootstrap import ensure_bootstrap_admin
@@ -137,6 +139,8 @@ def create_app() -> FastAPI:
     if settings.is_production and ("*" in origins or not origins):
         origins = []
     allowed_origins = origins or ["http://localhost:5173"]
+    # 認証は同一オリジン専用（SameSite=Strict の Cookie）。資格情報付き CORS は有効にしないので、
+    # 別オリジンの UI からはログインできない。UI は同一オリジンかプロキシ経由で配信する前提。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -226,11 +230,19 @@ def create_app() -> FastAPI:
     api.include_router(alerts_router)
     api.include_router(ingest_router)
     api.include_router(plugins_router)
-    api.include_router(plugins_installed_router)
-    from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
-    api.include_router(plugin_setup_router)
 
     app.include_router(api)
+
+    # プラグイン管理の変更系は、無効時に存在を伏せる 404 gate をログイン確認より先に評価する。
+    # 親 router の依存は子より先に走るため、``api`` には入れずにここで順序を指定してマウントする。
+    from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
+
+    for gated in (plugins_management_router, plugins_installed_router, plugin_setup_router):
+        app.include_router(
+            gated,
+            prefix="/api",
+            dependencies=[Depends(plugins_management_gate), Depends(get_current_principal)],
+        )
 
     if FRONTEND_DIST.is_dir() and (FRONTEND_DIST / "index.html").is_file():
         assets = FRONTEND_DIST / "assets"

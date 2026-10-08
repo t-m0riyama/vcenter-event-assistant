@@ -93,7 +93,10 @@ async def _unlock(settings: Settings, args: argparse.Namespace) -> str:
     async with session_scope(settings) as db:
         user = await _get_user_or_fail(db, args.username)
         unlock_user(user)
-        user.is_active = True
+        if not user.is_active:
+            # 無効化前のセッション（盗まれたものを含む）を有効化で復活させない
+            await revoke_all_for_user(db, user.id)
+            user.is_active = True
         return f"ユーザー '{user.username}' のロックを解除し、有効にしました。"
 
 
