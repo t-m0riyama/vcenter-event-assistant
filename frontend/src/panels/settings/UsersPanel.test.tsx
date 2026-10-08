@@ -275,4 +275,37 @@ describe('UsersPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '再読み込み' }))
     await waitFor(() => expect(listLoads()).toBe(3))
   })
+
+  it('編集中に一覧を読み直しても、編集を始めた時点から変えた項目だけを送る', async () => {
+    let current = USERS
+    const calls = stubApi((call) =>
+      call.url === '/api/auth/users' && call.method === 'GET' ? json(current) : undefined,
+    )
+    renderPanel()
+    await screen.findByText('alice')
+    fireEvent.click(within(row('alice')).getByRole('button', { name: '編集' }))
+    // 別の管理者が alice の表示名を変えた後に一覧を読み直した
+    current = USERS.map((u) => (u.id === 'u-alice' ? { ...u, display_name: 'Alice (Ops)' } : u))
+    fireEvent.click(screen.getByRole('button', { name: '再読み込み' }))
+    await waitFor(() => expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2))
+    fireEvent.change(screen.getByLabelText('alice のロール'), { target: { value: 'operator' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await screen.findByText('alice を更新しました。')
+    expect(calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([{ role: 'operator' }])
+  })
+
+  it('一覧の読み込みに成功したら、前の失敗表示を消す', async () => {
+    let fail = true
+    stubApi((call) =>
+      call.url === '/api/auth/users' && call.method === 'GET' && fail ? new Response('down', { status: 503 }) : undefined,
+    )
+    const onError = vi.fn()
+    const view = render(panel(onError))
+    await waitFor(() => expect(onError).toHaveBeenLastCalledWith(expect.stringContaining('リクエストに失敗しました')))
+    fail = false
+    view.rerender(panel(onError, false))
+    view.rerender(panel(onError, true))
+    await screen.findByText('alice')
+    expect(onError).toHaveBeenLastCalledWith(null)
+  })
 })

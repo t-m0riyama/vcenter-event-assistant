@@ -68,6 +68,8 @@ export function UsersPanel({
     role: 'viewer',
     is_active: true,
   })
+  // 編集を始めた時点の値。一覧を読み直しても変えず、これと比べて変えた項目だけを送る
+  const [editOriginal, setEditOriginal] = useState<EditForm | null>(null)
   const [passwordFor, setPasswordFor] = useState<string | null>(null)
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({ password: '', confirm: '' })
   const [notice, setNotice] = useState<string | null>(null)
@@ -76,6 +78,8 @@ export function UsersPanel({
     try {
       const data = await apiGet<unknown>('/api/auth/users')
       setList(managedUserListSchema.parse(data))
+      // 前の読み込みの失敗表示を消す（タブを開き直しての再試行が成功した場合も）
+      onError(null)
     } catch (e) {
       onError(toErrorMessage(e))
     }
@@ -123,24 +127,28 @@ export function UsersPanel({
 
   const startEdit = (u: ManagedUser) => {
     setPasswordFor(null)
-    setEditingId(u.id)
-    setEditForm({
+    const original: EditForm = {
       display_name: u.display_name ?? '',
       email: u.email ?? '',
       role: u.role,
       is_active: u.is_active,
-    })
+    }
+    setEditingId(u.id)
+    setEditOriginal(original)
+    setEditForm(original)
   }
 
   const saveEdit = async (u: ManagedUser) => {
-    // 変えた項目だけを送る（別の管理者が同時に変えたほかの項目を、編集開始時の値で上書きしないため）
+    if (!editOriginal) return
+    // 編集を始めた時点から変えた項目だけを送る（別の管理者が同時に変えたほかの項目を、
+    // 編集開始時の値で上書きしないため。途中で一覧を読み直しても基準は変えない）
     const body: Record<string, unknown> = {}
     const displayName = optionalText(editForm.display_name)
     const email = optionalText(editForm.email)
-    if (displayName !== (u.display_name ?? null)) body.display_name = displayName
-    if (email !== (u.email ?? null)) body.email = email
-    const roleChanged = editForm.role !== u.role
-    const activeChanged = editForm.is_active !== u.is_active
+    if (displayName !== optionalText(editOriginal.display_name)) body.display_name = displayName
+    if (email !== optionalText(editOriginal.email)) body.email = email
+    const roleChanged = editForm.role !== editOriginal.role
+    const activeChanged = editForm.is_active !== editOriginal.is_active
     if (roleChanged) body.role = editForm.role
     if (activeChanged) body.is_active = editForm.is_active
     if (Object.keys(body).length === 0) {
