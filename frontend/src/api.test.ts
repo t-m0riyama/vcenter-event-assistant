@@ -273,4 +273,11 @@ describe('api', () => {
     const h = new Headers((fetchMock().mock.calls[1]?.[1] as RequestInit).headers)
     expect(h.get('X-VEA-Expected-Principal')).toBeNull()
   })
+
+  it('422 の FastAPI の detail は文字列だけを表示する', async () => {
+    fetchMock().mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'パスワードは 12 文字以上にしてください。' }), { status: 422 }),
+    )
+    await expect(apiPost('/api/foo', {})).rejects.toThrow(/^パスワードは 12 文字以上にしてください。$/)
+  })
 })

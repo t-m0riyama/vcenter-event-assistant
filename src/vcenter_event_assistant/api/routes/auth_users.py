@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import Principal, require_admin
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
+from vcenter_event_assistant.api.import_guards import HTTP_422
 from vcenter_event_assistant.api.schemas.auth import (
     AdminPasswordReset,
     UserCreate,
@@ -67,7 +68,8 @@ def _to_read(user: User) -> UserRead:
 
 
 def _bad_request(message: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    # 管理画面に理由（パスワードの要件・重複など）を見せるため 422 にする（画面は 400 の本文を出さない）
+    return HTTPException(status_code=HTTP_422, detail=message)
 
 
 async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:

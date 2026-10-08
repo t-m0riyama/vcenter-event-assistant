@@ -36,3 +36,21 @@ export const realmsResponseSchema = z.object({
 })
 
 export type RealmsResponse = z.infer<typeof realmsResponseSchema>
+
+/** ``/api/auth/users`` の 1 件（admin のみ）。 */
+export const managedUserSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  display_name: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  role: roleSchema,
+  realm: z.string(),
+  is_local: z.boolean(),
+  is_active: z.boolean(),
+  locked: z.boolean(),
+  locked_until: z.string().nullable().optional(),
+  last_login_at: z.string().nullable().optional(),
+  created_at: z.string(),
+})
+export type ManagedUser = z.infer<typeof managedUserSchema>
+export const managedUserListSchema = z.array(managedUserSchema)

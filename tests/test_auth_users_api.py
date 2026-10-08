@@ -53,11 +53,11 @@ async def test_create_and_list(client: AsyncClient) -> None:
     dup = await client.post(
         "/api/auth/users", json={"username": "bob", "password": PASSWORD, "role": "viewer"}
     )
-    assert dup.status_code == 400
+    assert dup.status_code == 422
     weak = await client.post(
         "/api/auth/users", json={"username": "weak", "password": "short", "role": "viewer"}
     )
-    assert weak.status_code == 400
+    assert weak.status_code == 422
 
 
 async def test_role_change_and_deactivation_revoke_sessions(client: AsyncClient, open_client) -> None:
@@ -97,7 +97,7 @@ async def test_last_admin_is_protected(open_client) -> None:
             resp = await admin.patch(f"/api/auth/users/{me['id']}", json=body)
             assert resp.status_code == 409, body
         # 自分自身は削除できない
-        assert (await admin.delete(f"/api/auth/users/{me['id']}")).status_code == 400
+        assert (await admin.delete(f"/api/auth/users/{me['id']}")).status_code == 422
 
         other = await _create(admin, "second-admin", "admin")
         # admin が 2 人いれば片方を降格できる
@@ -154,9 +154,9 @@ async def test_directory_user_role_is_not_editable(client: AsyncClient) -> None:
         await db.flush()
         user_id = row.id
     resp = await client.patch(f"/api/auth/users/{user_id}", json={"role": "admin"})
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     reset = await client.post(f"/api/auth/users/{user_id}/password", json={"password": "whatever long pw"})
-    assert reset.status_code == 400
+    assert reset.status_code == 422
     # 無効化はできる
     assert (await client.patch(f"/api/auth/users/{user_id}", json={"is_active": False})).status_code == 200
 
@@ -194,7 +194,7 @@ async def test_concurrent_duplicate_create_is_400(client: AsyncClient, monkeypat
     resp = await client.post(
         "/api/auth/users", json={"username": "RACE", "password": PASSWORD, "role": "viewer"}
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     assert "既に存在" in resp.json()["detail"]
 
 
@@ -221,7 +221,7 @@ async def test_reactivation_revokes_sessions_left_from_before(client: AsyncClien
 async def test_update_rejects_invalid_profile_fields(client: AsyncClient, body: dict) -> None:
     user = await _create(client, "profile")
     resp = await client.patch(f"/api/auth/users/{user['id']}", json=body)
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     async with session_scope() as db:
         row = await db.get(User, uuid.UUID(user["id"]))
         assert row is not None and row.display_name is None and row.email is None
@@ -242,4 +242,4 @@ async def test_create_rejects_control_characters_in_profile(client: AsyncClient)
         "/api/auth/users",
         json={"username": "ctl", "password": PASSWORD, "role": "viewer", "display_name": "a\x07b"},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 422

@@ -100,6 +100,11 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
     userGuideDoc: 'docs/user-guides/plugins.md',
     markerId: 'plugins',
   },
+  users: {
+    summary:
+      '【ユーザー】\nログインできるユーザーを管理します（管理者のみ）。\n- ローカルユーザーの作成、表示名・ロール・有効状態の変更、パスワード再設定、ロック解除、ログイン解除、削除ができます。\n- ロールの変更・無効化・パスワード再設定をすると、そのユーザーのログインは解除されます。',
+    userGuideDoc: 'docs/user-guides/authentication.md',
+  },
   chat_samples: {
     summary:
       '【チャット設定】\nWEB 検索の条件（スコープ・積極度）と、チャット画面から挿入できるサンプル質問を編集します。',
