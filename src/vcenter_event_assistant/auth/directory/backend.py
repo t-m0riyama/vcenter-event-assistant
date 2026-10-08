@@ -78,11 +78,11 @@ class _Entry:
                 return [v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) for v in items]
         return []
 
-    def raw_first(self, name: str) -> bytes | None:
+    def raw_all(self, name: str) -> list[bytes]:
         for key, values in self.raw.items():
-            if key.casefold() == name.casefold() and values:
-                return values[0]
-        return None
+            if key.casefold() == name.casefold():
+                return list(values)
+        return []
 
 
 def clean_username(username: str) -> str:
@@ -169,23 +169,32 @@ def _user_attributes(spec: DirectorySpec) -> list[str]:
     return sorted(attrs)
 
 
-def unique_id(spec: DirectorySpec, entry: _Entry) -> str | None:
-    """ディレクトリ内で変わらない ID（``users.subject`` の元）。取れなければ ``None``。
+def unique_id(spec: DirectorySpec, entry: _Entry) -> str:
+    """ディレクトリ内で変わらない ID（``users.subject`` の元）。取れなければ ``DirectoryMissingUniqueId``。
 
     AD は objectGUID、LDAP は ID 属性（既定は entryUUID）。DN は改名・移動で変わるので使わない。
+    値がちょうど 1 つのときだけ使う。属性の値の順序は保証されないので、複数あるとどれを選んでも
+    検索のたびに（レプリカごとに）ID が変わり得て、無効にしたユーザーが別の行として作り直される。
     """
-    if spec.kind == "ad":
-        raw = entry.raw_first("objectGUID")
-        if raw and len(raw) == 16:
-            return f"guid:{uuid.UUID(bytes_le=raw)}"
-        return None
     attribute = spec.id_attribute
+    values = entry.raw_all(attribute)
+    if len(values) != 1 or not values[0]:
+        reason = "複数の値があります" if len(values) > 1 else "値がありません"
+        raise DirectoryMissingUniqueId(
+            f"ID 属性 {attribute} の{reason}。このユーザーはログインできません"
+            "（値がちょうど 1 つの、変わらない属性を指定し、サービスアカウントの読み取り権限を確認してください）。"
+        )
+    raw = values[0]
+    if spec.kind == "ad":
+        if len(raw) != 16:
+            raise DirectoryMissingUniqueId(f"ID 属性 {attribute} の値が GUID（16 バイト）ではありません。")
+        return f"guid:{uuid.UUID(bytes_le=raw)}"
     if attribute.casefold() == DEFAULT_UNIQUE_ID_ATTRIBUTE.casefold():
-        value = entry.first(attribute)
-        return f"uuid:{value.casefold()}" if value else None
-    raw = entry.raw_first(attribute)
-    if not raw:
-        return None
+        # #253 より前の行と同じ形（前後の空白を除いて小文字にする）。entryUUID は UUID の構文なので加工しても衝突しない
+        value = raw.decode("utf-8", "replace").strip()
+        if not value:
+            raise DirectoryMissingUniqueId(f"ID 属性 {attribute} の値が空です。")
+        return f"uuid:{value.casefold()}"
     # 文字列の値はそのまま、バイナリ（eDirectory の GUID など）は 16 進にする。
     # 区切り（``=`` と ``#``）を変えて、文字列とバイナリの値が同じ subject にならないようにする。
     # 空白の除去などの加工はしない（Octet String のように完全一致で比べる構文では、前後の空白だけが
@@ -197,20 +206,6 @@ def unique_id(spec: DirectorySpec, entry: _Entry) -> str | None:
     if text is not None and text.isprintable():
         return f"id:{attribute.casefold()}={text}"
     return f"id:{attribute.casefold()}#{raw.hex()}"
-
-
-def _subject(spec: DirectorySpec, entry: _Entry) -> str:
-    subject = unique_id(spec, entry)
-    if subject is None:
-        raise DirectoryMissingUniqueId(missing_unique_id_message(spec))
-    return subject
-
-
-def missing_unique_id_message(spec: DirectorySpec) -> str:
-    return (
-        f"ID 属性 {spec.id_attribute} が取れないため、このユーザーはログインできません"
-        "（属性名と、サービスアカウントの読み取り権限を確認してください）。"
-    )
 
 
 def resolved_username(spec: DirectorySpec, entry: _Entry, typed: str) -> str:
@@ -334,7 +329,7 @@ def authenticate(
         entry = find_user(conn, spec, name)
         verify_user_password(spec, entry.dn, password, options)
         # ロールより先に確かめる（ID が取れないのは設定の問題なので、どのユーザーでも運用者に知らせる）
-        subject = _subject(spec, entry)
+        subject = unique_id(spec, entry)
         groups = member_groups(conn, spec, entry, resolved_username(spec, entry, name))
     finally:
         conn.unbind()

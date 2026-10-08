@@ -1348,3 +1348,30 @@ def test_custom_unique_ids_keep_exact_bytes(directory: FakeDirectory) -> None:
     bob = backend.authenticate(spec, "bob", "bob-secret", OPTIONS)
     assert alice.subject == "id:serialnumber=abc"
     assert bob.subject != alice.subject
+
+
+@pytest.mark.parametrize(
+    ("attribute", "values"),
+    [
+        ("nsUniqueId", ["id-1", "id-2"]),
+        ("entryUUID", ["6f1c-alice", "6f1c-other"]),
+    ],
+)
+def test_multi_valued_unique_id_is_refused(directory: FakeDirectory, attribute: str, values: list[str]) -> None:
+    """値の順序は保証されないので、複数の値を持つ ID 属性からはどれも選ばずに拒否する。"""
+    directory.entries[ALICE_DN][attribute] = values
+    with pytest.raises(DirectoryMissingUniqueId, match="複数"):
+        backend.authenticate(_spec(unique_id_attribute=attribute), "alice", "alice-secret", OPTIONS)
+
+
+def test_multi_valued_object_guid_is_refused(directory: FakeDirectory) -> None:
+    directory.entries[f"cn=Erin,ou=people,{BASE}"] = {
+        "userPassword": "erin-secret",
+        "objectClass": ["user"],
+        "objectCategory": "person",
+        "sAMAccountName": "erin",
+        "objectGUID": [uuid.uuid4().bytes_le, uuid.uuid4().bytes_le],
+        "memberOf": [OPS],
+    }
+    with pytest.raises(DirectoryMissingUniqueId):
+        backend.authenticate(_spec(kind="ad", username_attribute=None), "erin", "erin-secret", OPTIONS)

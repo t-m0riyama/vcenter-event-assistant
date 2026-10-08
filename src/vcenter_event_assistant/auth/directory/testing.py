@@ -53,12 +53,15 @@ def run_test(
         except DirectoryError as exc:
             results.append(StageResult("user_search", False, str(exc)))
             return results
-        subject = backend.unique_id(spec, entry)
-        id_note = f"（ID 属性 {spec.id_attribute}: {subject}）" if subject else ""
-        results.append(StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}{id_note}"))
-        if subject is None:
-            results.append(StageResult("unique_id", False, backend.missing_unique_id_message(spec)))
+        try:
+            subject = backend.unique_id(spec, entry)
+        except DirectoryError as exc:
+            results.append(StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}"))
+            results.append(StageResult("unique_id", False, str(exc)))
             return results
+        results.append(
+            StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}（ID 属性 {spec.id_attribute}: {subject}）")
+        )
         if password:
             try:
                 backend.verify_user_password(spec, entry.dn, password, options)
