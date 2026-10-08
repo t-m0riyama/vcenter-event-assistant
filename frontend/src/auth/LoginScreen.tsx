@@ -6,14 +6,18 @@ type Props = {
   readonly realms: readonly Realm[]
   /** セッション切れなど、ログイン画面に戻った理由。 */
   readonly notice?: string | null
+  /** 最初に選んでおく認証先。一覧にない（無効にされた等）ときは先頭にする */
+  readonly initialRealm?: string | null
   readonly onLoggedIn: (me: Me) => void
 }
 
 /** ログイン画面。認証先（realm）は 2 件以上あるときだけ選ばせる。 */
-export function LoginScreen({ realms, notice, onLoggedIn }: Props) {
+export function LoginScreen({ realms, notice, initialRealm, onLoggedIn }: Props) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [realm, setRealm] = useState(realms[0]?.id ?? 'local')
+  const [realm, setRealm] = useState(
+    () => realms.find((r) => r.id === initialRealm)?.id ?? realms[0]?.id ?? 'local',
+  )
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 

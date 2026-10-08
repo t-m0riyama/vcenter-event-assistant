@@ -248,6 +248,45 @@ describe('AuthGate', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('設定を保存したため、ログアウトしました。')
   })
 
+  it('ログイン画面に戻したときは、直前の利用者の認証先を選んでおく', async () => {
+    let sessionValid = true
+    let realms = [
+      { id: 'local', name: 'ローカル', kind: 'local' },
+      { id: 'dir:1', name: '社内 AD', kind: 'ad' },
+      { id: 'dir:2', name: '社内 LDAP', kind: 'ldap' },
+    ]
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return sessionValid ? json({ ...ADMIN_ME, realm: 'dir:1' }) : json({ detail: 'ログインが必要です。' }, 401)
+      }
+      if (url === '/api/auth/realms') return json({ auth_enabled: true, realms })
+      return json({}, 404)
+    })
+    const { unmount } = render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    sessionValid = false
+    act(() => notifyUnauthorized('設定を保存したため、ログアウトしました。'))
+    expect(await screen.findByLabelText('認証先')).toHaveValue('dir:1')
+    unmount()
+
+    // その認証先がもう選べない（無効にした等）なら、一覧の先頭にする
+    sessionValid = true
+    realms = realms.filter((r) => r.id !== 'dir:1')
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    sessionValid = false
+    act(() => notifyUnauthorized())
+    expect(await screen.findByLabelText('認証先')).toHaveValue('local')
+  })
+
   it('前のセッションの遅れた 401 では、有効な今のセッションを追い出さない', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)

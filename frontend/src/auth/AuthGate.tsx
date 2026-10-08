@@ -36,7 +36,13 @@ function sameMe(a: Me, b: Me): boolean {
 type State =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly message: string }
-  | { readonly status: 'anonymous'; readonly realms: readonly Realm[]; readonly notice: string | null }
+  | {
+      readonly status: 'anonymous'
+      readonly realms: readonly Realm[]
+      readonly notice: string | null
+      /** 直前にログインしていた利用者の認証先。ログイン画面で最初から選んでおく */
+      readonly lastRealm: string | null
+    }
   | { readonly status: 'authenticated'; readonly me: Me }
 
 /**
@@ -77,12 +83,15 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   const showLogin = useCallback(
     async (notice: string | null) => {
       const op = beginOperation()
+      // 下で loading にすると消えるので、先に控える（セッション切れや自分のディレクトリの保存の後、
+      // 同じ認証先を選び直さなくて済むように）
+      const lastRealm = meRef.current?.realm ?? null
       // 認証先の取得を待つ間もアプリ本体（前の利用者のデータ）を表示し続けないよう、先に外す
       setState({ status: 'loading' })
       try {
         const { realms } = await fetchRealms()
         if (op !== operationRef.current) return
-        setState({ status: 'anonymous', realms, notice })
+        setState({ status: 'anonymous', realms, notice, lastRealm })
       } catch (e) {
         if (op !== operationRef.current) return
         setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
@@ -297,6 +306,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
       <LoginScreen
         realms={state.realms}
         notice={state.notice}
+        initialRealm={state.lastRealm}
         onLoggedIn={(nextMe) => {
           // 取得中の古い処理（認証先の再取得など）が後からログイン画面へ戻さないよう、番号を進める
           beginOperation()
