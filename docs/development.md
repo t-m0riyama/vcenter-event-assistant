@@ -58,8 +58,12 @@ worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレ
 | `SCHEDULER_ENABLED` | 独立。`true` ならモック収集が定期実行、`false` ならシードのみ |
 
 ```bash
-MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db uv run vcenter-event-assistant
+MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
+  VEA_BOOTSTRAP_ADMIN_USERNAME=admin VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password \
+  uv run vcenter-event-assistant
 ```
+
+認証は既定で有効なので、新しい DB では `VEA_BOOTSTRAP_ADMIN_*` で初期 admin を作り、その資格情報でログインする（ユーザーがいる DB では無視される）。ログインを省きたいローカル開発では、代わりに `VEA_AUTH_ENABLED=false` を付けてもよい。
 
 Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併存可能。テストは `tests/test_mock_mode.py`。
 
