@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiDelete, apiGet, apiPatch, apiPost, FORBIDDEN_MESSAGE, onUnauthorized, SESSION_EXPIRED_MESSAGE } from './api'
+import { markUserActivity, USER_ACTIVITY_WINDOW_MS } from './userActivity'
 
 const GENERIC = 'リクエストに失敗しました。時間をおいて再度お試しください。'
 
@@ -8,6 +9,8 @@ describe('api', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.stubGlobal('fetch', vi.fn())
+    // 既定は「利用者が操作した直後」（バックグラウンドの印なし）
+    markUserActivity()
   })
 
   afterEach(() => {
@@ -156,5 +159,26 @@ describe('api', () => {
     } finally {
       off()
     }
+  })
+
+  it('利用者が操作していないときの要求には X-VEA-Background を付ける', async () => {
+    const now = Date.now()
+    markUserActivity(now - USER_ACTIVITY_WINDOW_MS - 1)
+    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    await apiGet('/api/foo')
+    expect(new Headers((fetchMock().mock.calls[0]?.[1] as RequestInit).headers).get('X-VEA-Background')).toBe('1')
+
+    markUserActivity(now)
+    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    await apiGet('/api/foo')
+    expect(new Headers((fetchMock().mock.calls[1]?.[1] as RequestInit).headers).get('X-VEA-Background')).toBeNull()
+  })
+
+  it('クリックやキー入力を利用者の操作として記録する', async () => {
+    markUserActivity(Date.now() - USER_ACTIVITY_WINDOW_MS - 1)
+    window.dispatchEvent(new Event('keydown'))
+    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    await apiGet('/api/foo')
+    expect(new Headers((fetchMock().mock.calls[0]?.[1] as RequestInit).headers).get('X-VEA-Background')).toBeNull()
   })
 })

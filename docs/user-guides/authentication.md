@@ -42,7 +42,7 @@ Docker Compose の場合は `docker compose exec app vcenter-event-assistant-adm
 
 - ヘッダー右上に利用者名とロールが出る。「ログアウト」でセッションを終了する
 - ローカルユーザーは「パスワード変更」から自分のパスワードを変えられる。変更すると、ほかの端末のログインは解除される
-- 無操作が 60 分続くか、ログインから 12 時間たつとセッションが切れ、ログイン画面に戻る（`VEA_SESSION_IDLE_TIMEOUT_MINUTES` / `VEA_SESSION_ABSOLUTE_TIMEOUT_HOURS`）
+- 無操作が 60 分続くか、ログインから 12 時間たつとセッションが切れ、ログイン画面に戻る（`VEA_SESSION_IDLE_TIMEOUT_MINUTES` / `VEA_SESSION_ABSOLUTE_TIMEOUT_HOURS`）。画面の自動更新や通知ドットの定期取得は操作に数えないので、画面を開いたまま放置してもセッションは延びない
 - パスワードを 5 回続けて間違えると 15 分ロックされる（`VEA_LOGIN_MAX_FAILED_ATTEMPTS` / `VEA_LOGIN_LOCKOUT_MINUTES`）。接続元 IP ごとのログイン試行も 1 分あたり 10 回までに制限する（`RATE_LIMIT_LOGIN_PER_MINUTE`）
 
 ## ユーザー管理

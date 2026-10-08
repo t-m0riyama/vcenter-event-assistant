@@ -22,6 +22,9 @@ from vcenter_event_assistant.auth.sessions import resolve_session
 from vcenter_event_assistant.settings import Settings
 
 AUTH_DISABLED_SOURCE = "disabled"
+# 利用者の操作でない要求（画面の定期更新など）に付けるヘッダ。付いていればセッションの無操作期限を延ばさない。
+# クライアントが自分のセッションを延ばさないと申告するだけなので、偽装されても害はない
+BACKGROUND_REQUEST_HEADER = "x-vea-background"
 MIN_ROLE_ATTR = "__vea_min_role__"
 
 
@@ -58,7 +61,8 @@ async def get_current_principal(
     if not settings.auth_enabled:
         return DISABLED_PRINCIPAL
     token = request.cookies.get(session_cookie_name(settings))
-    resolved = await resolve_session(db, token, session_policy(settings))
+    background = request.headers.get(BACKGROUND_REQUEST_HEADER) == "1"
+    resolved = await resolve_session(db, token, session_policy(settings), touch=not background)
     if resolved is None:
         # 期限切れ・世代不一致で削除した行を確定させる（例外で get_session がロールバックするため）
         await db.commit()

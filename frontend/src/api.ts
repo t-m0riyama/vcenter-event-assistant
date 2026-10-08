@@ -1,3 +1,5 @@
+import { activityHeaders } from './userActivity'
+
 const GENERIC_API_ERROR =
   'リクエストに失敗しました。時間をおいて再度お試しください。'
 export const SESSION_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。再度ログインしてください。'
@@ -22,7 +24,8 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
 }
 
 function headers(): HeadersInit {
-  return { Accept: 'application/json' }
+  // 利用者が操作していないときの要求（定期更新）は、サーバでセッションの無操作期限を延ばさない
+  return { Accept: 'application/json', ...activityHeaders() }
 }
 
 /** 変更系 API 用ヘッダー（Cookie 認証の CSRF 対策。サーバの CsrfMiddleware が検査する）。 */

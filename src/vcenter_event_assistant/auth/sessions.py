@@ -90,8 +90,13 @@ async def resolve_session(
     policy: SessionPolicy,
     *,
     now: datetime | None = None,
+    touch: bool = True,
 ) -> ResolvedSession | None:
-    """トークンから有効なセッションとユーザーを返す。期限切れ・無効ユーザーは ``None``。"""
+    """トークンから有効なセッションとユーザーを返す。期限切れ・無効ユーザーは ``None``。
+
+    ``touch=False`` のときは ``last_seen_at`` を進めない（画面の定期更新など、利用者の操作でない
+    要求で無操作タイムアウトが延びないようにするため）。
+    """
     if not token:
         return None
     now = now or utcnow()
@@ -124,7 +129,7 @@ async def resolve_session(
         )
         db.expunge(row)
         return None
-    if now - as_utc(row.last_seen_at) >= policy.touch_interval:
+    if touch and now - as_utc(row.last_seen_at) >= policy.touch_interval:
         await _touch(db, row, now)
     return ResolvedSession(session=row, user=user)
 

@@ -493,3 +493,40 @@ async def test_audit_log_escapes_control_characters(caplog) -> None:
     line = next(r.getMessage() for r in caplog.records if "login_failure" in r.getMessage())
     assert not any(ch in line for ch in ("\x1b", "\x00", "\x07"))
     assert "\\x1b" in line and "\\x00" in line and "\\x07" in line
+
+
+async def test_background_requests_do_not_extend_idle_timeout() -> None:
+    """画面の定期更新（X-VEA-Background: 1）では無操作期限を延ばさない。利用者の操作では延ばす。"""
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        old = utcnow() - timedelta(minutes=30)
+        async with session_scope() as db:
+            await db.execute(update(AuthSession).values(last_seen_at=old))
+
+        resp = await ac.get("/api/config", headers={"X-VEA-Background": "1"})
+        assert resp.status_code == 200
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            assert abs((row.last_seen_at.replace(tzinfo=None) - old.replace(tzinfo=None)).total_seconds()) < 1
+
+        assert (await ac.get("/api/config")).status_code == 200
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            assert row.last_seen_at.replace(tzinfo=None) > old.replace(tzinfo=None) + timedelta(minutes=29)
+
+
+async def test_background_requests_expire_after_idle_timeout() -> None:
+    """定期更新だけが続いても、無操作期限を過ぎればセッションは切れる。"""
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        idle = session_policy(get_settings()).idle_timeout
+        async with session_scope() as db:
+            await db.execute(
+                update(AuthSession).values(last_seen_at=utcnow() - idle - timedelta(seconds=1))
+            )
+        resp = await ac.get("/api/config", headers={"X-VEA-Background": "1"})
+        assert resp.status_code == 401
