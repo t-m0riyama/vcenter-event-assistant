@@ -43,6 +43,21 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
         if settings.bootstrap_admin_password is not None
         else None
     )
+    if not settings.local_login_enabled:
+        # 初期 admin はローカルユーザーなので、ローカルログインが無効だと誰も管理できない
+        if username or password:
+            raise BootstrapError(
+                "VEA_LOCAL_LOGIN_ENABLED=false のため、VEA_BOOTSTRAP_ADMIN_* で作るローカルの"
+                "初期 admin ではログインできません。ローカルログインを有効にしてください。"
+            )
+        # 現時点でログインできる認証先はローカルだけ
+        # （AD / LDAP を追加したら、有効なディレクトリがあるかもここで判定する）
+        _report_missing_admin(
+            settings,
+            "認証が有効ですが、ログインできる認証先がありません（VEA_LOCAL_LOGIN_ENABLED=false）。"
+            "ローカルログインを有効にしてください。",
+        )
+        return
     async with session_scope(settings) as db:
         if await count_users(db) > 0:
             if password:
@@ -97,7 +112,7 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
 
 
 def _report_missing_admin(settings: Settings, message: str) -> None:
-    """認証が有効なのに admin がいない。本番では起動を止め、開発環境では警告だけ出す。"""
+    """認証が有効なのにログインできる admin がいない。本番では起動を止め、開発環境では警告だけ出す。"""
     if not settings.auth_enabled:
         return
     if settings.is_production:

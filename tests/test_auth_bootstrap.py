@@ -105,6 +105,42 @@ async def test_users_without_active_admin_are_reported(monkeypatch: pytest.Monke
     await ensure_bootstrap_admin(_settings(monkeypatch, VEA_AUTH_ENABLED="false"))
 
 
+async def test_bootstrap_rejected_when_local_login_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ローカルログインが無効だと初期 admin でログインできないため、作らずに起動を止める。"""
+    settings = _settings(
+        monkeypatch,
+        VEA_LOCAL_LOGIN_ENABLED="false",
+        VEA_BOOTSTRAP_ADMIN_USERNAME="root",
+        VEA_BOOTSTRAP_ADMIN_PASSWORD=BOOT_PASSWORD,
+    )
+    with pytest.raises(BootstrapError, match="VEA_LOCAL_LOGIN_ENABLED"):
+        await ensure_bootstrap_admin(settings)
+    async with session_scope() as db:
+        assert await count_users(db) == 0
+
+
+async def test_no_usable_realm_is_reported(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    """ローカルの admin がいても、ローカルログインが無効なら誰もログインできない。"""
+    async with session_scope() as db:
+        await create_local_user(
+            db, username="admin1", password="admin1 long pw", role="admin", password_min_length=12
+        )
+    caplog.set_level("WARNING", logger="vcenter_event_assistant.auth.bootstrap")
+    await ensure_bootstrap_admin(_settings(monkeypatch, VEA_LOCAL_LOGIN_ENABLED="false"))
+    assert "ログインできる認証先がありません" in caplog.text
+
+    prod = _settings(
+        monkeypatch,
+        APP_ENV="production",
+        VEA_SECRET_KEY="prod-secret-key",
+        VCENTER_ALLOWED_HOST_SUFFIXES="example.com",
+    )
+    with pytest.raises(BootstrapError, match="ログインできる認証先"):
+        await ensure_bootstrap_admin(prod)
+    # 認証が無効なら何もしない
+    await ensure_bootstrap_admin(_settings(monkeypatch, VEA_AUTH_ENABLED="false"))
+
+
 @pytest.mark.parametrize(
     "name",
     [
