@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 from vcenter_event_assistant.settings import Settings
 
@@ -66,6 +67,7 @@ def validate_startup_settings(settings: Settings) -> None:
                     "VEA_PLUGIN_ALLOW_INDEX_INSTALL is enabled in production; "
                     "plugins will be fetched from a package index at runtime."
                 )
+    _validate_smtp_tls(settings)
     if not settings.auth_enabled:
         logger.warning(
             "VEA_AUTH_ENABLED=false: authentication is disabled and every request is treated as admin. "
@@ -79,6 +81,20 @@ def validate_startup_settings(settings: Settings) -> None:
                 "VEA_SECRET_KEY is not set and VEA_ALLOW_PLAINTEXT_PASSWORDS is false; "
                 "vCenter password create/update API will be rejected until a key is configured."
             )
+
+
+def _validate_smtp_tls(settings: Settings) -> None:
+    if settings.smtp_ca_bundle and not Path(settings.smtp_ca_bundle).is_file():
+        raise SecurityConfigurationError(
+            f"SMTP_CA_BUNDLE does not point to a file: {settings.smtp_ca_bundle}"
+        )
+    # 本番でも禁止しない（自己署名の SMTP で CA を用意できるまで通知を止めないため）。
+    if settings.smtp_host and settings.smtp_use_tls and not settings.smtp_tls_verify:
+        logger.warning(
+            "SMTP_TLS_VERIFY=false: the SMTP server certificate is not verified, "
+            "so SMTP credentials and alert contents are exposed to man-in-the-middle attacks. "
+            "Set SMTP_CA_BUNDLE instead where possible."
+        )
 
 
 def _validate_production_database_url(database_url: str) -> None:

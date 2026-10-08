@@ -108,3 +108,50 @@ def test_development_allows_disabled_auth_with_warning(caplog: pytest.LogCapture
 def test_auth_is_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VEA_AUTH_ENABLED", raising=False)
     assert Settings(_env_file=None, database_url="sqlite+aiosqlite:///:memory:").auth_enabled is True
+
+
+def test_smtp_ca_bundle_must_exist(tmp_path) -> None:
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        smtp_ca_bundle=str(tmp_path / "missing.pem"),
+    )
+    with pytest.raises(SecurityConfigurationError, match="SMTP_CA_BUNDLE"):
+        validate_startup_settings(settings)
+
+
+def test_smtp_tls_verify_disabled_warns(caplog) -> None:
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        smtp_host="smtp.test.com",
+        smtp_tls_verify=False,
+    )
+    with caplog.at_level("WARNING"):
+        validate_startup_settings(settings)
+    assert "SMTP_TLS_VERIFY=false" in caplog.text
+
+
+def test_smtp_tls_verify_disabled_is_allowed_in_production(caplog) -> None:
+    settings = Settings(
+        app_env="production",
+        database_url="sqlite+aiosqlite:///:memory:",
+        vea_secret_key="prod-secret",
+        vea_allow_plaintext_passwords=False,
+        vcenter_allowed_host_suffixes=".corp.local",
+        smtp_host="smtp.test.com",
+        smtp_tls_verify=False,
+    )
+    with caplog.at_level("WARNING"):
+        validate_startup_settings(settings)
+    assert "SMTP_TLS_VERIFY=false" in caplog.text
+
+
+def test_smtp_tls_verify_warning_needs_starttls(caplog) -> None:
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        smtp_host="smtp.test.com",
+        smtp_use_tls=False,
+        smtp_tls_verify=False,
+    )
+    with caplog.at_level("WARNING"):
+        validate_startup_settings(settings)
+    assert "SMTP_TLS_VERIFY" not in caplog.text

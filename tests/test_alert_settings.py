@@ -81,3 +81,17 @@ def test_delivery_settings_environment(monkeypatch):
     assert (settings.alert_delivery_interval_seconds, settings.alert_delivery_batch_size,
             settings.alert_retry_initial_seconds, settings.alert_retry_max_seconds,
             settings.alert_retry_ttl_seconds) == (15, 30, 120, 1800, 7200)
+
+
+def test_smtp_tls_settings_defaults():
+    settings = Settings()
+    assert settings.smtp_tls_verify is True
+    assert settings.smtp_ca_bundle is None
+
+
+def test_smtp_tls_settings_env_override(monkeypatch):
+    monkeypatch.setenv("SMTP_TLS_VERIFY", "false")
+    monkeypatch.setenv("SMTP_CA_BUNDLE", "  ")
+    settings = Settings()
+    assert settings.smtp_tls_verify is False
+    assert settings.smtp_ca_bundle is None
