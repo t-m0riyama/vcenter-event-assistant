@@ -13,20 +13,34 @@
 | 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [#247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [#248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [#249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
-| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | レビュー対応を区切り、マージ待ち [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 20 回分を反映。持ち越しは Issue #251〜#253） |
+| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ待ち [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。CI 成功。持ち越しは Issue #251〜#253） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
-### PR6 の最後の指摘 2 件（2026-10-08 に対応）
+### 次にやること
 
-1. **DN のエスケープ表記の違い**: `cn=Ops\,EMEA` と `cn=Ops\2CEMEA` が一致しなかった。値のエスケープを戻してから決まった形でエスケープし直して比べるようにした
-2. **ログイン中のユーザー無効化との競合**: ユーザー行を読んでから更新するまでに無効化されると、ログインが 200 になっていた。更新した後に `is_active` を読み直し、無効ならセーブポイントを巻き戻して拒否するようにした
+1. PR6（#250）のマージ（利用者の判断）
+2. PR7 を始める前に、[#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) の方針を決める（ID 属性を設定できるようにするなら、PR7 のフォームに入力欄が要る）
+3. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
+4. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
 
-### PR6 の持ち越し（PR8 の実機確認で判断）
+### PR6 のレビューの経過
 
-- **entryUUID のない LDAP で DN を ID に使う**（[#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253)）: DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける。ID 属性を設定できるようにするか、ID が取れなければログインを拒否する。PR7 の画面と PR8 のガイドにも関係する
-- **ディレクトリの bind パスワードの暗号化の移行**（[#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)）: 鍵を後から設定しても、起動時の移行が `vcenters` しか見ないので平文のまま残る（開発用の設定で作った場合のみ）
-- **独自 OID の属性を使うグループ DN**（`1.3.6.1.4.1.9999.1=Admins,...`、[#251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251)）: ldap3 が解析できないので対応表の登録時に 422 になる。実機で必要と分かれば、未知の OID を解析前に仮の属性名へ置き換え、解析後に戻す
+- Codex の自動レビューは push のたびに走る。21 回分の指摘を確認し、妥当なものは修正コミットを示して返信した
+- 後半は、DN の正規化の細かい端のケース（RFC 4518 の文字列の準備、標準の属性の一覧など）へ指摘が移っていった。2026-10-08 に利用者の判断で区切り、残りは Issue にした
+- 後半で入った主な仕様（詳細は各節）:
+  - グループ DN の照合を RFC 4518 にそろえた（エスケープの表記・NFKC・空白・大文字小文字）
+  - 方針で接続を拒否されるディレクトリは、「使える admin」・発行済みセッション・realm の一覧のすべてで除く
+  - ディレクトリのログインでロールが変わったら、ほかのセッションを失効させる
+  - ログイン中の無効化・同じ名前の並行作成・検索ベースの不在の扱い
+
+### PR6 からの持ち越し（Issue）
+
+| Issue | 内容 | 対応の時期 |
+|---|---|---|
+| [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける。ID 属性を設定できるようにするか、ID が取れなければログインを拒否する | PR7 の前に方針を決める（画面と PR8 のガイドに関わる） |
+| [#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
+| [#251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
 ## Context
 
@@ -79,7 +93,7 @@
   - `Unique(realm_key, subject)`
   - subject の中身:
     - AD は `guid:<objectGUID>`
-    - LDAP は `uuid:<entryUUID>`。なければ `dn:<正規化した DN>`
+    - LDAP は `uuid:<entryUUID>`。なければ `dn:<正規化した DN>`（DN は変わり得るので問題がある。#253）
     - ローカルは小文字化したユーザー名
     - 512 文字を超える subject は `sha256:<hex>` にする（切り詰めると別の DN と衝突するため）
 - **`auth_sessions`**（PR1）: id, token_hash(unique), user_id(FK, CASCADE), created_at, last_seen_at, expires_at, client_ip, user_agent
@@ -100,7 +114,7 @@
 - `VEA_DIRECTORY_ALLOW_INSECURE_TLS=false` のときは `tls_verify=false` の保存を 422 にし、既存の設定でも接続時にエラーにする
 - 本番では `transport_security=none` を保存も接続も拒否する
 - 保存時、`tls_verify=false` や `none` のときは監査ログに WARNING を出す
-- bind パスワード: 書き込み専用（応答は `has_bind_password` だけ）。`enc:` で始まる値は拒否する。UTF-8 で 1024 バイトまで（暗号化後も 2048 文字の列に収まる）
+- bind パスワード: 書き込み専用（応答は `has_bind_password` だけ）。`enc:` で始まる値は拒否する。UTF-8 で 1024 バイトまで（暗号化後も 2048 文字の列に収まる）。鍵を後から設定したときの移行は未対応（#252）
 
 ### ユーザーの検索と認証
 - サービスアカウントで bind → ユーザーを検索 → ちょうど 1 件のときだけ本人として bind
@@ -117,7 +131,7 @@
 - ロールは対応表のうち一致したものの中で最も強いもの。どれにも一致しなければログインを拒否する
 - ログインで決まったロールが前回と違えば、そのユーザーのほかのセッションを失効させる（ローカルユーザーのロール変更と同じ）。同じロールなら別の端末のセッションは残す
 - グループ DN の正規化（`normalize_dn`）:
-  - 属性名は小文字にする。標準の命名属性の OID（`2.5.4.3` など。`OID.` 接頭辞付きも含む）は名前に置き換える。置き換えるのは本当の区切り（エスケープや引用符の外の `,` / `+`）の直後だけ
+  - 属性名は小文字にする。標準の属性の OID（`2.5.4.3` など。`OID.` 接頭辞付きも含む）は名前に置き換える。置き換えるのは本当の区切り（エスケープや引用符の外の `,` / `+`）の直後だけ。未知の OID は解析できない DN になる（#251）
   - 値の Unicode の正規化（NFKC）・大文字小文字・空白（連続する空白・前後の空白。RFC 4518）は、比較で区別しないと決まっている属性（RFC 4519 と RFC 4524 で equality が caseIgnoreMatch / caseIgnoreIA5Match の属性すべて）だけならす
   - 複数値 RDN（`+` でつないだ部分）の中は並べ替える。RDN の順序と `+` / `,` の違いは保つ
   - 値のエスケープ（`\,`、`\2C`、UTF-8 のバイト列の `\C3\A9` など）は実際の文字に戻してから、ldap3 の `escape_rdn` で決まった形にエスケープし直す。戻せない値（UTF-8 として不正なバイト列など）を含む DN は解析できない DN として扱う
@@ -163,10 +177,12 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - PR4・PR5 で実装済み: `frontend/src/auth/`（AuthProvider、useAuth、AuthGate、LoginScreen、UserMenu、ChangePasswordDialog）、`panels/settings/UsersPanel.tsx`
 - ユーザー管理画面では、ディレクトリのユーザーにはパスワード再設定と削除のボタンを出さず、ロールは編集できない（対応表で決まるため）
 - PR7 で作るもの:
+  - #253 の方針によっては、ID に使う属性の入力欄と、ID が取れないときの警告
   - 設定のサブタブ「認証ディレクトリ」（admin のみ）。`DirectoriesPanel.tsx`、`DirectoryForm.tsx`、`GroupRoleMappingsEditor.tsx`、`DirectoryTestResult.tsx`
   - `DirectoryForm` に「サーバ証明書を検証する」トグル（既定オン）。オフにするときは確認ダイアログを出し、オフの間はフォームと一覧に警告バッジ（「証明書を検証しません（中間者攻撃に弱い状態です）」）を出す。全体で禁止されているときは操作できないようにし、理由を表示する
-  - ログイン画面の realm の選択肢（有効な realm が 2 件以上のときだけ表示）
-  - API の 409（最後の admin の経路を失う変更）と 422（入力の検証）を画面に表示する
+  - ログイン画面の realm の選択肢（有効な realm が 2 件以上のときだけ表示）。`/api/auth/realms` は、方針で接続を拒否されるディレクトリを返さない
+  - API の 409（最後の admin の経路を失う変更）と 422（入力の検証、同じ名前、解析できない DN など）を画面に表示する
+  - 接続試験の結果は段階（connect / user_search / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
   - ディレクトリの削除は、無効にしてから確認ダイアログを出して行う
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
@@ -179,10 +195,13 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - AD の in-chain 照合は MOCK が対応していないので、生成するフィルタ文字列を単体テストする
   - 件数上限・`msDS-PrincipalName` のような MOCK で再現しにくい挙動は、`search` だけを持つ接続のスタブで確かめる
   - 競合（認証中の無効化・対応表の置き換え）は `service.run_directory_call` を差し替えて、認証の途中に変更を割り込ませる
+  - 「読んでから書くまで」の間の割り込み（ログイン中の無効化、名前の確認後の重複）は、`Session` の `before_flush` イベントで同じ接続に UPDATE を流して再現する。同じセーブポイントの中で流れるので、拒否したときは割り込ませた変更も一緒に巻き戻る点に注意
+  - 発行する SQL の回数（セッションの一括失効）は、エンジンの `before_cursor_execute` イベントで数える
 - `tests/test_auth_bootstrap.py`: 起動時の admin 判定（ディレクトリの admin 対応、本番で使えない設定、残った admin 行）
 - `tests/test_startup_migration.py`: ディレクトリの migration の downgrade
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
 - PostgreSQL 固有の挙動（行ロック・デッドロック）は CI の SQLite では再現できない
+- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）
 
 ## 確認方法
 - テスト: `uv run pytest -n auto`、`cd frontend && npm test && npm run e2e`、ruff、mypy
@@ -214,4 +233,4 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - **ldap3 はほぼメンテされていない**。DN の解析が厳しい（OID の属性や値の中の `=` を拒否する）など癖がある。AD の入れ子グループの照合は実サーバでの手動確認が必須
 - **rate limit**: クライアント IP 単位で数えるので、プロキシの後ろでは全員が同じ IP になる。ローカルユーザーは DB のロックアウトで補える
 - **ディレクトリの削除**: CASCADE で配下のユーザーも消える。有効な間は削除を禁止し、確認ダイアログも出す
-- **Codex のレビュー**: PR6 では指摘が細部の端のケースへ移りつつ続いた。どこで区切るかは利用者が判断する
+- **Codex のレビュー**: push のたびに走り、PR6 では指摘が細部の端のケースへ移りつつ続いた。どこで区切るかは利用者が判断する（PR6 は 21 回目で区切り、残りを Issue にした）。PR7・PR8 でも同じ進め方にする
