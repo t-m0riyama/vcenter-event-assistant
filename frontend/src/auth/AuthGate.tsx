@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { onUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
+import { notifyUnauthorized, onUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
 import type { Me, Realm, Role } from '../api/schemas'
 import { fetchMe, fetchRealms, logout as logoutRequest } from './authApi'
 import { AuthContext, type AuthContextValue } from './authContext'
@@ -94,6 +94,35 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
     void load()
   }, [load])
 
+  /**
+   * サーバが返した今のセッションの利用者を画面に反映する。別のタブで別のアカウントにログインし直すと
+   * Cookie が替わり、このタブの要求も 401 にならずにその利用者として成功するため、``/api/auth/me`` の
+   * 結果を受け取るたびに照合する。利用者が変われば下の key でアプリ本体を作り直し、前の利用者の
+   * 画面の状態を残さない。
+   */
+  const applySession = useCallback(
+    (current: Me) => {
+      if (!authenticatedRef.current) return
+      if (!meRef.current || !sameMe(meRef.current, current)) {
+        beginOperation()
+        setState({ status: 'authenticated', me: current })
+      }
+    },
+    [beginOperation],
+  )
+
+  /** 今のセッションを問い合わせて照合する。無効なら 401 と同じ流れ（確かめ直してログイン画面へ）にする。 */
+  const checkSession = useCallback(async () => {
+    const generation = generationRef.current
+    const current = await fetchMe()
+    if (generationRef.current !== generation || !authenticatedRef.current) return
+    if (current) {
+      applySession(current)
+    } else {
+      notifyUnauthorized()
+    }
+  }, [applySession])
+
   useEffect(
     () =>
       onUnauthorized(() => {
@@ -124,18 +153,14 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
           if (generationRef.current !== generation || !authenticatedRef.current) return
           if (current) {
             // 別のタブで別のアカウントに切り替わっていたら、その利用者の表示に置き換える
-            // （利用者が変われば下の key でアプリ本体を作り直し、前の利用者のデータを残さない）
-            if (!meRef.current || !sameMe(meRef.current, current)) {
-              beginOperation()
-              setState({ status: 'authenticated', me: current })
-            }
+            applySession(current)
             return
           }
           authenticatedRef.current = false
           await showLogin(SESSION_EXPIRED_MESSAGE)
         })()
       }),
-    [beginOperation, showLogin],
+    [applySession, showLogin],
   )
 
   // ログイン中は、API を呼ばない操作もサーバの無操作期限が切れる前に伝える（間隔はサーバの更新間隔）
@@ -144,10 +169,24 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (activityIntervalSeconds === undefined) return undefined
     return setActivityReporter(
-      () => fetchMe(),
+      checkSession,
       activityIntervalSeconds ? activityIntervalSeconds * 1000 : undefined,
     )
-  }, [activityIntervalSeconds])
+  }, [activityIntervalSeconds, checkSession])
+
+  // 別のタブでログインし直した後に戻ってきたときも、利用者を照合する
+  const isAuthenticated = state.status === 'authenticated'
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void checkSession().catch(() => {
+        // 確認できなくても画面はそのまま（次の要求で分かる）
+      })
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [checkSession, isAuthenticated])
 
   const logout = useCallback(async () => {
     // 失効を確認できたときだけログイン画面へ戻す。失敗したら例外を呼び出し元に返し、

@@ -303,6 +303,45 @@ describe('AuthGate', () => {
     expect(screen.getByText('マウント 2')).toBeInTheDocument()
   })
 
+  it('タブに戻ったときに別のアカウントに替わっていたら（401 なし）、その利用者に置き換える', async () => {
+    let switched = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json(switched ? { ...ADMIN_ME, username: 'bob', role: 'viewer' } : ADMIN_ME)
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    // 別のタブで bob としてログインし直した（Cookie が替わり、API は 401 にならない）
+    switched = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
+    expect(screen.getByText('管理者権限なし')).toBeInTheDocument()
+  })
+
+  it('タブに戻ったときにセッションが切れていたら、ログイン画面に戻す', async () => {
+    let loggedOut = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') return loggedOut ? json({ detail: 'ログインが必要です。' }, 401) : json(ADMIN_ME)
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    loggedOut = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(await screen.findByRole('status')).toHaveTextContent('ログインの有効期限が切れました')
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)
