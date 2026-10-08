@@ -937,3 +937,15 @@ def test_normalize_dn_treats_attribute_oids_as_their_names() -> None:
     expected = normalize_dn("CN=Admins,OU=Groups,DC=Example,DC=com")
     assert normalize_dn("2.5.4.3=Admins,2.5.4.11=Groups,0.9.2342.19200300.100.1.25=Example,dc=com") == expected
     assert normalize_dn("OID.2.5.4.3=Admins,ou=Groups,dc=example,dc=com") == expected
+
+
+def test_oid_replacement_ignores_escaped_separators() -> None:
+    """値の中（エスケープした区切りの後や引用符の中）の OID らしい文字列は置き換えず、別の DN と区別する。"""
+    from vcenter_event_assistant.auth.directory.role_mapping import _replace_known_oids
+
+    assert _replace_known_oids(r"cn=foo\,2.5.4.3=bar,dc=example") == r"cn=foo\,2.5.4.3=bar,dc=example"
+    assert _replace_known_oids("2.5.4.3=a+OID.2.5.4.11=b,dc=x") == "cn=a+ou=b,dc=x"
+    assert normalize_dn(r"cn=foo\,2.5.4.3=bar,dc=example") != normalize_dn(r"cn=foo\,cn=bar,dc=example")
+    assert normalize_dn('cn="a,2.5.4.3=b",dc=x') != normalize_dn('cn="a,cn=b",dc=x')
+    # バックスラッシュ自体をエスケープした後の区切りは本物なので、その後の OID は置き換える
+    assert normalize_dn(r"cn=a\\,2.5.4.3=b,dc=x") == normalize_dn(r"cn=a\\,cn=b,dc=x")

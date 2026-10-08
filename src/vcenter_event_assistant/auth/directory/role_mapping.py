@@ -29,21 +29,43 @@ _ATTRIBUTE_NAMES_BY_OID = {
 _CASE_INSENSITIVE_ATTRS = frozenset(_ATTRIBUTE_NAMES_BY_OID.values())
 
 
-# RDN の先頭（DN の先頭か ``,`` / ``+`` の直後）にある、OID で書いた属性（``OID.`` 接頭辞付きも含む）
-_OID_ATTRIBUTE = re.compile(r"(^|[,+])(\s*)(?:oid\.)?(\d+(?:\.\d+)+)(\s*=)", re.IGNORECASE)
+# 属性の位置（DN の先頭か、区切りの ``,`` / ``+`` の直後）から始まる、OID で書いた属性（``OID.`` 接頭辞付きも含む）
+_OID_ATTRIBUTE = re.compile(r"(\s*)(?:oid\.)?(\d+(?:\.\d+)+)(\s*=)", re.IGNORECASE)
+
+
+def _attribute_starts(dn: str) -> list[int]:
+    """属性が始まる位置（DN の先頭と、エスケープ・引用符の外にある ``,`` / ``+`` の直後）。"""
+    starts = [0]
+    escaped = quoted = False
+    for i, c in enumerate(dn):
+        if escaped:
+            escaped = False
+        elif c == "\\":
+            escaped = True
+        elif c == '"':
+            quoted = not quoted
+        elif c in ",+" and not quoted:
+            starts.append(i + 1)
+    return starts
 
 
 def _replace_known_oids(dn: str) -> str:
     """既知の OID で書いた属性を名前に置き換える（ldap3 の DN 解析は OID の属性を受け付けないため）。
 
+    置き換えるのは属性の位置だけ。値の中（``\\,`` のようにエスケープした区切りの後など）は変えない。
     標準スキーマにない OID はそのまま残す（解析できない DN として扱われる）。
     """
-
-    def replace(match: re.Match[str]) -> str:
-        name = _ATTRIBUTE_NAMES_BY_OID.get(match.group(3))
-        return f"{match.group(1)}{match.group(2)}{name}{match.group(4)}" if name else match.group(0)
-
-    return _OID_ATTRIBUTE.sub(replace, dn)
+    pieces: list[str] = []
+    last = 0
+    for start in _attribute_starts(dn):
+        match = _OID_ATTRIBUTE.match(dn, start)
+        name = _ATTRIBUTE_NAMES_BY_OID.get(match.group(2)) if match else None
+        if match and name:
+            pieces.append(dn[last:start])
+            pieces.append(f"{match.group(1)}{name}{match.group(3)}")
+            last = match.end()
+    pieces.append(dn[last:])
+    return "".join(pieces)
 
 
 def is_valid_dn(dn: str) -> bool:
