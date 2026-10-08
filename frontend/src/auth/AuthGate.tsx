@@ -30,30 +30,47 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
     generationRef.current += 1
   }, [state])
 
-  const showLogin = useCallback(async (notice: string | null) => {
-    // 認証先の取得を待つ間もアプリ本体（前の利用者のデータ）を表示し続けないよう、先に外す
-    setState({ status: 'loading' })
-    try {
-      const { realms } = await fetchRealms()
-      setState({ status: 'anonymous', realms, notice })
-    } catch (e) {
-      setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
-    }
+  // 状態を変える非同期処理（読み込み・ログイン画面の準備）の通し番号。結果を反映する時点で最新でなければ捨てる。
+  // StrictMode の二重実行や、取得中にログインが済んだ場合に、古い結果で画面を戻さないため
+  const operationRef = useRef(0)
+  const beginOperation = useCallback(() => {
+    operationRef.current += 1
+    return operationRef.current
   }, [])
+
+  const showLogin = useCallback(
+    async (notice: string | null) => {
+      const op = beginOperation()
+      // 認証先の取得を待つ間もアプリ本体（前の利用者のデータ）を表示し続けないよう、先に外す
+      setState({ status: 'loading' })
+      try {
+        const { realms } = await fetchRealms()
+        if (op !== operationRef.current) return
+        setState({ status: 'anonymous', realms, notice })
+      } catch (e) {
+        if (op !== operationRef.current) return
+        setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+      }
+    },
+    [beginOperation],
+  )
 
   // 初期状態が loading なので、ここでは同期的に state を変えない（再試行時は呼び出し側で loading にする）
   const load = useCallback(async () => {
+    const op = beginOperation()
     try {
       const me = await fetchMe()
+      if (op !== operationRef.current) return
       if (me) {
         setState({ status: 'authenticated', me })
       } else {
         await showLogin(null)
       }
     } catch (e) {
+      if (op !== operationRef.current) return
       setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
     }
-  }, [showLogin])
+  }, [beginOperation, showLogin])
 
   useEffect(() => {
     void load()
@@ -140,7 +157,11 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
       <LoginScreen
         realms={state.realms}
         notice={state.notice}
-        onLoggedIn={(nextMe) => setState({ status: 'authenticated', me: nextMe })}
+        onLoggedIn={(nextMe) => {
+          // 取得中の古い処理（認証先の再取得など）が後からログイン画面へ戻さないよう、番号を進める
+          beginOperation()
+          setState({ status: 'authenticated', me: nextMe })
+        }}
       />
     )
   }

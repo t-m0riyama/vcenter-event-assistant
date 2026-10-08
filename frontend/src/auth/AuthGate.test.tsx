@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useState } from 'react'
+import { StrictMode, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGet } from '../api'
 import { AuthGate } from './AuthGate'
@@ -97,6 +97,41 @@ describe('AuthGate', () => {
     const init = loginCall![1] as RequestInit
     expect(JSON.parse(String(init.body))).toEqual({ username: 'alice', password: 'secret pass', realm: 'local' })
     expect(new Headers(init.headers).get('X-Requested-With')).toBe('XMLHttpRequest')
+  })
+
+  it('StrictMode で二重に走った読み込みの遅い結果が、ログイン後の画面を戻さない', async () => {
+    const pendingRealms: Array<(r: Response) => void> = []
+    stubFetch((url) => {
+      if (url === '/api/auth/me') return json({ detail: 'ログインが必要です。' }, 401)
+      if (url === '/api/auth/realms') {
+        // 1 回目はすぐ返し、2 回目以降は保留する
+        if (pendingRealms.length === 0) {
+          pendingRealms.push(() => {})
+          return json(LOCAL_ONLY)
+        }
+        return new Promise<Response>((resolve) => pendingRealms.push(resolve))
+      }
+      if (url === '/api/auth/login') return json(ADMIN_ME)
+      return json({}, 404)
+    })
+    render(
+      <StrictMode>
+        <AuthGate>
+          <Probe />
+        </AuthGate>
+      </StrictMode>,
+    )
+    const user = await screen.findByLabelText('ユーザー名')
+    fireEvent.change(user, { target: { value: 'alice' } })
+    fireEvent.change(screen.getByLabelText('パスワード'), { target: { value: 'pw' } })
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン' }))
+    expect(await screen.findByText('ようこそ alice')).toBeInTheDocument()
+
+    // 保留していた古い認証先の取得が、ログインの後で返ってくる
+    pendingRealms.slice(1).forEach((resolve) => resolve(json(LOCAL_ONLY)))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
   })
 
   it('ログインに失敗したらサーバの文言を出し、パスワード欄を空にする', async () => {
