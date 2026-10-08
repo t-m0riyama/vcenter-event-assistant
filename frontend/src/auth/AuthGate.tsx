@@ -8,9 +8,12 @@ import { roleAtLeast } from './roles'
 import { setActivityReporter } from '../userActivity'
 import './auth.css'
 
-/** 利用者が同じ人か（別アカウントに切り替わったらアプリ本体を作り直す）。 */
+/**
+ * 利用者が同じ人か（別アカウントに切り替わったらアプリ本体を作り直す）。
+ * 同じ名前で削除・再作成されたユーザーも別人として扱うため、利用者 ID を含める。
+ */
 function identityKey(me: Me): string {
-  return `${me.realm}\u0000${me.username}`
+  return `${me.realm}\u0000${me.username}\u0000${me.principal_id ?? ''}`
 }
 
 function sameMe(a: Me, b: Me): boolean {

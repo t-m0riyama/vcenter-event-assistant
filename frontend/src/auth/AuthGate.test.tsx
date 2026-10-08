@@ -393,6 +393,38 @@ describe('AuthGate', () => {
     expect(screen.getByText('管理者権限なし')).toBeInTheDocument()
   })
 
+  it('同じ名前で作り直された別のユーザーに替わったら、アプリを作り直す', async () => {
+    let mounts = 0
+    function MountCounter() {
+      const [id] = useState(() => {
+        mounts += 1
+        return mounts
+      })
+      return <p>マウント {id}</p>
+    }
+    let recreated = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json({ ...ADMIN_ME, principal_id: recreated ? 'id-new' : 'id-old' })
+      }
+      if (url === '/api/protected') {
+        recreated = true
+        return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-new' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+        <MountCounter />
+      </AuthGate>,
+    )
+    expect(await screen.findByText('マウント 1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
+    expect(await screen.findByText('マウント 2')).toBeInTheDocument()
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)
