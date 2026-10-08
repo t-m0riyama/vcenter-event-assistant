@@ -19,8 +19,23 @@ export const USER_ACTIVITY_WINDOW_MS = 30_000
 export const ACTIVITY_REPORT_INTERVAL_MS = 60_000
 
 
-/** 伝えられなかった操作を、改めて報告するまでの最短の間隔。 */
+/**
+ * 伝えられなかった操作を改めて報告するまでの間隔（上限）。障害が続いても詰めて送り続けないため。
+ * 無操作期限が近ければ、期限までの残りの半分（``RESTORED_REPORT_MIN_RETRY_MS`` 以上）に縮める。
+ */
 export const RESTORED_REPORT_RETRY_MS = 5_000
+export const RESTORED_REPORT_MIN_RETRY_MS = 250
+
+/**
+ * 未報告に戻した操作を報告し直すまでの待ち時間。サーバの無操作期限は更新間隔の 2 倍以上
+ * （更新間隔 = min(60 秒, 無操作期限 / 2)）なので、最後に伝えた時点から 2 間隔を期限の目安にし、
+ * それより前に届くよう残りの半分ずつ詰めて送り直す（回数は対数的にしか増えない）。期限を過ぎていれば上限で待つ。
+ */
+function restoredRetryDelay(now: number): number {
+  const remaining = lastReportedAt + 2 * reportIntervalMs - now
+  if (remaining <= 0) return RESTORED_REPORT_RETRY_MS
+  return Math.min(RESTORED_REPORT_RETRY_MS, Math.max(RESTORED_REPORT_MIN_RETRY_MS, remaining / 2))
+}
 
 export const BACKGROUND_REQUEST_HEADER = 'X-VEA-Background'
 
@@ -113,8 +128,9 @@ export function takeActivity(now: number = Date.now()): ActivityTicket {
       // その後に別の要求で伝わっていれば、その記録は残す
       if (lastReportedAt === now) lastReportedAt = previousReportedAt
       // 予約済みの報告はこの要求の送信中に「伝わった」とみなして終わっている場合があるので、予約し直す
-      // （無操作期限より前に伝えるため。障害が続いても詰めて送り続けないよう、少し間を置く）
-      scheduleReport(Date.now(), RESTORED_REPORT_RETRY_MS)
+      // （無操作期限より前に伝えるため。障害が続いても詰めて送り続けないよう、期限に応じて間を置く）
+      const restoredAt = Date.now()
+      scheduleReport(restoredAt, restoredRetryDelay(restoredAt))
     },
   }
 }

@@ -172,4 +172,19 @@ describe('userActivity の操作報告', () => {
     expect(report).toHaveBeenCalledTimes(1)
     off()
   })
+
+  it('無操作期限の直前に伝えられなかった操作は、期限より前に報告し直す（無操作 1 分・間隔 30 秒）', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => m.activityHeaders())
+    const off = m.setActivityReporter(report, 30_000)
+    m.activityHeaders() // T=0 に伝えた（期限の目安は T=60 秒）
+    vi.advanceTimersByTime(58_000)
+    m.markUserActivity() // T=58 秒にクリック
+    const ticket = m.takeActivity() // その要求は手前のプロキシの 502 で終わる
+    vi.advanceTimersByTime(0)
+    ticket.restore()
+    vi.advanceTimersByTime(1_000) // 残り 2 秒の半分
+    expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
 })
