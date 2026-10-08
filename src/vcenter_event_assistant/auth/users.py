@@ -21,7 +21,12 @@ from vcenter_event_assistant.auth.passwords import (
 from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.sessions import credential_marker, revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import utcnow
-from vcenter_event_assistant.db.models import AuthSession, User
+from vcenter_event_assistant.db.models import (
+    AuthSession,
+    DirectoryConfig,
+    DirectoryGroupRoleMapping,
+    User,
+)
 
 LOCAL_REALM = "local"
 USERNAME_MAX_LENGTH = 256
@@ -92,9 +97,58 @@ async def admin_change_guard(db: AsyncSession) -> AsyncIterator[None]:
         await db.commit()
 
 
-async def ensure_not_last_admin(db: AsyncSession, user: User) -> None:
-    """``admin_change_guard`` の中で呼ぶこと。"""
-    if user.role == Role.ADMIN.value and user.is_active and await count_active_admins(db) <= 1:
+async def count_local_admins(db: AsyncSession, *, exclude_user_id: uuid.UUID | None = None) -> int:
+    """有効なローカルの admin の人数。"""
+    query = (
+        select(func.count())
+        .select_from(User)
+        .where(User.realm_key == LOCAL_REALM, User.role == Role.ADMIN.value, User.is_active.is_(True))
+    )
+    if exclude_user_id is not None:
+        query = query.where(User.id != exclude_user_id)
+    return int(await db.scalar(query) or 0)
+
+
+async def count_admin_directories(db: AsyncSession, *, exclude_directory_id: uuid.UUID | None = None) -> int:
+    """admin に対応づけたグループを持つ、有効なディレクトリの数。
+
+    ディレクトリのユーザーのロールはログインのたびに対応表で決まるので、admin としてログインできるかは
+    既存の admin 行ではなく対応表で判断する（初回ログイン前の admin も含めるため）。
+    """
+    query = (
+        select(func.count(func.distinct(DirectoryGroupRoleMapping.directory_id)))
+        .join(DirectoryConfig, DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id)
+        .where(DirectoryConfig.is_enabled.is_(True), DirectoryGroupRoleMapping.role == Role.ADMIN.value)
+    )
+    if exclude_directory_id is not None:
+        query = query.where(DirectoryConfig.id != exclude_directory_id)
+    return int(await db.scalar(query) or 0)
+
+
+async def ensure_not_last_admin(db: AsyncSession, user: User, *, local_login_enabled: bool) -> None:
+    """``user`` の降格・無効化・削除で、admin としてログインする手段がなくなるなら ``LastAdminError``。
+
+    ``admin_change_guard`` の中で呼ぶこと。数えるのは実際にログインに使える admin だけ:
+    ローカルログインが有効なときのローカルの admin と、admin の対応を持つ有効なディレクトリ。
+    無効にしたディレクトリや admin の対応を外したディレクトリに残る admin 行は数えない（ログインすると
+    ロールが決め直されるため）。
+    """
+    if user.role != Role.ADMIN.value or not user.is_active:
+        return
+    if user.realm_key == LOCAL_REALM:
+        if not local_login_enabled:
+            return  # ログインに使えない admin なので、外してもログインできる手段は減らない
+        remaining = await count_local_admins(db, exclude_user_id=user.id) + await count_admin_directories(db)
+    else:
+        if user.directory_id is None or await count_admin_directories(db) == await count_admin_directories(
+            db, exclude_directory_id=user.directory_id
+        ):
+            return  # このユーザーのディレクトリからは admin としてログインできない
+        # 同じディレクトリのほかの admin が残っていても、グループに今も属しているかはわからないので数えない
+        remaining = (
+            await count_local_admins(db) if local_login_enabled else 0
+        ) + await count_admin_directories(db, exclude_directory_id=user.directory_id)
+    if remaining == 0:
         raise LastAdminError()
 
 

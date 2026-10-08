@@ -123,6 +123,7 @@ async def update_user(
     body: UserUpdate,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> UserRead:
     changes = body.model_dump(exclude_unset=True)
     try:
@@ -146,14 +147,14 @@ async def update_user(
                 if user.realm_key != LOCAL_REALM:
                     raise _bad_request("ディレクトリのユーザーのロールはグループの対応表で決まります。")
                 if new_role != Role.ADMIN:
-                    await ensure_not_last_admin(db, user)
+                    await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
                 user.role = Role(new_role).value
                 revoke = True
 
             new_active = changes.get("is_active")
             if new_active is not None and new_active != user.is_active:
                 if not new_active:
-                    await ensure_not_last_admin(db, user)
+                    await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
                 # 無効化では使用中のセッションを切り、再有効化では無効化前の（盗まれた可能性の
                 # ある）セッションを復活させない。どちらも全セッションを失効させる
                 revoke = True
@@ -186,13 +187,14 @@ async def delete_user(
     user_id: uuid.UUID,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> Response:
     if principal.user_id == user_id:
         raise _bad_request("自分自身は削除できません。")
     try:
         async with admin_change_guard(db):
             user = await _get_user(db, user_id)
-            await ensure_not_last_admin(db, user)
+            await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
             username = user.username
             await db.delete(user)
             await db.flush()

@@ -95,11 +95,11 @@ def clean_username(username: str) -> str:
 def ad_user_filter(username: str, upn_suffix: str | None) -> str:
     """AD のユーザー検索フィルタ。sAMAccountName と UPN のどちらでも見つかるようにする。
 
-    ``DOMAIN\\user`` 形式はドメイン部分を除く。``@`` を含む名前は UPN だけで探し、含まない名前は
-    sAMAccountName と、``upn_suffix`` を付けた UPN で探す。
+    ``@`` を含む名前は UPN だけで探し、含まない名前は sAMAccountName と、``upn_suffix`` を付けた UPN で探す。
+    ``DOMAIN\\user`` 形式は ``find_user`` が sAMAccountName で候補を探し、ドメインまで照合する。
     無効化されたアカウントは除く。
     """
-    name = username.rsplit("\\", 1)[-1]
+    name = username
     if "@" in name:
         # UPN で入力されたら UPN だけで探す（同名の別ドメインの sAMAccountName に広げない）
         match = f"(userPrincipalName={escape_filter_chars(name)})"
@@ -179,10 +179,54 @@ def resolved_username(spec: DirectorySpec, entry: _Entry, typed: str) -> str:
     return entry.first(spec.username_attribute or "uid") or typed
 
 
+# DOMAIN\user で同名の候補を調べる上限（これを超える同名アカウントは扱わない）
+AD_QUALIFIED_CANDIDATES_LIMIT = 20
+
+
+def _ad_sam_only_filter(sam: str) -> str:
+    return (
+        f"(&(objectCategory=person)(objectClass=user){AD_ENABLED_ACCOUNT_FILTER}"
+        f"(sAMAccountName={escape_filter_chars(sam)}))"
+    )
+
+
+def _find_ad_qualified(conn: Connection, spec: DirectorySpec, domain: str, sam: str) -> list[_Entry]:
+    """``DOMAIN\\user`` の入力で、ドメインまで一致するアカウントだけを返す。
+
+    ドメイン部分を捨てて sAMAccountName だけで探すと、検索ベースが複数のドメインにまたがるとき、
+    別ドメインの同名アカウントで認証してしまう。各候補の msDS-PrincipalName（``DOMAIN\\sam`` の形で
+    AD が返す構築属性）を読み、入力と一致するものだけを残す。
+    """
+    candidates = _search(
+        conn,
+        spec.user_search_base,
+        _ad_sam_only_filter(sam),
+        attributes=_user_attributes(spec),
+        size_limit=AD_QUALIFIED_CANDIDATES_LIMIT,
+    )
+    expected = f"{domain}\\{sam}".casefold()
+    matched: list[_Entry] = []
+    for entry in candidates:
+        # 構築属性はエントリ自身を対象にした検索でしか返らないことがあるため、1 件ずつ読む
+        principal = _search(conn, entry.dn, "(objectClass=*)", scope=BASE, attributes=["msDS-PrincipalName"])
+        name = principal[0].first("msDS-PrincipalName") if principal else None
+        if name and name.casefold() == expected:
+            matched.append(entry)
+    return matched
+
+
 def find_user(conn: Connection, spec: DirectorySpec, username: str) -> _Entry:
     """ユーザーを 1 件だけ見つける。見つからない・複数なら ``DirectoryAuthFailed``。"""
-    search_filter = ad_user_filter(username, spec.ad_upn_suffix) if spec.kind == "ad" else ldap_user_filter(spec, username)
-    found = _search(conn, spec.user_search_base, search_filter, attributes=_user_attributes(spec), size_limit=2)
+    if spec.kind == "ad" and "\\" in username:
+        domain, sam = username.split("\\", 1)
+        if not domain or not sam or "\\" in sam:
+            raise DirectoryAuthFailed("ユーザー名が不正です。", reason="invalid_username")
+        found = _find_ad_qualified(conn, spec, domain, sam)
+    else:
+        search_filter = (
+            ad_user_filter(username, spec.ad_upn_suffix) if spec.kind == "ad" else ldap_user_filter(spec, username)
+        )
+        found = _search(conn, spec.user_search_base, search_filter, attributes=_user_attributes(spec), size_limit=2)
     if not found:
         raise DirectoryAuthFailed("ユーザーが見つかりません。", reason="unknown_user")
     if len(found) > 1:

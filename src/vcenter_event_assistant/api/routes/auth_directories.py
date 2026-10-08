@@ -42,7 +42,11 @@ from vcenter_event_assistant.auth.directory.testing import run_test
 from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.sessions import revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
-from vcenter_event_assistant.auth.users import LOCAL_REALM, admin_change_guard
+from vcenter_event_assistant.auth.users import (
+    admin_change_guard,
+    count_admin_directories,
+    count_local_admins,
+)
 from vcenter_event_assistant.db.models import DirectoryConfig, DirectoryGroupRoleMapping, User
 from vcenter_event_assistant.settings import Settings
 
@@ -210,35 +214,10 @@ def _audit_saved(event: str, principal: Principal, config: DirectoryConfig) -> N
 
 
 async def _other_admin_sources(db: AsyncSession, settings: Settings, directory_id: uuid.UUID) -> int:
-    """このディレクトリ以外で admin としてログインできる手段の数。
-
-    - ローカルログインが有効なら、有効なローカルの admin（無効ならローカルユーザーはログインできない）
-    - ほかの有効なディレクトリのうち、admin に対応づけたグループを持つもの（ロールはログインのたびに
-      対応表から決めるので、既存の admin 行ではなく対応表で数える。初回ログイン前の admin も含まれる）
-    """
-    local = 0
-    if settings.local_login_enabled:
-        local = int(
-            await db.scalar(
-                select(func.count())
-                .select_from(User)
-                .where(User.realm_key == LOCAL_REALM, User.role == Role.ADMIN.value, User.is_active.is_(True))
-            )
-            or 0
-        )
-    directories = int(
-        await db.scalar(
-            select(func.count(func.distinct(DirectoryGroupRoleMapping.directory_id)))
-            .join(DirectoryConfig, DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id)
-            .where(
-                DirectoryConfig.is_enabled.is_(True),
-                DirectoryConfig.id != directory_id,
-                DirectoryGroupRoleMapping.role == Role.ADMIN.value,
-            )
-        )
-        or 0
-    )
-    return local + directories
+    """このディレクトリ以外で admin としてログインできる手段の数（ローカルログインが有効なときの
+    ローカルの admin と、admin の対応を持つほかの有効なディレクトリ）。"""
+    local = await count_local_admins(db) if settings.local_login_enabled else 0
+    return local + await count_admin_directories(db, exclude_directory_id=directory_id)
 
 
 def _no_admin_left(action: str) -> HTTPException:
@@ -276,6 +255,8 @@ async def create_directory(
 ) -> DirectoryRead:
     data = body.model_dump(exclude={"mappings"})
     data["name"] = data["name"].strip()
+    if not data["name"]:
+        raise _invalid("名前を入力してください。")
     data["server_uris"] = [u.strip() for u in data["server_uris"] if u.strip()]
     data["user_search_base"] = data["user_search_base"].strip()
     for key in (*_OPTIONAL_TEXT_FIELDS, "bind_password"):

@@ -134,7 +134,7 @@ def test_filters_escape_user_input() -> None:
 
 
 def test_ad_filter_accepts_sam_upn_and_domain_prefix() -> None:
-    f = backend.ad_user_filter("CORP\\alice", "example.com")
+    f = backend.ad_user_filter("alice", "example.com")
     assert "(sAMAccountName=alice)" in f and "(userPrincipalName=alice@example.com)" in f
     # UPN で入力されたら UPN だけで探す（別ドメインの同名の sAMAccountName に広げない）
     f = backend.ad_user_filter("alice@corp.example.com", "example.com")
@@ -267,6 +267,7 @@ def test_ad_finds_users_by_sam_or_upn(directory: FakeDirectory) -> None:
         "objectCategory": "person",
         "sAMAccountName": "carol",
         "userPrincipalName": "carol@example.com",
+        "msDS-PrincipalName": "CORP\\carol",
         "memberOf": [OPS],
     }
     spec = _spec(kind="ad", ad_upn_suffix="example.com", username_attribute=None)
@@ -365,6 +366,7 @@ async def test_directory_crud_hides_the_bind_password(client, monkeypatch: pytes
         ({"user_search_filter": "(uid=fixed)"}, "{username}"),
         ({"group_mode": "group_search"}, "検索ベース"),
         ({"ca_cert_pem": "not a certificate"}, "PEM"),
+        ({"name": "   "}, "名前"),
         ({"mappings": [{"group_dn": ADMINS, "role": "admin"}, {"group_dn": ADMINS.upper(), "role": "viewer"}]}, "重複"),
     ],
 )
@@ -635,3 +637,51 @@ async def test_removing_the_last_admin_mapping_is_guarded(
     other = _directory_body(name="Other LDAP")
     assert (await client.post("/api/auth/directories", json=other)).status_code == 201
     assert (await client.put(url, json=without_admin)).status_code == 200
+
+
+def test_ad_domain_qualified_login_matches_the_domain(directory: FakeDirectory) -> None:
+    """DOMAIN\\user では、別ドメインの同名アカウントを選ばない（あいまいにもしない）。"""
+    for domain, ou in (("CORP", "corp"), ("LAB", "lab")):
+        directory.entries[f"cn=Dave,ou={ou},{BASE}"] = {
+            "userPassword": f"{ou}-secret",
+            "objectClass": ["user"],
+            "objectCategory": "person",
+            "sAMAccountName": "dave",
+            "msDS-PrincipalName": f"{domain}\\dave",
+            "memberOf": [OPS],
+        }
+    spec = _spec(kind="ad", username_attribute=None)
+    lab = backend.authenticate(spec, "lab\\dave", "lab-secret", OPTIONS)
+    assert lab.dn == f"cn=Dave,ou=lab,{BASE}"
+    # 別ドメインの名前では、そのドメインのアカウントのパスワードでも通らない
+    with pytest.raises(DirectoryAuthFailed) as info:
+        backend.authenticate(spec, "OTHER\\dave", "lab-secret", OPTIONS)
+    assert info.value.reason == "unknown_user"
+    # ドメインを付けない sAMAccountName だけでは 2 件に一致するので拒否する
+    with pytest.raises(DirectoryAuthFailed) as info:
+        backend.authenticate(spec, "dave", "lab-secret", OPTIONS)
+    assert info.value.reason == "ambiguous_user"
+
+
+async def test_stale_directory_admin_rows_do_not_protect_the_last_local_admin(client, directory: FakeDirectory) -> None:
+    """無効にしたディレクトリに残る admin 行を数えて、唯一使えるローカル admin を降格させない。"""
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    resp, _ = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
+    assert resp.status_code == 200
+    assert (await client.patch(f"/api/auth/directories/{directory_id}", json={"is_enabled": False})).status_code == 200
+
+    users = (await client.get("/api/auth/users")).json()
+    assert sorted(u["role"] for u in users) == ["admin", "admin"]  # ローカルと、無効にしたディレクトリの alice
+    local_admin = next(u for u in users if u["is_local"])
+    resp = await client.patch(f"/api/auth/users/{local_admin['id']}", json={"role": "viewer"})
+    assert resp.status_code == 409
+    assert (await client.delete(f"/api/auth/users/{next(u for u in users if not u['is_local'])['id']}")).status_code == 204
+
+
+async def test_admin_mapping_counts_as_another_admin(client, directory: FakeDirectory) -> None:
+    """admin の対応を持つ有効なディレクトリがあれば、その所属者が admin としてログインできるので、
+    唯一のローカル admin でも降格できる（ディレクトリの admin は初回ログインまで行がない）。"""
+    local_admin = next(u for u in (await client.get("/api/auth/users")).json() if u["is_local"])
+    await client.post("/api/auth/directories", json=_directory_body())
+    resp = await client.patch(f"/api/auth/users/{local_admin['id']}", json={"role": "viewer"})
+    assert resp.status_code == 200, resp.text

@@ -70,7 +70,7 @@ CLI でも次の操作ができる（管理画面に入れなくなったとき�
 
 - パスワードはコマンドライン引数では受け取らない。対話入力するか、`--password-stdin` で標準入力の 1 行目から渡す
 - ロールの変更・無効化・パスワード再設定をすると、そのユーザーのセッションはすべて失効する
-- 最後の有効な admin は降格・無効化・削除できない
+- admin としてログインする手段がなくなる降格・無効化・削除はできない。数えるのは、ローカルログインが有効なときのローカルの admin と、admin の対応を持つ有効なディレクトリ（無効にしたディレクトリに残る admin のユーザーは数えない）
 
 ## AD / LDAP（ディレクトリ）でのログイン
 
@@ -78,7 +78,7 @@ Active Directory や汎用の LDAP サーバのアカウントでもログイン
 
 - **ロールはグループで決める**: ディレクトリごとに「グループ DN → ロール」の対応表を登録する。ログインのたびに所属グループを調べ直し、一致したうちで最も強いロールを使う。どのグループにも一致しなければログインできない
 - **グループの判定方式**: AD は `ad_nested`（入れ子のグループもたどる）か `member_of`。LDAP は `member_of`（ユーザーの memberOf 属性）か `group_search`（groupOfNames の member、groupOfUniqueNames の uniqueMember、posixGroup の memberUid など、グループ側を検索する）
-- **ユーザーの識別**: AD は objectGUID、LDAP は entryUUID（なければ DN）で識別する。AD では sAMAccountName でも UPN（`user@example.com`）でも、`DOMAIN\user` でもログインでき、どれも同じユーザーになる
+- **ユーザーの識別**: AD は objectGUID、LDAP は entryUUID（なければ DN）で識別する。AD では sAMAccountName でも UPN（`user@example.com`）でも、`DOMAIN\user` でもログインでき、どれも同じユーザーになる。UPN と `DOMAIN\user` はドメインまで照合し、別ドメインの同名アカウントは選ばない
 - **接続の暗号化**: LDAPS か StartTLS を使い、サーバ証明書とホスト名を既定で検証する。社内 CA の証明書は PEM 形式で登録できる。証明書の検証を無効にもできるが、保存時に監査ログへ警告を残す。`VEA_DIRECTORY_ALLOW_INSECURE_TLS=false` にすると全体で禁止できる。本番（`APP_ENV=production`）では暗号化しない接続（`none`）を使えない
 - **サービスアカウント**: ユーザーの検索に使う。パスワードは暗号化して保存し、API の応答には返さない
 - **接続試験**: `POST /api/auth/directories/{id}/test` で、接続・ユーザー検索・本人としての bind・グループ判定を段階ごとに確かめられる
