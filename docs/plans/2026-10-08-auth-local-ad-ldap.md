@@ -14,20 +14,20 @@
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [PR #248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [PR #249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
 | 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
-| 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | レビュー中 [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259) |
+| 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ待ち [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。CI 成功） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
-   - [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）と [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258)（その確認の抜け）のバックエンドは、PR7 の前の単独の PR（上の表の 6.5）で入れる。PR7 では、その API を使う画面を作る（下の「フロントエンド」）
-2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
-3. [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
+1. [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（PR 6.5）のマージ。[Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）と [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258)（その確認の抜け）のバックエンド。Issue #258 はマージで閉じる。Issue #254 は画面が残るので、PR7 のマージで閉じる
+2. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）。PR 6.5 の API（未保存の設定の試験、`PATCH` でのまとめて保存、409 と `X-VEA-Error-Code`）を使う画面を作る
+3. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
+4. [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
 
 ### PR6 のレビューの経過
 
-- Codex の自動レビューは push のたびに走る。21 回分の指摘を確認し、妥当なものは修正コミットを示して返信した
+- Codex の自動レビューは、当時は push のたびに走った。21 回分の指摘を確認し、妥当なものは修正コミットを示して返信した
 - 後半は、DN の正規化の細かい端のケース（RFC 4518 の文字列の準備、標準の属性の一覧など）へ指摘が移っていった。2026-10-08 に利用者の判断で区切り、残りは Issue にした
 - 後半で入った主な仕様（詳細は各節）:
   - グループ DN の照合を RFC 4518 にそろえた（エスケープの表記・NFKC・空白・大文字小文字）
@@ -35,6 +35,11 @@
   - ディレクトリのログインでロールが変わったら、ほかのセッションを失効させる
   - ログイン中の無効化・同じ名前の並行作成・検索ベースの不在の扱い
 - PR #257（この計画の更新）でも、Codex の指摘は Issue #254 の設計の詰めへ続いた。妥当なものは計画と Issue #254 に追記し、最後の 1 件は利用者の指示で Issue #258 にした
+
+### PR 6.5（PR #259）のレビューの経過
+
+- PR 作成時のレビューで 1 件（サービスアカウントのパスワードだけの変更が保存前の確認を通らない）。妥当なので、確認の判定を失効の判定と分けて、パスワードとタイムアウトも含めた（a7a7e54）
+- 観点を添えて再レビューを依頼し、指摘なし
 
 ### PR6 からの持ち越し（Issue）
 
@@ -253,6 +258,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - ディレクトリのユーザーは削除ではなく無効化で止めること
 - ユーザーの ID に使う属性の選び方（OpenLDAP は entryUUID、389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。サービスアカウントにその属性の読み取り権限が要ること。DN は ID にしないこと、ユーザーがいる間は変えられないこと（変えるにはディレクトリを作り直す。最初の設定時に接続試験で ID が取れることを確かめる）
 - 「使える admin」の数え方と、409 になる操作
+- 締め出されたときの CLI での復旧手順（PR 6.5 で、保存前の確認・409 になる操作とあわせてユーザーガイドに一通り書いた。PR8 では実機確認の結果に合わせて見直す）
 - 監査レポートへの対応記録
 
 ## リスク
@@ -260,4 +266,4 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - **ldap3 はほぼメンテされていない**。DN の解析が厳しい（OID の属性や値の中の `=` を拒否する）など癖がある。AD の入れ子グループの照合は実サーバでの手動確認が必須
 - **rate limit**: クライアント IP 単位で数えるので、プロキシの後ろでは全員が同じ IP になる。ローカルユーザーは DB のロックアウトで補える
 - **ディレクトリの削除**: CASCADE で配下のユーザーも消える。有効な間は削除を禁止し、確認ダイアログも出す
-- **Codex のレビュー**: push のたびに走り、PR6 では指摘が細部の端のケースへ移りつつ続いた。どこで区切るかは利用者が判断する（PR6 は 21 回目で区切り、残りを Issue にした）。PR7・PR8 でも同じ進め方にする
+- **Codex のレビュー**: 自動で走るのは PR 作成時だけ（2026-10-09 から。それまでは push のたびに走った）。指摘に対応してコードを直したら、PR に「@codex review」と観点を添えて再レビューを依頼する。ドキュメントやコメントだけの更新なら、基本は依頼しない。PR6 では指摘が細部の端のケースへ移りつつ続いたので、どこで区切るかは利用者が判断する（PR6 は 21 回目で区切り、残りを Issue にした）。PR7・PR8 でも同じ進め方にする
