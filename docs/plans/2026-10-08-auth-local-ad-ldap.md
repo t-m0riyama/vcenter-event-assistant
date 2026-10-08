@@ -13,7 +13,7 @@
 | 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [#247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [#248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [#249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
-| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | レビュー中 [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 13 回分と最後の指摘 2 件を反映済み） |
+| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | レビュー対応を区切り、マージ待ち [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 20 回分を反映。持ち越し 1 件） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
@@ -21,6 +21,10 @@
 
 1. **DN のエスケープ表記の違い**: `cn=Ops\,EMEA` と `cn=Ops\2CEMEA` が一致しなかった。値のエスケープを戻してから決まった形でエスケープし直して比べるようにした
 2. **ログイン中のユーザー無効化との競合**: ユーザー行を読んでから更新するまでに無効化されると、ログインが 200 になっていた。更新した後に `is_active` を読み直し、無効ならセーブポイントを巻き戻して拒否するようにした
+
+### PR6 の持ち越し（PR8 の実機確認で判断）
+
+- **独自 OID の属性を使うグループ DN**（`1.3.6.1.4.1.9999.1=Admins,...`）: ldap3 が解析できないので対応表の登録時に 422 になる。実機で必要と分かれば、未知の OID を解析前に仮の属性名へ置き換え、解析後に戻す
 
 ## Context
 
