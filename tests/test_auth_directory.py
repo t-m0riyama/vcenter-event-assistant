@@ -1203,6 +1203,37 @@ async def test_directory_role_change_on_login_revokes_other_sessions(client, dir
         assert (await second.get("/api/auth/me")).status_code == 401
 
 
+async def test_directory_login_locks_the_user_row_before_comparing_roles(client, directory: FakeDirectory) -> None:
+    """ディレクトリのログインは、ユーザー行を FOR UPDATE で読んでからロールを比べる（#255）。
+
+    ロックせずに読むと、PostgreSQL では同じユーザーの並行したログインのセッション（未確定）の失効が漏れる。
+    SQLite は FOR UPDATE を SQL に出さず、競合も再現できないので、ORM の文を PostgreSQL の方言で確かめる。
+    """
+    from sqlalchemy import event
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.orm import Session
+
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    assert (await _dir_login(realm, "alice", "alice-secret"))[0].status_code == 200
+
+    user_selects: list[str] = []
+
+    def capture(state: Any) -> None:
+        if state.is_select and any(m.class_ is User for m in state.all_mappers):
+            user_selects.append(str(state.statement.compile(dialect=postgresql.dialect())))
+
+    event.listen(Session, "do_orm_execute", capture)
+    try:
+        directory.entries[ALICE_DN]["memberOf"] = [OPS]
+        assert (await _dir_login(realm, "alice", "alice-secret"))[0].status_code == 200
+    finally:
+        event.remove(Session, "do_orm_execute", capture)
+    lookups = [sql for sql in user_selects if "users.subject = " in sql]
+    assert lookups, user_selects
+    assert all(sql.rstrip().endswith("FOR UPDATE") for sql in lookups), lookups
+
+
 class _MissingBaseConnection:
     """検索ベースが存在しない（noSuchObject）と返す接続。"""
 
