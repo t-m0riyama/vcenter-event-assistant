@@ -1,0 +1,42 @@
+# AD/LDAP の手動確認用（検証専用。本番では使わない）。使い方は README.md
+name: vea-directory-lab
+
+services:
+  certgen:
+    image: debian:bookworm-slim
+    command: ["sh", "-c", "command -v openssl >/dev/null || (apt-get update -qq && apt-get install -y -qq openssl >/dev/null); /certgen/generate.sh"]
+    volumes:
+      - ./certgen:/certgen:ro
+      - ./certs:/certs
+
+  # localhost は ::1 にも解決されるので、IPv6 のループバックにも公開する（外部には公開しない）
+  samba:
+    build: ./samba
+    hostname: dc1
+    domainname: lab.example
+    # Samba AD はファイルの ACL を security.* の拡張属性に書くので SYS_ADMIN が要る
+    cap_add: [SYS_ADMIN]
+    volumes:
+      - ./certs:/certs:ro
+    ports:
+      - "127.0.0.1:10389:389"
+      - "[::1]:10389:389"
+      - "127.0.0.1:10636:636"
+      - "[::1]:10636:636"
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+
+  openldap:
+    build: ./openldap
+    hostname: ldap
+    volumes:
+      - ./certs:/certs:ro
+    ports:
+      - "127.0.0.1:11389:389"
+      - "[::1]:11389:389"
+      - "127.0.0.1:11636:636"
+      - "[::1]:11636:636"
+    depends_on:
+      certgen:
+        condition: service_completed_successfully

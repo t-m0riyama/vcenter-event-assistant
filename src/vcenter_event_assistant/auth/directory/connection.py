@@ -109,6 +109,19 @@ def _is_tls_failure(exc: BaseException) -> bool:
     return isinstance(exc, ssl.SSLError) or "certificate" in text or "ssl" in text or "tls" in text
 
 
+def close_quietly(conn: Connection) -> None:
+    """接続を閉じる。閉じるときの失敗は無視する。
+
+    StartTLS の失敗やサーバ側の切断の後はソケットが閉じていて、unbind の送信が例外になる。
+    後始末の失敗で、本来の結果やエラーを隠さない（実機の Samba / OpenLDAP で、StartTLS の
+    証明書エラーが 500 になり、次のサーバも試さなかった）。
+    """
+    try:
+        conn.unbind()
+    except (LDAPException, OSError):
+        pass
+
+
 def connect(
     spec: DirectorySpec,
     *,
@@ -129,6 +142,8 @@ def connect(
         raise BindRejected("パスワードが空です。")
 
     last_error: DirectoryError | None = None
+    # 設定の誤りと分かった理由。後のサーバが停止していても、その一般的な失敗で上書きしない
+    config_error: DirectoryConfigError | None = None
     for uri in spec.server_uris:
         conn = Connection(
             _server(spec, uri),
@@ -146,10 +161,10 @@ def connect(
                 raise DirectoryTlsError(f"{uri}: StartTLS を開始できません（{conn.result}）")
         except DirectoryError as exc:
             last_error = exc
-            conn.unbind()
+            close_quietly(conn)
             continue
         except (LDAPException, OSError) as exc:
-            conn.unbind()
+            close_quietly(conn)
             if spec.transport_security != "none" and _is_tls_failure(exc):
                 last_error = DirectoryTlsError(f"{uri}: {describe_tls_failure(exc)}")
             else:
@@ -158,15 +173,23 @@ def connect(
         try:
             bound = conn.bind()
         except (LDAPException, OSError) as exc:
-            conn.unbind()
+            close_quietly(conn)
             last_error = DirectoryUnavailable(f"{uri}: bind の途中で失敗しました（{str(exc)[:200]}）")
             continue
         if bound:
             return conn
         result = conn.result or {}
-        conn.unbind()
+        close_quietly(conn)
         if result.get("description") == "invalidCredentials":
             raise BindRejected(f"{uri}: 資格情報が正しくありません。")
+        if result.get("description") == "strongerAuthRequired":
+            # AD は暗号化しない接続での simple bind を断る。DC ごとに設定が違い得るので次のサーバも試す
+            config_error = config_error or DirectoryConfigError(
+                f"{uri}: サーバが暗号化した接続を求めています。接続の暗号化を LDAPS か StartTLS にしてください。"
+            )
+            continue
         last_error = DirectoryUnavailable(f"{uri}: bind に失敗しました（{result.get('description')}）")
+    if config_error is not None:
+        raise config_error
     assert last_error is not None
     raise last_error

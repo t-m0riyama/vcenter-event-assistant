@@ -311,7 +311,7 @@ def verify_user_password(spec: DirectorySpec, dn: str, password: str, options: C
         conn = connection.connect(spec, user=dn, password=password, options=options)
     except BindRejected:
         raise DirectoryAuthFailed("パスワードが正しくありません。", reason="bad_password") from None
-    conn.unbind()
+    connection.close_quietly(conn)
 
 
 def authenticate(
@@ -332,7 +332,7 @@ def authenticate(
         subject = unique_id(spec, entry)
         groups = member_groups(conn, spec, entry, resolved_username(spec, entry, name))
     finally:
-        conn.unbind()
+        connection.close_quietly(conn)
     role = resolve_role(groups, spec.mappings)
     matched = tuple(sorted(g for g, _r in spec.mappings if g in groups))
     if role is None:

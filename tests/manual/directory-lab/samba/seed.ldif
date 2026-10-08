@@ -1,0 +1,4 @@
+dn: CN=VEA Ops\, Tokyo,OU=VEA,DC=lab,DC=example
+objectClass: group
+sAMAccountName: vea-ops-tokyo
+description: DN escaping check (comma in CN)
