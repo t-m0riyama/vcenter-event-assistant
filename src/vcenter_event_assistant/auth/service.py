@@ -122,7 +122,7 @@ async def _upsert_directory_user(
 ) -> User | None:
     """ディレクトリのユーザーの行を作るか更新する（ロールはログインのたびに対応表から決め直す）。
 
-    無効化されたユーザーなら ``None``。
+    無効化されたユーザーなら ``None``（呼び出し側がセーブポイントを巻き戻して、更新も取り消す）。
     """
     realm_key = f"{DIRECTORY_REALM_PREFIX}{config.id}"
     subject = _subject_key(identity.subject)
@@ -147,6 +147,12 @@ async def _upsert_directory_user(
             for key, value in values.items():
                 setattr(user, key, value)
             await db.flush()
+            # 読んでから更新するまでの間に無効化されていないか、更新の後で読み直す。
+            # 更新は変更した列だけを書くので行は無効のまま残るが、ログインを通すと使えない Cookie を返してしまう。
+            # 更新で行ロックを取った後に読むので、無効化が先に確定していれば必ず見える（後なら無効化側が待ち、
+            # このログインのセッションも失効させる）
+            if not await db.scalar(select(User.is_active).where(User.id == user.id)):
+                return None
             return user
         user = User(realm_key=realm_key, subject=subject, is_active=True, failed_login_count=0, **values)
         try:
@@ -196,7 +202,7 @@ async def _authenticate_directory(
         async with db.begin_nested():
             user = await _upsert_directory_user(db, config, identity, utcnow())
             if user is None:
-                return LoginOutcome(None, "inactive")
+                raise _DirectoryRecheckFailed("inactive")
             current = (
                 await db.execute(
                     select(DirectoryConfig.is_enabled, DirectoryConfig.updated_at)

@@ -973,3 +973,34 @@ def test_group_dn_with_invalid_escape_is_not_valid() -> None:
     assert is_valid_dn(r"cn=Caf\C3\A9,dc=example")
     assert not is_valid_dn(r"cn=Caf\C3,dc=example")
     assert not is_valid_dn(r"cn=Ops\ZZ,dc=example")
+
+
+async def test_login_is_refused_if_the_user_was_disabled_while_updating(client, directory: FakeDirectory) -> None:
+    """ユーザー行を読んでから更新するまでの間に無効化されたら、ログインさせない（Cookie を返さない）。"""
+    from sqlalchemy import event, update
+    from sqlalchemy.orm import Session
+
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    assert (await _dir_login(realm, "alice", "alice-secret"))[0].status_code == 200
+
+    def disable_before_update(session: Session, _context: Any, _instances: Any) -> None:
+        # 管理者による無効化を、ログイン側がユーザー行を読んだ後・更新する前に割り込ませる
+        for obj in session.dirty:
+            if isinstance(obj, User) and obj.realm_key == realm:
+                session.connection().execute(update(User).where(User.id == obj.id).values(is_active=False))
+
+    async with session_scope() as db:
+        sessions_before = len((await db.scalars(select(AuthSession))).all())
+        last_login_before = await db.scalar(select(User.last_login_at).where(User.realm_key == realm))
+    event.listen(Session, "before_flush", disable_before_update)
+    try:
+        resp, me = await _dir_login(realm, "alice", "alice-secret")
+    finally:
+        event.remove(Session, "before_flush", disable_before_update)
+    assert resp.status_code == 401 and me is None
+    assert "set-cookie" not in resp.headers
+    async with session_scope() as db:
+        assert len((await db.scalars(select(AuthSession))).all()) == sessions_before
+        # ログイン側の更新も取り消す（割り込ませた無効化は同じセーブポイントの中なので一緒に巻き戻る）
+        assert await db.scalar(select(User.last_login_at).where(User.realm_key == realm)) == last_login_before
