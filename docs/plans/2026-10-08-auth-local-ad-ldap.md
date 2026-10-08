@@ -26,7 +26,7 @@
 計画の全 PR がマージされた。
 
 1. リリースするときに、アップグレード直後の注意（下の「リスク」）をリリースノートで周知する。手順は `docs/backend-operations.md` の 4.2
-2. 残りの Issue（#266 Samba の `DOMAIN\user`、#251 独自 OID の DN、#94 API トークン）は、必要になったときに対応する
+2. 残りの Issue（#266 Samba の `DOMAIN\user`、#251 独自 OID の DN、#94 API トークン）は、必要になったときに対応する。2026-10 の監査の残り（Issue #235〜#241）とあわせた対応の計画は [`2026-10-09-security-audit-followup.md`](2026-10-09-security-audit-followup.md)
 3. ldap3 の更新や `auth/directory/` の変更の後は、`tests/manual/directory-lab/` で実機確認する
 
 ### PR8a の実機確認の結果
