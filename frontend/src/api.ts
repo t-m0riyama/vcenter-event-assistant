@@ -10,6 +10,10 @@ const unauthorizedListeners = new Set<UnauthorizedListener>()
  * API が 401（未ログイン・セッション切れ）を返したときに呼ばれる関数を登録する。
  * ログイン画面へ戻すために認証ゲートが使う。戻り値で登録を解除する。
  */
+export function notifyUnauthorized(): void {
+  unauthorizedListeners.forEach((listener) => listener())
+}
+
 export function onUnauthorized(listener: UnauthorizedListener): () => void {
   unauthorizedListeners.add(listener)
   return () => {
@@ -39,7 +43,7 @@ async function errorMessageFromResponse(r: Response): Promise<string> {
     return GENERIC_API_ERROR
   }
   if (r.status === 401) {
-    unauthorizedListeners.forEach((listener) => listener())
+    notifyUnauthorized()
     return SESSION_EXPIRED_MESSAGE
   }
   if (r.status === 403) {

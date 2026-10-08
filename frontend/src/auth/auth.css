@@ -70,6 +70,8 @@
 .user-menu {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--spacing-2);
   align-self: flex-start;
   font-size: var(--font-size-footnote);
@@ -96,6 +98,12 @@
   color: var(--color-primary);
   border-color: var(--color-primary);
   background: var(--color-primary-50);
+}
+
+.user-menu__error {
+  color: var(--color-error);
+  font-size: var(--font-size-caption2);
+  max-width: 24em;
 }
 
 .user-menu__btn {

@@ -425,7 +425,7 @@ kill され、アプリ本体は停止しません。
 
 このバージョンから、認証が既定で有効になります（`VEA_AUTH_ENABLED=true`）。更新前に次を準備してください。
 
-1. 初期 admin を用意する。`.env` に `VEA_BOOTSTRAP_ADMIN_USERNAME` / `VEA_BOOTSTRAP_ADMIN_PASSWORD` を設定するか、更新後に `vcenter-event-assistant-admin create-user <名前> --role admin` を実行する。本番（`APP_ENV=production`）では admin がいないと起動を止めます
+1. 初期 admin を用意する（手順は下の「4.2.1 初回起動時の admin の指定」）。本番（`APP_ENV=production`）では admin がいないと起動を止めます
 2. HTTPS で配信している場合、`APP_ENV=production` でなければ `VEA_SESSION_COOKIE_SECURE=true` を設定する
 3. `curl` などで API を直接呼んでいるスクリプトは、ログインが必要になるため動かなくなります。ログイン API でセッション Cookie を取得して使ってください。POST / PUT / PATCH / DELETE（ログイン自体を含む）には `X-Requested-With: XMLHttpRequest` ヘッダが必要です
 
@@ -439,6 +439,45 @@ kill され、アプリ本体は停止しません。
 5. ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から削除する
 
 ログインの失敗・ロックアウト・ユーザー変更は、ロガー `vcenter_event_assistant.audit` に `AUDIT event=...` の形式で出力されます。
+
+### 4.2.1 初回起動時の admin の指定
+
+更新前の DB にはユーザーがいないため、更新後の最初の起動で admin を 1 人作ります。方法は次のどちらかです。
+
+**方法 A: 環境変数で指定する（推奨）**
+
+更新後のアプリを起動する前に、`.env` に次の 2 行を追加します。Docker Compose も `env_file` で同じ `.env` を読みます。
+
+```dotenv
+VEA_BOOTSTRAP_ADMIN_USERNAME=admin
+VEA_BOOTSTRAP_ADMIN_PASSWORD=ここに12文字以上のパスワード
+```
+
+- パスワードは `VEA_PASSWORD_MIN_LENGTH`（既定 12）文字以上にします。短いと起動時にエラーで停止します
+- 2 つのうち片方だけを設定した場合も、起動時にエラーで停止します
+- `.env` を使わずにシェルで一時的に渡してもかまいません（例: `VEA_BOOTSTRAP_ADMIN_USERNAME=admin VEA_BOOTSTRAP_ADMIN_PASSWORD='...' uv run vcenter-event-assistant`）。シェル履歴に残る点に注意してください
+- 起動ログに `Created initial admin user 'admin'` と出れば作成済みです。ブラウザでその名前とパスワードでログインします
+- ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` の行を `.env` から削除します（ユーザーがいる状態で残っていると、起動のたびに警告が出ます）。作成されるのはユーザーが 0 人のときだけなので、あとから値を変えてもパスワードは変わりません
+
+**方法 B: CLI で作る**
+
+アプリを更新したあと、パスワードを対話で入力して作ります。本番（`APP_ENV=production`）は admin がいないと起動しないため、本番では方法 A を使うか、起動前に CLI を実行してください（CLI は起動時と同じく DB を最新のスキーマへ更新してから作成します）。
+
+```bash
+uv run vcenter-event-assistant-admin create-user admin --role admin
+```
+
+Docker Compose の場合:
+
+```bash
+docker compose run --rm app vcenter-event-assistant-admin create-user admin --role admin
+```
+
+パスワードを対話入力できない環境では `--password-stdin` を付け、標準入力の 1 行目から渡します。
+
+**パスワードを忘れたとき**
+
+`vcenter-event-assistant-admin reset-password <ユーザー名>` で再設定します（ロックも解除されます）。`VEA_BOOTSTRAP_ADMIN_PASSWORD` を変えても既存ユーザーのパスワードは変わりません。
 
 ## 5. 変更管理（実務向け最小）
 

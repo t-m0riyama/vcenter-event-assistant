@@ -2,6 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGet } from '../api'
 import { AuthGate } from './AuthGate'
@@ -23,14 +24,16 @@ const LOCAL_ONLY = { auth_enabled: true, realms: [{ id: 'local', name: 'ロー�
 
 function Probe() {
   const { me, hasRole, logout } = useAuth()
+  const [logoutError, setLogoutError] = useState<string | null>(null)
   return (
     <div>
+      {logoutError && <p>ログアウト失敗: {logoutError}</p>}
       <p>ようこそ {me.username}</p>
       <p>{hasRole('admin') ? '管理者権限あり' : '管理者権限なし'}</p>
       <button type="button" onClick={() => void apiGet('/api/protected').catch(() => {})}>
         保護された API
       </button>
-      <button type="button" onClick={() => void logout()}>
+      <button type="button" onClick={() => logout().catch((e: Error) => setLogoutError(e.message))}>
         出る
       </button>
     </div>
@@ -196,6 +199,24 @@ describe('AuthGate', () => {
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([u, i]) => String(u) === '/api/auth/logout' && (i as RequestInit).method === 'POST')).toBe(true),
     )
+  })
+
+  it('ログアウトに失敗したらログイン画面に戻さず、失敗を伝える', async () => {
+    stubFetch((url) => {
+      if (url === '/api/auth/me') return json(ADMIN_ME)
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      if (url === '/api/auth/logout') return new Response('down', { status: 503 })
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '出る' }))
+    expect(await screen.findByText(/ログアウト失敗/)).toBeInTheDocument()
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
   })
 
   it('サーバに接続できないときは再試行できる', async () => {

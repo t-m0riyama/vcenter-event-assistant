@@ -8,6 +8,7 @@ export function UserMenu() {
   const { me, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
 
   if (!me.auth_enabled) return null
 
@@ -28,11 +29,22 @@ export function UserMenu() {
         disabled={loggingOut}
         onClick={() => {
           setLoggingOut(true)
-          void logout()
+          setLogoutError(null)
+          logout().catch((e: unknown) => {
+            setLogoutError(
+              `ログアウトできませんでした（${e instanceof Error ? e.message : String(e)}）。ログインは続いています。`,
+            )
+            setLoggingOut(false)
+          })
         }}
       >
         ログアウト
       </button>
+      {logoutError && (
+        <span className="user-menu__error" role="alert">
+          {logoutError}
+        </span>
+      )}
       {changingPassword && <ChangePasswordDialog onClose={() => setChangingPassword(false)} />}
     </div>
   )

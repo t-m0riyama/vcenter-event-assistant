@@ -6,6 +6,7 @@ export type AuthContextValue = {
   readonly me: Me
   /** ``role`` 以上のロールを持つか。画面の表示を切り替えるためだけに使い、最終判断はサーバが行う。 */
   readonly hasRole: (role: Role) => boolean
+  /** サーバでセッションを失効させてからログイン画面へ戻す。失効できなければ例外を投げる。 */
   readonly logout: () => Promise<void>
 }
 

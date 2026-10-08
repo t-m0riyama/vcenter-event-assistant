@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { onUnauthorized } from '../api'
 import { ChangePasswordDialog } from './ChangePasswordDialog'
 
 function fill(current: string, next: string, confirm: string) {
@@ -53,5 +54,20 @@ describe('ChangePasswordDialog', () => {
     fill('wrong', 'new long password', 'new long password')
     fireEvent.click(screen.getByRole('button', { name: '変更する' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('現在のパスワードが正しくありません。')
+  })
+
+  it('セッションが切れていたら（401）ログイン画面へ戻すよう通知する', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('{"detail":"x"}', { status: 401 }))))
+    const listener = vi.fn()
+    const off = onUnauthorized(listener)
+    try {
+      render(<ChangePasswordDialog onClose={() => {}} />)
+      fill('old password', 'new long password', 'new long password')
+      fireEvent.click(screen.getByRole('button', { name: '変更する' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('ログインの有効期限が切れました')
+      expect(listener).toHaveBeenCalledTimes(1)
+    } finally {
+      off()
+    }
   })
 })

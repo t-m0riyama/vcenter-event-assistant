@@ -36,6 +36,8 @@ uv run vcenter-event-assistant-admin create-user admin --role admin
 
 Docker Compose の場合は `docker compose exec app vcenter-event-assistant-admin create-user admin --role admin` のように実行する。
 
+既存の環境を認証付きのバージョンへ更新する場合の手順は、[バックエンド運用ガイドの 4.2](../backend-operations.md#42-認証を導入したバージョンへの更新) を参照する。
+
 ## ログイン・ログアウト・パスワード変更
 
 - ヘッダー右上に利用者名とロールが出る。「ログアウト」でセッションを終了する

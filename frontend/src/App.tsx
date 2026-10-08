@@ -249,7 +249,7 @@ export default function App() {
         id: 'plugins',
         label: 'プラグイン',
         panelLabel: 'プラグイン管理',
-        adminOnlyEdit: 'fieldset',
+        adminOnlyEdit: 'panel',
         render: (onError) => <PluginsPanel onError={onError} />,
       },
       {

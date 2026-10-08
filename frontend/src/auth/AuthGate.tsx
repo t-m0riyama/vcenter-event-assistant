@@ -35,8 +35,8 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
     }
   }, [])
 
+  // 初期状態が loading なので、ここでは同期的に state を変えない（再試行時は呼び出し側で loading にする）
   const load = useCallback(async () => {
-    setState({ status: 'loading' })
     try {
       const me = await fetchMe()
       if (me) {
@@ -50,6 +50,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   }, [showLogin])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch（state は await の後でだけ変える）
     void load()
   }, [load])
 
@@ -65,11 +66,11 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   )
 
   const logout = useCallback(async () => {
-    try {
-      await logoutRequest()
-    } finally {
-      await showLogin(null)
-    }
+    // 失効を確認できたときだけログイン画面へ戻す。失敗したら例外を呼び出し元に返し、
+    // ログアウトできたように見せない（共用端末で再読み込みすると入れてしまうため）
+    await logoutRequest()
+    authenticatedRef.current = false
+    await showLogin(null)
   }, [showLogin])
 
   const me = state.status === 'authenticated' ? state.me : null
@@ -91,7 +92,14 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
           <div className="error-banner" role="alert">
             {state.message}
           </div>
-          <button type="button" className="btn btn--filled" onClick={() => void load()}>
+          <button
+            type="button"
+            className="btn btn--filled"
+            onClick={() => {
+              setState({ status: 'loading' })
+              void load()
+            }}
+          >
             再試行
           </button>
         </div>

@@ -1,3 +1,4 @@
+import { notifyUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
 import { meSchema, realmsResponseSchema, type Me, type RealmsResponse } from '../api/schemas'
 
 /**
@@ -83,6 +84,10 @@ export async function changeOwnPassword(params: {
     headers: mutationHeaders,
     body: JSON.stringify(params),
   })
-  if (r.status === 401) throw new Error('ログインの有効期限が切れました。再度ログインしてください。')
+  if (r.status === 401) {
+    // セッションが切れているので、ほかの API と同じくログイン画面へ戻す
+    notifyUnauthorized()
+    throw new Error(SESSION_EXPIRED_MESSAGE)
+  }
   if (!r.ok) throw new Error(await detailOf(r, GENERIC_ERROR))
 }
