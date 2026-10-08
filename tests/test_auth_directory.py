@@ -930,3 +930,10 @@ async def test_group_dn_too_long_after_normalization_is_rejected(client, directo
     body = _directory_body(mappings=[{"group_dn": group_dn, "role": "admin"}])
     assert (await client.post("/api/auth/directories", json=body)).status_code == 422
 
+
+
+def test_normalize_dn_treats_attribute_oids_as_their_names() -> None:
+    """属性を OID で書いた DN も、名前で書いた DN と同じものとして扱う。"""
+    expected = normalize_dn("CN=Admins,OU=Groups,DC=Example,DC=com")
+    assert normalize_dn("2.5.4.3=Admins,2.5.4.11=Groups,0.9.2342.19200300.100.1.25=Example,dc=com") == expected
+    assert normalize_dn("OID.2.5.4.3=Admins,ou=Groups,dc=example,dc=com") == expected
