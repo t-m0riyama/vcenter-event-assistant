@@ -11,7 +11,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +19,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from vcenter_event_assistant.rate_limit import check_rate_limit
 
+from vcenter_event_assistant.api.auth_deps import get_current_principal
+from vcenter_event_assistant.api.routes.auth import router as auth_router
 from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
@@ -37,8 +39,11 @@ from vcenter_event_assistant.api.routes.incident_timeline import (
 )
 from vcenter_event_assistant.api.routes.plugins import (
     installed_router as plugins_installed_router,
+    management_gate as plugins_management_gate,
+    management_router as plugins_management_router,
     router as plugins_router,
 )
+from vcenter_event_assistant.auth.csrf import CsrfMiddleware
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
@@ -63,6 +68,7 @@ logger = logging.getLogger(__name__)
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
+    "/api/auth/login": ("login", 60),
     "/api/chat": ("chat", 60),
     "/api/chat/preview": ("chat_preview", 60),
     "/api/ingest/run": ("ingest", 60),
@@ -129,9 +135,12 @@ def create_app() -> FastAPI:
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     if settings.is_production and ("*" in origins or not origins):
         origins = []
+    allowed_origins = origins or ["http://localhost:5173"]
+    # 認証は同一オリジン専用（SameSite=Strict の Cookie）。資格情報付き CORS は有効にしないので、
+    # 別オリジンの UI からはログインできない。UI は同一オリジンかプロキシ経由で配信する前提。
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins or ["http://localhost:5173"],
+        allow_origins=allowed_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Accept", "Content-Type", "Authorization", "X-Requested-With"],
@@ -171,6 +180,7 @@ def create_app() -> FastAPI:
                         "ingest": settings.rate_limit_ingest_per_minute,
                         "digests": settings.rate_limit_digests_per_minute,
                         "plugins": settings.rate_limit_plugins_per_minute,
+                        "login": settings.rate_limit_login_per_minute,
                     }[bucket]
                     if not check_rate_limit(key, limit=limit, window_seconds=window):
                         return JSONResponse(
@@ -193,9 +203,15 @@ def create_app() -> FastAPI:
 
     app.add_middleware(NoStoreApiCacheMiddleware)
 
+    if settings.auth_enabled:
+        app.add_middleware(CsrfMiddleware, trusted_origins=allowed_origins)
+
     app.include_router(health_router)
 
-    api = APIRouter(prefix="/api")
+    app.include_router(auth_router)
+
+    # ``/api`` 配下は全 route でログインを必須にし、各 route が最低ロールを宣言する。
+    api = APIRouter(prefix="/api", dependencies=[Depends(get_current_principal)])
     api.include_router(config_router)
     api.include_router(event_score_rules_router)
     api.include_router(event_type_guides_router)
@@ -210,11 +226,19 @@ def create_app() -> FastAPI:
     api.include_router(alerts_router)
     api.include_router(ingest_router)
     api.include_router(plugins_router)
-    api.include_router(plugins_installed_router)
-    from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
-    api.include_router(plugin_setup_router)
 
     app.include_router(api)
+
+    # プラグイン管理の変更系は、無効時に存在を伏せる 404 gate をログイン確認より先に評価する。
+    # 親 router の依存は子より先に走るため、``api`` には入れずにここで順序を指定してマウントする。
+    from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
+
+    for gated in (plugins_management_router, plugins_installed_router, plugin_setup_router):
+        app.include_router(
+            gated,
+            prefix="/api",
+            dependencies=[Depends(plugins_management_gate), Depends(get_current_principal)],
+        )
 
     if FRONTEND_DIST.is_dir() and (FRONTEND_DIST / "index.html").is_file():
         assets = FRONTEND_DIST / "assets"

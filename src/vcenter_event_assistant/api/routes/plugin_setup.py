@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireAdmin
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.api.routes.plugins import _require_management_enabled
+from vcenter_event_assistant.api.routes.plugins import management_gate
 from vcenter_event_assistant.db.models import (
     CollectorPluginSetting,
     PluginConfigurationDraft,
@@ -50,10 +51,6 @@ from vcenter_event_assistant.services.ssh_management import (
 from vcenter_event_assistant.settings import Settings
 
 
-async def management_gate(settings: Settings = Depends(get_app_settings)):
-    _require_management_enabled(settings)
-
-
 async def mutation_gate():
     async with _reload_lock:
         yield
@@ -80,7 +77,9 @@ class SafeSetupRoute(APIRoute):
 router = APIRouter(
     prefix="/plugins",
     tags=["plugin setup"],
-    dependencies=[Depends(management_gate)],
+    # 無効時に存在を伏せる 404 gate を先に評価し、そのうえで admin を要求する
+    # （ログイン確認より先に gate を評価するマウントは main.create_app を参照）。
+    dependencies=[Depends(management_gate), RequireAdmin],
     route_class=SafeSetupRoute,
 )
 

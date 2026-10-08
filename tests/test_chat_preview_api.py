@@ -335,6 +335,8 @@ async def test_post_chat_preview_disabled_in_production(
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("VEA_SECRET_KEY", "prod-secret-key")
     monkeypatch.setenv("CHAT_PREVIEW_ENABLED", "false")
+    # 本番では Cookie 名が ``__Host-`` 付きに変わり、ログイン済み Cookie が届かなくなるため固定する
+    monkeypatch.setenv("VEA_SESSION_COOKIE_SECURE", "false")
     get_settings.cache_clear()
 
     resp = await client.post("/api/chat/preview", json=_chat_body())

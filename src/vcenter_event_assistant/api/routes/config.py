@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.deps import get_app_settings
 from vcenter_event_assistant.api.schemas import AppConfigResponse
 from vcenter_event_assistant.services.chat.chat_web_search import (
@@ -17,7 +18,7 @@ from vcenter_event_assistant.settings import Settings
 router = APIRouter(prefix="/config", tags=["config"])
 
 
-@router.get("", response_model=AppConfigResponse)
+@router.get("", dependencies=[RequireViewer], response_model=AppConfigResponse)
 async def get_app_config(
     settings: Settings = Depends(get_app_settings),
 ) -> AppConfigResponse:

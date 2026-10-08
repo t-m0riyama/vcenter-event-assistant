@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.routes.events import _contains_case_insensitive
@@ -59,7 +60,7 @@ def log_conditions(
     return conditions
 
 
-@router.get("", response_model=LogListResponse)
+@router.get("", dependencies=[RequireViewer], response_model=LogListResponse)
 async def list_logs(
     session: AsyncSession = Depends(get_session),
     conditions: list = Depends(log_conditions),
@@ -83,7 +84,7 @@ async def list_logs(
     return LogListResponse(items=[LogRead.model_validate(r) for r in rows], total=total)
 
 
-@router.get("/export.csv", response_class=StreamingResponse)
+@router.get("/export.csv", dependencies=[RequireViewer], response_class=StreamingResponse)
 async def export_logs(
     request: Request,
     conditions: list = Depends(log_conditions),

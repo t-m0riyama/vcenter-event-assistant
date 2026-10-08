@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import socket
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiosqlite
@@ -23,6 +24,8 @@ os.environ["LLM_DIGEST_API_KEY"] = ""
 # .env の APP_LOG_FILE へ書かない（digest_llm の失敗系テストの WARNING が混ざるのを防ぐ）
 os.environ["APP_LOG_FILE"] = ""
 os.environ["VEA_ALLOW_PLAINTEXT_PASSWORDS"] = "1"
+# 認証を有効にした状態でテストする。``client`` は admin でログイン済み（``open_client`` 参照）。
+os.environ["VEA_AUTH_ENABLED"] = "1"
 # CI 等で openaipublic.blob.core.windows.net へ届かない環境でも cl100k_base を使えるよう
 # リポジトリ同梱キャッシュを優先する（未設定時のみ。開発者が独自キャッシュを使う場合は上書き可）
 os.environ.setdefault(
@@ -30,7 +33,12 @@ os.environ.setdefault(
     str(Path(__file__).resolve().parent / "fixtures" / "tiktoken_cache"),
 )
 
-from vcenter_event_assistant.db.session import get_engine, init_db, reset_db
+from vcenter_event_assistant.api.auth_deps import session_cookie_name
+from vcenter_event_assistant.auth.service import session_policy
+from vcenter_event_assistant.auth.sessions import create_session
+from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.db.models import User
+from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 from vcenter_event_assistant.db.startup_migration import run_startup_migration
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.settings import Settings, get_settings
@@ -148,9 +156,76 @@ def no_external_collectors(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+async def login_cookie(role: str, *, username: str | None = None) -> tuple[str, str]:
+    """``role`` のローカルユーザーとセッションを直接作り、(Cookie 名, トークン) を返す。
+
+    argon2 を通さないため速い（password_hash は空で、パスワードログインはできない）。
+    """
+    settings = get_settings()
+    name = username or f"test-{role}"
+    now = utcnow()
+    async with session_scope(settings) as db:
+        user = User(
+            realm_key="local",
+            subject=name.casefold(),
+            username=name,
+            role=role,
+            is_active=True,
+            failed_login_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(user)
+        await db.flush()
+        token = await create_session(db, user, session_policy(settings))
+    return session_cookie_name(settings), token
+
+
 @pytest.fixture
-async def client() -> AsyncClient:
-    app = create_app()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+def open_client():
+    """``async with open_client(role="viewer") as c:`` で任意ロールのクライアントを開く。
+
+    ``role=None`` は未ログイン。``app`` を渡すとそのアプリを使う（既定は ``create_app()``）。
+    変更系リクエストに必要な ``X-Requested-With`` は既定ヘッダとして付ける。
+    """
+
+    @asynccontextmanager
+    async def _open(role: str | None = "admin", *, app=None, username: str | None = None) -> AsyncIterator[AsyncClient]:
+        target = app if app is not None else create_app()
+        cookies = {}
+        if role is not None:
+            name, token = await login_cookie(role, username=username)
+            cookies[name] = token
+        async with AsyncClient(
+            transport=ASGITransport(app=target),
+            base_url="http://test",
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            cookies=cookies,
+        ) as ac:
+            yield ac
+
+    return _open
+
+
+@pytest.fixture
+async def client(open_client) -> AsyncIterator[AsyncClient]:
+    async with open_client("admin") as ac:
+        yield ac
+
+
+@pytest.fixture
+async def anon_client(open_client) -> AsyncIterator[AsyncClient]:
+    async with open_client(None) as ac:
+        yield ac
+
+
+@pytest.fixture
+async def viewer_client(open_client) -> AsyncIterator[AsyncClient]:
+    async with open_client("viewer") as ac:
+        yield ac
+
+
+@pytest.fixture
+async def operator_client(open_client) -> AsyncIterator[AsyncClient]:
+    async with open_client("operator") as ac:
         yield ac

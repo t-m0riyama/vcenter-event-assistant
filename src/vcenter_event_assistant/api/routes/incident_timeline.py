@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireOperator, RequireViewer
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas.chat import (
     IncidentTimelineBuildRequest,
@@ -47,7 +48,7 @@ def _graph_context_for_response(snapshot: IncidentTimelineManualSnapshot) -> Inc
     return IncidentTimelineGraphContext.model_validate(raw)
 
 
-@router.post("", response_model=IncidentTimelinePayload)
+@router.post("", dependencies=[RequireViewer], response_model=IncidentTimelinePayload)
 async def post_incident_timeline(
     body: IncidentTimelineBuildRequest,
     session: AsyncSession = Depends(get_session),
@@ -55,7 +56,7 @@ async def post_incident_timeline(
     return await build_incident_timeline_payload(session, body)
 
 
-@router.post("/snapshots/manual", response_model=IncidentTimelineManualSnapshotCreateResponse, status_code=201)
+@router.post("/snapshots/manual", dependencies=[RequireOperator], response_model=IncidentTimelineManualSnapshotCreateResponse, status_code=201)
 async def post_manual_snapshot(
     body: IncidentTimelineManualSnapshotCreateRequest,
     session: AsyncSession = Depends(get_session),
@@ -92,7 +93,7 @@ async def post_manual_snapshot(
     )
 
 
-@router.get("/snapshots/manual", response_model=IncidentTimelineManualSnapshotListResponse)
+@router.get("/snapshots/manual", dependencies=[RequireViewer], response_model=IncidentTimelineManualSnapshotListResponse)
 async def get_manual_snapshots(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),

@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireOperator, RequireViewer
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.import_guards import reject_empty_destructive_import
 from vcenter_event_assistant.api.schemas import (
@@ -35,12 +36,12 @@ def _is_alert_rule_name_unique_violation(exc: IntegrityError) -> bool:
     message = " ".join(parts).lower()
     return "unique" in message and "alert_rules" in message and "name" in message
 
-@router.get("/rules", response_model=list[AlertRuleRead])
+@router.get("/rules", dependencies=[RequireViewer], response_model=list[AlertRuleRead])
 async def list_alert_rules(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(AlertRule).order_by(AlertRule.name.asc()))
     return list(res.scalars().all())
 
-@router.post("/rules", response_model=AlertRuleRead, status_code=status.HTTP_201_CREATED)
+@router.post("/rules", dependencies=[RequireAdmin], response_model=AlertRuleRead, status_code=status.HTTP_201_CREATED)
 async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depends(get_session)):
     # 同名のルールがないかチェック
     res = await session.execute(select(AlertRule.id).where(AlertRule.name == body.name))
@@ -64,7 +65,7 @@ async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depen
     await session.refresh(rule)
     return rule
 
-@router.patch("/rules/{rule_id}", response_model=AlertRuleRead)
+@router.patch("/rules/{rule_id}", dependencies=[RequireAdmin], response_model=AlertRuleRead)
 async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSession = Depends(get_session)):
     rule = await session.get(AlertRule, rule_id)
     if not rule:
@@ -96,7 +97,7 @@ async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSe
     await session.refresh(rule)
     return rule
 
-@router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/rules/{rule_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
 async def delete_alert_rule(rule_id: int, session: AsyncSession = Depends(get_session)):
     rule = await session.get(AlertRule, rule_id)
     if not rule:
@@ -105,7 +106,7 @@ async def delete_alert_rule(rule_id: int, session: AsyncSession = Depends(get_se
     await session.flush()
 
 
-@router.post("/rules/import", response_model=AlertRulesImportResponse)
+@router.post("/rules/import", dependencies=[RequireAdmin], response_model=AlertRulesImportResponse)
 async def import_alert_rules(
     body: AlertRulesImportRequest,
     session: AsyncSession = Depends(get_session),
@@ -183,7 +184,7 @@ def _history_item_to_read(
     )
 
 
-@router.get("/history", response_model=AlertHistoryListResponse)
+@router.get("/history", dependencies=[RequireViewer], response_model=AlertHistoryListResponse)
 async def list_alert_history(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -223,7 +224,7 @@ async def list_alert_history(
     )
 
 
-@router.post("/states/resolve", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/states/resolve", dependencies=[RequireOperator], status_code=status.HTTP_204_NO_CONTENT)
 async def resolve_alert_state(
     body: AlertStateResolveRequest,
     settings: Settings = Depends(get_app_settings),
@@ -237,7 +238,7 @@ async def resolve_alert_state(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.delete("/history/{history_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/history/{history_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
 async def delete_alert_history(
     history_id: int,
     session: AsyncSession = Depends(get_session),

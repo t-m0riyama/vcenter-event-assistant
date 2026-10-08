@@ -10,6 +10,7 @@ from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from vcenter_event_assistant.api.auth_deps import RequireOperator, RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
@@ -48,7 +49,7 @@ def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -
     return hay.ilike(f"%{_escape_like_metachars(needle)}%", escape="\\")
 
 
-@router.get("/event-types", response_model=EventTypesResponse)
+@router.get("/event-types", dependencies=[RequireViewer], response_model=EventTypesResponse)
 async def list_event_types(
     session: AsyncSession = Depends(get_session),
     vcenter_id: uuid.UUID | None = None,
@@ -68,7 +69,7 @@ async def list_event_types(
     return EventTypesResponse(event_types=types)
 
 
-@router.get("/rate-series", response_model=EventRateSeriesResponse)
+@router.get("/rate-series", dependencies=[RequireViewer], response_model=EventRateSeriesResponse)
 async def event_rate_series(
     session: AsyncSession = Depends(get_session),
     event_type: str = Query(..., min_length=1, max_length=512),
@@ -109,7 +110,7 @@ async def event_rate_series(
     return EventRateSeriesResponse(bucket_seconds=b, buckets=buckets)
 
 
-@router.get("", response_model=EventListResponse)
+@router.get("", dependencies=[RequireViewer], response_model=EventListResponse)
 async def list_events(
     session: AsyncSession = Depends(get_session),
     vcenter_id: uuid.UUID | None = None,
@@ -165,7 +166,7 @@ async def list_events(
     )
 
 
-@router.patch("/{event_id}", response_model=EventRead)
+@router.patch("/{event_id}", dependencies=[RequireOperator], response_model=EventRead)
 async def patch_event_comment(
     event_id: int,
     body: EventUserCommentPatch,

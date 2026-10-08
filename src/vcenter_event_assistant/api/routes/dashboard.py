@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import (
     DashboardSummary,
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 _TOP_EVENT_TYPES_LIMIT = 10
 
 
-@router.get("/attention", response_model=DashboardAttention)
+@router.get("/attention", dependencies=[RequireViewer], response_model=DashboardAttention)
 async def dashboard_attention(
     session: AsyncSession = Depends(get_session),
 ) -> DashboardAttention:
@@ -57,7 +58,7 @@ async def dashboard_attention(
     )
 
 
-@router.get("/summary", response_model=DashboardSummary)
+@router.get("/summary", dependencies=[RequireViewer], response_model=DashboardSummary)
 async def dashboard_summary(
     session: AsyncSession = Depends(get_session),
     top_notable_min_score: Annotated[

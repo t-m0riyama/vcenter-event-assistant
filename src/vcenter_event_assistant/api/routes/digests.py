@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireOperator, RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import DigestListResponse, DigestRead, DigestRunRequest
@@ -39,7 +40,7 @@ def _canonical_digest_kind(raw: str) -> str:
     return stripped
 
 
-@router.get("", response_model=DigestListResponse)
+@router.get("", dependencies=[RequireViewer], response_model=DigestListResponse)
 async def list_digests(
     session: AsyncSession = Depends(get_session),
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -63,7 +64,7 @@ async def list_digests(
     return DigestListResponse(items=[DigestRead.model_validate(r) for r in rows], total=total)
 
 
-@router.get("/{digest_id}", response_model=DigestRead)
+@router.get("/{digest_id}", dependencies=[RequireViewer], response_model=DigestRead)
 async def get_digest(digest_id: int, session: AsyncSession = Depends(get_session)) -> DigestRead:
     row = await session.get(DigestRecord, digest_id)
     if row is None:
@@ -71,7 +72,7 @@ async def get_digest(digest_id: int, session: AsyncSession = Depends(get_session
     return DigestRead.model_validate(row)
 
 
-@router.post("/run", response_model=DigestRead)
+@router.post("/run", dependencies=[RequireOperator], response_model=DigestRead)
 async def run_digest(
     body: DigestRunRequest = Body(default_factory=DigestRunRequest),
     session: AsyncSession = Depends(get_session),

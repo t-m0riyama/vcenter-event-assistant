@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
@@ -34,7 +33,7 @@ def _enable_mock_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch, open_client) -> None:
     _enable_mock_mode(monkeypatch)
     await run_mock_mode_seed_if_enabled()
 
@@ -53,8 +52,7 @@ async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch) ->
     assert n_vc2 == 1
 
     app = create_app()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with open_client(app=app) as ac:
         cfg = await ac.get("/api/config")
         assert cfg.status_code == 200
         body = cfg.json()
@@ -114,6 +112,7 @@ async def test_mock_mode_ingestion_skips_pyvmomi(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.asyncio
 async def test_mock_mode_chat_and_search_without_external_keys(
     monkeypatch: pytest.MonkeyPatch,
+    open_client,
 ) -> None:
     _enable_mock_mode(monkeypatch)
     settings = get_settings()
@@ -128,8 +127,7 @@ async def test_mock_mode_chat_and_search_without_external_keys(
     assert results[0].url.startswith("https://example.com/")
 
     app = create_app()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with open_client(app=app) as ac:
         with patch(
             "langchain_openai.ChatOpenAI",
             side_effect=AssertionError("ChatOpenAI must not be constructed"),

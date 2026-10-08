@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireViewer
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas.plugins import (
     CollectorReloadResponse,
@@ -44,8 +45,6 @@ from vcenter_event_assistant.services.plugin_settings import (
 )
 from vcenter_event_assistant.settings import Settings
 
-router = APIRouter(prefix="/plugins/collectors", tags=["plugins"])
-installed_router = APIRouter(prefix="/plugins/installed", tags=["plugins"])
 
 
 def _require_management_enabled(settings: Settings) -> None:
@@ -56,6 +55,26 @@ def _require_management_enabled(settings: Settings) -> None:
     """
     if not settings.plugin_management_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
+
+
+async def management_gate(settings: Settings = Depends(get_app_settings)) -> None:
+    _require_management_enabled(settings)
+
+
+# 参照系（一覧）は常に公開し、変更系は管理が無効なら存在を伏せる。
+# 変更系の router は ``main.create_app`` で、ログイン確認より先に ``management_gate`` を
+# 評価するようにマウントする（未ログインでも 401 ではなく 404 になる）。
+router = APIRouter(prefix="/plugins/collectors", tags=["plugins"])
+management_router = APIRouter(
+    prefix="/plugins/collectors",
+    tags=["plugins"],
+    dependencies=[Depends(management_gate)],
+)
+installed_router = APIRouter(
+    prefix="/plugins/installed",
+    tags=["plugins"],
+    dependencies=[Depends(management_gate)],
+)
 
 
 async def _run_statuses_by_plugin(
@@ -152,7 +171,7 @@ def _reload_required(registry: CollectorRegistry, overrides: dict[str, dict]) ->
     return False
 
 
-@router.get("", response_model=CollectorStatusListResponse)
+@router.get("", dependencies=[RequireViewer], response_model=CollectorStatusListResponse)
 async def list_collectors(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
@@ -168,7 +187,7 @@ async def list_collectors(
     )
 
 
-@router.patch("/{plugin_id}", response_model=CollectorStatusListResponse)
+@management_router.patch("/{plugin_id}", dependencies=[RequireAdmin], response_model=CollectorStatusListResponse)
 async def update_collector(
     plugin_id: str,
     payload: CollectorSettingUpdate,
@@ -176,7 +195,6 @@ async def update_collector(
     settings: Settings = Depends(get_app_settings),
 ) -> CollectorStatusListResponse:
     """設定を DB に保存する。稼働中の世代への反映は明示的なリロードで行う。"""
-    _require_management_enabled(settings)
     registry = get_collector_registry()
     if registry.get(plugin_id) is None:
         raise HTTPException(status_code=404, detail="collector is not registered")
@@ -242,14 +260,13 @@ async def update_collector(
     )
 
 
-@router.post("/reload", response_model=CollectorReloadResponse)
+@management_router.post("/reload", dependencies=[RequireAdmin], response_model=CollectorReloadResponse)
 async def reload_collectors(
     request: Request,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
 ) -> CollectorReloadResponse:
     """レジストリを再構築して原子的に差し替え、スケジューラのジョブを追従させる。"""
-    _require_management_enabled(settings)
     result = await reload_collector_registry(
         settings, scheduler=getattr(request.app.state, "scheduler", None)
     )
@@ -279,13 +296,12 @@ def _installed_reads(rows) -> list[InstalledPluginRead]:
     ]
 
 
-@installed_router.get("", response_model=InstalledPluginListResponse)
+@installed_router.get("", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse)
 async def list_installed(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
 ) -> InstalledPluginListResponse:
     """インストール済み・進行中・失敗した配布物の一覧。"""
-    _require_management_enabled(settings)
     rows = await list_installed_plugins(session)
     return InstalledPluginListResponse(
         management_enabled=True,
@@ -294,14 +310,13 @@ async def list_installed(
     )
 
 
-@installed_router.post("", response_model=InstalledPluginListResponse, status_code=202)
+@installed_router.post("", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse, status_code=202)
 async def install_from_index(
     payload: PluginInstallRequest,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
 ) -> InstalledPluginListResponse:
     """インデックスから名前指定でインストールする（既定では無効）。"""
-    _require_management_enabled(settings)
     if not settings.plugin_allow_index_install:
         raise HTTPException(
             status_code=409,
@@ -330,7 +345,7 @@ async def install_from_index(
 
 
 @installed_router.post(
-    "/upload", response_model=InstalledPluginListResponse, status_code=202
+    "/upload", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse, status_code=202
 )
 async def install_from_upload(
     file: UploadFile = File(...),
@@ -338,7 +353,6 @@ async def install_from_upload(
     settings: Settings = Depends(get_app_settings),
 ) -> InstalledPluginListResponse:
     """アップロードされた wheel / sdist をインストールする。"""
-    _require_management_enabled(settings)
     try:
         distribution, _version = parse_upload_filename(file.filename or "")
     except PluginInstallError as exc:
@@ -378,14 +392,13 @@ async def install_from_upload(
     )
 
 
-@installed_router.delete("/{distribution}", response_model=InstalledPluginListResponse)
+@installed_router.delete("/{distribution}", dependencies=[RequireAdmin], response_model=InstalledPluginListResponse)
 async def uninstall(
     distribution: str,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
 ) -> InstalledPluginListResponse:
     """配布物を削除する。稼働中の世代への反映には別途リロードが必要である。"""
-    _require_management_enabled(settings)
     try:
         removed = await remove_installed_plugin(session, settings, distribution)
     except PluginInstallError as exc:
