@@ -11,6 +11,7 @@ import { ChatWebSearchPrefsPanel } from './panels/settings/ChatWebSearchPrefsPan
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
+import { UsersPanel } from './panels/settings/UsersPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
 import { AlertRulesPanel } from './panels/settings/AlertRulesPanel'
 import { PluginsPanel } from './panels/settings/PluginsPanel'
@@ -46,7 +47,8 @@ type SettingsSubTabConfig = {
   readonly id: SettingsSubTabId
   readonly label: string
   readonly panelLabel: string
-  readonly render: (onError: (e: string | null) => void) => ReactNode
+  /** ``active`` はこのサブタブが表示中か（開き直したときに読み直すパネル用）。 */
+  readonly render: (onError: (e: string | null) => void, active: boolean) => ReactNode
   /**
    * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの（お知らせを出す）。
    * 変更系の操作部品はパネル自身がロールで出し分ける（展開・エクスポートなど閲覧の操作は残す）。
@@ -76,9 +78,11 @@ export default function App() {
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setAppErr)
-  const { hasRole } = useAuth()
+  const { me, hasRole } = useAuth()
   const canChat = hasRole('operator')
   const isAdmin = hasRole('admin')
+  // ユーザー管理は admin のみ。認証が無効なサーバではログインがないので出さない
+  const canManageUsers = isAdmin && me.auth_enabled
   const attention = useAttentionStatus()
 
   // タブに出すアテンションドット。概要=直近24hの要注意イベント、通知履歴=firing 中のアラート
@@ -93,6 +97,12 @@ export default function App() {
       setTab('summary')
     }
   }, [canChat, setTab, tab])
+
+  useEffect(() => {
+    if (tab === 'settings' && settingsSubTab === 'users' && !canManageUsers) {
+      setSettingsSubTab('general')
+    }
+  }, [canManageUsers, setSettingsSubTab, settingsSubTab, tab])
 
   useEffect(() => {
     if (tab !== 'metrics') {
@@ -253,6 +263,12 @@ export default function App() {
         render: (onError) => <PluginsPanel onError={onError} />,
       },
       {
+        id: 'users',
+        label: 'ユーザー',
+        panelLabel: 'ユーザー管理',
+        render: (onError, active) => <UsersPanel onError={onError} active={active} />,
+      },
+      {
         id: 'chat_samples',
         label: 'チャット',
         panelLabel: 'チャット設定',
@@ -266,6 +282,8 @@ export default function App() {
     ],
     [],
   )
+
+  const visibleSettingsSubTabs = settingsSubTabs.filter((sub) => sub.id !== 'users' || canManageUsers)
 
   const helpEntry = resolveTabHelp(tab, settingsSubTab)
 
@@ -345,7 +363,7 @@ export default function App() {
           {mountedMainTabs.has('settings') && (
             <div hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
               <nav className="settings-subtabs" aria-label="設定">
-                {settingsSubTabs.map((sub) => (
+                {visibleSettingsSubTabs.map((sub) => (
                   <button
                     key={sub.id}
                     type="button"
@@ -360,7 +378,7 @@ export default function App() {
                   </button>
                 ))}
               </nav>
-              {settingsSubTabs.map(
+              {visibleSettingsSubTabs.map(
                 (sub) =>
                   mountedSettingsSubTabs.has(sub.id) && (
                     <div
@@ -375,10 +393,10 @@ export default function App() {
                               <p className="readonly-notice" role="note">
                                 閲覧のみです。この設定を変更できるのは管理者だけです。
                               </p>
-                              {sub.render(onError)}
+                              {sub.render(onError, tab === 'settings' && settingsSubTab === sub.id)}
                             </>
                           ) : (
-                            sub.render(onError)
+                            sub.render(onError, tab === 'settings' && settingsSubTab === sub.id)
                           )
                         }
                       </PanelShell>

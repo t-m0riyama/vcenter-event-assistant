@@ -13,6 +13,7 @@ export type SettingsSubTabId =
   | 'chat_samples'
   | 'alerts'
   | 'plugins'
+  | 'users'
 
 /**
  * 設定サブタブ用の装飾アイコン（`currentColor`・スクリーンリーダーからは隠す）。
@@ -71,6 +72,15 @@ export function SettingsSubTabIcon({ tabId }: { readonly tabId: SettingsSubTabId
           <circle cx="8" cy="8" r="5" />
           <line x1="8" y1="5.5" x2="8" y2="9.5" />
           <circle cx="8" cy="11" r="0.5" />
+        </TabButtonSvgIcon>
+      )
+    case 'users':
+      return (
+        <TabButtonSvgIcon>
+          <circle cx="6" cy="5.5" r="2.2" />
+          <path d="M2 13c0-2.3 1.8-4 4-4s4 1.7 4 4" />
+          <circle cx="11.2" cy="6" r="1.7" />
+          <path d="M11 9.2c1.7 0 3 1.4 3 3.3" />
         </TabButtonSvgIcon>
       )
     case 'plugins':

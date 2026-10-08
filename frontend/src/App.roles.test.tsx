@@ -37,6 +37,8 @@ const ALERT_RULE = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
+const refresh = async () => {}
+
 function renderAs(role: Role, overrides: Partial<Me> = {}) {
   const me: Me = {
     auth_enabled: true,
@@ -48,7 +50,7 @@ function renderAs(role: Role, overrides: Partial<Me> = {}) {
     ...overrides,
   }
   return render(
-    <AuthContext.Provider value={{ me, hasRole: (r) => roleAtLeast(me.role, r), logout: async () => {} }}>
+    <AuthContext.Provider value={{ me, hasRole: (r) => roleAtLeast(me.role, r), logout: async () => {}, refresh }}>
       <App />
     </AuthContext.Provider>,
   )
@@ -83,6 +85,7 @@ describe('App のロールによる出し分け', () => {
           return Promise.resolve(jsonResponse([{ id: 1, event_type: 'vim.event.VmPoweredOnEvent', score_delta: 10 }]))
         }
         if (url.includes('/api/alerts/rules')) return Promise.resolve(jsonResponse([ALERT_RULE]))
+        if (url.includes('/api/auth/users')) return Promise.resolve(jsonResponse([]))
         return Promise.resolve(new Response('not found', { status: 404 }))
       }),
     )
@@ -151,6 +154,27 @@ describe('App のロールによる出し分け', () => {
     expect(await screen.findByRole('button', { name: '接続テスト' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '編集' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
+  })
+
+  it('ユーザー管理は admin にだけ出し、ほかのロールが URL で開いても一般に戻す', async () => {
+    window.history.replaceState(null, '', '/#/settings/users')
+    const { unmount } = renderAs('operator')
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/general'))
+    const subNav = await screen.findByRole('navigation', { name: '設定' })
+    expect(within(subNav).queryByRole('button', { name: 'ユーザー' })).not.toBeInTheDocument()
+    unmount()
+
+    window.history.replaceState(null, '', '/#/settings/users')
+    renderAs('admin')
+    expect(await screen.findByRole('heading', { name: 'ローカルユーザーの作成' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/settings/users')
+  })
+
+  it('認証が無効なサーバではユーザー管理を出さない', async () => {
+    renderAs('admin', { auth_enabled: false })
+    fireEvent.click(within(mainNav()).getByRole('button', { name: '設定' }))
+    const subNav = await screen.findByRole('navigation', { name: '設定' })
+    expect(within(subNav).queryByRole('button', { name: 'ユーザー' })).not.toBeInTheDocument()
   })
 
   it('admin には閲覧専用の表示を出さない', async () => {

@@ -109,6 +109,19 @@ function mutationHeaders(): Record<string, string> {
 /** ブラウザ既定キャッシュで GET が古い JSON を返すのを防ぐ */
 const fetchNoStore: RequestInit = { cache: 'no-store' }
 
+/** FastAPI の ``{"detail": "..."}`` なら detail の文字列を返す（それ以外は null）。 */
+function detailMessage(text: string): string | null {
+  try {
+    const body: unknown = JSON.parse(text)
+    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
+      return body.detail
+    }
+  } catch {
+    // JSON でなければ本文をそのまま使う
+  }
+  return null
+}
+
 async function errorMessageFromResponse(r: Response): Promise<string> {
   const text = await r.text()
   if (r.status >= 500) {
@@ -122,7 +135,7 @@ async function errorMessageFromResponse(r: Response): Promise<string> {
     return FORBIDDEN_MESSAGE
   }
   if (r.status === 422 || r.status === 409 || r.status === 413) {
-    return text || GENERIC_API_ERROR
+    return detailMessage(text) ?? (text || GENERIC_API_ERROR)
   }
   return GENERIC_API_ERROR
 }
