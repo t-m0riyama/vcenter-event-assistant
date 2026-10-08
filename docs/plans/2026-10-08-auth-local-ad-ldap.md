@@ -1,10 +1,10 @@
 # 認証・認可機能の追加（ローカル DB / AD / LDAP）
 
-最終更新: 2026-10-09
+最終更新: 2026-10-09（PR8a）
 
 ## 進捗
 
-全 8 PR に分けて段階的に実装している。各 PR は単独でマージでき、テストが通る状態にする。
+全 8 PR（一部はさらに分割）に分けて段階的に実装している。各 PR は単独でマージでき、テストが通る状態にする。
 
 | PR | 内容 | 状態 |
 |---|---|---|
@@ -18,11 +18,42 @@
 | 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ済み [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし） |
 | 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ済み [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし） |
 | 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | マージ済み [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263)（Codex の指摘 2 件に対応し、再レビューで指摘なし。CI 成功） |
-| 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
+| 8a | 実機確認: Samba AD / OpenLDAP の検証環境（`tests/manual/directory-lab/`）、実機で見つかった不具合の修正（StartTLS の証明書エラーで後始末の unbind が例外になる）、strongerAuthRequired の文言、ログイン画面に戻したときに直前の認証先を選ぶ | 作業中 |
+| 8b | 仕上げ: AD/LDAP 設定手順のユーザーガイド（`docs/user-guides/directory-auth.md`）、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）。7b の画面（資格情報の入力ダイアログなど、実際の LDAP がないと 409 を起こせないもの）もここで確かめる
+1. PR8a のレビューとマージ
+2. PR8b: ユーザーガイドと監査レポートへの対応記録（下の「PR8 で書くこと」と「PR8a の実機確認の結果」のガイドに書くこと）
+
+### PR8a の実機確認の結果
+
+`tests/manual/directory-lab/` の Samba 4.17.12 AD DC と OpenLDAP 2.5.13（Debian bookworm、arm64）で、計画の「確認方法」の項目と 7b の画面を確かめた。
+
+- 期待どおりだったもの
+  - 接続試験の各段階と ID の値。検索ベースの誤りは設定の誤りとして出る。ID 属性を読めないサービスアカウントでは unique_id の段階で止まる
+  - sAMAccountName と UPN でのログイン（同じユーザー行になる）
+  - `ad_nested` での入れ子の照合（`member_of` では入れ子は見えない）。primary group（Domain Users）は、どちらの方式でも一致しない
+  - グループから外すと次のログインで拒否され、ロールが変わるとほかのセッションが失効する
+  - LDAP の `member_of`、`group_search` の `member`（DN）と `memberUid`（ユーザー名）
+  - LDAPS: CA なし・ホスト名の不一致で失敗し理由が出る。CA の指定か検証の無効化で成功する。フェイルオーバー
+  - DN の表記: AD は `\,`、OpenLDAP の memberOf は `\2C` と書くが、対応表に `\,`・`\2c`・小文字・空白の違う表記で登録しても一致する。独自 OID の属性名は実サーバの DN に出てこない（Issue #251 は対応せず開けたまま。結果を Issue に書いた）
+  - 7b: 未試験と自分のログアウトの確認 → 409 `directory_verification_required` で資格情報のダイアログ → 誤ったパスワードで理由が出てパスワード欄が空になる → 正しいもので保存し、理由付きでログイン画面に戻る。自分のディレクトリの「有効」は操作できない。有効なディレクトリの削除は 409、無効化でセッション失効、削除で配下のユーザーも消える。アプリで無効にしたユーザーの資格情報では `directory_verification_failed`。証明書を検証しない設定の警告バッジ
+  - ローカルログインを無効にしてディレクトリだけで運用し、AD 側の変更で admin がいなくなったとき、CLI（`list-users`・`reset-password --password-stdin`）とローカルログインの再有効化で復旧できる
+- 直したもの（PR8a）
+  - StartTLS で証明書を検証できないと、`connect()` の後始末の `unbind()` が閉じたソケットへの送信で例外を投げていた。接続試験は 500、ログインは理由が `directory_error` になって原因が運用者に伝わらず、次のサーバも試さなかった。後始末は `connection.close_quietly` で行い、失敗を無視する（認証・接続試験の `finally` も同じ）
+  - AD で暗号化しない接続にすると「bind に失敗しました（strongerAuthRequired）」とだけ出ていた。設定の誤りとして、LDAPS か StartTLS を使うよう伝える
+  - 自分のディレクトリの保存やセッション切れでログイン画面に戻ると、認証先が一覧の先頭（ローカル）に戻っていた。直前の利用者の認証先を選んでおく（一覧にないときは先頭）
+- Issue にしたもの
+  - Issue #266: Samba は `msDS-PrincipalName` を返さないので、Samba AD では `DOMAIN\user` の形式でログインできない（拒否する側に倒れる）。代わりに構成パーティションの crossRef の NetBIOS 名で照合する案。Windows の AD での確認もあわせて
+- ガイドに書くこと（PR8b）
+  - グループから外しても、ログイン中のセッションは期限まで元のロールのまま。すぐ止めるならユーザー管理の「ログイン解除」か無効化
+  - primary group は対応表に使えない
+  - Samba AD では `DOMAIN\user` の形式は使えない（Issue #266）
+  - AD は暗号化しない接続での simple bind を断る
+  - ディレクトリだけの運用（`VEA_LOCAL_LOGIN_ENABLED=false`）に切り替えるときは `VEA_BOOTSTRAP_ADMIN_*` を消す（残っていると起動を止める）
+  - CLI の `list-users` のロールは、最後にログインしたときのもの
+- 確認の方法の注意: ディレクトリ管理画面の保存前の確認は `window.confirm` なので、確認ダイアログを自動で閉じるブラウザ（組み込みのペインなど）ではキャンセル扱いになる
 
 ### PR6 のレビューの経過
 
@@ -74,7 +105,8 @@
 | [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけ（設定上はほかにあっても、実際に動いているのがそのディレクトリだけの場合を含む）のとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | バックエンドは PR 6.5 で対応（下の「ディレクトリ API」）。画面は PR7 |
 | [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | PR 6.5 で対応（確かめた ID のユーザー行が無効なら 409） |
 | [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)、マージ待ち。ユーザー行を `FOR UPDATE` で読んでからロールを比べる） |
-| [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
+| [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | 対応しない（PR8a の実機確認で、実サーバの DN に OID の属性名は出てこなかった。必要になったら対応するため開けたまま） |
+| [Issue #266](https://github.com/t-m0riyama/vcenter-event-assistant/issues/266) | Samba AD では `DOMAIN\user` の形式でログインできない（Samba は `msDS-PrincipalName` を返さない） | 未定（PR8a の実機確認で発見。ガイドに制約として書く） |
 
 ## Context
 
@@ -151,6 +183,8 @@
 ### 接続と TLS
 - `server_uris` は `ldap(s)://ホスト名[:ポート]` の形だけを受け付ける（パス・クエリ・資格情報付き（ユーザー名が空でパスワードだけのものも）・範囲外のポートは 422）。ldap3 の `Server` は URI からホスト・ポート・SSL を読み取る
 - 複数の URI は順に試す（フェイルオーバー）。StartTLS に失敗したら中止する
+- 接続を閉じるとき（`unbind`）の失敗は無視する（`connection.close_quietly`）。StartTLS の失敗の後はソケットが閉じていて送信が例外になり、本来のエラーを隠して次のサーバも試さなかった（PR8a の実機確認で発見）
+- サーバが `strongerAuthRequired` で bind を断ったとき（AD は暗号化しない接続での simple bind を断る）は、設定の誤り（`DirectoryConfigError`）として LDAPS か StartTLS を使うよう伝える
 - `tls_verify=true` なら `CERT_REQUIRED` で、`ca_cert_pem` があれば `ca_certs_data` に使う。false なら `CERT_NONE`
 - `VEA_DIRECTORY_ALLOW_INSECURE_TLS=false` のときは `tls_verify=false` の保存を 422 にし、既存の設定でも接続時にエラーにする
 - 本番では `transport_security=none` を保存も接続も拒否する
@@ -275,7 +309,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - ロールを変更したとき、相手のセッションが即座に失効することを確認する
 - CSRF: ヘッダなしの `curl -X POST /api/ingest/run` と、`Origin: https://evil` を付けたリクエストが 403 になること
 - 本番設定（`APP_ENV=production`）: auth を無効にしたとき、または使える admin がいないときに起動を拒否すること。Cookie の属性
-- AD/LDAP（PR8 で実施）: Samba AD DC（入れ子グループあり）と OpenLDAP をコンテナで立てて確認する
+- AD/LDAP（PR8a で実施。結果は上の「PR8a の実機確認の結果」）: Samba AD DC（入れ子グループあり）と OpenLDAP をコンテナで立てて確認する。環境は `tests/manual/directory-lab/`（手順は README）
   - 接続試験
   - UPN・sAMAccountName・`DOMAIN\user` のどれでもログインでき、同じユーザー行になること（`msDS-PrincipalName` が実サーバで返ることも確認）
   - グループから外すと次のログインで拒否されること
