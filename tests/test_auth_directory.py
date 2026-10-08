@@ -1137,3 +1137,17 @@ def test_normalize_dn_applies_unicode_normalization_to_case_ignore_values() -> N
     decomposed = "cn=Cafe\u0301,dc=example"
     assert normalize_dn(composed) == normalize_dn(decomposed)
     assert normalize_dn("cn=\uff2f\uff50\uff53,dc=example") == normalize_dn("cn=Ops,dc=example")  # 全角
+
+
+def test_normalize_dn_covers_all_rfc4519_case_ignore_attributes() -> None:
+    """RFC 4519 で caseIgnoreMatch と定義された属性は、どれも大文字小文字を区別せずに比べる。"""
+    for attr, oid in (
+        ("name", "2.5.4.41"),
+        ("postalCode", "2.5.4.17"),
+        ("postOfficeBox", "2.5.4.18"),
+        ("physicalDeliveryOfficeName", "2.5.4.19"),
+        ("destinationIndicator", "2.5.4.27"),
+        ("knowledgeInformation", "2.5.4.2"),
+    ):
+        assert normalize_dn(f"{attr}=Ops,dc=example") == normalize_dn(f"{attr.upper()}=ops,DC=example"), attr
+        assert normalize_dn(f"{oid}=Ops,dc=example") == normalize_dn(f"{attr}=ops,dc=example"), attr

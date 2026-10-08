@@ -14,7 +14,7 @@ from vcenter_event_assistant.auth.roles import Role
 _ROLE_ORDER = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 
 # 標準スキーマ（RFC 4519 など）の命名属性の OID と名前（照合用に小文字）。DN では属性を OID でも書けるので、名前にそろえる。
-# どれも equality が caseIgnoreMatch / caseIgnoreIA5Match の属性
+# RFC 4519 で equality が caseIgnoreMatch / caseIgnoreIA5Match の属性はすべて含める（ほかに RFC 4524 の mail）
 _ATTRIBUTE_NAMES_BY_OID = {
     "2.5.4.3": "cn",
     "2.5.4.11": "ou",
@@ -33,6 +33,12 @@ _ATTRIBUTE_NAMES_BY_OID = {
     "2.5.4.15": "businesscategory",
     "2.5.4.46": "dnqualifier",
     "2.5.4.51": "houseidentifier",
+    "2.5.4.41": "name",
+    "2.5.4.17": "postalcode",
+    "2.5.4.18": "postofficebox",
+    "2.5.4.19": "physicaldeliveryofficename",
+    "2.5.4.27": "destinationindicator",
+    "2.5.4.2": "knowledgeinformation",
     "0.9.2342.19200300.100.1.25": "dc",
     "0.9.2342.19200300.100.1.1": "uid",
     "0.9.2342.19200300.100.1.3": "mail",
