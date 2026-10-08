@@ -17,6 +17,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.directory import backend as directory_backend
 from vcenter_event_assistant.auth.directory.backend import DirectoryIdentity
+from vcenter_event_assistant.auth.directory.connection import allowed_by_security
 from vcenter_event_assistant.auth.directory.errors import DirectoryError
 from vcenter_event_assistant.auth.directory.runner import connect_options, run_directory_call
 from vcenter_event_assistant.auth.directory.spec import spec_from_model
@@ -74,13 +75,13 @@ logger = logging.getLogger(__name__)
 
 
 async def list_realms(db: AsyncSession, settings: Settings) -> list[Realm]:
-    """ログイン画面に出す認証先（ローカルと、有効なディレクトリ）。"""
+    """ログイン画面に出す認証先（ローカルと、有効で今の接続の方針で拒否されないディレクトリ）。"""
     realms: list[Realm] = []
     if settings.local_login_enabled:
         realms.append(Realm(id=LOCAL_REALM, name="ローカル", kind="local"))
     directories = await db.scalars(
         select(DirectoryConfig)
-        .where(DirectoryConfig.is_enabled.is_(True))
+        .where(DirectoryConfig.is_enabled.is_(True), allowed_by_security(connect_options(settings)))
         .order_by(DirectoryConfig.sort_order, DirectoryConfig.name)
     )
     for d in directories:

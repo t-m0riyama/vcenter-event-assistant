@@ -1129,6 +1129,8 @@ async def test_sessions_of_directories_blocked_by_policy_stop_working(
         monkeypatch.setenv("VEA_DIRECTORY_ALLOW_INSECURE_TLS", "false")
         get_settings.cache_clear()
         assert (await ac.get("/api/auth/me")).status_code == 401
+        # ログイン画面の認証先にも出さない（選んでも必ず失敗するため）
+        assert realm not in [r["id"] for r in (await ac.get("/api/auth/realms")).json()["realms"]]
 
 
 def test_normalize_dn_applies_unicode_normalization_to_case_ignore_values() -> None:
@@ -1148,6 +1150,22 @@ def test_normalize_dn_covers_all_rfc4519_case_ignore_attributes() -> None:
         ("physicalDeliveryOfficeName", "2.5.4.19"),
         ("destinationIndicator", "2.5.4.27"),
         ("knowledgeInformation", "2.5.4.2"),
+    ):
+        assert normalize_dn(f"{attr}=Ops,dc=example") == normalize_dn(f"{attr.upper()}=ops,DC=example"), attr
+        assert normalize_dn(f"{oid}=Ops,dc=example") == normalize_dn(f"{attr}=ops,dc=example"), attr
+
+
+def test_normalize_dn_covers_rfc4524_case_ignore_attributes() -> None:
+    """RFC 4524（COSINE）で caseIgnoreMatch / caseIgnoreIA5Match と定義された属性も、大文字小文字を区別しない。"""
+    for attr, oid in (
+        ("roomNumber", "0.9.2342.19200300.100.1.6"),
+        ("buildingName", "0.9.2342.19200300.100.1.48"),
+        ("co", "0.9.2342.19200300.100.1.43"),
+        ("organizationalStatus", "0.9.2342.19200300.100.1.45"),
+        ("personalTitle", "0.9.2342.19200300.100.1.40"),
+        ("uniqueIdentifier", "0.9.2342.19200300.100.1.44"),
+        ("userClass", "0.9.2342.19200300.100.1.8"),
+        ("associatedDomain", "0.9.2342.19200300.100.1.37"),
     ):
         assert normalize_dn(f"{attr}=Ops,dc=example") == normalize_dn(f"{attr.upper()}=ops,DC=example"), attr
         assert normalize_dn(f"{oid}=Ops,dc=example") == normalize_dn(f"{attr}=ops,dc=example"), attr

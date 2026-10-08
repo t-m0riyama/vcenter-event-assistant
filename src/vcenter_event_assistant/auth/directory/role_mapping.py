@@ -14,7 +14,7 @@ from vcenter_event_assistant.auth.roles import Role
 _ROLE_ORDER = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 
 # 標準スキーマ（RFC 4519 など）の命名属性の OID と名前（照合用に小文字）。DN では属性を OID でも書けるので、名前にそろえる。
-# RFC 4519 で equality が caseIgnoreMatch / caseIgnoreIA5Match の属性はすべて含める（ほかに RFC 4524 の mail）
+# RFC 4519 と RFC 4524（COSINE）で equality が caseIgnoreMatch / caseIgnoreIA5Match の属性はすべて含める
 _ATTRIBUTE_NAMES_BY_OID = {
     "2.5.4.3": "cn",
     "2.5.4.11": "ou",
@@ -42,6 +42,22 @@ _ATTRIBUTE_NAMES_BY_OID = {
     "0.9.2342.19200300.100.1.25": "dc",
     "0.9.2342.19200300.100.1.1": "uid",
     "0.9.2342.19200300.100.1.3": "mail",
+    "0.9.2342.19200300.100.1.4": "info",
+    "0.9.2342.19200300.100.1.5": "drink",
+    "0.9.2342.19200300.100.1.6": "roomnumber",
+    "0.9.2342.19200300.100.1.8": "userclass",
+    "0.9.2342.19200300.100.1.9": "host",
+    "0.9.2342.19200300.100.1.11": "documentidentifier",
+    "0.9.2342.19200300.100.1.12": "documenttitle",
+    "0.9.2342.19200300.100.1.13": "documentversion",
+    "0.9.2342.19200300.100.1.15": "documentlocation",
+    "0.9.2342.19200300.100.1.37": "associateddomain",
+    "0.9.2342.19200300.100.1.40": "personaltitle",
+    "0.9.2342.19200300.100.1.43": "co",
+    "0.9.2342.19200300.100.1.44": "uniqueidentifier",
+    "0.9.2342.19200300.100.1.45": "organizationalstatus",
+    "0.9.2342.19200300.100.1.48": "buildingname",
+    "0.9.2342.19200300.100.1.56": "documentpublisher",
 }
 # 値の比較が大文字小文字を区別しない（equality が caseIgnoreMatch / caseIgnoreIA5Match）と標準スキーマで
 # 決まっている命名属性。これ以外の属性は、スキーマ次第で大文字小文字を区別するため値をならさない。
