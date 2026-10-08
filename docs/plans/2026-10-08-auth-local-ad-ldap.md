@@ -16,7 +16,7 @@
 | 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
 | 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ済み [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。Issue #258 は閉じた。Issue #254 は画面が残るので PR7 で閉じる） |
 | 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ済み [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし） |
-| 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | レビュー中 [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261) |
+| 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ待ち [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし。CI 成功） |
 | 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
@@ -45,6 +45,10 @@
 ### PR 6.6（PR #260）のレビューの経過
 
 - PR 作成時のレビューで指摘なし（`0493cbe`）。その後の計画書への PR 番号の追記はドキュメントだけなので、再レビューは依頼していない
+
+### PR 7a（PR #261）のレビューの経過
+
+- PR 作成時のレビューで指摘なし（`16cc9f7`）。その後の計画書への PR 番号の追記はドキュメントだけなので、再レビューは依頼していない
 
 ### PR6 からの持ち越し（Issue）
 
