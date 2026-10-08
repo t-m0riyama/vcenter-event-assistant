@@ -5,6 +5,7 @@ import { fetchMe, fetchRealms, logout as logoutRequest } from './authApi'
 import { AuthContext, type AuthContextValue } from './authContext'
 import { LoginScreen } from './LoginScreen'
 import { roleAtLeast } from './roles'
+import { setActivityReporter } from '../userActivity'
 import './auth.css'
 
 type State =
@@ -110,6 +111,13 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
       }),
     [showLogin],
   )
+
+  // ログイン中は、API を呼ばない操作もサーバの無操作期限が切れる前に伝える
+  const isAuthenticated = state.status === 'authenticated'
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    return setActivityReporter(() => fetchMe())
+  }, [isAuthenticated])
 
   const logout = useCallback(async () => {
     // 失効を確認できたときだけログイン画面へ戻す。失敗したら例外を呼び出し元に返し、

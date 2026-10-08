@@ -12,6 +12,15 @@
 /** 操作からこの時間内に出た要求は、その操作によるものとみなす。 */
 export const USER_ACTIVITY_WINDOW_MS = 30_000
 
+/**
+ * 操作をサーバに伝えた最後の要求からこの時間がたっていたら、API を呼ばない操作でも報告の要求を送る。
+ * サーバがセッションの最終利用時刻を更新する間隔（最大 60 秒）に合わせる。
+ */
+export const ACTIVITY_REPORT_INTERVAL_MS = 60_000
+
+/** 操作が続いているあいだに報告を何度も送らないよう、最後の操作からこの時間待って送る。 */
+export const ACTIVITY_REPORT_DEBOUNCE_MS = 2_000
+
 export const BACKGROUND_REQUEST_HEADER = 'X-VEA-Background'
 
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
@@ -20,10 +29,47 @@ const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as con
 let lastActivityAt = Date.now()
 /** まだどの要求でもサーバに伝えていない操作があるか。 */
 let unreportedActivity = true
+/** 操作をサーバに伝えた（バックグラウンドでない）最後の要求の時刻。 */
+let lastReportedAt = 0
+let reporter: (() => Promise<unknown>) | null = null
+let reportTimer: ReturnType<typeof setTimeout> | null = null
 
 export function markUserActivity(now: number = Date.now()): void {
   lastActivityAt = now
   unreportedActivity = true
+  scheduleReport(now)
+}
+
+/**
+ * API を呼ばない操作（スクロールなど）でも、サーバの無操作期限が切れる前に伝わるよう、
+ * 前回の報告から間が空いていれば報告の要求を送る。
+ */
+function scheduleReport(now: number): void {
+  if (!reporter || now - lastReportedAt < ACTIVITY_REPORT_INTERVAL_MS) return
+  if (reportTimer !== null) clearTimeout(reportTimer)
+  reportTimer = setTimeout(() => {
+    reportTimer = null
+    // 待っている間に別の要求で伝わっていれば送らない
+    if (!unreportedActivity || !reporter) return
+    void reporter().catch(() => {
+      // 報告の失敗は無視する（次の要求で伝わる）
+    })
+  }, ACTIVITY_REPORT_DEBOUNCE_MS)
+}
+
+/**
+ * 操作の報告に使う要求を登録する（ログイン中だけ）。戻り値で登録を解除する。
+ * 要求は ``activityHeaders()`` を付けて送ること。
+ */
+export function setActivityReporter(report: () => Promise<unknown>): () => void {
+  reporter = report
+  return () => {
+    if (reporter === report) reporter = null
+    if (reportTimer !== null) {
+      clearTimeout(reportTimer)
+      reportTimer = null
+    }
+  }
 }
 
 export function isUserIdle(now: number = Date.now()): boolean {
@@ -37,6 +83,7 @@ export function isUserIdle(now: number = Date.now()): boolean {
 export function activityHeaders(now: number = Date.now()): Record<string, string> {
   const idle = isUserIdle(now)
   unreportedActivity = false
+  if (!idle) lastReportedAt = now
   return idle ? { [BACKGROUND_REQUEST_HEADER]: '1' } : {}
 }
 
