@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiDelete, apiGet, apiPatch, apiPost } from './api'
+import { apiDelete, apiGet, apiPatch, apiPost, FORBIDDEN_MESSAGE, onUnauthorized, SESSION_EXPIRED_MESSAGE } from './api'
 
 const GENERIC = 'リクエストに失敗しました。時間をおいて再度お試しください。'
 
@@ -127,6 +127,34 @@ describe('api', () => {
     } catch (e) {
       expect((e as Error).message).toBe(GENERIC)
       expect((e as Error).message).not.toContain('gone')
+    }
+  })
+
+  it('401 はセッション切れとして通知し、案内の文言で失敗する', async () => {
+    const listener = vi.fn()
+    const off = onUnauthorized(listener)
+    try {
+      fetchMock().mockResolvedValueOnce(new Response('{"detail":"x"}', { status: 401 }))
+      await expect(apiGet('/api/foo')).rejects.toThrow(SESSION_EXPIRED_MESSAGE)
+      expect(listener).toHaveBeenCalledTimes(1)
+    } finally {
+      off()
+    }
+    // 登録を解除したあとは呼ばれない
+    fetchMock().mockResolvedValueOnce(new Response('{"detail":"x"}', { status: 401 }))
+    await expect(apiGet('/api/foo')).rejects.toThrow(SESSION_EXPIRED_MESSAGE)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('403 は権限エラーの文言で失敗する', async () => {
+    const listener = vi.fn()
+    const off = onUnauthorized(listener)
+    try {
+      fetchMock().mockResolvedValueOnce(new Response('{"detail":"x"}', { status: 403 }))
+      await expect(apiDelete('/api/foo')).rejects.toThrow(FORBIDDEN_MESSAGE)
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      off()
     }
   })
 })

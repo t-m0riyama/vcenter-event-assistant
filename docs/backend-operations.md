@@ -369,6 +369,7 @@
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
+- 認証: `VEA_AUTH_ENABLED`（既定 `true`、本番では無効にできない）、`VEA_SESSION_*`、`VEA_LOGIN_*`、`VEA_BOOTSTRAP_ADMIN_PASSWORD` が残っていないこと（起動時に警告）
 - プラグイン管理: `VEA_PLUGIN_MANAGEMENT_ENABLED`（既定 `false`）、`VEA_PLUGIN_ALLOW_INDEX_INSTALL`（既定 `false`）、`VEA_PLUGIN_DIR`
 - コレクタワーカーのログ: `VEA_COLLECTOR_WORKER_LOG_LEVEL`（未設定時は `LOG_LEVEL` を継承）
 
@@ -376,9 +377,9 @@
 
 `VEA_PLUGIN_MANAGEMENT_ENABLED=true` にすると、`/api/plugins` の変更系 API（設定変更・リロード・
 インストール・アンインストール）が開きます。**これは実質的に任意コード実行を許す操作です。**
-本アプリ単体は認証を行わないため、有効化する場合は次を必ず満たしてください。
+これらの API は admin ロールだけが呼べます。有効化する場合は次を必ず満たしてください。
 
-- リバースプロキシで `/api/plugins` に認証を必須にする（未認証アクセスを遮断する）
+- admin ロールは信頼できる利用者だけに付与する（`vcenter-event-assistant-admin list-users` で定期的に確認する）
 - `VEA_PLUGIN_ALLOW_INDEX_INSTALL` は原則 `false` のままにし、アップロード経路のみを使う
   （`true` にすると実行時に外部インデックスから取得するため、サプライチェーンリスクが増える）
 - `VEA_PLUGIN_DIR` を永続ボリュームに割り当てる（コンテナ入れ替えでインストール済みプラグインが消えないようにする）
@@ -419,6 +420,25 @@ kill され、アプリ本体は停止しません。
 | `load failed: ...` | entry point の読み込みに失敗 | ワーカーの stderr にトレースバックが出ている |
 | `TimeoutError: collector execution failed` | `timeout_seconds` 超過でワーカーを kill | 実行間隔とタイムアウトを見直す。ワーカーは次回実行で作り直される |
 | `BatchValidationError: ...` | バッチ検証で拒否。違反した規則がそのまま表示される | プラグイン側の修正が必要。条件の一覧は `docs/collector-plugin-authoring.md` の「バッチが拒否される条件」 |
+
+## 4.2 認証を導入したバージョンへの更新
+
+このバージョンから、認証が既定で有効になります（`VEA_AUTH_ENABLED=true`）。更新前に次を準備してください。
+
+1. 初期 admin を用意する。`.env` に `VEA_BOOTSTRAP_ADMIN_USERNAME` / `VEA_BOOTSTRAP_ADMIN_PASSWORD` を設定するか、更新後に `vcenter-event-assistant-admin create-user <名前> --role admin` を実行する。本番（`APP_ENV=production`）では admin がいないと起動を止めます
+2. HTTPS で配信している場合、`APP_ENV=production` でなければ `VEA_SESSION_COOKIE_SECURE=true` を設定する
+3. `curl` などで API を直接呼んでいるスクリプトは、ログインが必要になるため動かなくなります。ログイン API でセッション Cookie を取得して使ってください。POST / PUT / PATCH / DELETE（ログイン自体を含む）には `X-Requested-With: XMLHttpRequest` ヘッダが必要です
+
+   ```bash
+   curl -c cookies.txt -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
+     -d '{"username":"admin","password":"..."}' http://localhost:8000/api/auth/login
+   curl -b cookies.txt http://localhost:8000/api/events
+   ```
+
+4. リバースプロキシで行っていた認証は、二重になるため外してもかまいません（TLS 終端とネットワーク制限は引き続きプロキシで行う）
+5. ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から削除する
+
+ログインの失敗・ロックアウト・ユーザー変更は、ロガー `vcenter_event_assistant.audit` に `AUDIT event=...` の形式で出力されます。
 
 ## 5. 変更管理（実務向け最小）
 

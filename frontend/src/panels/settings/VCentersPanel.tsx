@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
 import { vcenterSchema, type VCenter } from '../../api/schemas'
+import { useAuth } from '../../auth/useAuth'
 import { toErrorMessage } from '../../utils/errors'
 
 const vcenterListSchema = z.array(vcenterSchema)
@@ -19,6 +20,10 @@ type VCenterFormState = {
 
 /** vCenter 接続設定パネル。 */
 export function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
+  const { hasRole } = useAuth()
+  // 登録・編集・削除は admin、接続テストは operator 以上（サーバの権限と同じ）
+  const canEdit = hasRole('admin')
+  const canTest = hasRole('operator')
   const [list, setList] = useState<VCenter[]>([])
   const [form, setForm] = useState<VCenterFormState>({
     name: '',
@@ -173,82 +178,86 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
       <p className="hint">
         vCenter の接続先と認証情報をサーバーに保存します。パスワードは暗号化して保存し、イベント収集や接続確認の対象になるのは有効化した接続だけです。
       </p>
-      <h2>登録</h2>
-      <div className="form-grid">
-        <label>
-          表示名
-          <input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-        </label>
-        <label>
-          ホスト
-          <input
-            value={form.host}
-            onChange={(e) => setForm({ ...form, host: e.target.value })}
-          />
-        </label>
-        <label>
-          プロトコル
-          <select
-            value={form.protocol}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                protocol: e.target.value === 'http' ? 'http' : 'https',
-                verify_ssl: e.target.value === 'http' ? false : form.verify_ssl,
-              })
-            }
-          >
-            <option value="https">HTTPS</option>
-            <option value="http">HTTP</option>
-          </select>
-        </label>
-        <label>
-          ポート
-          <input
-            type="number"
-            value={form.port}
-            onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
-          />
-        </label>
-        <label>
-          ユーザー
-          <input
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-          />
-        </label>
-        <label>
-          パスワード
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={form.protocol === 'https' && form.verify_ssl}
-            disabled={form.protocol !== 'https'}
-            onChange={(e) => setForm({ ...form, verify_ssl: e.target.checked })}
-          />
-          SSL 証明書を検証（HTTPS のみ）
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={form.is_enabled}
-            onChange={(e) => setForm({ ...form, is_enabled: e.target.checked })}
-          />
-          有効
-        </label>
-      </div>
-      <button type="button" className="btn btn--filled" onClick={() => void add()}>
-        追加
-      </button>
+      {canEdit && (
+        <>
+          <h2>登録</h2>
+          <div className="form-grid">
+            <label>
+              表示名
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </label>
+            <label>
+              ホスト
+              <input
+                value={form.host}
+                onChange={(e) => setForm({ ...form, host: e.target.value })}
+              />
+            </label>
+            <label>
+              プロトコル
+              <select
+                value={form.protocol}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    protocol: e.target.value === 'http' ? 'http' : 'https',
+                    verify_ssl: e.target.value === 'http' ? false : form.verify_ssl,
+                  })
+                }
+              >
+                <option value="https">HTTPS</option>
+                <option value="http">HTTP</option>
+              </select>
+            </label>
+            <label>
+              ポート
+              <input
+                type="number"
+                value={form.port}
+                onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              ユーザー
+              <input
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+              />
+            </label>
+            <label>
+              パスワード
+              <input
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.protocol === 'https' && form.verify_ssl}
+                disabled={form.protocol !== 'https'}
+                onChange={(e) => setForm({ ...form, verify_ssl: e.target.checked })}
+              />
+              SSL 証明書を検証（HTTPS のみ）
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.is_enabled}
+                onChange={(e) => setForm({ ...form, is_enabled: e.target.checked })}
+              />
+              有効
+            </label>
+          </div>
+          <button type="button" className="btn btn--filled" onClick={() => void add()}>
+            追加
+          </button>
+        </>
+      )}
 
       <h2>一覧</h2>
       <table className="table">
@@ -361,22 +370,28 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                 <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
                 <td>{v.username}</td>
                 <td className="actions">
-                  <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
-                    接続テスト
-                  </button>
-                  <button type="button" className="btn btn--gray" onClick={() => startEdit(v)}>
-                    編集
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--gray"
-                    onClick={() => void toggleEnabled(v)}
-                  >
-                    {v.is_enabled ? '無効' : '有効'}
-                  </button>
-                  <button type="button" className="btn btn--danger" onClick={() => void remove(v.id)}>
-                    削除
-                  </button>
+                  {canTest && (
+                    <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
+                      接続テスト
+                    </button>
+                  )}
+                  {canEdit && (
+                    <>
+                      <button type="button" className="btn btn--gray" onClick={() => startEdit(v)}>
+                        編集
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--gray"
+                        onClick={() => void toggleEnabled(v)}
+                      >
+                        {v.is_enabled ? '無効' : '有効'}
+                      </button>
+                      <button type="button" className="btn btn--danger" onClick={() => void remove(v.id)}>
+                        削除
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ),

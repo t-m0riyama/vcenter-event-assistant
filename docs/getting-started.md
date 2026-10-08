@@ -74,7 +74,9 @@ UI と API は既定で `http://localhost:8000`（動作確認は `http://localh
 
 DB は起動時に自動で最新のスキーマへ更新する。既存 SQLite DB の変更前には DB 隣の `backups/` にバックアップを保存する。PostgreSQL は更新前に運用側でバックアップを取得する。更新時は旧 app を停止してから新しい app を起動する。設定・失敗時の復旧方法は [開発者向け手順](development.md#自動移行の設定と排他制御) を参照する。
 
-**セキュリティ:** 本アプリ単体は認証を行わない。コンテナをインターネットに直接晒さず、必要に応じてリバースプロキシ側で TLS・認証・ネットワーク制限を行うこと。
+**初回ログイン:** 起動前に `.env` へ `VEA_BOOTSTRAP_ADMIN_USERNAME` と `VEA_BOOTSTRAP_ADMIN_PASSWORD` を設定しておくと、空の DB に初期 admin が作られる（詳しくは下の「ログイン」）。
+
+**セキュリティ:** コンテナをインターネットに直接晒さず、リバースプロキシ側で TLS 終端とネットワーク制限を行うこと。HTTPS で配信する場合は `VEA_SESSION_COOKIE_SECURE=true` にする（`APP_ENV=production` では既定で有効）。
 
 テンプレートはリポジトリで `docker-compose.sqlite.yml` / `docker-compose.postgres.yml` として管理し、コピーで生成した `docker-compose.yml` は `.gitignore` により追跡しない。
 
@@ -98,6 +100,19 @@ DB は起動時に自動で最新のスキーマへ更新する。既存 SQLite 
 4. ブラウザで既定の `http://localhost:8000`、または `UVICORN_PORT` で指定したポートを開く。起動に成功すると概要タブが表示されます（下図は `MOCK_MODE=1` で取得した例。ヘッダ下にモックバナーが出ます）。
 
 ![起動後の概要タブ](images/summary.png)
+
+### ログイン
+
+認証は既定で有効で、ブラウザで開くとログイン画面が出る。ユーザーが 1 人もいない DB では、起動前に `.env` で初期 admin を指定する。
+
+```dotenv
+VEA_BOOTSTRAP_ADMIN_USERNAME=admin
+VEA_BOOTSTRAP_ADMIN_PASSWORD=12文字以上のパスワード
+```
+
+ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` は `.env` から削除する。CLI（`uv run vcenter-event-assistant-admin create-user admin --role admin`）で作ってもよい。ロールごとの権限やユーザーの追加は [ログインとロール](user-guides/authentication.md) を参照する。
+
+ローカル開発でログインを省きたい場合だけ `VEA_AUTH_ENABLED=false` にできる（本番 `APP_ENV=production` では起動を止める）。
 
 ### 開発用途（フロントエンドの改修・HMR）（Vite 開発サーバー）
 
@@ -133,6 +148,9 @@ vCenter・SMTP・LLM・WEB 検索 API が無い環境でも、UI と主要フロ
 # .env に追記（またはシェルで指定）
 MOCK_MODE=1
 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
+# 初回だけ: ログイン用の初期 admin（ログイン後は削除してよい）
+VEA_BOOTSTRAP_ADMIN_USERNAME=admin
+VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password
 
 uv run vcenter-event-assistant
 ```
@@ -149,10 +167,11 @@ uv run vcenter-event-assistant
 
 画面の操作やアラート通知の仕組み（開発者向け API 説明ではない）:
 
+- [ログインとロール](user-guides/authentication.md) — 初期 admin、ロールごとの権限、ユーザー管理 CLI
 - [モックモードの使い方](user-guides/mock-mode.md) — 外部サービスなしのデモ・開発起動
 - [アラート機能の使い方](user-guides/alerts.md) — ルール設定、メール通知、通知履歴、タイムライン上の表示
 - [グラフタブの使い方](user-guides/graph.md) — メトリクス時系列、イベント件数オーバーレイ、エクスポート
 
 ## セキュリティ
 
-アプリ自体は認証を行わない。本番ではリバースプロキシで TLS・認証・ネットワーク制限を行い、インターネットに直接公開しないこと。
+アプリはログインとロールによる権限制御を持つ（[ログインとロール](user-guides/authentication.md)）。TLS は持たないので、本番ではリバースプロキシで TLS 終端とネットワーク制限を行い、インターネットに直接公開しないこと。

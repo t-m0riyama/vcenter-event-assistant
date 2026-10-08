@@ -16,9 +16,11 @@ import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { asArray } from '../../utils/asArray'
+import { useAuth } from '../../auth/useAuth'
 
 /** イベント一覧パネル（フィルタ・ページング・詳細・CSV export）。 */
 export function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
+  const canEditComment = useAuth().hasRole('operator')
   const c = useEventsPanelController(onError)
   const { load: reloadEvents } = c
   const { autoRefreshEnabled, autoRefreshIntervalMinutes } = useAutoRefreshPreferences()
@@ -246,13 +248,15 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
                     <span className="event-comment-preview">
                       {e.user_comment?.trim() ? e.user_comment : '—'}
                     </span>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => c.beginCommentEdit(e)}
-                    >
-                      編集
-                    </button>
+                    {canEditComment && (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => c.beginCommentEdit(e)}
+                      >
+                        編集
+                      </button>
+                    )}
                   </div>
                 )}
               </td>

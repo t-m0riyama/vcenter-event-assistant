@@ -328,7 +328,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 | 用途 | 前提 |
 |------|------|
 | **ドキュメント用 PNG**（本節） | 手元で **既に起動している** `http://127.0.0.1:8000`（API とフロントを同一オリジンで配信）を対象にする。`capture_ui_screenshots.py` の既定では Playwright は API を起動しない。 |
-| **`frontend/e2e/*.spec.ts` の E2E** | `npm run e2e` では **テスト専用**の uvicorn を **新規起動**する（既定ポートは環境変数 `E2E_PORT`、既定値は **9323**。開発用 8000 と別）。**`screenshots.spec.ts` はシード DB 前提のため `npm run e2e` の対象外**（ドキュメント取得は `capture_ui_screenshots.py` / `npm run screenshots*`）。設定は [frontend/playwright.config.ts](../frontend/playwright.config.ts)。 |
+| **`frontend/e2e/*.spec.ts` の E2E** | `npm run e2e` では **テスト専用**の uvicorn を **新規起動**する（既定ポートは環境変数 `E2E_PORT`、既定値は **9323**。開発用 8000 と別）。ログインは `e2e/auth.setup.ts` が画面から 1 回だけ行い、Cookie を `e2e/.auth/admin.json` に保存して各 spec で使い回す。起動するサーバーには同じ資格情報を `VEA_BOOTSTRAP_ADMIN_*` で渡す（値は `e2e/credentials.ts`）。**`screenshots.spec.ts` はシード DB 前提のため `npm run e2e` の対象外**（ドキュメント取得は `capture_ui_screenshots.py` / `npm run screenshots*`）。設定は [frontend/playwright.config.ts](../frontend/playwright.config.ts)。 |
 | **例外** | ドキュメント PNG を 8000 なしで取るときは `--spawn-server` または `npm run screenshots:spawn`（Playwright がメモリ DB＋シードで API を起動。E2E の `webServer` と同系）。 |
 
 ### 前提
@@ -338,7 +338,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 
 ### 推奨: `uv run` スクリプト
 
-**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
+**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。認証が有効なサーバーでは、そのサーバーの admin を環境変数 `E2E_USERNAME` / `E2E_PASSWORD` で渡してください（未指定時は `e2e-admin` / `e2e-admin-password`）。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
 
 | コマンド | 内容 |
 |---------|------|

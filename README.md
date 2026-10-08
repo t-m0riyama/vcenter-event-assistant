@@ -53,7 +53,7 @@ flowchart TB
 
 ## 制約、その他
 
-- **本アプリ単体では認証を行わない。本番ではリバースプロキシ等で TLS・認証・ネットワーク制限を行うこと**。
+- **ログインとロール（admin / operator / viewer）による権限制御を内蔵する**（[ログインとロール](docs/user-guides/authentication.md)）。TLS は持たないので、本番ではリバースプロキシ等で TLS 終端とネットワーク制限を行うこと。
 - **Broadcom / VMware の公式製品ではない**（[商標および免責](#商標および免責)）。
 - ホスト指標は `**quickStats` ベースの限定的な項目**であり、vCenter の全パフォーマンスカウンタ網羅や VM 単位の詳細キャパシティプランニング専用ツールではない。
 - **フル SIEM やコンプライアンス監査の唯一の証跡ソース**としての置き換えは想定しない（保持・改ざん耐性・長期アーカイブは運用設計が別途必要である）。
@@ -66,6 +66,7 @@ flowchart TB
 ## ドキュメント
 
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
+- **ログインとロール**（初期 admin・ユーザー管理・権限）: [docs/user-guides/authentication.md](docs/user-guides/authentication.md)
 - **モックモード（デモ・開発）**（外部サービスなしで UI を試す）: [docs/user-guides/mock-mode.md](docs/user-guides/mock-mode.md)
 - **アラート機能（利用者向け）**（ルール・メール通知・通知履歴・タイムライン）: [docs/user-guides/alerts.md](docs/user-guides/alerts.md)
 - **スコアルール（利用者向け）**（要注目スコア・種別ごとの加算・JSON バックアップ）: [docs/user-guides/score-rules.md](docs/user-guides/score-rules.md)

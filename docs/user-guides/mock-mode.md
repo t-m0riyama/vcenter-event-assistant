@@ -32,6 +32,10 @@ cp .env.example .env   # 未作成の場合
 MOCK_MODE=1
 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 
+# ログイン用の初期 admin（ユーザーがいない DB のときだけ作られる）
+VEA_BOOTSTRAP_ADMIN_USERNAME=admin
+VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password
+
 # 任意: true なら合成イベント／メトリクスを定期追加（false なら起動時シードのみ）
 # SCHEDULER_ENABLED=true
 ```
@@ -47,7 +51,7 @@ DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 uv run vcenter-event-assistant
 ```
 
-ブラウザで `http://localhost:8000` を開きます。
+ブラウザで `http://localhost:8000` を開き、上で設定した初期 admin でログインします（[ログインとロール](authentication.md)）。
 
 **開発用途（Vite）**
 
@@ -65,6 +69,7 @@ cd frontend && npm run dev
 
 ```bash
 MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
+  VEA_BOOTSTRAP_ADMIN_USERNAME=admin VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password \
   uv run vcenter-event-assistant
 ```
 
