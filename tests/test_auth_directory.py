@@ -795,3 +795,15 @@ async def test_bind_password_with_storage_prefix_is_rejected(client, directory: 
     directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
     resp = await client.patch(f"/api/auth/directories/{directory_id}", json={"bind_password": "enc:secret"})
     assert resp.status_code == 422
+
+
+async def test_malformed_group_dn_is_rejected(client, directory: FakeDirectory) -> None:
+    """DN として解析できない値は、どのグループとも一致しないので対応表に登録させない。"""
+    body = _directory_body(mappings=[{"group_dn": "not a DN", "role": "admin"}])
+    assert (await client.post("/api/auth/directories", json=body)).status_code == 422
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    resp = await client.put(
+        f"/api/auth/directories/{directory_id}/mappings",
+        json={"mappings": [{"group_dn": "not a DN", "role": "admin"}]},
+    )
+    assert resp.status_code == 422

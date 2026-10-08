@@ -397,3 +397,41 @@ async def test_postgres_timeout_failure_and_cancel_release(postgres_db):
             await task
         async with postgres_migration_lock(second, 0):
             pass
+
+
+async def test_directory_downgrade_removes_directory_users_and_sessions(sqlite_db):
+    """ディレクトリ機能を戻したら、そのユーザーとセッションを残さない（ローカルのユーザーは残す）。"""
+    path, settings, engine = sqlite_db
+    path.parent.mkdir(parents=True, exist_ok=True)
+    await upgrade(engine, settings, "a8b9c0d1e2f3")
+    now = "2026-01-01 00:00:00"
+    async with engine.begin() as conn:
+        for user_id, realm in (("u-local", "local"), ("u-dir", "dir:abc")):
+            await conn.execute(
+                text(
+                    "INSERT INTO users (id, realm_key, subject, username, role, is_active, "
+                    "failed_login_count, created_at, updated_at) "
+                    "VALUES (:id, :realm, :id, :id, 'admin', 1, 0, :now, :now)"
+                ),
+                {"id": user_id, "realm": realm, "now": now},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO auth_sessions (id, token_hash, user_id, created_at, last_seen_at, "
+                    "expires_at) VALUES (:sid, :sid, :id, :now, :now, :now)"
+                ),
+                {"sid": f"s-{user_id}", "id": user_id, "now": now},
+            )
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda c: _run_with_connection(
+                c,
+                alembic_config(settings=settings),
+                lambda cfg: command.downgrade(cfg, "z7a8b9c0d1e2"),
+            )
+        )
+    async with engine.connect() as conn:
+        users = (await conn.execute(text("SELECT id FROM users"))).scalars().all()
+        sessions = (await conn.execute(text("SELECT user_id FROM auth_sessions"))).scalars().all()
+    assert users == ["u-local"]
+    assert sessions == ["u-local"]

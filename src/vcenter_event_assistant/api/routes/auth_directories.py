@@ -36,7 +36,7 @@ from vcenter_event_assistant.api.schemas.auth_directories import (
     GroupRoleMappingRead,
 )
 from vcenter_event_assistant.auth.audit import audit
-from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn
+from vcenter_event_assistant.auth.directory.role_mapping import is_valid_dn, normalize_dn
 from vcenter_event_assistant.auth.directory.runner import connect_options, run_directory_call
 from vcenter_event_assistant.auth.directory.spec import realm_key_for, spec_from_model
 from vcenter_event_assistant.auth.directory.testing import run_test
@@ -154,9 +154,12 @@ def _mapping_rows(mappings: list[GroupRoleMappingIn]) -> list[DirectoryGroupRole
     rows: list[DirectoryGroupRoleMapping] = []
     for m in mappings:
         group_dn = m.group_dn.strip()
-        normalized = normalize_dn(group_dn)
         if not group_dn:
             raise _invalid("グループの DN を入力してください。")
+        # 解析できない DN はどのグループとも一致しないのに、admin の対応として「使える admin」に数えられてしまう
+        if not is_valid_dn(group_dn):
+            raise _invalid(f"グループの DN の形式が正しくありません: {group_dn}")
+        normalized = normalize_dn(group_dn)
         if normalized in seen:
             raise _invalid(f"同じグループが重複しています: {group_dn}")
         seen.add(normalized)

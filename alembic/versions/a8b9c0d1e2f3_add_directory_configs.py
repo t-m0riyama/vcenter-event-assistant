@@ -90,5 +90,14 @@ def _create_mappings() -> None:
 
 
 def downgrade() -> None:
+    # Without directory support, directory users can no longer be authenticated. Remove them and
+    # their sessions so existing directory cookies stop authorizing requests after the rollback.
+    op.execute(
+        sa.text(
+            "DELETE FROM auth_sessions WHERE user_id IN "
+            "(SELECT id FROM users WHERE realm_key LIKE 'dir:%')"
+        )
+    )
+    op.execute(sa.text("DELETE FROM users WHERE realm_key LIKE 'dir:%'"))
     op.drop_table("directory_group_role_mappings")
     op.drop_table("directory_configs")

@@ -29,6 +29,14 @@ _CASE_INSENSITIVE_ATTRS = frozenset(
 )
 
 
+def is_valid_dn(dn: str) -> bool:
+    """DN として解析できるか。対応表には、ディレクトリが返す DN と一致し得る値だけを登録させる。"""
+    try:
+        return bool(parse_dn(dn.strip(), escape=False, strip=True))
+    except (LDAPInvalidDnError, IndexError, ValueError):
+        return False
+
+
 def normalize_dn(dn: str) -> str:
     """照合用の DN。属性名の大文字小文字と、区切りの前後の空白の違いをならす。
 
