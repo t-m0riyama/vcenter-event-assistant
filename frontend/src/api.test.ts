@@ -204,4 +204,20 @@ describe('api', () => {
     await apiGet('/api/foo')
     expect(new Headers((fetchMock().mock.calls[0]?.[1] as RequestInit).headers).get('X-VEA-Background')).toBeNull()
   })
+
+  it('通信エラーで届かなかった要求の操作は、次の要求で改めて伝える', async () => {
+    const bg = (i: number) =>
+      new Headers((fetchMock().mock.calls[i]?.[1] as RequestInit).headers).get('X-VEA-Background')
+    // 判定窓より前の、まだ伝えていない操作
+    markUserActivity(Date.now() - USER_ACTIVITY_WINDOW_MS - 1)
+    fetchMock().mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(apiGet('/api/foo')).rejects.toThrow('Failed to fetch')
+    expect(bg(0)).toBeNull()
+
+    fetchMock().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+    await apiGet('/api/foo')
+    expect(bg(1)).toBeNull() // 届かなかった操作をここで伝える
+    await apiGet('/api/foo')
+    expect(bg(2)).toBe('1')
+  })
 })

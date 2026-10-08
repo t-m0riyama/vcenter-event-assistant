@@ -267,6 +267,42 @@ describe('AuthGate', () => {
     expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
   })
 
+  it('再確認で別のアカウントに切り替わっていたら、その利用者に置き換えてアプリを作り直す', async () => {
+    let mounts = 0
+    function MountCounter() {
+      const [id] = useState(() => {
+        mounts += 1
+        return mounts
+      })
+      return <p>マウント {id}</p>
+    }
+    let switched = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json(switched ? { ...ADMIN_ME, username: 'bob', display_name: 'Bob', role: 'viewer' } : ADMIN_ME)
+      }
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      if (url === '/api/protected') {
+        // 別のタブで bob としてログインし直した後に、前のセッションの要求が 401 になった
+        switched = true
+        return json({ detail: 'ログインが必要です。' }, 401)
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+        <MountCounter />
+      </AuthGate>,
+    )
+    expect(await screen.findByText('マウント 1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
+    expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
+    expect(screen.getByText('管理者権限なし')).toBeInTheDocument()
+    // 前の利用者の画面の状態は残さない
+    expect(screen.getByText('マウント 2')).toBeInTheDocument()
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)

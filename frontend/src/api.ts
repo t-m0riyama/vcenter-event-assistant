@@ -1,4 +1,4 @@
-import { activityHeaders } from './userActivity'
+import { fetchWithActivity } from './userActivity'
 
 const GENERIC_API_ERROR =
   'リクエストに失敗しました。時間をおいて再度お試しください。'
@@ -23,19 +23,21 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
   }
 }
 
-function headers(): HeadersInit {
-  // 利用者が操作していないときの要求（定期更新）は、サーバでセッションの無操作期限を延ばさない
-  return { Accept: 'application/json', ...activityHeaders() }
+function headers(): Record<string, string> {
+  return { Accept: 'application/json' }
 }
 
 /** 変更系 API 用ヘッダー（Cookie 認証の CSRF 対策。サーバの CsrfMiddleware が検査する）。 */
-function mutationHeaders(): HeadersInit {
+function mutationHeaders(): Record<string, string> {
   return {
     ...headers(),
     'Content-Type': 'application/json',
     'X-Requested-With': 'XMLHttpRequest',
   }
 }
+
+// 要求は fetchWithActivity で送る。利用者が操作していないときの要求（定期更新）は、
+// サーバでセッションの無操作期限を延ばさない
 
 /** ブラウザ既定キャッシュで GET が古い JSON を返すのを防ぐ */
 const fetchNoStore: RequestInit = { cache: 'no-store' }
@@ -60,14 +62,14 @@ async function errorMessageFromResponse(r: Response): Promise<string> {
 
 /** JSON GET（``cache: 'no-store'``）。 */
 export async function apiGet<T>(path: string): Promise<T> {
-  const r = await fetch(path, { ...fetchNoStore, headers: headers() })
+  const r = await fetchWithActivity(path, { ...fetchNoStore, headers: headers() })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
   return r.json() as Promise<T>
 }
 
 /** JSON POST。204 の場合は body なしとして ``undefined`` を返す。 */
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, {
+  const r = await fetchWithActivity(path, {
     ...fetchNoStore,
     method: 'POST',
     headers: mutationHeaders(),
@@ -84,7 +86,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
  * ``Content-Type`` はブラウザに boundary 付きで設定させるため、明示的に指定しない。
  */
 export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
-  const r = await fetch(path, {
+  const r = await fetchWithActivity(path, {
     ...fetchNoStore,
     method: 'POST',
     headers: { ...headers(), 'X-Requested-With': 'XMLHttpRequest' },
@@ -97,7 +99,7 @@ export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
 
 /** JSON PATCH。 */
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, {
+  const r = await fetchWithActivity(path, {
     ...fetchNoStore,
     method: 'PATCH',
     headers: mutationHeaders(),
@@ -109,7 +111,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 
 /** JSON DELETE。 */
 export async function apiDelete(path: string): Promise<void> {
-  const r = await fetch(path, {
+  const r = await fetchWithActivity(path, {
     ...fetchNoStore,
     method: 'DELETE',
     headers: mutationHeaders(),
@@ -119,7 +121,7 @@ export async function apiDelete(path: string): Promise<void> {
 
 /** JSON PUT. */
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, { ...fetchNoStore, method: 'PUT', headers: mutationHeaders(), body: JSON.stringify(body) })
+  const r = await fetchWithActivity(path, { ...fetchNoStore, method: 'PUT', headers: mutationHeaders(), body: JSON.stringify(body) })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
   return r.json() as Promise<T>
 }

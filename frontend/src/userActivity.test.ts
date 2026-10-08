@@ -104,4 +104,19 @@ describe('userActivity の操作報告', () => {
     vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS)
     expect(report).not.toHaveBeenCalled()
   })
+
+  it('操作が続いても報告を先延ばしにしない（最初の操作から決めた時点で送る）', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => m.activityHeaders())
+    const off = m.setActivityReporter(report)
+    m.activityHeaders()
+    vi.advanceTimersByTime(m.ACTIVITY_REPORT_INTERVAL_MS + 1)
+    // 0.5 秒ごとに入力し続ける
+    for (let t = 0; t < 10; t += 1) {
+      m.markUserActivity()
+      vi.advanceTimersByTime(500)
+    }
+    expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
 })

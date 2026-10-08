@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { onUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
 import type { Me, Realm, Role } from '../api/schemas'
 import { fetchMe, fetchRealms, logout as logoutRequest } from './authApi'
@@ -7,6 +7,21 @@ import { LoginScreen } from './LoginScreen'
 import { roleAtLeast } from './roles'
 import { setActivityReporter } from '../userActivity'
 import './auth.css'
+
+/** 利用者が同じ人か（別アカウントに切り替わったらアプリ本体を作り直す）。 */
+function identityKey(me: Me): string {
+  return `${me.realm}\u0000${me.username}`
+}
+
+function sameMe(a: Me, b: Me): boolean {
+  return (
+    identityKey(a) === identityKey(b) &&
+    a.role === b.role &&
+    a.display_name === b.display_name &&
+    a.can_change_password === b.can_change_password &&
+    a.session_activity_interval_seconds === b.session_activity_interval_seconds
+  )
+}
 
 type State =
   | { readonly status: 'loading' }
@@ -26,8 +41,10 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   const checkingRef = useRef(false)
   // 認証状態が変わるたびに進む世代。非同期の確認結果が古い状態に対するものかを見分ける
   const generationRef = useRef(0)
+  const meRef = useRef<Me | null>(null)
   useEffect(() => {
     authenticatedRef.current = state.status === 'authenticated'
+    meRef.current = state.status === 'authenticated' ? state.me : null
     generationRef.current += 1
   }, [state])
 
@@ -85,31 +102,40 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
         // 今のセッションが有効かを確かめ、無効なときだけログイン画面へ戻す。同時に何件 401 が来ても確認は 1 回
         checkingRef.current = true
         const generation = generationRef.current
-        const sessionIsValid = async () => {
+        const currentSession = async (): Promise<Me | null> => {
           try {
-            return (await fetchMe()) !== null
+            return await fetchMe()
           } catch {
-            return false
+            return null
           }
         }
         void (async () => {
-          let stillValid: boolean
+          let current: Me | null
           try {
-            stillValid = await sessionIsValid()
+            current = await currentSession()
             // 確認中に別のタブがログインして Cookie が替わった場合に備え、無効なら 1 回だけ確かめ直す
-            if (!stillValid && generationRef.current === generation) {
-              stillValid = await sessionIsValid()
+            if (current === null && generationRef.current === generation) {
+              current = await currentSession()
             }
           } finally {
             checkingRef.current = false
           }
           // 確認中にこのタブでログイン・ログアウトなどが起きていたら、結果は古いので使わない
-          if (stillValid || generationRef.current !== generation || !authenticatedRef.current) return
+          if (generationRef.current !== generation || !authenticatedRef.current) return
+          if (current) {
+            // 別のタブで別のアカウントに切り替わっていたら、その利用者の表示に置き換える
+            // （利用者が変われば下の key でアプリ本体を作り直し、前の利用者のデータを残さない）
+            if (!meRef.current || !sameMe(meRef.current, current)) {
+              beginOperation()
+              setState({ status: 'authenticated', me: current })
+            }
+            return
+          }
           authenticatedRef.current = false
           await showLogin(SESSION_EXPIRED_MESSAGE)
         })()
       }),
-    [showLogin],
+    [beginOperation, showLogin],
   )
 
   // ログイン中は、API を呼ばない操作もサーバの無操作期限が切れる前に伝える（間隔はサーバの更新間隔）
@@ -177,5 +203,9 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
       />
     )
   }
-  return <AuthContext.Provider value={value!}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={value!}>
+      <Fragment key={identityKey(state.me)}>{children}</Fragment>
+    </AuthContext.Provider>
+  )
 }

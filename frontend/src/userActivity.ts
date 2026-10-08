@@ -43,13 +43,13 @@ export function markUserActivity(now: number = Date.now()): void {
 
 /**
  * API を呼ばない操作（スクロールなど）でも、サーバの無操作期限が切れる前に伝わるよう報告の要求を送る。
- * 操作が続く間は最後の操作から少し待ち、前回の報告から更新間隔がたっていなければその時点まで遅らせる
- * （間隔より短い報告はサーバが最終利用時刻を更新しないため）。
+ * 最初の操作から少し待ち、前回の報告から更新間隔がたっていなければその時点まで遅らせる
+ * （間隔より短い報告はサーバが最終利用時刻を更新しないため）。操作が続いても予定は延ばさない
+ * （延ばし続けると、入力し続けている間に期限が来てしまう）。
  */
 function scheduleReport(now: number): void {
-  if (!reporter) return
+  if (!reporter || reportTimer !== null) return
   const dueAt = Math.max(now + ACTIVITY_REPORT_DEBOUNCE_MS, lastReportedAt + reportIntervalMs)
-  if (reportTimer !== null) clearTimeout(reportTimer)
   reportTimer = setTimeout(() => {
     reportTimer = null
     // 待っている間に別の要求で伝わっていれば送らない
@@ -86,15 +86,49 @@ export function isUserIdle(now: number = Date.now()): boolean {
   return !unreportedActivity && now - lastActivityAt > USER_ACTIVITY_WINDOW_MS
 }
 
+export type ActivityTicket = {
+  /** 要求に付けるヘッダ。利用者が操作していなければバックグラウンドの印が入る。 */
+  readonly headers: Record<string, string>
+  /** 要求がサーバに届かなかった（通信エラー）ときに呼ぶ。操作を未報告に戻す。 */
+  readonly restore: () => void
+}
+
 /**
- * 要求に付けるヘッダ。利用者が操作していなければバックグラウンドの印を付ける。
- * 呼ぶと未報告の操作はこの要求で伝えたものとして消える（要求を送る直前に 1 回だけ呼ぶこと）。
+ * 要求を送る直前に 1 回だけ呼ぶ。未報告の操作はこの要求で伝えたものとして扱う。
+ * 要求が届かなかったら ``restore()`` で元に戻すこと（次の要求で改めて伝えるため）。
  */
-export function activityHeaders(now: number = Date.now()): Record<string, string> {
+export function takeActivity(now: number = Date.now()): ActivityTicket {
   const idle = isUserIdle(now)
+  if (idle) {
+    return { headers: { [BACKGROUND_REQUEST_HEADER]: '1' }, restore: () => {} }
+  }
+  const previousReportedAt = lastReportedAt
   unreportedActivity = false
-  if (!idle) lastReportedAt = now
-  return idle ? { [BACKGROUND_REQUEST_HEADER]: '1' } : {}
+  lastReportedAt = now
+  return {
+    headers: {},
+    restore: () => {
+      unreportedActivity = true
+      // その後に別の要求で伝わっていれば、その記録は残す
+      if (lastReportedAt === now) lastReportedAt = previousReportedAt
+    },
+  }
+}
+
+/** ``takeActivity`` のヘッダだけを返す（失敗時に戻す必要のない呼び出し用）。 */
+export function activityHeaders(now: number = Date.now()): Record<string, string> {
+  return takeActivity(now).headers
+}
+
+/** ``fetch`` に操作の報告を付けて送る。通信エラーなら操作を未報告に戻して例外を投げ直す。 */
+export async function fetchWithActivity(input: string, init: RequestInit = {}): Promise<Response> {
+  const ticket = takeActivity()
+  try {
+    return await fetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), ...ticket.headers } })
+  } catch (e) {
+    ticket.restore()
+    throw e
+  }
 }
 
 if (typeof window !== 'undefined') {

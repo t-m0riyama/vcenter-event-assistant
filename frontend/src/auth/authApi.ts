@@ -1,6 +1,6 @@
 import { notifyUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
 import { meSchema, realmsResponseSchema, type Me, type RealmsResponse } from '../api/schemas'
-import { activityHeaders } from '../userActivity'
+import { fetchWithActivity } from '../userActivity'
 
 /**
  * 認証 API（``/api/auth``）の呼び出し。
@@ -37,7 +37,7 @@ async function detailOf(r: Response, fallback: string): Promise<string> {
 
 /** ログイン中の利用者。未ログインなら ``null``。 */
 export async function fetchMe(): Promise<Me | null> {
-  const r = await fetch('/api/auth/me', { cache: 'no-store', headers: { ...jsonHeaders, ...activityHeaders() } })
+  const r = await fetchWithActivity('/api/auth/me', { cache: 'no-store', headers: jsonHeaders as Record<string, string> })
   if (r.status === 401) return null
   if (!r.ok) throw new Error(await detailOf(r, GENERIC_ERROR))
   return meSchema.parse(await r.json())
