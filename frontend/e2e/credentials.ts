@@ -1,3 +1,4 @@
+import type { APIRequestContext } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -10,6 +11,19 @@ import { fileURLToPath } from 'node:url'
  */
 export const E2E_USERNAME = process.env.E2E_USERNAME ?? 'e2e-admin'
 export const E2E_PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-admin-password'
+
+/** 資格情報を環境変数で明示したか（既起動のサーバーでは既定値の admin は作られないため必須）。 */
+export const CREDENTIALS_FROM_ENV = Boolean(process.env.E2E_USERNAME && process.env.E2E_PASSWORD)
+
+/** Playwright がサーバーを起動せず、既起動のサーバーに向けているか（`playwright.config.ts` と同じ判定）。 */
+export const USING_EXISTING_SERVER = process.env.PLAYWRIGHT_USE_EXISTING_SERVER === '1'
+
+/** 対象サーバーで認証が有効か（認証が無効なら `/api/auth/me` が `auth_enabled: false` を返す）。 */
+export async function isAuthEnabled(request: APIRequestContext): Promise<boolean> {
+  const me = await request.get('/api/auth/me')
+  if (!me.ok()) return true
+  return (await me.json()).auth_enabled !== false
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 

@@ -165,8 +165,29 @@ describe('AuthGate', () => {
     expect(JSON.parse(String(init.body)).realm).toBe('dir:1')
   })
 
-  it('API が 401 を返したらログイン画面に戻し、理由を表示する', async () => {
+  it('API が 401 を返し、セッションも無効ならログイン画面に戻して理由を表示する', async () => {
+    let sessionValid = true
     stubFetch((url) => {
+      if (url === '/api/auth/me') return sessionValid ? json(ADMIN_ME) : json({ detail: 'ログインが必要です。' }, 401)
+      if (url === '/api/protected') {
+        sessionValid = false
+        return json({ detail: 'ログインが必要です。' }, 401)
+      }
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '保護された API' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('ログインの有効期限が切れました')
+    expect(screen.queryByText('ようこそ alice')).not.toBeInTheDocument()
+  })
+
+  it('前のセッションの遅れた 401 では、有効な今のセッションを追い出さない', async () => {
+    const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)
       if (url === '/api/auth/realms') return json(LOCAL_ONLY)
       if (url === '/api/protected') return json({ detail: 'ログインが必要です。' }, 401)
@@ -178,8 +199,13 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     fireEvent.click(await screen.findByRole('button', { name: '保護された API' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('ログインの有効期限が切れました')
-    expect(screen.queryByText('ようこそ alice')).not.toBeInTheDocument()
+    // 再確認の /api/auth/me（2 回目）が終わるまで待つ
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([u]) => String(u) === '/api/auth/me')).toHaveLength(2),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
   })
 
   it('ログアウトするとログイン画面に戻る', async () => {

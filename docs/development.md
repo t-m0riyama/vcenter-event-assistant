@@ -338,7 +338,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 
 ### 推奨: `uv run` スクリプト
 
-**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。認証が有効なサーバーでは、そのサーバーの admin を環境変数 `E2E_USERNAME` / `E2E_PASSWORD` で渡してください（未指定時は `e2e-admin` / `e2e-admin-password`）。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
+**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。認証が有効なサーバーでは、ログインに使う admin が必要です。`capture_ui_screenshots.py` は接続先の認証状態を確かめ、有効なら環境変数 `E2E_USERNAME` / `E2E_PASSWORD` を使い、無ければユーザー名（`--username` でも指定可）とパスワードを対話で尋ねます。`npx playwright test` を直接使う場合は `E2E_USERNAME` / `E2E_PASSWORD` が必須で、未指定だとログインの準備段階でエラーにして止めます。認証を無効にしたサーバー（`VEA_AUTH_ENABLED=false`）では資格情報は不要で、ログインの E2E（`auth.spec.ts`）はスキップされます。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
 
 | コマンド | 内容 |
 |---------|------|
@@ -354,7 +354,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 
 ```bash
 cd frontend
-npm run screenshots
+E2E_USERNAME=admin E2E_PASSWORD='...' npm run screenshots
 ```
 
 組み込みサーバーで取得する例（`npm run build` 付き）:
@@ -368,7 +368,7 @@ npm run screenshots:spawn
 
 ```bash
 cd frontend
-PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=9000 npx playwright test e2e/screenshots.spec.ts
+PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=9000 E2E_USERNAME=admin E2E_PASSWORD='...' npx playwright test e2e/screenshots.spec.ts
 ```
 
 Windows のコマンドプロンプトでは環境変数の付け方が異なるため、**`uv run scripts/capture_ui_screenshots.py`** の利用を推奨します。

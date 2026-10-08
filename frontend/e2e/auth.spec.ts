@@ -1,10 +1,15 @@
 import { expect, test } from '@playwright/test'
-import { E2E_PASSWORD, E2E_USERNAME } from './credentials'
+import { E2E_PASSWORD, E2E_USERNAME, isAuthEnabled } from './credentials'
 
 // ログイン画面そのものを確かめるので、保存済みのセッションは使わない
 test.use({ storageState: { cookies: [], origins: [] } })
 
 test.describe('ログイン', () => {
+  test.beforeEach(async ({ request }) => {
+    // 認証を無効にしたサーバーではログイン画面が出ないので対象外
+    test.skip(!(await isAuthEnabled(request)), 'VEA_AUTH_ENABLED=false のサーバー')
+  })
+
   test('未ログインならログイン画面だけを出す', async ({ page }) => {
     await page.goto('/#/events')
     await expect(page.getByRole('form', { name: 'ログイン' })).toBeVisible()

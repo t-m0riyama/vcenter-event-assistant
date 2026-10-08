@@ -22,6 +22,7 @@ type State =
 export function AuthGate({ children }: { readonly children: ReactNode }) {
   const [state, setState] = useState<State>({ status: 'loading' })
   const authenticatedRef = useRef(false)
+  const checkingRef = useRef(false)
   useEffect(() => {
     authenticatedRef.current = state.status === 'authenticated'
   }, [state.status])
@@ -52,17 +53,29 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   }, [showLogin])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch（state は await の後でだけ変える）
     void load()
   }, [load])
 
   useEffect(
     () =>
       onUnauthorized(() => {
-        // 同時に複数の API が 401 を返しても、ログイン画面へ戻すのは 1 回だけ
-        if (!authenticatedRef.current) return
-        authenticatedRef.current = false
-        void showLogin(SESSION_EXPIRED_MESSAGE)
+        if (!authenticatedRef.current || checkingRef.current) return
+        // 401 が前のセッションで出した要求の遅れた応答かもしれない（ログインし直した後に届くことがある）。
+        // 今のセッションが有効かを確かめ、無効なときだけログイン画面へ戻す。同時に何件 401 が来ても確認は 1 回
+        checkingRef.current = true
+        void (async () => {
+          let stillValid = false
+          try {
+            stillValid = (await fetchMe()) !== null
+          } catch {
+            stillValid = false
+          } finally {
+            checkingRef.current = false
+          }
+          if (stillValid || !authenticatedRef.current) return
+          authenticatedRef.current = false
+          await showLogin(SESSION_EXPIRED_MESSAGE)
+        })()
       }),
     [showLogin],
   )
