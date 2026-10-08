@@ -6,14 +6,23 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from vcenter_event_assistant.auth.roles import Role
+from vcenter_event_assistant.db.encrypted_string import ENC_PREFIX
 
 DirectoryKind = Literal["ad", "ldap"]
 TransportSecurity = Literal["ldaps", "starttls", "none"]
 GroupMode = Literal["ad_nested", "member_of", "group_search"]
 GroupMemberValue = Literal["dn", "username"]
+
+
+
+def _reject_storage_prefix(value: str | None) -> str | None:
+    # ``enc:`` で始まる値は暗号化済みとみなされて暗号化されず、読み出し時の復号に失敗するため受け付けない
+    if value is not None and value.startswith(ENC_PREFIX):
+        raise ValueError(f"bind password must not start with {ENC_PREFIX!r} (reserved for encrypted storage format)")
+    return value
 
 
 class GroupRoleMappingIn(BaseModel):
@@ -55,6 +64,8 @@ class DirectoryCreate(_DirectoryFields):
     bind_password: str | None = Field(default=None, max_length=1024)
     mappings: list[GroupRoleMappingIn] = Field(default_factory=list, max_length=200)
 
+    _check_bind_password = field_validator("bind_password")(_reject_storage_prefix)
+
 
 class DirectoryUpdate(BaseModel):
     """省略した項目は変えない。``bind_password`` を省略すると今の値を保つ（消すには ``clear_bind_password``）。"""
@@ -81,6 +92,8 @@ class DirectoryUpdate(BaseModel):
     group_search_filter: str | None = Field(default=None, max_length=1024)
     group_member_attribute: str | None = Field(default=None, max_length=128)
     group_member_value: GroupMemberValue | None = None
+
+    _check_bind_password = field_validator("bind_password")(_reject_storage_prefix)
 
 
 class DirectoryRead(_DirectoryFields):

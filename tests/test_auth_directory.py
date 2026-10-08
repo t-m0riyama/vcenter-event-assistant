@@ -779,3 +779,19 @@ async def test_identity_changes_revoke_directory_sessions(client, directory: Fak
         )
         assert resp.status_code == 200
         assert (await ac.get("/api/auth/me")).status_code == 401
+
+
+def test_normalize_dn_ignores_ava_order_within_an_rdn() -> None:
+    """複数値 RDN の中の順序は区別しない。RDN の間の順序と ``+`` / ``,`` の違いは区別する。"""
+    assert normalize_dn("uid=x+cn=ops,dc=example") == normalize_dn("CN=Ops+UID=X,DC=Example")
+    assert normalize_dn("cn=ops+uid=x,dc=example") != normalize_dn("cn=ops,uid=x,dc=example")
+    assert normalize_dn("cn=ops,ou=a,dc=example") != normalize_dn("ou=a,cn=ops,dc=example")
+
+
+async def test_bind_password_with_storage_prefix_is_rejected(client, directory: FakeDirectory) -> None:
+    """``enc:`` で始まる bind パスワードは暗号化されずに保存されてしまうため受け付けない。"""
+    resp = await client.post("/api/auth/directories", json=_directory_body(bind_password="enc:secret"))
+    assert resp.status_code == 422
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    resp = await client.patch(f"/api/auth/directories/{directory_id}", json={"bind_password": "enc:secret"})
+    assert resp.status_code == 422

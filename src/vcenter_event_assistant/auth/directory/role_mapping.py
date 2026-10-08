@@ -42,12 +42,20 @@ def normalize_dn(dn: str) -> str:
     except (LDAPInvalidDnError, IndexError, ValueError):
         return value.casefold()
     # 区切り（RDN の間の ``,`` と、複数値 RDN の中の ``+``）は保つ。``cn=a+uid=b`` と ``cn=a,uid=b`` は別の DN
-    rdns = []
+    # 複数値 RDN（``+`` でつないだ AVA）の中の順序は意味を持たないので並べ替える。
+    # RDN の間（``,``）の順序と、``+`` と ``,`` の違いは保つ（``cn=a+uid=b`` と ``cn=a,uid=b`` は別の DN）
+    rdns: list[str] = []
+    avas: list[str] = []
     for attr, val, sep in parts:
         name = attr.strip().casefold()
         text = val.strip()
-        rdns.append(f"{name}={text.casefold() if name in _CASE_INSENSITIVE_ATTRS else text}{sep}")
-    return "".join(rdns)
+        avas.append(f"{name}={text.casefold() if name in _CASE_INSENSITIVE_ATTRS else text}")
+        if sep != "+":
+            rdns.append("+".join(sorted(avas)))
+            avas = []
+    if avas:
+        rdns.append("+".join(sorted(avas)))
+    return ",".join(rdns)
 
 
 def resolve_role(group_dns: Iterable[str], mappings: Iterable[tuple[str, Role]]) -> Role | None:
