@@ -162,20 +162,43 @@ describe('api', () => {
   })
 
   it('利用者が操作していないときの要求には X-VEA-Background を付ける', async () => {
+    const bg = (i: number) =>
+      new Headers((fetchMock().mock.calls[i]?.[1] as RequestInit).headers).get('X-VEA-Background')
     const now = Date.now()
+    // 古い操作は 1 回目の要求で伝わる（バックグラウンド扱いにしない）
     markUserActivity(now - USER_ACTIVITY_WINDOW_MS - 1)
-    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    fetchMock().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
     await apiGet('/api/foo')
-    expect(new Headers((fetchMock().mock.calls[0]?.[1] as RequestInit).headers).get('X-VEA-Background')).toBe('1')
+    expect(bg(0)).toBeNull()
+    // 以後、操作がないまま出る要求はバックグラウンド
+    await apiGet('/api/foo')
+    expect(bg(1)).toBe('1')
 
+    // 操作の直後の要求は通常扱い
     markUserActivity(now)
-    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
     await apiGet('/api/foo')
-    expect(new Headers((fetchMock().mock.calls[1]?.[1] as RequestInit).headers).get('X-VEA-Background')).toBeNull()
+    expect(bg(2)).toBeNull()
+  })
+
+  it('定期取得の間隔より前の操作も、次の要求で必ず伝わる', async () => {
+    const bg = (i: number) =>
+      new Headers((fetchMock().mock.calls[i]?.[1] as RequestInit).headers).get('X-VEA-Background')
+    fetchMock().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+    const now = Date.now()
+    markUserActivity(now - 120_000)
+    await apiGet('/api/foo') // 未報告の操作を伝える
+    expect(bg(0)).toBeNull()
+    // 定期取得の 40 秒前にスクロールした（API は呼んでいない）
+    markUserActivity(now - 40_000)
+    await apiGet('/api/foo')
+    expect(bg(1)).toBeNull()
   })
 
   it('クリックやキー入力を利用者の操作として記録する', async () => {
     markUserActivity(Date.now() - USER_ACTIVITY_WINDOW_MS - 1)
+    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    await apiGet('/api/foo') // 古い操作を報告済みにする
+    fetchMock().mockClear()
     window.dispatchEvent(new Event('keydown'))
     fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }))
     await apiGet('/api/foo')
