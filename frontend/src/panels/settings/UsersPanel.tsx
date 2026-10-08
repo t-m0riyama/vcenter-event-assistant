@@ -56,7 +56,7 @@ export function UsersPanel({
   /** サブタブが表示中か。開き直すたびに一覧を読み直す（ほかの管理者の変更やログインを反映するため）。 */
   active?: boolean
 }) {
-  const { me } = useAuth()
+  const { me, refresh } = useAuth()
   const { timeZone } = useTimeZone()
   const selfId = principalUserId(me.principal_id)
   const [list, setList] = useState<ManagedUser[]>([])
@@ -177,7 +177,12 @@ export function UsersPanel({
       if (!confirm(`${target} のログインはすべて解除されます。よろしいですか？`)) return
     }
     const ok = await run(() => apiPatch(`/api/auth/users/${u.id}`, body), `${u.username} を更新しました。`)
-    if (ok) setEditingId(null)
+    if (!ok) return
+    setEditingId(null)
+    if (u.id === selfId) {
+      // ヘッダーのユーザーメニュー（表示名など）にも反映する。読み直せなくても更新自体は済んでいる
+      await refresh().catch(() => {})
+    }
   }
 
   const startPasswordReset = (u: ManagedUser) => {

@@ -263,9 +263,9 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   const value = useMemo<AuthContextValue | null>(
     () =>
       me
-        ? { me, hasRole: (role: Role) => roleAtLeast(me.role, role), logout }
+        ? { me, hasRole: (role: Role) => roleAtLeast(me.role, role), logout, refresh: checkSession }
         : null,
-    [me, logout],
+    [checkSession, me, logout],
   )
 
   if (state.status === 'loading') {

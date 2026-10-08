@@ -37,6 +37,8 @@ const ALERT_RULE = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
+const refresh = async () => {}
+
 function renderAs(role: Role, overrides: Partial<Me> = {}) {
   const me: Me = {
     auth_enabled: true,
@@ -48,7 +50,7 @@ function renderAs(role: Role, overrides: Partial<Me> = {}) {
     ...overrides,
   }
   return render(
-    <AuthContext.Provider value={{ me, hasRole: (r) => roleAtLeast(me.role, r), logout: async () => {} }}>
+    <AuthContext.Provider value={{ me, hasRole: (r) => roleAtLeast(me.role, r), logout: async () => {}, refresh }}>
       <App />
     </AuthContext.Provider>,
   )

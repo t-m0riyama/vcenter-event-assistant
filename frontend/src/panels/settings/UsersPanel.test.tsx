@@ -81,9 +81,11 @@ function stubApi(handler: (call: Call) => Response | undefined = () => undefined
   return calls
 }
 
+const refresh = vi.fn(async () => {})
+
 function panel(onError: (e: string | null) => void, active = true) {
   return (
-    <AuthContext.Provider value={{ me: ME, hasRole: (r) => roleAtLeast(ME.role, r), logout: async () => {} }}>
+    <AuthContext.Provider value={{ me: ME, hasRole: (r) => roleAtLeast(ME.role, r), logout: async () => {}, refresh }}>
       <TimeZoneProvider>
         <UsersPanel onError={onError} active={active} />
       </TimeZoneProvider>
@@ -381,5 +383,23 @@ describe('UsersPanel', () => {
     await waitFor(() => expect(onError).toHaveBeenLastCalledWith('最後の有効な admin は削除できません。'))
     expect(screen.getByRole('button', { name: '再読み込み' })).toBeEnabled()
     expect(gets()).toBe(1)
+  })
+
+  it('自分を編集したら、ログイン中の利用者を読み直す（ほかの利用者では読み直さない）', async () => {
+    refresh.mockClear()
+    stubApi()
+    renderPanel()
+    await screen.findByText('alice')
+    fireEvent.click(within(row('alice')).getByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByLabelText('alice の表示名'), { target: { value: 'Alice L' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await screen.findByText('alice を更新しました。')
+    expect(refresh).not.toHaveBeenCalled()
+
+    fireEvent.click(within(row('admin')).getByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByLabelText('admin の表示名'), { target: { value: 'Administrator' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await screen.findByText('admin を更新しました。')
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
   })
 })
