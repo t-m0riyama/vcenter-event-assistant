@@ -31,6 +31,7 @@ dependencies = [
     "vcenter-event-assistant-plugin-api>=1.4,<2",
     "vea-remote-log-collector>=0.2,<1",
     "jsonschema>=4.23,<5",
+    "argon2-cffi>=23.1.0",
 ]
 
 [tool.uv.sources]
@@ -42,6 +43,7 @@ members = ["packages/plugin-api", "packages/remote-log-collector"]
 
 [project.scripts]
 vcenter-event-assistant = "vcenter_event_assistant:main"
+vcenter-event-assistant-admin = "vcenter_event_assistant.auth.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.10.4,<0.11.0"]

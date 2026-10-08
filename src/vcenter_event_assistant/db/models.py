@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -410,3 +410,65 @@ class SSHConnection(Base):
     candidate_key: Mapped[str | None] = mapped_column(Text)
     approved_key: Mapped[str | None] = mapped_column(Text)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class User(Base):
+    """ログインユーザー（ローカル / ディレクトリ由来の両方）。"""
+
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("realm_key", "subject", name="uq_users_realm_subject"),
+        CheckConstraint("role IN ('admin', 'operator', 'viewer')", name="ck_users_role"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # ``local`` またはディレクトリ由来の ``dir:<uuid>``。NULL を使わないことで一意制約を効かせる。
+    realm_key: Mapped[str] = mapped_column(String(64), default="local")
+    # 認証元での不変 ID（ローカルは小文字化したユーザー名、AD は objectGUID など）。
+    subject: Mapped[str] = mapped_column(String(512))
+    username: Mapped[str] = mapped_column(String(256))
+    display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    directory_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    role: Mapped[str] = mapped_column(String(16), default="viewer")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
+
+
+class AuthSession(Base):
+    """ブラウザのログインセッション。トークンそのものは保存せず SHA-256 だけを持つ。"""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # 認証に使ったパスワードの世代（User.password_changed_at）。変更後は一致しなくなり無効になる。
+    credential_marker: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
