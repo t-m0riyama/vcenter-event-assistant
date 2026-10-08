@@ -254,4 +254,20 @@ describe('api', () => {
       setExpectedPrincipal(null)
     }
   })
+
+  it('表示中の利用者を要求に付けて送る（サーバが Cookie の利用者と照合する）', async () => {
+    fetchMock().mockImplementation(() => Promise.resolve(new Response(null, { status: 204 })))
+    setExpectedPrincipal('id-alice:s1')
+    try {
+      await apiPost('/api/foo', {})
+      const h = new Headers((fetchMock().mock.calls[0]?.[1] as RequestInit).headers)
+      expect(h.get('X-VEA-Expected-Principal')).toBe('id-alice:s1')
+      expect(h.get('X-Requested-With')).toBe('XMLHttpRequest')
+    } finally {
+      setExpectedPrincipal(null)
+    }
+    await apiPost('/api/foo', {})
+    const h = new Headers((fetchMock().mock.calls[1]?.[1] as RequestInit).headers)
+    expect(h.get('X-VEA-Expected-Principal')).toBeNull()
+  })
 })

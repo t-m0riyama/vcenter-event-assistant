@@ -1,4 +1,10 @@
-import { notifyUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
+import {
+  expectedPrincipalHeaders,
+  notifyUnauthorized,
+  principalMismatched,
+  PRINCIPAL_SWITCHED_MESSAGE,
+  SESSION_EXPIRED_MESSAGE,
+} from '../api'
 import { meSchema, realmsResponseSchema, type Me, type RealmsResponse } from '../api/schemas'
 import { fetchWithActivity } from '../userActivity'
 
@@ -82,9 +88,11 @@ export async function changeOwnPassword(params: {
   const r = await fetch('/api/auth/me/password', {
     cache: 'no-store',
     method: 'POST',
-    headers: mutationHeaders,
+    // 別のタブで別の利用者にログインし直されていたら、その利用者のパスワードを変えないようサーバが断る
+    headers: { ...mutationHeaders, ...expectedPrincipalHeaders() },
     body: JSON.stringify(params),
   })
+  if (principalMismatched(r)) throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
   if (r.status === 401) {
     // セッションが切れているので、ほかの API と同じくログイン画面へ戻す
     notifyUnauthorized()

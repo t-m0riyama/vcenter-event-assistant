@@ -600,3 +600,26 @@ async def test_cors_preflight_allows_the_background_marker(client: AsyncClient) 
     )
     assert resp.status_code == 200
     assert "x-vea-background" in resp.headers["access-control-allow-headers"].lower()
+
+
+async def test_requests_bound_to_another_principal_are_refused() -> None:
+    """別のタブで別の利用者にログインし直された後、前の利用者の画面からの要求は実行しない。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]  # 別のタブで bob に切り替わった
+        # alice の画面からの bob のパスワード変更（現在のパスワードが同じでも）は断る
+        resp = await ac.post(
+            "/api/auth/me/password",
+            json={"current_password": PASSWORD, "new_password": "another-long-password"},
+            headers={**XHR, "X-VEA-Expected-Principal": alice_id},
+        )
+        assert resp.status_code == 409
+        assert resp.headers["x-vea-principal"] == bob_id
+        # bob のパスワードは変わっていない
+        async with _raw_client() as other:
+            assert (await _login(other, "bob")).status_code == 200
+        # 表示中の利用者と一致していれば通る
+        resp = await ac.get("/api/config", headers={"X-VEA-Expected-Principal": bob_id})
+        assert resp.status_code == 200

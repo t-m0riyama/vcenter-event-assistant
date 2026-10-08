@@ -42,15 +42,28 @@ export function setExpectedPrincipal(principalId: string | null): void {
  * 画面（前の利用者のもの）に渡さずにエラーにする。照合が済むまで別の利用者のデータを表示しないため。
  */
 async function send(path: string, init: RequestInit): Promise<Response> {
-  const r = await fetchWithActivity(path, init)
-  const principalId = r.headers.get('X-VEA-Principal')
-  if (principalId) {
-    principalListeners.forEach((listener) => listener(principalId))
-    if (expectedPrincipal && principalId !== expectedPrincipal) {
-      throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
-    }
-  }
+  const r = await fetchWithActivity(path, {
+    ...init,
+    headers: { ...(init.headers as Record<string, string>), ...expectedPrincipalHeaders() },
+  })
+  if (principalMismatched(r)) throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
   return r
+}
+
+/**
+ * 表示中の利用者をサーバに伝えるヘッダ。サーバは Cookie の利用者と違えば要求を実行せずに 409 で断る
+ * （応答を捨てるだけでは、変更系の要求が別の利用者として実行されてしまうため）。
+ */
+export function expectedPrincipalHeaders(): Record<string, string> {
+  return expectedPrincipal ? { 'X-VEA-Expected-Principal': expectedPrincipal } : {}
+}
+
+/** 応答が示す利用者を通知し、表示中の利用者と違えば true を返す。 */
+export function principalMismatched(r: Response): boolean {
+  const principalId = r.headers.get('X-VEA-Principal')
+  if (!principalId) return false
+  principalListeners.forEach((listener) => listener(principalId))
+  return Boolean(expectedPrincipal && principalId !== expectedPrincipal)
 }
 
 export function notifyUnauthorized(): void {

@@ -3,7 +3,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { onUnauthorized } from '../api'
+import { onUnauthorized, setExpectedPrincipal } from '../api'
 import { ChangePasswordDialog } from './ChangePasswordDialog'
 
 function fill(current: string, next: string, confirm: string) {
@@ -68,6 +68,26 @@ describe('ChangePasswordDialog', () => {
       expect(listener).toHaveBeenCalledTimes(1)
     } finally {
       off()
+    }
+  })
+
+  it('表示中の利用者を送り、別の利用者に切り替わっていたら（409）その旨を表示する', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response('{"detail":"x"}', { status: 409, headers: { 'X-VEA-Principal': 'id-bob:s1' } }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    setExpectedPrincipal('id-alice:s1')
+    try {
+      render(<ChangePasswordDialog onClose={() => {}} />)
+      fill('old password', 'new long password', 'new long password')
+      fireEvent.click(screen.getByRole('button', { name: '変更する' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('別のタブで利用者が切り替わりました')
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(new Headers(init.headers).get('X-VEA-Expected-Principal')).toBe('id-alice:s1')
+    } finally {
+      setExpectedPrincipal(null)
     }
   })
 })

@@ -148,7 +148,15 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         # X-VEA-Background: 画面の定期更新など、利用者の操作によらない要求の印（フロントの userActivity.ts）
-        allow_headers=["Accept", "Content-Type", "Authorization", "X-Requested-With", "X-VEA-Background"],
+        # X-VEA-Expected-Principal: 画面に表示中の利用者（フロントの api.ts。auth_deps で照合する）
+        allow_headers=[
+            "Accept",
+            "Content-Type",
+            "Authorization",
+            "X-Requested-With",
+            "X-VEA-Background",
+            "X-VEA-Expected-Principal",
+        ],
     )
 
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):
