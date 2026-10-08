@@ -316,6 +316,20 @@ class AlertSettingsMixin(BaseModel):
     smtp_username: str | None = Field(default=None)
     smtp_password: str | None = Field(default=None)
     smtp_use_tls: bool = Field(default=True)
+    smtp_tls_verify: bool = Field(
+        default=True,
+        description=(
+            "STARTTLS でサーバ証明書とホスト名を検証するか（``SMTP_TLS_VERIFY``）。"
+            "false は検証用の環境向けで、起動時に WARNING を出す。"
+        ),
+    )
+    smtp_ca_bundle: str | None = Field(
+        default=None,
+        description=(
+            "SMTP の証明書の検証に使う CA バンドルのパス（``SMTP_CA_BUNDLE``）。"
+            "未設定時は OS 既定の信頼ストアを使用。"
+        ),
+    )
     smtp_timeout_seconds: int = Field(
         default=10,
         ge=1,
@@ -387,6 +401,7 @@ class AlertSettingsMixin(BaseModel):
         "smtp_host",
         "smtp_username",
         "smtp_password",
+        "smtp_ca_bundle",
         "alert_email_to",
         "alert_template_firing_path",
         "alert_template_resolved_path",

@@ -1,3 +1,5 @@
+import ssl
+
 import pytest
 from unittest.mock import AsyncMock, patch
 from vcenter_event_assistant.services.alerting.notification.email_channel import EmailChannel
@@ -82,3 +84,84 @@ async def test_email_channel_fails_on_smtp_error(monkeypatch):
         
         with pytest.raises(Exception, match="SMTP Error"):
             await channel.notify(AlertRule(), AlertState(), "S", "B")
+
+
+def _starttls_context(instance):
+    instance.starttls.assert_called_once()
+    return instance.starttls.call_args.kwargs["context"]
+
+
+@pytest.mark.asyncio
+async def test_email_channel_starttls_verifies_certificate_by_default(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
+
+    channel = EmailChannel(get_settings())
+    with patch("smtplib.SMTP") as mock_smtp:
+        instance = mock_smtp.return_value.__enter__.return_value
+        await channel.notify(AlertRule(), AlertState(), "S", "B")
+
+    context = _starttls_context(instance)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+@pytest.mark.asyncio
+async def test_email_channel_starttls_uses_ca_bundle(monkeypatch):
+    import certifi
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
+    monkeypatch.setenv("SMTP_CA_BUNDLE", certifi.where())
+
+    channel = EmailChannel(get_settings())
+    with (
+        patch("smtplib.SMTP") as mock_smtp,
+        patch(
+            "vcenter_event_assistant.services.alerting.notification.email_channel.ssl.create_default_context",
+            wraps=ssl.create_default_context,
+        ) as create_context,
+    ):
+        instance = mock_smtp.return_value.__enter__.return_value
+        await channel.notify(AlertRule(), AlertState(), "S", "B")
+
+    create_context.assert_called_once_with(cafile=certifi.where())
+    context = _starttls_context(instance)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+@pytest.mark.asyncio
+async def test_email_channel_starttls_skips_verification_when_disabled(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
+    monkeypatch.setenv("SMTP_TLS_VERIFY", "false")
+
+    channel = EmailChannel(get_settings())
+    with patch("smtplib.SMTP") as mock_smtp:
+        instance = mock_smtp.return_value.__enter__.return_value
+        await channel.notify(AlertRule(), AlertState(), "S", "B")
+
+    context = _starttls_context(instance)
+    assert context.verify_mode == ssl.CERT_NONE
+    assert context.check_hostname is False
+
+
+@pytest.mark.asyncio
+async def test_email_channel_certificate_error_fails_delivery(monkeypatch, caplog):
+    monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "ops@example.com")
+
+    channel = EmailChannel(get_settings())
+    with patch("smtplib.SMTP") as mock_smtp:
+        instance = mock_smtp.return_value.__enter__.return_value
+        instance.starttls.side_effect = ssl.SSLCertVerificationError(
+            "certificate verify failed: self-signed certificate"
+        )
+        with pytest.raises(ssl.SSLCertVerificationError):
+            await channel.notify(AlertRule(), AlertState(), "S", "B")
+
+    instance.login.assert_not_called()
+    instance.send_message.assert_not_called()
+    assert "self-signed certificate" in caplog.text
+    assert "SMTP_CA_BUNDLE" in caplog.text

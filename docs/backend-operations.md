@@ -183,7 +183,15 @@
 設定（環境変数名の例）:
 
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `SMTP_TIMEOUT_SECONDS`
+- `SMTP_CA_BUNDLE`, `SMTP_TLS_VERIFY`
 - `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`
+
+TLS:
+
+- `SMTP_USE_TLS=true`（既定）では STARTTLS を使い、サーバ証明書とホスト名を検証する。以前のバージョンは検証していなかったので、自己署名や社内 CA の証明書の SMTP では、アップグレード後にメールが届かなくなる
+- 社内 CA の証明書なら、`SMTP_CA_BUNDLE` に CA バンドル（PEM）のパスを指定する。未設定なら OS 既定の信頼ストアを使う。指定したファイルがなければ起動しない
+- `SMTP_TLS_VERIFY=false` で検証をやめられる。経路上の攻撃者に SMTP の資格情報とアラートの内容を盗み見られるので、検証用の環境だけで使う。本番でも起動は止めず、起動時に WARNING を出す
+- 暗黙の TLS（465 番ポート、SMTPS）には対応していない。STARTTLS（587 番など）を使う
 
 配送と再送:
 
@@ -350,7 +358,7 @@
 - ログに次が出ていないか（`src/vcenter_event_assistant/services/alerting/notification/email_channel.py`）
   - `SMTP_HOST is not set. Skipping email notification.`
   - `ALERT_EMAIL_TO is not set. Skipping email notification.`
-  - `Failed to send email notification: ...`
+  - `Failed to send email notification: ...`（`certificate verify failed` を含むときは、SMTP サーバの証明書を検証できていない。`SMTP_CA_BUNDLE` を設定する）
 - `alert evaluation job failed` が出ていないか（`src/vcenter_event_assistant/jobs/scheduler.py`）
 
 対処の例:
@@ -439,6 +447,7 @@ kill され、アプリ本体は停止しません。
 
 4. リバースプロキシで行っていた認証は、二重になるため外してもかまいません（TLS 終端とネットワーク制限は引き続きプロキシで行う）
 5. ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から削除する
+6. アラートメールの STARTTLS で、SMTP サーバの証明書を検証するようになりました。自己署名や社内 CA の証明書の SMTP では、`SMTP_CA_BUNDLE` に CA バンドルを指定してください（検証用の環境なら `SMTP_TLS_VERIFY=false`）。指定しないとメールが届かなくなります（詳細は「E) SMTP/メール通知」）
 
 ログインの失敗・ロックアウト・ユーザー変更は、ロガー `vcenter_event_assistant.audit` に `AUDIT event=...` の形式で出力されます。
 

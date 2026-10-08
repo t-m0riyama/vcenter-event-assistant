@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState
@@ -17,6 +18,18 @@ from vcenter_event_assistant.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+def _smtp_ssl_context(settings: Settings) -> ssl.SSLContext:
+    """STARTTLS 用の ``SSLContext``。既定でサーバ証明書とホスト名を検証する。"""
+    if not settings.smtp_tls_verify:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+    if settings.smtp_ca_bundle:
+        return ssl.create_default_context(cafile=settings.smtp_ca_bundle)
+    return ssl.create_default_context()
+
+
 def _send_smtp_message(settings: Settings, msg: EmailMessage) -> None:
     """SMTP でメールを送信する（同期。``asyncio.to_thread`` から呼ぶ）。"""
     with smtplib.SMTP(
@@ -25,7 +38,8 @@ def _send_smtp_message(settings: Settings, msg: EmailMessage) -> None:
         timeout=settings.smtp_timeout_seconds,
     ) as server:
         if settings.smtp_use_tls:
-            server.starttls()
+            # context を渡さないと smtplib は証明書を検証しない（監査 M-2）。
+            server.starttls(context=_smtp_ssl_context(settings))
 
         if settings.smtp_username and settings.smtp_password:
             server.login(settings.smtp_username, settings.smtp_password)
@@ -86,6 +100,13 @@ class EmailChannel(NotificationChannel):
             await asyncio.to_thread(_send_smtp_message, settings, msg)
             logger.info("Email notification sent: %s", subject)
             return NotificationDeliveryOutcome(channel="email", success=True)
+        except ssl.SSLCertVerificationError as e:
+            logger.error(
+                "Failed to send email notification: %s "
+                "(set SMTP_CA_BUNDLE to the CA that issued the SMTP server certificate)",
+                e,
+            )
+            raise
         except Exception as e:
             logger.error("Failed to send email notification: %s", e)
             raise
