@@ -242,6 +242,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    // 401 を受け取るリスナーは effect で登録するので、先に流しておく（CI でまれに取りこぼした）
+    await flushEffects()
     // 自分のセッションも失効させる操作（ディレクトリの設定の保存など）の後
     sessionValid = false
     act(() => notifyUnauthorized('設定を保存したため、ログアウトしました。'))
@@ -268,6 +270,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    await flushEffects()
     sessionValid = false
     act(() => notifyUnauthorized('設定を保存したため、ログアウトしました。'))
     expect(await screen.findByLabelText('認証先')).toHaveValue('dir:1')
@@ -282,6 +285,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    await flushEffects()
     sessionValid = false
     act(() => notifyUnauthorized())
     expect(await screen.findByLabelText('認証先')).toHaveValue('local')
