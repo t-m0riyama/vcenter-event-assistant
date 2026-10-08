@@ -1,21 +1,17 @@
-"""初期 admin の作成、子プロセスへの秘密の受け渡し防止、期限切れセッションの掃除。"""
+"""初期 admin の作成と、子プロセスへの秘密の受け渡し防止。
+
+期限切れセッションの定期削除は tests/test_auth_api.py で確認している。
+"""
 
 from __future__ import annotations
 
-from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
 
 from vcenter_event_assistant.auth.bootstrap import BootstrapError, ensure_bootstrap_admin
 from vcenter_event_assistant.auth.passwords import verify_password
-from vcenter_event_assistant.auth.service import session_policy
-from vcenter_event_assistant.auth.sessions import create_session
-from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.auth.users import count_users, create_local_user, get_local_user
-from vcenter_event_assistant.db.models import AuthSession
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.jobs.scheduler import purge_retention
 from vcenter_event_assistant.plugins.subprocess_env import child_process_env
 from vcenter_event_assistant.settings import get_settings
 
@@ -147,17 +143,3 @@ async def test_concurrent_bootstrap_by_another_process_is_ignored(monkeypatch: p
     monkeypatch.setattr("vcenter_event_assistant.auth.bootstrap.count_users", zero)
     monkeypatch.setattr("vcenter_event_assistant.auth.users.get_local_user", not_found)
     await ensure_bootstrap_admin(settings)
-
-
-async def test_purge_retention_removes_expired_sessions() -> None:
-    settings = get_settings()
-    now = utcnow()
-    async with session_scope() as db:
-        user = await create_local_user(
-            db, username="sess", password="session long pw", role="viewer", password_min_length=12
-        )
-        await create_session(db, user, session_policy(settings), now=now - timedelta(days=2))
-        await create_session(db, user, session_policy(settings), now=now)
-    await purge_retention(settings)
-    async with session_scope() as db:
-        assert len((await db.scalars(select(AuthSession))).all()) == 1

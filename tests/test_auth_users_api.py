@@ -8,7 +8,7 @@ import uuid
 import pytest
 
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.auth.users import get_local_user
@@ -196,3 +196,50 @@ async def test_concurrent_duplicate_create_is_400(client: AsyncClient, monkeypat
     )
     assert resp.status_code == 400
     assert "既に存在" in resp.json()["detail"]
+
+
+async def test_reactivation_revokes_sessions_left_from_before(client: AsyncClient, open_client) -> None:
+    """無効化前のセッションが残っていても、再有効化で復活させない。"""
+    user = await _create(client, "revive")
+    async with open_client(None) as revive:
+        await _login(revive, "revive")
+        # セッションを残したまま無効化された状態（DB の直接操作などを想定）
+        async with session_scope() as db:
+            await db.execute(update(User).where(User.id == uuid.UUID(user["id"])).values(is_active=False))
+        resp = await client.patch(f"/api/auth/users/{user['id']}", json={"is_active": True})
+        assert resp.status_code == 200 and resp.json()["is_active"] is True
+        assert (await revive.get("/api/auth/me")).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"display_name": "bad\x1bname"},
+        {"email": "evil\x00@example.com"},
+    ],
+)
+async def test_update_rejects_invalid_profile_fields(client: AsyncClient, body: dict) -> None:
+    user = await _create(client, "profile")
+    resp = await client.patch(f"/api/auth/users/{user['id']}", json=body)
+    assert resp.status_code == 400
+    async with session_scope() as db:
+        row = await db.get(User, uuid.UUID(user["id"]))
+        assert row is not None and row.display_name is None and row.email is None
+
+
+async def test_update_trims_profile_fields(client: AsyncClient) -> None:
+    user = await _create(client, "tidy")
+    resp = await client.patch(
+        f"/api/auth/users/{user['id']}", json={"display_name": "  Tidy User ", "email": "   "}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "Tidy User"
+    assert resp.json()["email"] is None
+
+
+async def test_create_rejects_control_characters_in_profile(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/auth/users",
+        json={"username": "ctl", "password": PASSWORD, "role": "viewer", "display_name": "a\x07b"},
+    )
+    assert resp.status_code == 400

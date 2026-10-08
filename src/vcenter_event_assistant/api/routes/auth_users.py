@@ -27,11 +27,14 @@ from vcenter_event_assistant.auth.sessions import revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
+    DISPLAY_NAME_MAX_LENGTH,
+    EMAIL_MAX_LENGTH,
     LastAdminError,
     UserError,
     admin_change_guard,
     create_local_user,
     ensure_not_last_admin,
+    normalize_optional_text,
     set_local_password,
     unlock_user,
 )
@@ -120,6 +123,18 @@ async def update_user(
     db: AsyncSession = Depends(get_session),
 ) -> UserRead:
     changes = body.model_dump(exclude_unset=True)
+    try:
+        # 作成時と同じ検査（列長・制御文字）。ロックを取る前に入力エラーを返す
+        if "display_name" in changes:
+            changes["display_name"] = normalize_optional_text(
+                changes["display_name"], max_length=DISPLAY_NAME_MAX_LENGTH, label="表示名"
+            )
+        if "email" in changes:
+            changes["email"] = normalize_optional_text(
+                changes["email"], max_length=EMAIL_MAX_LENGTH, label="メールアドレス"
+            )
+    except UserError as exc:
+        raise _bad_request(str(exc)) from None
     revoke = False
     try:
         async with admin_change_guard(db):
@@ -137,13 +152,15 @@ async def update_user(
             if new_active is not None and new_active != user.is_active:
                 if not new_active:
                     await ensure_not_last_admin(db, user)
-                    revoke = True
+                # 無効化では使用中のセッションを切り、再有効化では無効化前の（盗まれた可能性の
+                # ある）セッションを復活させない。どちらも全セッションを失効させる
+                revoke = True
                 user.is_active = new_active
 
             if "display_name" in changes:
-                user.display_name = changes["display_name"] or None
+                user.display_name = changes["display_name"]
             if "email" in changes:
-                user.email = changes["email"] or None
+                user.email = changes["email"]
 
             user.updated_at = utcnow()
             if revoke:
