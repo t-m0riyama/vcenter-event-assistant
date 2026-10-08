@@ -9,11 +9,13 @@ import weakref
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, and_, func, or_, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
+from vcenter_event_assistant.auth.directory.connection import ConnectOptions
+from vcenter_event_assistant.auth.directory.runner import connect_options
 from vcenter_event_assistant.auth.passwords import (
     hash_password,
     validate_password_policy,
@@ -21,6 +23,7 @@ from vcenter_event_assistant.auth.passwords import (
 from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.sessions import credential_marker, revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.db.models import (
     AuthSession,
     DirectoryConfig,
@@ -109,23 +112,42 @@ async def count_local_admins(db: AsyncSession, *, exclude_user_id: uuid.UUID | N
     return int(await db.scalar(query) or 0)
 
 
-async def count_admin_directories(db: AsyncSession, *, exclude_directory_id: uuid.UUID | None = None) -> int:
-    """admin に対応づけたグループを持つ、有効なディレクトリの数。
+def _directory_allowed(options: ConnectOptions) -> ColumnElement[bool]:
+    """今のセキュリティ方針で接続が許される（``check_security`` で拒否されない）ディレクトリの条件。"""
+    conditions: list[ColumnElement[bool]] = []
+    if options.production:
+        conditions.append(DirectoryConfig.transport_security != "none")
+    if not options.allow_insecure_tls:
+        conditions.append(
+            or_(DirectoryConfig.transport_security == "none", DirectoryConfig.tls_verify.is_(True))
+        )
+    return and_(true(), *conditions)
+
+
+async def count_admin_directories(
+    db: AsyncSession, options: ConnectOptions, *, exclude_directory_id: uuid.UUID | None = None
+) -> int:
+    """admin に対応づけたグループを持つ、有効で接続が許されるディレクトリの数。
 
     ディレクトリのユーザーのロールはログインのたびに対応表で決まるので、admin としてログインできるかは
     既存の admin 行ではなく対応表で判断する（初回ログイン前の admin も含めるため）。
+    今の設定（本番・証明書を検証しない接続の禁止）で接続を拒否されるディレクトリは数えない。
     """
     query = (
         select(func.count(func.distinct(DirectoryGroupRoleMapping.directory_id)))
         .join(DirectoryConfig, DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id)
-        .where(DirectoryConfig.is_enabled.is_(True), DirectoryGroupRoleMapping.role == Role.ADMIN.value)
+        .where(
+            DirectoryConfig.is_enabled.is_(True),
+            DirectoryGroupRoleMapping.role == Role.ADMIN.value,
+            _directory_allowed(options),
+        )
     )
     if exclude_directory_id is not None:
         query = query.where(DirectoryConfig.id != exclude_directory_id)
     return int(await db.scalar(query) or 0)
 
 
-async def ensure_not_last_admin(db: AsyncSession, user: User, *, local_login_enabled: bool) -> None:
+async def ensure_not_last_admin(db: AsyncSession, user: User, settings: Settings) -> None:
     """``user`` の降格・無効化・削除で、admin としてログインする手段がなくなるなら ``LastAdminError``。
 
     ``admin_change_guard`` の中で呼ぶこと。数えるのは実際にログインに使える admin だけ:
@@ -135,19 +157,21 @@ async def ensure_not_last_admin(db: AsyncSession, user: User, *, local_login_ena
     """
     if user.role != Role.ADMIN.value or not user.is_active:
         return
+    local_login_enabled = settings.local_login_enabled
+    options = connect_options(settings)
     if user.realm_key == LOCAL_REALM:
         if not local_login_enabled:
             return  # ログインに使えない admin なので、外してもログインできる手段は減らない
-        remaining = await count_local_admins(db, exclude_user_id=user.id) + await count_admin_directories(db)
+        remaining = await count_local_admins(db, exclude_user_id=user.id) + await count_admin_directories(db, options)
     else:
-        if user.directory_id is None or await count_admin_directories(db) == await count_admin_directories(
-            db, exclude_directory_id=user.directory_id
+        if user.directory_id is None or await count_admin_directories(db, options) == await count_admin_directories(
+            db, options, exclude_directory_id=user.directory_id
         ):
             return  # このユーザーのディレクトリからは admin としてログインできない
         # 同じディレクトリのほかの admin が残っていても、グループに今も属しているかはわからないので数えない
         remaining = (
             await count_local_admins(db) if local_login_enabled else 0
-        ) + await count_admin_directories(db, exclude_directory_id=user.directory_id)
+        ) + await count_admin_directories(db, options, exclude_directory_id=user.directory_id)
     if remaining == 0:
         raise LastAdminError()
 

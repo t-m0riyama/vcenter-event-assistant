@@ -679,7 +679,9 @@ async def test_stale_directory_admin_rows_do_not_protect_the_last_local_admin(cl
     local_admin = next(u for u in users if u["is_local"])
     resp = await client.patch(f"/api/auth/users/{local_admin['id']}", json={"role": "viewer"})
     assert resp.status_code == 409
-    assert (await client.delete(f"/api/auth/users/{next(u for u in users if not u['is_local'])['id']}")).status_code == 204
+    # 使えない admin 行は、無効化しても使える admin は減らない
+    stale = next(u for u in users if not u["is_local"])
+    assert (await client.patch(f"/api/auth/users/{stale['id']}", json={"is_active": False})).status_code == 200
 
 
 async def test_admin_mapping_counts_as_another_admin(client, directory: FakeDirectory) -> None:
@@ -848,3 +850,38 @@ def test_too_many_domain_qualified_candidates_are_ambiguous() -> None:
 async def test_blank_search_base_is_rejected_on_create(client, directory: FakeDirectory) -> None:
     resp = await client.post("/api/auth/directories", json=_directory_body(user_search_base="   "))
     assert resp.status_code == 422
+
+
+async def test_policy_blocked_directory_does_not_count_as_an_admin_source(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """今の設定で接続を拒否されるディレクトリ（証明書を検証しない接続の禁止など）は、admin の手段に数えない。"""
+    local_admin = next(u for u in (await client.get("/api/auth/users")).json() if u["is_local"])
+    resp = await client.post("/api/auth/directories", json=_directory_body(tls_verify=False))
+    assert resp.status_code == 201, resp.text
+    monkeypatch.setenv("VEA_DIRECTORY_ALLOW_INSECURE_TLS", "false")
+    get_settings.cache_clear()
+    resp = await client.patch(f"/api/auth/users/{local_admin['id']}", json={"role": "viewer"})
+    assert resp.status_code == 409
+
+
+async def test_directory_users_cannot_be_deleted(client, directory: FakeDirectory) -> None:
+    """ディレクトリのユーザーは消しても次のログインで作り直されるので、削除ではなく無効化させる。"""
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    resp, _ = await _dir_login(realm, "alice", "alice-secret")
+    assert resp.status_code == 200
+    alice = next(u for u in (await client.get("/api/auth/users")).json() if u["username"] == "alice")
+    assert (await client.delete(f"/api/auth/users/{alice['id']}")).status_code == 422
+    assert (await client.patch(f"/api/auth/users/{alice['id']}", json={"is_active": False})).status_code == 200
+    resp, _ = await _dir_login(realm, "alice", "alice-secret")
+    assert resp.status_code == 401
+
+
+@pytest.mark.parametrize(("password", "ok"), [("あ" * 341 + "a", True), ("あ" * 342, False)])
+async def test_bind_password_is_limited_by_utf8_bytes(
+    client, directory: FakeDirectory, password: str, ok: bool
+) -> None:
+    """暗号化後に列の長さを超えないよう、bind パスワードは UTF-8 のバイト数で制限する。"""
+    resp = await client.post("/api/auth/directories", json=_directory_body(bind_password=password))
+    assert (resp.status_code == 201) is ok, resp.text

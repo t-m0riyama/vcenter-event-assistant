@@ -250,7 +250,7 @@ async def _other_admin_sources(db: AsyncSession, settings: Settings, directory_i
     """このディレクトリ以外で admin としてログインできる手段の数（ローカルログインが有効なときの
     ローカルの admin と、admin の対応を持つほかの有効なディレクトリ）。"""
     local = await count_local_admins(db) if settings.local_login_enabled else 0
-    return local + await count_admin_directories(db, exclude_directory_id=directory_id)
+    return local + await count_admin_directories(db, connect_options(settings), exclude_directory_id=directory_id)
 
 
 def _no_admin_left(action: str) -> HTTPException:

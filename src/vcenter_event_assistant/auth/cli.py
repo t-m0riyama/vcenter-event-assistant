@@ -83,7 +83,7 @@ async def _set_role(settings: Settings, args: argparse.Namespace) -> str:
     async with session_scope(settings) as db, admin_change_guard(db):
         user = await _get_user_or_fail(db, args.username)
         if args.role != Role.ADMIN.value:
-            await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
+            await ensure_not_last_admin(db, user, settings)
         user.role = Role(args.role).value
         await revoke_all_for_user(db, user.id)
         return f"ユーザー '{user.username}' のロールを {user.role} にしました。"

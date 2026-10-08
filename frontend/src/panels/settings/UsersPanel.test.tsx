@@ -132,6 +132,8 @@ describe('UsersPanel', () => {
     const carol = row('carol@example.com')
     expect(within(carol).getByText('ディレクトリ')).toBeInTheDocument()
     expect(within(carol).queryByRole('button', { name: 'パスワード再設定' })).not.toBeInTheDocument()
+    // 消しても次のログインで作り直されるので、削除ではなく無効化で止める
+    expect(within(carol).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
   })
 
   it('ローカルユーザーを作成する（確認欄が一致するまで作成できない）', async () => {

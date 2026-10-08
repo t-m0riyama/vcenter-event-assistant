@@ -18,10 +18,20 @@ GroupMemberValue = Literal["dn", "username"]
 
 
 
-def _reject_storage_prefix(value: str | None) -> str | None:
+# bind パスワードの UTF-8 でのバイト数の上限。暗号化（Fernet + base64）すると 4/3 倍強に増えるので、
+# 1024 バイトなら暗号化後も約 1470 文字で、保存先の列（EncryptedString(2048)）に収まる
+BIND_PASSWORD_MAX_BYTES = 1024
+
+
+def _check_bind_password_value(value: str | None) -> str | None:
+    if value is None:
+        return value
     # ``enc:`` で始まる値は暗号化済みとみなされて暗号化されず、読み出し時の復号に失敗するため受け付けない
-    if value is not None and value.startswith(ENC_PREFIX):
+    if value.startswith(ENC_PREFIX):
         raise ValueError(f"bind password must not start with {ENC_PREFIX!r} (reserved for encrypted storage format)")
+    # 文字数ではなくバイト数で制限する（マルチバイト文字は暗号化後に列の長さを超え得る）
+    if len(value.encode("utf-8")) > BIND_PASSWORD_MAX_BYTES:
+        raise ValueError(f"bind password must be at most {BIND_PASSWORD_MAX_BYTES} bytes in UTF-8")
     return value
 
 
@@ -64,7 +74,7 @@ class DirectoryCreate(_DirectoryFields):
     bind_password: str | None = Field(default=None, max_length=1024)
     mappings: list[GroupRoleMappingIn] = Field(default_factory=list, max_length=200)
 
-    _check_bind_password = field_validator("bind_password")(_reject_storage_prefix)
+    _check_bind_password = field_validator("bind_password")(_check_bind_password_value)
 
 
 class DirectoryUpdate(BaseModel):
@@ -93,7 +103,7 @@ class DirectoryUpdate(BaseModel):
     group_member_attribute: str | None = Field(default=None, max_length=128)
     group_member_value: GroupMemberValue | None = None
 
-    _check_bind_password = field_validator("bind_password")(_reject_storage_prefix)
+    _check_bind_password = field_validator("bind_password")(_check_bind_password_value)
 
 
 class DirectoryRead(_DirectoryFields):
