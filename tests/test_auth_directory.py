@@ -1169,3 +1169,44 @@ def test_normalize_dn_covers_rfc4524_case_ignore_attributes() -> None:
     ):
         assert normalize_dn(f"{attr}=Ops,dc=example") == normalize_dn(f"{attr.upper()}=ops,DC=example"), attr
         assert normalize_dn(f"{oid}=Ops,dc=example") == normalize_dn(f"{attr}=ops,dc=example"), attr
+
+
+async def test_directory_role_change_on_login_revokes_other_sessions(client, directory: FakeDirectory) -> None:
+    """ログインでグループから決まるロールが変わったら、そのユーザーの他のセッションを失効させる。
+
+    ロールは毎リクエストでユーザー行から読むので、残すと古い Cookie が新しいロールで使えてしまう。
+    """
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    login = {"username": "alice", "password": "alice-secret", "realm": realm}
+    async with _raw_client() as first, _raw_client() as second, _raw_client() as third:
+        _rate_limiter._hits.clear()
+        assert (await first.post("/api/auth/login", json=login, headers=XHR)).status_code == 200
+        # 同じロールのままなら、別の端末のログインで既存のセッションは消さない
+        assert (await second.post("/api/auth/login", json=login, headers=XHR)).status_code == 200
+        assert (await first.get("/api/auth/me")).json()["role"] == "admin"
+
+        directory.entries[ALICE_DN]["memberOf"] = [OPS]
+        assert (await third.post("/api/auth/login", json=login, headers=XHR)).status_code == 200
+        assert (await third.get("/api/auth/me")).json()["role"] == "operator"
+        assert (await first.get("/api/auth/me")).status_code == 401
+        assert (await second.get("/api/auth/me")).status_code == 401
+
+
+class _MissingBaseConnection:
+    """検索ベースが存在しない（noSuchObject）と返す接続。"""
+
+    def __init__(self) -> None:
+        self.response: list[dict[str, Any]] = []
+        self.result: dict[str, Any] = {}
+
+    def search(self, base: str, search_filter: str, **kwargs: Any) -> bool:
+        self.response = []
+        self.result = {"result": 32, "description": "noSuchObject"}
+        return False
+
+
+def test_missing_search_base_is_a_directory_error() -> None:
+    """検索ベースがないのは設定の誤りなので、ユーザーが見つからないのとは区別する（運用者に警告が出る）。"""
+    with pytest.raises(DirectoryConfigError, match="検索の起点"):
+        backend.find_user(_MissingBaseConnection(), _spec(), "alice")  # type: ignore[arg-type]

@@ -143,7 +143,11 @@ def _search(conn: Connection, base: str, search_filter: str, *, scope: Any = SUB
         raise DirectoryUnavailable(f"検索に失敗しました（{str(exc)[:200]}）") from None
     result = conn.result or {}
     code = result.get("result", 0)
-    if code not in (0, 4, 32):  # success / sizeLimitExceeded / noSuchObject
+    if code == 32:  # noSuchObject
+        # 検索の起点がない（検索ベースの誤り・削除など）。0 件として扱うと、設定の誤りが
+        # 「ユーザーが見つからない」に見えてしまうので、設定の問題として扱う
+        raise DirectoryConfigError(f"検索の起点のエントリが見つかりません（{base[:200]}）。検索ベースを確認してください。")
+    if code not in (0, 4):  # success / sizeLimitExceeded
         raise DirectoryUnavailable(f"検索に失敗しました（{result.get('description')}）")
     entries = list(_entries(conn))
     # sizeLimitExceeded は、こちらが指定した件数まで取れたとき（それ以上あると分かったとき）だけ受け入れる。

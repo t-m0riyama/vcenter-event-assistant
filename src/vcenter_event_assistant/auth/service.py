@@ -26,7 +26,7 @@ from vcenter_event_assistant.auth.passwords import (
     hash_password,
     verify_password,
 )
-from vcenter_event_assistant.auth.sessions import SessionPolicy, credential_marker
+from vcenter_event_assistant.auth.sessions import SessionPolicy, credential_marker, revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     DISPLAY_NAME_MAX_LENGTH,
@@ -146,6 +146,10 @@ async def _upsert_directory_user(
         if user is not None:
             if not user.is_active:
                 return None
+            if user.role != values["role"]:
+                # ロールは毎リクエストでユーザー行から読むので、ほかのセッションを残すと古い Cookie が
+                # 新しいロールで使えてしまう。ローカルユーザーのロール変更と同じく失効させる
+                await revoke_all_for_user(db, user.id)
             for key, value in values.items():
                 setattr(user, key, value)
             await db.flush()
