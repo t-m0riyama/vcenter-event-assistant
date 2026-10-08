@@ -140,13 +140,15 @@ export function activityHeaders(now: number = Date.now()): Record<string, string
   return takeActivity(now).headers
 }
 
-/** 認証を通った応答に付くヘッダ（サーバの PrincipalHeaderMiddleware）。 */
-const PRINCIPAL_HEADER = 'X-VEA-Principal'
+/** サーバがセッションの最終利用時刻を更新した応答に付くヘッダ（サーバの PrincipalHeaderMiddleware）。 */
+const SESSION_TOUCHED_HEADER = 'X-VEA-Session-Touched'
 
 /**
  * ``fetch`` に操作の報告を付けて送る。通信エラーなら操作を未報告に戻して例外を投げ直す。
- * 応答が返っても認証を通った印（``X-VEA-Principal``）がなければ、サーバはセッションを更新していない
- * （レート制限の 429 や、手前のプロキシが返した 502/503 など）ので、同じく未報告に戻す。
+ * 応答が返ってもサーバが最終利用時刻を更新した印（``X-VEA-Session-Touched``）がなければ、同じく未報告に戻す。
+ * サーバは更新間隔ごとにしか更新しない（間隔内の要求は認証を通っても期限が延びない）うえ、レート制限の 429 や
+ * 手前のプロキシが返した 502/503 は認証まで届いていないため。最後に伝えた時刻は実際に更新された時刻だけで進め、
+ * 次の報告をそこから更新間隔たった時点（期限より十分前）に予約する。
  */
 export async function fetchWithActivity(input: string, init: RequestInit = {}): Promise<Response> {
   const ticket = takeActivity()
@@ -157,7 +159,7 @@ export async function fetchWithActivity(input: string, init: RequestInit = {}): 
     ticket.restore()
     throw e
   }
-  if (!response.headers.has(PRINCIPAL_HEADER)) ticket.restore()
+  if (response.headers.get(SESSION_TOUCHED_HEADER) !== '1') ticket.restore()
   return response
 }
 

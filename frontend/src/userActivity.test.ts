@@ -145,11 +145,22 @@ describe('userActivity の操作報告', () => {
 
       m.markUserActivity()
       vi.advanceTimersByTime(m.USER_ACTIVITY_WINDOW_MS + 1)
+      // 認証は通っても、更新間隔内でサーバが最終利用時刻を更新しなかった応答は伝わっていない
       fetchMock.mockImplementation(
         async () => new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-alice:s1' } }),
       )
       await m.fetchWithActivity('/api/config')
-      // 認証を通った応答なら伝わったものとして扱う
+      expect(m.isUserIdle()).toBe(false)
+
+      fetchMock.mockImplementation(
+        async () =>
+          new Response('{}', {
+            status: 200,
+            headers: { 'X-VEA-Principal': 'id-alice:s1', 'X-VEA-Session-Touched': '1' },
+          }),
+      )
+      await m.fetchWithActivity('/api/config')
+      // サーバが最終利用時刻を更新した応答なら伝わったものとして扱う
       expect(m.isUserIdle()).toBe(true)
     } finally {
       vi.unstubAllGlobals()
@@ -184,6 +195,23 @@ describe('userActivity の操作報告', () => {
     vi.advanceTimersByTime(0)
     ticket.restore()
     vi.advanceTimersByTime(1_000) // 残り 2 秒の半分
+    expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
+
+  it('更新間隔の直前の要求でサーバが更新しなかったら、間隔がたった時点で報告する（無操作 1 分・間隔 30 秒）', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => m.activityHeaders())
+    const off = m.setActivityReporter(report, 30_000)
+    m.activityHeaders() // T=0 にサーバが更新した
+    vi.advanceTimersByTime(29_000)
+    m.markUserActivity()
+    const ticket = m.takeActivity() // T=29 秒の要求は認証を通ったが、間隔内なので更新されなかった
+    vi.advanceTimersByTime(0)
+    ticket.restore()
+    vi.advanceTimersByTime(999)
+    expect(report).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1) // T=30 秒、サーバが更新する時点で報告する（期限の T=60 秒より十分前）
     expect(report).toHaveBeenCalledTimes(1)
     off()
   })

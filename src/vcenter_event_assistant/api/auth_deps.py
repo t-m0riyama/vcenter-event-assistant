@@ -16,7 +16,11 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.auth.principal_header import PRINCIPAL_STATE_KEY, principal_marker
+from vcenter_event_assistant.auth.principal_header import (
+    PRINCIPAL_STATE_KEY,
+    SESSION_TOUCHED_STATE_KEY,
+    principal_marker,
+)
 from vcenter_event_assistant.auth.roles import Role, role_at_least
 from vcenter_event_assistant.auth.service import session_policy
 from vcenter_event_assistant.auth.sessions import resolve_session
@@ -93,6 +97,8 @@ async def get_current_principal(
         # 最終利用時刻の更新はルートの処理と切り離して確定させる。ルートが 4xx/5xx で失敗すると
         # get_session がロールバックし、操作したのに無操作期限が延びないままになるため
         await db.commit()
+        # 応答に更新した印を付ける（クライアントは印のない応答では操作が伝わっていないとみなす）
+        setattr(request.state, SESSION_TOUCHED_STATE_KEY, True)
     user = resolved.user
     # 応答に利用者とセッションの ID を付ける（PrincipalHeaderMiddleware）。クライアントが別アカウントへの
     # 切り替わりや、同じ利用者の再ログイン（ロール変更後など）に気づくため

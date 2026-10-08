@@ -15,9 +15,12 @@ import { markUserActivity, USER_ACTIVITY_WINDOW_MS } from './userActivity'
 
 const GENERIC = 'リクエストに失敗しました。時間をおいて再度お試しください。'
 
-/** 認証を通った応答（サーバが X-VEA-Principal を付ける）。 */
+/** 認証を通り、セッションの最終利用時刻を更新した応答。 */
 function authedResponse(): Response {
-  return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-alice:s1' } })
+  return new Response('{}', {
+    status: 200,
+    headers: { 'X-VEA-Principal': 'id-alice:s1', 'X-VEA-Session-Touched': '1' },
+  })
 }
 
 describe('api', () => {

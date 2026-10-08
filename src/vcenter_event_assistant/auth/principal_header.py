@@ -16,6 +16,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 PRINCIPAL_HEADER = b"x-vea-principal"
 # ``get_current_principal`` が request.state（= scope["state"]）に入れるキー
 PRINCIPAL_STATE_KEY = "vea_principal_id"
+# サーバがこの要求でセッションの最終利用時刻を更新したことを示すヘッダと、その state のキー。
+# 更新は更新間隔ごとにしか行わないので、クライアントはこれが付いた応答だけを「操作を伝えた」とみなす
+SESSION_TOUCHED_HEADER = b"x-vea-session-touched"
+SESSION_TOUCHED_STATE_KEY = "vea_session_touched"
 
 
 def principal_marker(user_id: uuid.UUID, session_id: uuid.UUID) -> str:
@@ -34,10 +38,13 @@ class PrincipalHeaderMiddleware:
 
         async def send_with_principal(message: Message) -> None:
             if message["type"] == "http.response.start":
-                principal_id = scope.get("state", {}).get(PRINCIPAL_STATE_KEY)
+                state = scope.get("state", {})
+                principal_id = state.get(PRINCIPAL_STATE_KEY)
                 if principal_id:
                     headers = list(message.get("headers", []))
                     headers.append((PRINCIPAL_HEADER, str(principal_id).encode("latin-1")))
+                    if state.get(SESSION_TOUCHED_STATE_KEY):
+                        headers.append((SESSION_TOUCHED_HEADER, b"1"))
                     message = {**message, "headers": headers}
             await send(message)
 

@@ -658,3 +658,20 @@ async def test_browser_downloads_are_bound_by_query() -> None:
         assert resp.status_code == 409
         resp = await ac.get(url, params={"time_zone": "UTC", "vea_expected_principal": bob_id})
         assert resp.status_code == 200
+
+
+async def test_responses_mark_when_the_session_was_touched() -> None:
+    """最終利用時刻を更新した応答にだけ印を付ける（クライアントは印で操作が伝わったかを判断する）。"""
+    await _make_user("alice")
+    async with _raw_client() as ac:
+        await _login(ac, "alice")
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            row.last_seen_at = row.last_seen_at - timedelta(minutes=5)
+            await db.commit()
+        first = await ac.get("/api/config")
+        assert first.headers.get("x-vea-session-touched") == "1"
+        # 更新間隔内の要求は認証を通っても更新しないので、印を付けない
+        second = await ac.get("/api/config")
+        assert second.status_code == 200 and "x-vea-session-touched" not in second.headers
