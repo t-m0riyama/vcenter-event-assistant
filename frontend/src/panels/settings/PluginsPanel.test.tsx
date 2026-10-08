@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, AUTH_DISABLED_ME } from '../../auth/authContext'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { PluginsPanel } from './PluginsPanel'
@@ -192,6 +193,35 @@ describe('PluginsPanel（プラグイン管理が有効なとき）', () => {
     expect(screen.getByText(/アプリの再起動が必要です/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '変更を反映' })).not.toBeInTheDocument()
     expect(screen.queryByText('インストール済みプラグイン')).not.toBeInTheDocument()
+  })
+
+  it('admin 以外には管理系の API を呼ばず、一覧と実行状況だけを見せる', async () => {
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      routedFetch({ '/api/plugins/collectors': managedResponse }, (url) => urls.push(url)),
+    )
+    const onError = vi.fn()
+    render(
+      <AuthContext.Provider
+        value={{ me: { ...AUTH_DISABLED_ME, auth_enabled: true, role: 'operator' }, hasRole: (r) => r !== 'admin', logout: async () => {} }}
+      >
+        <TimeZoneProvider>
+          <PluginsPanel onError={onError} />
+        </TimeZoneProvider>
+      </AuthContext.Provider>,
+    )
+
+    await screen.findByText('Temperature')
+    expect(screen.getByText(/設定の変更とパッケージの追加は管理者が行います/)).toBeInTheDocument()
+    expect(urls).not.toContain('/api/plugins/installed')
+    expect(screen.queryByRole('button', { name: '変更を反映' })).not.toBeInTheDocument()
+    expect(screen.queryByText('インストール済みプラグイン')).not.toBeInTheDocument()
+    // 詳細（実行状況）は開ける
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
+    expect(await screen.findByText('Tokyo vCenter')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '設定を始める' })).not.toBeInTheDocument()
+    expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('権限'))
   })
 
   it('チェックを変えただけでは保存せず、未保存であることを知らせる', async () => {

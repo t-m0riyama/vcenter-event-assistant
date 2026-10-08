@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { AUTH_STATE_FILE, E2E_PASSWORD, E2E_USERNAME } from './e2e/credentials'
 
 /**
  * Playwright 設定（`frontend/e2e` 全テスト共通）。
@@ -19,6 +20,10 @@ import { fileURLToPath } from 'node:url'
  * **ドキュメント用 PNG を Playwright が起動して取得するとき**（`capture_ui_screenshots.py --spawn-server` /
  * `npm run screenshots:spawn`）だけ、環境変数 `SCREENSHOT_E2E_SEED=1` を付与する。通常の `npm run e2e` では
  * 付けず空 DB で検証する。
+ *
+ * **ログイン:** `setup` プロジェクト（`e2e/auth.setup.ts`）が画面から admin でログインし、Cookie を
+ * `e2e/.auth/admin.json` に保存する。各 spec はそれを `storageState` として使う。起動するサーバーには
+ * 同じ資格情報を `VEA_BOOTSTRAP_ADMIN_*` で渡す（`e2e/credentials.ts`）。
  *
  * @see リポジトリルートの `docs/development.md`（ドキュメント用キャプチャと E2E の前提）
  */
@@ -53,7 +58,14 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'], storageState: AUTH_STATE_FILE },
+      dependencies: ['setup'],
+    },
+  ],
   webServer: useExistingServerOnly
     ? undefined
     : {
@@ -64,6 +76,8 @@ export default defineConfig({
         timeout: 120 * 1000,
         env: {
           SCREENSHOT_E2E_SEED: process.env.SCREENSHOT_E2E_SEED ?? '',
+          VEA_BOOTSTRAP_ADMIN_USERNAME: E2E_USERNAME,
+          VEA_BOOTSTRAP_ADMIN_PASSWORD: E2E_PASSWORD,
         },
       },
 })

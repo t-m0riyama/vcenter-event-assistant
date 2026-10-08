@@ -1,4 +1,5 @@
 import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
+import { useAuth } from '../../auth/useAuth'
 
 type TimelineSnapshotActionsProps = {
   loading: boolean
@@ -30,6 +31,8 @@ export function TimelineSnapshotActions({
   onLoadTimelineFromSnapshot,
   onOpenSnapshotInMetrics,
 }: TimelineSnapshotActionsProps) {
+  // 手動スナップショットの保存は operator 以上（生成・閲覧は viewer でもできる）
+  const canSaveSnapshot = useAuth().hasRole('operator')
   return (
     <>
       <div className="timeline-panel__actions">
@@ -44,7 +47,7 @@ export function TimelineSnapshotActions({
         </button>
       </div>
 
-      {hasTimeline ? (
+      {hasTimeline && canSaveSnapshot ? (
         <section className="timeline-panel__section" aria-label="手動スナップショット保存">
           <label className="timeline-panel__threshold-field">
             運用メモ（必須）

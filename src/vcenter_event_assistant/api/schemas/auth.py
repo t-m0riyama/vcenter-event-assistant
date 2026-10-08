@@ -34,6 +34,11 @@ class MeResponse(BaseModel):
     role: str
     realm: str
     can_change_password: bool
+    # サーバがセッションの最終利用時刻を更新する間隔（秒）。クライアントは API を呼ばない操作も
+    # この間隔で報告する（無操作期限が切れる前に伝えるため）。認証が無効なら None
+    session_activity_interval_seconds: int | None = None
+    # 利用者の ID。API 応答の X-VEA-Principal と照合し、別アカウントへの切り替わりを検知する。認証が無効なら None
+    principal_id: str | None = None
 
 
 class ChangeOwnPasswordRequest(BaseModel):

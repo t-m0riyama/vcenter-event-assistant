@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
-import { apiGet } from '../../api'
+import { apiGet, prepareBrowserRequest } from '../../api'
 import { SeverityBadge } from '../../components/badges'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
 import { collectorStatusListSchema } from '../../api/schemas/plugins'
@@ -78,14 +78,15 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
     return { vcenter_id: vcenter, source_id: source, log_kind: kind, severity, message_contains: message, from, to }
   }, [range, timeZone, linkedRange, vcenter, source, kind, severity, message, onError])
 
-  const downloadCsv = () => {
+  const downloadCsv = async () => {
     if (loading || data.total === 0) return
     const filters = getFilters()
     if (!filters) return
     onError(null)
     setDownloadStarted(false)
     try {
-      downloadLogCsv(buildLogExportUrl(filters, timeZone))
+      // ダウンロードはブラウザに任せる（401 や利用者の切り替わりを扱えないので、先に確かめる）
+      downloadLogCsv(await prepareBrowserRequest(buildLogExportUrl(filters, timeZone)))
       setDownloadStarted(true)
     } catch (e) {
       onError(toErrorMessage(e))
@@ -176,7 +177,7 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
       <span className="toolbar__meta" role="status">
         {loading ? '読み込み中…' : data.total === 0 ? '全 0 件' : `全 ${data.total} 件中 ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, data.total)} 件を表示`}
       </span>
-      <button type="button" className="btn btn--gray" disabled={loading || !resolvedRange.ok || data.total === 0} onClick={downloadCsv}>
+      <button type="button" className="btn btn--gray" disabled={loading || !resolvedRange.ok || data.total === 0} onClick={() => void downloadCsv()}>
         CSVをダウンロード
       </button>
       {downloadStarted && <span role="status" className="toolbar__meta">ダウンロードを開始しました。進捗・完了はブラウザで確認してください。</span>}

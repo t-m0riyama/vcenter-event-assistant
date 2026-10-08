@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright のログイン状態（e2e/auth.setup.ts が保存）
+e2e/.auth/

@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import (
     Principal,
     get_current_principal,
+    refuse_if_principal_switched,
     session_cookie_name,
 )
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
@@ -30,14 +32,16 @@ from vcenter_event_assistant.auth.service import (
     list_realms,
     session_policy,
 )
-from vcenter_event_assistant.auth.sessions import create_session, revoke_session
+from vcenter_event_assistant.auth.principal_header import principal_marker
+from vcenter_event_assistant.auth.sessions import create_session, resolve_session, revoke_session
+from vcenter_event_assistant.auth.tokens import hash_token
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
     PasswordChangedConcurrentlyError,
     UserError,
     set_local_password,
 )
-from vcenter_event_assistant.db.models import User
+from vcenter_event_assistant.db.models import AuthSession, User
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -47,14 +51,26 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _me(principal: Principal, *, auth_enabled: bool) -> MeResponse:
+def _activity_interval_seconds(settings: Settings) -> int | None:
+    if not settings.auth_enabled:
+        return None
+    return int(session_policy(settings).touch_interval.total_seconds())
+
+
+def _me(principal: Principal, *, settings: Settings) -> MeResponse:
     return MeResponse(
-        auth_enabled=auth_enabled,
+        auth_enabled=settings.auth_enabled,
         username=principal.username,
         display_name=principal.display_name,
         role=principal.role.value,
         realm=principal.realm,
         can_change_password=principal.realm == LOCAL_REALM,
+        session_activity_interval_seconds=_activity_interval_seconds(settings),
+        principal_id=(
+            principal_marker(principal.user_id, principal.session_id)
+            if principal.user_id and principal.session_id
+            else None
+        ),
     )
 
 
@@ -113,6 +129,9 @@ async def login(
         user_agent=request.headers.get("user-agent"),
     )
     user = outcome.user
+    session_id = (
+        await db.execute(select(AuthSession.id).where(AuthSession.token_hash == hash_token(token)))
+    ).scalar_one()
     payload = MeResponse(
         auth_enabled=True,
         username=user.username,
@@ -120,6 +139,8 @@ async def login(
         role=user.role,
         realm=user.realm_key,
         can_change_password=user.realm_key == LOCAL_REALM,
+        session_activity_interval_seconds=_activity_interval_seconds(settings),
+        principal_id=principal_marker(user.id, session_id),
     )
     response = JSONResponse(content=payload.model_dump())
     response.set_cookie(
@@ -144,6 +165,13 @@ async def logout(
     cookie_name = session_cookie_name(settings)
     token = request.cookies.get(cookie_name)
     if settings.auth_enabled and token:
+        # 別のタブで別の利用者にログインし直されていたら、前の利用者の画面からのログアウトで
+        # 新しい利用者のセッションを消さない（クライアントが表示中の利用者を送ってきたときだけ照合する）
+        resolved = await resolve_session(db, token, session_policy(settings), touch=False)
+        if resolved is not None:
+            refuse_if_principal_switched(
+                request, principal_marker(resolved.user.id, resolved.session.id)
+            )
         await revoke_session(db, token)
         audit("logout", ip=_client_ip(request))
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -162,7 +190,7 @@ async def get_me(
     principal: Principal = Depends(get_current_principal),
     settings: Settings = Depends(get_app_settings),
 ) -> MeResponse:
-    return _me(principal, auth_enabled=settings.auth_enabled)
+    return _me(principal, settings=settings)
 
 
 @router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)

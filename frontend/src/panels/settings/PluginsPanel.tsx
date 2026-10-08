@@ -12,6 +12,7 @@ import {
 } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
+import { useAuth } from '../../auth/useAuth'
 import { toErrorMessage } from '../../utils/errors'
 import './PluginsPanel.css'
 import PluginSetupPanel from './PluginSetupPanel'
@@ -378,7 +379,10 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
   const [notice, setNotice] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const managementEnabled = data?.management_enabled ?? false
+  // 管理系の API（インストール済み一覧を含む）は admin 専用。admin 以外には一覧と実行状況だけを見せる
+  const isAdmin = useAuth().hasRole('admin')
+  const serverManagementEnabled = data?.management_enabled ?? false
+  const managementEnabled = isAdmin && serverManagementEnabled
   const [setupId, setSetupId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -388,7 +392,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
       const response = await apiGet<unknown>('/api/plugins/collectors')
       const parsed = collectorStatusListSchema.parse(response)
       setData(parsed)
-      if (parsed.management_enabled) {
+      if (parsed.management_enabled && isAdmin) {
         const installedResponse = await apiGet<unknown>('/api/plugins/installed')
         setInstalled(installedPluginListSchema.parse(installedResponse))
       } else {
@@ -399,7 +403,7 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
     } finally {
       setLoading(false)
     }
-  }, [onError])
+  }, [isAdmin, onError])
 
   useEffect(() => {
     void load()
@@ -508,7 +512,9 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
       <p className="hint">
         {managementEnabled
           ? 'コレクタプラグインの構成と実行状態を確認し、有効/無効・実行間隔の変更やパッケージの追加ができます。変更は「変更を反映」を押すと稼働中の構成に適用されます（アプリの再起動は不要です）。'
-          : 'コレクタプラグインの構成と実行状態を確認します。設定は TOML または環境変数で変更し、反映にはアプリの再起動が必要です。画面から変更するには VEA_PLUGIN_MANAGEMENT_ENABLED を有効にしてください。'}
+          : serverManagementEnabled
+            ? 'コレクタプラグインの構成と実行状態を確認します。設定の変更とパッケージの追加は管理者が行います。'
+            : 'コレクタプラグインの構成と実行状態を確認します。設定は TOML または環境変数で変更し、反映にはアプリの再起動が必要です。画面から変更するには VEA_PLUGIN_MANAGEMENT_ENABLED を有効にしてください。'}
       </p>
 
       {notice ? <p className="plugin-notice">{notice}</p> : null}

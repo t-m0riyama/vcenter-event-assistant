@@ -671,11 +671,11 @@ class AuthSettingsMixin(BaseModel):
     """認証・認可（ログイン、セッション、ロックアウト、初期 admin）の設定。"""
 
     auth_enabled: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices("auth_enabled", "VEA_AUTH_ENABLED"),
         description=(
-            "アプリ内蔵の認証・認可を有効にする（``VEA_AUTH_ENABLED``）。"
-            "無効時は全リクエストを admin として扱う（従来の動作）。"
+            "アプリ内蔵の認証・認可を有効にする（``VEA_AUTH_ENABLED``、既定 true）。"
+            "無効時は全リクエストを admin として扱う（従来の動作）。本番（APP_ENV=production）では無効にできない。"
         ),
     )
     session_idle_timeout_minutes: int = Field(

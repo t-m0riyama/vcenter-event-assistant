@@ -32,6 +32,10 @@ cp .env.example .env   # 未作成の場合
 MOCK_MODE=1
 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 
+# ログイン用の初期 admin（ユーザーがいない DB のときだけ作られる）
+VEA_BOOTSTRAP_ADMIN_USERNAME=admin
+VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password
+
 # 任意: true なら合成イベント／メトリクスを定期追加（false なら起動時シードのみ）
 # SCHEDULER_ENABLED=true
 ```
@@ -47,7 +51,7 @@ DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 uv run vcenter-event-assistant
 ```
 
-ブラウザで `http://localhost:8000` を開きます。
+ブラウザで `http://localhost:8000` を開き、上で設定した初期 admin でログインします（[ログインとロール](authentication.md)）。
 
 **開発用途（Vite）**
 
@@ -65,6 +69,7 @@ cd frontend && npm run dev
 
 ```bash
 MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
+  VEA_BOOTSTRAP_ADMIN_USERNAME=admin VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password \
   uv run vcenter-event-assistant
 ```
 
@@ -118,7 +123,7 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 - **本番・実 vCenter 接続用の設定と併用しない。** デモ用 DB（`vea.dev.db`）と `MOCK_MODE=1` の組み合わせを推奨します。
 - モック応答やシードデータは説明用のダミーです。運用判断の根拠にしないでください。
 - Playwright 用の `SCREENSHOT_E2E_SEED=1` とは別機能です。スクリーンショット用の最小シードであり、本モードの代替ではありません。
-- アプリ単体に認証はありません。デモ環境もネットワーク公開には注意してください（[getting-started.md のセキュリティ](../getting-started.md#セキュリティ)）。
+- 認証は既定で有効です（上の手順で初期 admin を作ります）。それでもモックモードはデモ用なので、ネットワークに公開しないでください（[getting-started.md のセキュリティ](../getting-started.md#セキュリティ)）。
 
 ---
 

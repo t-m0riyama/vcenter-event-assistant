@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import { useAuth } from '../../auth/useAuth'
 import './AlertHistoryPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -46,6 +47,9 @@ interface HistoryResponse {
  * メール通知の履歴一覧（ルール名・レベル・発火/回復・結果）を表示するパネル。
  */
 export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void }) {
+  const { hasRole } = useAuth()
+  const canResolve = hasRole('operator')
+  const canDelete = hasRole('admin')
   const { timeZone } = useTimeZone()
   const [history, setHistory] = useState<AlertHistory[]>([])
   const [loading, setLoading] = useState(true)
@@ -174,7 +178,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                     )}
                   </td>
                   <td className="col-actions">
-                    {h.can_resolve && (
+                    {canResolve && h.can_resolve && (
                       <button
                         type="button"
                         className="btn btn--gray alert-history-action"
@@ -183,13 +187,15 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                         解消
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="btn btn--danger alert-history-action"
-                      onClick={() => void handleDelete(h)}
-                    >
-                      削除
-                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        className="btn btn--danger alert-history-action"
+                        onClick={() => void handleDelete(h)}
+                      >
+                        削除
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

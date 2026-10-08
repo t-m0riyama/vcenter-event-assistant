@@ -6,7 +6,7 @@
 
 - **役割**: HTTP API（`/api`）、永続化、vCenter からの収集、定期ジョブ、環境設定に応じた LLM 呼び出し（ダイジェスト要約・ベータ）などを担う。
 - **実装の所在**: [`src/vcenter_event_assistant/`](../src/vcenter_event_assistant/)（エントリは [`main.py`](../src/vcenter_event_assistant/main.py) の `create_app()`）。
-- **主要要素**: **FastAPI**、**SQLAlchemy**（`DATABASE_URL` で **PostgreSQL** または **SQLite**）、**pyVmomi** による vCenter 接続、**APScheduler** による定期ポーリングとメトリクス削除、オプションの Bearer/Basic 認証。本番ではビルド済みの [`frontend/dist`](../frontend/dist) を同一プロセスから配信できる。
+- **主要要素**: **FastAPI**、**SQLAlchemy**（`DATABASE_URL` で **PostgreSQL** または **SQLite**）、**pyVmomi** による vCenter 接続、**APScheduler** による定期ポーリングとメトリクス削除、アプリ内蔵のログイン（Cookie セッション）とロール（admin / operator / viewer）による認可。本番ではビルド済みの [`frontend/dist`](../frontend/dist) を同一プロセスから配信できる。
 
 ## フロントエンド
 
@@ -16,7 +16,7 @@
 
 ## システムコンテキスト
 
-利用者はブラウザから **フロントエンド**にアクセスする。本番では **TLS・認証・ネットワーク制限はリバースプロキシ側**で行う想定である（アプリ単体では認証しない）。**バックエンド**では **APScheduler** が **定期実行**（イベント／性能サンプルのポーリングなど）を担い、**pyVmomi** 経由で vCenter からイベントやメトリクスを収集する。手動収集や API 経由の操作は **FastAPI** 側から同様に収集処理へ繋がる。環境設定により **LLM API** を用いたダイジェスト要約（ベータ）を実行する。
+利用者はブラウザから **フロントエンド**にアクセスする。**ログインとロールによる認可はアプリ自身が行う**（Cookie セッション、ローカル DB ユーザー）。本番では **TLS 終端とネットワーク制限をリバースプロキシ側**で行う想定である。**バックエンド**では **APScheduler** が **定期実行**（イベント／性能サンプルのポーリングなど）を担い、**pyVmomi** 経由で vCenter からイベントやメトリクスを収集する。手動収集や API 経由の操作は **FastAPI** 側から同様に収集処理へ繋がる。環境設定により **LLM API** を用いたダイジェスト要約（ベータ）を実行する。
 
 本番では多くの場合、フロントの静的ファイルと API が **同一オリジン**（`create_app()` による `frontend/dist` 配信）で提供される。APScheduler も同一プロセス内で動作する。下図は論理的な役割の分離を示す。
 

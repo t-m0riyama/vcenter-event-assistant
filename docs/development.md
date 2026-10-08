@@ -58,8 +58,12 @@ worktree 内の `./data/` はリポジトリ直下の `data/` とは別ディレ
 | `SCHEDULER_ENABLED` | 独立。`true` ならモック収集が定期実行、`false` ならシードのみ |
 
 ```bash
-MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db uv run vcenter-event-assistant
+MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
+  VEA_BOOTSTRAP_ADMIN_USERNAME=admin VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password \
+  uv run vcenter-event-assistant
 ```
+
+認証は既定で有効なので、新しい DB では `VEA_BOOTSTRAP_ADMIN_*` で初期 admin を作り、その資格情報でログインする（ユーザーがいる DB では無視される）。ログインを省きたいローカル開発では、代わりに `VEA_AUTH_ENABLED=false` を付けてもよい。
 
 Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併存可能。テストは `tests/test_mock_mode.py`。
 
@@ -328,7 +332,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 | 用途 | 前提 |
 |------|------|
 | **ドキュメント用 PNG**（本節） | 手元で **既に起動している** `http://127.0.0.1:8000`（API とフロントを同一オリジンで配信）を対象にする。`capture_ui_screenshots.py` の既定では Playwright は API を起動しない。 |
-| **`frontend/e2e/*.spec.ts` の E2E** | `npm run e2e` では **テスト専用**の uvicorn を **新規起動**する（既定ポートは環境変数 `E2E_PORT`、既定値は **9323**。開発用 8000 と別）。**`screenshots.spec.ts` はシード DB 前提のため `npm run e2e` の対象外**（ドキュメント取得は `capture_ui_screenshots.py` / `npm run screenshots*`）。設定は [frontend/playwright.config.ts](../frontend/playwright.config.ts)。 |
+| **`frontend/e2e/*.spec.ts` の E2E** | `npm run e2e` では **テスト専用**の uvicorn を **新規起動**する（既定ポートは環境変数 `E2E_PORT`、既定値は **9323**。開発用 8000 と別）。ログインは `e2e/auth.setup.ts` が画面から 1 回だけ行い、Cookie を `e2e/.auth/admin.json` に保存して各 spec で使い回す。起動するサーバーには同じ資格情報を `VEA_BOOTSTRAP_ADMIN_*` で渡す（値は `e2e/credentials.ts`）。**`screenshots.spec.ts` はシード DB 前提のため `npm run e2e` の対象外**（ドキュメント取得は `capture_ui_screenshots.py` / `npm run screenshots*`）。設定は [frontend/playwright.config.ts](../frontend/playwright.config.ts)。 |
 | **例外** | ドキュメント PNG を 8000 なしで取るときは `--spawn-server` または `npm run screenshots:spawn`（Playwright がメモリ DB＋シードで API を起動。E2E の `webServer` と同系）。 |
 
 ### 前提
@@ -338,7 +342,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 
 ### 推奨: `uv run` スクリプト
 
-**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
+**既定**は **既に起動しているアプリ**（例: `http://127.0.0.1:8000`）へ接続し、Playwright はサーバーを起動しません。認証が有効なサーバーでは、ログインに使う admin が必要です。`capture_ui_screenshots.py` は接続先の認証状態を確かめ、有効なら環境変数 `E2E_USERNAME` / `E2E_PASSWORD` を使い、無ければユーザー名（`--username` でも指定可）とパスワードを対話で尋ねます。`npx playwright test` を直接使う場合は `E2E_USERNAME` / `E2E_PASSWORD` が必須で、未指定だとログインの準備段階でエラーにして止めます。認証を無効にしたサーバー（`VEA_AUTH_ENABLED=false`）では資格情報は不要で、ログインの E2E（`auth.spec.ts`）はスキップされます。事前に API＋フロント配信を動かしておき、必要なら `npm run build` 後にサーバーを再起動してください。
 
 | コマンド | 内容 |
 |---------|------|
@@ -354,7 +358,7 @@ UI ドキュメント用のスクリーンショットの再取得は、**起動
 
 ```bash
 cd frontend
-npm run screenshots
+E2E_USERNAME=admin E2E_PASSWORD='...' npm run screenshots
 ```
 
 組み込みサーバーで取得する例（`npm run build` 付き）:
@@ -368,7 +372,7 @@ npm run screenshots:spawn
 
 ```bash
 cd frontend
-PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=9000 npx playwright test e2e/screenshots.spec.ts
+PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=9000 E2E_USERNAME=admin E2E_PASSWORD='...' npx playwright test e2e/screenshots.spec.ts
 ```
 
 Windows のコマンドプロンプトでは環境変数の付け方が異なるため、**`uv run scripts/capture_ui_screenshots.py`** の利用を推奨します。

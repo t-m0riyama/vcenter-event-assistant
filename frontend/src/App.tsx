@@ -26,6 +26,8 @@ import { TabHelpSection } from './components/TabHelpSection'
 import { AppProviders } from './components/AppProviders'
 import { PanelShell } from './components/PanelErrorBoundary'
 import { resolveTabHelp } from './help/tabHelpContent'
+import { UserMenu } from './auth/UserMenu'
+import { useAuth } from './auth/useAuth'
 import './App.css'
 
 const MetricsPanel = lazy(async () => {
@@ -45,6 +47,11 @@ type SettingsSubTabConfig = {
   readonly label: string
   readonly panelLabel: string
   readonly render: (onError: (e: string | null) => void) => ReactNode
+  /**
+   * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの（お知らせを出す）。
+   * 変更系の操作部品はパネル自身がロールで出し分ける（展開・エクスポートなど閲覧の操作は残す）。
+   */
+  readonly adminOnlyEdit?: boolean
 }
 
 function initialMountedMainTabs(): Set<MainTabId> {
@@ -69,6 +76,9 @@ export default function App() {
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setAppErr)
+  const { hasRole } = useAuth()
+  const canChat = hasRole('operator')
+  const isAdmin = hasRole('admin')
   const attention = useAttentionStatus()
 
   // タブに出すアテンションドット。概要=直近24hの要注意イベント、通知履歴=firing 中のアラート
@@ -76,6 +86,13 @@ export default function App() {
     summary: (attention?.notable_events_last_24h ?? 0) > 0,
     alerts: (attention?.firing_alerts ?? 0) > 0,
   }
+
+  useEffect(() => {
+    // 権限のないタブ（URL の直接指定など）は概要に戻す
+    if (tab === 'chat' && !canChat) {
+      setTab('summary')
+    }
+  }, [canChat, setTab, tab])
 
   useEffect(() => {
     if (tab !== 'metrics') {
@@ -189,6 +206,8 @@ export default function App() {
     ],
     [metricsReplayNonce, metricsSnapshotReplay, retention?.perf_sample_interval_seconds, setTab],
   )
+  // チャットは operator 以上（LLM の呼び出しを伴うため）
+  const visibleMainTabs = mainTabs.filter((t) => t.id !== 'chat' || canChat)
 
   const settingsSubTabs: SettingsSubTabConfig[] = useMemo(
     () => [
@@ -202,30 +221,35 @@ export default function App() {
         id: 'vcenters',
         label: 'vCenter',
         panelLabel: 'vCenter 設定',
+        adminOnlyEdit: true,
         render: (onError) => <VCentersPanel onError={onError} />,
       },
       {
         id: 'score_rules',
         label: 'スコアルール',
         panelLabel: 'スコアルール',
+        adminOnlyEdit: true,
         render: (onError) => <ScoreRulesPanel onError={onError} />,
       },
       {
         id: 'event_type_guides',
         label: 'イベント種別ガイド',
         panelLabel: 'イベント種別ガイド',
+        adminOnlyEdit: true,
         render: (onError) => <EventTypeGuidesPanel onError={onError} />,
       },
       {
         id: 'alerts',
         label: 'アラート',
         panelLabel: 'アラート設定',
+        adminOnlyEdit: true,
         render: (onError) => <AlertRulesPanel onError={onError} />,
       },
       {
         id: 'plugins',
         label: 'プラグイン',
         panelLabel: 'プラグイン管理',
+        adminOnlyEdit: true,
         render: (onError) => <PluginsPanel onError={onError} />,
       },
       {
@@ -262,6 +286,7 @@ export default function App() {
               <HelpIcon />
               <span>使い方を表示</span>
             </button>
+            <UserMenu />
           </div>
           {retention && (
             <p className="retention-hint">
@@ -285,7 +310,7 @@ export default function App() {
         {showHelp && <TabHelpSection entry={helpEntry} />}
 
         <nav className="tabs">
-          {mainTabs.map((t) => (
+          {visibleMainTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -344,7 +369,18 @@ export default function App() {
                       aria-hidden={tab !== 'settings' || settingsSubTab !== sub.id}
                     >
                       <PanelShell panelLabel={sub.panelLabel}>
-                        {(onError) => sub.render(onError)}
+                        {(onError) =>
+                          sub.adminOnlyEdit && !isAdmin ? (
+                            <>
+                              <p className="readonly-notice" role="note">
+                                閲覧のみです。この設定を変更できるのは管理者だけです。
+                              </p>
+                              {sub.render(onError)}
+                            </>
+                          ) : (
+                            sub.render(onError)
+                          )
+                        }
                       </PanelShell>
                     </div>
                   ),
@@ -352,7 +388,7 @@ export default function App() {
             </div>
           )}
 
-          {mainTabs.map(
+          {visibleMainTabs.map(
             (t) =>
               mountedMainTabs.has(t.id) &&
               t.id !== 'settings' && (

@@ -60,13 +60,18 @@ async def test_login_sets_hardened_cookie_and_me_works() -> None:
 
         me = await ac.get("/api/auth/me")
         assert me.status_code == 200
-        assert me.json() == {
+        body = me.json()
+        principal_id = body.pop("principal_id")
+        assert principal_id and me.headers["x-vea-principal"] == principal_id
+        assert body == {
             "auth_enabled": True,
             "username": "alice",
             "display_name": None,
             "role": "operator",
             "realm": "local",
             "can_change_password": True,
+            # 既定の無操作 60 分では、サーバは 60 秒ごとに最終利用時刻を更新する
+            "session_activity_interval_seconds": 60,
         }
         assert (await ac.get("/api/config")).status_code == 200
 
@@ -493,3 +498,180 @@ async def test_audit_log_escapes_control_characters(caplog) -> None:
     line = next(r.getMessage() for r in caplog.records if "login_failure" in r.getMessage())
     assert not any(ch in line for ch in ("\x1b", "\x00", "\x07"))
     assert "\\x1b" in line and "\\x00" in line and "\\x07" in line
+
+
+async def test_background_requests_do_not_extend_idle_timeout() -> None:
+    """画面の定期更新（X-VEA-Background: 1）では無操作期限を延ばさない。利用者の操作では延ばす。"""
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        old = utcnow() - timedelta(minutes=30)
+        async with session_scope() as db:
+            await db.execute(update(AuthSession).values(last_seen_at=old))
+
+        resp = await ac.get("/api/config", headers={"X-VEA-Background": "1"})
+        assert resp.status_code == 200
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            assert abs((row.last_seen_at.replace(tzinfo=None) - old.replace(tzinfo=None)).total_seconds()) < 1
+
+        assert (await ac.get("/api/config")).status_code == 200
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            assert row.last_seen_at.replace(tzinfo=None) > old.replace(tzinfo=None) + timedelta(minutes=29)
+
+
+async def test_background_requests_expire_after_idle_timeout() -> None:
+    """定期更新だけが続いても、無操作期限を過ぎればセッションは切れる。"""
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        idle = session_policy(get_settings()).idle_timeout
+        async with session_scope() as db:
+            await db.execute(
+                update(AuthSession).values(last_seen_at=utcnow() - idle - timedelta(seconds=1))
+            )
+        resp = await ac.get("/api/config", headers={"X-VEA-Background": "1"})
+        assert resp.status_code == 401
+
+
+async def test_activity_interval_follows_short_idle_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """無操作タイムアウトが短い設定では、報告間隔も短くなる（クライアントが期限前に操作を伝えるため）。"""
+    monkeypatch.setenv("VEA_SESSION_IDLE_TIMEOUT_MINUTES", "1")
+    get_settings.cache_clear()
+    await _make_user()
+    async with _raw_client() as ac:
+        resp = await _login(ac)
+        assert resp.json()["session_activity_interval_seconds"] == 30
+        assert (await ac.get("/api/auth/me")).json()["session_activity_interval_seconds"] == 30
+
+
+async def test_touch_is_kept_when_the_route_fails() -> None:
+    """ルートがエラーで終わっても（ロールバックされても）、操作による最終利用時刻の更新は残る。"""
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        old = utcnow() - timedelta(minutes=30)
+        async with session_scope() as db:
+            await db.execute(update(AuthSession).values(last_seen_at=old))
+
+        # 存在しないイベントの更新 → 404（HTTPException で get_session はロールバックする）
+        resp = await ac.patch("/api/events/999999", json={"user_comment": "x"}, headers=XHR)
+        assert resp.status_code == 404
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            assert row.last_seen_at.replace(tzinfo=None) > old.replace(tzinfo=None) + timedelta(minutes=29)
+
+
+async def test_responses_carry_the_principal_id() -> None:
+    """認証済みの API 応答には利用者の ID が付き、別アカウントへの切り替わりをクライアントが検知できる。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        assert (await ac.get("/api/config")).headers["x-vea-principal"] == alice_id
+        # 同じブラウザ（Cookie）で別のアカウントにログインし直すと、以後の応答は bob の ID になる
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]
+        assert bob_id != alice_id
+        assert (await ac.get("/api/config")).headers["x-vea-principal"] == bob_id
+        # 同じアカウントでログインし直しても（ロール変更でセッションが失効した後など）値は変わる
+        bob_again = (await _login(ac, "bob")).json()["principal_id"]
+        assert bob_again != bob_id
+        assert (await ac.get("/api/config")).headers["x-vea-principal"] == bob_again
+        assert (await ac.get("/api/auth/me")).json()["principal_id"] == bob_again
+        # 未ログインの応答には付かない
+        await ac.post("/api/auth/logout", headers=XHR)
+        resp = await ac.get("/api/config")
+        assert resp.status_code == 401 and "x-vea-principal" not in resp.headers
+
+
+async def test_cors_preflight_allows_the_background_marker(client: AsyncClient) -> None:
+    """別オリジンの UI（認証無効の開発構成）でも、定期更新の要求に付く X-VEA-Background が CORS で拒否されない。"""
+    resp = await client.options(
+        "/api/config",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-vea-background",
+        },
+    )
+    assert resp.status_code == 200
+    assert "x-vea-background" in resp.headers["access-control-allow-headers"].lower()
+
+
+async def test_requests_bound_to_another_principal_are_refused() -> None:
+    """別のタブで別の利用者にログインし直された後、前の利用者の画面からの要求は実行しない。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]  # 別のタブで bob に切り替わった
+        # alice の画面からの bob のパスワード変更（現在のパスワードが同じでも）は断る
+        resp = await ac.post(
+            "/api/auth/me/password",
+            json={"current_password": PASSWORD, "new_password": "another-long-password"},
+            headers={**XHR, "X-VEA-Expected-Principal": alice_id},
+        )
+        assert resp.status_code == 409
+        assert resp.headers["x-vea-principal"] == bob_id
+        # bob のパスワードは変わっていない
+        async with _raw_client() as other:
+            assert (await _login(other, "bob")).status_code == 200
+        # 表示中の利用者と一致していれば通る
+        resp = await ac.get("/api/config", headers={"X-VEA-Expected-Principal": bob_id})
+        assert resp.status_code == 200
+
+
+async def test_logout_from_a_stale_tab_keeps_the_new_session() -> None:
+    """前の利用者の画面からのログアウトでは、別のタブでログインし直した利用者のセッションを消さない。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]
+        resp = await ac.post(
+            "/api/auth/logout", headers={**XHR, "X-VEA-Expected-Principal": alice_id}
+        )
+        assert resp.status_code == 409
+        assert resp.headers["x-vea-principal"] == bob_id
+        assert (await ac.get("/api/auth/me")).json()["username"] == "bob"
+        # 表示中の利用者と一致していればログアウトする
+        resp = await ac.post(
+            "/api/auth/logout", headers={**XHR, "X-VEA-Expected-Principal": bob_id}
+        )
+        assert resp.status_code == 204
+        assert (await ac.get("/api/auth/me")).status_code == 401
+
+
+async def test_browser_downloads_are_bound_by_query() -> None:
+    """ヘッダを付けられない CSV のダウンロードも、クエリで渡した表示中の利用者と照合する。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]
+        url = "/api/logs/export.csv"
+        resp = await ac.get(url, params={"time_zone": "UTC", "vea_expected_principal": alice_id})
+        assert resp.status_code == 409
+        resp = await ac.get(url, params={"time_zone": "UTC", "vea_expected_principal": bob_id})
+        assert resp.status_code == 200
+
+
+async def test_responses_mark_when_the_session_was_touched() -> None:
+    """最終利用時刻を更新した応答にだけ印を付ける（クライアントは印で操作が伝わったかを判断する）。"""
+    await _make_user("alice")
+    async with _raw_client() as ac:
+        await _login(ac, "alice")
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            row.last_seen_at = row.last_seen_at - timedelta(minutes=5)
+            await db.commit()
+        first = await ac.get("/api/config")
+        assert first.headers.get("x-vea-session-touched") == "1"
+        # 更新間隔内の要求は認証を通っても更新しないので、印を付けない
+        second = await ac.get("/api/config")
+        assert second.status_code == 200 and "x-vea-session-touched" not in second.headers

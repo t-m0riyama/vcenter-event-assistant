@@ -50,19 +50,30 @@ def validate_startup_settings(settings: Settings) -> None:
             raise SecurityConfigurationError(
                 "VCENTER_ALLOWED_HOST_SUFFIXES is required when APP_ENV=production"
             )
+        if not settings.auth_enabled:
+            raise SecurityConfigurationError(
+                "VEA_AUTH_ENABLED must not be disabled when APP_ENV=production"
+            )
         _validate_production_database_url(settings.database_url)
         if settings.plugin_management_enabled:
             logger.warning(
                 "VEA_PLUGIN_MANAGEMENT_ENABLED is enabled in production; "
                 "plugin install and reload APIs allow arbitrary code execution. "
-                "Ensure a reverse proxy enforces authentication for /api/plugins."
+                "Grant the admin role only to trusted users."
             )
             if settings.plugin_allow_index_install:
                 logger.warning(
                     "VEA_PLUGIN_ALLOW_INDEX_INSTALL is enabled in production; "
                     "plugins will be fetched from a package index at runtime."
                 )
-    elif not settings.vea_secret_key and not settings.mock_mode:
+    if not settings.auth_enabled:
+        logger.warning(
+            "VEA_AUTH_ENABLED=false: authentication is disabled and every request is treated as admin. "
+            "Use this only for local development."
+        )
+    if settings.is_production:
+        return
+    if not settings.vea_secret_key and not settings.mock_mode:
         if not settings.vea_allow_plaintext_passwords:
             logger.warning(
                 "VEA_SECRET_KEY is not set and VEA_ALLOW_PLAINTEXT_PASSWORDS is false; "
