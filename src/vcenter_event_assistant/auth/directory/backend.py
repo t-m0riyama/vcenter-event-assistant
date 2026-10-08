@@ -187,12 +187,14 @@ def unique_id(spec: DirectorySpec, entry: _Entry) -> str | None:
     if not raw:
         return None
     # 文字列の値はそのまま、バイナリ（eDirectory の GUID など）は 16 進にする。
-    # 区切り（``=`` と ``#``）を変えて、文字列とバイナリの値が同じ subject にならないようにする
+    # 区切り（``=`` と ``#``）を変えて、文字列とバイナリの値が同じ subject にならないようにする。
+    # 空白の除去などの加工はしない（Octet String のように完全一致で比べる構文では、前後の空白だけが
+    # 違う値も別のエントリの ID になり得るので、加工すると別のユーザーが同じ行になる）
     try:
-        text = raw.decode("utf-8").strip()
+        text: str | None = raw.decode("utf-8")
     except UnicodeDecodeError:
-        text = ""
-    if text and text.isprintable():
+        text = None
+    if text is not None and text.isprintable():
         return f"id:{attribute.casefold()}={text}"
     return f"id:{attribute.casefold()}#{raw.hex()}"
 

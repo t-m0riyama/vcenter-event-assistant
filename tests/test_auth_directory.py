@@ -1326,3 +1326,15 @@ async def test_unique_id_attribute_cannot_change_once_users_exist(client, direct
     # 未設定と entryUUID の明示は同じ属性なので、変更に当たらない
     assert (await client.patch(url, json={"unique_id_attribute": "entryUUID"})).status_code == 200
     assert (await client.patch(url, json={"unique_id_attribute": None})).status_code == 200
+
+
+def test_custom_unique_ids_keep_exact_bytes(directory: FakeDirectory) -> None:
+    """前後の空白だけが違う値（Octet String など完全一致の構文）を同じユーザーにしない。"""
+    directory.entries[ALICE_DN]["serialNumber"] = b"abc"
+    directory.entries[BOB_DN]["serialNumber"] = b" abc"
+    directory.entries[BOB_DN]["memberOf"] = [OPS]
+    spec = _spec(unique_id_attribute="serialNumber")
+    alice = backend.authenticate(spec, "alice", "alice-secret", OPTIONS)
+    bob = backend.authenticate(spec, "bob", "bob-secret", OPTIONS)
+    assert alice.subject == "id:serialnumber=abc"
+    assert bob.subject != alice.subject
