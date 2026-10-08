@@ -112,12 +112,16 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
     [showLogin],
   )
 
-  // ログイン中は、API を呼ばない操作もサーバの無操作期限が切れる前に伝える
-  const isAuthenticated = state.status === 'authenticated'
+  // ログイン中は、API を呼ばない操作もサーバの無操作期限が切れる前に伝える（間隔はサーバの更新間隔）
+  const activityIntervalSeconds =
+    state.status === 'authenticated' ? (state.me.session_activity_interval_seconds ?? null) : undefined
   useEffect(() => {
-    if (!isAuthenticated) return undefined
-    return setActivityReporter(() => fetchMe())
-  }, [isAuthenticated])
+    if (activityIntervalSeconds === undefined) return undefined
+    return setActivityReporter(
+      () => fetchMe(),
+      activityIntervalSeconds ? activityIntervalSeconds * 1000 : undefined,
+    )
+  }, [activityIntervalSeconds])
 
   const logout = useCallback(async () => {
     // 失効を確認できたときだけログイン画面へ戻す。失敗したら例外を呼び出し元に返し、

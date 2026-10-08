@@ -67,6 +67,8 @@ async def test_login_sets_hardened_cookie_and_me_works() -> None:
             "role": "operator",
             "realm": "local",
             "can_change_password": True,
+            # 既定の無操作 60 分では、サーバは 60 秒ごとに最終利用時刻を更新する
+            "session_activity_interval_seconds": 60,
         }
         assert (await ac.get("/api/config")).status_code == 200
 
@@ -530,3 +532,14 @@ async def test_background_requests_expire_after_idle_timeout() -> None:
             )
         resp = await ac.get("/api/config", headers={"X-VEA-Background": "1"})
         assert resp.status_code == 401
+
+
+async def test_activity_interval_follows_short_idle_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """無操作タイムアウトが短い設定では、報告間隔も短くなる（クライアントが期限前に操作を伝えるため）。"""
+    monkeypatch.setenv("VEA_SESSION_IDLE_TIMEOUT_MINUTES", "1")
+    get_settings.cache_clear()
+    await _make_user()
+    async with _raw_client() as ac:
+        resp = await _login(ac)
+        assert resp.json()["session_activity_interval_seconds"] == 30
+        assert (await ac.get("/api/auth/me")).json()["session_activity_interval_seconds"] == 30

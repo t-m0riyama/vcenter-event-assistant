@@ -14,7 +14,7 @@ export const USER_ACTIVITY_WINDOW_MS = 30_000
 
 /**
  * 操作をサーバに伝えた最後の要求からこの時間がたっていたら、API を呼ばない操作でも報告の要求を送る。
- * サーバがセッションの最終利用時刻を更新する間隔（最大 60 秒）に合わせる。
+ * 既定値。実際にはサーバが返す更新間隔（無操作タイムアウトが短いと縮む）を ``setActivityReporter`` で渡す。
  */
 export const ACTIVITY_REPORT_INTERVAL_MS = 60_000
 
@@ -32,6 +32,7 @@ let unreportedActivity = true
 /** 操作をサーバに伝えた（バックグラウンドでない）最後の要求の時刻。 */
 let lastReportedAt = 0
 let reporter: (() => Promise<unknown>) | null = null
+let reportIntervalMs = ACTIVITY_REPORT_INTERVAL_MS
 let reportTimer: ReturnType<typeof setTimeout> | null = null
 
 export function markUserActivity(now: number = Date.now()): void {
@@ -41,28 +42,37 @@ export function markUserActivity(now: number = Date.now()): void {
 }
 
 /**
- * API を呼ばない操作（スクロールなど）でも、サーバの無操作期限が切れる前に伝わるよう、
- * 前回の報告から間が空いていれば報告の要求を送る。
+ * API を呼ばない操作（スクロールなど）でも、サーバの無操作期限が切れる前に伝わるよう報告の要求を送る。
+ * 操作が続く間は最後の操作から少し待ち、前回の報告から更新間隔がたっていなければその時点まで遅らせる
+ * （間隔より短い報告はサーバが最終利用時刻を更新しないため）。
  */
 function scheduleReport(now: number): void {
-  if (!reporter || now - lastReportedAt < ACTIVITY_REPORT_INTERVAL_MS) return
+  if (!reporter) return
+  const dueAt = Math.max(now + ACTIVITY_REPORT_DEBOUNCE_MS, lastReportedAt + reportIntervalMs)
   if (reportTimer !== null) clearTimeout(reportTimer)
   reportTimer = setTimeout(() => {
     reportTimer = null
     // 待っている間に別の要求で伝わっていれば送らない
     if (!unreportedActivity || !reporter) return
+    const previousReportedAt = lastReportedAt
     void reporter().catch(() => {
-      // 報告の失敗は無視する（次の要求で伝わる）
+      // 失敗したら伝わっていないので、未報告に戻す（次の操作や要求で改めて伝える）
+      unreportedActivity = true
+      lastReportedAt = previousReportedAt
     })
-  }, ACTIVITY_REPORT_DEBOUNCE_MS)
+  }, dueAt - now)
 }
 
 /**
  * 操作の報告に使う要求を登録する（ログイン中だけ）。戻り値で登録を解除する。
  * 要求は ``activityHeaders()`` を付けて送ること。
  */
-export function setActivityReporter(report: () => Promise<unknown>): () => void {
+export function setActivityReporter(
+  report: () => Promise<unknown>,
+  intervalMs: number = ACTIVITY_REPORT_INTERVAL_MS,
+): () => void {
   reporter = report
+  reportIntervalMs = intervalMs
   return () => {
     if (reporter === report) reporter = null
     if (reportTimer !== null) {

@@ -47,14 +47,21 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _me(principal: Principal, *, auth_enabled: bool) -> MeResponse:
+def _activity_interval_seconds(settings: Settings) -> int | None:
+    if not settings.auth_enabled:
+        return None
+    return int(session_policy(settings).touch_interval.total_seconds())
+
+
+def _me(principal: Principal, *, settings: Settings) -> MeResponse:
     return MeResponse(
-        auth_enabled=auth_enabled,
+        auth_enabled=settings.auth_enabled,
         username=principal.username,
         display_name=principal.display_name,
         role=principal.role.value,
         realm=principal.realm,
         can_change_password=principal.realm == LOCAL_REALM,
+        session_activity_interval_seconds=_activity_interval_seconds(settings),
     )
 
 
@@ -120,6 +127,7 @@ async def login(
         role=user.role,
         realm=user.realm_key,
         can_change_password=user.realm_key == LOCAL_REALM,
+        session_activity_interval_seconds=_activity_interval_seconds(settings),
     )
     response = JSONResponse(content=payload.model_dump())
     response.set_cookie(
@@ -162,7 +170,7 @@ async def get_me(
     principal: Principal = Depends(get_current_principal),
     settings: Settings = Depends(get_app_settings),
 ) -> MeResponse:
-    return _me(principal, auth_enabled=settings.auth_enabled)
+    return _me(principal, settings=settings)
 
 
 @router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)

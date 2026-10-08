@@ -36,14 +36,49 @@ describe('userActivity の操作報告', () => {
     off()
   })
 
-  it('直前に報告していれば、次の間隔まで送らない', async () => {
+  it('直前に報告していれば、次の間隔が来た時点で送る（操作は捨てない）', async () => {
     const m = await freshModule()
     const report = vi.fn(async () => m.activityHeaders())
-    const off = m.setActivityReporter(report)
+    const off = m.setActivityReporter(report, 30_000)
     m.activityHeaders() // たった今、通常の要求で伝えた
+    vi.advanceTimersByTime(1_000)
     m.markUserActivity()
-    vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS * 2)
+    vi.advanceTimersByTime(28_000)
     expect(report).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1_000)
+    expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
+
+  it('サーバが返した短い間隔（無操作 1 分の設定なら 30 秒）で報告する', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => m.activityHeaders())
+    const off = m.setActivityReporter(report, 30_000)
+    m.activityHeaders()
+    vi.advanceTimersByTime(31_000)
+    m.markUserActivity()
+    vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS)
+    expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
+
+  it('報告に失敗したら未報告に戻し、次の要求で伝える', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => {
+      m.activityHeaders()
+      throw new Error('network')
+    })
+    const off = m.setActivityReporter(report)
+    m.activityHeaders()
+    vi.advanceTimersByTime(m.ACTIVITY_REPORT_INTERVAL_MS + 1)
+    m.markUserActivity()
+    // 判定窓を過ぎてから報告が失敗した状況にする
+    vi.advanceTimersByTime(m.USER_ACTIVITY_WINDOW_MS + 1)
+    expect(report).toHaveBeenCalledTimes(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    // 失敗した報告の操作は、次の（定期取得の）要求で伝わる
+    expect(m.activityHeaders()).toEqual({})
     off()
   })
 
