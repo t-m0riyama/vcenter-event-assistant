@@ -187,19 +187,39 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   // 応答が示す利用者（X-VEA-Principal）が表示中の利用者と違えば、すぐに照合する
   // （並べた別ウィンドウで別のアカウントにログインし直すと、タブの切り替えも 401 も起きないため）
   const reconcilingRef = useRef(false)
+  const latestPrincipalRef = useRef<string | null>(null)
+  const pendingMismatchRef = useRef(false)
   useEffect(() => {
     if (!isAuthenticated) return undefined
-    return onPrincipalSeen((principalId) => {
+    const mismatched = () => {
       const known = meRef.current?.principal_id
-      if (!known || principalId === known || reconcilingRef.current) return
+      const latest = latestPrincipalRef.current
+      return Boolean(authenticatedRef.current && known && latest && latest !== known)
+    }
+    return onPrincipalSeen((principalId) => {
+      latestPrincipalRef.current = principalId
+      if (!mismatched()) return
+      if (reconcilingRef.current) {
+        // 照合中に届いた食い違いは捨てずに、今の照合が終わってからもう一度照合する
+        pendingMismatchRef.current = true
+        return
+      }
       reconcilingRef.current = true
-      void checkSession()
-        .catch(() => {
-          // 確認できなくても画面はそのまま（次の応答で改めて照合する）
-        })
-        .finally(() => {
+      void (async () => {
+        try {
+          do {
+            pendingMismatchRef.current = false
+            try {
+              await checkSession()
+            } catch {
+              // 確認できなくても画面はそのまま（照合中に新しい食い違いが届いていれば下でやり直す）
+            }
+          } while (pendingMismatchRef.current && mismatched())
+        } finally {
           reconcilingRef.current = false
-        })
+          pendingMismatchRef.current = false
+        }
+      })()
     })
   }, [checkSession, isAuthenticated])
   useEffect(() => {

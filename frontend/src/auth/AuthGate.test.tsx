@@ -425,6 +425,40 @@ describe('AuthGate', () => {
     expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
   })
 
+  it('照合中に届いた食い違いは、照合が一時的に失敗しても後でやり直す', async () => {
+    let meCalls = 0
+    let releaseFirstCheck: () => void = () => {}
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        meCalls += 1
+        if (meCalls === 1) return json({ ...ADMIN_ME, principal_id: 'id-alice' })
+        if (meCalls === 2) {
+          // 1 回目の照合は保留した後に一時的な障害で失敗する
+          return new Promise<Response>((resolve) => {
+            releaseFirstCheck = () => resolve(new Response('down', { status: 503 }))
+          })
+        }
+        return json({ ...ADMIN_ME, username: 'bob', role: 'viewer', principal_id: 'id-bob' })
+      }
+      if (url === '/api/protected') {
+        return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-bob' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' })) // 照合が始まる
+    await waitFor(() => expect(meCalls).toBe(2))
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' })) // 照合中に届いた食い違い
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    releaseFirstCheck()
+    expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)
