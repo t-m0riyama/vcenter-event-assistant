@@ -25,6 +25,7 @@ export function DirectoryForm({
   onChange,
   original,
   policy,
+  disableLockedReason = null,
 }: {
   readonly value: DirectoryFormState
   readonly onChange: (next: DirectoryFormState) => void
@@ -32,6 +33,8 @@ export function DirectoryForm({
   readonly original?: Directory
   /** 接続の方針。読み込めていなければ null（制限せず、保存時のサーバの検証に任せる）。 */
   readonly policy: DirectoryPolicy | null
+  /** 無効にできない理由（自分がログインしているディレクトリなど）。null なら無効にできる。 */
+  readonly disableLockedReason?: string | null
 }) {
   const set = <K extends keyof DirectoryFormState>(key: K, v: DirectoryFormState[K]) =>
     onChange({ ...value, [key]: v })
@@ -96,10 +99,21 @@ export function DirectoryForm({
             />
           </label>
           <label className="check">
-            <input type="checkbox" checked={value.is_enabled} onChange={(e) => set('is_enabled', e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={value.is_enabled}
+              disabled={disableLockedReason !== null && value.is_enabled}
+              aria-describedby={disableLockedReason ? 'directory-disable-locked' : undefined}
+              onChange={(e) => set('is_enabled', e.target.checked)}
+            />
             有効（ログイン画面の認証先に出す）
           </label>
         </div>
+        {disableLockedReason && (
+          <p className="hint" id="directory-disable-locked">
+            {disableLockedReason}
+          </p>
+        )}
       </fieldset>
 
       <fieldset className="directories-panel__group">

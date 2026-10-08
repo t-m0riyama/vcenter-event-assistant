@@ -203,9 +203,19 @@ export function changesFromForm(original: Directory, form: DirectoryFormState): 
   return changes
 }
 
-/** 対応表を変えたか（前後の空白と DN が空の行は無視する）。 */
+/** 対応表を比べるための値（順序は意味を持たないので並べ替える）。 */
+function mappingSetKey(mappings: GroupRoleMapping[]): string[] {
+  return mappings.map((m) => JSON.stringify([m.group_dn, m.role])).sort()
+}
+
+/**
+ * 対応表を変えたか（前後の空白・DN が空の行・並び順は無視する）。
+ *
+ * サーバは DN を正規化（大文字小文字・エスケープの表記など）して比べるので、ここで変えたと判断しても、
+ * サーバは変更とみなさないことがある（保存後のセッションの確認で補う）。
+ */
 export function mappingsChanged(original: Directory, form: DirectoryFormState): boolean {
-  return !sameValue(mappingsFromForm(formFromDirectory(original)), mappingsFromForm(form))
+  return !sameValue(mappingSetKey(mappingsFromForm(formFromDirectory(original))), mappingSetKey(mappingsFromForm(form)))
 }
 
 export const INSECURE_TLS_WARNING = '証明書を検証しません（中間者攻撃に弱い状態です）'
@@ -215,4 +225,36 @@ export const PLAINTEXT_WARNING = '暗号化しない接続です（パスワー�
 export function connectionWarnings(form: Pick<DirectoryFormState, 'transport_security' | 'tls_verify'>): string[] {
   if (form.transport_security === 'none') return [PLAINTEXT_WARNING]
   return form.tls_verify ? [] : [INSECURE_TLS_WARNING]
+}
+
+/**
+ * 変えても、ログイン中のユーザーの認証・ロールの根拠には影響しない項目（サーバの ``_SESSION_NEUTRAL_FIELDS``）。
+ * ``is_enabled`` は別に扱う（無効化はログアウトさせ、有効化はさせない）。
+ */
+const SESSION_NEUTRAL_KEYS = new Set([
+  'name',
+  'sort_order',
+  'timeout_seconds',
+  'bind_password',
+  'clear_bind_password',
+  'display_name_attribute',
+  'email_attribute',
+  'is_enabled',
+])
+
+/** 保存すると、このディレクトリでログイン中のユーザーがログアウトされるか（サーバが失効させる条件）。 */
+export function revokesSessions(changes: Record<string, unknown>, mappingsChanged: boolean): boolean {
+  if (mappingsChanged || changes.is_enabled === false) return true
+  return Object.keys(changes).some((key) => !SESSION_NEUTRAL_KEYS.has(key))
+}
+
+/**
+ * ログインの成否に関わる変更か（サーバが保存の前の確認の対象にする変更）。サービスアカウントのパスワードと
+ * タイムアウトは、ログアウトさせないが、誤るとこの後のログインがすべて失敗する。
+ */
+export function affectsLogin(changes: Record<string, unknown>, mappingsChanged: boolean): boolean {
+  return (
+    revokesSessions(changes, mappingsChanged) ||
+    ['bind_password', 'clear_bind_password', 'timeout_seconds', 'is_enabled'].some((key) => key in changes)
+  )
 }

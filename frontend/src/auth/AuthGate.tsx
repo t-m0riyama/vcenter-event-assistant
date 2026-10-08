@@ -143,7 +143,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
 
   useEffect(
     () =>
-      onUnauthorized(() => {
+      onUnauthorized((notice) => {
         if (!authenticatedRef.current || checkingRef.current) return
         // 401 が前のセッションで出した要求の遅れた応答かもしれない（ログインし直した後に届くことがある）。
         // 今のセッションが有効かを確かめ、無効なときだけログイン画面へ戻す。同時に何件 401 が来ても確認は 1 回
@@ -178,7 +178,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
             return
           }
           authenticatedRef.current = false
-          await showLogin(SESSION_EXPIRED_MESSAGE)
+          await showLogin(notice ?? SESSION_EXPIRED_MESSAGE)
         })()
       }),
     [applySession, showLogin],
