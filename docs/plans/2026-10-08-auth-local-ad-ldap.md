@@ -8,21 +8,21 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| 1 | 土台（users / auth_sessions、settings、roles / passwords / tokens / sessions、管理 CLI） | マージ済み [#245](https://github.com/t-m0riyama/vcenter-event-assistant/pull/245) |
-| 2 | ローカルログイン、セッション Cookie、CSRF、rate limit とロックアウト、全 route のロール宣言 | マージ済み [#246](https://github.com/t-m0riyama/vcenter-event-assistant/pull/246) |
-| 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [#247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
-| 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [#248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
-| 5 | ユーザー管理画面とパスワード変更 | マージ済み [#249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
-| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255。#253 は [#256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
+| 1 | 土台（users / auth_sessions、settings、roles / passwords / tokens / sessions、管理 CLI） | マージ済み [PR #245](https://github.com/t-m0riyama/vcenter-event-assistant/pull/245) |
+| 2 | ローカルログイン、セッション Cookie、CSRF、rate limit とロックアウト、全 route のロール宣言 | マージ済み [PR #246](https://github.com/t-m0riyama/vcenter-event-assistant/pull/246) |
+| 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [PR #247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
+| 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [PR #248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
+| 5 | ユーザー管理画面とパスワード変更 | マージ済み [PR #249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
+| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
 1. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
-   - [#254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）も PR7 のマージまでに入れる。保存前の接続試験には、未保存の設定を受け取る試験用の API が要る（今の `POST /api/auth/directories/{id}/test` は保存済みの設定しか試せない）
+   - [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）も PR7 のマージまでに入れる。保存前の接続試験には、未保存の設定を受け取る試験用の API が要る（今の `POST /api/auth/directories/{id}/test` は保存済みの設定しか試せない）
 2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
-3. [#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[#255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
+3. [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
 
 ### PR6 のレビューの経過
 
@@ -38,11 +38,11 @@
 
 | Issue | 内容 | 対応の時期 |
 |---|---|---|
-| [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[#256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
-| [#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
-| [#254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけのとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | PR7 のマージまでに（保存前の接続試験・確認ダイアログと合わせて設計する。未保存の設定を試す API が要る） |
-| [#255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | いつでも（`FOR UPDATE` を足す小さな修正。#252 と同じ PR でよい） |
-| [#251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
+| [Issue #253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
+| [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
+| [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけのとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | PR7 のマージまでに（保存前の接続試験・確認ダイアログと合わせて設計する。未保存の設定を試す API が要る） |
+| [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | いつでも（`FOR UPDATE` を足す小さな修正。Issue #252 と同じ PR でよい） |
+| [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
 ## Context
 
@@ -96,14 +96,14 @@
   - subject の中身:
     - AD は `guid:<objectGUID>`
     - LDAP は ID 属性（`directory_configs.unique_id_attribute`、未設定なら entryUUID）の値
-      - entryUUID は `uuid:<小文字にした値>`（#253 より前の行と同じ形）
+      - entryUUID は `uuid:<小文字にした値>`（Issue #253 より前の行と同じ形）
       - ほかの属性は、文字列なら `id:<小文字の属性名>=<値>`、バイナリ（eDirectory の GUID など）なら `id:<小文字の属性名>#<16 進>`
-    - ID が取れないユーザーはログインを拒否する（`DirectoryMissingUniqueId`、理由 `directory_missing_unique_id`。運用者向けに警告ログが出る）。DN は改名・移動で変わり、変わると別のユーザーとして作り直されてアプリ側の無効化をすり抜けるので、ID にしない（#253）
-    - #253 より前に `dn:` で作られた行は移行しない（ログインには使われなくなる）。認証機能は未リリースなので実害はない
+    - ID が取れないユーザーはログインを拒否する（`DirectoryMissingUniqueId`、理由 `directory_missing_unique_id`。運用者向けに警告ログが出る）。DN は改名・移動で変わり、変わると別のユーザーとして作り直されてアプリ側の無効化をすり抜けるので、ID にしない（Issue #253）
+    - Issue #253 より前に `dn:` で作られた行は移行しない（ログインには使われなくなる）。認証機能は未リリースなので実害はない
     - ローカルは小文字化したユーザー名
     - 512 文字を超える subject は `sha256:<hex>` にする（切り詰めると別の DN と衝突するため）
 - **`auth_sessions`**（PR1）: id, token_hash(unique), user_id(FK, CASCADE), created_at, last_seen_at, expires_at, client_ip, user_agent
-- **`directory_configs`**（PR6、revision `a8b9c0d1e2f3`。`unique_id_attribute` は #253 で追加、revision `b9c0d1e2f3a4`）
+- **`directory_configs`**（PR6、revision `a8b9c0d1e2f3`。`unique_id_attribute` は Issue #253 で追加、revision `b9c0d1e2f3a4`）
   - `unique_id_attribute` は LDAP のみ（AD で指定すると 422）。属性名か数字の OID
   - そのディレクトリのユーザー行がある間は変更できない（422）。変えると全員の subject が変わり、無効化をすり抜けられるため。未設定と `entryUUID` の明示は同じとみなす
   - ディレクトリのユーザーは個別に削除できないので、変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）。ユーザーの一括削除の操作は、無効化の情報まで消えてすり抜けの経路になるので用意しない（利用者の判断）
@@ -123,7 +123,7 @@
 - `VEA_DIRECTORY_ALLOW_INSECURE_TLS=false` のときは `tls_verify=false` の保存を 422 にし、既存の設定でも接続時にエラーにする
 - 本番では `transport_security=none` を保存も接続も拒否する
 - 保存時、`tls_verify=false` や `none` のときは監査ログに WARNING を出す
-- bind パスワード: 書き込み専用（応答は `has_bind_password` だけ）。`enc:` で始まる値は拒否する。UTF-8 で 1024 バイトまで（暗号化後も 2048 文字の列に収まる）。鍵を後から設定したときの移行は未対応（#252）
+- bind パスワード: 書き込み専用（応答は `has_bind_password` だけ）。`enc:` で始まる値は拒否する。UTF-8 で 1024 バイトまで（暗号化後も 2048 文字の列に収まる）。鍵を後から設定したときの移行は未対応（Issue #252）
 
 ### ユーザーの検索と認証
 - サービスアカウントで bind → ユーザーを検索 → ちょうど 1 件のときだけ本人として bind
@@ -140,7 +140,7 @@
 - ロールは対応表のうち一致したものの中で最も強いもの。どれにも一致しなければログインを拒否する
 - ログインで決まったロールが前回と違えば、そのユーザーのほかのセッションを失効させる（ローカルユーザーのロール変更と同じ）。同じロールなら別の端末のセッションは残す
 - グループ DN の正規化（`normalize_dn`）:
-  - 属性名は小文字にする。標準の属性の OID（`2.5.4.3` など。`OID.` 接頭辞付きも含む）は名前に置き換える。置き換えるのは本当の区切り（エスケープや引用符の外の `,` / `+`）の直後だけ。未知の OID は解析できない DN になる（#251）
+  - 属性名は小文字にする。標準の属性の OID（`2.5.4.3` など。`OID.` 接頭辞付きも含む）は名前に置き換える。置き換えるのは本当の区切り（エスケープや引用符の外の `,` / `+`）の直後だけ。未知の OID は解析できない DN になる（Issue #251）
   - 値の Unicode の正規化（NFKC）・大文字小文字・空白（連続する空白・前後の空白。RFC 4518）は、比較で区別しないと決まっている属性（RFC 4519 と RFC 4524 で equality が caseIgnoreMatch / caseIgnoreIA5Match の属性すべて）だけならす
   - 複数値 RDN（`+` でつないだ部分）の中は並べ替える。RDN の順序と `+` / `,` の違いは保つ
   - 値のエスケープ（`\,`、`\2C`、UTF-8 のバイト列の `\C3\A9` など）は実際の文字に戻してから、ldap3 の `escape_rdn` で決まった形にエスケープし直す。戻せない値（UTF-8 として不正なバイト列など）を含む DN は解析できない DN として扱う
@@ -176,8 +176,8 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `PUT /api/auth/directories/{id}/mappings`（admin の対応をなくすとき、ほかに経路がなければ 409）
 - `DELETE /api/auth/directories/{id}`（無効なときだけ）
 - `POST /api/auth/directories/{id}/test`（connect / user_search / user_bind / groups の段階ごとの結果）。保存済みの設定で試す
-- 予定（PR7・#254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
-- 予定（PR7・#254）: 試験した設定と対応表を 1 回でまとめて保存する API（1 つのトランザクションで反映し、セッションの失効も 1 回にする）。設定の PATCH と対応表の PUT に分けて送ると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなるため
+- 予定（PR7・Issue #254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
+- 予定（PR7・Issue #254）: 試験した設定と対応表を 1 回でまとめて保存する API（1 つのトランザクションで反映し、セッションの失効も 1 回にする）。設定の PATCH と対応表の PUT に分けて送ると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなるため
 
 ## バックエンドの構成
 - `src/vcenter_event_assistant/auth/`: `roles.py`、`passwords.py`、`tokens.py`、`sessions.py`、`local_backend.py`、`service.py`（`authenticate(realm, username, password, ip)` が入口）、`users.py`、`bootstrap.py`、`csrf.py`、`audit.py`、`cli.py`
@@ -196,7 +196,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - 接続試験の結果は段階（connect / user_search / unique_id / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
   - user_search の結果には ID 属性の値が出る。取れなければ unique_id の段階が失敗し、「このユーザーはログインできない」と警告する
   - ディレクトリの削除は、無効にしてから確認ダイアログを出して行う
-  - 認証に関わる設定や対応表を保存する前に、編集中の値で接続試験を促し（未保存の設定を試す API を使う）、「このディレクトリでログイン中の利用者はログアウトされる」ことを確認ダイアログで伝える（ローカルや別のディレクトリの利用者は影響を受けない。#254）
+  - 認証に関わる設定や対応表を保存する前に、編集中の値で接続試験を促し（未保存の設定を試す API を使う）、「このディレクトリでログイン中の利用者はログアウトされる」ことを確認ダイアログで伝える（ローカルや別のディレクトリの利用者は影響を受けない。Issue #254）
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
 ## テスト
