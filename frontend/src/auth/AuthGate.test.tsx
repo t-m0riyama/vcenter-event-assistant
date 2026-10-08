@@ -1,12 +1,20 @@
 /**
  * @vitest-environment happy-dom
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode, useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGet } from '../api'
 import { AuthGate } from './AuthGate'
 import { useAuth } from './useAuth'
+
+/**
+ * 保留中の effect を流す。表示が出た時点では、visibilitychange のリスナーを登録する effect が
+ * まだ走っていないことがある（その間に送ったイベントは取りこぼされ、CI でまれに落ちる）。
+ */
+async function flushEffects(): Promise<void> {
+  await act(async () => {})
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
@@ -317,6 +325,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    await flushEffects()
     // 別のタブで bob としてログインし直した（Cookie が替わり、API は 401 にならない）
     switched = true
     document.dispatchEvent(new Event('visibilitychange'))
@@ -337,6 +346,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    await flushEffects()
     loggedOut = true
     document.dispatchEvent(new Event('visibilitychange'))
     expect(await screen.findByRole('status')).toHaveTextContent('ログインの有効期限が切れました')
