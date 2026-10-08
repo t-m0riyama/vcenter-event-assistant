@@ -53,14 +53,13 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
         if settings.bootstrap_admin_password is not None
         else None
     )
+    if not settings.auth_enabled:
+        # 認証が無効なら初期 admin は使われない。不完全な設定が残っていても起動は止めず、
+        # 使われないアカウントも作らない（認証を有効にした次の起動で作る）
+        if username or password:
+            logger.warning("VEA_BOOTSTRAP_ADMIN_* is ignored because VEA_AUTH_ENABLED=false.")
+        return
     if not settings.local_login_enabled:
-        if not settings.auth_enabled:
-            # 認証が無効ならローカルログインも初期 admin も使われない。起動は止めない
-            if username or password:
-                logger.warning(
-                    "VEA_BOOTSTRAP_ADMIN_* is ignored because VEA_LOCAL_LOGIN_ENABLED=false."
-                )
-            return
         # 初期 admin はローカルユーザーなので、ローカルログインが無効だと誰も管理できない
         if username or password:
             raise BootstrapError(

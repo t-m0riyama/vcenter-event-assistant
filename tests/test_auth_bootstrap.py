@@ -119,16 +119,22 @@ async def test_bootstrap_rejected_when_local_login_disabled(monkeypatch: pytest.
         assert await count_users(db) == 0
 
 
-async def test_local_login_disabled_is_ignored_when_auth_disabled(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("local_login", ["true", "false"])
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"VEA_BOOTSTRAP_ADMIN_USERNAME": "root", "VEA_BOOTSTRAP_ADMIN_PASSWORD": BOOT_PASSWORD},
+        {"VEA_BOOTSTRAP_ADMIN_USERNAME": "root", "VEA_BOOTSTRAP_ADMIN_PASSWORD": "short"},
+        {"VEA_BOOTSTRAP_ADMIN_USERNAME": "root"},
+        {"VEA_BOOTSTRAP_ADMIN_PASSWORD": BOOT_PASSWORD},
+    ],
+)
+async def test_bootstrap_settings_are_ignored_when_auth_disabled(
+    monkeypatch: pytest.MonkeyPatch, local_login: str, env: dict[str, str]
 ) -> None:
-    """認証が無効なら、ローカルログイン無効と初期 admin の設定が残っていても起動を止めない。"""
+    """認証が無効なら、初期 admin の設定が残っていても起動を止めず、アカウントも作らない。"""
     settings = _settings(
-        monkeypatch,
-        VEA_AUTH_ENABLED="false",
-        VEA_LOCAL_LOGIN_ENABLED="false",
-        VEA_BOOTSTRAP_ADMIN_USERNAME="root",
-        VEA_BOOTSTRAP_ADMIN_PASSWORD=BOOT_PASSWORD,
+        monkeypatch, VEA_AUTH_ENABLED="false", VEA_LOCAL_LOGIN_ENABLED=local_login, **env
     )
     await ensure_bootstrap_admin(settings)
     async with session_scope() as db:
