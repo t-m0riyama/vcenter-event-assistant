@@ -48,6 +48,8 @@ def credential_marker(user: User) -> str | None:
 class ResolvedSession:
     session: AuthSession
     user: User
+    # このリクエストで last_seen_at を進めたか（呼び出し側がルートの処理と切り離して確定させるため）
+    touched: bool = False
 
 
 async def create_session(
@@ -129,9 +131,10 @@ async def resolve_session(
         )
         db.expunge(row)
         return None
+    touched = False
     if touch and now - as_utc(row.last_seen_at) >= policy.touch_interval:
-        await _touch(db, row, now)
-    return ResolvedSession(session=row, user=user)
+        touched = await _touch(db, row, now)
+    return ResolvedSession(session=row, user=user, touched=touched)
 
 
 async def _delete_if_still_expired(
@@ -159,7 +162,7 @@ async def _delete_if_still_expired(
     return False
 
 
-async def _touch(db: AsyncSession, row: AuthSession, now: datetime) -> None:
+async def _touch(db: AsyncSession, row: AuthSession, now: datetime) -> bool:
     """``last_seen_at`` を進める。DB 上の値より新しいときだけ書き込み、巻き戻さない。
 
     同じトークンのリクエストが重なると、遅れて確定した側が古い時刻で上書きし、
@@ -173,6 +176,8 @@ async def _touch(db: AsyncSession, row: AuthSession, now: datetime) -> None:
     )
     if done.rowcount:
         set_committed_value(row, "last_seen_at", now)
+        return True
+    return False
 
 
 async def revoke_session(db: AsyncSession, token: str | None) -> None:

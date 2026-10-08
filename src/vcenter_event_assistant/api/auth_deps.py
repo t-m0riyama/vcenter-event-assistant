@@ -70,6 +70,10 @@ async def get_current_principal(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="ログインが必要です。",
         )
+    if resolved.touched:
+        # 最終利用時刻の更新はルートの処理と切り離して確定させる。ルートが 4xx/5xx で失敗すると
+        # get_session がロールバックし、操作したのに無操作期限が延びないままになるため
+        await db.commit()
     user = resolved.user
     return Principal(
         username=user.username,

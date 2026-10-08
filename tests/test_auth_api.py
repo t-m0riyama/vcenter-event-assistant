@@ -543,3 +543,21 @@ async def test_activity_interval_follows_short_idle_timeout(monkeypatch: pytest.
         resp = await _login(ac)
         assert resp.json()["session_activity_interval_seconds"] == 30
         assert (await ac.get("/api/auth/me")).json()["session_activity_interval_seconds"] == 30
+
+
+async def test_touch_is_kept_when_the_route_fails() -> None:
+    """ルートがエラーで終わっても（ロールバックされても）、操作による最終利用時刻の更新は残る。"""
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        old = utcnow() - timedelta(minutes=30)
+        async with session_scope() as db:
+            await db.execute(update(AuthSession).values(last_seen_at=old))
+
+        # 存在しないイベントの更新 → 404（HTTPException で get_session はロールバックする）
+        resp = await ac.patch("/api/events/999999", json={"user_comment": "x"}, headers=XHR)
+        assert resp.status_code == 404
+        async with session_scope() as db:
+            row = await db.scalar(select(AuthSession))
+            assert row is not None
+            assert row.last_seen_at.replace(tzinfo=None) > old.replace(tzinfo=None) + timedelta(minutes=29)
