@@ -1,7 +1,8 @@
 """ディレクトリの接続試験（管理画面の「接続試験」）。段階ごとに結果を返す。
 
 1. connect: サーバに接続し、TLS を確立して、サービスアカウント（未設定なら匿名）で bind する
-2. user_search: 試験用のユーザー名でユーザーを 1 件見つける（ユーザー名を指定したときだけ）
+2. user_search: 試験用のユーザー名でユーザーを 1 件見つけ、ID 属性の値を示す（ユーザー名を指定したときだけ）
+   ID 属性が取れなければ unique_id の段階を失敗として打ち切る（そのユーザーはログインできない）
 3. user_bind: そのユーザーとして bind する（パスワードを指定したときだけ）
 4. groups: 所属グループを調べ、対応表から決まるロールを示す（ユーザー名を指定したときだけ）
 """
@@ -52,7 +53,12 @@ def run_test(
         except DirectoryError as exc:
             results.append(StageResult("user_search", False, str(exc)))
             return results
-        results.append(StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}"))
+        subject = backend.unique_id(spec, entry)
+        id_note = f"（ID 属性 {spec.id_attribute}: {subject}）" if subject else ""
+        results.append(StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}{id_note}"))
+        if subject is None:
+            results.append(StageResult("unique_id", False, backend.missing_unique_id_message(spec)))
+            return results
         if password:
             try:
                 backend.verify_user_password(spec, entry.dn, password, options)

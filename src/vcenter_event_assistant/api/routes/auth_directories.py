@@ -6,11 +6,13 @@
 - 無効化・削除では、そのディレクトリのユーザーのセッションを失効させる。ログインできる admin が
   いなくなる無効化・削除は断る
 - 削除できるのは無効にしたディレクトリだけ。配下のユーザーも削除する
+- ユーザーの ID に使う属性（``unique_id_attribute``）は、そのディレクトリのユーザーがいる間は変えられない
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import ssl
 import uuid
 from typing import Any
@@ -39,7 +41,7 @@ from vcenter_event_assistant.api.schemas.auth_directories import (
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.directory.role_mapping import is_valid_dn, normalize_dn
 from vcenter_event_assistant.auth.directory.runner import connect_options, run_directory_call
-from vcenter_event_assistant.auth.directory.spec import realm_key_for, spec_from_model
+from vcenter_event_assistant.auth.directory.spec import DEFAULT_UNIQUE_ID_ATTRIBUTE, realm_key_for, spec_from_model
 from vcenter_event_assistant.auth.directory.testing import run_test
 from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
@@ -72,6 +74,7 @@ _OPTIONAL_TEXT_FIELDS = (
     "bind_dn",
     "user_search_filter",
     "username_attribute",
+    "unique_id_attribute",
     "ad_upn_suffix",
     "display_name_attribute",
     "email_attribute",
@@ -135,6 +138,15 @@ def _valid_server_uri(uri: str, scheme: str) -> bool:
     )
 
 
+# 属性の名前（RFC 4512 の descr）か、数字の OID
+_ATTRIBUTE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9-]*|(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+")
+
+
+def _effective_unique_id_attribute(value: str | None) -> str:
+    """ID 属性の実効値（未設定は entryUUID）。属性名は大文字小文字を区別しないので casefold して比べる。"""
+    return (value or DEFAULT_UNIQUE_ID_ATTRIBUTE).casefold()
+
+
 def _validate(config: DirectoryConfig, settings: Settings) -> None:
     """保存する前に設定の組み合わせを確かめる。不正なら 422。"""
     if config.transport_security == "none" and settings.is_production:
@@ -161,6 +173,11 @@ def _validate(config: DirectoryConfig, settings: Settings) -> None:
         raise _invalid("サービスアカウントの DN を指定したときはパスワードも設定してください。")
     if config.kind == "ldap" and config.user_search_filter and "{username}" not in config.user_search_filter:
         raise _invalid("ユーザー検索フィルタには {username} を含めてください。")
+    if config.unique_id_attribute:
+        if config.kind == "ad":
+            raise _invalid("AD ではユーザーの ID に objectGUID を使うため、ID 属性は指定できません。")
+        if not _ATTRIBUTE_NAME.fullmatch(config.unique_id_attribute):
+            raise _invalid("ID 属性には属性名（例: nsUniqueId）か数字の OID を指定してください。")
     if config.kind == "ad" and config.group_mode == "group_search":
         raise _invalid("AD ではグループの判定に ad_nested か member_of を使ってください。")
     if config.kind == "ldap" and config.group_mode == "ad_nested":
@@ -233,6 +250,7 @@ def _to_read(config: DirectoryConfig, user_count: int) -> DirectoryRead:
         user_search_base=config.user_search_base,
         user_search_filter=config.user_search_filter,
         username_attribute=config.username_attribute,
+        unique_id_attribute=config.unique_id_attribute,
         ad_upn_suffix=config.ad_upn_suffix,
         display_name_attribute=config.display_name_attribute,
         email_attribute=config.email_attribute,
@@ -361,6 +379,7 @@ async def update_directory(
         config = await _load(db, directory_id)
         was_enabled = config.is_enabled
         identity_before = {name: getattr(config, name) for name in _IDENTITY_FIELDS}
+        unique_id_before = config.unique_id_attribute
         if "name" in changes:
             name = (changes["name"] or "").strip()
             if not name:
@@ -392,6 +411,15 @@ async def update_directory(
         # 名前の変更を先に書き込む。この後のクエリ（autoflush）や失効のための書き込みで一意制約に反しても、
         # 500 ではなく 422 にするため
         await _flush_checking_name(db)
+        if _effective_unique_id_attribute(config.unique_id_attribute) != _effective_unique_id_attribute(
+            unique_id_before
+        ) and await db.scalar(select(func.count()).select_from(User).where(User.directory_id == config.id)):
+            # ID 属性を変えると全員の subject が変わり、無効にしたユーザーが新しい有効な行として作り直される。
+            # 変更を書き込んで（行をロックして）から数えるので、並行するログインは先に確定していれば数に入り、
+            # 後なら設定の変更（updated_at）を見て拒否される
+            raise _invalid(
+                "このディレクトリのユーザーがいるため、ID 属性は変更できません。先にユーザーを削除してください。"
+            )
         if was_enabled and not config.is_enabled:
             if await _other_admin_sources(db, settings, config.id) == 0:
                 raise _no_admin_left("このディレクトリを無効にする")

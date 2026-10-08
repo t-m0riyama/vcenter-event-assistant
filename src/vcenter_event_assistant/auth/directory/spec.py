@@ -14,6 +14,9 @@ from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.db.models import DirectoryConfig
 
 
+DEFAULT_UNIQUE_ID_ATTRIBUTE = "entryUUID"
+
+
 @dataclass(frozen=True)
 class DirectorySpec:
     id: uuid.UUID
@@ -41,6 +44,15 @@ class DirectorySpec:
     mappings: tuple[tuple[str, Role], ...]
     # 表示用（接続試験の結果に出す、登録したままの DN）
     mapping_labels: tuple[tuple[str, Role], ...] = ()
+    # LDAP のみ。ユーザーの ID に使う属性（未設定なら entryUUID）
+    unique_id_attribute: str | None = None
+
+    @property
+    def id_attribute(self) -> str:
+        """ユーザーの ID に使う属性。AD は objectGUID に決まっている。"""
+        if self.kind == "ad":
+            return "objectGUID"
+        return self.unique_id_attribute or DEFAULT_UNIQUE_ID_ATTRIBUTE
 
     @property
     def realm_key(self) -> str:
@@ -79,4 +91,5 @@ def spec_from_model(config: DirectoryConfig) -> DirectorySpec:
             (m.group_dn_normalized or normalize_dn(m.group_dn), Role(m.role)) for m in config.mappings
         ),
         mapping_labels=tuple((m.group_dn, Role(m.role)) for m in config.mappings),
+        unique_id_attribute=config.unique_id_attribute or None,
     )
