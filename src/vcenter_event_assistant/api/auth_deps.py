@@ -57,6 +57,17 @@ def session_cookie_name(settings: Settings) -> str:
     return "__Host-vea_session" if settings.effective_session_cookie_secure else "vea_session"
 
 
+def refuse_if_principal_switched(request: Request, marker: str) -> None:
+    """応答に利用者を付け、クライアントが表示中の利用者（ヘッダ）と違えば 409 で断る。"""
+    setattr(request.state, PRINCIPAL_STATE_KEY, marker)
+    expected = request.headers.get(EXPECTED_PRINCIPAL_HEADER)
+    if expected and expected != marker:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="別のタブで利用者が切り替わったため、操作を中止しました。画面を更新してから操作し直してください。",
+        )
+
+
 async def get_current_principal(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -81,14 +92,7 @@ async def get_current_principal(
     user = resolved.user
     # 応答に利用者とセッションの ID を付ける（PrincipalHeaderMiddleware）。クライアントが別アカウントへの
     # 切り替わりや、同じ利用者の再ログイン（ロール変更後など）に気づくため
-    marker = principal_marker(user.id, resolved.session.id)
-    setattr(request.state, PRINCIPAL_STATE_KEY, marker)
-    expected = request.headers.get(EXPECTED_PRINCIPAL_HEADER)
-    if expected and expected != marker:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="別のタブで利用者が切り替わったため、操作を中止しました。画面を更新してから操作し直してください。",
-        )
+    refuse_if_principal_switched(request, principal_marker(user.id, resolved.session.id))
     return Principal(
         username=user.username,
         role=Role(user.role),

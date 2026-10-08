@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.auth_deps import (
     Principal,
     get_current_principal,
+    refuse_if_principal_switched,
     session_cookie_name,
 )
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
@@ -32,7 +33,7 @@ from vcenter_event_assistant.auth.service import (
     session_policy,
 )
 from vcenter_event_assistant.auth.principal_header import principal_marker
-from vcenter_event_assistant.auth.sessions import create_session, revoke_session
+from vcenter_event_assistant.auth.sessions import create_session, resolve_session, revoke_session
 from vcenter_event_assistant.auth.tokens import hash_token
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
@@ -164,6 +165,13 @@ async def logout(
     cookie_name = session_cookie_name(settings)
     token = request.cookies.get(cookie_name)
     if settings.auth_enabled and token:
+        # 別のタブで別の利用者にログインし直されていたら、前の利用者の画面からのログアウトで
+        # 新しい利用者のセッションを消さない（クライアントが表示中の利用者を送ってきたときだけ照合する）
+        resolved = await resolve_session(db, token, session_policy(settings), touch=False)
+        if resolved is not None:
+            refuse_if_principal_switched(
+                request, principal_marker(resolved.user.id, resolved.session.id)
+            )
         await revoke_session(db, token)
         audit("logout", ip=_client_ip(request))
     response = Response(status_code=status.HTTP_204_NO_CONTENT)

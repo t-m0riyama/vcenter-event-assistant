@@ -623,3 +623,24 @@ async def test_requests_bound_to_another_principal_are_refused() -> None:
         # 表示中の利用者と一致していれば通る
         resp = await ac.get("/api/config", headers={"X-VEA-Expected-Principal": bob_id})
         assert resp.status_code == 200
+
+
+async def test_logout_from_a_stale_tab_keeps_the_new_session() -> None:
+    """前の利用者の画面からのログアウトでは、別のタブでログインし直した利用者のセッションを消さない。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]
+        resp = await ac.post(
+            "/api/auth/logout", headers={**XHR, "X-VEA-Expected-Principal": alice_id}
+        )
+        assert resp.status_code == 409
+        assert resp.headers["x-vea-principal"] == bob_id
+        assert (await ac.get("/api/auth/me")).json()["username"] == "bob"
+        # 表示中の利用者と一致していればログアウトする
+        resp = await ac.post(
+            "/api/auth/logout", headers={**XHR, "X-VEA-Expected-Principal": bob_id}
+        )
+        assert resp.status_code == 204
+        assert (await ac.get("/api/auth/me")).status_code == 401

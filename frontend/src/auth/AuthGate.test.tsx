@@ -486,6 +486,34 @@ describe('AuthGate', () => {
     await waitFor(() => expect(initialHeaders).toEqual(['id-alice:s1', 'id-bob:s1']))
   })
 
+  it('別のタブで別の利用者に切り替わっていたら、ログアウトせずにその利用者へ置き換える', async () => {
+    let switched = false
+    const fetchMock = stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json(
+          switched
+            ? { ...ADMIN_ME, username: 'bob', principal_id: 'id-bob:s1' }
+            : { ...ADMIN_ME, principal_id: 'id-alice:s1' },
+        )
+      }
+      if (url === '/api/auth/logout') {
+        switched = true
+        return new Response('{"detail":"x"}', { status: 409, headers: { 'X-VEA-Principal': 'id-bob:s1' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    fireEvent.click(screen.getByRole('button', { name: '出る' }))
+    expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
+    const logoutCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/auth/logout')
+    expect(new Headers(logoutCall?.[1]?.headers).get('X-VEA-Expected-Principal')).toBe('id-alice:s1')
+  })
+
   it('照合中に届いた食い違いは、照合が一時的に失敗しても後でやり直す', async () => {
     let meCalls = 0
     let releaseFirstCheck: () => void = () => {}

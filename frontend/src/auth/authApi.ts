@@ -76,8 +76,10 @@ export async function logout(): Promise<void> {
   const r = await fetch('/api/auth/logout', {
     cache: 'no-store',
     method: 'POST',
-    headers: mutationHeaders,
+    // 別のタブで別の利用者にログインし直されていたら、その利用者のセッションを消さないようサーバが断る
+    headers: { ...mutationHeaders, ...expectedPrincipalHeaders() },
   })
+  if (principalMismatched(r)) throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
   if (!r.ok) throw new Error(await detailOf(r, GENERIC_ERROR))
 }
 
