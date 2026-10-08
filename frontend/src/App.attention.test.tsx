@@ -21,13 +21,14 @@ function stubFetch(attention: { notable_events_last_24h: number; firing_alerts: 
     if (url.includes('/api/config')) {
       return Promise.resolve({
         ok: true,
+        headers: new Headers(),
         json: () => Promise.resolve({ event_retention_days: 7, metric_retention_days: 7 }),
       })
     }
     if (url.includes('/api/dashboard/attention') && attention) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve(attention) })
+      return Promise.resolve({ ok: true, headers: new Headers(), json: () => Promise.resolve(attention) })
     }
-    return Promise.resolve({ ok: false })
+    return Promise.resolve({ ok: false, headers: new Headers() })
   }))
 }
 

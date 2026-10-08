@@ -46,6 +46,7 @@ from vcenter_event_assistant.api.routes.plugins import (
 )
 from vcenter_event_assistant.auth.bootstrap import ensure_bootstrap_admin
 from vcenter_event_assistant.auth.csrf import CsrfMiddleware
+from vcenter_event_assistant.auth.principal_header import PrincipalHeaderMiddleware
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
@@ -208,6 +209,7 @@ def create_app() -> FastAPI:
 
     if settings.auth_enabled:
         app.add_middleware(CsrfMiddleware, trusted_origins=allowed_origins)
+        app.add_middleware(PrincipalHeaderMiddleware)
 
     app.include_router(health_router)
 

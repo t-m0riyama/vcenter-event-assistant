@@ -62,6 +62,7 @@ def _me(principal: Principal, *, settings: Settings) -> MeResponse:
         realm=principal.realm,
         can_change_password=principal.realm == LOCAL_REALM,
         session_activity_interval_seconds=_activity_interval_seconds(settings),
+        principal_id=str(principal.user_id) if principal.user_id else None,
     )
 
 
@@ -128,6 +129,7 @@ async def login(
         realm=user.realm_key,
         can_change_password=user.realm_key == LOCAL_REALM,
         session_activity_interval_seconds=_activity_interval_seconds(settings),
+        principal_id=str(user.id),
     )
     response = JSONResponse(content=payload.model_dump())
     response.set_cookie(

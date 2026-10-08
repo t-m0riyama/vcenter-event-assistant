@@ -12,6 +12,28 @@ const unauthorizedListeners = new Set<UnauthorizedListener>()
  * API が 401（未ログイン・セッション切れ）を返したときに呼ばれる関数を登録する。
  * ログイン画面へ戻すために認証ゲートが使う。戻り値で登録を解除する。
  */
+type PrincipalListener = (principalId: string) => void
+const principalListeners = new Set<PrincipalListener>()
+
+/**
+ * 認証済みの応答が示す利用者（``X-VEA-Principal``）を受け取る関数を登録する。別のタブで別のアカウントに
+ * ログインし直すと、401 にならずにその利用者として成功し続けるため、認証ゲートが表示中の利用者と照合する。
+ */
+export function onPrincipalSeen(listener: PrincipalListener): () => void {
+  principalListeners.add(listener)
+  return () => {
+    principalListeners.delete(listener)
+  }
+}
+
+/** 操作の報告を付けて送り、応答が示す利用者を通知する。 */
+async function send(path: string, init: RequestInit): Promise<Response> {
+  const r = await fetchWithActivity(path, init)
+  const principalId = r.headers.get('X-VEA-Principal')
+  if (principalId) principalListeners.forEach((listener) => listener(principalId))
+  return r
+}
+
 export function notifyUnauthorized(): void {
   unauthorizedListeners.forEach((listener) => listener())
 }
@@ -62,14 +84,14 @@ async function errorMessageFromResponse(r: Response): Promise<string> {
 
 /** JSON GET（``cache: 'no-store'``）。 */
 export async function apiGet<T>(path: string): Promise<T> {
-  const r = await fetchWithActivity(path, { ...fetchNoStore, headers: headers() })
+  const r = await send(path, { ...fetchNoStore, headers: headers() })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
   return r.json() as Promise<T>
 }
 
 /** JSON POST。204 の場合は body なしとして ``undefined`` を返す。 */
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetchWithActivity(path, {
+  const r = await send(path, {
     ...fetchNoStore,
     method: 'POST',
     headers: mutationHeaders(),
@@ -86,7 +108,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
  * ``Content-Type`` はブラウザに boundary 付きで設定させるため、明示的に指定しない。
  */
 export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
-  const r = await fetchWithActivity(path, {
+  const r = await send(path, {
     ...fetchNoStore,
     method: 'POST',
     headers: { ...headers(), 'X-Requested-With': 'XMLHttpRequest' },
@@ -99,7 +121,7 @@ export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
 
 /** JSON PATCH。 */
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetchWithActivity(path, {
+  const r = await send(path, {
     ...fetchNoStore,
     method: 'PATCH',
     headers: mutationHeaders(),
@@ -111,7 +133,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 
 /** JSON DELETE。 */
 export async function apiDelete(path: string): Promise<void> {
-  const r = await fetchWithActivity(path, {
+  const r = await send(path, {
     ...fetchNoStore,
     method: 'DELETE',
     headers: mutationHeaders(),
@@ -121,7 +143,7 @@ export async function apiDelete(path: string): Promise<void> {
 
 /** JSON PUT. */
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetchWithActivity(path, { ...fetchNoStore, method: 'PUT', headers: mutationHeaders(), body: JSON.stringify(body) })
+  const r = await send(path, { ...fetchNoStore, method: 'PUT', headers: mutationHeaders(), body: JSON.stringify(body) })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
   return r.json() as Promise<T>
 }

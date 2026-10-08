@@ -342,6 +342,57 @@ describe('AuthGate', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('ログインの有効期限が切れました')
   })
 
+  it('401 の後の再確認が一時的な障害で失敗しても、ログイン画面に戻さない', async () => {
+    let failing = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') return failing ? new Response('down', { status: 503 }) : json(ADMIN_ME)
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      if (url === '/api/protected') {
+        failing = true
+        return json({ detail: 'ログインが必要です。' }, 401)
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
+  })
+
+  it('応答の利用者 ID が表示中の利用者と違えば（401 もタブ切り替えもなし）、照合して置き換える', async () => {
+    let switched = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json(
+          switched
+            ? { ...ADMIN_ME, username: 'bob', role: 'viewer', principal_id: 'id-bob' }
+            : { ...ADMIN_ME, principal_id: 'id-alice' },
+        )
+      }
+      if (url === '/api/protected') {
+        // 並べた別ウィンドウで bob としてログインし直した後の、成功した応答
+        switched = true
+        return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-bob' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
+    expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
+    expect(screen.getByText('管理者権限なし')).toBeInTheDocument()
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
       if (url === '/api/auth/me') return json(ADMIN_ME)

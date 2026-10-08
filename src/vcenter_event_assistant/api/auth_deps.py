@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
+from vcenter_event_assistant.auth.principal_header import PRINCIPAL_STATE_KEY
 from vcenter_event_assistant.auth.roles import Role, role_at_least
 from vcenter_event_assistant.auth.service import session_policy
 from vcenter_event_assistant.auth.sessions import resolve_session
@@ -75,6 +76,8 @@ async def get_current_principal(
         # get_session がロールバックし、操作したのに無操作期限が延びないままになるため
         await db.commit()
     user = resolved.user
+    # 応答に利用者の ID を付ける（PrincipalHeaderMiddleware）。クライアントが別アカウントへの切り替わりに気づくため
+    setattr(request.state, PRINCIPAL_STATE_KEY, str(user.id))
     return Principal(
         username=user.username,
         role=Role(user.role),

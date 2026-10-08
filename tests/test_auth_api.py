@@ -60,7 +60,10 @@ async def test_login_sets_hardened_cookie_and_me_works() -> None:
 
         me = await ac.get("/api/auth/me")
         assert me.status_code == 200
-        assert me.json() == {
+        body = me.json()
+        principal_id = body.pop("principal_id")
+        assert principal_id and me.headers["x-vea-principal"] == principal_id
+        assert body == {
             "auth_enabled": True,
             "username": "alice",
             "display_name": None,
@@ -561,3 +564,20 @@ async def test_touch_is_kept_when_the_route_fails() -> None:
             row = await db.scalar(select(AuthSession))
             assert row is not None
             assert row.last_seen_at.replace(tzinfo=None) > old.replace(tzinfo=None) + timedelta(minutes=29)
+
+
+async def test_responses_carry_the_principal_id() -> None:
+    """認証済みの API 応答には利用者の ID が付き、別アカウントへの切り替わりをクライアントが検知できる。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        assert (await ac.get("/api/config")).headers["x-vea-principal"] == alice_id
+        # 同じブラウザ（Cookie）で別のアカウントにログインし直すと、以後の応答は bob の ID になる
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]
+        assert bob_id != alice_id
+        assert (await ac.get("/api/config")).headers["x-vea-principal"] == bob_id
+        # 未ログインの応答には付かない
+        await ac.post("/api/auth/logout", headers=XHR)
+        resp = await ac.get("/api/config")
+        assert resp.status_code == 401 and "x-vea-principal" not in resp.headers
