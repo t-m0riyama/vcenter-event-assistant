@@ -1054,6 +1054,19 @@ async def test_concurrent_duplicate_directory_name_is_rejected(client, directory
     assert renamed.status_code == 422, renamed.text
     assert "同じ名前" in renamed.json()["detail"]
 
+    # 名前と一緒に認証に関わる設定を変えても（途中でセッションの失効のために書き込んでも）同じ
+    event.listen(Session, "before_flush", take_name_before_flush)
+    try:
+        target["name"] = "Renamed again"
+        renamed = await client.patch(
+            f"/api/auth/directories/{directory_id}",
+            json={"name": "Renamed again", "user_search_base": "ou=people,dc=example,dc=org"},
+        )
+    finally:
+        event.remove(Session, "before_flush", take_name_before_flush)
+    assert renamed.status_code == 422, renamed.text
+    assert "同じ名前" in renamed.json()["detail"]
+
 
 async def test_directory_sessions_are_revoked_with_one_delete(client, directory: FakeDirectory) -> None:
     """設定の変更でセッションを失効させるとき、ユーザーの数によらず DELETE は 1 回で済ませる。"""
@@ -1089,3 +1102,10 @@ async def test_directory_sessions_are_revoked_with_one_delete(client, directory:
     async with session_scope() as db:
         users = select(User.id).where(User.realm_key == realm)
         assert (await db.scalars(select(AuthSession).where(AuthSession.user_id.in_(users)))).all() == []
+
+
+def test_normalize_dn_folds_case_of_other_standard_case_ignore_attributes() -> None:
+    """cn・ou 以外の標準の命名属性（sn・givenName など）も大文字小文字を区別せずに比べる。"""
+    assert normalize_dn("sn=Ops,dc=example") == normalize_dn("SN=ops,dc=example")
+    assert normalize_dn("givenName=Ops,dc=example") == normalize_dn("2.5.4.42=ops,dc=example")
+    assert normalize_dn("mail=Ops@Example.com,dc=example") == normalize_dn("mail=ops@example.com,dc=example")

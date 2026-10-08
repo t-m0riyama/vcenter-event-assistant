@@ -12,7 +12,8 @@ from vcenter_event_assistant.auth.roles import Role
 
 _ROLE_ORDER = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 
-# 標準スキーマ（RFC 4519 など）の命名属性の OID と名前。DN では属性を OID でも書けるので、名前にそろえる
+# 標準スキーマ（RFC 4519 など）の命名属性の OID と名前（照合用に小文字）。DN では属性を OID でも書けるので、名前にそろえる。
+# どれも equality が caseIgnoreMatch / caseIgnoreIA5Match の属性
 _ATTRIBUTE_NAMES_BY_OID = {
     "2.5.4.3": "cn",
     "2.5.4.11": "ou",
@@ -21,8 +22,19 @@ _ATTRIBUTE_NAMES_BY_OID = {
     "2.5.4.7": "l",
     "2.5.4.8": "st",
     "2.5.4.9": "street",
+    "2.5.4.4": "sn",
+    "2.5.4.42": "givenname",
+    "2.5.4.43": "initials",
+    "2.5.4.44": "generationqualifier",
+    "2.5.4.12": "title",
+    "2.5.4.5": "serialnumber",
+    "2.5.4.13": "description",
+    "2.5.4.15": "businesscategory",
+    "2.5.4.46": "dnqualifier",
+    "2.5.4.51": "houseidentifier",
     "0.9.2342.19200300.100.1.25": "dc",
     "0.9.2342.19200300.100.1.1": "uid",
+    "0.9.2342.19200300.100.1.3": "mail",
 }
 # 値の比較が大文字小文字を区別しない（equality が caseIgnoreMatch / caseIgnoreIA5Match）と標準スキーマで
 # 決まっている命名属性。これ以外の属性は、スキーマ次第で大文字小文字を区別するため値をならさない。

@@ -389,6 +389,9 @@ async def update_directory(
         elif new_password:
             config.bind_password = new_password
         _validate(config, settings)
+        # 名前の変更を先に書き込む。この後のクエリ（autoflush）や失効のための書き込みで一意制約に反しても、
+        # 500 ではなく 422 にするため
+        await _flush_checking_name(db)
         if was_enabled and not config.is_enabled:
             if await _other_admin_sources(db, settings, config.id) == 0:
                 raise _no_admin_left("このディレクトリを無効にする")
