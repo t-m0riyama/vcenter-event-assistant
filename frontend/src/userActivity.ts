@@ -18,8 +18,6 @@ export const USER_ACTIVITY_WINDOW_MS = 30_000
  */
 export const ACTIVITY_REPORT_INTERVAL_MS = 60_000
 
-/** 操作が続いているあいだに報告を何度も送らないよう、最後の操作からこの時間待って送る。 */
-export const ACTIVITY_REPORT_DEBOUNCE_MS = 2_000
 
 export const BACKGROUND_REQUEST_HEADER = 'X-VEA-Background'
 
@@ -43,13 +41,13 @@ export function markUserActivity(now: number = Date.now()): void {
 
 /**
  * API を呼ばない操作（スクロールなど）でも、サーバの無操作期限が切れる前に伝わるよう報告の要求を送る。
- * 最初の操作から少し待ち、前回の報告から更新間隔がたっていなければその時点まで遅らせる
- * （間隔より短い報告はサーバが最終利用時刻を更新しないため）。操作が続いても予定は延ばさない
- * （延ばし続けると、入力し続けている間に期限が来てしまう）。
+ * 前回の報告から更新間隔がたっていればすぐに送り、たっていなければその時点まで遅らせる
+ * （間隔より短い報告はサーバが最終利用時刻を更新しないため）。間隔はサーバの無操作期限の半分以下なので、
+ * この時点で送れば期限より前に届く。予約済みなら操作が続いても予定は動かさない（1 間隔に 1 回まで）。
  */
 function scheduleReport(now: number): void {
   if (!reporter || reportTimer !== null) return
-  const dueAt = Math.max(now + ACTIVITY_REPORT_DEBOUNCE_MS, lastReportedAt + reportIntervalMs)
+  const dueAt = Math.max(now, lastReportedAt + reportIntervalMs)
   reportTimer = setTimeout(() => {
     reportTimer = null
     // 待っている間に別の要求で伝わっていれば送らない

@@ -18,7 +18,7 @@ describe('userActivity の操作報告', () => {
     vi.useRealTimers()
   })
 
-  it('API を呼ばない操作も、前回の報告から間が空いていれば少し待って報告する', async () => {
+  it('API を呼ばない操作も、前回の報告から間が空いていればすぐに報告する', async () => {
     const m = await freshModule()
     const report = vi.fn(async () => m.activityHeaders())
     const off = m.setActivityReporter(report)
@@ -28,8 +28,7 @@ describe('userActivity の操作報告', () => {
 
     m.markUserActivity()
     m.markUserActivity() // 続けて操作してもまとめて 1 回
-    expect(report).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS)
+    vi.advanceTimersByTime(0)
     expect(report).toHaveBeenCalledTimes(1)
     // 報告はバックグラウンド扱いにならない
     expect(await report.mock.results[0].value).toEqual({})
@@ -57,7 +56,7 @@ describe('userActivity の操作報告', () => {
     m.activityHeaders()
     vi.advanceTimersByTime(31_000)
     m.markUserActivity()
-    vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS)
+    vi.advanceTimersByTime(0)
     expect(report).toHaveBeenCalledTimes(1)
     off()
   })
@@ -90,7 +89,7 @@ describe('userActivity の操作報告', () => {
     vi.advanceTimersByTime(m.ACTIVITY_REPORT_INTERVAL_MS + 1)
     m.markUserActivity()
     m.activityHeaders() // 利用者の操作で API を呼んだ
-    vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS)
+    vi.advanceTimersByTime(0)
     expect(report).not.toHaveBeenCalled()
     off()
   })
@@ -101,7 +100,7 @@ describe('userActivity の操作報告', () => {
     m.setActivityReporter(report)()
     vi.advanceTimersByTime(m.ACTIVITY_REPORT_INTERVAL_MS + 1)
     m.markUserActivity()
-    vi.advanceTimersByTime(m.ACTIVITY_REPORT_DEBOUNCE_MS)
+    vi.advanceTimersByTime(0)
     expect(report).not.toHaveBeenCalled()
   })
 
@@ -117,6 +116,18 @@ describe('userActivity の操作報告', () => {
       vi.advanceTimersByTime(500)
     }
     expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
+
+  it('無操作期限の直前の操作は、待たずに期限より前に報告する（無操作 1 分・間隔 30 秒の設定）', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => m.activityHeaders())
+    const off = m.setActivityReporter(report, 30_000)
+    m.activityHeaders() // T=0 にサーバへ伝わった
+    vi.advanceTimersByTime(59_000)
+    m.markUserActivity() // T=59s に API を呼ばない操作
+    vi.advanceTimersByTime(0)
+    expect(report).toHaveBeenCalledTimes(1) // T=60s の期限より前
     off()
   })
 })
