@@ -83,9 +83,9 @@ function stubApi(handler: (call: Call) => Response | undefined = () => undefined
 
 const refresh = vi.fn(async () => {})
 
-function panel(onError: (e: string | null) => void, active = true) {
+function panel(onError: (e: string | null) => void, active = true, me: Me = ME) {
   return (
-    <AuthContext.Provider value={{ me: ME, hasRole: (r) => roleAtLeast(ME.role, r), logout: async () => {}, refresh }}>
+    <AuthContext.Provider value={{ me, hasRole: (r) => roleAtLeast(me.role, r), logout: async () => {}, refresh }}>
       <TimeZoneProvider>
         <UsersPanel onError={onError} active={active} />
       </TimeZoneProvider>
@@ -401,5 +401,14 @@ describe('UsersPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     await screen.findByText('admin を更新しました。')
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
+  })
+
+  it('principal_id を返さない古いサーバでも、認証先とユーザー名で自分の行を見分ける', async () => {
+    stubApi()
+    render(panel(vi.fn(), true, { ...ME, principal_id: undefined }))
+    await screen.findByText('alice')
+    const self = row('admin')
+    expect(within(self).getByText('（あなた）')).toBeInTheDocument()
+    expect(within(self).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
   })
 })

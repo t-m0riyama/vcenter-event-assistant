@@ -59,6 +59,9 @@ export function UsersPanel({
   const { me, refresh } = useAuth()
   const { timeZone } = useTimeZone()
   const selfId = principalUserId(me.principal_id)
+  /** ログイン中の自分か。principal_id を返さない古いサーバでは、認証先とユーザー名で見分ける。 */
+  const isSelfUser = (u: ManagedUser): boolean =>
+    selfId ? u.id === selfId : u.realm === me.realm && u.username === me.username
   const [list, setList] = useState<ManagedUser[]>([])
   const [form, setForm] = useState<CreateForm>(EMPTY_CREATE)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -173,13 +176,13 @@ export function UsersPanel({
       return
     }
     if (roleChanged || activeChanged) {
-      const target = u.id === selfId ? 'あなた自身' : u.username
+      const target = isSelfUser(u) ? 'あなた自身' : u.username
       if (!confirm(`${target} のログインはすべて解除されます。よろしいですか？`)) return
     }
     const ok = await run(() => apiPatch(`/api/auth/users/${u.id}`, body), `${u.username} を更新しました。`)
     if (!ok) return
     setEditingId(null)
-    if (u.id === selfId) {
+    if (isSelfUser(u)) {
       // ヘッダーのユーザーメニュー（表示名など）にも反映する。読み直せなくても更新自体は済んでいる
       await refresh().catch(() => {})
     }
@@ -208,7 +211,7 @@ export function UsersPanel({
 
   const revokeSessions = (u: ManagedUser) => {
     const message =
-      u.id === selfId
+      isSelfUser(u)
         ? 'この画面以外のあなたのログインをすべて解除します。よろしいですか？'
         : `${u.username} のログインをすべて解除します。よろしいですか？`
     if (!confirm(message)) return
@@ -319,7 +322,7 @@ export function UsersPanel({
         </thead>
         <tbody>
           {list.map((u) => {
-            const isSelf = u.id === selfId
+            const isSelf = isSelfUser(u)
             return (
               <Fragment key={u.id}>
                 {editingId === u.id ? (
