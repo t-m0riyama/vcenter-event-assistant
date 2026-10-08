@@ -21,6 +21,7 @@ from vcenter_event_assistant.rate_limit import check_rate_limit
 
 from vcenter_event_assistant.api.auth_deps import get_current_principal
 from vcenter_event_assistant.api.routes.auth import router as auth_router
+from vcenter_event_assistant.api.routes.auth_directories import router as auth_directories_router
 from vcenter_event_assistant.api.routes.auth_users import router as auth_users_router
 from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
@@ -224,6 +225,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(auth_users_router)
+    app.include_router(auth_directories_router)
 
     # ``/api`` 配下は全 route でログインを必須にし、各 route が最低ロールを宣言する。
     api = APIRouter(prefix="/api", dependencies=[Depends(get_current_principal)])

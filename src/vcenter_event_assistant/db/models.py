@@ -472,3 +472,93 @@ class AuthSession(Base):
     credential_marker: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="sessions")
+
+
+class DirectoryConfig(Base):
+    """認証先の AD / LDAP ディレクトリ。管理画面（``/api/auth/directories``）から編集する。"""
+
+    __tablename__ = "directory_configs"
+    __table_args__ = (
+        CheckConstraint("kind IN ('ad', 'ldap')", name="ck_directory_configs_kind"),
+        CheckConstraint(
+            "transport_security IN ('ldaps', 'starttls', 'none')",
+            name="ck_directory_configs_transport",
+        ),
+        CheckConstraint(
+            "group_mode IN ('ad_nested', 'member_of', 'group_search')",
+            name="ck_directory_configs_group_mode",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    kind: Mapped[str] = mapped_column(String(8))
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 接続
+    server_uris: Mapped[list[str]] = mapped_column(JSON, default=list)
+    transport_security: Mapped[str] = mapped_column(String(8), default="ldaps")
+    # LDAPS / StartTLS でサーバ証明書（とホスト名）を検証するか
+    tls_verify: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ca_cert_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bind_dn: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    bind_password: Mapped[str | None] = mapped_column(EncryptedString(2048), nullable=True)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    # ユーザー検索
+    user_search_base: Mapped[str] = mapped_column(String(1024))
+    # LDAP のみ。``{username}`` をエスケープしたユーザー名に置き換える（未指定なら ``(<username_attribute>={username})``）
+    user_search_filter: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    username_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # AD のみ。ドメインを付けずに入力されたユーザー名を UPN として探すときの接尾辞（例: example.com）
+    ad_upn_suffix: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    display_name_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    email_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # グループの所属
+    group_mode: Mapped[str] = mapped_column(String(16), default="member_of")
+    group_search_base: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    group_search_filter: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # group_search のとき、グループ側でメンバーを表す属性（member / uniqueMember / memberUid）
+    group_member_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # その属性の値がユーザーの DN（``dn``）かユーザー名（``username``）か
+    group_member_value: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    mappings: Mapped[list["DirectoryGroupRoleMapping"]] = relationship(
+        back_populates="directory",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DirectoryGroupRoleMapping.group_dn",
+    )
+
+
+class DirectoryGroupRoleMapping(Base):
+    """ディレクトリのグループ DN とロールの対応。ログインのたびに評価し、最も強いロールを使う。"""
+
+    __tablename__ = "directory_group_role_mappings"
+    __table_args__ = (
+        UniqueConstraint(
+            "directory_id", "group_dn_normalized", name="uq_directory_group_role_mappings_group"
+        ),
+        CheckConstraint(
+            "role IN ('admin', 'operator', 'viewer')", name="ck_directory_group_role_mappings_role"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    directory_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("directory_configs.id", ondelete="CASCADE"), index=True,
+    )
+    group_dn: Mapped[str] = mapped_column(String(1024))
+    # 照合用（属性名・値の大文字小文字と空白の違いをならした DN）
+    group_dn_normalized: Mapped[str] = mapped_column(String(1024))
+    role: Mapped[str] = mapped_column(String(16))
+
+    directory: Mapped["DirectoryConfig"] = relationship(back_populates="mappings")

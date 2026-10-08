@@ -8,20 +8,29 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError
 from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.users import (
     DuplicateUserError,
     UserError,
-    count_active_admins,
+    count_admin_directories,
+    count_local_admins,
     count_users,
     create_local_user,
 )
+from vcenter_event_assistant.auth.directory.runner import connect_options
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+
+async def directory_admin_available(db: AsyncSession, settings: Settings) -> bool:
+    """admin に対応づけたグループを持ち、今の設定で接続が許される有効なディレクトリがあるか。"""
+    return await count_admin_directories(db, connect_options(settings)) > 0
 
 
 class BootstrapError(RuntimeError):
@@ -35,8 +44,8 @@ async def ensure_bootstrap_admin(settings: Settings) -> None:
         # 同時に起動した別のワーカーなどが、先に同名ユーザーを作っていた。それが admin とは
         # 限らない（CLI で viewer として作られた等）ので、有効な admin が実在するかを確かめ直す
         async with session_scope(settings) as db:
-            admins = await count_active_admins(db)
-        if admins == 0:
+            usable = await count_local_admins(db) > 0 or await directory_admin_available(db, settings)
+        if not usable:
             _report_missing_admin(
                 settings,
                 "初期 admin と同名のユーザーが別の操作で先に作られ、有効な admin がいません。"
@@ -66,12 +75,15 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
                 "VEA_LOCAL_LOGIN_ENABLED=false のため、VEA_BOOTSTRAP_ADMIN_* で作るローカルの"
                 "初期 admin ではログインできません。ローカルログインを有効にしてください。"
             )
-        # 現時点でログインできる認証先はローカルだけ
-        # （AD / LDAP を追加したら、有効なディレクトリがあるかもここで判定する）
+        # ディレクトリ専用の運用。admin の行は初回ログインまで存在しないので、admin に対応づけた
+        # 有効なディレクトリがあれば管理できるとみなす
+        async with session_scope(settings) as db:
+            if await directory_admin_available(db, settings):
+                return
         _report_missing_admin(
             settings,
-            "認証が有効ですが、ログインできる認証先がありません（VEA_LOCAL_LOGIN_ENABLED=false）。"
-            "ローカルログインを有効にしてください。",
+            "認証が有効ですが、admin としてログインできる認証先がありません（VEA_LOCAL_LOGIN_ENABLED=false で、"
+            "admin に対応づけた有効なディレクトリもありません）。ローカルログインを有効にしてください。",
         )
         return
     async with session_scope(settings) as db:
@@ -81,7 +93,9 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
                     "VEA_BOOTSTRAP_ADMIN_PASSWORD is set but users already exist; it is ignored. "
                     "Remove it from the environment."
                 )
-            if await count_active_admins(db) == 0:
+            # 数えるのはログインに使える admin だけ。無効にした・admin の対応を外したディレクトリに
+            # 残る admin 行は、ログインするとロールが決め直されるので数えない
+            if await count_local_admins(db) == 0 and not await directory_admin_available(db, settings):
                 # 例: CLI の create-user を既定ロール（viewer）で実行しただけの状態
                 _report_missing_admin(
                     settings,
@@ -118,6 +132,10 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
             raise BootstrapError(
                 "VEA_BOOTSTRAP_ADMIN_USERNAME と VEA_BOOTSTRAP_ADMIN_PASSWORD は両方設定してください。"
             )
+
+        if await directory_admin_available(db, settings):
+            # 初期 admin を作らなくても、ディレクトリの admin がログインできる
+            return
 
     _report_missing_admin(
         settings,

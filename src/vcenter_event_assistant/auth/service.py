@@ -2,30 +2,43 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from vcenter_event_assistant.auth.audit import audit
+from vcenter_event_assistant.auth.directory import backend as directory_backend
+from vcenter_event_assistant.auth.directory.backend import DirectoryIdentity
+from vcenter_event_assistant.auth.directory.connection import allowed_by_security
+from vcenter_event_assistant.auth.directory.errors import DirectoryError
+from vcenter_event_assistant.auth.directory.runner import connect_options, run_directory_call
+from vcenter_event_assistant.auth.directory.spec import spec_from_model
 from vcenter_event_assistant.auth.passwords import (
     PASSWORD_MAX_LENGTH,
     hash_password,
     verify_password,
 )
-from vcenter_event_assistant.auth.sessions import SessionPolicy, credential_marker
+from vcenter_event_assistant.auth.sessions import SessionPolicy, credential_marker, revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
+    DISPLAY_NAME_MAX_LENGTH,
+    EMAIL_MAX_LENGTH,
     LOCAL_REALM,
+    SUBJECT_MAX_LENGTH,
+    USERNAME_MAX_LENGTH,
     UserError,
     get_local_user,
     normalize_username,
 )
-from vcenter_event_assistant.db.models import User
+from vcenter_event_assistant.db.models import DirectoryConfig, User
 from vcenter_event_assistant.settings import Settings
 
 # 失敗理由（ユーザー不在・パスワード誤り・ロック中・無効化）を画面に出し分けない。
@@ -53,16 +66,164 @@ def session_policy(settings: Settings) -> SessionPolicy:
     return SessionPolicy(
         idle_timeout=timedelta(minutes=settings.session_idle_timeout_minutes),
         absolute_timeout=timedelta(hours=settings.session_absolute_timeout_hours),
+        directory_options=connect_options(settings),
     )
 
 
+DIRECTORY_REALM_PREFIX = "dir:"
+logger = logging.getLogger(__name__)
+
+
 async def list_realms(db: AsyncSession, settings: Settings) -> list[Realm]:
-    """ログイン画面に出す認証先。"""
-    _ = db
+    """ログイン画面に出す認証先（ローカルと、有効で今の接続の方針で拒否されないディレクトリ）。"""
     realms: list[Realm] = []
     if settings.local_login_enabled:
         realms.append(Realm(id=LOCAL_REALM, name="ローカル", kind="local"))
+    directories = await db.scalars(
+        select(DirectoryConfig)
+        .where(DirectoryConfig.is_enabled.is_(True), allowed_by_security(connect_options(settings)))
+        .order_by(DirectoryConfig.sort_order, DirectoryConfig.name)
+    )
+    for d in directories:
+        realms.append(Realm(id=f"{DIRECTORY_REALM_PREFIX}{d.id}", name=d.name, kind=d.kind))
     return realms
+
+
+async def _load_directory(db: AsyncSession, realm: str) -> DirectoryConfig | None:
+    """realm（``dir:<uuid>``）に対応する有効なディレクトリ。"""
+    try:
+        directory_id = uuid.UUID(realm.removeprefix(DIRECTORY_REALM_PREFIX))
+    except ValueError:
+        return None
+    return await db.scalar(
+        select(DirectoryConfig)
+        .where(DirectoryConfig.id == directory_id, DirectoryConfig.is_enabled.is_(True))
+        .options(selectinload(DirectoryConfig.mappings))
+    )
+
+
+def _subject_key(subject: str) -> str:
+    """``users.subject`` に入れる値。長すぎる識別子（長い DN など）は切り詰めずにハッシュにする。
+
+    切り詰めると、先頭が同じ別の DN が同じユーザー行になってしまうため。
+    """
+    if len(subject) <= SUBJECT_MAX_LENGTH:
+        return subject
+    return f"sha256:{hashlib.sha256(subject.encode('utf-8')).hexdigest()}"
+
+
+def _clip(value: str | None, limit: int) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value[:limit] or None
+
+
+async def _upsert_directory_user(
+    db: AsyncSession, config: DirectoryConfig, identity: DirectoryIdentity, now: datetime
+) -> User | None:
+    """ディレクトリのユーザーの行を作るか更新する（ロールはログインのたびに対応表から決め直す）。
+
+    無効化されたユーザーなら ``None``（呼び出し側がセーブポイントを巻き戻して、更新も取り消す）。
+    """
+    realm_key = f"{DIRECTORY_REALM_PREFIX}{config.id}"
+    subject = _subject_key(identity.subject)
+    values = {
+        "username": identity.username[:USERNAME_MAX_LENGTH],
+        "display_name": _clip(identity.display_name, DISPLAY_NAME_MAX_LENGTH),
+        "email": _clip(identity.email, EMAIL_MAX_LENGTH),
+        "role": identity.role.value,
+        "directory_id": config.id,
+        "last_login_at": now,
+        "updated_at": now,
+    }
+    for _attempt in range(2):
+        user = await db.scalar(
+            select(User)
+            .where(User.realm_key == realm_key, User.subject == subject)
+            .execution_options(populate_existing=True)
+        )
+        if user is not None:
+            if not user.is_active:
+                return None
+            if user.role != values["role"]:
+                # ロールは毎リクエストでユーザー行から読むので、ほかのセッションを残すと古い Cookie が
+                # 新しいロールで使えてしまう。ローカルユーザーのロール変更と同じく失効させる
+                await revoke_all_for_user(db, user.id)
+            for key, value in values.items():
+                setattr(user, key, value)
+            await db.flush()
+            # 読んでから更新するまでの間に無効化されていないか、更新の後で読み直す。
+            # 更新は変更した列だけを書くので行は無効のまま残るが、ログインを通すと使えない Cookie を返してしまう。
+            # 更新で行ロックを取った後に読むので、無効化が先に確定していれば必ず見える（後なら無効化側が待ち、
+            # このログインのセッションも失効させる）
+            if not await db.scalar(select(User.is_active).where(User.id == user.id)):
+                return None
+            return user
+        user = User(realm_key=realm_key, subject=subject, is_active=True, failed_login_count=0, **values)
+        try:
+            async with db.begin_nested():
+                db.add(user)
+        except IntegrityError:
+            # 同じユーザーの初回ログインが並行して行を作った。読み直して更新する
+            continue
+        return user
+    return None
+
+
+class _DirectoryRecheckFailed(Exception):
+    """認証後の再確認で拒否する（セーブポイントを巻き戻すために使う）。"""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def _authenticate_directory(
+    db: AsyncSession, settings: Settings, realm: str, username: str, password: str
+) -> LoginOutcome:
+    config = await _load_directory(db, realm)
+    if config is None:
+        return LoginOutcome(None, "unknown_realm")
+    spec = spec_from_model(config)
+    config_version = config.updated_at
+    try:
+        identity = await run_directory_call(
+            directory_backend.authenticate, spec, username, password, connect_options(settings)
+        )
+    except DirectoryError as exc:
+        if exc.reason.startswith("directory_"):
+            # 接続・設定の問題はユーザーの誤りではないので、運用者が気づけるようにログに残す
+            logger.warning("Directory %r is unavailable: %s", config.name, exc)
+        return LoginOutcome(None, exc.reason)
+    except Exception:
+        logger.exception("Unexpected error while authenticating against directory %r", config.name)
+        return LoginOutcome(None, "directory_error")
+    # 認証している間に無効化・変更（対応表の置き換えなど）されていたら、ログインさせない。
+    # 変更時にセッションを失効させた後で、古い設定で決めたロールのセッションを作らないため。
+    # 行をロックしておき、この後の変更はこのログインの確定を待ってから失効させるようにする。
+    # ロックの順序は管理側（admin のユーザー行 → ディレクトリの行）と同じにする（逆順はデッドロックになる）ので、
+    # ユーザー行を更新してからディレクトリの行をロックし、拒否するときはユーザー行の更新も取り消す
+    try:
+        async with db.begin_nested():
+            user = await _upsert_directory_user(db, config, identity, utcnow())
+            if user is None:
+                raise _DirectoryRecheckFailed("inactive")
+            current = (
+                await db.execute(
+                    select(DirectoryConfig.is_enabled, DirectoryConfig.updated_at)
+                    .where(DirectoryConfig.id == config.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).one_or_none()
+            if current is None or not current.is_enabled:
+                raise _DirectoryRecheckFailed("directory_disabled")
+            if current.updated_at != config_version:
+                raise _DirectoryRecheckFailed("directory_changed")
+    except _DirectoryRecheckFailed as exc:
+        return LoginOutcome(None, exc.reason)
+    return LoginOutcome(user, "ok")
 
 
 async def _authenticate_local(
@@ -189,6 +350,8 @@ async def authenticate(
         outcome = LoginOutcome(None, "empty_password" if not password else "too_long")
     elif realm == LOCAL_REALM and settings.local_login_enabled:
         outcome = await _authenticate_local(db, settings, username, password)
+    elif realm.startswith(DIRECTORY_REALM_PREFIX):
+        outcome = await _authenticate_directory(db, settings, realm, username, password)
     else:
         await verify_password(None, password)
         outcome = LoginOutcome(None, "unknown_realm")

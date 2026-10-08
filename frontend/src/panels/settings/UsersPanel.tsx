@@ -419,7 +419,8 @@ export function UsersPanel({
                       <button type="button" className="btn btn--gray" onClick={() => revokeSessions(u)}>
                         ログイン解除
                       </button>
-                      {!isSelf && (
+                      {/* ディレクトリのユーザーは消しても次のログインで作り直されるので、無効化で止める */}
+                      {!isSelf && u.is_local && (
                         <button type="button" className="btn btn--danger" onClick={() => remove(u)}>
                           削除
                         </button>
