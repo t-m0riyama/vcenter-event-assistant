@@ -949,3 +949,27 @@ def test_oid_replacement_ignores_escaped_separators() -> None:
     assert normalize_dn('cn="a,2.5.4.3=b",dc=x') != normalize_dn('cn="a,cn=b",dc=x')
     # バックスラッシュ自体をエスケープした後の区切りは本物なので、その後の OID は置き換える
     assert normalize_dn(r"cn=a\\,2.5.4.3=b,dc=x") == normalize_dn(r"cn=a\\,cn=b,dc=x")
+
+
+def test_normalize_dn_treats_escape_notations_alike() -> None:
+    """同じ文字のエスケープ表記の違い（``\\,`` と ``\\2C``、16 進の大文字小文字、UTF-8 のバイト列）をならす。"""
+    expected = normalize_dn(r"cn=Ops\,EMEA,ou=Groups,dc=example")
+    assert normalize_dn(r"cn=Ops\2CEMEA,ou=Groups,dc=example") == expected
+    assert normalize_dn(r"cn=Ops\2cEMEA,ou=Groups,dc=example") == expected
+    assert normalize_dn(r"cn=Caf\C3\A9,dc=example") == normalize_dn("cn=Café,dc=example")
+    assert normalize_dn(r"cn=a\20b,dc=example") == normalize_dn("cn=a b,dc=example")
+    # 戻した文字が区切りでも、本物の区切りとは区別する
+    assert normalize_dn(r"cn=a\2Bb=c,dc=example") != normalize_dn("cn=a+b=c,dc=example")
+    assert normalize_dn(r"cn=a\2Cdc=example") != normalize_dn("cn=a,dc=example")
+    # エスケープした先頭の空白は値の一部
+    assert normalize_dn(r"cn=\20ops,dc=example") == normalize_dn(r"cn=\ ops,dc=example")
+    assert normalize_dn(r"cn=\20ops,dc=example") != normalize_dn("cn=ops,dc=example")
+
+
+def test_group_dn_with_invalid_escape_is_not_valid() -> None:
+    """UTF-8 として戻せないエスケープや不正なエスケープは、解析できない DN として扱う。"""
+    from vcenter_event_assistant.auth.directory.role_mapping import is_valid_dn
+
+    assert is_valid_dn(r"cn=Caf\C3\A9,dc=example")
+    assert not is_valid_dn(r"cn=Caf\C3,dc=example")
+    assert not is_valid_dn(r"cn=Ops\ZZ,dc=example")

@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable
 
 from ldap3.core.exceptions import LDAPInvalidDnError
-from ldap3.utils.dn import parse_dn
+from ldap3.utils.dn import escape_rdn, parse_dn
 
 from vcenter_event_assistant.auth.roles import Role
 
@@ -68,10 +68,45 @@ def _replace_known_oids(dn: str) -> str:
     return "".join(pieces)
 
 
+_HEX_ESCAPE = re.compile(r"\\([0-9A-Fa-f]{2})")
+
+
+def _unescape_value(text: str) -> str:
+    """属性値のエスケープ（``\\,`` や ``\\2C``、UTF-8 のバイト列の ``\\C3\\A9``）を実際の文字に戻す。
+
+    16 進のエスケープは連続するものをバイト列としてまとめて UTF-8 でデコードする。
+    戻せないときは ``ValueError``（解析できない DN として扱う）。
+    """
+    data = bytearray()
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c != "\\":
+            data += c.encode("utf-8")
+            i += 1
+        elif match := _HEX_ESCAPE.match(text, i):
+            data.append(int(match.group(1), 16))
+            i = match.end()
+        elif i + 1 < len(text):
+            data += text[i + 1].encode("utf-8")
+            i += 2
+        else:
+            raise ValueError("dangling escape in DN value")
+    return data.decode("utf-8")  # 不正なバイト列は UnicodeDecodeError（ValueError）
+
+
+def _parse(dn: str) -> list[tuple[str, str, str]]:
+    """DN を解析し、各属性値のエスケープを戻した ``(属性, 値, 区切り)`` の並びにする。"""
+    return [
+        (attr, _unescape_value(val.strip()), sep)
+        for attr, val, sep in parse_dn(_replace_known_oids(dn), escape=False, strip=True)
+    ]
+
+
 def is_valid_dn(dn: str) -> bool:
     """DN として解析できるか。対応表には、ディレクトリが返す DN と一致し得る値だけを登録させる。"""
     try:
-        return bool(parse_dn(_replace_known_oids(dn.strip()), escape=False, strip=True))
+        return bool(_parse(dn.strip()))
     except (LDAPInvalidDnError, IndexError, ValueError):
         return False
 
@@ -80,12 +115,13 @@ def normalize_dn(dn: str) -> str:
     """照合用の DN。属性名の大文字小文字と、区切りの前後の空白の違いをならす。
 
     値の大文字小文字は、比較で区別しないと決まっている属性（cn・ou・dc など）だけならす。
+    値のエスケープは実際の文字に戻してから決まった形でエスケープし直す（``\\,`` と ``\\2C`` は同じ）。
     対応表に登録した DN とディレクトリが返す DN の表記ゆれで一致しなくならないようにしつつ、
     大文字小文字を区別する属性で別のグループを同じものとみなさないため。
     """
     value = dn.strip()
     try:
-        parts = parse_dn(_replace_known_oids(value), escape=False, strip=True)
+        parts = _parse(value)
     except (LDAPInvalidDnError, IndexError, ValueError):
         return value.casefold()
     # 区切り（RDN の間の ``,`` と、複数値 RDN の中の ``+``）は保つ。``cn=a+uid=b`` と ``cn=a,uid=b`` は別の DN
@@ -95,8 +131,9 @@ def normalize_dn(dn: str) -> str:
     avas: list[str] = []
     for attr, val, sep in parts:
         name = attr.strip().casefold()
-        text = val.strip()
-        avas.append(f"{name}={text.casefold() if name in _CASE_INSENSITIVE_ATTRS else text}")
+        text = val.casefold() if name in _CASE_INSENSITIVE_ATTRS else val
+        # 戻した値に区切りなどが含まれ得るので、決まった形でエスケープし直す（空の値はそのまま）
+        avas.append(f"{name}={escape_rdn(text) if text else text}")
         if sep != "+":
             rdns.append("+".join(sorted(avas)))
             avas = []
