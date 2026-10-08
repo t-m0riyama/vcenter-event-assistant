@@ -99,7 +99,7 @@ memberUid のグループでメンバーの値を既定（DN）のままにす�
 フォームの下の「接続試験（保存しません）」で、編集中の値のまま試せる。DB には書かず、ログイン中の利用者にも影響しない。
 
 - ユーザー名だけ入れると、接続・サービスアカウントでの bind・ユーザーの検索と ID 属性の値・グループの判定（どのロールになるか）まで試す。対応表を確かめるだけなら、利用者にパスワードを聞かなくてよい
-- パスワードも入れると、本人としての bind（user_bind の段階）も試す。admin になるユーザーで試しておくと、保存の後で締め出される心配がない
+- パスワードも入れると、本人としての bind（user_bind の段階）も試す。admin になるユーザーで試しておくと、保存の後で締め出される危険を減らせる。ただし接続試験は、アプリでそのユーザーを無効にしているかは見ない（ログインと保存前の資格情報の確認では拒否される）。**設定 → ユーザー** でそのユーザーが有効なことも確かめる
 
 結果は段階ごとに出る。
 
@@ -202,7 +202,7 @@ admin としてログインする手段がなくなる操作は、サーバが 4
    uv run vcenter-event-assistant-admin list-users
    ```
 
-2. ローカルの admin のパスワードを再設定する（ロックも解除される）。ローカルの admin がいなければ作る
+2. ローカルの admin のパスワードを再設定する（ロックも解除される）。ローカルの admin がいなければ作る。一覧で `ACTIVE` が `no`（無効）なら、パスワードを再設定しても有効にはならないので、`unlock` で有効にする
 
    ```bash
    uv run vcenter-event-assistant-admin reset-password admin
@@ -210,6 +210,10 @@ admin としてログインする手段がなくなる操作は、サーバが 4
 
    ```bash
    uv run vcenter-event-assistant-admin create-user rescue-admin --role admin
+   ```
+
+   ```bash
+   uv run vcenter-event-assistant-admin unlock admin
    ```
 
 3. ディレクトリだけで運用していた（`VEA_LOCAL_LOGIN_ENABLED=false`）なら、`VEA_LOCAL_LOGIN_ENABLED=true` にしてアプリを再起動する
