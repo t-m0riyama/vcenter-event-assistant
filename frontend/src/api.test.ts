@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiDelete, apiGet, apiPatch, apiPost, FORBIDDEN_MESSAGE, onUnauthorized, SESSION_EXPIRED_MESSAGE } from './api'
+import {
+  apiDelete,
+  apiGet,
+  apiPatch,
+  apiPost,
+  FORBIDDEN_MESSAGE,
+  onUnauthorized,
+  PRINCIPAL_SWITCHED_MESSAGE,
+  SESSION_EXPIRED_MESSAGE,
+  setExpectedPrincipal,
+} from './api'
 import { markUserActivity, USER_ACTIVITY_WINDOW_MS } from './userActivity'
 
 const GENERIC = 'リクエストに失敗しました。時間をおいて再度お試しください。'
@@ -224,5 +234,24 @@ describe('api', () => {
     expect(bg(1)).toBeNull() // 届かなかった操作をここで伝える
     await apiGet('/api/foo')
     expect(bg(2)).toBe('1')
+  })
+
+  it('表示中の利用者と違う利用者の応答は、要求した画面に渡さない', async () => {
+    fetchMock().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ secret: 'bob' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'X-VEA-Principal': 'id-bob:s1' },
+        }),
+      ),
+    )
+    setExpectedPrincipal('id-alice:s1')
+    try {
+      await expect(apiGet('/api/foo')).rejects.toThrow(PRINCIPAL_SWITCHED_MESSAGE)
+      setExpectedPrincipal('id-bob:s1')
+      await expect(apiGet('/api/foo')).resolves.toEqual({ secret: 'bob' })
+    } finally {
+      setExpectedPrincipal(null)
+    }
   })
 })

@@ -27,11 +27,29 @@ export function onPrincipalSeen(listener: PrincipalListener): () => void {
   }
 }
 
-/** 操作の報告を付けて送り、応答が示す利用者を通知する。 */
+export const PRINCIPAL_SWITCHED_MESSAGE =
+  '別のタブで利用者が切り替わりました。画面を新しい利用者に合わせて更新します。'
+
+/** 画面に表示中の利用者とセッション（``/api/auth/me`` の ``principal_id``）。認証ゲートが設定する。 */
+let expectedPrincipal: string | null = null
+
+export function setExpectedPrincipal(principalId: string | null): void {
+  expectedPrincipal = principalId
+}
+
+/**
+ * 操作の報告を付けて送り、応答が示す利用者を通知する。表示中の利用者と違う利用者の応答は、要求した
+ * 画面（前の利用者のもの）に渡さずにエラーにする。照合が済むまで別の利用者のデータを表示しないため。
+ */
 async function send(path: string, init: RequestInit): Promise<Response> {
   const r = await fetchWithActivity(path, init)
   const principalId = r.headers.get('X-VEA-Principal')
-  if (principalId) principalListeners.forEach((listener) => listener(principalId))
+  if (principalId) {
+    principalListeners.forEach((listener) => listener(principalId))
+    if (expectedPrincipal && principalId !== expectedPrincipal) {
+      throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
+    }
+  }
   return r
 }
 

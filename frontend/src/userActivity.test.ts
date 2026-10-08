@@ -155,4 +155,21 @@ describe('userActivity の操作報告', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('送信中に予約済みの報告が終わっていても、伝わらなかった操作は改めて報告を予約する', async () => {
+    const m = await freshModule()
+    const report = vi.fn(async () => m.activityHeaders())
+    const off = m.setActivityReporter(report, 30_000)
+    vi.advanceTimersByTime(31_000)
+    m.markUserActivity() // 報告を予約する（すぐ送る）
+    const ticket = m.takeActivity() // その前に通常の要求が操作を伝えたつもりになる
+    vi.advanceTimersByTime(0)
+    expect(report).not.toHaveBeenCalled() // 予約済みの報告は「伝わった」とみなして送らない
+    ticket.restore() // ところが要求は失敗した
+    vi.advanceTimersByTime(m.RESTORED_REPORT_RETRY_MS - 1)
+    expect(report).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(report).toHaveBeenCalledTimes(1)
+    off()
+  })
 })

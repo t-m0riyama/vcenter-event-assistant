@@ -1,5 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { notifyUnauthorized, onPrincipalSeen, onUnauthorized, SESSION_EXPIRED_MESSAGE } from '../api'
+import {
+  notifyUnauthorized,
+  onPrincipalSeen,
+  onUnauthorized,
+  SESSION_EXPIRED_MESSAGE,
+  setExpectedPrincipal,
+} from '../api'
 import type { Me, Realm, Role } from '../api/schemas'
 import { fetchMe, fetchRealms, logout as logoutRequest } from './authApi'
 import { AuthContext, type AuthContextValue } from './authContext'
@@ -49,8 +55,11 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     authenticatedRef.current = state.status === 'authenticated'
     meRef.current = state.status === 'authenticated' ? state.me : null
+    // 表示中の利用者と違う利用者の応答を、API 呼び出し側で画面に渡さないため
+    setExpectedPrincipal(meRef.current?.principal_id ?? null)
     generationRef.current += 1
   }, [state])
+  useEffect(() => () => setExpectedPrincipal(null), [])
 
   // 状態を変える非同期処理（読み込み・ログイン画面の準備）の通し番号。結果を反映する時点で最新でなければ捨てる。
   // StrictMode の二重実行や、取得中にログインが済んだ場合に、古い結果で画面を戻さないため

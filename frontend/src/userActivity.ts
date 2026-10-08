@@ -19,6 +19,9 @@ export const USER_ACTIVITY_WINDOW_MS = 30_000
 export const ACTIVITY_REPORT_INTERVAL_MS = 60_000
 
 
+/** 伝えられなかった操作を、改めて報告するまでの最短の間隔。 */
+export const RESTORED_REPORT_RETRY_MS = 5_000
+
 export const BACKGROUND_REQUEST_HEADER = 'X-VEA-Background'
 
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
@@ -45,9 +48,9 @@ export function markUserActivity(now: number = Date.now()): void {
  * （間隔より短い報告はサーバが最終利用時刻を更新しないため）。間隔はサーバの無操作期限の半分以下なので、
  * この時点で送れば期限より前に届く。予約済みなら操作が続いても予定は動かさない（1 間隔に 1 回まで）。
  */
-function scheduleReport(now: number): void {
+function scheduleReport(now: number, minDelayMs = 0): void {
   if (!reporter || reportTimer !== null) return
-  const dueAt = Math.max(now, lastReportedAt + reportIntervalMs)
+  const dueAt = Math.max(now + minDelayMs, lastReportedAt + reportIntervalMs)
   reportTimer = setTimeout(() => {
     reportTimer = null
     // 待っている間に別の要求で伝わっていれば送らない
@@ -109,6 +112,9 @@ export function takeActivity(now: number = Date.now()): ActivityTicket {
       unreportedActivity = true
       // その後に別の要求で伝わっていれば、その記録は残す
       if (lastReportedAt === now) lastReportedAt = previousReportedAt
+      // 予約済みの報告はこの要求の送信中に「伝わった」とみなして終わっている場合があるので、予約し直す
+      // （無操作期限より前に伝えるため。障害が続いても詰めて送り続けないよう、少し間を置く）
+      scheduleReport(Date.now(), RESTORED_REPORT_RETRY_MS)
     },
   }
 }
