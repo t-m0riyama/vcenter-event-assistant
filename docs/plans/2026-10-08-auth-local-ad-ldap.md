@@ -1,10 +1,10 @@
 # 認証・認可機能の追加（ローカル DB / AD / LDAP）
 
-最終更新: 2026-10-09（PR8b）
+最終更新: 2026-10-09（全 PR マージ済み）
 
 ## 進捗
 
-全 8 PR（一部はさらに分割）に分けて段階的に実装している。各 PR は単独でマージでき、テストが通る状態にする。
+全 8 PR（一部はさらに分割）に分けて段階的に実装した。各 PR は単独でマージでき、テストが通る状態にした。
 
 | PR | 内容 | 状態 |
 |---|---|---|
@@ -25,7 +25,9 @@
 
 計画の全 PR がマージされた。
 
-1. 残りの Issue（#266 Samba の `DOMAIN\user`、#251 独自 OID の DN、#94 API トークン）は、必要になったときに対応する
+1. リリースするときに、アップグレード直後の注意（下の「リスク」）をリリースノートで周知する。手順は `docs/backend-operations.md` の 4.2
+2. 残りの Issue（#266 Samba の `DOMAIN\user`、#251 独自 OID の DN、#94 API トークン）は、必要になったときに対応する
+3. ldap3 の更新や `auth/directory/` の変更の後は、`tests/manual/directory-lab/` で実機確認する
 
 ### PR8a の実機確認の結果
 
@@ -111,17 +113,19 @@
 - Codex のレビューは 4 回。妥当な指摘（ヘルプの参照先・失敗後の push・引用符・改名・照会の失敗・別ブランチの実行）に対応し、4 回目のブランチ名の使い回し（影響度が低い）で利用者の判断で区切った
 - CI でまれに落ちていた `AuthGate.test.tsx` のテスト（effect の登録前に操作していた）も同じ PR で直した（下の「テスト」）
 
-### PR6 からの持ち越し（Issue）
+### 関連する Issue
+
+PR6 からの持ち越しと、PR8a の実機確認で見つけたもの。
 
 | Issue | 内容 | 対応の時期 |
 |---|---|---|
 | [Issue #253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
-| [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)、マージ待ち。起動時の移行を `EncryptedString` の全列（vCenter のパスワード・bind パスワード・プラグインの SSH 秘密鍵）に広げた。SSH 秘密鍵も同じく漏れていたので、利用者の判断で一緒に直した） |
-| [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけ（設定上はほかにあっても、実際に動いているのがそのディレクトリだけの場合を含む）のとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | バックエンドは PR 6.5 で対応（下の「ディレクトリ API」）。画面は PR7 |
-| [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | PR 6.5 で対応（確かめた ID のユーザー行が無効なら 409） |
-| [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)、マージ待ち。ユーザー行を `FOR UPDATE` で読んでからロールを比べる） |
+| [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)。起動時の移行を `EncryptedString` の全列（vCenter のパスワード・bind パスワード・プラグインの SSH 秘密鍵）に広げた。SSH 秘密鍵も同じく漏れていたので、利用者の判断で一緒に直した） |
+| [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけ（設定上はほかにあっても、実際に動いているのがそのディレクトリだけの場合を含む）のとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | 対応済み（バックエンドは [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)、画面は [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263) で閉じた） |
+| [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | 対応済み（[PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)。確かめた ID のユーザー行が無効なら 409） |
+| [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)。ユーザー行を `FOR UPDATE` で読んでからロールを比べる） |
 | [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | 対応しない（PR8a の実機確認で、実サーバの DN に OID の属性名は出てこなかった。必要になったら対応するため開けたまま） |
-| [Issue #266](https://github.com/t-m0riyama/vcenter-event-assistant/issues/266) | Samba AD では `DOMAIN\user` の形式でログインできない（Samba は `msDS-PrincipalName` を返さない） | 未定（PR8a の実機確認で発見。ガイドに制約として書く） |
+| [Issue #266](https://github.com/t-m0riyama/vcenter-event-assistant/issues/266) | Samba AD では `DOMAIN\user` の形式でログインできない（Samba は `msDS-PrincipalName` を返さない） | 未定（PR8a の実機確認で発見。ユーザーガイドに制約として書いた） |
 
 ## Context
 
@@ -197,7 +201,7 @@
 
 ### 接続と TLS
 - `server_uris` は `ldap(s)://ホスト名[:ポート]` の形だけを受け付ける（パス・クエリ・資格情報付き（ユーザー名が空でパスワードだけのものも）・範囲外のポートは 422）。ldap3 の `Server` は URI からホスト・ポート・SSL を読み取る
-- 複数の URI は順に試す（フェイルオーバー）。StartTLS に失敗したら中止する
+- 複数の URI は順に試す（フェイルオーバー）。StartTLS に失敗したら、平文のまま続けずにそのサーバを失敗として次のサーバを試す
 - 接続を閉じるとき（`unbind`）の失敗は無視する（`connection.close_quietly`）。StartTLS の失敗の後はソケットが閉じていて送信が例外になり、本来のエラーを隠して次のサーバも試さなかった（PR8a の実機確認で発見）
 - サーバが `strongerAuthRequired` で bind を断ったとき（AD は暗号化しない接続での simple bind を断る）は、設定の誤り（`DirectoryConfigError`）として LDAPS か StartTLS を使うよう伝える。DC ごとに設定が違い得るので次のサーバも試すが、どこにも接続できなければ、後のサーバの一般的な失敗ではなくこの理由を返す（PR #267 の Codex レビューの指摘）
 - `tls_verify=true` なら `CERT_REQUIRED` で、`ca_cert_pem` があれば `ca_certs_data` に使う。false なら `CERT_NONE`
@@ -211,7 +215,7 @@
 - AD のユーザー名:
   - `@` を含む入力は UPN だけで探す
   - そうでなければ sAMAccountName で探す（UPN サフィックスが設定されていれば UPN も）
-  - `DOMAIN\user` は sAMAccountName で候補を探し（上限 20 件。1 件多く求めて、上限を超えたら一意でないとして拒否）、各候補の `msDS-PrincipalName` を BASE 検索で読んで、完全に一致するものだけを残す
+  - `DOMAIN\user` は sAMAccountName で候補を探し（上限 20 件。1 件多く求めて、上限を超えたら一意でないとして拒否）、各候補の `msDS-PrincipalName` を BASE 検索で読んで、完全に一致するものだけを残す。Samba（4.17）はこの属性を返さないので、Samba AD ではこの形式でログインできない（拒否する側に倒れる。Issue #266）
 - 検索の起点がない（結果コード 32 `noSuchObject`）ときは、0 件ではなく設定の誤り（`directory_config_error`、運用者向けの警告を出す）として扱う
 - 検索結果がサーバ側の件数上限で打ち切られた（sizeLimitExceeded で、指定した件数に届いていない）ときは不完全として扱い、エラーにする
 - フィルタに入れる値はすべて `escape_filter_chars` でエスケープする
@@ -261,7 +265,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `POST /api/auth/directories/{id}/test`（connect / user_search / unique_id / user_bind / groups の段階ごとの結果）。保存済みの設定で試す。`changes` / `mappings` を渡すと、保存せずに重ねて試す（bind パスワードを送らなければ保存済みのものを使う）
 - `POST /api/auth/directories/test`（PR 6.5）: まだ保存していない設定で試す。試験はどちらも DB に書かず、セッションも失効させない
 - 保存前の確認（PR 6.5・Issue #254・Issue #258）:
-  - 確認が要るのは、ログインの成否に関わる変更（`_IDENTITY_FIELDS`・対応表の中身・有効化・サービスアカウントのパスワード・タイムアウト）で、次のどちらかに当たるとき。(a) 操作している admin がこのディレクトリのユーザー（保存で自分のセッションも失効する）。(b) 設定上、ほかに admin の経路がない。「ほかの経路がある」の判定（`count_admin_directories`）は設定と方針しか見ず、そのサーバが落ちている・グループが存在しないなど実際には使えない経路も数えるので、(b) だけでは締め出しを防げない
+  - 確認が要るのは、ログインの成否に関わる変更（`_IDENTITY_FIELDS`・対応表の中身・有効化・サービスアカウントのパスワード・タイムアウト）で、次のどちらかに当たるとき。(a) 操作している admin がこのディレクトリのユーザー（失効させる変更なら自分のセッションも失効し、失効させない変更（サービスアカウントのパスワード・タイムアウト）でも、今のセッションが切れた後にログインし直せなくなるおそれがある）。(b) 設定上、ほかに admin の経路がない。「ほかの経路がある」の判定（`count_admin_directories`）は設定と方針しか見ず、そのサーバが落ちている・グループが存在しないなど実際には使えない経路も数えるので、(b) だけでは締め出しを防げない
   - 確かめる内容: `verification` の資格情報で、新しい設定と対応表のもとで本番のログインと同じ処理（`directory_backend.authenticate`。ユーザーの検索・ID 属性の確認・本人としての bind・グループの判定のすべて）を通し、admin に解決されること。あわせて、確かめた ID のユーザー行があれば有効であること（`authenticate` はアプリ側の `is_active` を見ないため。Issue #258）。行がなければ初回のログインで有効な行が作られるので通す
   - 満たさなければ 409。画面が見分けられるよう、応答ヘッダ `X-VEA-Error-Code` に `directory_verification_required`（資格情報がない）か `directory_verification_failed`（確かめられなかった）を入れる（detail は文字列のまま）
   - LDAP の呼び出しは `admin_change_guard` の外で行う（待っている間、admin の変更やこのディレクトリへのログインを止めないため）。その前に読み取りのトランザクションを閉じる。ロックを取った後で、設定の `updated_at` が確認した時から変わっていなければ保存し、変わっていれば 409（確認していない設定を保存しない）。(b) と無効なユーザーの判定はロックの下でやり直す（ユーザーの無効化も同じロックを通る）
@@ -276,7 +280,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 ## フロントエンド
 - PR4・PR5 で実装済み: `frontend/src/auth/`（AuthProvider、useAuth、AuthGate、LoginScreen、UserMenu、ChangePasswordDialog）、`panels/settings/UsersPanel.tsx`
 - ユーザー管理画面では、ディレクトリのユーザーにはパスワード再設定と削除のボタンを出さず、ロールは編集できない（対応表で決まるため）
-- PR7 で作るもの（7a と 7b に分ける。保存前の確認・409 の扱い・自分のディレクトリの無効化は 7b）:
+- PR7 で作ったもの（7a と 7b に分けた。保存前の確認・409 の扱い・自分のディレクトリの無効化は 7b）:
   - LDAP のときだけ「ID 属性」の入力欄（空なら entryUUID。例: 389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。ユーザーがいるディレクトリでは編集できないようにし、理由と「変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）」ことを出す（API も 422 で断る）
   - 設定のサブタブ「認証ディレクトリ」（admin のみ）。`DirectoriesPanel.tsx`、`DirectoryForm.tsx`、`GroupRoleMappingsEditor.tsx`、`DirectoryTestResult.tsx`
   - `DirectoryForm` に「サーバ証明書を検証する」トグル（既定オン）。オフにするときは確認ダイアログを出し、オフの間はフォームと一覧に警告バッジ（「証明書を検証しません（中間者攻撃に弱い状態です）」）を出す。全体で禁止されているときは操作できないようにし、理由を表示する
@@ -294,6 +298,11 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - `notifyUnauthorized(notice)` でログイン画面に出す理由を渡せる（自分のディレクトリの保存の後に使う）
   - 保存の前の判定は `directoryFormState.ts` の `revokesSessions`（サーバの失効の条件）と `affectsLogin`（サーバの確認の対象）。サーバの `_SESSION_NEUTRAL_FIELDS` と `_LOGIN_CRITICAL_NEUTRAL_FIELDS` にそろえる
   - 資格情報は `DirectoryVerificationDialog` で入力し、送った時点でパスワード欄を空にする
+  - 保存前の確認は `window.confirm`。確認ダイアログを自動で閉じるブラウザ（組み込みのペインなど）ではキャンセル扱いになる
+- PR8 で直したもの:
+  - ログイン画面に戻したとき（セッション切れ・自分のディレクトリの保存・ログアウト）は、直前の利用者の認証先を選んでおく。`AuthGate` がログイン画面へ戻す時点の `me.realm` を控え、`LoginScreen` の `initialRealm` に渡す（一覧にないときは先頭）
+  - 「グループを検索する」の「メンバーの値」の既定の表示を「既定（ユーザーの DN）」にした（サーバは「ユーザー名」を選んだときだけユーザー名で探す）
+  - 接続試験の説明文: ユーザー名だけでグループの判定（ロール）まで試し、パスワードは本人としての bind を足す
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
 ## テスト
@@ -308,6 +317,8 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - 「読んでから書くまで」の間の割り込み（ログイン中の無効化、名前の確認後の重複）は、`Session` の `before_flush` イベントで同じ接続に UPDATE を流して再現する。同じセーブポイントの中で流れるので、拒否したときは割り込ませた変更も一緒に巻き戻る点に注意
   - 発行する SQL の回数（セッションの一括失効）は、エンジンの `before_cursor_execute` イベントで数える
   - 保存前の確認とロックの間の割り込みは、`auth_directories.run_directory_call`（確認の LDAP 呼び出し）や `auth_directories.admin_change_guard` を差し替えて再現する
+  - 接続の後始末の失敗（PR8a）は、`connection.Connection` を差し替えたスタブ（`_ClosedSocketConn`。StartTLS が失敗し、unbind が送信エラーを投げる）と、MOCK の接続の unbind を失敗させる `failing_unbind` フィクスチャで確かめる
+- 実サーバでの手動確認は `tests/manual/directory-lab/`（Samba AD DC と OpenLDAP。pytest と CI では使わない。`docs/development.md` の「AD / LDAP の手動確認」）
 - `tests/test_auth_bootstrap.py`: 起動時の admin 判定（ディレクトリの admin 対応、本番で使えない設定、残った admin 行）
 - `tests/test_startup_migration.py`: ディレクトリの migration の downgrade
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
@@ -326,24 +337,22 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - 本番設定（`APP_ENV=production`）: auth を無効にしたとき、または使える admin がいないときに起動を拒否すること。Cookie の属性
 - AD/LDAP（PR8a で実施。結果は上の「PR8a の実機確認の結果」）: Samba AD DC（入れ子グループあり）と OpenLDAP をコンテナで立てて確認する。環境は `tests/manual/directory-lab/`（手順は README）
   - 接続試験
-  - UPN・sAMAccountName・`DOMAIN\user` のどれでもログインでき、同じユーザー行になること（`msDS-PrincipalName` が実サーバで返ることも確認）
+  - UPN・sAMAccountName・`DOMAIN\user` のどれでもログインでき、同じユーザー行になること（`msDS-PrincipalName` が実サーバで返ることも確認）。結果: UPN と sAMAccountName は期待どおり。Samba は `msDS-PrincipalName` を返さず、`DOMAIN\user` は使えない（Issue #266）。Windows の AD では未確認
   - グループから外すと次のログインで拒否されること
   - 自己署名証明書の LDAPS / StartTLS で、CA を指定せず `tls_verify=true` なら失敗し、CA を指定するか `tls_verify=false` にすると成功すること。false のとき UI に警告が出ること
   - 実サーバが返す DN の表記（大文字小文字・エスケープ・OID）と、対応表の DN が一致すること
 
-## PR8 で書くこと（ユーザーガイド）
-- AD/LDAP の設定手順（入れ子グループ、UPN、`DOMAIN\user`、CA 証明書、primary group が使えないこと）
-- 対応表の DN の書き方（大文字小文字・空白・OID の扱い、エスケープの表記）
-- 設定を変えるとログイン中のユーザーが失効すること（どの項目で失効するか）
-- ディレクトリのユーザーは削除ではなく無効化で止めること
-- ユーザーの ID に使う属性の選び方（OpenLDAP は entryUUID、389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。サービスアカウントにその属性の読み取り権限が要ること。DN は ID にしないこと、ユーザーがいる間は変えられないこと（変えるにはディレクトリを作り直す。最初の設定時に接続試験で ID が取れることを確かめる）
-- 「使える admin」の数え方と、409 になる操作
-- 締め出されたときの CLI での復旧手順（PR 6.5 で、保存前の確認・409 になる操作とあわせてユーザーガイドに一通り書いた。PR8 では実機確認の結果に合わせて見直す）
-- 監査レポートへの対応記録
+## PR8 で書いたこと（ユーザーガイドと監査）
+
+PR8b（PR #268）で書いた。計画していた項目（AD/LDAP の設定手順、対応表の DN の書き方、ログアウトされる項目、無効化で止めること、ID 属性の選び方、「使える admin」と 409 になる操作、CLI での復旧、監査レポートへの対応記録）と、PR8a の実機確認で分かった注意点をすべて含む。
+
+- ユーザーガイド: `docs/user-guides/directory-auth.md`（設定画面の「認証ディレクトリ」のヘルプの参照先）。`authentication.md` には概要とリンクだけを残した
+- 監査レポート: `docs/security-audit-report-2026-08-23.md` と `docs/security-audit-report-2026-10-05.md` の末尾の「対応状況（2026-10、認証機能の追加）」
 
 ## リスク
 - **アップグレード直後**: bootstrap の設定がないと起動しない。curl などから API を使っているスクリプトも動かなくなる。リリースノートで周知する
 - **ldap3 はほぼメンテされていない**。DN の解析が厳しい（OID の属性や値の中の `=` を拒否する）など癖がある。AD の入れ子グループの照合は実サーバでの手動確認が必須
 - **rate limit**: クライアント IP 単位で数えるので、プロキシの後ろでは全員が同じ IP になる。ローカルユーザーは DB のロックアウトで補える
 - **ディレクトリの削除**: CASCADE で配下のユーザーも消える。有効な間は削除を禁止し、確認ダイアログも出す
-- **Codex のレビュー**: 自動で走るのは PR 作成時だけ（2026-10-09 から。それまでは push のたびに走った）。指摘に対応してコードを直したら、PR に「@codex review」と観点を添えて再レビューを依頼する。ドキュメントやコメントだけの更新なら、基本は依頼しない。PR6 では指摘が細部の端のケースへ移りつつ続いたので、どこで区切るかは利用者が判断する（PR6 は 21 回目で区切り、残りを Issue にした）。PR7・PR8 でも同じ進め方にする。ドキュメントだけのコミットでは CI が走らない（PR #264）ので、計画書の更新は都度 push してよい
+- **Samba AD**: `msDS-PrincipalName` を返さないので `DOMAIN\user` の形式でログインできない（Issue #266）。Windows の AD での実機確認はまだしていない
+- **Codex のレビュー**: 自動で走るのは PR 作成時だけ（2026-10-09 から。それまでは push のたびに走った）。指摘に対応してコードを直したら、PR に「@codex review」と観点を添えて再レビューを依頼する。ドキュメントやコメントだけの更新なら、基本は依頼しない。PR6 では指摘が細部の端のケースへ移りつつ続いたので、どこで区切るかは利用者が判断する（PR6 は 21 回目で区切り、残りを Issue にした）。PR7・PR8 も同じ進め方にした（PR8b は 3 回目で区切った）。ドキュメントだけのコミットでは CI が走らない（PR #264）ので、計画書の更新は都度 push してよい
