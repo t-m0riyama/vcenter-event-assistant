@@ -149,13 +149,6 @@
   border-radius: var(--radius-control);
 }
 
-.readonly-fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-
 @media (max-width: 640px) {
   .user-menu__name {
     max-width: 8em;

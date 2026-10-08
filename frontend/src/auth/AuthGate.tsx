@@ -27,6 +27,8 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   }, [state.status])
 
   const showLogin = useCallback(async (notice: string | null) => {
+    // 認証先の取得を待つ間もアプリ本体（前の利用者のデータ）を表示し続けないよう、先に外す
+    setState({ status: 'loading' })
     try {
       const { realms } = await fetchRealms()
       setState({ status: 'anonymous', realms, notice })

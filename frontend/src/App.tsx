@@ -48,10 +48,10 @@ type SettingsSubTabConfig = {
   readonly panelLabel: string
   readonly render: (onError: (e: string | null) => void) => ReactNode
   /**
-   * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの。
-   * ``fieldset``: 操作部品をまとめて無効にする。``panel``: パネル自身がロールで操作部品を出し分ける。
+   * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの（お知らせを出す）。
+   * 変更系の操作部品はパネル自身がロールで出し分ける（展開・エクスポートなど閲覧の操作は残す）。
    */
-  readonly adminOnlyEdit?: 'fieldset' | 'panel'
+  readonly adminOnlyEdit?: boolean
 }
 
 function initialMountedMainTabs(): Set<MainTabId> {
@@ -221,35 +221,35 @@ export default function App() {
         id: 'vcenters',
         label: 'vCenter',
         panelLabel: 'vCenter 設定',
-        adminOnlyEdit: 'panel',
+        adminOnlyEdit: true,
         render: (onError) => <VCentersPanel onError={onError} />,
       },
       {
         id: 'score_rules',
         label: 'スコアルール',
         panelLabel: 'スコアルール',
-        adminOnlyEdit: 'fieldset',
+        adminOnlyEdit: true,
         render: (onError) => <ScoreRulesPanel onError={onError} />,
       },
       {
         id: 'event_type_guides',
         label: 'イベント種別ガイド',
         panelLabel: 'イベント種別ガイド',
-        adminOnlyEdit: 'fieldset',
+        adminOnlyEdit: true,
         render: (onError) => <EventTypeGuidesPanel onError={onError} />,
       },
       {
         id: 'alerts',
         label: 'アラート',
         panelLabel: 'アラート設定',
-        adminOnlyEdit: 'fieldset',
+        adminOnlyEdit: true,
         render: (onError) => <AlertRulesPanel onError={onError} />,
       },
       {
         id: 'plugins',
         label: 'プラグイン',
         panelLabel: 'プラグイン管理',
-        adminOnlyEdit: 'panel',
+        adminOnlyEdit: true,
         render: (onError) => <PluginsPanel onError={onError} />,
       },
       {
@@ -375,13 +375,7 @@ export default function App() {
                               <p className="readonly-notice" role="note">
                                 閲覧のみです。この設定を変更できるのは管理者だけです。
                               </p>
-                              {sub.adminOnlyEdit === 'fieldset' ? (
-                                <fieldset disabled className="readonly-fieldset">
-                                  {sub.render(onError)}
-                                </fieldset>
-                              ) : (
-                                sub.render(onError)
-                              )}
+                              {sub.render(onError)}
                             </>
                           ) : (
                             sub.render(onError)

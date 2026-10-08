@@ -7,6 +7,7 @@ import {
   buildAlertRulesExportPayload,
   type AlertRuleRow,
 } from '../../api/schemas'
+import { useAuth } from '../../auth/useAuth'
 import { toErrorMessage } from '../../utils/errors'
 import {
   formatAlertRulesFileParseError,
@@ -51,6 +52,8 @@ interface EditDraft {
  * アラートルールの一覧・新規作成・レベル変更（PATCH）・有効切替・削除を行う設定パネル。
  */
 export function AlertRulesPanel({ onError }: { onError: (msg: string) => void }) {
+  // 追加・変更・削除・インポートは admin だけ（閲覧・詳細の展開・エクスポートは全ロール）
+  const canEdit = useAuth().hasRole('admin')
   const fetchList = useCallback(async () => {
     const data = await apiGet<unknown>('/api/alerts/rules')
     const parsed = alertRuleRowSchema.array().parse(data)
@@ -227,59 +230,73 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         <p className="hint">
           イベントスコアやメトリクスに基づくアラート判定ルールをサーバーに保存します。判定対象になるのは有効化したルールだけです。
         </p>
-        <button type="button" className="btn btn--filled" onClick={() => setIsAdding(true)}>
-          新規ルール追加
-        </button>
+        {canEdit && (
+          <>
+            <button type="button" className="btn btn--filled" onClick={() => setIsAdding(true)}>
+              新規ルール追加
+            </button>
+          </>
+        )}
       </div>
-      <h2>エクスポート・インポート</h2>
+      <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
       <p className="hint">
-        アラートルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。
+        {canEdit
+          ? 'アラートルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。'
+          : 'アラートルールを JSON でエクスポートできます。'}
       </p>
-      <fieldset className="score-rules-import-options">
-        <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
-        <div className="form-grid score-rules-import-options__grid">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={overwriteExisting}
-              onChange={(event) => setOverwriteExisting(event.target.checked)}
-              aria-label="既存の同一ルール名を上書き"
-            />
-            既存の同一ルール名を上書き
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={deleteNotInImport}
-              onChange={(event) => setDeleteNotInImport(event.target.checked)}
-              aria-label="ファイルに含まれないアラートルールを削除"
-            />
-            ファイルに含まれないアラートルールを削除
-          </label>
-        </div>
-      </fieldset>
+      {canEdit && (
+        <>
+          <fieldset className="score-rules-import-options">
+            <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
+            <div className="form-grid score-rules-import-options__grid">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={overwriteExisting}
+                  onChange={(event) => setOverwriteExisting(event.target.checked)}
+                  aria-label="既存の同一ルール名を上書き"
+                />
+                既存の同一ルール名を上書き
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={deleteNotInImport}
+                  onChange={(event) => setDeleteNotInImport(event.target.checked)}
+                  aria-label="ファイルに含まれないアラートルールを削除"
+                />
+                ファイルに含まれないアラートルールを削除
+              </label>
+            </div>
+          </fieldset>
+        </>
+      )}
       <div className="score-rules-file-actions">
         <button type="button" className="btn btn--gray" onClick={exportToFile}>
           ファイルにエクスポート
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden-file-input"
-          aria-label="アラートルール JSON を選択"
-          onChange={(event) => void onImportFileChange(event)}
-        />
-        <button
-          type="button"
-          className="btn btn--filled"
-          onClick={() => openImportFilePicker()}
-        >
-          ファイルからインポート
-        </button>
+        {canEdit && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden-file-input"
+              aria-label="アラートルール JSON を選択"
+              onChange={(event) => void onImportFileChange(event)}
+            />
+            <button
+              type="button"
+              className="btn btn--filled"
+              onClick={() => openImportFilePicker()}
+            >
+              ファイルからインポート
+            </button>
+          </>
+        )}
       </div>
 
-      {isAdding && (
+      {isAdding && canEdit && (
         <form className="add-rule-form" onSubmit={handleAdd}>
           <h3>新規ルールの作成</h3>
           <div className="form-grid">
@@ -382,7 +399,15 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                         className="btn btn--gray"
                         aria-expanded={expanded}
                         aria-controls={editRowId}
-                        aria-label={expanded ? `${r.name} の編集を閉じる` : `${r.name} の編集を開く`}
+                        aria-label={
+                          canEdit
+                            ? expanded
+                              ? `${r.name} の編集を閉じる`
+                              : `${r.name} の編集を開く`
+                            : expanded
+                              ? `${r.name} の詳細を閉じる`
+                              : `${r.name} の詳細を開く`
+                        }
                         onClick={() => handleExpandRow(r)}
                       >
                         {expanded ? '▾' : '▸'}
@@ -400,6 +425,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                     <td className="col-level">
                       <select
                         className="alert-level-select"
+                        disabled={!canEdit}
                         value={r.alert_level}
                         onChange={(e) => void handleLevelChange(r, e.target.value as AlertLevel)}
                         aria-label={`${r.name} のアラートレベル`}
@@ -414,13 +440,16 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                         <input
                           type="checkbox"
                           checked={r.is_enabled}
+                          disabled={!canEdit}
                           onChange={() => handleToggle(r)}
                           aria-label={`${r.name} を${r.is_enabled ? '無効化' : '有効化'}`}
                         />
                       </label>
                     </td>
                     <td className="actions">
-                      <button type="button" className="btn btn--danger" onClick={() => handleDelete(r.id)}>削除</button>
+                      {canEdit && (
+                        <button type="button" className="btn btn--danger" onClick={() => handleDelete(r.id)}>削除</button>
+                      )}
                     </td>
                   </tr>
                   {expanded ? (
@@ -432,6 +461,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                             <input
                               type="text"
                               value={draft.name}
+                              readOnly={!canEdit}
                               onChange={(e) => updateDraft(r.id, { name: e.target.value })}
                               aria-label={`${r.name} のルール名`}
                             />
@@ -441,6 +471,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                             <input
                               type="number"
                               value={draft.threshold}
+                              readOnly={!canEdit}
                               onChange={(e) => updateDraft(r.id, { threshold: Number(e.target.value) })}
                               aria-label={`${r.name} の閾値`}
                             />
@@ -452,6 +483,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                                 type="text"
                                 list="alert-metric-key-options"
                                 value={draft.metric_key}
+                                readOnly={!canEdit}
                                 onChange={(e) => updateDraft(r.id, { metric_key: e.target.value })}
                                 aria-label={`${r.name} のメトリクスキー`}
                               />
@@ -465,23 +497,28 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                                 type="number"
                                 min={1}
                                 value={draft.cooldown_minutes}
+                                readOnly={!canEdit}
                                 onChange={(e) => updateDraft(r.id, { cooldown_minutes: Number(e.target.value) })}
                                 aria-label={`${r.name} の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで`}
                               />
                             </label>
                           )}
                         </div>
-                        <p className="hint edit-row-hint">
-                          タイプは変更できません。変更する場合は既存ルールを削除して再作成してください。
-                        </p>
-                        <div className="form-actions">
-                          <button type="button" className="btn btn--filled" disabled={!changed} onClick={() => void handleSaveEdit(r)}>
-                            保存
-                          </button>
-                          <button type="button" className="btn btn--gray" onClick={() => handleCancelEdit(r.id)}>
-                            キャンセル
-                          </button>
-                        </div>
+                        {canEdit && (
+                          <>
+                            <p className="hint edit-row-hint">
+                              タイプは変更できません。変更する場合は既存ルールを削除して再作成してください。
+                            </p>
+                            <div className="form-actions">
+                              <button type="button" className="btn btn--filled" disabled={!changed} onClick={() => void handleSaveEdit(r)}>
+                                保存
+                              </button>
+                              <button type="button" className="btn btn--gray" onClick={() => handleCancelEdit(r.id)}>
+                                キャンセル
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ) : null}

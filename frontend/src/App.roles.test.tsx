@@ -27,6 +27,16 @@ const VCENTER = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
+const ALERT_RULE = {
+  id: 7,
+  name: '高スコアイベント',
+  rule_type: 'event_score',
+  is_enabled: true,
+  alert_level: 'warning',
+  config: { threshold: 60, cooldown_minutes: 45 },
+  created_at: '2026-01-01T00:00:00Z',
+}
+
 function renderAs(role: Role, overrides: Partial<Me> = {}) {
   const me: Me = {
     auth_enabled: true,
@@ -69,7 +79,10 @@ describe('App のロールによる出し分け', () => {
           )
         }
         if (url.includes('/api/vcenters')) return Promise.resolve(jsonResponse([VCENTER]))
-        if (url.includes('/api/event-score-rules')) return Promise.resolve(jsonResponse([]))
+        if (url.includes('/api/event-score-rules')) {
+          return Promise.resolve(jsonResponse([{ id: 1, event_type: 'vim.event.VmPoweredOnEvent', score_delta: 10 }]))
+        }
+        if (url.includes('/api/alerts/rules')) return Promise.resolve(jsonResponse([ALERT_RULE]))
         return Promise.resolve(new Response('not found', { status: 404 }))
       }),
     )
@@ -91,12 +104,30 @@ describe('App のロールによる出し分け', () => {
     expect(await within(mainNav()).findByRole('button', { name: 'チャット' })).toBeInTheDocument()
   })
 
-  it('viewer にはサーバ保存の設定を閲覧専用で見せる', async () => {
+  it('viewer にはサーバ保存の設定を閲覧専用で見せる（エクスポートはできる）', async () => {
     renderAs('viewer')
     await openSettings('スコアルール')
     expect(await screen.findByRole('note')).toHaveTextContent('閲覧のみです')
-    const fieldset = document.querySelector('fieldset.readonly-fieldset')
-    expect(fieldset).toBeDisabled()
+    expect(await screen.findByText('vim.event.VmPoweredOnEvent')).toBeInTheDocument()
+    expect(screen.getByLabelText('vim.event.VmPoweredOnEvent の加算')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'ファイルにエクスポート' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'ファイルからインポート' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '追加' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
+  })
+
+  it('アラートルールは viewer でも行を展開して詳細（再通知間隔）を確認できる', async () => {
+    renderAs('viewer')
+    await openSettings('アラート')
+    fireEvent.click(await screen.findByRole('button', { name: '高スコアイベント の詳細を開く' }))
+    const cooldown = await screen.findByLabelText(/高スコアイベント の再通知間隔/)
+    expect(cooldown).toHaveValue(45)
+    expect(cooldown).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('高スコアイベント のアラートレベル')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新規ルール追加' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイルにエクスポート' })).toBeEnabled()
   })
 
   it('ブラウザに保存する設定（一般）は viewer でも編集できる', async () => {
@@ -104,7 +135,6 @@ describe('App のロールによる出し分け', () => {
     await openSettings('一般')
     await screen.findByText((content, el) => el?.tagName === 'P' && content.includes('このブラウザで使う基本設定'))
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
-    expect(document.querySelector('fieldset.readonly-fieldset')).toBeNull()
   })
 
   it('vCenter は viewer に操作ボタンを出さず、operator には接続テストだけ出す', async () => {

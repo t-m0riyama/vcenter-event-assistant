@@ -219,6 +219,26 @@ describe('AuthGate', () => {
     expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
   })
 
+  it('ログアウト後は認証先の取得を待たずにアプリを外す', async () => {
+    let releaseRealms: (r: Response) => void = () => {}
+    stubFetch((url) => {
+      if (url === '/api/auth/me') return json(ADMIN_ME)
+      if (url === '/api/auth/realms') return new Promise<Response>((resolve) => (releaseRealms = resolve))
+      if (url === '/api/auth/logout') return new Response(null, { status: 204 })
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '出る' }))
+    await waitFor(() => expect(screen.queryByText('ようこそ alice')).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
+    releaseRealms(json(LOCAL_ONLY))
+    expect(await screen.findByLabelText('ユーザー名')).toBeInTheDocument()
+  })
+
   it('サーバに接続できないときは再試行できる', async () => {
     let fail = true
     stubFetch((url) => {
