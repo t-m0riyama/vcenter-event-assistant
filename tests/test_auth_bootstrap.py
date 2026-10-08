@@ -141,6 +141,34 @@ async def test_no_usable_realm_is_reported(monkeypatch: pytest.MonkeyPatch, capl
     await ensure_bootstrap_admin(_settings(monkeypatch, VEA_AUTH_ENABLED="false"))
 
 
+async def test_concurrent_duplicate_that_is_not_admin_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """同名ユーザーが先に viewer として作られていたら、admin 作成済みとはみなさない。"""
+    async with session_scope() as db:
+        await create_local_user(
+            db, username="root", password="viewer long pw", role="viewer", password_min_length=12
+        )
+
+    async def zero(db):
+        return 0
+
+    async def not_found(db, username):
+        return None
+
+    # 自分の確認時点ではユーザー 0 人に見えていた（その直後に他方が作った）状況を再現する
+    monkeypatch.setattr("vcenter_event_assistant.auth.bootstrap.count_users", zero)
+    monkeypatch.setattr("vcenter_event_assistant.auth.users.get_local_user", not_found)
+    prod = _settings(
+        monkeypatch,
+        APP_ENV="production",
+        VEA_SECRET_KEY="prod-secret-key",
+        VCENTER_ALLOWED_HOST_SUFFIXES="example.com",
+        VEA_BOOTSTRAP_ADMIN_USERNAME="root",
+        VEA_BOOTSTRAP_ADMIN_PASSWORD=BOOT_PASSWORD,
+    )
+    with pytest.raises(BootstrapError, match="有効な admin がいません"):
+        await ensure_bootstrap_admin(prod)
+
+
 @pytest.mark.parametrize(
     "name",
     [

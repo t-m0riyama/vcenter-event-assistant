@@ -32,7 +32,17 @@ async def ensure_bootstrap_admin(settings: Settings) -> None:
     try:
         await _ensure_bootstrap_admin(settings)
     except DuplicateUserError:
-        # 複数ワーカーが同時に起動し、別のプロセスが先に作った場合
+        # 同時に起動した別のワーカーなどが、先に同名ユーザーを作っていた。それが admin とは
+        # 限らない（CLI で viewer として作られた等）ので、有効な admin が実在するかを確かめ直す
+        async with session_scope(settings) as db:
+            admins = await count_active_admins(db)
+        if admins == 0:
+            _report_missing_admin(
+                settings,
+                "初期 admin と同名のユーザーが別の操作で先に作られ、有効な admin がいません。"
+                "vcenter-event-assistant-admin set-role <ユーザー名> admin で昇格してください。",
+            )
+            return
         logger.info("Initial admin user was created by another process.")
 
 
