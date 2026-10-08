@@ -1,31 +1,62 @@
 name: CI
 
-# ドキュメントだけの変更（計画書の更新など）では CI を走らせない（Issue #262）。
-# 後に書いたパターンが優先される。テストやビルドが読む Markdown は対象に戻す:
-# - docs/user-guides/: ヘルプのリンク先として tabHelpContent.test.ts が見出しを確かめる
-# - README.md: パッケージのメタデータ（pyproject.toml の readme）として読まれる
-# push と pull_request で同じパスの条件にそろえる。
 on:
   push:
     branches: [main, master]
-    paths:
-      - "**"
-      - "!docs/**"
-      - "!**/*.md"
-      - "docs/user-guides/**"
-      - "README.md"
-      - "packages/*/README.md"
   pull_request:
-    paths:
-      - "**"
-      - "!docs/**"
-      - "!**/*.md"
-      - "docs/user-guides/**"
-      - "README.md"
-      - "packages/*/README.md"
 
 jobs:
+  # ドキュメントだけの変更（計画書の更新など）では、後続のジョブを省く（Issue #262）。
+  # on.paths は pull_request では PR 全体の差分で判定するため、コードを含む PR に後から
+  # ドキュメントだけのコミットを push しても省けない。ここではその push で増えたコミットだけを見る。
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # 比べる起点。PR への追加の push はその push の前の先頭、PR の作成などは main との分岐点、
+          # main への push は push の前の先頭。決められない（force push で前の先頭が祖先でないなど）ときは全部走らせる
+          if [ "$EVENT" = pull_request ] && [ "$ACTION" = synchronize ] \
+            && git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            from="$BEFORE"
+          elif [ "$EVENT" = pull_request ]; then
+            from="$(git merge-base "$BASE" "$AFTER")"
+          elif git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            from="$BEFORE"
+          else
+            echo "変更の範囲を決められないので、すべて走らせる"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=false
+          while IFS= read -r file; do
+            case "$file" in
+              "") ;;
+              # テストやビルドが読む Markdown は対象に戻す:
+              # - docs/user-guides/: ヘルプのリンク先として tabHelpContent.test.ts が見出しを確かめる
+              # - README.md: パッケージのメタデータ（pyproject.toml の readme）として読まれる
+              docs/user-guides/* | README.md | packages/*/README.md) code=true ;;
+              docs/* | *.md) ;;
+              *) code=true ;;
+            esac
+          done <<< "$(git diff --name-only "$from" "$AFTER")"
+          echo "変更の範囲: $from..$AFTER → code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   python:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +146,8 @@ jobs:
           done
 
   frontend-unit:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -137,6 +170,8 @@ jobs:
         run: npm ci && npm run test
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
