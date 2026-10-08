@@ -558,6 +558,94 @@ def test_connect_tries_the_next_server(monkeypatch: pytest.MonkeyPatch) -> None:
     assert attempted == ["ldaps://a", "ldaps://b"]
 
 
+class _ClosedSocketConn:
+    """StartTLS の失敗でソケットが閉じた後の接続（実機の ldap3 と同じく unbind が送信に失敗する）。"""
+
+    def __init__(self, server: Any, **_kw: Any) -> None:
+        self.uri = server
+        self.result: dict[str, Any] = {}
+
+    def open(self) -> None:
+        pass
+
+    def start_tls(self) -> bool:
+        if self.uri == "ldap://bad":
+            from ldap3.core.exceptions import LDAPStartTLSError
+
+            raise LDAPStartTLSError(
+                "wrap socket error: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                "unable to get local issuer certificate"
+            )
+        return True
+
+    def bind(self) -> bool:
+        return True
+
+    def unbind(self) -> None:
+        from ldap3.core.exceptions import LDAPSocketSendError
+
+        raise LDAPSocketSendError("socket sending error[Errno 9] Bad file descriptor")
+
+
+def test_starttls_failure_explains_the_cause_and_tries_the_next_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """StartTLS の証明書エラーの後、閉じたソケットへの unbind の失敗で止まらない（実機の Samba / OpenLDAP で再現）。"""
+    from vcenter_event_assistant.auth.directory.errors import DirectoryTlsError
+
+    monkeypatch.setattr(connection, "Connection", _ClosedSocketConn)
+    monkeypatch.setattr(connection, "_server", lambda spec, uri: uri)
+    only_bad = _spec(transport_security="starttls", server_uris=("ldap://bad",))
+    with pytest.raises(DirectoryTlsError, match="CA"):
+        connection.connect(only_bad, user=SVC_DN, password="x", options=OPTIONS)
+
+    failover = _spec(transport_security="starttls", server_uris=("ldap://bad", "ldap://good"))
+    conn = connection.connect(failover, user=SVC_DN, password="x", options=OPTIONS)
+    assert conn.uri == "ldap://good"
+
+
+def test_plaintext_bind_refused_by_the_server_is_a_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AD は暗号化しない接続での simple bind を strongerAuthRequired で断る。対処が分かるように伝える。"""
+
+    class _Conn(_ClosedSocketConn):
+        def bind(self) -> bool:
+            self.result = {"description": "strongerAuthRequired"}
+            return False
+
+    monkeypatch.setattr(connection, "Connection", _Conn)
+    monkeypatch.setattr(connection, "_server", lambda spec, uri: uri)
+    spec = _spec(transport_security="none", server_uris=("ldap://dc",))
+    with pytest.raises(DirectoryConfigError, match="LDAPS か StartTLS"):
+        connection.connect(spec, user=SVC_DN, password="x", options=OPTIONS)
+
+
+@pytest.fixture
+def failing_unbind(directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """接続を閉じるときに、サーバ側で切断済みなどの理由で unbind が失敗する。"""
+    from ldap3.core.exceptions import LDAPSocketSendError
+
+    connect = directory.connect
+
+    def _connect(*args: Any, **kwargs: Any) -> Connection:
+        conn = connect(*args, **kwargs)
+
+        def _unbind(*_a: Any, **_kw: Any) -> bool:
+            raise LDAPSocketSendError("socket sending error[Errno 9] Bad file descriptor")
+
+        conn.unbind = _unbind  # type: ignore[method-assign]
+        return conn
+
+    monkeypatch.setattr(connection, "connect", _connect)
+
+
+@pytest.mark.usefixtures("failing_unbind")
+def test_closing_errors_do_not_hide_the_result() -> None:
+    """認証と接続試験の結果は、後始末の unbind の失敗で失われない。"""
+    from vcenter_event_assistant.auth.directory.testing import run_test
+
+    assert backend.authenticate(_spec(), "alice", "alice-secret", OPTIONS).role == Role.ADMIN
+    stages = run_test(_spec(), OPTIONS, username="alice", password="alice-secret")
+    assert all(stage.ok for stage in stages)
+
+
 def test_long_subjects_are_hashed_not_truncated() -> None:
     from vcenter_event_assistant.auth.users import directory_subject_key
 

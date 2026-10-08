@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from vcenter_event_assistant.auth.directory import backend
+from vcenter_event_assistant.auth.directory import backend, connection
 from vcenter_event_assistant.auth.directory.connection import ConnectOptions
 from vcenter_event_assistant.auth.directory.errors import DirectoryError
 from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
@@ -87,4 +87,4 @@ def run_test(
             )
         return results
     finally:
-        conn.unbind()
+        connection.close_quietly(conn)
