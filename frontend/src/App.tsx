@@ -47,7 +47,8 @@ type SettingsSubTabConfig = {
   readonly id: SettingsSubTabId
   readonly label: string
   readonly panelLabel: string
-  readonly render: (onError: (e: string | null) => void) => ReactNode
+  /** ``active`` はこのサブタブが表示中か（開き直したときに読み直すパネル用）。 */
+  readonly render: (onError: (e: string | null) => void, active: boolean) => ReactNode
   /**
    * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの（お知らせを出す）。
    * 変更系の操作部品はパネル自身がロールで出し分ける（展開・エクスポートなど閲覧の操作は残す）。
@@ -265,7 +266,7 @@ export default function App() {
         id: 'users',
         label: 'ユーザー',
         panelLabel: 'ユーザー管理',
-        render: (onError) => <UsersPanel onError={onError} />,
+        render: (onError, active) => <UsersPanel onError={onError} active={active} />,
       },
       {
         id: 'chat_samples',
@@ -392,10 +393,10 @@ export default function App() {
                               <p className="readonly-notice" role="note">
                                 閲覧のみです。この設定を変更できるのは管理者だけです。
                               </p>
-                              {sub.render(onError)}
+                              {sub.render(onError, tab === 'settings' && settingsSubTab === sub.id)}
                             </>
                           ) : (
-                            sub.render(onError)
+                            sub.render(onError, tab === 'settings' && settingsSubTab === sub.id)
                           )
                         }
                       </PanelShell>

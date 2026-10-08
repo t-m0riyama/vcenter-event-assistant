@@ -54,3 +54,10 @@
 .users-panel__password-form label {
   min-width: 220px;
 }
+
+.users-panel__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}

@@ -48,7 +48,14 @@ function principalUserId(principalId: string | null | undefined): string | null 
 }
 
 /** ユーザー管理パネル（admin のみ）。ローカルユーザーの作成と、全ユーザーのロール・有効状態の管理。 */
-export function UsersPanel({ onError }: { onError: (e: string | null) => void }) {
+export function UsersPanel({
+  onError,
+  active = true,
+}: {
+  onError: (e: string | null) => void
+  /** サブタブが表示中か。開き直すたびに一覧を読み直す（ほかの管理者の変更やログインを反映するため）。 */
+  active?: boolean
+}) {
   const { me } = useAuth()
   const { timeZone } = useTimeZone()
   const selfId = principalUserId(me.principal_id)
@@ -75,9 +82,10 @@ export function UsersPanel({ onError }: { onError: (e: string | null) => void })
   }, [onError])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
+    if (!active) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch whenever the tab is shown
     void load()
-  }, [load])
+  }, [active, load])
 
   /** 操作を実行し、成功したら一覧を読み直してお知らせを出す。 */
   const run = async (action: () => Promise<unknown>, done: string): Promise<boolean> => {
@@ -254,7 +262,19 @@ export function UsersPanel({ onError }: { onError: (e: string | null) => void })
         </div>
       </form>
 
-      <h2>一覧</h2>
+      <div className="users-panel__list-header">
+        <h2>一覧</h2>
+        <button
+          type="button"
+          className="btn btn--gray"
+          onClick={() => {
+            onError(null)
+            void load()
+          }}
+        >
+          再読み込み
+        </button>
+      </div>
       <table className="table users-panel__table">
         <thead>
           <tr>

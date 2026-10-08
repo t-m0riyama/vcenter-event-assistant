@@ -81,14 +81,18 @@ function stubApi(handler: (call: Call) => Response | undefined = () => undefined
   return calls
 }
 
-function renderPanel(onError = vi.fn()) {
-  render(
+function panel(onError: (e: string | null) => void, active = true) {
+  return (
     <AuthContext.Provider value={{ me: ME, hasRole: (r) => roleAtLeast(ME.role, r), logout: async () => {} }}>
       <TimeZoneProvider>
-        <UsersPanel onError={onError} />
+        <UsersPanel onError={onError} active={active} />
       </TimeZoneProvider>
-    </AuthContext.Provider>,
+    </AuthContext.Provider>
   )
+}
+
+function renderPanel(onError = vi.fn()) {
+  render(panel(onError))
   return onError
 }
 
@@ -256,5 +260,19 @@ describe('UsersPanel', () => {
       'POST /api/auth/users/u-alice/sessions/revoke',
       'DELETE /api/auth/users/u-alice',
     ])
+  })
+
+  it('タブを開き直したときと「再読み込み」で一覧を読み直す', async () => {
+    const calls = stubApi()
+    const onError = vi.fn()
+    const view = render(panel(onError))
+    await screen.findByText('alice')
+    const listLoads = () => calls.filter((c) => c.method === 'GET' && c.url === '/api/auth/users').length
+    expect(listLoads()).toBe(1)
+    view.rerender(panel(onError, false)) // ほかのタブへ移った（パネルは残る）
+    view.rerender(panel(onError, true)) // 戻ってきた
+    await waitFor(() => expect(listLoads()).toBe(2))
+    fireEvent.click(screen.getByRole('button', { name: '再読み込み' }))
+    await waitFor(() => expect(listLoads()).toBe(3))
   })
 })
