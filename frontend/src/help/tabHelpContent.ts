@@ -108,7 +108,7 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
   directories: {
     summary:
       '【認証ディレクトリ】\nログインに使う Active Directory / LDAP を管理します（管理者のみ）。\n- 接続先・ユーザーの検索・グループの調べ方と、グループとロールの対応表を設定します。保存せずに編集中の値で接続試験ができます。\n- ログインの成否に関わる変更は、保存の前に接続試験を促します。管理者としてログインする手段を失うおそれがあるときは、新しい設定で管理者としてログインできるユーザーの資格情報を求めます。\n- 接続先・検索・グループの設定や対応表を変える、または無効にすると、そのディレクトリでログイン中のユーザーはログアウトされます。\n- 削除できるのは無効にしたディレクトリだけです（配下のユーザーも削除されます）。',
-    userGuideDoc: 'docs/user-guides/authentication.md',
+    userGuideDoc: 'docs/user-guides/directory-auth.md',
   },
   chat_samples: {
     summary:
