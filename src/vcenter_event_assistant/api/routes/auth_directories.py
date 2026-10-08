@@ -302,6 +302,8 @@ async def create_directory(
         raise _invalid("名前を入力してください。")
     data["server_uris"] = [u.strip() for u in data["server_uris"] if u.strip()]
     data["user_search_base"] = data["user_search_base"].strip()
+    if not data["user_search_base"]:
+        raise _invalid("ユーザーの検索ベースを入力してください。")
     for key in (*_OPTIONAL_TEXT_FIELDS, "bind_password"):
         data[key] = _clean(data[key]) if key != "bind_password" else (data[key] or None)
     if not data["server_uris"]:

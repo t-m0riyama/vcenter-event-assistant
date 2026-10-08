@@ -142,10 +142,15 @@ def _search(conn: Connection, base: str, search_filter: str, *, scope: Any = SUB
     except LDAPException as exc:
         raise DirectoryUnavailable(f"検索に失敗しました（{str(exc)[:200]}）") from None
     result = conn.result or {}
-    # sizeLimitExceeded は 2 件目まで取れていれば「複数見つかった」として扱う
-    if result.get("result", 0) not in (0, 4, 32):  # success / sizeLimitExceeded / noSuchObject
+    code = result.get("result", 0)
+    if code not in (0, 4, 32):  # success / sizeLimitExceeded / noSuchObject
         raise DirectoryUnavailable(f"検索に失敗しました（{result.get('description')}）")
-    return list(_entries(conn))
+    entries = list(_entries(conn))
+    # sizeLimitExceeded は、こちらが指定した件数まで取れたとき（それ以上あると分かったとき）だけ受け入れる。
+    # サーバ側の上限で途中までしか返らなかった結果からは、一意かどうかもグループの所属も判断できない
+    if code == 4 and (size_limit == 0 or len(entries) < size_limit):
+        raise DirectoryUnavailable("サーバの件数上限で検索結果が途中までしか返りませんでした。")
+    return entries
 
 
 def _user_attributes(spec: DirectorySpec) -> list[str]:
@@ -204,6 +209,9 @@ def _find_ad_qualified(conn: Connection, spec: DirectorySpec, domain: str, sam: 
         attributes=_user_attributes(spec),
         size_limit=AD_QUALIFIED_CANDIDATES_LIMIT,
     )
+    if len(candidates) >= AD_QUALIFIED_CANDIDATES_LIMIT:
+        # 候補が上限を超えて残りを確かめられないので、一意とは言えない
+        raise DirectoryAuthFailed("同じ名前のユーザーが多すぎます。", reason="ambiguous_user")
     expected = f"{domain}\\{sam}".casefold()
     matched: list[_Entry] = []
     for entry in candidates:

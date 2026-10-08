@@ -17,6 +17,7 @@ from vcenter_event_assistant.auth.directory.errors import (
     DirectoryAuthFailed,
     DirectoryConfigError,
     DirectoryNoRole,
+    DirectoryUnavailable,
 )
 from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
 from vcenter_event_assistant.auth.directory.spec import DirectorySpec
@@ -806,4 +807,44 @@ async def test_malformed_group_dn_is_rejected(client, directory: FakeDirectory) 
         f"/api/auth/directories/{directory_id}/mappings",
         json={"mappings": [{"group_dn": "not a DN", "role": "admin"}]},
     )
+    assert resp.status_code == 422
+
+
+class _TruncatingConnection:
+    """サーバ側の件数上限で、指定より少ない件数で sizeLimitExceeded を返す接続。"""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.response: list[dict[str, Any]] = []
+        self.result: dict[str, Any] = {}
+
+    def search(self, base: str, search_filter: str, **kwargs: Any) -> bool:
+        self.response = [
+            {"type": "searchResEntry", "dn": f"cn=u{i},{base}", "attributes": {}, "raw_attributes": {}}
+            for i in range(self.count)
+        ]
+        self.result = {"result": 4, "description": "sizeLimitExceeded"}
+        return True
+
+
+def test_user_search_truncated_by_the_server_is_not_treated_as_unique() -> None:
+    """サーバの件数上限で 1 件だけ返った結果から、一意と判断して認証しない。"""
+    with pytest.raises(DirectoryUnavailable):
+        backend.find_user(_TruncatingConnection(1), _spec(), "alice")  # type: ignore[arg-type]
+    # 指定した件数（2 件）まで取れたなら、複数見つかったとして扱う
+    with pytest.raises(DirectoryAuthFailed):
+        backend.find_user(_TruncatingConnection(2), _spec(), "alice")  # type: ignore[arg-type]
+
+
+def test_too_many_domain_qualified_candidates_are_ambiguous() -> None:
+    """``DOMAIN\\user`` の候補が上限に達したら、残りを確かめられないので一意とみなさない。"""
+    conn = _TruncatingConnection(backend.AD_QUALIFIED_CANDIDATES_LIMIT)
+    spec = _spec(kind="ad", group_mode="ad_nested")
+    with pytest.raises(DirectoryAuthFailed) as exc:
+        backend.find_user(conn, spec, "CORP\\alice")  # type: ignore[arg-type]
+    assert exc.value.reason == "ambiguous_user"
+
+
+async def test_blank_search_base_is_rejected_on_create(client, directory: FakeDirectory) -> None:
+    resp = await client.post("/api/auth/directories", json=_directory_body(user_search_base="   "))
     assert resp.status_code == 422

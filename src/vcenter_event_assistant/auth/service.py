@@ -159,6 +159,14 @@ async def _upsert_directory_user(
     return None
 
 
+class _DirectoryRecheckFailed(Exception):
+    """認証後の再確認で拒否する（セーブポイントを巻き戻すために使う）。"""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 async def _authenticate_directory(
     db: AsyncSession, settings: Settings, realm: str, username: str, password: str
 ) -> LoginOutcome:
@@ -181,22 +189,28 @@ async def _authenticate_directory(
         return LoginOutcome(None, "directory_error")
     # 認証している間に無効化・変更（対応表の置き換えなど）されていたら、ログインさせない。
     # 変更時にセッションを失効させた後で、古い設定で決めたロールのセッションを作らないため。
-    # 行をロックしておき、この後の変更はこのログインの確定を待ってから失効させるようにする
-    current = (
-        await db.execute(
-            select(DirectoryConfig.is_enabled, DirectoryConfig.updated_at)
-            .where(DirectoryConfig.id == config.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).one_or_none()
-    if current is None or not current.is_enabled:
-        return LoginOutcome(None, "directory_disabled")
-    if current.updated_at != config_version:
-        return LoginOutcome(None, "directory_changed")
-    user = await _upsert_directory_user(db, config, identity, utcnow())
-    if user is None:
-        return LoginOutcome(None, "inactive")
+    # 行をロックしておき、この後の変更はこのログインの確定を待ってから失効させるようにする。
+    # ロックの順序は管理側（admin のユーザー行 → ディレクトリの行）と同じにする（逆順はデッドロックになる）ので、
+    # ユーザー行を更新してからディレクトリの行をロックし、拒否するときはユーザー行の更新も取り消す
+    try:
+        async with db.begin_nested():
+            user = await _upsert_directory_user(db, config, identity, utcnow())
+            if user is None:
+                return LoginOutcome(None, "inactive")
+            current = (
+                await db.execute(
+                    select(DirectoryConfig.is_enabled, DirectoryConfig.updated_at)
+                    .where(DirectoryConfig.id == config.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).one_or_none()
+            if current is None or not current.is_enabled:
+                raise _DirectoryRecheckFailed("directory_disabled")
+            if current.updated_at != config_version:
+                raise _DirectoryRecheckFailed("directory_changed")
+    except _DirectoryRecheckFailed as exc:
+        return LoginOutcome(None, exc.reason)
     return LoginOutcome(user, "ok")
 
 
