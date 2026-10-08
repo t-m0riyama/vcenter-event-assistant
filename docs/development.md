@@ -292,6 +292,12 @@ CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗
 
 UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は本ドキュメントの「UI スクリーンショット」セクションを参照）。一方、**Playwright E2E**（`frontend` で `npm run e2e`）は **テスト専用プロセスを新規起動**して実施する（既定は別ポート `9323`）。
 
+### AD / LDAP の手動確認
+
+AD / LDAP でのログインは、自動テストでは ldap3 の MOCK とスタブで確かめている。AD の入れ子グループの照合、実サーバが返す DN の表記、自己署名の証明書での TLS などは MOCK では再現できないので、ldap3 を更新したときや `auth/directory/`・ディレクトリ管理画面を変えたときは、実際のサーバでも確かめる。
+
+[`tests/manual/directory-lab/`](../tests/manual/directory-lab/README.md) に、Samba AD DC と OpenLDAP を Docker Compose で立て、検証用のユーザーとグループを投入する環境と、検証用の設定でアプリを起動するスクリプトを置いている（pytest や CI では動かさない）。使い方・投入されるユーザーとグループ・アプリに登録する設定の例は、その README を参照する。
+
 ---
 
 ## 期間コンテキスト付きチャット

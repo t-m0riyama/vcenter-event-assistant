@@ -1,0 +1,5 @@
+# svc-noid には entryUUID を読ませない（ID 属性が取れないときの unique_id の失敗を確かめるため）
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: {0}to attrs=entryUUID by dn.exact="uid=svc-noid,ou=services,dc=example,dc=org" none by * break

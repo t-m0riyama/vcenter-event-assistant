@@ -1,0 +1,123 @@
+# 検証専用のデータ。パスワードはすべて Lab-Passw0rd!（本番では使わない）
+
+dn: ou=people,dc=example,dc=org
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=example,dc=org
+objectClass: organizationalUnit
+ou: groups
+
+dn: ou=services,dc=example,dc=org
+objectClass: organizationalUnit
+ou: services
+
+dn: uid=alice,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: alice
+cn: Alice Admin
+givenName: Alice
+sn: Admin
+displayName: Alice Admin
+mail: alice@example.org
+uidNumber: 10001
+gidNumber: 10000
+homeDirectory: /home/alice
+userPassword: Lab-Passw0rd!
+
+dn: uid=bob,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: bob
+cn: Bob Operator
+givenName: Bob
+sn: Operator
+displayName: Bob Operator
+mail: bob@example.org
+uidNumber: 10002
+gidNumber: 10000
+homeDirectory: /home/bob
+userPassword: Lab-Passw0rd!
+
+dn: uid=carol,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: carol
+cn: Carol Viewer
+givenName: Carol
+sn: Viewer
+displayName: Carol Viewer
+mail: carol@example.org
+uidNumber: 10003
+gidNumber: 10000
+homeDirectory: /home/carol
+userPassword: Lab-Passw0rd!
+
+dn: uid=dave,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: dave
+cn: Dave Nogroup
+givenName: Dave
+sn: Nogroup
+displayName: Dave Nogroup
+mail: dave@example.org
+uidNumber: 10004
+gidNumber: 10000
+homeDirectory: /home/dave
+userPassword: Lab-Passw0rd!
+
+dn: uid=erin,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: erin
+cn: Erin Osaka
+givenName: Erin
+sn: Osaka
+displayName: Erin Osaka
+mail: erin@example.org
+uidNumber: 10005
+gidNumber: 10000
+homeDirectory: /home/erin
+userPassword: Lab-Passw0rd!
+
+dn: uid=svc-vea,ou=services,dc=example,dc=org
+objectClass: account
+objectClass: simpleSecurityObject
+uid: svc-vea
+description: VEA service account
+userPassword: Lab-Passw0rd!
+
+dn: uid=svc-noid,ou=services,dc=example,dc=org
+objectClass: account
+objectClass: simpleSecurityObject
+uid: svc-noid
+description: service account without entryUUID read access
+userPassword: Lab-Passw0rd!
+
+dn: cn=vea-admins,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+cn: vea-admins
+member: uid=alice,ou=people,dc=example,dc=org
+
+dn: cn=vea-operators,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+cn: vea-operators
+member: uid=bob,ou=people,dc=example,dc=org
+
+dn: cn=vea-viewers,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+cn: vea-viewers
+member: uid=carol,ou=people,dc=example,dc=org
+
+dn: cn=Ops Team\, Osaka,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+cn: Ops Team, Osaka
+member: uid=erin,ou=people,dc=example,dc=org
+
+dn: cn=vea-posix-admins,ou=groups,dc=example,dc=org
+objectClass: posixGroup
+cn: vea-posix-admins
+gidNumber: 20001
+memberUid: alice
