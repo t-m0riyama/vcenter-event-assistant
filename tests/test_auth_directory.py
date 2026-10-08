@@ -1053,3 +1053,39 @@ async def test_concurrent_duplicate_directory_name_is_rejected(client, directory
         event.remove(Session, "before_flush", take_name_before_flush)
     assert renamed.status_code == 422, renamed.text
     assert "同じ名前" in renamed.json()["detail"]
+
+
+async def test_directory_sessions_are_revoked_with_one_delete(client, directory: FakeDirectory) -> None:
+    """設定の変更でセッションを失効させるとき、ユーザーの数によらず DELETE は 1 回で済ませる。"""
+    from sqlalchemy import event
+
+    from vcenter_event_assistant.db.session import get_engine
+
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    assert (await _dir_login(realm, "alice", "alice-secret"))[0].status_code == 200
+    async with session_scope() as db:
+        for i in range(5):
+            db.add(User(realm_key=realm, subject=f"uuid:extra-{i}", username=f"extra{i}", role="viewer",
+                        directory_id=uuid.UUID(directory_id), is_active=True, failed_login_count=0))
+
+    deletes: list[str] = []
+
+    def count_session_deletes(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        if statement.lstrip().upper().startswith("DELETE FROM AUTH_SESSIONS"):
+            deletes.append(statement)
+
+    engine = get_engine().sync_engine
+    event.listen(engine, "before_cursor_execute", count_session_deletes)
+    try:
+        resp = await client.put(
+            f"/api/auth/directories/{directory_id}/mappings",
+            json={"mappings": [{"group_dn": ADMINS, "role": "admin"}]},
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count_session_deletes)
+    assert resp.status_code == 200, resp.text
+    assert len(deletes) == 1
+    async with session_scope() as db:
+        users = select(User.id).where(User.realm_key == realm)
+        assert (await db.scalars(select(AuthSession).where(AuthSession.user_id.in_(users)))).all() == []

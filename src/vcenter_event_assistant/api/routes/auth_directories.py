@@ -42,14 +42,13 @@ from vcenter_event_assistant.auth.directory.runner import connect_options, run_d
 from vcenter_event_assistant.auth.directory.spec import realm_key_for, spec_from_model
 from vcenter_event_assistant.auth.directory.testing import run_test
 from vcenter_event_assistant.auth.roles import Role
-from vcenter_event_assistant.auth.sessions import revoke_all_for_user
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     admin_change_guard,
     count_admin_directories,
     count_local_admins,
 )
-from vcenter_event_assistant.db.models import DirectoryConfig, DirectoryGroupRoleMapping, User
+from vcenter_event_assistant.db.models import AuthSession, DirectoryConfig, DirectoryGroupRoleMapping, User
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(
@@ -300,9 +299,9 @@ async def _touch(db: AsyncSession, config: DirectoryConfig) -> None:
 
 
 async def _revoke_directory_sessions(db: AsyncSession, directory_id: uuid.UUID) -> None:
-    user_ids = (await db.scalars(select(User.id).where(User.directory_id == directory_id))).all()
-    for user_id in user_ids:
-        await revoke_all_for_user(db, user_id)
+    """ディレクトリのユーザーのセッションをすべて失効させる（ユーザーが多くても 1 回の DELETE で済ませる）。"""
+    users = select(User.id).where(User.directory_id == directory_id)
+    await db.execute(delete(AuthSession).where(AuthSession.user_id.in_(users)))
 
 
 @router.get("", response_model=list[DirectoryRead])
