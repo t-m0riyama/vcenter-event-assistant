@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-09（計画を作成）
+最終更新: 2026-10-09（計画を作成。PR #270 の Codex レビューの指摘 2 件を反映）
 
 ## Context
 
@@ -65,7 +65,12 @@
 
 - `plugins/subprocess_env.py` の `child_process_env()` を許可リストに変える（呼び出し元は `plugins/remote.py` の 2 か所と `plugins/installer.py` の `_run_install`。引数で用途（ワーカー・インストーラ）を分けてもよい）
   - OS・実行環境: `PATH`・`HOME`・`LANG`・`LC_*`・`TZ`・`TMPDIR`・`SSL_CERT_FILE`・`SSL_CERT_DIR`・`REQUESTS_CA_BUNDLE`・プロキシ（`HTTP(S)_PROXY`・`NO_PROXY`、小文字も）・`VIRTUAL_ENV`
-  - インストーラだけ: `UV_*`・`PIP_*`（インデックスの URL・キャッシュ）
+  - インストーラだけ: `UV_*`・`PIP_*` のうち資格情報を含まないもの（キャッシュの場所・オフライン・ネットワークのタイムアウトなど）。名前の接頭辞でまとめて通さず、1 つずつ許可する
+- インストーラにインデックスの資格情報を渡さない（PR #270 の Codex レビューの指摘）
+  - sdist はインストールのときにビルドされ、ビルドバックエンド（`setup.py` など）が同じ環境で動く。`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_EXTRA_INDEX_URL`・`UV_INDEX_<名前>_USERNAME`/`_PASSWORD`・`PIP_INDEX_URL`・`PIP_EXTRA_INDEX_URL` などを通すと、ビルドのコードが読めてしまう
+  - 今は `VEA_PLUGIN_INDEX_URL` を `--index-url` でコマンドラインに渡しているので、URL に資格情報（`https://user:pass@...`）があればビルドのコードから `/proc/<uv の pid>/cmdline` で読める
+  - そのため、資格情報のあるインデックスを使うとき（`VEA_PLUGIN_INDEX_URL` にユーザー情報があるとき）は `--no-build` を付けて wheel だけを入れる。資格情報のないインデックスと、アップロード（`--no-index`）では今までどおり sdist も入れられる
+  - `HOME` の `~/.netrc` などのファイルは、同じ UID なら読める。ドキュメントで、資格情報のファイルをアプリの実行ユーザーの `HOME` に置かないよう伝える
   - プラグインの設定: `VEA_COLLECTOR__<ID>__*`（`plugins/config.py` の `collector_environment_prefix`。Issue の本文の `VEA_COLLECTOR_<ID>_*` は誤り）
   - ワーカーが `get_settings()` で読む設定: ログ（`log_level`・`collector_worker_log_level`・`app_log_file` など、`logging_config.configure_worker_logging` が使うもの）と vCenter の接続（`vcenter_allowed_host_suffix_list` など、`collectors/connection.connect_vcenter` が使うもの）。Settings のフィールドの別名から環境変数名を作り、手で書いた一覧と食い違わないようにする
 - ワーカーの Settings が `.env` を読まないようにする。今は `_settings_env_file()` が cwd の `.env` を読むので、環境変数を絞っても `.env` の秘密が入る。ワーカーとインストーラには `.env` を読まない印（例: 専用の環境変数）を渡し、`_settings_env_file()` で見る
@@ -86,11 +91,15 @@
 
 ## PR4: SSRF と rate limit（Issue #237）
 
-- `api/routes/plugin_setup.py` の host-key の probe・セットアップのアクション・ホストの一覧で、接続の直前に `services/vcenter_host_validation.validate_vcenter_host(..., resolve_dns=True)` で名前解決後の IP を検証する（vCenter は `collectors/connection.connect_vcenter` で同じことをしている）。ワーカーが接続する経路でも同じ検証を通す（ワーカーの中で検証するか、解決済みの IP を渡すかは、SSH のホスト鍵の照合への影響を見て決める）
+- SSH の接続先は、名前解決して検証した IP に接続する（`services/vcenter_host_validation.validate_vcenter_host(..., resolve_dns=True)` と同じ判定）。検証の後に名前で接続すると、もう一度名前解決が起き、DNS の応答を操作できる攻撃者は、検証にはグローバルな IP、接続にはループバックを返せる（DNS rebinding。PR #270 の Codex レビューの指摘）
   - 拒否するもの: ループバック・リンクローカル・メタデータ・マルチキャスト・予約済み・未指定。RFC1918 は今と同じく許す
+  - ホスト鍵の照合は元のホスト名で行う。asyncssh の `host_key_alias` にホスト名を渡し、接続先には検証した IP を渡す（known_hosts の行はホスト名のまま使える）
+  - 本体の経路: `api/routes/plugin_setup.py` の host-key の probe（`asyncssh.get_server_host_key`）・セットアップのアクション・ホストの一覧
+  - ワーカーの経路: 同梱のプラグイン `packages/remote-log-collector` の `transport.open_reader`（`asyncssh.connect`）。ワーカーの中で名前解決して検証し、その IP に接続する（本体で解決した IP を渡しても、収集までの間に DNS が変わるので、接続する側で解決と検証を 1 回で済ませるのが確実）。判定は本体の関数を使えないので、プラグイン API のパッケージに置くか、プラグインの中に持つかは実装時に決める
+  - 第三者のプラグインが自分で接続する経路は強制できない。PR3b の脅威モデルに書く
 - ポート: 設定で許すポートを絞れるようにする。既定は制限なし（既定を 22 だけにすると既存の設定が壊れ得るため）
 - rate limit: `main.py` の `RateLimitMiddleware` の照合を、完全一致に加えてパターン（パスの部品の一致）にも対応させ、`/api/plugins/ssh/connections/*/host-key`・`/api/plugins/collectors/*/draft/actions/*`・`/api/vcenters/*/hosts` を加える。GET が対象なら、メソッドの条件も見直す。バケットは既存の `plugins` を使うか、新しく設けるかは実装時に決める
-- テスト: ループバックに解決されるホスト名（名前解決を差し替える）を拒否すること、RFC1918 は通ること、パターンの rate limit が効くこと（`VEA_PYTEST=1` で無効になる点に注意し、テストでは有効にする）
+- テスト: ループバックに解決されるホスト名（名前解決を差し替える）を拒否すること、RFC1918 は通ること、1 回目と 2 回目で名前解決の答えが変わっても検証した IP に接続すること（asyncssh に渡す引数で確かめる）、`host_key_alias` にホスト名が渡ること、パターンの rate limit が効くこと（`VEA_PYTEST=1` で無効になる点に注意し、テストでは有効にする）
 
 ## 保留（必要になったら）
 
@@ -115,4 +124,5 @@
 - PR1 で、自己署名の SMTP を使っている環境はアップグレード後に通知が止まる。リリースノートで周知する
 - PR3a で、プラグインが今まで暗黙に読んでいた環境変数（プロキシや独自の変数）が渡らなくなる。許可リストに足す方法（設定で追加を許すか）をドキュメントに書く
 - PR3a の `PR_SET_DUMPABLE` は Linux だけ。macOS の開発環境では効かない
+- PR3a の `--no-build` で、資格情報のあるインデックスからは sdist しかないプラグインを入れられなくなる。wheel を用意するか、アップロードで入れる
 - PR3b の変更は compose の利用者に影響する。ボリュームの所有者が変わらないことを確かめる
