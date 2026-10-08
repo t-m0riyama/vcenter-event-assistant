@@ -14,16 +14,16 @@
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [PR #248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [PR #249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
 | 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
-| 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ待ち [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。CI 成功） |
+| 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ済み [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。Issue #258 は閉じた。Issue #254 は画面が残るので PR7 で閉じる） |
+| 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ待ち [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし。CI 成功） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（PR 6.5）のマージ。[Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）と [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258)（その確認の抜け）のバックエンド。Issue #258 はマージで閉じる。Issue #254 は画面が残るので、PR7 のマージで閉じる
+1. [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（PR 6.6）のマージ。[Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) はマージで閉じる
 2. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）。PR 6.5 の API（未保存の設定の試験、`PATCH` でのまとめて保存、409 と `X-VEA-Error-Code`）を使う画面を作る
 3. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
-4. [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正: [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260) でレビュー中（マージで両方閉じる）
 
 ### PR6 のレビューの経過
 
@@ -41,15 +41,19 @@
 - PR 作成時のレビューで 1 件（サービスアカウントのパスワードだけの変更が保存前の確認を通らない）。妥当なので、確認の判定を失効の判定と分けて、パスワードとタイムアウトも含めた（a7a7e54）
 - 観点を添えて再レビューを依頼し、指摘なし
 
+### PR 6.6（PR #260）のレビューの経過
+
+- PR 作成時のレビューで指摘なし（`0493cbe`）。その後の計画書への PR 番号の追記はドキュメントだけなので、再レビューは依頼していない
+
 ### PR6 からの持ち越し（Issue）
 
 | Issue | 内容 | 対応の時期 |
 |---|---|---|
 | [Issue #253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
-| [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | 対応中（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)。起動時の移行を `EncryptedString` の全列（vCenter のパスワード・bind パスワード・プラグインの SSH 秘密鍵）に広げた。SSH 秘密鍵も同じく漏れていたので、利用者の判断で一緒に直した） |
+| [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)、マージ待ち。起動時の移行を `EncryptedString` の全列（vCenter のパスワード・bind パスワード・プラグインの SSH 秘密鍵）に広げた。SSH 秘密鍵も同じく漏れていたので、利用者の判断で一緒に直した） |
 | [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけ（設定上はほかにあっても、実際に動いているのがそのディレクトリだけの場合を含む）のとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | バックエンドは PR 6.5 で対応（下の「ディレクトリ API」）。画面は PR7 |
 | [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | PR 6.5 で対応（確かめた ID のユーザー行が無効なら 409） |
-| [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | 対応中（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)。ユーザー行を `FOR UPDATE` で読んでからロールを比べる） |
+| [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | 対応済み（[PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)、マージ待ち。ユーザー行を `FOR UPDATE` で読んでからロールを比べる） |
 | [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
 ## Context
