@@ -19,12 +19,13 @@
 | 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ済み [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし） |
 | 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | マージ済み [PR #263](https://github.com/t-m0riyama/vcenter-event-assistant/pull/263)（Codex の指摘 2 件に対応し、再レビューで指摘なし。CI 成功） |
 | 8a | 実機確認: Samba AD / OpenLDAP の検証環境（`tests/manual/directory-lab/`）、実機で見つかった不具合の修正（StartTLS の証明書エラーで後始末の unbind が例外になる）、strongerAuthRequired の文言、ログイン画面に戻したときに直前の認証先を選ぶ | マージ済み [PR #267](https://github.com/t-m0riyama/vcenter-event-assistant/pull/267)（Codex の指摘 1 件に対応し、再レビューで指摘なし） |
-| 8b | 仕上げ: AD/LDAP 設定手順のユーザーガイド（`docs/user-guides/directory-auth.md`。ヘルプの「認証ディレクトリ」の参照先もここへ）、監査レポート 2 本の末尾に「対応状況」、画面の「メンバーの値」の既定の表示を実際の動き（DN）に合わせる | 作業中 |
+| 8b | 仕上げ: AD/LDAP 設定手順のユーザーガイド（`docs/user-guides/directory-auth.md`。ヘルプの「認証ディレクトリ」の参照先もここへ）、監査レポート 2 本の末尾に「対応状況」、画面の「メンバーの値」の既定の表示を実際の動き（DN）に合わせる | マージ済み [PR #268](https://github.com/t-m0riyama/vcenter-event-assistant/pull/268)（Codex のレビュー 3 回分の指摘 6 件に対応し、利用者の判断で区切った） |
 
 ### 次にやること
 
-1. PR8b のレビューとマージ。これで計画の全 PR が終わる
-2. 残りの Issue（#266 Samba の `DOMAIN\user`、#251 独自 OID の DN、#94 API トークン）は、必要になったときに対応する
+計画の全 PR がマージされた。
+
+1. 残りの Issue（#266 Samba の `DOMAIN\user`、#251 独自 OID の DN、#94 API トークン）は、必要になったときに対応する
 
 ### PR8a の実機確認の結果
 
@@ -54,6 +55,15 @@
   - ディレクトリだけの運用（`VEA_LOCAL_LOGIN_ENABLED=false`）に切り替えるときは `VEA_BOOTSTRAP_ADMIN_*` を消す（残っていると起動を止める）
   - CLI の `list-users` のロールは、最後にログインしたときのもの
 - 確認の方法の注意: ディレクトリ管理画面の保存前の確認は `window.confirm` なので、確認ダイアログを自動で閉じるブラウザ（組み込みのペインなど）ではキャンセル扱いになる
+
+### PR8b（PR #268）のレビューの経過
+
+- Codex のレビューは 3 回。指摘はどれもガイドと実装の食い違いで、妥当なので直した
+  - 接続試験はユーザー名だけでロールの判定まで行う（パスワードは user_bind の段階を足すだけ）。画面の説明文も同じ誤りだったので直した
+  - 保存時の影響の表に有効化の行がなかった。自分のディレクトリでのログアウトされない変更（サービスアカウントのパスワード・タイムアウト）でも、本人はログアウトされない。ホスト名の不一致の reason（`directory_tls_error`）
+  - 締め出しからの復旧で、無効になった admin は `reset-password` では有効にならない（`unlock` を使う）。接続試験はアプリでの無効化を見ないので、成功しても admin の経路の証明にならない
+- 指摘が細部へ移ってきたので、3 回目への対応で利用者の判断で区切った
+- CI で `AuthGate.test.tsx` がまれに落ちた（下の「テスト」）
 
 ### PR8a（PR #267）のレビューの経過
 
@@ -302,7 +312,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `tests/test_startup_migration.py`: ディレクトリの migration の downgrade
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
 - PostgreSQL 固有の挙動（行ロック・デッドロック）は CI の SQLite では再現できない
-- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）。応答の利用者（`X-VEA-Principal`）を受け取る `onPrincipalSeen` のリスナーも effect で登録するので、それに頼るテストは表示を待った後に `flushEffects` してから操作する（PR #264 の CI でまれに取りこぼした）
+- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）。応答の利用者（`X-VEA-Principal`）を受け取る `onPrincipalSeen` のリスナーも effect で登録するので、それに頼るテストは表示を待った後に `flushEffects` してから操作する（PR #264 の CI でまれに取りこぼした）。401 を受け取る `onUnauthorized` のリスナーも同じで、`notifyUnauthorized` を送る前に `flushEffects` する（PR #268 の CI でまれに取りこぼした）
 
 ## 確認方法
 - テスト: `uv run pytest -n auto`、`cd frontend && npm test && npm run e2e`、ruff、mypy
