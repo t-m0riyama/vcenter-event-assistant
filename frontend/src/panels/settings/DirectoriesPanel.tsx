@@ -8,6 +8,7 @@ import {
   type DirectoryPolicy,
   type DirectoryTestResponse,
 } from '../../api/schemas'
+import { fetchMe } from '../../auth/authApi'
 import { useAuth } from '../../auth/useAuth'
 import { toErrorMessage } from '../../utils/errors'
 import { DirectoryForm } from './DirectoryForm'
@@ -50,7 +51,10 @@ const SELF_DISABLE_REASON =
 type PendingSave = {
   readonly original: Directory
   readonly body: Record<string, unknown>
-  /** 保存で自分のセッションも失効するか。 */
+  /**
+   * 保存で自分のセッションも失効するおそれがあるか。サーバは対応表の DN を正規化して比べるので、
+   * 実際に失効したかは保存の後に確かめる。
+   */
   readonly logsOutSelf: boolean
 }
 
@@ -192,7 +196,7 @@ export function DirectoriesPanel({
     const name = typeof body.name === 'string' ? body.name : original.name
     const saved = await run(
       () => apiPatch(`/api/auth/directories/${original.id}`, verification ? { ...body, verification } : body),
-      // 自分のセッションも失効したら、一覧は読み直さずにログイン画面へ戻す
+      // 自分のセッションも失効するおそれがあるときは、確かめてから一覧を読み直す（下）
       logsOutSelf ? null : `${name} を保存しました。`,
       (e) => {
         if (
@@ -210,7 +214,16 @@ export function DirectoriesPanel({
     if (saved === undefined) return
     setVerifying(null)
     close()
-    if (logsOutSelf) notifyUnauthorized(LOGGED_OUT_SELF_NOTICE)
+    if (!logsOutSelf) return
+    // 失効していれば理由を添えてログイン画面へ戻す。確かめられなかったときは読み直しに任せる
+    // （失効していれば 401 で認証ゲートがログイン画面へ戻す）
+    const current = await fetchMe().catch(() => undefined)
+    if (current === null) {
+      notifyUnauthorized(LOGGED_OUT_SELF_NOTICE)
+      return
+    }
+    setNotice(`${name} を保存しました。`)
+    await load()
   }
 
   const save = async () => {

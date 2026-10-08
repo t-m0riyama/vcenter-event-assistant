@@ -66,8 +66,12 @@ function json(data: unknown, status = 200) {
 type Call = { url: string; method: string; body: unknown }
 
 function stubApi(
-  handler: (call: Call) => Response | undefined = () => undefined,
-  { list = DIRECTORIES, policy = ALLOW_ALL }: { list?: Directory[]; policy?: DirectoryPolicy } = {},
+  handler: (call: Call) => Response | Promise<Response> | undefined = () => undefined,
+  {
+    list = DIRECTORIES,
+    policy = ALLOW_ALL,
+    me = null,
+  }: { list?: Directory[]; policy?: DirectoryPolicy; me?: Me | null } = {},
 ) {
   const calls: Call[] = []
   vi.stubGlobal(
@@ -83,6 +87,10 @@ function stubApi(
       if (custom) return Promise.resolve(custom)
       if (call.url === '/api/auth/directories' && call.method === 'GET') return Promise.resolve(json(list))
       if (call.url === '/api/auth/directories/policy') return Promise.resolve(json(policy))
+      // 保存の後のセッションの確認。既定は失効（401）
+      if (call.url === '/api/auth/me') {
+        return Promise.resolve(me ? json(me) : json({ detail: 'ログインが必要です。' }, 401))
+      }
       if (call.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
       if (call.url.endsWith('/test')) {
         return Promise.resolve(json({ ok: true, stages: [{ stage: 'connect', ok: true, message: '接続できました' }] }))
@@ -567,6 +575,83 @@ describe('DirectoriesPanel', () => {
       } finally {
         off()
       }
+    })
+
+    it('サーバがセッションを失効させなかったら（DN の表記の違いだけなど）、ログイン画面に戻さず一覧を読み直す', async () => {
+      const listener = vi.fn()
+      const off = onUnauthorized(listener)
+      try {
+        const calls = stubApi(undefined, { me: LDAP_ADMIN })
+        renderPanel(vi.fn(), LDAP_ADMIN)
+        const form = await openEdit('Corp LDAP')
+        // サーバは DN を正規化して比べるので、大文字にしただけでは失効させない
+        fireEvent.change(within(form).getByLabelText('1 行目のグループの DN'), {
+          target: { value: 'CN=Admins,DC=example,DC=com' },
+        })
+        fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+        expect(await screen.findByText('Corp LDAP を保存しました。')).toBeInTheDocument()
+        expect(listener).not.toHaveBeenCalled()
+        const afterSave = calls.slice(calls.findIndex((c) => c.method === 'PATCH'))
+        expect(afterSave.map((c) => c.url)).toContain('/api/auth/directories')
+      } finally {
+        off()
+      }
+    })
+
+    it('対応表の並べ替えだけなら変更として扱わない', async () => {
+      const calls = stubApi(undefined, {
+        list: [
+          directory({
+            mappings: [
+              { group_dn: 'cn=admins,dc=example,dc=com', role: 'admin' },
+              { group_dn: 'cn=ops,dc=example,dc=com', role: 'operator' },
+            ],
+          }),
+        ],
+      })
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      // 1 行目を外して末尾に足し直す
+      fireEvent.click(within(form).getByRole('button', { name: '1 行目の対応を外す' }))
+      fireEvent.click(within(form).getByRole('button', { name: '対応を追加' }))
+      fireEvent.change(within(form).getByLabelText('2 行目のグループの DN'), {
+        target: { value: 'cn=admins,dc=example,dc=com' },
+      })
+      fireEvent.change(within(form).getByLabelText('2 行目のロール'), { target: { value: 'admin' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'ディレクトリの設定' })).not.toBeInTheDocument())
+      expect(mutations(calls)).toEqual([])
+    })
+
+    it('確かめている間はダイアログを閉じられない（閉じても保存が続くため）', async () => {
+      let release: (r: Response) => void = () => {}
+      let attempts = 0
+      stubApi((call) => {
+        if (call.method !== 'PATCH') return undefined
+        attempts += 1
+        if (attempts === 1) return verificationError('directory_verification_required', '確かめてください')
+        return new Promise<Response>((resolve) => {
+          release = resolve
+        })
+      })
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('1 行目のロール'), { target: { value: 'operator' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      const dialog = await screen.findByRole('dialog', { name: '管理者としてログインできるか確かめる' })
+      fireEvent.change(within(dialog).getByLabelText('確認に使うユーザー名'), { target: { value: 'alice' } })
+      fireEvent.change(within(dialog).getByLabelText('確認に使うパスワード'), { target: { value: 'secret' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: '確かめて保存' }))
+
+      await waitFor(() => expect(within(dialog).getByRole('button', { name: 'キャンセル' })).toBeDisabled())
+      expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeDisabled()
+      // Esc（cancel イベント）でも閉じない
+      const cancel = new Event('cancel', { cancelable: true })
+      dialog.dispatchEvent(cancel)
+      expect(cancel.defaultPrevented).toBe(true)
+
+      release(json(directory({})))
+      expect(await screen.findByText('Corp LDAP を保存しました。')).toBeInTheDocument()
     })
   })
 })

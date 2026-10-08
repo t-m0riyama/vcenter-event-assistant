@@ -203,9 +203,19 @@ export function changesFromForm(original: Directory, form: DirectoryFormState): 
   return changes
 }
 
-/** 対応表を変えたか（前後の空白と DN が空の行は無視する）。 */
+/** 対応表を比べるための値（順序は意味を持たないので並べ替える）。 */
+function mappingSetKey(mappings: GroupRoleMapping[]): string[] {
+  return mappings.map((m) => JSON.stringify([m.group_dn, m.role])).sort()
+}
+
+/**
+ * 対応表を変えたか（前後の空白・DN が空の行・並び順は無視する）。
+ *
+ * サーバは DN を正規化（大文字小文字・エスケープの表記など）して比べるので、ここで変えたと判断しても、
+ * サーバは変更とみなさないことがある（保存後のセッションの確認で補う）。
+ */
 export function mappingsChanged(original: Directory, form: DirectoryFormState): boolean {
-  return !sameValue(mappingsFromForm(formFromDirectory(original)), mappingsFromForm(form))
+  return !sameValue(mappingSetKey(mappingsFromForm(formFromDirectory(original))), mappingSetKey(mappingsFromForm(form)))
 }
 
 export const INSECURE_TLS_WARNING = '証明書を検証しません（中間者攻撃に弱い状態です）'

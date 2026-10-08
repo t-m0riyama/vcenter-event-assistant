@@ -43,6 +43,10 @@ export function DirectoryVerificationDialog({
       ref={dialogRef}
       className="dialog directory-verification-dialog"
       onClose={onClose}
+      // 確かめている間は Esc で閉じさせない（閉じても保存は続き、キャンセルしたつもりの変更が保存されるため）
+      onCancel={(e) => {
+        if (submitting) e.preventDefault()
+      }}
       aria-labelledby="directory-verification-title"
     >
       <form onSubmit={submit}>
@@ -54,6 +58,7 @@ export function DirectoryVerificationDialog({
             type="button"
             className="btn dialog__close-btn"
             onClick={() => dialogRef.current?.close()}
+            disabled={submitting}
             aria-label="閉じる"
           >
             ×
@@ -92,7 +97,12 @@ export function DirectoryVerificationDialog({
           </label>
         </div>
         <div className="dialog__footer">
-          <button type="button" className="btn btn--gray" onClick={() => dialogRef.current?.close()}>
+          <button
+            type="button"
+            className="btn btn--gray"
+            onClick={() => dialogRef.current?.close()}
+            disabled={submitting}
+          >
             キャンセル
           </button>
           <button
