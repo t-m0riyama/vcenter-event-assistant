@@ -926,8 +926,8 @@ def test_domain_qualified_candidates_exactly_at_the_limit_are_resolved() -> None
 
 
 async def test_group_dn_too_long_after_normalization_is_rejected(client, directory: FakeDirectory) -> None:
-    """正規化（casefold）で列の長さを超える DN は、DB エラーではなく 422 にする。"""
-    group_dn = "cn=" + "\u0390" * 400 + ",dc=example"
+    """正規化（NFKC・casefold）で列の長さを超える DN は、DB エラーではなく 422 にする。"""
+    group_dn = "cn=" + "\ufdfa" * 100 + ",dc=example"
     assert len(group_dn) <= 1024 and len(normalize_dn(group_dn)) > 1024
     body = _directory_body(mappings=[{"group_dn": group_dn, "role": "admin"}])
     assert (await client.post("/api/auth/directories", json=body)).status_code == 422
@@ -1109,3 +1109,31 @@ def test_normalize_dn_folds_case_of_other_standard_case_ignore_attributes() -> N
     assert normalize_dn("sn=Ops,dc=example") == normalize_dn("SN=ops,dc=example")
     assert normalize_dn("givenName=Ops,dc=example") == normalize_dn("2.5.4.42=ops,dc=example")
     assert normalize_dn("mail=Ops@Example.com,dc=example") == normalize_dn("mail=ops@example.com,dc=example")
+
+
+async def test_sessions_of_directories_blocked_by_policy_stop_working(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """接続の方針（証明書を検証しない接続の禁止など）で拒否されるディレクトリの発行済みセッションも使わせない。"""
+    body = _directory_body(tls_verify=False)
+    directory_id = (await client.post("/api/auth/directories", json=body)).json()["id"]
+    realm = f"dir:{directory_id}"
+    _rate_limiter._hits.clear()
+    async with _raw_client() as ac:
+        resp = await ac.post(
+            "/api/auth/login", json={"username": "alice", "password": "alice-secret", "realm": realm}, headers=XHR
+        )
+        assert resp.status_code == 200
+        assert (await ac.get("/api/auth/me")).status_code == 200
+
+        monkeypatch.setenv("VEA_DIRECTORY_ALLOW_INSECURE_TLS", "false")
+        get_settings.cache_clear()
+        assert (await ac.get("/api/auth/me")).status_code == 401
+
+
+def test_normalize_dn_applies_unicode_normalization_to_case_ignore_values() -> None:
+    """caseIgnoreMatch の値は Unicode の正規化（NFKC）をしてから比べる（合成済みの文字と分解した文字は同じ）。"""
+    composed = "cn=Caf\u00e9,dc=example"
+    decomposed = "cn=Cafe\u0301,dc=example"
+    assert normalize_dn(composed) == normalize_dn(decomposed)
+    assert normalize_dn("cn=\uff2f\uff50\uff53,dc=example") == normalize_dn("cn=Ops,dc=example")  # 全角

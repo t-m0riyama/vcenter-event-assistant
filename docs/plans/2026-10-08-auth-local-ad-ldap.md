@@ -43,7 +43,7 @@
   - Cookie は本番 `__Host-vea_session`。HttpOnly、SameSite=Strict、本番では Secure
   - 無操作 60 分、絶対期限 12 時間
   - ロールは毎リクエストで users 行から読む。ロール変更・無効化・パスワード変更のときは、そのユーザーのセッションを全部失効させる
-  - ディレクトリのユーザーのセッションは、そのディレクトリが有効な間だけ使える（`resolve_session` で確認）
+  - ディレクトリのユーザーのセッションは、そのディレクトリが有効で、今の接続の方針（本番での `none`、禁止中の `tls_verify=false`）で拒否されない間だけ使える（`resolve_session` で確認。条件は `connection.allowed_by_security` で、「使える admin」の数え方と共通）
 - **CSRF**: `CsrfMiddleware`。`/api/*` への POST/PUT/PATCH/DELETE で `X-Requested-With: XMLHttpRequest` を必須にし、Origin も照合する（監査 M-14）
 - **全体での強制**:
   - `main.py` の `api` router に `Depends(get_current_principal)` を付ける（未ログインは 401）
@@ -110,7 +110,7 @@
 - ロールは対応表のうち一致したものの中で最も強いもの。どれにも一致しなければログインを拒否する
 - グループ DN の正規化（`normalize_dn`）:
   - 属性名は小文字にする。標準の命名属性の OID（`2.5.4.3` など。`OID.` 接頭辞付きも含む）は名前に置き換える。置き換えるのは本当の区切り（エスケープや引用符の外の `,` / `+`）の直後だけ
-  - 値の大文字小文字と空白（連続する空白・前後の空白。RFC 4518）は、比較で区別しないと決まっている属性（cn・ou・dc・uid・sn・givenName・mail など、RFC 4519 の標準の属性のうち equality が caseIgnoreMatch のもの）だけならす
+  - 値の Unicode の正規化（NFKC）・大文字小文字・空白（連続する空白・前後の空白。RFC 4518）は、比較で区別しないと決まっている属性（cn・ou・dc・uid・sn・givenName・mail など、RFC 4519 の標準の属性のうち equality が caseIgnoreMatch のもの）だけならす
   - 複数値 RDN（`+` でつないだ部分）の中は並べ替える。RDN の順序と `+` / `,` の違いは保つ
   - 値のエスケープ（`\,`、`\2C`、UTF-8 のバイト列の `\C3\A9` など）は実際の文字に戻してから、ldap3 の `escape_rdn` で決まった形にエスケープし直す。戻せない値（UTF-8 として不正なバイト列など）を含む DN は解析できない DN として扱う
   - 引用符で囲んだ値と `#` で始まる 16 進表記の値は、ldap3 が解析できないので登録できない

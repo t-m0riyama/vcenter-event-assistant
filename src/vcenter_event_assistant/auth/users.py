@@ -9,12 +9,12 @@ import weakref
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import ColumnElement, and_, func, or_, select, true, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
-from vcenter_event_assistant.auth.directory.connection import ConnectOptions
+from vcenter_event_assistant.auth.directory.connection import ConnectOptions, allowed_by_security
 from vcenter_event_assistant.auth.directory.runner import connect_options
 from vcenter_event_assistant.auth.passwords import (
     hash_password,
@@ -112,18 +112,6 @@ async def count_local_admins(db: AsyncSession, *, exclude_user_id: uuid.UUID | N
     return int(await db.scalar(query) or 0)
 
 
-def _directory_allowed(options: ConnectOptions) -> ColumnElement[bool]:
-    """今のセキュリティ方針で接続が許される（``check_security`` で拒否されない）ディレクトリの条件。"""
-    conditions: list[ColumnElement[bool]] = []
-    if options.production:
-        conditions.append(DirectoryConfig.transport_security != "none")
-    if not options.allow_insecure_tls:
-        conditions.append(
-            or_(DirectoryConfig.transport_security == "none", DirectoryConfig.tls_verify.is_(True))
-        )
-    return and_(true(), *conditions)
-
-
 async def count_admin_directories(
     db: AsyncSession, options: ConnectOptions, *, exclude_directory_id: uuid.UUID | None = None
 ) -> int:
@@ -139,7 +127,7 @@ async def count_admin_directories(
         .where(
             DirectoryConfig.is_enabled.is_(True),
             DirectoryGroupRoleMapping.role == Role.ADMIN.value,
-            _directory_allowed(options),
+            allowed_by_security(options),
         )
     )
     if exclude_directory_id is not None:

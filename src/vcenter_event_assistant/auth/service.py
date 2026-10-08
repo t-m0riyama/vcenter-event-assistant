@@ -65,6 +65,7 @@ def session_policy(settings: Settings) -> SessionPolicy:
     return SessionPolicy(
         idle_timeout=timedelta(minutes=settings.session_idle_timeout_minutes),
         absolute_timeout=timedelta(hours=settings.session_absolute_timeout_hours),
+        directory_options=connect_options(settings),
     )
 
 

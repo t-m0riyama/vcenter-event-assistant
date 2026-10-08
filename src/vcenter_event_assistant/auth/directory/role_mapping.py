@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable
 
 from ldap3.core.exceptions import LDAPInvalidDnError
@@ -143,8 +144,9 @@ def normalize_dn(dn: str) -> str:
     avas: list[str] = []
     for attr, val, sep in parts:
         name = attr.strip().casefold()
-        # caseIgnoreMatch の属性は、大文字小文字に加えて、連続する空白と前後の空白も比較に影響しない（RFC 4518）
-        text = " ".join(val.split()).casefold() if name in _CASE_INSENSITIVE_ATTRS else val
+        # caseIgnoreMatch の属性は、Unicode の正規化（NFKC）・大文字小文字・連続する空白と前後の空白の
+        # 違いが比較に影響しない（RFC 4518 の文字列の準備）
+        text = _prepare_case_ignore(val) if name in _CASE_INSENSITIVE_ATTRS else val
         # 戻した値に区切りなどが含まれ得るので、決まった形でエスケープし直す（空の値はそのまま）
         avas.append(f"{name}={escape_rdn(text) if text else text}")
         if sep != "+":
@@ -153,6 +155,12 @@ def normalize_dn(dn: str) -> str:
     if avas:
         rdns.append("+".join(sorted(avas)))
     return ",".join(rdns)
+
+
+def _prepare_case_ignore(value: str) -> str:
+    """caseIgnoreMatch で比べる値の準備。NFKC で正規化し、大文字小文字と空白の違いをならす。"""
+    folded = unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", value).casefold())
+    return " ".join(folded.split())
 
 
 def resolve_role(group_dns: Iterable[str], mappings: Iterable[tuple[str, Role]]) -> Role | None:

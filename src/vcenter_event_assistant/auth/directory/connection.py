@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from ldap3 import ANONYMOUS, NONE, SIMPLE, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
+from sqlalchemy import ColumnElement, and_, or_, true
 
 from vcenter_event_assistant.auth.directory.errors import (
     DirectoryConfigError,
@@ -23,6 +24,7 @@ from vcenter_event_assistant.auth.directory.errors import (
     DirectoryUnavailable,
 )
 from vcenter_event_assistant.auth.directory.spec import DirectorySpec
+from vcenter_event_assistant.db.models import DirectoryConfig
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,18 @@ def check_security(spec: DirectorySpec, options: ConnectOptions) -> None:
             "証明書を検証しない接続は禁止されています（VEA_DIRECTORY_ALLOW_INSECURE_TLS=false）。"
             "CA 証明書を設定して証明書の検証を有効にしてください。"
         )
+
+
+def allowed_by_security(options: ConnectOptions) -> ColumnElement[bool]:
+    """``check_security`` で拒否されないディレクトリの条件（SQL）。両者は同じ規則を保つ。"""
+    conditions: list[ColumnElement[bool]] = []
+    if options.production:
+        conditions.append(DirectoryConfig.transport_security != "none")
+    if not options.allow_insecure_tls:
+        conditions.append(
+            or_(DirectoryConfig.transport_security == "none", DirectoryConfig.tls_verify.is_(True))
+        )
+    return and_(true(), *conditions)
 
 
 def build_tls(spec: DirectorySpec) -> Tls | None:

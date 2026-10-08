@@ -10,6 +10,7 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
+from vcenter_event_assistant.auth.directory.connection import ConnectOptions, allowed_by_security
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.tokens import hash_token, new_session_token
 from vcenter_event_assistant.db.models import AuthSession, DirectoryConfig, User
@@ -26,6 +27,8 @@ _USER_AGENT_MAX = 256
 class SessionPolicy:
     idle_timeout: timedelta
     absolute_timeout: timedelta
+    # ディレクトリの接続の方針。指定があれば、方針で接続を拒否されるディレクトリのセッションも使わせない
+    directory_options: ConnectOptions | None = None
 
     @property
     def touch_interval(self) -> timedelta:
@@ -125,7 +128,7 @@ async def resolve_session(
         user is None
         or not user.is_active
         or row.credential_marker != credential_marker(user)
-        or not await _directory_enabled(db, user)
+        or not await _directory_usable(db, user, policy.directory_options)
     ):
         # 無効化されたユーザーのセッションも消す（再度有効にしたときに復活させないため）。
         # 重なったリクエストが先に消していても失敗しないよう、件数を問わない DELETE にする
@@ -142,17 +145,19 @@ async def resolve_session(
     return ResolvedSession(session=row, user=user, touched=touched)
 
 
-async def _directory_enabled(db: AsyncSession, user: User) -> bool:
-    """ディレクトリのユーザーなら、そのディレクトリが今も有効か（ローカルユーザーは常に ``True``）。
+async def _directory_usable(db: AsyncSession, user: User, options: ConnectOptions | None) -> bool:
+    """ディレクトリのユーザーなら、そのディレクトリが今も有効で、接続の方針で拒否されないか。
 
-    無効化と並行したログインが、無効化の後にセッションを作ってしまっても使えないようにする。
+    ローカルユーザーは常に ``True``。無効化と並行したログインが、無効化の後にセッションを作ってしまっても
+    使えないようにする。方針を厳しくした（本番に切り替えた、証明書を検証しない接続を禁止した）ときも、
+    新しいログインと同じく、発行済みのセッションを使わせない。
     """
     if user.directory_id is None:
         return True
-    enabled = await db.scalar(
-        select(DirectoryConfig.is_enabled).where(DirectoryConfig.id == user.directory_id)
-    )
-    return bool(enabled)
+    query = select(DirectoryConfig.is_enabled).where(DirectoryConfig.id == user.directory_id)
+    if options is not None:
+        query = query.where(allowed_by_security(options))
+    return bool(await db.scalar(query))
 
 
 async def _delete_if_still_expired(
