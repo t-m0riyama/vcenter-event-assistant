@@ -27,14 +27,22 @@ jobs:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE: ${{ github.event.pull_request.base.sha }}
+          # 前の先頭の CI を探すときに、同じ種類の実行（PR ならこの PR のブランチ）に絞る
+          RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           # push の前の先頭を起点にできるか。祖先で、かつその先頭の CI が成功していること
           # （失敗・中断・実行中のコードの後にドキュメントだけを push して、未検証のまま省かないため）
+          # 照会に失敗したら検証済みとみなさない（空の結果を成功と取り違えないため）。
+          # 成功の後に main が進んでいても省く（利用者の判断）。push がなくても GitHub は main の前進で
+          # PR の CI を走らせ直さないので今より弱くはならず、マージ後の main への push では全部走る
           verified_before() {
             git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null || return 1
-            [ "$(gh run list --workflow ci.yml --commit "$BEFORE" --status success --json databaseId --jq length)" != 0 ]
+            local count
+            count="$(gh run list --workflow ci.yml --commit "$BEFORE" --branch "$RUN_BRANCH" --event "$EVENT" \
+              --status success --json databaseId --jq length)" || return 1
+            [ "$count" -gt 0 ] 2>/dev/null
           }
           # 比べる起点。PR への追加の push はその push の前の先頭、それ以外の PR は main との分岐点、
           # main への push は push の前の先頭。前の先頭を起点にできず、決められないときは全部走らせる
