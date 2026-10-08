@@ -1,5 +1,6 @@
 export * from './alerts'
 export * from './auth'
+export * from './authDirectories'
 export * from './base'
 export * from './chat'
 export * from './dashboard'

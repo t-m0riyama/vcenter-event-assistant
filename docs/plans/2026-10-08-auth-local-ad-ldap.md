@@ -16,13 +16,13 @@
 | 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
 | 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ済み [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。Issue #258 は閉じた。Issue #254 は画面が残るので PR7 で閉じる） |
 | 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ済み [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし） |
-| 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択のテスト | 作業中 |
+| 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | 作業中 |
 | 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. PR 7a: ディレクトリ管理画面の基本と、接続の方針を返す API（下の「フロントエンド」）。ログイン画面の realm 選択は PR4 で実装済みなので、テストを足す
+1. PR 7a: ディレクトリ管理画面の基本と、接続の方針を返す API（下の「フロントエンド」）。ログイン画面の realm 選択は PR4 で実装とテスト（`AuthGate.test.tsx`）が済んでいる
 2. PR 7b: 保存前の確認の画面（PR 6.5 の 409 と `X-VEA-Error-Code` を使う）。量が多いので 7a と分けた（利用者の判断）
 3. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
 
@@ -212,7 +212,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - LDAP のときだけ「ID 属性」の入力欄（空なら entryUUID。例: 389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。ユーザーがいるディレクトリでは編集できないようにし、理由と「変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）」ことを出す（API も 422 で断る）
   - 設定のサブタブ「認証ディレクトリ」（admin のみ）。`DirectoriesPanel.tsx`、`DirectoryForm.tsx`、`GroupRoleMappingsEditor.tsx`、`DirectoryTestResult.tsx`
   - `DirectoryForm` に「サーバ証明書を検証する」トグル（既定オン）。オフにするときは確認ダイアログを出し、オフの間はフォームと一覧に警告バッジ（「証明書を検証しません（中間者攻撃に弱い状態です）」）を出す。全体で禁止されているときは操作できないようにし、理由を表示する
-  - ログイン画面の realm の選択肢（有効な realm が 2 件以上のときだけ表示。PR4 で実装済み、7a でテストを足す）。`/api/auth/realms` は、方針で接続を拒否されるディレクトリを返さない
+  - ログイン画面の realm の選択肢（有効な realm が 2 件以上のときだけ表示。PR4 で実装とテスト済み）。`/api/auth/realms` は、方針で接続を拒否されるディレクトリを返さない
   - API の 409（最後の admin の経路を失う変更）と 422（入力の検証、同じ名前、解析できない DN など）を画面に表示する
   - 接続試験の結果は段階（connect / user_search / unique_id / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
   - user_search の結果には ID 属性の値が出る。取れなければ unique_id の段階が失敗し、「このユーザーはログインできない」と警告する

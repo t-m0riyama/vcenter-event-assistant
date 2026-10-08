@@ -74,11 +74,13 @@ CLI でも次の操作ができる（管理画面に入れなくなったとき�
 
 ## AD / LDAP（ディレクトリ）でのログイン
 
-Active Directory や汎用の LDAP サーバのアカウントでもログインできる。接続設定は DB に保存し、admin が `/api/auth/directories` で登録する（管理画面は今後追加予定）。有効なディレクトリはログイン画面の認証先に並ぶ。
+Active Directory や汎用の LDAP サーバのアカウントでもログインできる。接続設定は DB に保存し、admin が「設定」→「認証ディレクトリ」（API は `/api/auth/directories`）で登録する。有効なディレクトリはログイン画面の認証先に並ぶ（認証先が 1 つだけなら選択欄は出ない）。
+
+画面では、追加・編集のたびに保存せずに編集中の値で接続試験ができる（試すユーザーのパスワードまで入れると、本人としての認証とロールの判定まで確かめる）。全体の方針で禁止されている接続（証明書を検証しない設定、本番での暗号化しない接続）は選べない。証明書を検証しない設定のディレクトリには、一覧とフォームに警告が出る。
 
 - **ロールはグループで決める**: ディレクトリごとに「グループ DN → ロール」の対応表を登録する。ログインのたびに所属グループを調べ直し、一致したうちで最も強いロールを使う。どのグループにも一致しなければログインできない
 - **グループの判定方式**: AD は `ad_nested`（入れ子のグループもたどる）か `member_of`。LDAP は `member_of`（ユーザーの memberOf 属性）か `group_search`（groupOfNames の member、groupOfUniqueNames の uniqueMember、posixGroup の memberUid など、グループ側を検索する）
-- **ユーザーの識別**: AD は objectGUID、LDAP は entryUUID（なければ DN）で識別する。AD では sAMAccountName でも UPN（`user@example.com`）でも、`DOMAIN\user` でもログインでき、どれも同じユーザーになる。UPN と `DOMAIN\user` はドメインまで照合し、別ドメインの同名アカウントは選ばない
+- **ユーザーの識別**: AD は objectGUID、LDAP は ID 属性（既定は entryUUID。389 DS は nsUniqueId、FreeIPA は ipaUniqueID などを指定する）で識別する。ID が取れないユーザーはログインできない。ID 属性は、そのディレクトリのユーザーがいる間は変えられない。AD では sAMAccountName でも UPN（`user@example.com`）でも、`DOMAIN\user` でもログインでき、どれも同じユーザーになる。UPN と `DOMAIN\user` はドメインまで照合し、別ドメインの同名アカウントは選ばない
 - **接続の暗号化**: LDAPS か StartTLS を使い、サーバ証明書とホスト名を既定で検証する。社内 CA の証明書は PEM 形式で登録できる。証明書の検証を無効にもできるが、保存時に監査ログへ警告を残す。`VEA_DIRECTORY_ALLOW_INSECURE_TLS=false` にすると全体で禁止できる。本番（`APP_ENV=production`）では暗号化しない接続（`none`）を使えない
 - **サービスアカウント**: ユーザーの検索に使う。パスワードは暗号化して保存し、API の応答には返さない
 - **接続試験**: `POST /api/auth/directories/{id}/test` で、接続・ユーザー検索・本人としての bind・グループ判定を段階ごとに確かめられる。本文に `changes`（設定の変更）や `mappings`（対応表）を渡すと、保存せずに編集中の値を重ねて試せる。まだ登録していない設定は `POST /api/auth/directories/test` で試せる。どちらも DB には書かず、ログイン中の利用者にも影響しない

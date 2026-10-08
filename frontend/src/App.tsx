@@ -11,6 +11,7 @@ import { ChatWebSearchPrefsPanel } from './panels/settings/ChatWebSearchPrefsPan
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
+import { DirectoriesPanel } from './panels/settings/DirectoriesPanel'
 import { UsersPanel } from './panels/settings/UsersPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
 import { AlertRulesPanel } from './panels/settings/AlertRulesPanel'
@@ -56,6 +57,9 @@ type SettingsSubTabConfig = {
   readonly adminOnlyEdit?: boolean
 }
 
+/** 認証の管理（admin のみ、認証が有効なときだけ出す）の設定サブタブ。 */
+const AUTH_ADMIN_SUB_TABS: ReadonlySet<SettingsSubTabId> = new Set(['users', 'directories'])
+
 function initialMountedMainTabs(): Set<MainTabId> {
   return new Set([parseAppHash(window.location.hash).tab])
 }
@@ -81,7 +85,7 @@ export default function App() {
   const { me, hasRole } = useAuth()
   const canChat = hasRole('operator')
   const isAdmin = hasRole('admin')
-  // ユーザー管理は admin のみ。認証が無効なサーバではログインがないので出さない
+  // ユーザー管理と認証ディレクトリは admin のみ。認証が無効なサーバではログインがないので出さない
   const canManageUsers = isAdmin && me.auth_enabled
   const attention = useAttentionStatus()
 
@@ -99,7 +103,7 @@ export default function App() {
   }, [canChat, setTab, tab])
 
   useEffect(() => {
-    if (tab === 'settings' && settingsSubTab === 'users' && !canManageUsers) {
+    if (tab === 'settings' && AUTH_ADMIN_SUB_TABS.has(settingsSubTab) && !canManageUsers) {
       setSettingsSubTab('general')
     }
   }, [canManageUsers, setSettingsSubTab, settingsSubTab, tab])
@@ -269,6 +273,12 @@ export default function App() {
         render: (onError, active) => <UsersPanel onError={onError} active={active} />,
       },
       {
+        id: 'directories',
+        label: '認証ディレクトリ',
+        panelLabel: '認証ディレクトリ',
+        render: (onError, active) => <DirectoriesPanel onError={onError} active={active} />,
+      },
+      {
         id: 'chat_samples',
         label: 'チャット',
         panelLabel: 'チャット設定',
@@ -283,7 +293,9 @@ export default function App() {
     [],
   )
 
-  const visibleSettingsSubTabs = settingsSubTabs.filter((sub) => sub.id !== 'users' || canManageUsers)
+  const visibleSettingsSubTabs = settingsSubTabs.filter(
+    (sub) => !AUTH_ADMIN_SUB_TABS.has(sub.id) || canManageUsers,
+  )
 
   const helpEntry = resolveTabHelp(tab, settingsSubTab)
 
