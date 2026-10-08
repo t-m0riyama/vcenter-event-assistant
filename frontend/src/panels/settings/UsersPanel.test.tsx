@@ -350,4 +350,36 @@ describe('UsersPanel', () => {
     expect(screen.queryByText('alice')).not.toBeInTheDocument()
     expect(calls.some((c) => c.method === 'DELETE')).toBe(true)
   })
+
+  it('操作の実行中は再読み込みなどを止め、操作のエラーを後の読み込みで消さない', async () => {
+    let resolveDelete: (r: Response) => void = () => {}
+    const calls = stubApi()
+    const originalFetch = globalThis.fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'DELETE') {
+          void originalFetch(input, init)
+          return new Promise<Response>((resolve) => {
+            resolveDelete = resolve
+          })
+        }
+        return originalFetch(input, init)
+      }),
+    )
+    const onError = vi.fn()
+    const view = render(panel(onError))
+    await screen.findByText('alice')
+    fireEvent.click(within(row('alice')).getByRole('button', { name: '削除' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '再読み込み' })).toBeDisabled())
+    // タブを開き直しても、実行中は読み直さない
+    const gets = () => calls.filter((c) => c.method === 'GET').length
+    view.rerender(panel(onError, false))
+    view.rerender(panel(onError, true))
+    expect(gets()).toBe(1)
+    resolveDelete(json({ detail: '最後の有効な admin は削除できません。' }, 409))
+    await waitFor(() => expect(onError).toHaveBeenLastCalledWith('最後の有効な admin は削除できません。'))
+    expect(screen.getByRole('button', { name: '再読み込み' })).toBeEnabled()
+    expect(gets()).toBe(1)
+  })
 })

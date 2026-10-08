@@ -77,6 +77,10 @@ export function UsersPanel({
   // 一覧の読み込みと操作の通し番号。後から届いた古い読み込みの結果で、操作後の一覧や
   // 新しいエラー表示を上書きしないため、最新のものだけを反映する
   const sequenceRef = useRef(0)
+  // 操作の実行中か。実行中は画面の操作を止め、自動の読み直しもしない（操作のエラー表示を、
+  // その後に始まった読み込みの成功で消さないため。操作が同時に重なることも防ぐ）
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
 
   const load = useCallback(async () => {
     const sequence = ++sequenceRef.current
@@ -93,8 +97,7 @@ export function UsersPanel({
   }, [onError])
 
   useEffect(() => {
-    if (!active) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch whenever the tab is shown
+    if (!active || busyRef.current) return
     void load()
   }, [active, load])
 
@@ -102,6 +105,8 @@ export function UsersPanel({
   const run = async (action: () => Promise<unknown>, done: string): Promise<boolean> => {
     // 実行中の読み込みの結果は捨てる（操作前の一覧で上書きしたり、操作のエラーを消したりしないため）
     sequenceRef.current += 1
+    busyRef.current = true
+    setBusy(true)
     onError(null)
     setNotice(null)
     try {
@@ -112,6 +117,9 @@ export function UsersPanel({
     } catch (e) {
       onError(toErrorMessage(e))
       return false
+    } finally {
+      busyRef.current = false
+      setBusy(false)
     }
   }
 
@@ -209,6 +217,7 @@ export function UsersPanel({
 
   return (
     <div className="panel users-panel">
+      <fieldset className="users-panel__fieldset" disabled={busy} aria-busy={busy}>
       <p className="hint">
         ログインできるユーザーを管理します。ロールの変更・無効化・パスワード再設定をすると、そのユーザーのログインは解除されます。最後の有効な管理者は降格・無効化・削除できません。
       </p>
@@ -457,6 +466,7 @@ export function UsersPanel({
           })}
         </tbody>
       </table>
+      </fieldset>
     </div>
   )
 }

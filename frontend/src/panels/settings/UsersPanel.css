@@ -1,3 +1,11 @@
+/** 操作の実行中にまとめて無効にするための枠（見た目は持たない） */
+.users-panel__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .users-panel__form {
   max-width: 720px;
 }
