@@ -95,20 +95,19 @@ def clean_username(username: str) -> str:
 def ad_user_filter(username: str, upn_suffix: str | None) -> str:
     """AD のユーザー検索フィルタ。sAMAccountName と UPN のどちらでも見つかるようにする。
 
-    ``DOMAIN\\user`` 形式はドメイン部分を除く。``@`` を含まない名前は ``upn_suffix`` を付けた UPN でも探す。
+    ``DOMAIN\\user`` 形式はドメイン部分を除く。``@`` を含む名前は UPN だけで探し、含まない名前は
+    sAMAccountName と、``upn_suffix`` を付けた UPN で探す。
     無効化されたアカウントは除く。
     """
     name = username.rsplit("\\", 1)[-1]
     if "@" in name:
-        sam = name.split("@", 1)[0]
-        upn = name
+        # UPN で入力されたら UPN だけで探す（同名の別ドメインの sAMAccountName に広げない）
+        match = f"(userPrincipalName={escape_filter_chars(name)})"
     else:
-        sam = name
-        upn = f"{name}@{upn_suffix}" if upn_suffix else None
-    clauses = [f"(sAMAccountName={escape_filter_chars(sam)})"]
-    if upn:
-        clauses.append(f"(userPrincipalName={escape_filter_chars(upn)})")
-    match = clauses[0] if len(clauses) == 1 else f"(|{''.join(clauses)})"
+        clauses = [f"(sAMAccountName={escape_filter_chars(name)})"]
+        if upn_suffix:
+            clauses.append(f"(userPrincipalName={escape_filter_chars(f'{name}@{upn_suffix}')})")
+        match = clauses[0] if len(clauses) == 1 else f"(|{''.join(clauses)})"
     return f"(&(objectCategory=person)(objectClass=user){AD_ENABLED_ACCOUNT_FILTER}{match})"
 
 
@@ -173,7 +172,8 @@ def _subject(spec: DirectorySpec, entry: _Entry) -> str:
     return f"dn:{normalize_dn(entry.dn)}"
 
 
-def _username(spec: DirectorySpec, entry: _Entry, typed: str) -> str:
+def resolved_username(spec: DirectorySpec, entry: _Entry, typed: str) -> str:
+    """ディレクトリ上のユーザー名（AD は sAMAccountName、LDAP は username_attribute）。"""
     if spec.kind == "ad":
         return entry.first("sAMAccountName") or typed
     return entry.first(spec.username_attribute or "uid") or typed
@@ -244,7 +244,7 @@ def authenticate(
     try:
         entry = find_user(conn, spec, name)
         verify_user_password(spec, entry.dn, password, options)
-        groups = member_groups(conn, spec, entry, _username(spec, entry, name))
+        groups = member_groups(conn, spec, entry, resolved_username(spec, entry, name))
     finally:
         conn.unbind()
     role = resolve_role(groups, spec.mappings)
@@ -253,7 +253,7 @@ def authenticate(
         raise DirectoryNoRole("どのグループの対応にも当てはまりません。")
     return DirectoryIdentity(
         subject=_subject(spec, entry),
-        username=_username(spec, entry, name),
+        username=resolved_username(spec, entry, name),
         display_name=entry.first(spec.display_name_attribute or "displayName"),
         email=entry.first(spec.email_attribute or "mail"),
         dn=entry.dn,

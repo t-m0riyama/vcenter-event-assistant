@@ -23,7 +23,8 @@ def normalize_dn(dn: str) -> str:
         parts = parse_dn(value, escape=False, strip=True)
     except (LDAPInvalidDnError, IndexError, ValueError):
         return value.casefold()
-    return ",".join(f"{attr.strip().casefold()}={val.strip().casefold()}" for attr, val, _sep in parts)
+    # 区切り（RDN の間の ``,`` と、複数値 RDN の中の ``+``）は保つ。``cn=a+uid=b`` と ``cn=a,uid=b`` は別の DN
+    return "".join(f"{attr.strip().casefold()}={val.strip().casefold()}{sep}" for attr, val, sep in parts)
 
 
 def resolve_role(group_dns: Iterable[str], mappings: Iterable[tuple[str, Role]]) -> Role | None:

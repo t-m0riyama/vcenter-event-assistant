@@ -61,7 +61,8 @@ def run_test(
                 return results
             results.append(StageResult("user_bind", True, "このユーザーとして bind できました。"))
         try:
-            groups = backend.member_groups(conn, spec, entry, name)
+            # 本番のログインと同じく、ディレクトリ上のユーザー名で調べる（別名で検索した場合も）
+            groups = backend.member_groups(conn, spec, entry, backend.resolved_username(spec, entry, name))
         except DirectoryError as exc:
             results.append(StageResult("groups", False, str(exc)))
             return results

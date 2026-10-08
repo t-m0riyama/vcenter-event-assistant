@@ -136,8 +136,9 @@ def test_filters_escape_user_input() -> None:
 def test_ad_filter_accepts_sam_upn_and_domain_prefix() -> None:
     f = backend.ad_user_filter("CORP\\alice", "example.com")
     assert "(sAMAccountName=alice)" in f and "(userPrincipalName=alice@example.com)" in f
-    f = backend.ad_user_filter("alice@corp.example.com", None)
-    assert "(sAMAccountName=alice)" in f and "(userPrincipalName=alice@corp.example.com)" in f
+    # UPN で入力されたら UPN だけで探す（別ドメインの同名の sAMAccountName に広げない）
+    f = backend.ad_user_filter("alice@corp.example.com", "example.com")
+    assert "(userPrincipalName=alice@corp.example.com)" in f and "sAMAccountName" not in f
     # 無効化されたアカウントは除外する
     assert backend.AD_ENABLED_ACCOUNT_FILTER in f
 
@@ -151,6 +152,9 @@ def test_ldap_filter_template_requires_placeholder() -> None:
 
 def test_normalize_dn_and_strongest_role() -> None:
     assert normalize_dn(" CN=Admins , OU=Groups,DC=Example,DC=com ") == normalize_dn(ADMINS)
+    # 複数値 RDN（+）と RDN の区切り（,）は別の DN
+    assert normalize_dn("cn=ops+uid=x,dc=example") != normalize_dn("cn=ops,uid=x,dc=example")
+    assert normalize_dn("CN=Ops+UID=X,DC=Example") == "cn=ops+uid=x,dc=example"
     mappings = [(normalize_dn(OPS), Role.OPERATOR), (normalize_dn(ADMINS), Role.ADMIN)]
     assert resolve_role({normalize_dn(ADMINS), normalize_dn(OPS)}, mappings) == Role.ADMIN
     assert resolve_role({normalize_dn(OPS)}, mappings) == Role.OPERATOR
@@ -517,3 +521,36 @@ def test_connect_tries_the_next_server(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(DirectoryUnavailable, match="ldaps://b"):
         connection.connect(spec, user=SVC_DN, password="x", options=OPTIONS)
     assert attempted == ["ldaps://a", "ldaps://b"]
+
+
+def test_long_subjects_are_hashed_not_truncated() -> None:
+    from vcenter_event_assistant.auth.service import _subject_key
+
+    prefix = "dn:" + "ou=x," * 120
+    a, b = prefix + "cn=alice", prefix + "cn=bob"
+    assert len(a) > 512
+    assert _subject_key(a) != _subject_key(b)
+    assert len(_subject_key(a)) <= 512 and _subject_key(a).startswith("sha256:")
+    assert _subject_key("uuid:short") == "uuid:short"
+
+
+def test_connection_test_uses_the_resolved_username(directory: FakeDirectory) -> None:
+    """メールアドレスで検索しても、グループ（memberUid）は uid で調べる（本番のログインと同じ）。"""
+    from vcenter_event_assistant.auth.directory.testing import run_test
+
+    directory.entries[BOB_DN]["mail"] = "bob@example.com"
+    posix = f"cn=posix-ops,ou=groups,{BASE}"
+    spec = _spec(
+        user_search_filter="(mail={username})",
+        group_mode="group_search",
+        group_search_base=f"ou=groups,{BASE}",
+        group_search_filter="(objectClass=posixGroup)",
+        group_member_attribute="memberUid",
+        group_member_value="username",
+        mappings=((normalize_dn(posix), Role.VIEWER),),
+        mapping_labels=((posix, Role.VIEWER),),
+    )
+    stages = run_test(spec, OPTIONS, username="bob@example.com")
+    assert stages[-1].stage == "groups" and stages[-1].ok, stages
+    assert backend.authenticate(spec, "bob@example.com", "bob-secret", OPTIONS).role == Role.VIEWER
+

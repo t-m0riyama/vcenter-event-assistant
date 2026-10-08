@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -99,6 +100,16 @@ async def _load_directory(db: AsyncSession, realm: str) -> DirectoryConfig | Non
     )
 
 
+def _subject_key(subject: str) -> str:
+    """``users.subject`` に入れる値。長すぎる識別子（長い DN など）は切り詰めずにハッシュにする。
+
+    切り詰めると、先頭が同じ別の DN が同じユーザー行になってしまうため。
+    """
+    if len(subject) <= SUBJECT_MAX_LENGTH:
+        return subject
+    return f"sha256:{hashlib.sha256(subject.encode('utf-8')).hexdigest()}"
+
+
 def _clip(value: str | None, limit: int) -> str | None:
     if value is None:
         return None
@@ -114,7 +125,7 @@ async def _upsert_directory_user(
     無効化されたユーザーなら ``None``。
     """
     realm_key = f"{DIRECTORY_REALM_PREFIX}{config.id}"
-    subject = identity.subject[:SUBJECT_MAX_LENGTH]
+    subject = _subject_key(identity.subject)
     values = {
         "username": identity.username[:USERNAME_MAX_LENGTH],
         "display_name": _clip(identity.display_name, DISPLAY_NAME_MAX_LENGTH),
