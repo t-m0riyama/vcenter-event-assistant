@@ -1,0 +1,262 @@
+"""ディレクトリでの認証（同期。別スレッドで呼ぶ）。
+
+1. サービスアカウント（未設定なら匿名）で bind し、ユーザーを検索する。ちょうど 1 件のときだけ続ける
+2. 見つかったユーザーの DN と入力されたパスワードで、本人として bind する
+3. 所属グループを調べ、グループとロールの対応表から最も強いロールを決める（どれにも一致しなければ拒否）
+
+フィルタに入れる値（ユーザー名・DN）はすべて ``escape_filter_chars`` でエスケープする。
+"""
+
+from __future__ import annotations
+
+import unicodedata
+import uuid
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Any
+
+from ldap3 import BASE, SUBTREE, Connection
+from ldap3.core.exceptions import LDAPException
+from ldap3.utils.conv import escape_filter_chars
+
+from vcenter_event_assistant.auth.directory import connection
+from vcenter_event_assistant.auth.directory.connection import BindRejected, ConnectOptions
+from vcenter_event_assistant.auth.directory.errors import (
+    DirectoryAuthFailed,
+    DirectoryConfigError,
+    DirectoryNoRole,
+    DirectoryUnavailable,
+)
+from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
+from vcenter_event_assistant.auth.directory.spec import DirectorySpec
+from vcenter_event_assistant.auth.roles import Role
+
+# AD の LDAP_MATCHING_RULE_IN_CHAIN（入れ子のグループもたどって所属を判定する）
+AD_IN_CHAIN_RULE = "1.2.840.113556.1.4.1941"
+# AD の userAccountControl の ACCOUNTDISABLE ビットを除外する（LDAP_MATCHING_RULE_BIT_AND）
+AD_ENABLED_ACCOUNT_FILTER = "(!(userAccountControl:1.2.840.113556.1.4.803:=2))"
+USERNAME_MAX_LENGTH = 256
+
+
+@dataclass(frozen=True)
+class DirectoryIdentity:
+    """ディレクトリで認証できたユーザー。"""
+
+    subject: str
+    username: str
+    display_name: str | None
+    email: str | None
+    dn: str
+    role: Role
+    # 対応表と一致した（正規化済みの）グループ DN
+    matched_groups: tuple[str, ...] = ()
+
+
+@dataclass
+class _Entry:
+    dn: str
+    attributes: dict[str, list[Any]] = field(default_factory=dict)
+    raw: dict[str, list[bytes]] = field(default_factory=dict)
+
+    def first(self, name: str | None) -> str | None:
+        if not name:
+            return None
+        for key, values in self.attributes.items():
+            if key.casefold() == name.casefold():
+                items = values if isinstance(values, list) else [values]
+                for v in items:
+                    text = v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+                    if text.strip():
+                        return text.strip()
+        return None
+
+    def all(self, name: str) -> list[str]:
+        for key, values in self.attributes.items():
+            if key.casefold() == name.casefold():
+                items = values if isinstance(values, list) else [values]
+                return [v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) for v in items]
+        return []
+
+    def raw_first(self, name: str) -> bytes | None:
+        for key, values in self.raw.items():
+            if key.casefold() == name.casefold() and values:
+                return values[0]
+        return None
+
+
+def clean_username(username: str) -> str:
+    """入力されたユーザー名の正規化。空・長すぎる・制御文字を含む値は拒否する。"""
+    value = unicodedata.normalize("NFKC", username).strip()
+    if not value or len(value) > USERNAME_MAX_LENGTH or any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
+        raise DirectoryAuthFailed("ユーザー名が不正です。", reason="invalid_username")
+    return value
+
+
+def ad_user_filter(username: str, upn_suffix: str | None) -> str:
+    """AD のユーザー検索フィルタ。sAMAccountName と UPN のどちらでも見つかるようにする。
+
+    ``DOMAIN\\user`` 形式はドメイン部分を除く。``@`` を含まない名前は ``upn_suffix`` を付けた UPN でも探す。
+    無効化されたアカウントは除く。
+    """
+    name = username.rsplit("\\", 1)[-1]
+    if "@" in name:
+        sam = name.split("@", 1)[0]
+        upn = name
+    else:
+        sam = name
+        upn = f"{name}@{upn_suffix}" if upn_suffix else None
+    clauses = [f"(sAMAccountName={escape_filter_chars(sam)})"]
+    if upn:
+        clauses.append(f"(userPrincipalName={escape_filter_chars(upn)})")
+    match = clauses[0] if len(clauses) == 1 else f"(|{''.join(clauses)})"
+    return f"(&(objectCategory=person)(objectClass=user){AD_ENABLED_ACCOUNT_FILTER}{match})"
+
+
+def ldap_user_filter(spec: DirectorySpec, username: str) -> str:
+    """汎用 LDAP のユーザー検索フィルタ。テンプレートの ``{username}`` をエスケープした値に置き換える。"""
+    escaped = escape_filter_chars(username)
+    template = spec.user_search_filter or f"({spec.username_attribute or 'uid'}={{username}})"
+    if "{username}" not in template:
+        raise DirectoryConfigError("ユーザー検索フィルタに {username} がありません。")
+    return template.replace("{username}", escaped)
+
+
+def ad_in_chain_filter(group_dn: str) -> str:
+    """ユーザーがグループ（入れ子を含む）に属するかを、ユーザーのエントリに対して調べるフィルタ。"""
+    return f"(memberOf:{AD_IN_CHAIN_RULE}:={escape_filter_chars(group_dn)})"
+
+
+def _entries(conn: Connection) -> Iterator[_Entry]:
+    for item in conn.response or []:
+        if item.get("type") != "searchResEntry":
+            continue
+        yield _Entry(
+            dn=item.get("dn", ""),
+            attributes=dict(item.get("attributes") or {}),
+            raw=dict(item.get("raw_attributes") or {}),
+        )
+
+
+def _search(conn: Connection, base: str, search_filter: str, *, scope: Any = SUBTREE, attributes: list[str], size_limit: int = 0) -> list[_Entry]:
+    try:
+        conn.search(base, search_filter, search_scope=scope, attributes=attributes, size_limit=size_limit)
+    except LDAPException as exc:
+        raise DirectoryUnavailable(f"検索に失敗しました（{str(exc)[:200]}）") from None
+    result = conn.result or {}
+    # sizeLimitExceeded は 2 件目まで取れていれば「複数見つかった」として扱う
+    if result.get("result", 0) not in (0, 4, 32):  # success / sizeLimitExceeded / noSuchObject
+        raise DirectoryUnavailable(f"検索に失敗しました（{result.get('description')}）")
+    return list(_entries(conn))
+
+
+def _user_attributes(spec: DirectorySpec) -> list[str]:
+    attrs = {spec.display_name_attribute or "displayName", spec.email_attribute or "mail"}
+    if spec.kind == "ad":
+        attrs |= {"objectGUID", "sAMAccountName", "userPrincipalName"}
+    else:
+        attrs |= {"entryUUID", spec.username_attribute or "uid"}
+    if spec.group_mode == "member_of":
+        attrs.add("memberOf")
+    return sorted(attrs)
+
+
+def _subject(spec: DirectorySpec, entry: _Entry) -> str:
+    """ディレクトリ内で変わらない ID。AD は objectGUID、LDAP は entryUUID（なければ DN）。"""
+    if spec.kind == "ad":
+        raw = entry.raw_first("objectGUID")
+        if raw and len(raw) == 16:
+            return f"guid:{uuid.UUID(bytes_le=raw)}"
+    else:
+        value = entry.first("entryUUID")
+        if value:
+            return f"uuid:{value.casefold()}"
+    return f"dn:{normalize_dn(entry.dn)}"
+
+
+def _username(spec: DirectorySpec, entry: _Entry, typed: str) -> str:
+    if spec.kind == "ad":
+        return entry.first("sAMAccountName") or typed
+    return entry.first(spec.username_attribute or "uid") or typed
+
+
+def find_user(conn: Connection, spec: DirectorySpec, username: str) -> _Entry:
+    """ユーザーを 1 件だけ見つける。見つからない・複数なら ``DirectoryAuthFailed``。"""
+    search_filter = ad_user_filter(username, spec.ad_upn_suffix) if spec.kind == "ad" else ldap_user_filter(spec, username)
+    found = _search(conn, spec.user_search_base, search_filter, attributes=_user_attributes(spec), size_limit=2)
+    if not found:
+        raise DirectoryAuthFailed("ユーザーが見つかりません。", reason="unknown_user")
+    if len(found) > 1:
+        raise DirectoryAuthFailed("同じ名前のユーザーが複数見つかりました。", reason="ambiguous_user")
+    return found[0]
+
+
+def member_groups(conn: Connection, spec: DirectorySpec, entry: _Entry, username: str) -> set[str]:
+    """ユーザーが属するグループ（正規化済み DN）。AD の入れ子判定では対応表のグループだけを調べる。"""
+    if spec.group_mode == "member_of":
+        return {normalize_dn(dn) for dn in entry.all("memberOf")}
+    if spec.group_mode == "ad_nested":
+        groups: set[str] = set()
+        for label, _role in spec.mapping_labels:
+            if _search(conn, entry.dn, ad_in_chain_filter(label), scope=BASE, attributes=["1.1"]):
+                groups.add(normalize_dn(label))
+        return groups
+    if spec.group_mode == "group_search":
+        if not spec.group_search_base:
+            raise DirectoryConfigError("グループの検索ベースが設定されていません。")
+        attribute = spec.group_member_attribute or "member"
+        value = username if spec.group_member_value == "username" else entry.dn
+        member = f"({attribute}={escape_filter_chars(value)})"
+        base_filter = spec.group_search_filter or "(objectClass=*)"
+        found = _search(conn, spec.group_search_base, f"(&{base_filter}{member})", attributes=["1.1"])
+        return {normalize_dn(e.dn) for e in found}
+    raise DirectoryConfigError(f"未対応のグループ判定方式です: {spec.group_mode}")
+
+
+def service_connection(spec: DirectorySpec, options: ConnectOptions) -> Connection:
+    """ユーザー検索に使う接続（サービスアカウント、未設定なら匿名）。"""
+    if spec.bind_dn and not spec.bind_password:
+        raise DirectoryConfigError("サービスアカウントのパスワードが設定されていません。")
+    try:
+        return connection.connect(spec, user=spec.bind_dn, password=spec.bind_password, options=options)
+    except BindRejected:
+        raise DirectoryUnavailable("サービスアカウントで bind できません（DN またはパスワードを確認してください）。") from None
+
+
+def verify_user_password(spec: DirectorySpec, dn: str, password: str, options: ConnectOptions) -> None:
+    try:
+        conn = connection.connect(spec, user=dn, password=password, options=options)
+    except BindRejected:
+        raise DirectoryAuthFailed("パスワードが正しくありません。", reason="bad_password") from None
+    conn.unbind()
+
+
+def authenticate(
+    spec: DirectorySpec,
+    username: str,
+    password: str,
+    options: ConnectOptions,
+) -> DirectoryIdentity:
+    """ディレクトリで認証し、ロールを決める。失敗したら ``DirectoryError`` の派生を投げる。"""
+    if not password:
+        raise DirectoryAuthFailed("パスワードが空です。", reason="empty_password")
+    name = clean_username(username)
+    conn = service_connection(spec, options)
+    try:
+        entry = find_user(conn, spec, name)
+        verify_user_password(spec, entry.dn, password, options)
+        groups = member_groups(conn, spec, entry, _username(spec, entry, name))
+    finally:
+        conn.unbind()
+    role = resolve_role(groups, spec.mappings)
+    matched = tuple(sorted(g for g, _r in spec.mappings if g in groups))
+    if role is None:
+        raise DirectoryNoRole("どのグループの対応にも当てはまりません。")
+    return DirectoryIdentity(
+        subject=_subject(spec, entry),
+        username=_username(spec, entry, name),
+        display_name=entry.first(spec.display_name_attribute or "displayName"),
+        email=entry.first(spec.email_attribute or "mail"),
+        dn=entry.dn,
+        role=role,
+        matched_groups=matched,
+    )

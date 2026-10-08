@@ -229,3 +229,59 @@ async def test_concurrent_bootstrap_by_another_process_is_ignored(monkeypatch: p
     monkeypatch.setattr("vcenter_event_assistant.auth.bootstrap.count_users", zero)
     monkeypatch.setattr("vcenter_event_assistant.auth.users.get_local_user", not_found)
     await ensure_bootstrap_admin(settings)
+
+
+async def _add_directory(*, enabled: bool, role: str) -> None:
+    from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn
+    from vcenter_event_assistant.db.models import DirectoryConfig, DirectoryGroupRoleMapping
+
+    group = "cn=Admins,dc=example,dc=com"
+    async with session_scope() as db:
+        db.add(
+            DirectoryConfig(
+                name="corp",
+                kind="ad",
+                is_enabled=enabled,
+                server_uris=["ldaps://dc.example.com"],
+                transport_security="ldaps",
+                user_search_base="dc=example,dc=com",
+                group_mode="ad_nested",
+                mappings=[
+                    DirectoryGroupRoleMapping(group_dn=group, group_dn_normalized=normalize_dn(group), role=role)
+                ],
+            )
+        )
+
+
+@pytest.mark.parametrize("local_login", ["true", "false"])
+async def test_directory_admin_mapping_counts_as_a_way_to_administer(
+    monkeypatch: pytest.MonkeyPatch, local_login: str
+) -> None:
+    """ディレクトリ専用の運用では admin の行は初回ログインまでないので、admin の対応があれば起動を止めない。"""
+    await _add_directory(enabled=True, role="admin")
+    prod = _settings(
+        monkeypatch,
+        APP_ENV="production",
+        VEA_SECRET_KEY="prod-secret-key",
+        VCENTER_ALLOWED_HOST_SUFFIXES="example.com",
+        VEA_LOCAL_LOGIN_ENABLED=local_login,
+    )
+    await ensure_bootstrap_admin(prod)
+    async with session_scope() as db:
+        assert await count_users(db) == 0
+
+
+@pytest.mark.parametrize(("enabled", "role"), [(False, "admin"), (True, "operator")])
+async def test_directory_without_admin_does_not_count(
+    monkeypatch: pytest.MonkeyPatch, enabled: bool, role: str
+) -> None:
+    await _add_directory(enabled=enabled, role=role)
+    prod = _settings(
+        monkeypatch,
+        APP_ENV="production",
+        VEA_SECRET_KEY="prod-secret-key",
+        VCENTER_ALLOWED_HOST_SUFFIXES="example.com",
+        VEA_LOCAL_LOGIN_ENABLED="false",
+    )
+    with pytest.raises(BootstrapError, match="ログインできる認証先"):
+        await ensure_bootstrap_admin(prod)

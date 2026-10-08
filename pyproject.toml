@@ -32,6 +32,7 @@ dependencies = [
     "vea-remote-log-collector>=0.2,<1",
     "jsonschema>=4.23,<5",
     "argon2-cffi>=23.1.0",
+    "ldap3>=2.9.1",
 ]
 
 [tool.uv.sources]
