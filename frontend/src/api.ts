@@ -16,8 +16,9 @@ type PrincipalListener = (principalId: string) => void
 const principalListeners = new Set<PrincipalListener>()
 
 /**
- * 認証済みの応答が示す利用者（``X-VEA-Principal``）を受け取る関数を登録する。別のタブで別のアカウントに
- * ログインし直すと、401 にならずにその利用者として成功し続けるため、認証ゲートが表示中の利用者と照合する。
+ * 認証済みの応答が示す利用者とセッション（``X-VEA-Principal``）を受け取る関数を登録する。別のタブで
+ * ログインし直すと（別のアカウントでも、ロール変更後の同じアカウントでも）、401 にならずに新しいセッションで
+ * 成功し続けるため、認証ゲートが表示中の利用者と照合する。
  */
 export function onPrincipalSeen(listener: PrincipalListener): () => void {
   principalListeners.add(listener)

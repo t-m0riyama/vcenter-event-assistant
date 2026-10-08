@@ -425,6 +425,33 @@ describe('AuthGate', () => {
     expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
   })
 
+  it('同じ利用者が別のウィンドウでログインし直す（ロール変更後など）と、新しいロールに置き換える', async () => {
+    let relogged = false
+    stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json(
+          relogged
+            ? { ...ADMIN_ME, role: 'viewer', principal_id: 'id-alice:session-2' }
+            : { ...ADMIN_ME, principal_id: 'id-alice:session-1' },
+        )
+      }
+      if (url === '/api/protected') {
+        relogged = true
+        return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-alice:session-2' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    expect(await screen.findByText('管理者権限あり')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
+    expect(await screen.findByText('管理者権限なし')).toBeInTheDocument()
+    expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+  })
+
   it('照合中に届いた食い違いは、照合が一時的に失敗しても後でやり直す', async () => {
     let meCalls = 0
     let releaseFirstCheck: () => void = () => {}

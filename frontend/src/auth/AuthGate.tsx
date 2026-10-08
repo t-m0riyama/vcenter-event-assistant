@@ -184,8 +184,9 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   // 別のタブでログインし直した後に戻ってきたときも、利用者を照合する
   const isAuthenticated = state.status === 'authenticated'
 
-  // 応答が示す利用者（X-VEA-Principal）が表示中の利用者と違えば、すぐに照合する
-  // （並べた別ウィンドウで別のアカウントにログインし直すと、タブの切り替えも 401 も起きないため）
+  // 応答が示す利用者とセッション（X-VEA-Principal）が表示中のものと違えば、すぐに照合する
+  // （並べた別ウィンドウでログインし直すと、タブの切り替えも 401 も起きないため。同じアカウントでも
+  // ロール変更後の再ログインならセッションが替わるので、ここで新しいロールに置き換わる）
   const reconcilingRef = useRef(false)
   const latestPrincipalRef = useRef<string | null>(null)
   const pendingMismatchRef = useRef(false)

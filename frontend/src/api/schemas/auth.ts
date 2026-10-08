@@ -15,7 +15,7 @@ export const meSchema = z.object({
   can_change_password: z.boolean(),
   /** サーバがセッションの最終利用時刻を更新する間隔（秒）。認証が無効なら null。旧サーバ互換で optional */
   session_activity_interval_seconds: z.number().int().positive().nullable().optional(),
-  /** 利用者の ID。API 応答の X-VEA-Principal と照合する。認証が無効なら null。旧サーバ互換で optional */
+  /** 利用者とセッションを表す値。API 応答の X-VEA-Principal と照合する。認証が無効なら null。旧サーバ互換で optional */
   principal_id: z.string().nullable().optional(),
 })
 

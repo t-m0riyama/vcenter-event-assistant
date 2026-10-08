@@ -577,6 +577,11 @@ async def test_responses_carry_the_principal_id() -> None:
         bob_id = (await _login(ac, "bob")).json()["principal_id"]
         assert bob_id != alice_id
         assert (await ac.get("/api/config")).headers["x-vea-principal"] == bob_id
+        # 同じアカウントでログインし直しても（ロール変更でセッションが失効した後など）値は変わる
+        bob_again = (await _login(ac, "bob")).json()["principal_id"]
+        assert bob_again != bob_id
+        assert (await ac.get("/api/config")).headers["x-vea-principal"] == bob_again
+        assert (await ac.get("/api/auth/me")).json()["principal_id"] == bob_again
         # 未ログインの応答には付かない
         await ac.post("/api/auth/logout", headers=XHR)
         resp = await ac.get("/api/config")

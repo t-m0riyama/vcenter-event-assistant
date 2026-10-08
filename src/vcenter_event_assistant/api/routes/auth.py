@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import (
@@ -30,14 +31,16 @@ from vcenter_event_assistant.auth.service import (
     list_realms,
     session_policy,
 )
+from vcenter_event_assistant.auth.principal_header import principal_marker
 from vcenter_event_assistant.auth.sessions import create_session, revoke_session
+from vcenter_event_assistant.auth.tokens import hash_token
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
     PasswordChangedConcurrentlyError,
     UserError,
     set_local_password,
 )
-from vcenter_event_assistant.db.models import User
+from vcenter_event_assistant.db.models import AuthSession, User
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -62,7 +65,11 @@ def _me(principal: Principal, *, settings: Settings) -> MeResponse:
         realm=principal.realm,
         can_change_password=principal.realm == LOCAL_REALM,
         session_activity_interval_seconds=_activity_interval_seconds(settings),
-        principal_id=str(principal.user_id) if principal.user_id else None,
+        principal_id=(
+            principal_marker(principal.user_id, principal.session_id)
+            if principal.user_id and principal.session_id
+            else None
+        ),
     )
 
 
@@ -121,6 +128,9 @@ async def login(
         user_agent=request.headers.get("user-agent"),
     )
     user = outcome.user
+    session_id = (
+        await db.execute(select(AuthSession.id).where(AuthSession.token_hash == hash_token(token)))
+    ).scalar_one()
     payload = MeResponse(
         auth_enabled=True,
         username=user.username,
@@ -129,7 +139,7 @@ async def login(
         realm=user.realm_key,
         can_change_password=user.realm_key == LOCAL_REALM,
         session_activity_interval_seconds=_activity_interval_seconds(settings),
-        principal_id=str(user.id),
+        principal_id=principal_marker(user.id, session_id),
     )
     response = JSONResponse(content=payload.model_dump())
     response.set_cookie(
