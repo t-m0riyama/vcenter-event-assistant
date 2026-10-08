@@ -286,7 +286,7 @@ CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗
 
 あわせて関連 pytest を実行する（例: `uv run pytest tests/test_alert_eval_events.py -q`）。
 
-**CI を省く変更:** push で増えたコミットが `docs/` 配下と `*.md` だけ（計画書の更新など）なら、CI の `python`・`frontend-unit`・`e2e` は skipped になる（Issue #262）。判定は `ci.yml` の `changes` ジョブで、PR への追加の push はその push で増えたコミットだけ、PR の作成時は main との分岐点からの差分、main への push は push の前の先頭からの差分を見る（`on.paths` は PR 全体の差分で判定するので、コードを含む PR に後からドキュメントだけを push しても省けないため使わない）。force push などで範囲を決められないときはすべて走らせる。テストやビルドが読む `docs/user-guides/`、ヘルプ（`frontend/src/help/tabHelpContent.ts`）が参照するドキュメント（`tabHelpContent.test.ts` が存在と見出しを確かめる。`docs/backend.md` など）と `README.md`・`packages/*/README.md`（パッケージのメタデータ）の変更では従来どおり走る。skipped のジョブはブランチ保護の必須チェックでも成功として扱われる。
+**CI を省く変更:** push で増えたコミットが `docs/` 配下と `*.md` だけ（計画書の更新など）なら、CI の `python`・`frontend-unit`・`e2e` は skipped になる（Issue #262）。判定は `ci.yml` の `changes` ジョブで、PR への追加の push と main への push は push の前の先頭からの差分（その先頭の CI が成功しているときだけ。失敗・中断・実行中なら、PR は main との分岐点からの差分で判定する）、PR の作成時は main との分岐点からの差分を見る。改名は削除と追加として扱う（`on.paths` は PR 全体の差分で判定するので、コードを含む PR に後からドキュメントだけを push しても省けないため使わない）。force push などで範囲を決められないとき、差分を取れないときはすべて走らせる。テストやビルドが読む `docs/user-guides/`、ヘルプ（`frontend/src/help/tabHelpContent.ts`）が参照するドキュメント（`tabHelpContent.test.ts` が存在と見出しを確かめる。`docs/backend.md` など）と `README.md`・`packages/*/README.md`（パッケージのメタデータ）の変更では従来どおり走る。skipped のジョブはブランチ保護の必須チェックでも成功として扱われる。
 
 **よくある CI 失敗:** テストに `rule_id = rule.id` など**未使用の代入**を残すと Ruff **F841** になる。テストだけ直した PR でも `uv run ruff check tests/` を忘れないこと。
 
