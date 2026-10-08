@@ -509,6 +509,9 @@ class DirectoryConfig(Base):
     # LDAP のみ。``{username}`` をエスケープしたユーザー名に置き換える（未指定なら ``(<username_attribute>={username})``）
     user_search_filter: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     username_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # LDAP のみ。ユーザーの ID（``users.subject``）に使う、変わらない属性（未設定なら entryUUID）。
+    # DN は改名・移動で変わるので ID にしない。ユーザーがいる間は変えられない（全員の ID が変わるため）
+    unique_id_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # AD のみ。ドメインを付けずに入力されたユーザー名を UPN として探すときの接尾辞（例: example.com）
     ad_upn_suffix: Mapped[str | None] = mapped_column(String(256), nullable=True)
     display_name_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)

@@ -42,3 +42,13 @@ class DirectoryNoRole(DirectoryError):
     """どのグループの対応にも当てはまらない（ログインを許さない）。"""
 
     reason = "no_matching_group"
+
+
+class DirectoryMissingUniqueId(DirectoryError):
+    """ユーザーの ID（AD の objectGUID、LDAP の ID 属性）が取れない。
+
+    DN は改名・移動で変わるので ID の代わりにしない（変わると別のユーザーとして作り直され、
+    アプリ側の無効化をすり抜ける）。属性名の誤りか読み取り権限の不足なので、設定の問題として扱う。
+    """
+
+    reason = "directory_missing_unique_id"

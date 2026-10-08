@@ -20,7 +20,7 @@
 ### 次にやること
 
 1. PR6（#250）のマージ（利用者の判断）
-2. PR7 を始める前に、[#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) の方針を決める（ID 属性を設定できるようにするなら、PR7 のフォームに入力欄が要る）
+2. [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) の修正（ID 属性を設定できるようにし、取れなければログインを拒否する）をマージする
 3. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
 4. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
 
@@ -38,7 +38,7 @@
 
 | Issue | 内容 | 対応の時期 |
 |---|---|---|
-| [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける。ID 属性を設定できるようにするか、ID が取れなければログインを拒否する | PR7 の前に方針を決める（画面と PR8 のガイドに関わる） |
+| [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | PR7 の前に修正（ID 属性を設定できるようにし、取れなければ拒否する。DN は ID にしない） |
 | [#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
 | [#251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
@@ -93,11 +93,18 @@
   - `Unique(realm_key, subject)`
   - subject の中身:
     - AD は `guid:<objectGUID>`
-    - LDAP は `uuid:<entryUUID>`。なければ `dn:<正規化した DN>`（DN は変わり得るので問題がある。#253）
+    - LDAP は ID 属性（`directory_configs.unique_id_attribute`、未設定なら entryUUID）の値
+      - entryUUID は `uuid:<小文字にした値>`（#253 より前の行と同じ形）
+      - ほかの属性は、文字列なら `id:<小文字の属性名>=<値>`、バイナリ（eDirectory の GUID など）なら `id:<小文字の属性名>#<16 進>`
+    - ID が取れないユーザーはログインを拒否する（`DirectoryMissingUniqueId`、理由 `directory_missing_unique_id`。運用者向けに警告ログが出る）。DN は改名・移動で変わり、変わると別のユーザーとして作り直されてアプリ側の無効化をすり抜けるので、ID にしない（#253）
+    - #253 より前に `dn:` で作られた行は移行しない（ログインには使われなくなる）。認証機能は未リリースなので実害はない
     - ローカルは小文字化したユーザー名
     - 512 文字を超える subject は `sha256:<hex>` にする（切り詰めると別の DN と衝突するため）
 - **`auth_sessions`**（PR1）: id, token_hash(unique), user_id(FK, CASCADE), created_at, last_seen_at, expires_at, client_ip, user_agent
-- **`directory_configs`**（PR6、revision `a8b9c0d1e2f3`）
+- **`directory_configs`**（PR6、revision `a8b9c0d1e2f3`。`unique_id_attribute` は #253 で追加、revision `b9c0d1e2f3a4`）
+  - `unique_id_attribute` は LDAP のみ（AD で指定すると 422）。属性名か数字の OID
+  - そのディレクトリのユーザー行がある間は変更できない（422）。変えると全員の subject が変わり、無効化をすり抜けられるため。未設定と `entryUUID` の明示は同じとみなす
+  - ディレクトリのユーザーは個別に削除できないので、変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）。ユーザーの一括削除の操作は、無効化の情報まで消えてすり抜けの経路になるので用意しない（利用者の判断）
   - 基本: name(unique), kind(`ad`|`ldap`), is_enabled, sort_order
   - 接続: server_uris(JSON), transport_security(`ldaps`|`starttls`|`none`), tls_verify(既定 true), ca_cert_pem, bind_dn, bind_password(EncryptedString), timeout_seconds
   - ユーザー検索: user_search_base, user_search_filter, username_attribute, ad_upn_suffix, display_name_attribute, email_attribute
@@ -177,12 +184,13 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - PR4・PR5 で実装済み: `frontend/src/auth/`（AuthProvider、useAuth、AuthGate、LoginScreen、UserMenu、ChangePasswordDialog）、`panels/settings/UsersPanel.tsx`
 - ユーザー管理画面では、ディレクトリのユーザーにはパスワード再設定と削除のボタンを出さず、ロールは編集できない（対応表で決まるため）
 - PR7 で作るもの:
-  - #253 の方針によっては、ID に使う属性の入力欄と、ID が取れないときの警告
+  - LDAP のときだけ「ID 属性」の入力欄（空なら entryUUID。例: 389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。ユーザーがいるディレクトリでは編集できないようにし、理由と「変えるにはディレクトリを無効にして削除し、作り直す（ユーザーと対応表も消える）」ことを出す（API も 422 で断る）
   - 設定のサブタブ「認証ディレクトリ」（admin のみ）。`DirectoriesPanel.tsx`、`DirectoryForm.tsx`、`GroupRoleMappingsEditor.tsx`、`DirectoryTestResult.tsx`
   - `DirectoryForm` に「サーバ証明書を検証する」トグル（既定オン）。オフにするときは確認ダイアログを出し、オフの間はフォームと一覧に警告バッジ（「証明書を検証しません（中間者攻撃に弱い状態です）」）を出す。全体で禁止されているときは操作できないようにし、理由を表示する
   - ログイン画面の realm の選択肢（有効な realm が 2 件以上のときだけ表示）。`/api/auth/realms` は、方針で接続を拒否されるディレクトリを返さない
   - API の 409（最後の admin の経路を失う変更）と 422（入力の検証、同じ名前、解析できない DN など）を画面に表示する
-  - 接続試験の結果は段階（connect / user_search / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
+  - 接続試験の結果は段階（connect / user_search / unique_id / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
+  - user_search の結果には ID 属性の値が出る。取れなければ unique_id の段階が失敗し、「このユーザーはログインできない」と警告する
   - ディレクトリの削除は、無効にしてから確認ダイアログを出して行う
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
@@ -225,6 +233,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - 対応表の DN の書き方（大文字小文字・空白・OID の扱い、エスケープの表記）
 - 設定を変えるとログイン中のユーザーが失効すること（どの項目で失効するか）
 - ディレクトリのユーザーは削除ではなく無効化で止めること
+- ユーザーの ID に使う属性の選び方（OpenLDAP は entryUUID、389 DS は nsUniqueId、FreeIPA は ipaUniqueID、eDirectory は GUID）。サービスアカウントにその属性の読み取り権限が要ること。DN は ID にしないこと、ユーザーがいる間は変えられないこと（変えるにはディレクトリを作り直す。最初の設定時に接続試験で ID が取れることを確かめる）
 - 「使える admin」の数え方と、409 になる操作
 - 監査レポートへの対応記録
 

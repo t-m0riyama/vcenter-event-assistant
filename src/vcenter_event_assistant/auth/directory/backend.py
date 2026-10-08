@@ -24,11 +24,12 @@ from vcenter_event_assistant.auth.directory.connection import BindRejected, Conn
 from vcenter_event_assistant.auth.directory.errors import (
     DirectoryAuthFailed,
     DirectoryConfigError,
+    DirectoryMissingUniqueId,
     DirectoryNoRole,
     DirectoryUnavailable,
 )
 from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
-from vcenter_event_assistant.auth.directory.spec import DirectorySpec
+from vcenter_event_assistant.auth.directory.spec import DEFAULT_UNIQUE_ID_ATTRIBUTE, DirectorySpec
 from vcenter_event_assistant.auth.roles import Role
 
 # AD の LDAP_MATCHING_RULE_IN_CHAIN（入れ子のグループもたどって所属を判定する）
@@ -77,11 +78,11 @@ class _Entry:
                 return [v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) for v in items]
         return []
 
-    def raw_first(self, name: str) -> bytes | None:
+    def raw_all(self, name: str) -> list[bytes]:
         for key, values in self.raw.items():
-            if key.casefold() == name.casefold() and values:
-                return values[0]
-        return None
+            if key.casefold() == name.casefold():
+                return list(values)
+        return []
 
 
 def clean_username(username: str) -> str:
@@ -158,27 +159,53 @@ def _search(conn: Connection, base: str, search_filter: str, *, scope: Any = SUB
 
 
 def _user_attributes(spec: DirectorySpec) -> list[str]:
-    attrs = {spec.display_name_attribute or "displayName", spec.email_attribute or "mail"}
+    attrs = {spec.display_name_attribute or "displayName", spec.email_attribute or "mail", spec.id_attribute}
     if spec.kind == "ad":
-        attrs |= {"objectGUID", "sAMAccountName", "userPrincipalName"}
+        attrs |= {"sAMAccountName", "userPrincipalName"}
     else:
-        attrs |= {"entryUUID", spec.username_attribute or "uid"}
+        attrs.add(spec.username_attribute or "uid")
     if spec.group_mode == "member_of":
         attrs.add("memberOf")
     return sorted(attrs)
 
 
-def _subject(spec: DirectorySpec, entry: _Entry) -> str:
-    """ディレクトリ内で変わらない ID。AD は objectGUID、LDAP は entryUUID（なければ DN）。"""
+def unique_id(spec: DirectorySpec, entry: _Entry) -> str:
+    """ディレクトリ内で変わらない ID（``users.subject`` の元）。取れなければ ``DirectoryMissingUniqueId``。
+
+    AD は objectGUID、LDAP は ID 属性（既定は entryUUID）。DN は改名・移動で変わるので使わない。
+    値がちょうど 1 つのときだけ使う。属性の値の順序は保証されないので、複数あるとどれを選んでも
+    検索のたびに（レプリカごとに）ID が変わり得て、無効にしたユーザーが別の行として作り直される。
+    """
+    attribute = spec.id_attribute
+    values = entry.raw_all(attribute)
+    if len(values) != 1 or not values[0]:
+        reason = "複数の値があります" if len(values) > 1 else "値がありません"
+        raise DirectoryMissingUniqueId(
+            f"ID 属性 {attribute} の{reason}。このユーザーはログインできません"
+            "（値がちょうど 1 つの、変わらない属性を指定し、サービスアカウントの読み取り権限を確認してください）。"
+        )
+    raw = values[0]
     if spec.kind == "ad":
-        raw = entry.raw_first("objectGUID")
-        if raw and len(raw) == 16:
-            return f"guid:{uuid.UUID(bytes_le=raw)}"
-    else:
-        value = entry.first("entryUUID")
-        if value:
-            return f"uuid:{value.casefold()}"
-    return f"dn:{normalize_dn(entry.dn)}"
+        if len(raw) != 16:
+            raise DirectoryMissingUniqueId(f"ID 属性 {attribute} の値が GUID（16 バイト）ではありません。")
+        return f"guid:{uuid.UUID(bytes_le=raw)}"
+    if attribute.casefold() == DEFAULT_UNIQUE_ID_ATTRIBUTE.casefold():
+        # #253 より前の行と同じ形（前後の空白を除いて小文字にする）。entryUUID は UUID の構文なので加工しても衝突しない
+        value = raw.decode("utf-8", "replace").strip()
+        if not value:
+            raise DirectoryMissingUniqueId(f"ID 属性 {attribute} の値が空です。")
+        return f"uuid:{value.casefold()}"
+    # 文字列の値はそのまま、バイナリ（eDirectory の GUID など）は 16 進にする。
+    # 区切り（``=`` と ``#``）を変えて、文字列とバイナリの値が同じ subject にならないようにする。
+    # 空白の除去などの加工はしない（Octet String のように完全一致で比べる構文では、前後の空白だけが
+    # 違う値も別のエントリの ID になり得るので、加工すると別のユーザーが同じ行になる）
+    try:
+        text: str | None = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = None
+    if text is not None and text.isprintable():
+        return f"id:{attribute.casefold()}={text}"
+    return f"id:{attribute.casefold()}#{raw.hex()}"
 
 
 def resolved_username(spec: DirectorySpec, entry: _Entry, typed: str) -> str:
@@ -301,6 +328,8 @@ def authenticate(
     try:
         entry = find_user(conn, spec, name)
         verify_user_password(spec, entry.dn, password, options)
+        # ロールより先に確かめる（ID が取れないのは設定の問題なので、どのユーザーでも運用者に知らせる）
+        subject = unique_id(spec, entry)
         groups = member_groups(conn, spec, entry, resolved_username(spec, entry, name))
     finally:
         conn.unbind()
@@ -309,7 +338,7 @@ def authenticate(
     if role is None:
         raise DirectoryNoRole("どのグループの対応にも当てはまりません。")
     return DirectoryIdentity(
-        subject=_subject(spec, entry),
+        subject=subject,
         username=resolved_username(spec, entry, name),
         display_name=entry.first(spec.display_name_attribute or "displayName"),
         email=entry.first(spec.email_attribute or "mail"),

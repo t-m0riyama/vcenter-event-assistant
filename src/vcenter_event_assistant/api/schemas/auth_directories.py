@@ -59,6 +59,7 @@ class _DirectoryFields(BaseModel):
     user_search_base: str = Field(min_length=1, max_length=1024)
     user_search_filter: str | None = Field(default=None, max_length=1024)
     username_attribute: str | None = Field(default=None, max_length=128)
+    unique_id_attribute: str | None = Field(default=None, max_length=128)
     ad_upn_suffix: str | None = Field(default=None, max_length=256)
     display_name_attribute: str | None = Field(default=None, max_length=128)
     email_attribute: str | None = Field(default=None, max_length=128)
@@ -94,6 +95,7 @@ class DirectoryUpdate(BaseModel):
     user_search_base: str | None = Field(default=None, min_length=1, max_length=1024)
     user_search_filter: str | None = Field(default=None, max_length=1024)
     username_attribute: str | None = Field(default=None, max_length=128)
+    unique_id_attribute: str | None = Field(default=None, max_length=128)
     ad_upn_suffix: str | None = Field(default=None, max_length=256)
     display_name_attribute: str | None = Field(default=None, max_length=128)
     email_attribute: str | None = Field(default=None, max_length=128)
@@ -125,7 +127,7 @@ class DirectoryTestRequest(BaseModel):
 
 
 class DirectoryTestStage(BaseModel):
-    stage: Literal["connect", "user_search", "user_bind", "groups"]
+    stage: Literal["connect", "user_search", "unique_id", "user_bind", "groups"]
     ok: bool
     message: str
 

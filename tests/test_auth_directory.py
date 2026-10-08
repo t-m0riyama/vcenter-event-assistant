@@ -16,6 +16,7 @@ from vcenter_event_assistant.auth.directory.connection import BindRejected, Conn
 from vcenter_event_assistant.auth.directory.errors import (
     DirectoryAuthFailed,
     DirectoryConfigError,
+    DirectoryMissingUniqueId,
     DirectoryNoRole,
     DirectoryUnavailable,
 )
@@ -260,6 +261,9 @@ def test_user_without_mapped_group_cannot_log_in(directory: FakeDirectory) -> No
         backend.authenticate(_spec(), "bob", "bob-secret", OPTIONS)
 
 
+CAROL_GUID = uuid.UUID("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")
+
+
 def test_ad_finds_users_by_sam_or_upn(directory: FakeDirectory) -> None:
     carol = f"cn=Carol,ou=people,{BASE}"
     directory.entries[carol] = {
@@ -269,14 +273,15 @@ def test_ad_finds_users_by_sam_or_upn(directory: FakeDirectory) -> None:
         "sAMAccountName": "carol",
         "userPrincipalName": "carol@example.com",
         "msDS-PrincipalName": "CORP\\carol",
+        "objectGUID": CAROL_GUID.bytes_le,
         "memberOf": [OPS],
     }
     spec = _spec(kind="ad", ad_upn_suffix="example.com", username_attribute=None)
     by_sam = backend.authenticate(spec, "CORP\\carol", "carol-secret", OPTIONS)
     by_upn = backend.authenticate(spec, "carol@example.com", "carol-secret", OPTIONS)
     assert by_sam.username == by_upn.username == "carol"
-    # objectGUID がなければ DN で識別する（どちらの入力でも同じユーザー行になる）
-    assert by_sam.subject == by_upn.subject == f"dn:{normalize_dn(carol)}"
+    # objectGUID で識別する（どちらの入力でも同じユーザー行になる）
+    assert by_sam.subject == by_upn.subject == f"guid:{CAROL_GUID}"
     assert by_sam.role == Role.OPERATOR
 
 
@@ -654,6 +659,7 @@ def test_ad_domain_qualified_login_matches_the_domain(directory: FakeDirectory) 
             "objectCategory": "person",
             "sAMAccountName": "dave",
             "msDS-PrincipalName": f"{domain}\\dave",
+            "objectGUID": uuid.uuid4().bytes_le,
             "memberOf": [OPS],
         }
     spec = _spec(kind="ad", username_attribute=None)
@@ -1210,3 +1216,162 @@ def test_missing_search_base_is_a_directory_error() -> None:
     """検索ベースがないのは設定の誤りなので、ユーザーが見つからないのとは区別する（運用者に警告が出る）。"""
     with pytest.raises(DirectoryConfigError, match="検索の起点"):
         backend.find_user(_MissingBaseConnection(), _spec(), "alice")  # type: ignore[arg-type]
+
+
+# --- ユーザーの ID（subject）。DN は変わり得るので使わない（#253） ----------------------
+
+
+def test_ldap_user_without_unique_id_is_refused(directory: FakeDirectory) -> None:
+    """entryUUID が取れないユーザーは、DN を ID の代わりにせずログインを拒否する。"""
+    del directory.entries[ALICE_DN]["entryUUID"]
+    with pytest.raises(DirectoryMissingUniqueId) as info:
+        backend.authenticate(_spec(), "alice", "alice-secret", OPTIONS)
+    # 接続・設定の問題として運用者に警告が出る理由にする
+    assert info.value.reason.startswith("directory_")
+
+
+def test_ad_user_without_object_guid_is_refused(directory: FakeDirectory) -> None:
+    directory.entries[f"cn=Erin,ou=people,{BASE}"] = {
+        "userPassword": "erin-secret",
+        "objectClass": ["user"],
+        "objectCategory": "person",
+        "sAMAccountName": "erin",
+        "memberOf": [OPS],
+    }
+    with pytest.raises(DirectoryMissingUniqueId):
+        backend.authenticate(_spec(kind="ad", username_attribute=None), "erin", "erin-secret", OPTIONS)
+
+
+def test_entry_uuid_subject_is_unchanged(directory: FakeDirectory) -> None:
+    """既定（entryUUID）の subject は今までの形のまま（既存のユーザー行と一致させる）。"""
+    identity = backend.authenticate(_spec(), "alice", "alice-secret", OPTIONS)
+    assert identity.subject == "uuid:6f1c-alice"
+    explicit = backend.authenticate(_spec(unique_id_attribute="entryuuid"), "alice", "alice-secret", OPTIONS)
+    assert explicit.subject == identity.subject
+
+
+def test_configured_unique_id_attribute(directory: FakeDirectory) -> None:
+    """ID の属性を指定できる。文字列はそのまま、バイナリ（eDirectory の GUID など）は 16 進で使う。"""
+    directory.entries[ALICE_DN]["nsUniqueId"] = "8a1b2c3d-11e1aa01-80f0c1d2-a1b2c3d4"
+    directory.entries[ALICE_DN]["GUID"] = bytes([0xFF, 0x00, 0x10, 0xAB])
+    by_text = backend.authenticate(_spec(unique_id_attribute="nsUniqueId"), "alice", "alice-secret", OPTIONS)
+    assert by_text.subject == "id:nsuniqueid=8a1b2c3d-11e1aa01-80f0c1d2-a1b2c3d4"
+    by_binary = backend.authenticate(_spec(unique_id_attribute="GUID"), "alice", "alice-secret", OPTIONS)
+    assert by_binary.subject == "id:guid#ff0010ab"
+    # 指定した属性がなければ、entryUUID があっても拒否する
+    with pytest.raises(DirectoryMissingUniqueId):
+        backend.authenticate(_spec(unique_id_attribute="ipaUniqueID"), "alice", "alice-secret", OPTIONS)
+
+
+async def test_renamed_user_stays_disabled(client, directory: FakeDirectory) -> None:
+    """アプリで無効にしたユーザーは、ディレクトリで DN が変わっても（改名・移動）ログインできない。"""
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    assert (await _dir_login(realm, "alice", "alice-secret"))[0].status_code == 200
+    async with session_scope() as db:
+        user = await db.scalar(select(User).where(User.realm_key == realm))
+        assert user is not None
+        user.is_active = False
+
+    directory.entries[f"uid=alice,ou=staff,{BASE}"] = directory.entries.pop(ALICE_DN)
+    assert (await _dir_login(realm, "alice", "alice-secret"))[0].status_code == 401
+    async with session_scope() as db:
+        assert len((await db.scalars(select(User).where(User.realm_key == realm))).all()) == 1
+
+
+async def test_connection_test_reports_a_missing_unique_id(client, directory: FakeDirectory) -> None:
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    url = f"/api/auth/directories/{directory_id}/test"
+    found = (await client.post(url, json={"username": "alice"})).json()
+    assert "6f1c-alice" in found["stages"][1]["message"]
+
+    del directory.entries[ALICE_DN]["entryUUID"]
+    missing = (await client.post(url, json={"username": "alice", "password": "alice-secret"})).json()
+    assert missing["ok"] is False
+    assert [s["stage"] for s in missing["stages"]] == ["connect", "user_search", "unique_id"]
+    assert "entryUUID" in missing["stages"][-1]["message"]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"kind": "ad", "group_mode": "member_of", "unique_id_attribute": "nsUniqueId"}, "objectGUID"),
+        ({"unique_id_attribute": "bad attr"}, "属性名"),
+        ({"unique_id_attribute": "1.2..3"}, "属性名"),
+    ],
+)
+async def test_unique_id_attribute_validation(client, overrides: dict[str, Any], message: str) -> None:
+    resp = await client.post("/api/auth/directories", json=_directory_body(**overrides))
+    assert resp.status_code == 422, resp.text
+    assert message in resp.json()["detail"]
+
+
+async def test_unique_id_attribute_cannot_change_once_users_exist(client, directory: FakeDirectory) -> None:
+    """ID の属性を変えると全員の subject が変わり、無効化をすり抜けられるので、ユーザーがいれば変えさせない。"""
+    created = await client.post("/api/auth/directories", json=_directory_body(unique_id_attribute="1.3.6.1.4.1.1466.115"))
+    assert created.status_code == 201, created.text
+    directory_id = created.json()["id"]
+    assert created.json()["unique_id_attribute"] == "1.3.6.1.4.1.1466.115"
+    url = f"/api/auth/directories/{directory_id}"
+    # ユーザーがいなければ変えられる。空文字は未設定（entryUUID）
+    resp = await client.patch(url, json={"unique_id_attribute": ""})
+    assert resp.status_code == 200 and resp.json()["unique_id_attribute"] is None
+
+    assert (await _dir_login(f"dir:{directory_id}", "alice", "alice-secret"))[0].status_code == 200
+    resp = await client.patch(url, json={"unique_id_attribute": "nsUniqueId"})
+    assert resp.status_code == 422
+    assert "ID" in resp.json()["detail"]
+    # 断った変更は保存しない
+    assert (await client.get("/api/auth/directories")).json()[0]["unique_id_attribute"] is None
+    # 未設定と entryUUID の明示は同じ属性なので、変更に当たらない
+    assert (await client.patch(url, json={"unique_id_attribute": "entryUUID"})).status_code == 200
+    assert (await client.patch(url, json={"unique_id_attribute": None})).status_code == 200
+
+    # 案内のとおり、無効にして削除すれば、別の ID 属性で作り直せる
+    assert "作り直" in resp.json()["detail"]
+    assert (await client.patch(url, json={"is_enabled": False})).status_code == 200
+    assert (await client.delete(url)).status_code == 204
+    directory.entries[ALICE_DN]["nsUniqueId"] = "alice-ns"
+    recreated = await client.post("/api/auth/directories", json=_directory_body(unique_id_attribute="nsUniqueId"))
+    assert recreated.status_code == 201, recreated.text
+    resp, me = await _dir_login(f"dir:{recreated.json()['id']}", "alice", "alice-secret")
+    assert resp.status_code == 200 and me is not None
+
+
+def test_custom_unique_ids_keep_exact_bytes(directory: FakeDirectory) -> None:
+    """前後の空白だけが違う値（Octet String など完全一致の構文）を同じユーザーにしない。"""
+    directory.entries[ALICE_DN]["serialNumber"] = b"abc"
+    directory.entries[BOB_DN]["serialNumber"] = b" abc"
+    directory.entries[BOB_DN]["memberOf"] = [OPS]
+    spec = _spec(unique_id_attribute="serialNumber")
+    alice = backend.authenticate(spec, "alice", "alice-secret", OPTIONS)
+    bob = backend.authenticate(spec, "bob", "bob-secret", OPTIONS)
+    assert alice.subject == "id:serialnumber=abc"
+    assert bob.subject != alice.subject
+
+
+@pytest.mark.parametrize(
+    ("attribute", "values"),
+    [
+        ("nsUniqueId", ["id-1", "id-2"]),
+        ("entryUUID", ["6f1c-alice", "6f1c-other"]),
+    ],
+)
+def test_multi_valued_unique_id_is_refused(directory: FakeDirectory, attribute: str, values: list[str]) -> None:
+    """値の順序は保証されないので、複数の値を持つ ID 属性からはどれも選ばずに拒否する。"""
+    directory.entries[ALICE_DN][attribute] = values
+    with pytest.raises(DirectoryMissingUniqueId, match="複数"):
+        backend.authenticate(_spec(unique_id_attribute=attribute), "alice", "alice-secret", OPTIONS)
+
+
+def test_multi_valued_object_guid_is_refused(directory: FakeDirectory) -> None:
+    directory.entries[f"cn=Erin,ou=people,{BASE}"] = {
+        "userPassword": "erin-secret",
+        "objectClass": ["user"],
+        "objectCategory": "person",
+        "sAMAccountName": "erin",
+        "objectGUID": [uuid.uuid4().bytes_le, uuid.uuid4().bytes_le],
+        "memberOf": [OPS],
+    }
+    with pytest.raises(DirectoryMissingUniqueId):
+        backend.authenticate(_spec(kind="ad", username_attribute=None), "erin", "erin-secret", OPTIONS)
