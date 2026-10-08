@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
+
 from pydantic import BaseModel, Field
+
+from vcenter_event_assistant.auth.roles import Role
 
 
 class LoginRequest(BaseModel):
@@ -34,3 +39,37 @@ class MeResponse(BaseModel):
 class ChangeOwnPasswordRequest(BaseModel):
     current_password: str = Field(max_length=1024)
     new_password: str = Field(max_length=1024)
+
+
+class UserRead(BaseModel):
+    id: uuid.UUID
+    username: str
+    display_name: str | None = None
+    email: str | None = None
+    role: Role
+    realm: str
+    is_local: bool
+    is_active: bool
+    locked: bool
+    locked_until: datetime | None = None
+    last_login_at: datetime | None = None
+    created_at: datetime
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=256)
+    password: str = Field(max_length=1024)
+    role: Role = Role.VIEWER
+    display_name: str | None = Field(default=None, max_length=256)
+    email: str | None = Field(default=None, max_length=320)
+
+
+class UserUpdate(BaseModel):
+    role: Role | None = None
+    is_active: bool | None = None
+    display_name: str | None = Field(default=None, max_length=256)
+    email: str | None = Field(default=None, max_length=320)
+
+
+class AdminPasswordReset(BaseModel):
+    password: str = Field(max_length=1024)

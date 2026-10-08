@@ -31,6 +31,13 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/auth/logout"): PUBLIC,
     ("GET", "/api/auth/me"): AUTHENTICATED,
     ("POST", "/api/auth/me/password"): AUTHENTICATED,
+    ("GET", "/api/auth/users"): ADMIN,
+    ("POST", "/api/auth/users"): ADMIN,
+    ("PATCH", "/api/auth/users/{user_id}"): ADMIN,
+    ("DELETE", "/api/auth/users/{user_id}"): ADMIN,
+    ("POST", "/api/auth/users/{user_id}/password"): ADMIN,
+    ("POST", "/api/auth/users/{user_id}/sessions/revoke"): ADMIN,
+    ("POST", "/api/auth/users/{user_id}/unlock"): ADMIN,
     # config / ルール類
     ("GET", "/api/config"): VIEWER,
     ("GET", "/api/event-score-rules"): VIEWER,
@@ -147,7 +154,7 @@ def test_protected_router_requires_login_for_every_route() -> None:
 # ---- 実リクエストでの強制確認 -------------------------------------------------
 
 _ROLE_ORDER = [VIEWER, OPERATOR, ADMIN]
-_UUID_PARAMS = {"vcenter_id", "identifier"}
+_UUID_PARAMS = {"vcenter_id", "identifier", "user_id"}
 _TEXT_PARAMS = {"plugin_id", "distribution", "action"}
 # 必要ロールでの実行は副作用（取り込み・LLM 呼び出し・プラグイン再読込）が大きいので省く
 _SKIP_SUFFICIENT = {
