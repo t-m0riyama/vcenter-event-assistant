@@ -13,7 +13,7 @@
 | 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [#247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [#248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [#249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
-| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | レビュー対応を区切り、マージ待ち [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 20 回分を反映。持ち越し 1 件） |
+| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | レビュー対応を区切り、マージ待ち [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 20 回分を反映。持ち越しは Issue #251〜#253） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
@@ -24,6 +24,8 @@
 
 ### PR6 の持ち越し（PR8 の実機確認で判断）
 
+- **entryUUID のない LDAP で DN を ID に使う**（[#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253)）: DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける。ID 属性を設定できるようにするか、ID が取れなければログインを拒否する。PR7 の画面と PR8 のガイドにも関係する
+- **ディレクトリの bind パスワードの暗号化の移行**（[#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)）: 鍵を後から設定しても、起動時の移行が `vcenters` しか見ないので平文のまま残る（開発用の設定で作った場合のみ）
 - **独自 OID の属性を使うグループ DN**（`1.3.6.1.4.1.9999.1=Admins,...`、[#251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251)）: ldap3 が解析できないので対応表の登録時に 422 になる。実機で必要と分かれば、未知の OID を解析前に仮の属性名へ置き換え、解析後に戻す
 
 ## Context
