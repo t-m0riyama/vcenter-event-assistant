@@ -78,8 +78,15 @@ class DirectoryCreate(_DirectoryFields):
     _check_bind_password = field_validator("bind_password")(_check_bind_password_value)
 
 
-class DirectoryUpdate(BaseModel):
-    """省略した項目は変えない。``bind_password`` を省略すると今の値を保つ（消すには ``clear_bind_password``）。"""
+class DirectoryCredentials(BaseModel):
+    """保存の前の確認に使う、ディレクトリのユーザーの資格情報（保存しない・ログに出さない）。"""
+
+    username: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class DirectoryChanges(BaseModel):
+    """設定の変更。省略した項目は変えない。``bind_password`` を省略すると今の値を保つ（消すには ``clear_bind_password``）。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     is_enabled: bool | None = None
@@ -108,6 +115,18 @@ class DirectoryUpdate(BaseModel):
     _check_bind_password = field_validator("bind_password")(_check_bind_password_value)
 
 
+class DirectoryUpdate(DirectoryChanges):
+    """設定と対応表をまとめて保存する（セッションの失効も 1 回にする）。
+
+    ``mappings`` を省略すると対応表は変えない（空のリストは「すべて外す」）。``verification`` は、保存で
+    admin としてログインする手段を失うおそれがあるときに、新しい設定で admin としてログインできることを
+    確かめるための資格情報。
+    """
+
+    mappings: list[GroupRoleMappingIn] | None = Field(default=None, max_length=200)
+    verification: DirectoryCredentials | None = None
+
+
 class DirectoryRead(_DirectoryFields):
     id: uuid.UUID
     has_bind_password: bool
@@ -117,11 +136,18 @@ class DirectoryRead(_DirectoryFields):
     updated_at: datetime
 
 
-class DirectoryMappingsUpdate(BaseModel):
-    mappings: list[GroupRoleMappingIn] = Field(max_length=200)
-
-
 class DirectoryTestRequest(BaseModel):
+    """保存済みの設定で試す。``changes`` / ``mappings`` を渡すと、保存せずに重ねて試す。"""
+
+    username: str | None = Field(default=None, max_length=256)
+    password: str | None = Field(default=None, max_length=1024)
+    changes: DirectoryChanges | None = None
+    mappings: list[GroupRoleMappingIn] | None = Field(default=None, max_length=200)
+
+
+class DirectoryTestUnsavedRequest(DirectoryCreate):
+    """まだ保存していない設定で試す（新規作成の画面から）。"""
+
     username: str | None = Field(default=None, max_length=256)
     password: str | None = Field(default=None, max_length=1024)
 

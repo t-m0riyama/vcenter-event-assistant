@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import unicodedata
 import uuid
 import weakref
@@ -194,6 +195,16 @@ def normalize_optional_text(value: str | None, *, max_length: int, label: str) -
     if any(ord(c) < 0x20 or ord(c) == 0x7F for c in text):
         raise UserError(f"{label}に制御文字は使えません。")
     return text
+
+
+def directory_subject_key(subject: str) -> str:
+    """ディレクトリのユーザーの ``users.subject`` に入れる値。長すぎる識別子は切り詰めずにハッシュにする。
+
+    切り詰めると、先頭が同じ別の識別子が同じユーザー行になってしまうため。
+    """
+    if len(subject) <= SUBJECT_MAX_LENGTH:
+        return subject
+    return f"sha256:{hashlib.sha256(subject.encode('utf-8')).hexdigest()}"
 
 
 def local_subject(username: str) -> str:

@@ -36,6 +36,7 @@ ALICE_DN = f"uid=alice,ou=people,{BASE}"
 BOB_DN = f"uid=bob,ou=people,{BASE}"
 ADMINS = f"cn=Admins,ou=groups,{BASE}"
 OPS = f"cn=Ops,ou=groups,{BASE}"
+ALICE_CREDENTIALS = {"username": "alice", "password": "alice-secret"}
 
 
 def _entries() -> dict[str, dict[str, Any]]:
@@ -354,8 +355,8 @@ async def test_directory_crud_hides_the_bind_password(client, monkeypatch: pytes
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["has_bind_password"] is False and cleared.json()["bind_dn"] is None
 
-    mappings = await client.put(
-        f"/api/auth/directories/{directory_id}/mappings",
+    mappings = await client.patch(
+        f"/api/auth/directories/{directory_id}",
         json={"mappings": [{"group_dn": OPS, "role": "viewer"}]},
     )
     assert mappings.json()["mappings"] == [{"group_dn": OPS, "role": "viewer"}]
@@ -537,14 +538,14 @@ def test_connect_tries_the_next_server(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_long_subjects_are_hashed_not_truncated() -> None:
-    from vcenter_event_assistant.auth.service import _subject_key
+    from vcenter_event_assistant.auth.users import directory_subject_key
 
     prefix = "dn:" + "ou=x," * 120
     a, b = prefix + "cn=alice", prefix + "cn=bob"
     assert len(a) > 512
-    assert _subject_key(a) != _subject_key(b)
-    assert len(_subject_key(a)) <= 512 and _subject_key(a).startswith("sha256:")
-    assert _subject_key("uuid:short") == "uuid:short"
+    assert directory_subject_key(a) != directory_subject_key(b)
+    assert len(directory_subject_key(a)) <= 512 and directory_subject_key(a).startswith("sha256:")
+    assert directory_subject_key("uuid:short") == "uuid:short"
 
 
 def test_connection_test_uses_the_resolved_username(directory: FakeDirectory) -> None:
@@ -632,22 +633,24 @@ async def test_removing_the_last_admin_mapping_is_guarded(
     client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
-    url = f"/api/auth/directories/{directory_id}/mappings"
+    url = f"/api/auth/directories/{directory_id}"
     without_admin = {"mappings": [{"group_dn": OPS, "role": "operator"}]}
 
     # ローカルの admin がログインできる間は、admin の対応をなくしてもよい
-    assert (await client.put(url, json=without_admin)).status_code == 200
-    assert (await client.put(url, json={"mappings": [{"group_dn": ADMINS, "role": "admin"}]})).status_code == 200
+    assert (await client.patch(url, json=without_admin)).status_code == 200
+    assert (await client.patch(url, json={"mappings": [{"group_dn": ADMINS, "role": "admin"}]})).status_code == 200
 
-    # ディレクトリ専用の運用では、唯一の admin の対応はなくせない
+    # ディレクトリ専用の運用では、唯一の admin の対応はなくせない（確認の資格情報を付けても同じ）
     monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
-    resp = await client.put(url, json=without_admin)
+    resp = await client.patch(url, json=without_admin)
+    assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
+    resp = await client.patch(url, json={**without_admin, "verification": ALICE_CREDENTIALS})
     assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
     # ほかに admin の対応を持つ有効なディレクトリがあればよい
     other = _directory_body(name="Other LDAP")
     assert (await client.post("/api/auth/directories", json=other)).status_code == 201
-    assert (await client.put(url, json=without_admin)).status_code == 200
+    assert (await client.patch(url, json=without_admin)).status_code == 200
 
 
 def test_ad_domain_qualified_login_matches_the_domain(directory: FakeDirectory) -> None:
@@ -724,8 +727,8 @@ async def test_changing_mappings_revokes_directory_sessions(client, directory: F
             headers=XHR,
         )
         assert (await ac.get("/api/auth/me")).json()["role"] == "admin"
-        resp = await client.put(
-            f"/api/auth/directories/{directory_id}/mappings",
+        resp = await client.patch(
+            f"/api/auth/directories/{directory_id}",
             json={"mappings": [{"group_dn": ADMINS, "role": "viewer"}]},
         )
         assert resp.status_code == 200
@@ -753,8 +756,8 @@ async def test_login_is_refused_if_the_mappings_changed_during_authentication(
 
     async def replace_while_authenticating(*args: Any, **kwargs: Any) -> Any:
         result = await original(*args, **kwargs)
-        resp = await client.put(
-            f"/api/auth/directories/{directory_id}/mappings",
+        resp = await client.patch(
+            f"/api/auth/directories/{directory_id}",
             json={"mappings": [{"group_dn": ADMINS, "role": "viewer"}]},
         )
         assert resp.status_code == 200
@@ -813,8 +816,8 @@ async def test_malformed_group_dn_is_rejected(client, directory: FakeDirectory) 
     body = _directory_body(mappings=[{"group_dn": "not a DN", "role": "admin"}])
     assert (await client.post("/api/auth/directories", json=body)).status_code == 422
     directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
-    resp = await client.put(
-        f"/api/auth/directories/{directory_id}/mappings",
+    resp = await client.patch(
+        f"/api/auth/directories/{directory_id}",
         json={"mappings": [{"group_dn": "not a DN", "role": "admin"}]},
     )
     assert resp.status_code == 422
@@ -1097,9 +1100,10 @@ async def test_directory_sessions_are_revoked_with_one_delete(client, directory:
     engine = get_engine().sync_engine
     event.listen(engine, "before_cursor_execute", count_session_deletes)
     try:
-        resp = await client.put(
-            f"/api/auth/directories/{directory_id}/mappings",
-            json={"mappings": [{"group_dn": ADMINS, "role": "admin"}]},
+        # 設定と対応表を同時に変えても、失効は 1 回にまとめる
+        resp = await client.patch(
+            f"/api/auth/directories/{directory_id}",
+            json={"user_search_filter": "(uid={username})", "mappings": [{"group_dn": ADMINS, "role": "admin"}]},
         )
     finally:
         event.remove(engine, "before_cursor_execute", count_session_deletes)
@@ -1375,3 +1379,261 @@ def test_multi_valued_object_guid_is_refused(directory: FakeDirectory) -> None:
     }
     with pytest.raises(DirectoryMissingUniqueId):
         backend.authenticate(_spec(kind="ad", username_attribute=None), "erin", "erin-secret", OPTIONS)
+
+
+# --- 締め出し対策（Issue #254・Issue #258）---------------------------------------
+
+VERIFICATION_HEADER = "x-vea-error-code"
+
+
+class _DirectoryAdmin:
+    """ディレクトリのユーザー（既定は alice）としてログインしたクライアント。"""
+
+    def __init__(self, realm: str, username: str = "alice", password: str = "alice-secret") -> None:
+        self.realm = realm
+        self.credentials = {"username": username, "password": password, "realm": realm}
+        self.client = _raw_client()
+
+    async def __aenter__(self) -> AsyncClient:
+        _rate_limiter._hits.clear()
+        await self.client.__aenter__()
+        resp = await self.client.post("/api/auth/login", json=self.credentials, headers=XHR)
+        assert resp.status_code == 200, resp.text
+        self.client.headers.update(XHR)
+        return self.client
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.client.__aexit__(*exc)
+
+
+async def _create_directory(client) -> str:
+    resp = await client.post("/api/auth/directories", json=_directory_body())
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+async def _stored_directory(directory_id: str) -> dict[str, Any]:
+    from vcenter_event_assistant.db.models import DirectoryConfig
+
+    async with session_scope() as db:
+        config = await db.get(DirectoryConfig, uuid.UUID(directory_id))
+        assert config is not None
+        return {
+            "username_attribute": config.username_attribute,
+            "user_search_filter": config.user_search_filter,
+            "updated_at": config.updated_at,
+        }
+
+
+async def test_unsaved_settings_can_be_tested(client, directory: FakeDirectory) -> None:
+    """未保存の設定で接続を試せる。DB には何も書かない。"""
+    body = {**_directory_body(), "username": "alice", "password": "alice-secret"}
+    resp = await client.post("/api/auth/directories/test", json=body)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+    assert [s["stage"] for s in resp.json()["stages"]] == ["connect", "user_search", "user_bind", "groups"]
+    assert (await client.get("/api/auth/directories")).json() == []
+
+    resp = await client.post("/api/auth/directories/test", json={**body, "server_uris": ["ldap://ldap.example.com"]})
+    assert resp.status_code == 422
+
+
+async def test_unsaved_changes_can_be_tested_on_an_existing_directory(client, directory: FakeDirectory) -> None:
+    """保存済みの設定に編集中の変更を重ねて試す。保存せず、ログイン中のセッションも失効させない。"""
+    directory_id = await _create_directory(client)
+    before = await _stored_directory(directory_id)
+    url = f"/api/auth/directories/{directory_id}/test"
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        # bind パスワードを送らなければ保存済みのものを使う
+        resp = await client.post(url, json={**ALICE_CREDENTIALS, "changes": {"sort_order": 1}})
+        assert resp.json()["ok"] is True, resp.text
+
+        resp = await client.post(url, json={**ALICE_CREDENTIALS, "changes": {"username_attribute": "cn"}})
+        assert resp.json()["ok"] is False
+        assert resp.json()["stages"][-1]["stage"] == "user_search"
+
+        resp = await client.post(url, json={**ALICE_CREDENTIALS, "mappings": [{"group_dn": OPS, "role": "admin"}]})
+        assert resp.json()["ok"] is False
+        assert resp.json()["stages"][-1]["stage"] == "groups"
+
+        resp = await client.post(url, json={"changes": {"bind_password": "wrong"}})
+        assert resp.json()["ok"] is False and resp.json()["stages"][0]["stage"] == "connect"
+
+        resp = await client.post(url, json={"changes": {"server_uris": ["ldap://ldap.example.com"]}})
+        assert resp.status_code == 422
+
+        assert (await alice.get("/api/auth/me")).status_code == 200
+    assert await _stored_directory(directory_id) == before
+
+
+async def test_directory_admin_must_verify_changes_to_their_own_directory(client, directory: FakeDirectory) -> None:
+    """(a) 自分のセッションが失効する変更は、新しい設定で admin としてログインできると確かめてから保存する。"""
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    change = {"user_search_filter": "(uid={username})"}
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        resp = await alice.patch(url, json=change)
+        assert resp.status_code == 409, resp.text
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
+
+        # 新しい設定ではユーザーが見つからない
+        resp = await alice.patch(url, json={"username_attribute": "cn", "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
+        # パスワードの誤り
+        resp = await alice.patch(url, json={**change, "verification": {"username": "alice", "password": "wrong"}})
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
+        # 新しい対応表では admin にならない
+        resp = await alice.patch(
+            url,
+            json={"mappings": [{"group_dn": ADMINS, "role": "operator"}], "verification": ALICE_CREDENTIALS},
+        )
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
+        stored = await _stored_directory(directory_id)
+        assert stored["username_attribute"] == "uid" and stored["user_search_filter"] is None
+
+        # 名前や表示順だけなら確かめずに保存でき、セッションも残る
+        resp = await alice.patch(url, json={"name": "Renamed", "sort_order": 2})
+        assert resp.status_code == 200, resp.text
+        assert (await alice.get("/api/auth/me")).status_code == 200
+
+        resp = await alice.patch(url, json={**change, "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["user_search_filter"] == "(uid={username})"
+        # 自分のセッションも失効する（新しい設定でログインし直す）
+        assert (await alice.get("/api/auth/me")).status_code == 401
+    resp, me = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
+    assert resp.status_code == 200 and me is not None and me.json()["role"] == "admin"
+
+
+async def test_changes_must_be_verified_when_no_other_admin_path_exists(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(b) 設定上ほかに admin の経路がなければ、ほかの経路の admin が操作するときも確かめる。"""
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    change = {"user_search_filter": "(uid={username})"}
+    # ローカルの admin がログインできる間は、確かめずに保存できる
+    assert (await client.patch(url, json={"username_attribute": "cn"})).status_code == 200
+    assert (await client.patch(url, json={"username_attribute": "uid"})).status_code == 200
+
+    monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
+    get_settings.cache_clear()
+    resp = await client.patch(url, json=change)
+    assert resp.status_code == 409
+    assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
+    resp = await client.patch(url, json={"username_attribute": "cn", "verification": ALICE_CREDENTIALS})
+    assert resp.status_code == 409
+    resp = await client.patch(url, json={**change, "verification": ALICE_CREDENTIALS})
+    assert resp.status_code == 200, resp.text
+
+
+async def test_verification_refuses_users_disabled_in_the_app(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #258: アプリで無効にしたユーザーの資格情報では、確かめたことにしない（保存後にログインできない）。"""
+    directory_id = await _create_directory(client)
+    realm = f"dir:{directory_id}"
+    directory.entries[BOB_DN]["memberOf"] = [ADMINS]
+    assert (await _dir_login(realm, "bob", "bob-secret"))[0].status_code == 200
+    users = (await client.get("/api/auth/users")).json()
+    bob_id = next(u["id"] for u in users if u["username"] == "bob")
+    assert (await client.patch(f"/api/auth/users/{bob_id}", json={"is_active": False})).status_code == 200
+
+    monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
+    get_settings.cache_clear()
+    url = f"/api/auth/directories/{directory_id}"
+    change = {"user_search_filter": "(uid={username})"}
+    resp = await client.patch(url, json={**change, "verification": {"username": "bob", "password": "bob-secret"}})
+    assert resp.status_code == 409
+    assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
+    assert "無効" in resp.json()["detail"]
+    # まだ行のない（初回ログイン前の）ユーザーなら、ログインすると有効な行が作られるので通す
+    resp = await client.patch(url, json={**change, "verification": ALICE_CREDENTIALS})
+    assert resp.status_code == 200, resp.text
+
+
+async def test_directory_admin_cannot_disable_their_own_directory(client, directory: FakeDirectory) -> None:
+    """(a) 自分のディレクトリは無効にできない。別の経路でログインして操作する。"""
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        resp = await alice.patch(url, json={"is_enabled": False, "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 409
+        assert "別の" in resp.json()["detail"]
+        assert (await alice.get("/api/auth/me")).status_code == 200
+    assert (await client.patch(url, json={"is_enabled": False})).status_code == 200
+
+
+async def test_save_is_refused_if_the_directory_changed_during_verification(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """確かめている間に設定が変わったら、確かめていない設定を保存しない。"""
+    from vcenter_event_assistant.api.routes import auth_directories
+    from vcenter_event_assistant.auth.timeutil import utcnow
+    from vcenter_event_assistant.db.models import DirectoryConfig
+
+    directory_id = await _create_directory(client)
+    original = auth_directories.run_directory_call
+
+    async def change_while_verifying(*args: Any, **kwargs: Any) -> Any:
+        result = await original(*args, **kwargs)
+        async with session_scope() as db:
+            config = await db.get(DirectoryConfig, uuid.UUID(directory_id))
+            assert config is not None
+            config.username_attribute = "cn"
+            config.updated_at = utcnow()
+        return result
+
+    monkeypatch.setattr(auth_directories, "run_directory_call", change_while_verifying)
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        resp = await alice.patch(
+            f"/api/auth/directories/{directory_id}",
+            json={"user_search_filter": "(uid={username})", "verification": ALICE_CREDENTIALS},
+        )
+        assert resp.status_code == 409, resp.text
+        assert "ほかの操作" in resp.json()["detail"]
+    assert (await _stored_directory(directory_id))["user_search_filter"] is None
+
+
+async def test_mappings_endpoint_is_removed(client, directory: FakeDirectory) -> None:
+    """対応表は設定と同じ PATCH で保存する（別々に送ると、1 回目で唯一の admin が締め出される）。"""
+    directory_id = await _create_directory(client)
+    resp = await client.put(
+        f"/api/auth/directories/{directory_id}/mappings", json={"mappings": [{"group_dn": OPS, "role": "admin"}]}
+    )
+    assert resp.status_code in (404, 405)
+
+
+async def test_verification_is_required_if_the_other_admin_path_disappears_before_saving(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """確かめずに済むと判断した後、ロックを取るまでにほかの admin の経路がなくなったら、確かめを求める。"""
+    from contextlib import asynccontextmanager
+
+    from vcenter_event_assistant.api.routes import auth_directories
+    from vcenter_event_assistant.db.models import DirectoryConfig
+
+    directory_id = await _create_directory(client)
+    other = await client.post("/api/auth/directories", json=_directory_body(name="Other LDAP"))
+    other_id = other.json()["id"]
+    monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
+    get_settings.cache_clear()
+    original = auth_directories.admin_change_guard
+
+    @asynccontextmanager
+    async def disable_other_first(db: Any):
+        async with session_scope() as other_db:
+            config = await other_db.get(DirectoryConfig, uuid.UUID(other_id))
+            assert config is not None
+            config.is_enabled = False
+        async with original(db):
+            yield
+
+    monkeypatch.setattr(auth_directories, "admin_change_guard", disable_other_first)
+    resp = await client.patch(f"/api/auth/directories/{directory_id}", json={"user_search_filter": "(uid={username})"})
+    assert resp.status_code == 409, resp.text
+    assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
+    assert (await _stored_directory(directory_id))["user_search_filter"] is None
