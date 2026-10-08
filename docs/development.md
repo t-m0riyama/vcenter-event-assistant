@@ -286,6 +286,8 @@ CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）と同じ失敗
 
 あわせて関連 pytest を実行する（例: `uv run pytest tests/test_alert_eval_events.py -q`）。
 
+**CI を走らせない変更:** `docs/` 配下と `*.md` だけの変更（計画書の更新など）では CI は起動しない（Issue #262）。ただし、テストやビルドが読む `docs/user-guides/`（ヘルプのリンク先として `tabHelpContent.test.ts` が見出しを確かめる）と `README.md`・`packages/*/README.md`（パッケージのメタデータ）の変更では従来どおり走る。条件は `ci.yml` の `paths` にある。main にはブランチ保護の必須チェックを設定していないので、CI を省いた PR もマージできる。必須チェックを設定するなら、省いたときに成功を返す仕組みが要る。
+
 **よくある CI 失敗:** テストに `rule_id = rule.id` など**未使用の代入**を残すと Ruff **F841** になる。テストだけ直した PR でも `uv run ruff check tests/` を忘れないこと。
 
 UI ドキュメント用のスクリーンショットの再取得は、**起動済みのインスタンス**（既定 `http://127.0.0.1:8000`）に向けて `uv run scripts/capture_ui_screenshots.py` を実行する（詳細は本ドキュメントの「UI スクリーンショット」セクションを参照）。一方、**Playwright E2E**（`frontend` で `npm run e2e`）は **テスト専用プロセスを新規起動**して実施する（既定は別ポート `9323`）。

@@ -1,9 +1,28 @@
 name: CI
 
+# ドキュメントだけの変更（計画書の更新など）では CI を走らせない（Issue #262）。
+# 後に書いたパターンが優先される。テストやビルドが読む Markdown は対象に戻す:
+# - docs/user-guides/: ヘルプのリンク先として tabHelpContent.test.ts が見出しを確かめる
+# - README.md: パッケージのメタデータ（pyproject.toml の readme）として読まれる
+# push と pull_request で同じパスの条件にそろえる。
 on:
   push:
     branches: [main, master]
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**/*.md"
+      - "docs/user-guides/**"
+      - "README.md"
+      - "packages/*/README.md"
   pull_request:
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**/*.md"
+      - "docs/user-guides/**"
+      - "README.md"
+      - "packages/*/README.md"
 
 jobs:
   python:
