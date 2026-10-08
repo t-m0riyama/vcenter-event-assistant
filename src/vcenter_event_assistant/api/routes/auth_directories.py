@@ -248,6 +248,16 @@ def _no_admin_left(action: str) -> HTTPException:
     )
 
 
+async def _touch(db: AsyncSession, config: DirectoryConfig) -> None:
+    """設定の更新時刻を進めて書き込む。
+
+    認証中のログインは、この時刻が変わっていたら拒否する。失効させる前に書き込んで行をロックし、
+    ログイン中の処理が作るセッションも、その確定を待ってから失効の対象に含める。
+    """
+    config.updated_at = utcnow()
+    await db.flush()
+
+
 async def _revoke_directory_sessions(db: AsyncSession, directory_id: uuid.UUID) -> None:
     user_ids = (await db.scalars(select(User.id).where(User.directory_id == directory_id))).all()
     for user_id in user_ids:
@@ -340,6 +350,7 @@ async def update_directory(
             if await _other_admin_sources(db, settings, config.id) == 0:
                 raise _no_admin_left("このディレクトリを無効にする")
             # 無効にしたディレクトリのユーザーは、使用中のセッションも使えなくする
+            await _touch(db, config)
             await _revoke_directory_sessions(db, config.id)
         config.updated_at = utcnow()
         await db.flush()
@@ -373,9 +384,9 @@ async def replace_mappings(
         config.mappings.clear()
         await db.flush()
         config.mappings = rows
-        config.updated_at = utcnow()
         # ロールはログインのたびに対応表で決めるので、ログイン中のユーザーは失効させてログインし直させる
         # （対応を外した・弱めたロールのまま使い続けさせない）
+        await _touch(db, config)
         await _revoke_directory_sessions(db, config.id)
         await db.flush()
     audit(

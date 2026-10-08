@@ -722,3 +722,36 @@ async def test_changing_mappings_revokes_directory_sessions(client, directory: F
     resp, me = await _dir_login(realm, "alice", "alice-secret")
     assert resp.status_code == 200 and me is not None and me.json()["role"] == "viewer"
 
+
+
+def test_normalize_dn_keeps_case_of_case_sensitive_attributes() -> None:
+    """値をならすのは大文字小文字を区別しない属性だけ。それ以外の属性の値は区別したまま比べる。"""
+    assert normalize_dn("CN=Ops,OU=Groups,DC=Example") == normalize_dn("cn=ops,ou=groups,dc=example")
+    assert normalize_dn("customId=Ops,dc=example") != normalize_dn("customId=ops,dc=example")
+    assert normalize_dn("CUSTOMID=Ops,dc=example") == normalize_dn("customId=Ops,DC=EXAMPLE")
+
+
+async def test_login_is_refused_if_the_mappings_changed_during_authentication(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """認証中に対応表が置き換わったら、古い対応表で決めたロールのセッションを作らない。"""
+    from vcenter_event_assistant.auth import service
+
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    original = service.run_directory_call
+
+    async def replace_while_authenticating(*args: Any, **kwargs: Any) -> Any:
+        result = await original(*args, **kwargs)
+        resp = await client.put(
+            f"/api/auth/directories/{directory_id}/mappings",
+            json={"mappings": [{"group_dn": ADMINS, "role": "viewer"}]},
+        )
+        assert resp.status_code == 200
+        return result
+
+    monkeypatch.setattr(service, "run_directory_call", replace_while_authenticating)
+    resp, _ = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
+    assert resp.status_code == 401
+    monkeypatch.setattr(service, "run_directory_call", original)
+    resp, me = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
+    assert resp.status_code == 200 and me is not None and me.json()["role"] == "viewer"

@@ -11,12 +11,30 @@ from vcenter_event_assistant.auth.roles import Role
 
 _ROLE_ORDER = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 
+# 値の比較が大文字小文字を区別しない（equality が caseIgnoreMatch / caseIgnoreIA5Match）と
+# 標準スキーマ（RFC 4519 など）で決まっている命名属性。名前と OID の両方で持つ。
+# これ以外の属性は、スキーマ次第で大文字小文字を区別するため値をならさない。
+_CASE_INSENSITIVE_ATTRS = frozenset(
+    {
+        "cn", "2.5.4.3",
+        "ou", "2.5.4.11",
+        "o", "2.5.4.10",
+        "c", "2.5.4.6",
+        "l", "2.5.4.7",
+        "st", "2.5.4.8",
+        "street", "2.5.4.9",
+        "dc", "0.9.2342.19200300.100.1.25",
+        "uid", "0.9.2342.19200300.100.1.1",
+    }
+)
+
 
 def normalize_dn(dn: str) -> str:
-    """照合用の DN。属性名・値の大文字小文字と、区切りの前後の空白の違いをならす。
+    """照合用の DN。属性名の大文字小文字と、区切りの前後の空白の違いをならす。
 
-    AD / LDAP の DN の比較は（ほとんどの属性で）大文字小文字を区別しないため、対応表に登録した
-    DN とディレクトリが返す DN の表記ゆれで一致しなくならないようにする。
+    値の大文字小文字は、比較で区別しないと決まっている属性（cn・ou・dc など）だけならす。
+    対応表に登録した DN とディレクトリが返す DN の表記ゆれで一致しなくならないようにしつつ、
+    大文字小文字を区別する属性で別のグループを同じものとみなさないため。
     """
     value = dn.strip()
     try:
@@ -24,7 +42,12 @@ def normalize_dn(dn: str) -> str:
     except (LDAPInvalidDnError, IndexError, ValueError):
         return value.casefold()
     # 区切り（RDN の間の ``,`` と、複数値 RDN の中の ``+``）は保つ。``cn=a+uid=b`` と ``cn=a,uid=b`` は別の DN
-    return "".join(f"{attr.strip().casefold()}={val.strip().casefold()}{sep}" for attr, val, sep in parts)
+    rdns = []
+    for attr, val, sep in parts:
+        name = attr.strip().casefold()
+        text = val.strip()
+        rdns.append(f"{name}={text.casefold() if name in _CASE_INSENSITIVE_ATTRS else text}{sep}")
+    return "".join(rdns)
 
 
 def resolve_role(group_dns: Iterable[str], mappings: Iterable[tuple[str, Role]]) -> Role | None:

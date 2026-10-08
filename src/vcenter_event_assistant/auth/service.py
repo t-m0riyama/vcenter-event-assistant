@@ -166,6 +166,7 @@ async def _authenticate_directory(
     if config is None:
         return LoginOutcome(None, "unknown_realm")
     spec = spec_from_model(config)
+    config_version = config.updated_at
     try:
         identity = await run_directory_call(
             directory_backend.authenticate, spec, username, password, connect_options(settings)
@@ -178,14 +179,21 @@ async def _authenticate_directory(
     except Exception:
         logger.exception("Unexpected error while authenticating against directory %r", config.name)
         return LoginOutcome(None, "directory_error")
-    # 認証している間に無効化されていたら、ログインさせない（無効化で失効させた後にセッションを作らない）
-    still_enabled = await db.scalar(
-        select(DirectoryConfig.is_enabled)
-        .where(DirectoryConfig.id == config.id)
-        .execution_options(populate_existing=True)
-    )
-    if not still_enabled:
+    # 認証している間に無効化・変更（対応表の置き換えなど）されていたら、ログインさせない。
+    # 変更時にセッションを失効させた後で、古い設定で決めたロールのセッションを作らないため。
+    # 行をロックしておき、この後の変更はこのログインの確定を待ってから失効させるようにする
+    current = (
+        await db.execute(
+            select(DirectoryConfig.is_enabled, DirectoryConfig.updated_at)
+            .where(DirectoryConfig.id == config.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).one_or_none()
+    if current is None or not current.is_enabled:
         return LoginOutcome(None, "directory_disabled")
+    if current.updated_at != config_version:
+        return LoginOutcome(None, "directory_changed")
     user = await _upsert_directory_user(db, config, identity, utcnow())
     if user is None:
         return LoginOutcome(None, "inactive")
