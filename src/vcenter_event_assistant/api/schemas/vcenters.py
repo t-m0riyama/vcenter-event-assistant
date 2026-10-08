@@ -9,9 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vcenter_event_assistant.db.encrypted_string import ENC_PREFIX
-from vcenter_event_assistant.services.vcenter_host_validation import (
-    validate_vcenter_host,
-)
+from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
 
 
 def _reject_storage_prefix_password(value: str) -> str:

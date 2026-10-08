@@ -5,11 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vcenter_event_assistant.api.schemas import (
-    EventRead,
-    EventTypeCountRow,
-    EventTypeGuideSnippet,
-)
+from vcenter_event_assistant.api.schemas import EventRead, EventTypeCountRow, EventTypeGuideSnippet
 from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide
 
 
@@ -25,9 +21,7 @@ async def attach_type_guides_to_event_reads(
     types = {r.event_type for r in rows}
     guides_by_type: dict[str, EventTypeGuide] = {}
     if types:
-        gr = await session.execute(
-            select(EventTypeGuide).where(EventTypeGuide.event_type.in_(types))
-        )
+        gr = await session.execute(select(EventTypeGuide).where(EventTypeGuide.event_type.in_(types)))
         for g in gr.scalars().all():
             guides_by_type[g.event_type] = g
 
@@ -65,9 +59,7 @@ async def attach_type_guides_to_event_type_count_rows(
     types = {r.event_type for r in rows}
     guides_by_type: dict[str, EventTypeGuide] = {}
     if types:
-        gr = await session.execute(
-            select(EventTypeGuide).where(EventTypeGuide.event_type.in_(types))
-        )
+        gr = await session.execute(select(EventTypeGuide).where(EventTypeGuide.event_type.in_(types)))
         for g in gr.scalars().all():
             guides_by_type[g.event_type] = g
 

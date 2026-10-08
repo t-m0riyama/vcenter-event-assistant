@@ -6,10 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from vcenter_event_assistant.collectors.connection import (
-    connect_vcenter,
-    parse_proxy_url,
-)
+from vcenter_event_assistant.collectors.connection import connect_vcenter, parse_proxy_url
 
 
 class TestParseProxyUrl:
@@ -44,10 +41,7 @@ class TestConnectVcenterProxy:
     def test_with_proxy_url(self, mock_sc: MagicMock) -> None:
         mock_sc.return_value = MagicMock()
         connect_vcenter(
-            host="vc",
-            port=443,
-            username="u",
-            password="p",
+            host="vc", port=443, username="u", password="p",
             proxy_url="http://proxy.local:3128",
         )
         _, kwargs = mock_sc.call_args
@@ -65,6 +59,4 @@ class TestConnectVcenterProxy:
 
     def test_invalid_protocol_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="protocol must be 'https' or 'http'"):
-            connect_vcenter(
-                host="vc", protocol="ftp", port=21, username="u", password="p"
-            )
+            connect_vcenter(host="vc", protocol="ftp", port=21, username="u", password="p")

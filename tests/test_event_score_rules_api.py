@@ -69,9 +69,7 @@ async def test_event_score_rules_crud_recalculates_events(client: AsyncClient) -
     )
     assert dup.status_code == 409
 
-    patch = await client.patch(
-        f"/api/event-score-rules/{rule_id}", json={"score_delta": -10}
-    )
+    patch = await client.patch(f"/api/event-score-rules/{rule_id}", json={"score_delta": -10})
     assert patch.status_code == 200
     assert patch.json()["score_delta"] == -10
 
@@ -102,9 +100,7 @@ async def test_event_score_rules_crud_recalculates_events(client: AsyncClient) -
 
 
 @pytest.mark.asyncio
-async def test_event_score_rules_import_duplicate_event_type_returns_400(
-    client: AsyncClient,
-) -> None:
+async def test_event_score_rules_import_duplicate_event_type_returns_400(client: AsyncClient) -> None:
     r = await client.post(
         "/api/event-score-rules/import",
         json={
@@ -121,16 +117,10 @@ async def test_event_score_rules_import_duplicate_event_type_returns_400(
 
 
 @pytest.mark.asyncio
-async def test_event_score_rules_import_overwrite_and_delete_orphans(
-    client: AsyncClient,
-) -> None:
-    a = await client.post(
-        "/api/event-score-rules", json={"event_type": "orphan.Type", "score_delta": 5}
-    )
+async def test_event_score_rules_import_overwrite_and_delete_orphans(client: AsyncClient) -> None:
+    a = await client.post("/api/event-score-rules", json={"event_type": "orphan.Type", "score_delta": 5})
     assert a.status_code == 201
-    b = await client.post(
-        "/api/event-score-rules", json={"event_type": "keep.Type", "score_delta": 3}
-    )
+    b = await client.post("/api/event-score-rules", json={"event_type": "keep.Type", "score_delta": 3})
     assert b.status_code == 201
 
     imp = await client.post(
@@ -155,9 +145,7 @@ async def test_event_score_rules_import_overwrite_and_delete_orphans(
 
 
 @pytest.mark.asyncio
-async def test_event_score_rules_import_skip_overwrite_keeps_delta(
-    client: AsyncClient,
-) -> None:
+async def test_event_score_rules_import_skip_overwrite_keeps_delta(client: AsyncClient) -> None:
     created = await client.post(
         "/api/event-score-rules",
         json={"event_type": "vim.event.SkipMe", "score_delta": 7},
@@ -180,12 +168,8 @@ async def test_event_score_rules_import_skip_overwrite_keeps_delta(
 
 
 @pytest.mark.asyncio
-async def test_event_score_rules_import_empty_file_rejected_with_delete_flag(
-    client: AsyncClient,
-) -> None:
-    await client.post(
-        "/api/event-score-rules", json={"event_type": "t.only", "score_delta": 1}
-    )
+async def test_event_score_rules_import_empty_file_rejected_with_delete_flag(client: AsyncClient) -> None:
+    await client.post("/api/event-score-rules", json={"event_type": "t.only", "score_delta": 1})
     imp = await client.post(
         "/api/event-score-rules/import",
         json={

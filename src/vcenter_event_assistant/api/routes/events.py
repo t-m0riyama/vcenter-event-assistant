@@ -26,9 +26,7 @@ from vcenter_event_assistant.services.event_repository import (
     event_rate_bucket_count,
     get_event_rate_series,
 )
-from vcenter_event_assistant.services.event_type_guide_attach import (
-    attach_type_guides_to_event_reads,
-)
+from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -45,17 +43,13 @@ def _escape_like_metachars(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _contains_case_insensitive(
-    column: ColumnElement[str | None], needle: str
-) -> ColumnElement[bool]:
+def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -> ColumnElement[bool]:
     """Substring match, case-insensitive; works on SQLite and PostgreSQL via ``ilike`` + escape."""
     hay = func.coalesce(column, literal(""))
     return hay.ilike(f"%{_escape_like_metachars(needle)}%", escape="\\")
 
 
-@router.get(
-    "/event-types", dependencies=[RequireViewer], response_model=EventTypesResponse
-)
+@router.get("/event-types", dependencies=[RequireViewer], response_model=EventTypesResponse)
 async def list_event_types(
     session: AsyncSession = Depends(get_session),
     vcenter_id: uuid.UUID | None = None,
@@ -64,10 +58,8 @@ async def list_event_types(
     conditions: list[ColumnElement[bool]] = []
     if vcenter_id is not None:
         conditions.append(EventRecord.vcenter_id == vcenter_id)
-    q = (
-        select(EventRecord.event_type)
-        .group_by(EventRecord.event_type)
-        .order_by(func.max(EventRecord.occurred_at).desc())
+    q = select(EventRecord.event_type).group_by(EventRecord.event_type).order_by(
+        func.max(EventRecord.occurred_at).desc()
     )
     if conditions:
         q = q.where(*conditions)
@@ -77,9 +69,7 @@ async def list_event_types(
     return EventTypesResponse(event_types=types)
 
 
-@router.get(
-    "/rate-series", dependencies=[RequireViewer], response_model=EventRateSeriesResponse
-)
+@router.get("/rate-series", dependencies=[RequireViewer], response_model=EventRateSeriesResponse)
 async def event_rate_series(
     session: AsyncSession = Depends(get_session),
     event_type: str = Query(..., min_length=1, max_length=512),
@@ -94,11 +84,7 @@ async def event_rate_series(
     if ft >= tt:
         raise HTTPException(status_code=400, detail="from must be before to")
 
-    b = (
-        bucket_seconds
-        if bucket_seconds is not None
-        else settings.perf_sample_interval_seconds
-    )
+    b = bucket_seconds if bucket_seconds is not None else settings.perf_sample_interval_seconds
 
     bucket_count = event_rate_bucket_count(ft, tt, b)
     if bucket_count > settings.event_rate_max_buckets:
@@ -119,7 +105,7 @@ async def event_rate_series(
         bucket_seconds=b,
         vcenter_id=vcenter_id,
     )
-
+    
     buckets = [EventRateBucket(**b_data) for b_data in buckets_data]
     return EventRateSeriesResponse(bucket_seconds=b, buckets=buckets)
 

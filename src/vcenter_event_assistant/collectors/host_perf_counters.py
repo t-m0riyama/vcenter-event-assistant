@@ -22,66 +22,16 @@ _DEFAULT_REALTIME_INTERVAL_SEC = 20
 
 # (metric_key, perf group, counter name, rollup)
 _TARGET_SPECS: tuple[tuple[str, str, str, int], ...] = (
-    (
-        "host.net.errors_rx_total",
-        "net",
-        "errorsRx",
-        vim.PerformanceManager.CounterInfo.RollupType.summation,
-    ),
-    (
-        "host.net.errors_tx_total",
-        "net",
-        "errorsTx",
-        vim.PerformanceManager.CounterInfo.RollupType.summation,
-    ),
-    (
-        "host.net.dropped_rx_total",
-        "net",
-        "droppedRx",
-        vim.PerformanceManager.CounterInfo.RollupType.summation,
-    ),
-    (
-        "host.net.dropped_tx_total",
-        "net",
-        "droppedTx",
-        vim.PerformanceManager.CounterInfo.RollupType.summation,
-    ),
-    (
-        "host.net.bytes_rx_kbps",
-        "net",
-        "bytesRx",
-        vim.PerformanceManager.CounterInfo.RollupType.average,
-    ),
-    (
-        "host.net.bytes_tx_kbps",
-        "net",
-        "bytesTx",
-        vim.PerformanceManager.CounterInfo.RollupType.average,
-    ),
-    (
-        "host.net.usage_kbps",
-        "net",
-        "usage",
-        vim.PerformanceManager.CounterInfo.RollupType.average,
-    ),
-    (
-        "host.disk.usage_pct",
-        "disk",
-        "usage",
-        vim.PerformanceManager.CounterInfo.RollupType.average,
-    ),
-    (
-        "host.disk.read_kbps",
-        "disk",
-        "read",
-        vim.PerformanceManager.CounterInfo.RollupType.average,
-    ),
-    (
-        "host.disk.write_kbps",
-        "disk",
-        "write",
-        vim.PerformanceManager.CounterInfo.RollupType.average,
-    ),
+    ("host.net.errors_rx_total", "net", "errorsRx", vim.PerformanceManager.CounterInfo.RollupType.summation),
+    ("host.net.errors_tx_total", "net", "errorsTx", vim.PerformanceManager.CounterInfo.RollupType.summation),
+    ("host.net.dropped_rx_total", "net", "droppedRx", vim.PerformanceManager.CounterInfo.RollupType.summation),
+    ("host.net.dropped_tx_total", "net", "droppedTx", vim.PerformanceManager.CounterInfo.RollupType.summation),
+    ("host.net.bytes_rx_kbps", "net", "bytesRx", vim.PerformanceManager.CounterInfo.RollupType.average),
+    ("host.net.bytes_tx_kbps", "net", "bytesTx", vim.PerformanceManager.CounterInfo.RollupType.average),
+    ("host.net.usage_kbps", "net", "usage", vim.PerformanceManager.CounterInfo.RollupType.average),
+    ("host.disk.usage_pct", "disk", "usage", vim.PerformanceManager.CounterInfo.RollupType.average),
+    ("host.disk.read_kbps", "disk", "read", vim.PerformanceManager.CounterInfo.RollupType.average),
+    ("host.disk.write_kbps", "disk", "write", vim.PerformanceManager.CounterInfo.RollupType.average),
 )
 
 
@@ -93,18 +43,12 @@ def _counter_key_by_group_name_rollup(
 ) -> int | None:
     """Resolve vSphere performance counter key (integer id)."""
     for c in perf_manager.perfCounter:
-        if (
-            c.groupInfo.key == group
-            and c.nameInfo.key == name
-            and c.rollupType == rollup
-        ):
+        if c.groupInfo.key == group and c.nameInfo.key == name and c.rollupType == rollup:
             return int(c.key)
     return None
 
 
-def _build_metric_key_by_counter_id(
-    perf_manager: vim.PerformanceManager,
-) -> dict[int, str]:
+def _build_metric_key_by_counter_id(perf_manager: vim.PerformanceManager) -> dict[int, str]:
     out: dict[int, str] = {}
     for metric_key, group, name, rollup in _TARGET_SPECS:
         cid = _counter_key_by_group_name_rollup(perf_manager, group, name, rollup)
@@ -119,10 +63,7 @@ def _realtime_interval_id(perf_manager: vim.PerformanceManager, host: Any) -> in
         if summary is not None and summary.refreshRate and summary.refreshRate > 0:
             return int(summary.refreshRate)
     except Exception:
-        logger.warning(
-            "QueryPerfProviderSummary failed; using default realtime interval",
-            exc_info=True,
-        )
+        logger.warning("QueryPerfProviderSummary failed; using default realtime interval", exc_info=True)
     return _DEFAULT_REALTIME_INTERVAL_SEC
 
 
@@ -156,9 +97,7 @@ def _is_aggregate_perf_instance(instance: str) -> bool:
     return False
 
 
-def _drop_aggregate_instances_when_named_exist(
-    by_pair: dict[tuple[int, str], float],
-) -> None:
+def _drop_aggregate_instances_when_named_exist(by_pair: dict[tuple[int, str], float]) -> None:
     """
     同一 counterId に「名前付き」インスタンスが 1 本以上あるとき、
     集約インスタンスに対応するキーを by_pair から除く（グラフの重複系列を防ぐ）。

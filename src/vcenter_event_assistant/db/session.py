@@ -60,9 +60,7 @@ def get_engine(*, settings: Settings | None = None):
     return _engine
 
 
-def get_session_factory(
-    *, settings: Settings | None = None
-) -> async_sessionmaker[AsyncSession]:
+def get_session_factory(*, settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
     """シングルトンの非同期セッションファクトリを返す。
 
     Args:
@@ -74,16 +72,12 @@ def get_session_factory(
     global _session_factory
     if _session_factory is None:
         engine = get_engine(settings=settings)
-        _session_factory = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        _session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     return _session_factory
 
 
 @asynccontextmanager
-async def session_scope(
-    settings: Settings | None = None,
-) -> AsyncIterator[AsyncSession]:
+async def session_scope(settings: Settings | None = None) -> AsyncIterator[AsyncSession]:
     """トランザクション付き非同期セッションのコンテキストマネージャ。
 
     正常終了時は commit、例外時は rollback する。

@@ -289,9 +289,7 @@ async def test_draft_testing_and_atomic_apply(client, setup_enabled, monkeypatch
     assert new.json()["tests"] == {}
     assert get_collector_registry().get("example.setup").config.values["targets"]
     # Restart reads only applied settings, even after an unfinished draft changes.
-    from vcenter_event_assistant.services.plugin_settings import (
-        load_collector_db_overrides,
-    )
+    from vcenter_event_assistant.services.plugin_settings import load_collector_db_overrides
 
     async with session_scope(settings=get_settings()) as session:
         restored = (await load_collector_db_overrides(session))["example.setup"]
@@ -460,9 +458,7 @@ async def test_setup_rejects_unselected_ssh_connection_before_worker(
         values["targets"][0]["ssh_connection_id"] = connection_value
     base = "/api/plugins/collectors/example.setup/draft"
     d = (await client.put(base, json={"config_values": values})).json()
-    response = await client.post(
-        base + "/actions/test", json={"revision": d["revision"]}
-    )
+    response = await client.post(base + "/actions/test", json={"revision": d["revision"]})
     assert response.status_code == 422
     assert "SSH接続先を選択" in response.json()["detail"]
     assert (await client.post(base + "/validate")).status_code == 422
@@ -479,17 +475,12 @@ async def test_remote_log_schema_resolves_connection_into_worker_context(
     from vcenter_event_assistant.services.plugin_configuration import validate_values
 
     schema = RemoteLogCollector.manifest.configuration_schema
-    setup_enabled.manifest = replace(
-        setup_enabled.manifest, configuration_schema=schema
-    )
+    setup_enabled.manifest = replace(setup_enabled.manifest, configuration_schema=schema)
     vc, key, c = await prepare(client, monkeypatch)
     await approve(client, c)
     source = {
-        "id": "source-1",
-        "vcenter_id": vc,
-        "product": "esxi",
-        "inventory_host": c["host"],
-        "ssh_connection_id": c["id"],
+        "id": "source-1", "vcenter_id": vc, "product": "esxi",
+        "inventory_host": c["host"], "ssh_connection_id": c["id"],
     }
     with pytest.raises(ValueError):
         validate_values({"sources": [{**source, "ssh_connection_id": ""}]}, schema)
@@ -514,28 +505,18 @@ async def test_remote_log_schema_resolves_connection_into_worker_context(
     result = await client.post(base + "/actions/test", json={"revision": d["revision"]})
     assert result.status_code == 200 and result.json()["ok"]
     assert paths and all(not path.exists() for path in paths)
-    saved = (
-        await client.get("/api/plugins/collectors/example.setup/configuration")
-    ).json()
+    saved = (await client.get("/api/plugins/collectors/example.setup/configuration")).json()
     assert saved["draft"]["config_values"] == {"sources": [source]}
 
 
 async def test_legacy_external_ssh_files_do_not_require_managed_reference():
     from vea_remote_log_collector import RemoteLogCollector
 
-    legacy = {
-        "sources": [
-            {
-                "id": "legacy-source",
-                "vcenter_id": "unused",
-                "product": "esxi",
-                "host": "esxi.example.net",
-                "username": "reader",
-                "private_key_file": "/mounted/key",
-                "known_hosts_file": "/mounted/known_hosts",
-            }
-        ]
-    }
+    legacy = {"sources": [{
+        "id": "legacy-source", "vcenter_id": "unused", "product": "esxi",
+        "host": "esxi.example.net", "username": "reader",
+        "private_key_file": "/mounted/key", "known_hosts_file": "/mounted/known_hosts",
+    }]}
     async with materialize_ssh(
         get_settings(), legacy, RemoteLogCollector.manifest.configuration_schema
     ) as resolved:

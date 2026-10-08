@@ -41,9 +41,7 @@ async def run_mock_mode_seed_if_enabled() -> None:
         return
 
     async with session_scope(settings=settings) as session:
-        res = await session.execute(
-            select(VCenter).where(VCenter.name == _MOCK_VC_NAME)
-        )
+        res = await session.execute(select(VCenter).where(VCenter.name == _MOCK_VC_NAME))
         if res.scalar_one_or_none() is not None:
             logger.info("MOCK_MODE seed skipped (already present): %s", _MOCK_VC_NAME)
             return

@@ -42,9 +42,7 @@ class PrincipalHeaderMiddleware:
                 principal_id = state.get(PRINCIPAL_STATE_KEY)
                 if principal_id:
                     headers = list(message.get("headers", []))
-                    headers.append(
-                        (PRINCIPAL_HEADER, str(principal_id).encode("latin-1"))
-                    )
+                    headers.append((PRINCIPAL_HEADER, str(principal_id).encode("latin-1")))
                     if state.get(SESSION_TOUCHED_STATE_KEY):
                         headers.append((SESSION_TOUCHED_HEADER, b"1"))
                     message = {**message, "headers": headers}

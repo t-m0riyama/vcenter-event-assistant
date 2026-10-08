@@ -7,11 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from pyVmomi import vim
 
-from vcenter_event_assistant.collectors.perf import (
-    _host_is_connected,
-    _host_metrics,
-    sample_hosts_blocking,
-)
+from vcenter_event_assistant.collectors.perf import _host_is_connected, _host_metrics, sample_hosts_blocking
 
 
 def _host(
@@ -99,13 +95,7 @@ def test_sample_hosts_skips_failed_host_and_keeps_others() -> None:
         patch(
             "vcenter_event_assistant.collectors.perf._host_metrics",
             side_effect=[
-                [
-                    {
-                        "entity_moid": "host-good",
-                        "metric_key": "host.cpu.usage_pct",
-                        "value": 1.0,
-                    }
-                ],
+                [{"entity_moid": "host-good", "metric_key": "host.cpu.usage_pct", "value": 1.0}],
                 RuntimeError("host unreachable"),
             ],
         ),

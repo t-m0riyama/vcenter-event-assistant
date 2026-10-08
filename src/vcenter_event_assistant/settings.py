@@ -5,14 +5,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import (
-    AliasChoices,
-    BaseModel,
-    Field,
-    SecretStr,
-    field_validator,
-    model_validator,
-)
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["openai_compatible", "gemini", "copilot_cli"]
@@ -157,12 +150,8 @@ class AppLogSettingsMixin(BaseModel):
     rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_plugins_per_minute: int = Field(default=10, ge=1, le=1000)
-    uvicorn_host: str = Field(
-        default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)"
-    )
-    uvicorn_port: int = Field(
-        default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)"
-    )
+    uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
+    uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
         default=None,
         description=(
@@ -190,9 +179,7 @@ class AppLogSettingsMixin(BaseModel):
     )
     collector_config_file: str | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "collector_config_file", "VEA_COLLECTOR_CONFIG_FILE"
-        ),
+        validation_alias=AliasChoices("collector_config_file", "VEA_COLLECTOR_CONFIG_FILE"),
         description="Optional TOML configuration for collector plugins (VEA_COLLECTOR_CONFIG_FILE).",
     )
     plugin_dir: str = Field(
@@ -264,11 +251,7 @@ class AppLogSettingsMixin(BaseModel):
     @property
     def vcenter_allowed_host_suffix_list(self) -> list[str]:
         """``VCENTER_ALLOWED_HOST_SUFFIXES`` をリスト化。"""
-        return [
-            s.strip()
-            for s in self.vcenter_allowed_host_suffixes.split(",")
-            if s.strip()
-        ]
+        return [s.strip() for s in self.vcenter_allowed_host_suffixes.split(",") if s.strip()]
 
     @property
     def effective_chat_preview_enabled(self) -> bool:
@@ -354,11 +337,7 @@ class AlertSettingsMixin(BaseModel):
 
     @model_validator(mode="after")
     def validate_alert_retry_intervals(self) -> "AlertSettingsMixin":
-        if (
-            not self.alert_retry_initial_seconds
-            <= self.alert_retry_max_seconds
-            <= self.alert_retry_ttl_seconds
-        ):
+        if not self.alert_retry_initial_seconds <= self.alert_retry_max_seconds <= self.alert_retry_ttl_seconds:
             raise ValueError("alert retry intervals require initial <= max <= ttl")
         return self
 
@@ -719,9 +698,7 @@ class AuthSettingsMixin(BaseModel):
     )
     session_cookie_secure: bool | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "session_cookie_secure", "VEA_SESSION_COOKIE_SECURE"
-        ),
+        validation_alias=AliasChoices("session_cookie_secure", "VEA_SESSION_COOKIE_SECURE"),
         description=(
             "セッション Cookie に Secure 属性を付けるか（``VEA_SESSION_COOKIE_SECURE``）。"
             "未設定時は本番環境でのみ付ける。"
@@ -745,9 +722,7 @@ class AuthSettingsMixin(BaseModel):
         default=15,
         ge=1,
         le=24 * 60,
-        validation_alias=AliasChoices(
-            "login_lockout_minutes", "VEA_LOGIN_LOCKOUT_MINUTES"
-        ),
+        validation_alias=AliasChoices("login_lockout_minutes", "VEA_LOGIN_LOCKOUT_MINUTES"),
         description="ロックアウトの継続分数（``VEA_LOGIN_LOCKOUT_MINUTES``）。",
     )
     rate_limit_login_per_minute: int = Field(

@@ -20,9 +20,7 @@ _PNG_B64 = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
 
 
 def _text(name: str = "vmkernel.log", body: str = "line-1\nline-2") -> ChatAttachment:
-    return ChatAttachment(
-        kind="text", filename=name, media_type="text/plain", text=body
-    )
+    return ChatAttachment(kind="text", filename=name, media_type="text/plain", text=body)
 
 
 def _image(name: str = "shot.png") -> ChatAttachment:
@@ -67,11 +65,7 @@ def test_render_attachment_text_block_escapes_fence_in_body() -> None:
 
 def test_render_attachment_text_block_marks_truncated() -> None:
     a = ChatAttachment(
-        kind="text",
-        filename="big.log",
-        media_type="text/plain",
-        text="x",
-        truncated=True,
+        kind="text", filename="big.log", media_type="text/plain", text="x", truncated=True
     )
     block = render_attachment_text_block([a])
     assert block is not None
@@ -126,8 +120,5 @@ def test_oversized_image_is_rejected() -> None:
     too_big = base64.b64encode(b"0" * (10 * 1024 * 1024 + 1)).decode()
     with pytest.raises(ValidationError):
         ChatAttachment(
-            kind="image",
-            filename="big.png",
-            media_type="image/png",
-            data_base64=too_big,
+            kind="image", filename="big.png", media_type="image/png", data_base64=too_big
         )

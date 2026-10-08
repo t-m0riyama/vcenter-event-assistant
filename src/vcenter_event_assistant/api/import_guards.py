@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-HTTP_422 = getattr(
-    status, "HTTP_422_UNPROCESSABLE_CONTENT", status.HTTP_422_UNPROCESSABLE_ENTITY
-)
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def reject_empty_destructive_import(

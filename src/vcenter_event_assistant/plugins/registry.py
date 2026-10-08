@@ -249,9 +249,7 @@ def build_collector_registry(
                     "interval_seconds", _legacy_interval(settings, plugin_id, plugin)
                 )
             )
-            timeout = float(
-                raw.get("timeout_seconds", plugin.manifest.default_timeout_seconds)
-            )
+            timeout = float(raw.get("timeout_seconds", plugin.manifest.default_timeout_seconds))
             if interval < 10 or timeout <= 0:
                 raise ValueError("invalid interval_seconds or timeout_seconds")
             values = raw.get("config", {})

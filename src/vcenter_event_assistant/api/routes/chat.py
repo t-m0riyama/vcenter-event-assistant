@@ -48,9 +48,7 @@ def _accepted_attachments(
         return []
     max_files = settings.chat_attachment_max_files
     if max_files <= 0:
-        raise HTTPException(
-            status_code=422, detail="ファイルの添付は無効化されています"
-        )
+        raise HTTPException(status_code=422, detail="ファイルの添付は無効化されています")
     if len(attachments) > max_files:
         raise HTTPException(
             status_code=422,
@@ -61,9 +59,7 @@ def _accepted_attachments(
     out: list[ChatAttachment] = []
     for a in attachments:
         if a.kind == "text" and a.text is not None and len(a.text) > max_chars:
-            out.append(
-                a.model_copy(update={"text": a.text[:max_chars], "truncated": True})
-            )
+            out.append(a.model_copy(update={"text": a.text[:max_chars], "truncated": True}))
         else:
             out.append(a)
     return out
@@ -129,9 +125,7 @@ async def post_chat(
     )
 
 
-@router.post(
-    "/preview", dependencies=[RequireOperator], response_model=ChatPreviewResponse
-)
+@router.post("/preview", dependencies=[RequireOperator], response_model=ChatPreviewResponse)
 async def post_chat_preview(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
@@ -146,9 +140,7 @@ async def post_chat_preview(
     vc_anon = await load_all_vcenter_anonymization_strings(session)
     preview_settings = settings
     if settings.is_production:
-        preview_settings = settings.model_copy(
-            update={"llm_anonymization_enabled": True}
-        )
+        preview_settings = settings.model_copy(update={"llm_anonymization_enabled": True})
     block, trimmed, meta = build_chat_preview(
         context=payloads.context,
         messages=list(body.messages),

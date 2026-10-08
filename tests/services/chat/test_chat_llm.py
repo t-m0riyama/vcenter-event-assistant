@@ -908,10 +908,7 @@ async def test_run_period_chat_puts_image_on_last_user_message(
     assert isinstance(last, HumanMessage)
     assert last.content == [
         {"type": "text", "text": "この画面は？"},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{_PNG_B64}"},
-        },
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_PNG_B64}"}},
     ]
     # 過去の user メッセージは素のテキストのまま
     assert lc[-3].content == "前の質問"

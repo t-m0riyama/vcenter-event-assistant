@@ -35,7 +35,6 @@ def _epoch_seconds_expr(dialect_name: str):
         return cast(func.floor(func.extract("epoch", EventRecord.occurred_at)), Integer)
     return cast(func.strftime("%s", EventRecord.occurred_at), Integer)
 
-
 async def get_event_rate_series(
     session: AsyncSession,
     event_type: str,
@@ -86,10 +85,10 @@ async def get_event_rate_series(
     to_ts = int(to_time.timestamp())
     first = (from_ts // bucket_seconds) * bucket_seconds
     last = (to_ts // bucket_seconds) * bucket_seconds
-
+    
     buckets = []
     for s in range(first, last + bucket_seconds, bucket_seconds):
         dt = datetime.fromtimestamp(s, tz=timezone.utc)
         buckets.append({"bucket_start": dt, "count": count_by_epoch.get(s, 0)})
-
+        
     return buckets

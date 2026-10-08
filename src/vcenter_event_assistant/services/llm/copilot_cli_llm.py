@@ -12,10 +12,7 @@ from copilot.session import PermissionRequestResult, SystemMessageAppendConfig
 from copilot.tools import Tool
 
 from vcenter_event_assistant.api.schemas import ChatMessage
-from vcenter_event_assistant.services.llm.llm_profile import (
-    LlmPurpose,
-    resolve_llm_profile,
-)
+from vcenter_event_assistant.services.llm.llm_profile import LlmPurpose, resolve_llm_profile
 
 if TYPE_CHECKING:
     from vcenter_event_assistant.settings import Settings
@@ -36,9 +33,7 @@ def format_copilot_chat_prompt(block: str, messages: list[ChatMessage]) -> str:
     for m in messages:
         role_label = "ユーザー" if m.role == "user" else "アシスタント"
         parts.append(f"{role_label}: {m.content}\n")
-    parts.append(
-        "\n上記に基づき、最後のユーザーの意図に答えてください。日本語で簡潔に。"
-    )
+    parts.append("\n上記に基づき、最後のユーザーの意図に答えてください。日本語で簡潔に。")
     return "".join(parts)
 
 
@@ -74,9 +69,7 @@ async def _run_copilot_cli_completion_base(
 ) -> str:
     prof = resolve_llm_profile(settings, purpose=purpose)
     if prof.provider != "copilot_cli":
-        raise ValueError(
-            f"_run_copilot_cli_completion_base は copilot_cli のときのみ呼び出してください（現在: {prof.provider}）"
-        )
+        raise ValueError(f"_run_copilot_cli_completion_base は copilot_cli のときのみ呼び出してください（現在: {prof.provider}）")
 
     use_cli_session = settings.llm_copilot_cli_session_auth
     if not use_cli_session:
@@ -87,9 +80,7 @@ async def _run_copilot_cli_completion_base(
                 " PAT が使えないモデルでは LLM_COPILOT_CLI_SESSION_AUTH=true と gh auth login を検討してください。"
             )
 
-    def deny_permission(
-        _request: object, _invocation: dict[str, str]
-    ) -> PermissionRequestResult:
+    def deny_permission(_request: object, _invocation: dict[str, str]) -> PermissionRequestResult:
         return PermissionRequestResult(
             kind="denied-by-rules",
             feedback="vcenter-event-assistant: サーバ API 経由ではツール権限を付与しません",
@@ -107,10 +98,7 @@ async def _run_copilot_cli_completion_base(
             github_token=prof.api_key.strip(),
             cli_path=settings.llm_copilot_cli_path,
         )
-    system_message: SystemMessageAppendConfig = {
-        "mode": "append",
-        "content": system_prompt,
-    }
+    system_message: SystemMessageAppendConfig = {"mode": "append", "content": system_prompt}
 
     async with CopilotClient(cfg) as client:
         try:
@@ -129,8 +117,7 @@ async def _run_copilot_cli_completion_base(
                 raise
             # 古い CLI 等でカスタムツール登録が使えない場合は検索なしで続行する（失敗分離）
             logger.warning(
-                "Copilot CLI へのカスタムツール登録に失敗したため、ツールなしで続行します: %r",
-                e,
+                "Copilot CLI へのカスタムツール登録に失敗したため、ツールなしで続行します: %r", e
             )
             session = await client.create_session(
                 on_permission_request=deny_permission,

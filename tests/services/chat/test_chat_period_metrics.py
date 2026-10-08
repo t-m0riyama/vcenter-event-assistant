@@ -53,9 +53,7 @@ async def test_build_chat_period_metrics_rejects_inverted_range() -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_chat_period_metrics_cpu_bucket_averages_two_samples_same_bucket() -> (
-    None
-):
+async def test_build_chat_period_metrics_cpu_bucket_averages_two_samples_same_bucket() -> None:
     """同一バケット内 2 サンプルの算術平均。"""
     vid = uuid.uuid4()
     host = "esxi-1"
@@ -129,9 +127,7 @@ async def test_build_chat_period_metrics_cpu_bucket_averages_two_samples_same_bu
 
 
 @pytest.mark.asyncio
-async def test_build_chat_period_metrics_cpu_only_on_does_not_include_memory_key() -> (
-    None
-):
+async def test_build_chat_period_metrics_cpu_only_on_does_not_include_memory_key() -> None:
     """CPU のみ ON のとき memory セクションが無い。"""
     vid = uuid.uuid4()
     from_utc = datetime(2026, 3, 22, 10, 0, 0, tzinfo=timezone.utc)

@@ -52,9 +52,7 @@ def apply_collector_database_overrides(
         if value is not None:
             merged[field_name] = value
     config_values = overrides.get("config_values")
-    if isinstance(config_values, dict) and (
-        config_values or overrides.get("replace_config")
-    ):
+    if isinstance(config_values, dict) and (config_values or overrides.get("replace_config")):
         values = (
             dict(merged.get("config", {}))
             if isinstance(merged.get("config"), dict)
@@ -80,7 +78,9 @@ def collector_env_locked_fields(plugin_id: str) -> list[str]:
     """
     prefix = collector_environment_prefix(plugin_id)
     locked = {
-        name[len(prefix) :].lower() for name in os.environ if name.startswith(prefix)
+        name[len(prefix) :].lower()
+        for name in os.environ
+        if name.startswith(prefix)
     }
     return sorted(locked & set(_DB_OVERRIDE_FIELDS))
 

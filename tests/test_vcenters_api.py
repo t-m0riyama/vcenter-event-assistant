@@ -57,9 +57,7 @@ async def test_vcenter_create_rejects_without_password_storage_allowed(
 
 
 @pytest.mark.asyncio
-async def test_vcenter_create_rejects_password_with_storage_prefix(
-    client: AsyncClient,
-) -> None:
+async def test_vcenter_create_rejects_password_with_storage_prefix(client: AsyncClient) -> None:
     """暗号化ストレージ形式のプレフィックス ``enc:`` で始まるパスワードは拒否する。"""
     r = await client.post(
         "/api/vcenters",
@@ -77,9 +75,7 @@ async def test_vcenter_create_rejects_password_with_storage_prefix(
 
 
 @pytest.mark.asyncio
-async def test_vcenter_patch_rejects_password_with_storage_prefix(
-    client: AsyncClient,
-) -> None:
+async def test_vcenter_patch_rejects_password_with_storage_prefix(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={

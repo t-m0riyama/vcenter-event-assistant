@@ -82,9 +82,7 @@ def _to_langchain_messages(
     （``ChatOpenAI`` / ``ChatGoogleGenerativeAI`` いずれもこの形を受ける）。
     """
     out: list[BaseMessage] = [
-        SystemMessage(
-            content=system_prompt if system_prompt is not None else CHAT_SYSTEM_PROMPT
-        ),
+        SystemMessage(content=system_prompt if system_prompt is not None else CHAT_SYSTEM_PROMPT),
         HumanMessage(content=block),
     ]
     if attachment_block:

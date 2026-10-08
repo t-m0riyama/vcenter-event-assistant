@@ -13,10 +13,7 @@ from vcenter_event_assistant.db.encrypted_string import (
 )
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings import Settings
-from vcenter_event_assistant.settings_binding import (
-    require_settings,
-    resolve_vea_secret_key,
-)
+from vcenter_event_assistant.settings_binding import require_settings, resolve_vea_secret_key
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +31,7 @@ async def ensure_vcenter_password_storage(settings: Settings | None = None) -> N
             encrypted_count = int(
                 (
                     await session.execute(
-                        text(
-                            "SELECT COUNT(*) FROM vcenters WHERE password LIKE :prefix"
-                        ),
+                        text("SELECT COUNT(*) FROM vcenters WHERE password LIKE :prefix"),
                         {"prefix": f"{ENC_PREFIX}%"},
                     )
                 ).scalar_one()
@@ -66,6 +61,4 @@ async def ensure_vcenter_password_storage(settings: Settings | None = None) -> N
             )
             migrated += 1
     if migrated:
-        logger.info(
-            "Encrypted %d legacy plaintext vCenter password(s) at startup.", migrated
-        )
+        logger.info("Encrypted %d legacy plaintext vCenter password(s) at startup.", migrated)

@@ -56,11 +56,7 @@ def datastore_space_rows_from_datastores(
                 }
             )
         except Exception:
-            logger.warning(
-                "datastore summary metrics skipped for datastore=%s",
-                getattr(ds, "name", "?"),
-                exc_info=True,
-            )
+            logger.warning("datastore summary metrics skipped for datastore=%s", getattr(ds, "name", "?"), exc_info=True)
     return rows
 
 

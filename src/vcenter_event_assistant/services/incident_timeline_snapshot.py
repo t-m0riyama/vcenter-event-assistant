@@ -9,11 +9,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
-from vcenter_event_assistant.db.models import (
-    AlertRule,
-    AlertState,
-    IncidentTimelineManualSnapshot,
-)
+from vcenter_event_assistant.db.models import AlertRule, AlertState, IncidentTimelineManualSnapshot
 
 _CONTEXT_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -68,9 +64,7 @@ async def persist_alert_rule_firing_snapshot(
         to_time=to_time,
         lookback_hours=lookback_hours,
     )
-    trigger_id = format_alert_rule_trigger_id(
-        rule_id=rule.id, context_key=state.context_key
-    )
+    trigger_id = format_alert_rule_trigger_id(rule_id=rule.id, context_key=state.context_key)
     normalized_timestamp = fired_at.astimezone(timezone.utc)
 
     exists = await session.execute(
@@ -93,9 +87,7 @@ async def persist_alert_rule_firing_snapshot(
             to_time=build_body.to_time,
             timestamp_utc=normalized_timestamp,
             operator_note=f"自動スナップショット: {rule.name} ({state.context_key})",
-            build_request_payload=build_body.model_dump(
-                mode="json", by_alias=True, exclude_none=True
-            ),
+            build_request_payload=build_body.model_dump(mode="json", by_alias=True, exclude_none=True),
             snapshot_kind="auto",
             trigger_id=trigger_id,
             trigger_evidence={

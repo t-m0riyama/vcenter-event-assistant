@@ -12,40 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_session
-from vcenter_event_assistant.api.schemas import (
-    MetricKeysResponse,
-    MetricPoint,
-    MetricSeriesResponse,
-)
-from vcenter_event_assistant.api.schemas.metrics import (
-    MetricCatalogResponse,
-    MetricDefinitionRead,
-)
+from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint, MetricSeriesResponse
+from vcenter_event_assistant.api.schemas.metrics import MetricCatalogResponse, MetricDefinitionRead
 from vcenter_event_assistant.db.models import MetricSample
 from vcenter_event_assistant.plugins.registry import get_collector_registry
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 
-@router.get(
-    "/catalog", dependencies=[RequireViewer], response_model=MetricCatalogResponse
-)
+@router.get("/catalog", dependencies=[RequireViewer], response_model=MetricCatalogResponse)
 async def metric_catalog() -> MetricCatalogResponse:
-    return MetricCatalogResponse(
-        metrics=[
-            MetricDefinitionRead(
-                collector_id=collector_id,
-                key=d.key,
-                display_name=d.display_name,
-                unit=d.unit,
-                entity_type=d.entity_type,
-                series_mode=d.series_mode,
-                category=d.category,
-                description=d.description,
-            )
-            for collector_id, d in get_collector_registry().metric_catalog()
-        ]
-    )
+    return MetricCatalogResponse(metrics=[
+        MetricDefinitionRead(collector_id=collector_id, key=d.key, display_name=d.display_name,
+                             unit=d.unit, entity_type=d.entity_type, series_mode=d.series_mode,
+                             category=d.category, description=d.description)
+        for collector_id, d in get_collector_registry().metric_catalog()
+    ])
 
 
 def _metric_filter_clauses(

@@ -154,9 +154,7 @@ async def build_digest_context(
     if vcenter_id is not None:
         ev_clauses.append(EventRecord.vcenter_id == vcenter_id)
 
-    ev_q = await session.execute(
-        select(func.count()).select_from(EventRecord).where(*ev_clauses)
-    )
+    ev_q = await session.execute(select(func.count()).select_from(EventRecord).where(*ev_clauses))
     notable_clauses = [
         *ev_clauses,
         EventRecord.notable_score >= _NOTABLE_SCORE_THRESHOLD,
@@ -207,31 +205,19 @@ async def build_digest_context(
     ]
 
     cpu_rows = await query_top_metric_hosts(
-        session,
-        "host.cpu.usage_pct",
-        from_utc,
-        to_utc,
-        vcenter_id=vcenter_id,
-        limit=_TOP_HOST_METRICS_LIMIT,
+        session, "host.cpu.usage_pct", from_utc, to_utc,
+        vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT,
     )
     mem_rows = await query_top_metric_hosts(
-        session,
-        "host.mem.usage_pct",
-        from_utc,
-        to_utc,
-        vcenter_id=vcenter_id,
-        limit=_TOP_HOST_METRICS_LIMIT,
+        session, "host.mem.usage_pct", from_utc, to_utc,
+        vcenter_id=vcenter_id, limit=_TOP_HOST_METRICS_LIMIT,
     )
 
     ids_for_label = {r.vcenter_id for r in cpu_rows} | {r.vcenter_id for r in mem_rows}
     label_map = await load_vcenter_labels_map(session, ids_for_label)
 
-    high_cpu = metric_samples_to_high_host_rows(
-        cpu_rows, label_map, row_class=HighCpuHostRow
-    )
-    high_mem = metric_samples_to_high_host_rows(
-        mem_rows, label_map, row_class=HighMemHostRow
-    )
+    high_cpu = metric_samples_to_high_host_rows(cpu_rows, label_map, row_class=HighCpuHostRow)
+    high_mem = metric_samples_to_high_host_rows(mem_rows, label_map, row_class=HighMemHostRow)
 
     return DigestContext(
         from_utc=from_utc,

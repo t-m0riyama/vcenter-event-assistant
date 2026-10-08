@@ -203,9 +203,7 @@ def _validate_batch(
             "collector batch has %d warning(s) plugin_id=%s: %s",
             len(warnings),
             registration.plugin_id,
-            "; ".join(
-                f"{issue.code}({issue.kind}[{issue.index}])" for issue in warnings[:10]
-            ),
+            "; ".join(f"{issue.code}({issue.kind}[{issue.index}])" for issue in warnings[:10]),
         )
 
 
@@ -274,30 +272,14 @@ async def _persist_batch(
         logs_inserted = 0
         for record in batch.logs:
             result = await _insert_on_conflict_do_nothing(
-                session,
-                LogRecord,
-                {
-                    "vcenter_id": vcenter_id,
-                    "collector_id": registration.plugin_id,
-                    "source_id": record.source_id,
-                    "host": record.host,
-                    "log_kind": record.log_kind,
-                    "file_generation": record.file_generation,
-                    "byte_offset": record.byte_offset,
-                    "occurred_at": record.occurred_at,
-                    "collected_at": record.collected_at,
-                    "effective_at": record.occurred_at or record.collected_at,
-                    "severity": record.severity,
-                    "message": record.message,
-                },
-                index_elements=[
-                    "vcenter_id",
-                    "collector_id",
-                    "source_id",
-                    "log_kind",
-                    "file_generation",
-                    "byte_offset",
-                ],
+                session, LogRecord,
+                {"vcenter_id": vcenter_id, "collector_id": registration.plugin_id,
+                 "source_id": record.source_id, "host": record.host, "log_kind": record.log_kind,
+                 "file_generation": record.file_generation, "byte_offset": record.byte_offset,
+                 "occurred_at": record.occurred_at, "collected_at": record.collected_at,
+                 "effective_at": record.occurred_at or record.collected_at,
+                 "severity": record.severity, "message": record.message},
+                index_elements=["vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset"],
             )
             logs_inserted += result.rowcount or 0
         if batch.next_cursor is not None:
@@ -382,13 +364,7 @@ async def run_collector_for_vcenter(
             timeout_seconds = registration.config.timeout_seconds
             from dataclasses import replace
             from vcenter_event_assistant.services.ssh_management import materialize_ssh
-
-            async with materialize_ssh(
-                settings,
-                dict(context.config),
-                registration.plugin.manifest.configuration_schema,
-                vcenter_id,
-            ) as resolved:
+            async with materialize_ssh(settings, dict(context.config), registration.plugin.manifest.configuration_schema, vcenter_id) as resolved:
                 context = replace(context, config=resolved)
                 if isinstance(registration.plugin, RemoteCollectorPlugin):
                     # ワーカーが自前でタイムアウトを監視し、超過時はプロセスごと kill する。
@@ -402,9 +378,7 @@ async def run_collector_for_vcenter(
             events, metrics, logs = await _persist_batch(
                 settings, vcenter_id, registration, batch
             )
-            return CollectorRunResult(
-                registration.plugin_id, "ok", events, metrics, logs_inserted=logs
-            )
+            return CollectorRunResult(registration.plugin_id, "ok", events, metrics, logs_inserted=logs)
         except Exception as exc:
             logger.exception(
                 "collector execution failed plugin_id=%s vcenter_id=%s",

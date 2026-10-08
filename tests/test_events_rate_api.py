@@ -79,9 +79,7 @@ async def test_rate_series_rejects_from_after_to(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rate_series_rejects_too_many_buckets(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_rate_series_rejects_too_many_buckets(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     import os
 
     from vcenter_event_assistant.settings import get_settings

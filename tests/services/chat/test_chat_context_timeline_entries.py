@@ -49,15 +49,10 @@ def _minimal_ctx(**kwargs: object) -> DigestContext:
 
 
 def test_build_auto_trigger_alert_entries_returns_empty_without_buckets() -> None:
-    assert (
-        build_auto_trigger_alert_entries(period_metrics=None, event_time_buckets=None)
-        == []
-    )
+    assert build_auto_trigger_alert_entries(period_metrics=None, event_time_buckets=None) == []
 
 
-def test_build_auto_trigger_alert_entries_emits_critical_burst_when_total_ge_10() -> (
-    None
-):
+def test_build_auto_trigger_alert_entries_emits_critical_burst_when_total_ge_10() -> None:
     t0 = _ts()
     buckets = EventTimeBucketsPayload(
         bucket_minutes=15,
@@ -68,18 +63,14 @@ def test_build_auto_trigger_alert_entries_emits_critical_burst_when_total_ge_10(
             EventTimeBucketRow(bucket_start_utc=t0 + timedelta(minutes=15), total=3),
         ],
     )
-    entries = build_auto_trigger_alert_entries(
-        period_metrics=None, event_time_buckets=buckets
-    )
+    entries = build_auto_trigger_alert_entries(period_metrics=None, event_time_buckets=buckets)
     assert len(entries) == 1
     assert entries[0].trigger_id == "critical_burst"
     assert entries[0].kind == "alert"
     assert entries[0].timestamp_utc == t0
 
 
-def test_build_auto_trigger_alert_entries_emits_sustained_breach_on_three_consecutive_high_cpu() -> (
-    None
-):
+def test_build_auto_trigger_alert_entries_emits_sustained_breach_on_three_consecutive_high_cpu() -> None:
     t0 = _ts()
     interval = timedelta(minutes=15)
     cpu_series = PeriodMetricHostSeries(
@@ -113,9 +104,7 @@ def test_build_auto_trigger_alert_entries_emits_sustained_breach_on_three_consec
     assert sustained.timestamp_utc == t0 + 2 * interval
 
 
-def test_build_auto_trigger_alert_entries_emits_multi_signal_overlap_when_both_triggers() -> (
-    None
-):
+def test_build_auto_trigger_alert_entries_emits_multi_signal_overlap_when_both_triggers() -> None:
     t0 = _ts()
     interval = timedelta(minutes=15)
     cpu_series = PeriodMetricHostSeries(
@@ -148,9 +137,7 @@ def test_build_auto_trigger_alert_entries_emits_multi_signal_overlap_when_both_t
     assert trigger_ids == {"critical_burst", "sustained_breach", "multi_signal_overlap"}
 
 
-def test_build_chat_incident_timeline_entries_from_event_buckets_includes_alert_top_types() -> (
-    None
-):
+def test_build_chat_incident_timeline_entries_from_event_buckets_includes_alert_top_types() -> None:
     t0 = _ts()
     buckets = EventTimeBucketsPayload(
         bucket_minutes=15,
@@ -161,9 +148,7 @@ def test_build_chat_incident_timeline_entries_from_event_buckets_includes_alert_
                 bucket_start_utc=t0,
                 total=5,
                 alert_top_types=[
-                    AlertTypeBucketRow(
-                        event_type="vim.event.Alarm", count=3, max_notable_score=80
-                    ),
+                    AlertTypeBucketRow(event_type="vim.event.Alarm", count=3, max_notable_score=80),
                 ],
                 alert_other_count=2,
             ),
@@ -189,9 +174,7 @@ def test_build_chat_incident_timeline_entries_from_event_buckets_includes_alert_
     assert event_titles == ["イベント件数: 5"]
 
 
-def test_build_chat_incident_timeline_entries_without_buckets_uses_notable_groups() -> (
-    None
-):
+def test_build_chat_incident_timeline_entries_without_buckets_uses_notable_groups() -> None:
     t0 = _ts()
     ctx = _minimal_ctx(
         top_notable_event_groups=[
@@ -224,9 +207,7 @@ def test_build_chat_incident_timeline_entries_without_buckets_uses_notable_group
     assert entries[1].title == "関連イベント: 4件"
 
 
-def test_build_chat_incident_timeline_entries_without_period_metrics_uses_high_cpu_mem_from_context() -> (
-    None
-):
+def test_build_chat_incident_timeline_entries_without_period_metrics_uses_high_cpu_mem_from_context() -> None:
     t0 = _ts()
     vc_id = str(uuid.uuid4())
     ctx = _minimal_ctx(

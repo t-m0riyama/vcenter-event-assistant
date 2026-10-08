@@ -3,21 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (
-    JSON,
-    BigInteger,
-    Boolean,
-    CheckConstraint,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    Uuid,
-)
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -27,9 +13,7 @@ from vcenter_event_assistant.db.encrypted_string import EncryptedString
 class VCenter(Base):
     __tablename__ = "vcenters"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     host: Mapped[str] = mapped_column(String(512))
     protocol: Mapped[str] = mapped_column(String(16), default="https")
@@ -60,30 +44,19 @@ class VCenter(Base):
 class EventRecord(Base):
     __tablename__ = "events"
     __table_args__ = (
-        UniqueConstraint(
-            "vcenter_id",
-            "collector_id",
-            "vmware_key",
-            name="uq_event_collector_vmware_key",
-        ),
+        UniqueConstraint("vcenter_id", "collector_id", "vmware_key", name="uq_event_collector_vmware_key"),
         Index("ix_events_vcenter_id_occurred_at", "vcenter_id", "occurred_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    collector_id: Mapped[str] = mapped_column(
-        String(64), default="builtin.vcenter.events", index=True
-    )
-    vcenter_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE")
-    )
+    collector_id: Mapped[str] = mapped_column(String(64), default="builtin.vcenter.events", index=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     event_type: Mapped[str] = mapped_column(String(512), index=True)
     message: Mapped[str] = mapped_column(Text, default="")
     severity: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     user_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    entity_name: Mapped[str | None] = mapped_column(
-        String(1024), nullable=True, index=True
-    )
+    entity_name: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
     entity_type: Mapped[str | None] = mapped_column(String(256), nullable=True)
     vmware_key: Mapped[int] = mapped_column(Integer, index=True)
     chain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -97,31 +70,19 @@ class EventRecord(Base):
 class LogRecord(Base):
     __tablename__ = "log_records"
     __table_args__ = (
-        UniqueConstraint(
-            "vcenter_id",
-            "collector_id",
-            "source_id",
-            "log_kind",
-            "file_generation",
-            "byte_offset",
-            name="uq_log_source_position",
-        ),
+        UniqueConstraint("vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset", name="uq_log_source_position"),
         Index("ix_log_vcenter_effective_time", "vcenter_id", "effective_at", "id"),
         Index("ix_log_effective_time_id", "effective_at", "id"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    vcenter_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE")
-    )
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     collector_id: Mapped[str] = mapped_column(String(64))
     source_id: Mapped[str] = mapped_column(String(128), index=True)
     host: Mapped[str] = mapped_column(String(512))
     log_kind: Mapped[str] = mapped_column(String(64), index=True)
     file_generation: Mapped[str] = mapped_column(String(128))
     byte_offset: Mapped[int] = mapped_column(BigInteger)
-    occurred_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     severity: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -132,9 +93,7 @@ class EventScoreRule(Base):
     """Per-event-type additive adjustment to ``score_event`` base score (stored in ``events.notable_score``)."""
 
     __tablename__ = "event_score_rules"
-    __table_args__ = (
-        UniqueConstraint("event_type", name="uq_event_score_rules_event_type"),
-    )
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_score_rules_event_type"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -145,18 +104,14 @@ class EventTypeGuide(Base):
     """イベント種別ごとの一般的な説明・原因・対処（運用者が登録）。"""
 
     __tablename__ = "event_type_guides"
-    __table_args__ = (
-        UniqueConstraint("event_type", name="uq_event_type_guides_event_type"),
-    )
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_type_guides_event_type"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(512), nullable=False)
     general_meaning: Mapped[str | None] = mapped_column(Text, nullable=True)
     typical_causes: Mapped[str | None] = mapped_column(Text, nullable=True)
     remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    action_required: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    action_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class MetricSample(Base):
@@ -179,12 +134,8 @@ class MetricSample(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    collector_id: Mapped[str] = mapped_column(
-        String(64), default="builtin.vcenter.host_quickstats", index=True
-    )
-    vcenter_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE")
-    )
+    collector_id: Mapped[str] = mapped_column(String(64), default="builtin.vcenter.host_quickstats", index=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     entity_type: Mapped[str] = mapped_column(String(128), index=True)
     entity_moid: Mapped[str] = mapped_column(String(256), index=True)
@@ -197,14 +148,10 @@ class MetricSample(Base):
 
 class IngestionState(Base):
     __tablename__ = "ingestion_state"
-    __table_args__ = (
-        UniqueConstraint("vcenter_id", "kind", name="uq_ingestion_vcenter_kind"),
-    )
+    __table_args__ = (UniqueConstraint("vcenter_id", "kind", name="uq_ingestion_vcenter_kind"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    vcenter_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE")
-    )
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(64), index=True)
     cursor_value: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -216,27 +163,17 @@ class CollectorRunState(Base):
 
     __tablename__ = "collector_run_states"
     __table_args__ = (
-        UniqueConstraint(
-            "vcenter_id", "collector_id", name="uq_collector_run_vcenter_plugin"
-        ),
+        UniqueConstraint("vcenter_id", "collector_id", name="uq_collector_run_vcenter_plugin"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    vcenter_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE")
-    )
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
     collector_id: Mapped[str] = mapped_column(String(64), index=True)
     collector_version: Mapped[str] = mapped_column(String(64), default="")
     status: Mapped[str] = mapped_column(String(16), index=True)
-    last_started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_success_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_failure_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     events_inserted: Mapped[int] = mapped_column(Integer, default=0)
     metrics_inserted: Mapped[int] = mapped_column(Integer, default=0)
     logs_inserted: Mapped[int] = mapped_column(Integer, default=0)
@@ -306,7 +243,6 @@ class DigestRecord(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
-
 class EventTypeResearch(Base):
     """event_type 単位の WEB 調査結果キャッシュ（原因・対処情報の要約と出典）。
 
@@ -315,9 +251,7 @@ class EventTypeResearch(Base):
     """
 
     __tablename__ = "event_type_research"
-    __table_args__ = (
-        UniqueConstraint("event_type", name="uq_event_type_research_event_type"),
-    )
+    __table_args__ = (UniqueConstraint("event_type", name="uq_event_type_research_event_type"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
@@ -342,26 +276,18 @@ class AlertRule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    rule_type: Mapped[str] = mapped_column(
-        String(64), index=True
-    )  # "event_score" or "metric_threshold"
+    rule_type: Mapped[str] = mapped_column(String(64), index=True)  # "event_score" or "metric_threshold"
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # critical / error / warning（運用上の重大度）
-    alert_level: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="warning", index=True
-    )
+    alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
 
-    states: Mapped[list["AlertState"]] = relationship(
-        back_populates="rule", cascade="all, delete-orphan"
-    )
-    history: Mapped[list["AlertHistory"]] = relationship(
-        back_populates="rule", cascade="all, delete-orphan"
-    )
+    states: Mapped[list["AlertState"]] = relationship(back_populates="rule", cascade="all, delete-orphan")
+    history: Mapped[list["AlertHistory"]] = relationship(back_populates="rule", cascade="all, delete-orphan")
 
 
 class AlertState(Base):
@@ -369,23 +295,15 @@ class AlertState(Base):
 
     __tablename__ = "alert_states"
     __table_args__ = (
-        UniqueConstraint(
-            "rule_id", "context_key", name="uq_alert_states_rule_id_context_key"
-        ),
+        UniqueConstraint("rule_id", "context_key", name="uq_alert_states_rule_id_context_key"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("alert_rules.id", ondelete="CASCADE")
-    )
-    state: Mapped[str] = mapped_column(
-        String(32), index=True
-    )  # firing / resolved / stale
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
+    state: Mapped[str] = mapped_column(String(32), index=True)  # firing / resolved / stale
     context_key: Mapped[str] = mapped_column(String(512), index=True)
     fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -399,13 +317,9 @@ class AlertHistory(Base):
     __tablename__ = "alert_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("alert_rules.id", ondelete="CASCADE")
-    )
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("alert_rules.id", ondelete="CASCADE"))
     # 通知送信時点のレベル（ルール変更後も履歴上の重大度を保つ）
-    alert_level: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="warning", index=True
-    )
+    alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)
     state: Mapped[str] = mapped_column(String(32), index=True)
     context_key: Mapped[str] = mapped_column(String(512), index=True)
     notified_at: Mapped[datetime] = mapped_column(
@@ -417,23 +331,13 @@ class AlertHistory(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     delivery_status: Mapped[str] = mapped_column(
-        String(16),
-        nullable=False,
-        default=lambda ctx: (
-            "skipped"
-            if ctx.get_current_parameters().get("success") is None
-            else "succeeded"
-            if ctx.get_current_parameters()["success"]
-            else "failed"
-        ),
+        String(16), nullable=False,
+        default=lambda ctx: ("skipped" if ctx.get_current_parameters().get("success") is None
+                             else "succeeded" if ctx.get_current_parameters()["success"] else "failed"),
     )
     attempt_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    last_attempt_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    next_attempt_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     rule: Mapped["AlertRule"] = relationship(back_populates="history")
 
@@ -445,9 +349,7 @@ class AlertNotificationOutbox(Base):
     __table_args__ = (Index("ix_alert_outbox_due", "next_attempt_at", "created_at"),)
 
     history_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("alert_history.id", ondelete="CASCADE"),
-        primary_key=True,
+        Integer, ForeignKey("alert_history.id", ondelete="CASCADE"), primary_key=True,
     )
     subject: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
@@ -465,25 +367,15 @@ class IncidentTimelineManualSnapshot(Base):
 
     __tablename__ = "incident_timeline_manual_snapshots"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     from_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     to_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     timestamp_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     operator_note: Mapped[str] = mapped_column(Text, nullable=False)
-    build_request_payload: Mapped[dict[str, object]] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
-    snapshot_kind: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="manual", index=True
-    )
-    trigger_id: Mapped[str | None] = mapped_column(
-        String(128), nullable=True, index=True
-    )
-    trigger_evidence: Mapped[dict[str, object] | None] = mapped_column(
-        JSON, nullable=True
-    )
+    build_request_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    snapshot_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="manual", index=True)
+    trigger_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    trigger_evidence: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     graph_context: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -501,9 +393,7 @@ class PluginConfigurationDraft(Base):
 
 class SSHCredential(Base):
     __tablename__ = "ssh_credentials"
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
     private_key: Mapped[str] = mapped_column(EncryptedString(65536))
     public_key: Mapped[str] = mapped_column(Text)
@@ -511,16 +401,12 @@ class SSHCredential(Base):
 
 class SSHConnection(Base):
     __tablename__ = "ssh_connections"
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
     host: Mapped[str] = mapped_column(String(512))
     port: Mapped[int] = mapped_column(Integer, default=22)
     username: Mapped[str] = mapped_column(String(512))
-    credential_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("ssh_credentials.id")
-    )
+    credential_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("ssh_credentials.id"))
     candidate_key: Mapped[str | None] = mapped_column(Text)
     approved_key: Mapped[str | None] = mapped_column(Text)
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -532,14 +418,10 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("realm_key", "subject", name="uq_users_realm_subject"),
-        CheckConstraint(
-            "role IN ('admin', 'operator', 'viewer')", name="ck_users_role"
-        ),
+        CheckConstraint("role IN ('admin', 'operator', 'viewer')", name="ck_users_role"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # ``local`` またはディレクトリ由来の ``dir:<uuid>``。NULL を使わないことで一意制約を効かせる。
     realm_key: Mapped[str] = mapped_column(String(64), default="local")
     # 認証元での不変 ID（ローカルは小文字化したユーザー名、AD は objectGUID など）。
@@ -547,22 +429,14 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(256))
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
-    directory_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), nullable=True, index=True
-    )
+    directory_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     role: Mapped[str] = mapped_column(String(16), default="viewer")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    locked_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    password_changed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -584,14 +458,10 @@ class AuthSession(Base):
 
     __tablename__ = "auth_sessions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        index=True,
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -620,9 +490,7 @@ class DirectoryConfig(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(128), unique=True)
     kind: Mapped[str] = mapped_column(String(8))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -634,9 +502,7 @@ class DirectoryConfig(Base):
     tls_verify: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     ca_cert_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
     bind_dn: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    bind_password: Mapped[str | None] = mapped_column(
-        EncryptedString(2048), nullable=True
-    )
+    bind_password: Mapped[str | None] = mapped_column(EncryptedString(2048), nullable=True)
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     # ユーザー検索
     user_search_base: Mapped[str] = mapped_column(String(1024))
@@ -645,18 +511,14 @@ class DirectoryConfig(Base):
     username_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # AD のみ。ドメインを付けずに入力されたユーザー名を UPN として探すときの接尾辞（例: example.com）
     ad_upn_suffix: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    display_name_attribute: Mapped[str | None] = mapped_column(
-        String(128), nullable=True
-    )
+    display_name_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
     email_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # グループの所属
     group_mode: Mapped[str] = mapped_column(String(16), default="member_of")
     group_search_base: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     group_search_filter: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # group_search のとき、グループ側でメンバーを表す属性（member / uniqueMember / memberUid）
-    group_member_attribute: Mapped[str | None] = mapped_column(
-        String(128), nullable=True
-    )
+    group_member_attribute: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # その属性の値がユーザーの DN（``dn``）かユーザー名（``username``）か
     group_member_value: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -683,23 +545,16 @@ class DirectoryGroupRoleMapping(Base):
     __tablename__ = "directory_group_role_mappings"
     __table_args__ = (
         UniqueConstraint(
-            "directory_id",
-            "group_dn_normalized",
-            name="uq_directory_group_role_mappings_group",
+            "directory_id", "group_dn_normalized", name="uq_directory_group_role_mappings_group"
         ),
         CheckConstraint(
-            "role IN ('admin', 'operator', 'viewer')",
-            name="ck_directory_group_role_mappings_role",
+            "role IN ('admin', 'operator', 'viewer')", name="ck_directory_group_role_mappings_role"
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     directory_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True),
-        ForeignKey("directory_configs.id", ondelete="CASCADE"),
-        index=True,
+        Uuid(as_uuid=True), ForeignKey("directory_configs.id", ondelete="CASCADE"), index=True,
     )
     group_dn: Mapped[str] = mapped_column(String(1024))
     # 照合用（属性名・値の大文字小文字と空白の違いをならした DN）

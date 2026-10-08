@@ -102,9 +102,7 @@ async def resolve_session(
     if not token:
         return None
     now = now or utcnow()
-    row = await db.scalar(
-        select(AuthSession).where(AuthSession.token_hash == hash_token(token))
-    )
+    row = await db.scalar(select(AuthSession).where(AuthSession.token_hash == hash_token(token)))
     if row is None:
         return None
     if _is_expired(row, policy, now):
@@ -152,9 +150,7 @@ async def _directory_enabled(db: AsyncSession, user: User) -> bool:
     if user.directory_id is None:
         return True
     enabled = await db.scalar(
-        select(DirectoryConfig.is_enabled).where(
-            DirectoryConfig.id == user.directory_id
-        )
+        select(DirectoryConfig.is_enabled).where(DirectoryConfig.id == user.directory_id)
     )
     return bool(enabled)
 
@@ -205,9 +201,7 @@ async def _touch(db: AsyncSession, row: AuthSession, now: datetime) -> bool:
 async def revoke_session(db: AsyncSession, token: str | None) -> None:
     if not token:
         return
-    await db.execute(
-        delete(AuthSession).where(AuthSession.token_hash == hash_token(token))
-    )
+    await db.execute(delete(AuthSession).where(AuthSession.token_hash == hash_token(token)))
 
 
 async def revoke_all_for_user(

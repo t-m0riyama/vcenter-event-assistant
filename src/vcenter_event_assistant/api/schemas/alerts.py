@@ -21,34 +21,19 @@ class AlertRuleCreate(BaseModel):
         if not isinstance(cfg, dict):
             raise ValueError("config must be an object")
         if self.rule_type == "metric_threshold":
-            if (
-                "metric_key" not in cfg
-                or not isinstance(cfg.get("metric_key"), str)
-                or not cfg["metric_key"].strip()
-            ):
-                raise ValueError(
-                    "metric_threshold config requires non-empty string metric_key"
-                )
-            if "threshold" not in cfg or not isinstance(
-                cfg.get("threshold"), (int, float)
-            ):
+            if "metric_key" not in cfg or not isinstance(cfg.get("metric_key"), str) or not cfg["metric_key"].strip():
+                raise ValueError("metric_threshold config requires non-empty string metric_key")
+            if "threshold" not in cfg or not isinstance(cfg.get("threshold"), (int, float)):
                 raise ValueError("metric_threshold config requires numeric threshold")
         elif self.rule_type == "event_score":
             threshold_raw = cfg.get("threshold", cfg.get("min_notable_score", 60))
-            if (
-                not isinstance(threshold_raw, (int, float))
-                or not 0 <= float(threshold_raw) <= 100
-            ):
-                raise ValueError(
-                    "event_score config requires threshold (or min_notable_score) in 0..100"
-                )
+            if not isinstance(threshold_raw, (int, float)) or not 0 <= float(threshold_raw) <= 100:
+                raise ValueError("event_score config requires threshold (or min_notable_score) in 0..100")
             if "cooldown_minutes" in cfg and (
                 not isinstance(cfg.get("cooldown_minutes"), (int, float))
                 or int(cfg["cooldown_minutes"]) < 1
             ):
-                raise ValueError(
-                    "event_score config.cooldown_minutes must be >= 1 when set"
-                )
+                raise ValueError("event_score config.cooldown_minutes must be >= 1 when set")
         return self
 
 

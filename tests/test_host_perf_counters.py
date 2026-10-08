@@ -17,12 +17,8 @@ from vcenter_event_assistant.collectors import host_perf_counters as hpc
 
 def test_parse_perf_query_result_rows_splits_instances_and_maps_keys() -> None:
     sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
-    s1 = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[10.0]
-    )
-    s2 = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance="vmnic1"), value=[5.0]
-    )
+    s1 = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[10.0])
+    s2 = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic1"), value=[5.0])
     s3 = SimpleNamespace(id=SimpleNamespace(counterId=202, instance=""), value=[3.25])
     pem = SimpleNamespace(value=[s1, s2, s3])
     rows = parse_perf_query_result_rows(
@@ -88,11 +84,7 @@ def test_collect_host_perf_metric_rows_returns_rows_when_query_perf_succeeds() -
     perf_manager = MagicMock()
     perf_manager.perfCounter = [counter_net, counter_disk]
     perf_manager.QueryPerfProviderSummary.return_value = SimpleNamespace(refreshRate=20)
-    perf_manager.QueryAvailablePerfMetric.return_value = [
-        avail_net0,
-        avail_net1,
-        avail_disk,
-    ]
+    perf_manager.QueryAvailablePerfMetric.return_value = [avail_net0, avail_net1, avail_disk]
     perf_manager.QueryPerf.return_value = [pem]
 
     content = SimpleNamespace(perfManager=perf_manager)
@@ -125,17 +117,11 @@ def test_collect_host_perf_metric_rows_returns_rows_when_query_perf_succeeds() -
     assert disk_rows[0]["entity_moid"] == "moid-9"
 
 
-def test_parse_perf_query_result_rows_drops_empty_aggregate_when_named_net_instance_exists() -> (
-    None
-):
+def test_parse_perf_query_result_rows_drops_empty_aggregate_when_named_net_instance_exists() -> None:
     """同一 counter で `""` と vmnic が併存するとき、集約（空 instance）の行は出さない。"""
     sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
-    s_agg = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance=""), value=[99.0]
-    )
-    s_nic = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[10.0]
-    )
+    s_agg = SimpleNamespace(id=SimpleNamespace(counterId=101, instance=""), value=[99.0])
+    s_nic = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[10.0])
     pem = SimpleNamespace(value=[s_agg, s_nic])
     rows = parse_perf_query_result_rows(
         entity_moid="host-1",
@@ -152,12 +138,8 @@ def test_parse_perf_query_result_rows_drops_empty_aggregate_when_named_net_insta
 def test_parse_perf_query_result_rows_drops_total_instance_when_vmnic_exists() -> None:
     """Total と名前付き NIC が併存するとき Total の行は出さない。"""
     sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
-    s_total = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance="Total"), value=[88.0]
-    )
-    s_nic = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[7.0]
-    )
+    s_total = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="Total"), value=[88.0])
+    s_nic = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="vmnic0"), value=[7.0])
     pem = SimpleNamespace(value=[s_total, s_nic])
     rows = parse_perf_query_result_rows(
         entity_moid="host-1",
@@ -174,9 +156,7 @@ def test_parse_perf_query_result_rows_drops_total_instance_when_vmnic_exists() -
 def test_parse_perf_query_result_rows_keeps_total_only_instance() -> None:
     """Total のみのときは 1 行残す（グラフを空にしない）。"""
     sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
-    s_total = SimpleNamespace(
-        id=SimpleNamespace(counterId=101, instance="Total"), value=[42.0]
-    )
+    s_total = SimpleNamespace(id=SimpleNamespace(counterId=101, instance="Total"), value=[42.0])
     pem = SimpleNamespace(value=[s_total])
     rows = parse_perf_query_result_rows(
         entity_moid="host-1",
@@ -190,14 +170,10 @@ def test_parse_perf_query_result_rows_keeps_total_only_instance() -> None:
     assert rows[0]["value"] == 42.0
 
 
-def test_parse_perf_query_result_rows_keeps_empty_instance_when_only_aggregate() -> (
-    None
-):
+def test_parse_perf_query_result_rows_keeps_empty_instance_when_only_aggregate() -> None:
     """空 instance のみの counter は従来どおりホスト MOID の 1 行。"""
     sampled = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
-    s_disk = SimpleNamespace(
-        id=SimpleNamespace(counterId=202, instance=""), value=[3.25]
-    )
+    s_disk = SimpleNamespace(id=SimpleNamespace(counterId=202, instance=""), value=[3.25])
     pem = SimpleNamespace(value=[s_disk])
     rows = parse_perf_query_result_rows(
         entity_moid="host-1",

@@ -46,21 +46,14 @@ def test_build_alert_rule_snapshot_build_request_lookback():
 
 
 def test_format_alert_rule_trigger_id():
-    assert (
-        format_alert_rule_trigger_id(rule_id=3, context_key="host-1")
-        == "alert_rule_3_host_1"
-    )
+    assert format_alert_rule_trigger_id(rule_id=3, context_key="host-1") == "alert_rule_3_host_1"
 
 
 @pytest.mark.asyncio
 async def test_persist_alert_rule_firing_snapshot_inserts_once():
     fired_at = datetime(2026, 5, 22, 10, 0, tzinfo=timezone.utc)
     to_time = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
-    rule = AlertRule(
-        name="CPU High",
-        rule_type="metric_threshold",
-        config={"metric_key": "cpu", "threshold": 90},
-    )
+    rule = AlertRule(name="CPU High", rule_type="metric_threshold", config={"metric_key": "cpu", "threshold": 90})
 
     async with session_scope() as session:
         session.add(rule)

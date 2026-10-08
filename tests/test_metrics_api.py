@@ -41,7 +41,11 @@ async def test_metrics_returns_total_and_respects_limit(client: AsyncClient) -> 
                 )
             )
 
-    q = f"/api/metrics?metric_key=host.cpu.usage_pct&vcenter_id={vid}&limit=2"
+    q = (
+        "/api/metrics?metric_key=host.cpu.usage_pct"
+        f"&vcenter_id={vid}"
+        "&limit=2"
+    )
     resp = await client.get(q)
     assert resp.status_code == 200
     assert resp.headers.get("X-Total-Count") == "3"
@@ -65,9 +69,7 @@ async def test_metrics_empty_total_zero(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_metric_keys_distinct_sorted_and_scoped_by_vcenter(
-    client: AsyncClient,
-) -> None:
+async def test_metric_keys_distinct_sorted_and_scoped_by_vcenter(client: AsyncClient) -> None:
     r1 = await client.post(
         "/api/vcenters",
         json={

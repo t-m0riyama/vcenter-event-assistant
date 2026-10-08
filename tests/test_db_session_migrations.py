@@ -40,9 +40,7 @@ async def test_init_db_sets_alembic_head_on_fresh_db() -> None:
 
         def sync_check(sync_conn) -> bool:
             insp = inspect(sync_conn)
-            return insp.has_table("vcenters") and insp.has_table(
-                "incident_timeline_manual_snapshots"
-            )
+            return insp.has_table("vcenters") and insp.has_table("incident_timeline_manual_snapshots")
 
         assert await conn.run_sync(sync_check)
 

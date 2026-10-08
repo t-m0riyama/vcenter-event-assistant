@@ -75,9 +75,7 @@ async def test_run_digest_once_persists_without_llm() -> None:
     async with session_scope(settings=settings) as session:
         from sqlalchemy import select
 
-        res = await session.execute(
-            select(DigestRecord).where(DigestRecord.id == row.id)
-        )
+        res = await session.execute(select(DigestRecord).where(DigestRecord.id == row.id))
         loaded = res.scalar_one()
         assert loaded.body_markdown == row.body_markdown
 

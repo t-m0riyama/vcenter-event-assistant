@@ -44,14 +44,8 @@ class BindRejected(DirectoryError):
 def check_security(spec: DirectorySpec, options: ConnectOptions) -> None:
     """接続してよい設定か。禁止されていれば ``DirectoryConfigError``。"""
     if spec.transport_security == "none" and options.production:
-        raise DirectoryConfigError(
-            "本番環境では暗号化しない接続（transport_security=none）は使えません。"
-        )
-    if (
-        spec.transport_security != "none"
-        and not spec.tls_verify
-        and not options.allow_insecure_tls
-    ):
+        raise DirectoryConfigError("本番環境では暗号化しない接続（transport_security=none）は使えません。")
+    if spec.transport_security != "none" and not spec.tls_verify and not options.allow_insecure_tls:
         raise DirectoryConfigError(
             "証明書を検証しない接続は禁止されています（VEA_DIRECTORY_ALLOW_INSECURE_TLS=false）。"
             "CA 証明書を設定して証明書の検証を有効にしてください。"
@@ -89,11 +83,7 @@ def describe_tls_failure(exc: BaseException) -> str:
         cause = "サーバ証明書の有効期限が切れています"
     elif "hostname" in lowered or "doesn't match" in lowered or "not match" in lowered:
         cause = "サーバ証明書のホスト名が接続先と一致しません"
-    elif (
-        "self signed" in lowered
-        or "self-signed" in lowered
-        or "unable to get local issuer" in lowered
-    ):
+    elif "self signed" in lowered or "self-signed" in lowered or "unable to get local issuer" in lowered:
         cause = "サーバ証明書の発行元（CA）を信頼できません"
     else:
         cause = "サーバ証明書を検証できません"
@@ -102,12 +92,7 @@ def describe_tls_failure(exc: BaseException) -> str:
 
 def _is_tls_failure(exc: BaseException) -> bool:
     text = str(exc).lower()
-    return (
-        isinstance(exc, ssl.SSLError)
-        or "certificate" in text
-        or "ssl" in text
-        or "tls" in text
-    )
+    return isinstance(exc, ssl.SSLError) or "certificate" in text or "ssl" in text or "tls" in text
 
 
 def connect(
@@ -144,9 +129,7 @@ def connect(
         try:
             conn.open()
             if spec.transport_security == "starttls" and not conn.start_tls():
-                raise DirectoryTlsError(
-                    f"{uri}: StartTLS を開始できません（{conn.result}）"
-                )
+                raise DirectoryTlsError(f"{uri}: StartTLS を開始できません（{conn.result}）")
         except DirectoryError as exc:
             last_error = exc
             conn.unbind()
@@ -156,17 +139,13 @@ def connect(
             if spec.transport_security != "none" and _is_tls_failure(exc):
                 last_error = DirectoryTlsError(f"{uri}: {describe_tls_failure(exc)}")
             else:
-                last_error = DirectoryUnavailable(
-                    f"{uri}: 接続できません（{str(exc)[:200]}）"
-                )
+                last_error = DirectoryUnavailable(f"{uri}: 接続できません（{str(exc)[:200]}）")
             continue
         try:
             bound = conn.bind()
         except (LDAPException, OSError) as exc:
             conn.unbind()
-            last_error = DirectoryUnavailable(
-                f"{uri}: bind の途中で失敗しました（{str(exc)[:200]}）"
-            )
+            last_error = DirectoryUnavailable(f"{uri}: bind の途中で失敗しました（{str(exc)[:200]}）")
             continue
         if bound:
             return conn
@@ -174,8 +153,6 @@ def connect(
         conn.unbind()
         if result.get("description") == "invalidCredentials":
             raise BindRejected(f"{uri}: 資格情報が正しくありません。")
-        last_error = DirectoryUnavailable(
-            f"{uri}: bind に失敗しました（{result.get('description')}）"
-        )
+        last_error = DirectoryUnavailable(f"{uri}: bind に失敗しました（{result.get('description')}）")
     assert last_error is not None
     raise last_error

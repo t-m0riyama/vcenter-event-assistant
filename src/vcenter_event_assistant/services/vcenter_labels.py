@@ -97,11 +97,7 @@ async def load_vcenter_labels_map(
     unique = list({uid for uid in ids})
     if not unique:
         return {}
-    rows = (
-        (await session.execute(select(VCenter).where(VCenter.id.in_(unique))))
-        .scalars()
-        .all()
-    )
+    rows = (await session.execute(select(VCenter).where(VCenter.id.in_(unique)))).scalars().all()
     by_id = {r.id: label_for_vcenter_row(r) for r in rows}
     out: dict[uuid.UUID, str] = {}
     for uid in unique:

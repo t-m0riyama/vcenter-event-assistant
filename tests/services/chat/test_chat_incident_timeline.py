@@ -40,20 +40,16 @@ def test_build_chat_incident_timeline_orders_items_within_same_timestamp() -> No
 def test_build_chat_incident_timeline_limits_visible_items_to_top_10() -> None:
     """同一時刻の表示は上位10件で、それ以外は hidden_count に入る。"""
     at = _ts()
-    entries = (
-        [
-            IncidentTimelineEntry(timestamp_utc=at, kind="alert", title=f"a{i}")
-            for i in range(4)
-        ]
-        + [
-            IncidentTimelineEntry(timestamp_utc=at, kind="event", title=f"e{i}")
-            for i in range(4)
-        ]
-        + [
-            IncidentTimelineEntry(timestamp_utc=at, kind="metric", title=f"m{i}")
-            for i in range(5)
-        ]
-    )
+    entries = [
+        IncidentTimelineEntry(timestamp_utc=at, kind="alert", title=f"a{i}")
+        for i in range(4)
+    ] + [
+        IncidentTimelineEntry(timestamp_utc=at, kind="event", title=f"e{i}")
+        for i in range(4)
+    ] + [
+        IncidentTimelineEntry(timestamp_utc=at, kind="metric", title=f"m{i}")
+        for i in range(5)
+    ]
 
     out = build_chat_incident_timeline(entries)
     col = out.columns[0]
@@ -106,9 +102,7 @@ def test_build_chat_incident_timeline_rejects_invalid_bucket_seconds() -> None:
         build_chat_incident_timeline(entries, bucket_seconds=0)
 
 
-def test_build_chat_incident_timeline_sets_bucket_range_when_bucket_seconds_given() -> (
-    None
-):
+def test_build_chat_incident_timeline_sets_bucket_range_when_bucket_seconds_given() -> None:
     """bucket_seconds があると各列に開始/終了時刻を付与する。"""
     at = _ts()
     out = build_chat_incident_timeline(
@@ -159,9 +153,7 @@ def test_build_chat_incident_timeline_treats_naive_datetime_as_utc() -> None:
     out = build_chat_incident_timeline(
         [
             IncidentTimelineEntry(timestamp_utc=aware_utc, kind="alert", title="aware"),
-            IncidentTimelineEntry(
-                timestamp_utc=naive_same_wall_time, kind="event", title="naive"
-            ),
+            IncidentTimelineEntry(timestamp_utc=naive_same_wall_time, kind="event", title="naive"),
         ],
     )
 

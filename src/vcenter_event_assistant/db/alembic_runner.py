@@ -51,9 +51,7 @@ def _run_with_connection(sync_conn: object, cfg: Config, fn) -> None:
 
 
 @asynccontextmanager
-async def _connection(
-    engine: AsyncEngine | AsyncConnection, *, transactional: bool = False
-):
+async def _connection(engine: AsyncEngine | AsyncConnection, *, transactional: bool = False):
     """起動時はロックを保持した接続を再利用し、既存の engine API も維持する。"""
     if isinstance(engine, AsyncConnection):
         if transactional:
@@ -62,13 +60,11 @@ async def _connection(
         else:
             yield engine
     else:
-        async with engine.begin() if transactional else engine.connect() as conn:
+        async with (engine.begin() if transactional else engine.connect()) as conn:
             yield conn
 
 
-async def get_applied_alembic_revision(
-    engine: AsyncEngine | AsyncConnection,
-) -> str | None:
+async def get_applied_alembic_revision(engine: AsyncEngine | AsyncConnection) -> str | None:
     """``alembic_version.version_num`` を返す。テーブルが無ければ ``None``。"""
 
     def sync_read(sync_conn) -> str | None:
@@ -78,9 +74,7 @@ async def get_applied_alembic_revision(
         return await conn.run_sync(sync_read)
 
 
-async def infer_legacy_stamp_revision(
-    engine: AsyncEngine | AsyncConnection,
-) -> str | None:
+async def infer_legacy_stamp_revision(engine: AsyncEngine | AsyncConnection) -> str | None:
     """``alembic_version`` 未作成 DB の stamp 先を推定する。
 
     Returns:
@@ -132,12 +126,7 @@ async def infer_legacy_stamp_revision(
         return await conn.run_sync(sync_infer)
 
 
-async def alembic_stamp(
-    engine: AsyncEngine | AsyncConnection,
-    revision: str,
-    *,
-    settings: Settings | None = None,
-) -> None:
+async def alembic_stamp(engine: AsyncEngine | AsyncConnection, revision: str, *, settings: Settings | None = None) -> None:
     """指定リビジョンで ``alembic_version`` を stamp する。"""
     cfg = alembic_config(settings=settings)
 
@@ -149,9 +138,7 @@ async def alembic_stamp(
         await conn.run_sync(sync_stamp)
 
 
-async def alembic_upgrade_head(
-    engine: AsyncEngine | AsyncConnection, *, settings: Settings | None = None
-) -> None:
+async def alembic_upgrade_head(engine: AsyncEngine | AsyncConnection, *, settings: Settings | None = None) -> None:
     """``upgrade head`` を実行する。"""
     cfg = alembic_config(settings=settings)
 

@@ -8,13 +8,8 @@ from datetime import datetime, timezone
 import pytest
 
 from vcenter_event_assistant.api.schemas import ChatAttachment, ChatMessage
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
-    EventTimeBucketsPayload,
-)
-from vcenter_event_assistant.services.chat.chat_incident_timeline import (
-    IncidentTimelineColumn,
-    IncidentTimelinePayload,
-)
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelineColumn, IncidentTimelinePayload
 from vcenter_event_assistant.services.chat.chat_attachments import (
     ATTACHMENT_TRUNCATION_SUFFIX,
     IMAGE_TOKENS_PER_ATTACHMENT,
@@ -31,13 +26,8 @@ from vcenter_event_assistant.services.chat.chat_llm_payload import (
     prepare_chat_payload,
     web_search_tool_description,
 )
-from vcenter_event_assistant.services.chat.chat_period_metrics import (
-    PeriodMetricsPayload,
-)
-from vcenter_event_assistant.services.digest.digest_context import (
-    DigestContext,
-    DigestNotableEventGroup,
-)
+from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
+from vcenter_event_assistant.services.digest.digest_context import DigestContext, DigestNotableEventGroup
 from vcenter_event_assistant.settings import Settings
 
 
@@ -96,16 +86,9 @@ def test_web_search_tool_description_varies_by_scope() -> None:
     assert compose_web_search_guidance() == CHAT_WEB_SEARCH_GUIDANCE
 
 
-def test_prepare_chat_payload_excludes_high_cpu_mem_hosts(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    s = Settings(
-        database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=False
-    )
-    monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
-    )
+def test_prepare_chat_payload_excludes_high_cpu_mem_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
+    s = Settings(database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=False)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     ctx = _minimal_ctx(
         high_cpu_hosts=[],
         high_mem_hosts=[],
@@ -129,13 +112,8 @@ def test_prepare_chat_payload_excludes_high_cpu_mem_hosts(
 def test_prepare_chat_payload_includes_optional_blocks_when_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    s = Settings(
-        database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=False
-    )
-    monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
-    )
+    s = Settings(database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=False)
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
     pm = PeriodMetricsPayload(bucket_minutes=15, from_utc=t0, to_utc=t1, cpu=[])
@@ -169,18 +147,13 @@ def test_fit_chat_payload_to_token_budget_truncates_large_json(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_chat_max_input_tokens=2500,
     )
-    monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
-    )
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     pad = "x" * 120_000
     payload = {
         "digest_context": {
             "from_utc": "2026-03-22T00:00:00+00:00",
             "to_utc": "2026-03-22T00:00:00+00:00",
-            "top_event_types": [
-                {"event_type": pad, "event_count": 1, "max_notable_score": 0}
-            ],
+            "top_event_types": [{"event_type": pad, "event_count": 1, "max_notable_score": 0}],
         },
     }
     ctx_json, trimmed, json_truncated, _, _ = fit_chat_payload_to_token_budget(
@@ -201,10 +174,7 @@ def test_build_chat_llm_context_returns_meta_without_llm_call(
         llm_chat_max_input_tokens=8000,
         llm_anonymization_enabled=False,
     )
-    monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
-    )
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     result = build_chat_llm_context(
         _minimal_ctx(),
         [ChatMessage(role="user", content="ping")],
@@ -230,10 +200,7 @@ def test_build_chat_llm_context_anonymizes_entity_names_when_enabled(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_anonymization_enabled=True,
     )
-    monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
-    )
+    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s)
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     secret = "SECRET-ESXI-01.example.com"
     ctx = _minimal_ctx(
@@ -267,9 +234,7 @@ def test_build_chat_llm_context_anonymizes_entity_names_when_enabled(
 
 
 def _text_attachment(name: str = "big.log", body: str = "x") -> ChatAttachment:
-    return ChatAttachment(
-        kind="text", filename=name, media_type="text/plain", text=body
-    )
+    return ChatAttachment(kind="text", filename=name, media_type="text/plain", text=body)
 
 
 def test_estimate_chat_input_tokens_counts_attachments_and_images() -> None:
@@ -289,8 +254,7 @@ def test_fit_chat_payload_trims_conversation_before_attachment(
         llm_chat_max_input_tokens=2500,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
+        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s
     )
     payload = {"digest_context": {"note": "y" * 40_000}}
     old_turns = [ChatMessage(role="user", content="z" * 4_000) for _ in range(3)]
@@ -320,8 +284,7 @@ def test_fit_chat_payload_truncates_attachment_as_last_resort(
         llm_chat_max_input_tokens=1500,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
+        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s
     )
     ctx_json, trimmed, _json_truncated, out_attachment, attachment_truncated = (
         fit_chat_payload_to_token_budget(
@@ -335,12 +298,9 @@ def test_fit_chat_payload_truncates_attachment_as_last_resort(
     assert len(out_attachment) < 20_000
     assert ATTACHMENT_TRUNCATION_SUFFIX in out_attachment
     assert trimmed == [ChatMessage(role="user", content="質問")]
-    assert (
-        estimate_chat_input_tokens(
-            merged_context_user_block(ctx_json), trimmed, out_attachment
-        )
-        <= s.llm_chat_max_input_tokens
-    )
+    assert estimate_chat_input_tokens(
+        merged_context_user_block(ctx_json), trimmed, out_attachment
+    ) <= s.llm_chat_max_input_tokens
 
 
 def test_build_chat_llm_context_reports_attachment_meta(
@@ -352,8 +312,7 @@ def test_build_chat_llm_context_reports_attachment_meta(
         llm_anonymization_enabled=False,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
+        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s
     )
     result = build_chat_llm_context(
         _minimal_ctx(),
@@ -380,8 +339,7 @@ def test_build_chat_llm_context_drops_images_when_unsupported(
         llm_anonymization_enabled=False,
     )
     monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings",
-        lambda: s,
+        "vcenter_event_assistant.services.chat.chat_llm_payload.require_settings", lambda: s
     )
     image = ChatAttachment(
         kind="image",

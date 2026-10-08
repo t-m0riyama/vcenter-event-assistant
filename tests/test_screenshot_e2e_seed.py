@@ -5,16 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import func, select
 
-from vcenter_event_assistant.db.models import (
-    EventRecord,
-    EventTypeGuide,
-    MetricSample,
-    VCenter,
-)
+from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.dev.screenshot_e2e_seed import (
-    run_screenshot_e2e_seed_if_enabled,
-)
+from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.main import create_app
 
 
@@ -27,18 +20,10 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
     await run_screenshot_e2e_seed_if_enabled()
 
     async with session_scope() as session:
-        n_vc = (
-            await session.execute(select(func.count()).select_from(VCenter))
-        ).scalar_one()
-        n_g = (
-            await session.execute(select(func.count()).select_from(EventTypeGuide))
-        ).scalar_one()
-        n_ev = (
-            await session.execute(select(func.count()).select_from(EventRecord))
-        ).scalar_one()
-        n_m = (
-            await session.execute(select(func.count()).select_from(MetricSample))
-        ).scalar_one()
+        n_vc = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
+        n_g = (await session.execute(select(func.count()).select_from(EventTypeGuide))).scalar_one()
+        n_ev = (await session.execute(select(func.count()).select_from(EventRecord))).scalar_one()
+        n_m = (await session.execute(select(func.count()).select_from(MetricSample))).scalar_one()
     assert n_vc == 1
     assert n_g == 3
     assert n_ev == 1
@@ -59,7 +44,5 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
 async def test_screenshot_e2e_seed_skipped_without_env() -> None:
     await run_screenshot_e2e_seed_if_enabled()
     async with session_scope() as session:
-        n_vc = (
-            await session.execute(select(func.count()).select_from(VCenter))
-        ).scalar_one()
+        n_vc = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
     assert n_vc == 0

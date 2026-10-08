@@ -127,9 +127,7 @@ def configure_logging(settings: Settings) -> None:
 #: 切り替える。両者が同じ定数を見ていなければ機能しないので、再公開で一元化する。
 PLUGIN_LOGGER_NAMESPACE = _PLUGIN_LOGGER_NAMESPACE
 
-_LOG_FORMAT_WORKER = (
-    "%(levelname)s [collector-worker %(process)d] [%(name)s] %(message)s"
-)
+_LOG_FORMAT_WORKER = "%(levelname)s [collector-worker %(process)d] [%(name)s] %(message)s"
 
 
 def build_worker_logging_dict(settings: Settings, *, stream: Any) -> dict[str, Any]:

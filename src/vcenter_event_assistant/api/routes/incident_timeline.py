@@ -19,12 +19,8 @@ from vcenter_event_assistant.api.schemas.chat import (
     IncidentTimelineManualSnapshotListResponse,
 )
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
-from vcenter_event_assistant.services.chat.chat_context_payloads import (
-    build_incident_timeline_payload,
-)
-from vcenter_event_assistant.services.chat.chat_incident_timeline import (
-    IncidentTimelinePayload,
-)
+from vcenter_event_assistant.services.chat.chat_context_payloads import build_incident_timeline_payload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 
 router = APIRouter(prefix="/incident-timeline", tags=["incident-timeline"])
 
@@ -36,22 +32,16 @@ def _normalize_utc_datetime(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _build_request_payload_for_response(
-    snapshot: IncidentTimelineManualSnapshot,
-) -> IncidentTimelineBuildRequest:
+def _build_request_payload_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineBuildRequest:
     if snapshot.build_request_payload:
-        return IncidentTimelineBuildRequest.model_validate(
-            snapshot.build_request_payload
-        )
+        return IncidentTimelineBuildRequest.model_validate(snapshot.build_request_payload)
     return IncidentTimelineBuildRequest(
         from_time=_normalize_utc_datetime(snapshot.from_time),
         to_time=_normalize_utc_datetime(snapshot.to_time),
     )
 
 
-def _graph_context_for_response(
-    snapshot: IncidentTimelineManualSnapshot,
-) -> IncidentTimelineGraphContext | None:
+def _graph_context_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineGraphContext | None:
     raw = snapshot.graph_context
     if not raw:
         return None
@@ -66,12 +56,7 @@ async def post_incident_timeline(
     return await build_incident_timeline_payload(session, body)
 
 
-@router.post(
-    "/snapshots/manual",
-    dependencies=[RequireOperator],
-    response_model=IncidentTimelineManualSnapshotCreateResponse,
-    status_code=201,
-)
+@router.post("/snapshots/manual", dependencies=[RequireOperator], response_model=IncidentTimelineManualSnapshotCreateResponse, status_code=201)
 async def post_manual_snapshot(
     body: IncidentTimelineManualSnapshotCreateRequest,
     session: AsyncSession = Depends(get_session),
@@ -92,9 +77,7 @@ async def post_manual_snapshot(
         to_time=body.to_time,
         timestamp_utc=body.timestamp_utc,
         operator_note=body.operator_note,
-        build_request_payload=build_request_payload.model_dump(
-            mode="json", by_alias=True, exclude_none=True
-        ),
+        build_request_payload=build_request_payload.model_dump(mode="json", by_alias=True, exclude_none=True),
         graph_context=graph_context_dict,
     )
     session.add(snapshot)
@@ -110,19 +93,13 @@ async def post_manual_snapshot(
     )
 
 
-@router.get(
-    "/snapshots/manual",
-    dependencies=[RequireViewer],
-    response_model=IncidentTimelineManualSnapshotListResponse,
-)
+@router.get("/snapshots/manual", dependencies=[RequireViewer], response_model=IncidentTimelineManualSnapshotListResponse)
 async def get_manual_snapshots(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> IncidentTimelineManualSnapshotListResponse:
-    total_result = await session.execute(
-        select(func.count()).select_from(IncidentTimelineManualSnapshot)
-    )
+    total_result = await session.execute(select(func.count()).select_from(IncidentTimelineManualSnapshot))
     total = int(total_result.scalar_one())
 
     result = await session.execute(

@@ -11,22 +11,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
-from vcenter_event_assistant.services.llm.llm_anonymization import (
-    anonymize_for_llm,
-    deanonymize_text,
-)
+from vcenter_event_assistant.services.llm.llm_anonymization import anonymize_for_llm, deanonymize_text
 from vcenter_event_assistant.services.llm.llm_factory import build_chat_model
-from vcenter_event_assistant.services.llm.llm_profile import (
-    is_digest_llm_configured,
-    resolve_llm_profile,
-)
-from vcenter_event_assistant.services.llm.llm_invoke import (
-    log_llm_failure,
-    stream_chat_to_text,
-)
-from vcenter_event_assistant.services.llm.llm_user_errors import (
-    _llm_failure_detail_for_user,
-)
+from vcenter_event_assistant.services.llm.llm_profile import is_digest_llm_configured, resolve_llm_profile
+from vcenter_event_assistant.services.llm.llm_invoke import log_llm_failure, stream_chat_to_text
+from vcenter_event_assistant.services.llm.llm_user_errors import _llm_failure_detail_for_user
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -63,6 +52,8 @@ _SYSTEM_PROMPT = (
     "数値・事実は入力（JSON および本文に書かれた内容）を正とし、推測で情報を追加しない。"
     "不明なことは書かない。"
 )
+
+
 
 
 def _trim_context_json(payload: dict[str, Any], *, max_chars: int | None = None) -> str:
@@ -115,9 +106,7 @@ async def augment_digest_with_llm(
         )
 
     ctx_json = _trim_context_json(ctx_dict)
-    user_block = (
-        f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{md_for_llm}"
-    )
+    user_block = f"集約 JSON:\n```json\n{ctx_json}\n```\n\n---\nテンプレート:\n{md_for_llm}"
 
     try:
         dprof = resolve_llm_profile(s, purpose="digest")
@@ -129,10 +118,7 @@ async def augment_digest_with_llm(
             dprof.model,
         )
         if dprof.provider == "copilot_cli" and not s.mock_mode:
-            from vcenter_event_assistant.services.llm.copilot_cli_llm import (
-                run_copilot_cli_digest_completion,
-            )
-
+            from vcenter_event_assistant.services.llm.copilot_cli_llm import run_copilot_cli_digest_completion
             summary = await run_copilot_cli_digest_completion(
                 s,
                 system_prompt=_SYSTEM_PROMPT,
@@ -140,13 +126,8 @@ async def augment_digest_with_llm(
             )
         else:
             model = build_chat_model(s, purpose="digest", config=runnable_config)
-            lc_messages = [
-                SystemMessage(content=_SYSTEM_PROMPT),
-                HumanMessage(content=user_block),
-            ]
-            summary, _, _ = await stream_chat_to_text(
-                model, lc_messages, config=runnable_config
-            )
+            lc_messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_block)]
+            summary, _, _ = await stream_chat_to_text(model, lc_messages, config=runnable_config)
         summary = deanonymize_text(summary.strip(), reverse_map)
         merged = template_markdown.rstrip() + "\n\n" + summary + "\n"
         return (merged, None)

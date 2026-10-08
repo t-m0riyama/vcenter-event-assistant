@@ -11,16 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.auth_deps import RequireOperator, RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.api.schemas import (
-    DigestListResponse,
-    DigestRead,
-    DigestRunRequest,
-)
+from vcenter_event_assistant.api.schemas import DigestListResponse, DigestRead, DigestRunRequest
 from vcenter_event_assistant.db.models import DigestRecord
 from vcenter_event_assistant.services.digest.digest_run import run_digest_once
-from vcenter_event_assistant.services.digest.digest_timezone import (
-    resolve_digest_timezone,
-)
+from vcenter_event_assistant.services.digest.digest_timezone import resolve_digest_timezone
 from vcenter_event_assistant.services.digest.digest_window import (
     zoned_previous_calendar_month_window,
     zoned_previous_week_window,
@@ -67,15 +61,11 @@ async def list_digests(
     )
     res = await session.execute(q)
     rows = list(res.scalars().all())
-    return DigestListResponse(
-        items=[DigestRead.model_validate(r) for r in rows], total=total
-    )
+    return DigestListResponse(items=[DigestRead.model_validate(r) for r in rows], total=total)
 
 
 @router.get("/{digest_id}", dependencies=[RequireViewer], response_model=DigestRead)
-async def get_digest(
-    digest_id: int, session: AsyncSession = Depends(get_session)
-) -> DigestRead:
+async def get_digest(digest_id: int, session: AsyncSession = Depends(get_session)) -> DigestRead:
     row = await session.get(DigestRecord, digest_id)
     if row is None:
         raise HTTPException(status_code=404, detail="digest not found")

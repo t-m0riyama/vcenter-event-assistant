@@ -13,10 +13,7 @@ from dataclasses import dataclass
 from vcenter_event_assistant.auth.directory import backend
 from vcenter_event_assistant.auth.directory.connection import ConnectOptions
 from vcenter_event_assistant.auth.directory.errors import DirectoryError
-from vcenter_event_assistant.auth.directory.role_mapping import (
-    normalize_dn,
-    resolve_role,
-)
+from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
 from vcenter_event_assistant.auth.directory.spec import DirectorySpec
 
 
@@ -46,9 +43,7 @@ def run_test(
         return [StageResult("connect", False, str(exc))]
     try:
         who = spec.bind_dn or "匿名"
-        results.append(
-            StageResult("connect", True, f"接続して {who} で bind しました{tls_note}。")
-        )
+        results.append(StageResult("connect", True, f"接続して {who} で bind しました{tls_note}。"))
         if not username:
             return results
         try:
@@ -57,45 +52,29 @@ def run_test(
         except DirectoryError as exc:
             results.append(StageResult("user_search", False, str(exc)))
             return results
-        results.append(
-            StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}")
-        )
+        results.append(StageResult("user_search", True, f"ユーザーが見つかりました: {entry.dn}"))
         if password:
             try:
                 backend.verify_user_password(spec, entry.dn, password, options)
             except DirectoryError as exc:
                 results.append(StageResult("user_bind", False, str(exc)))
                 return results
-            results.append(
-                StageResult("user_bind", True, "このユーザーとして bind できました。")
-            )
+            results.append(StageResult("user_bind", True, "このユーザーとして bind できました。"))
         try:
             # 本番のログインと同じく、ディレクトリ上のユーザー名で調べる（別名で検索した場合も）
-            groups = backend.member_groups(
-                conn, spec, entry, backend.resolved_username(spec, entry, name)
-            )
+            groups = backend.member_groups(conn, spec, entry, backend.resolved_username(spec, entry, name))
         except DirectoryError as exc:
             results.append(StageResult("groups", False, str(exc)))
             return results
         role = resolve_role(groups, spec.mappings)
-        matched = [
-            label for label, _r in spec.mapping_labels if normalize_dn(label) in groups
-        ]
+        matched = [label for label, _r in spec.mapping_labels if normalize_dn(label) in groups]
         if role is None:
             results.append(
-                StageResult(
-                    "groups",
-                    False,
-                    "対応表のどのグループにも属していないため、ログインできません。",
-                )
+                StageResult("groups", False, "対応表のどのグループにも属していないため、ログインできません。")
             )
         else:
             results.append(
-                StageResult(
-                    "groups",
-                    True,
-                    f"ロール {role.value} でログインできます（一致したグループ: {', '.join(matched)}）。",
-                )
+                StageResult("groups", True, f"ロール {role.value} でログインできます（一致したグループ: {', '.join(matched)}）。")
             )
         return results
     finally:

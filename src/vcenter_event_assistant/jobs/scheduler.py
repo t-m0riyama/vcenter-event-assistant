@@ -17,9 +17,7 @@ from vcenter_event_assistant.auth.service import session_policy
 from vcenter_event_assistant.auth.sessions import purge_expired_sessions
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
-from vcenter_event_assistant.services.alerting.notification_outbox import (
-    deliver_notifications,
-)
+from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
 from vcenter_event_assistant.services.digest.digest_run import run_digest_once
 from vcenter_event_assistant.services.digest.digest_timezone import (
     resolve_digest_timezone,
@@ -266,9 +264,7 @@ def add_digest_cron_jobs(scheduler: AsyncIOScheduler, settings: Settings) -> Non
         )
 
 
-def setup_scheduler(
-    app: "FastAPI", settings: Settings, *, registry=None
-) -> AsyncIOScheduler:
+def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> AsyncIOScheduler:
     """APScheduler に定期ジョブを登録し、``app.state.scheduler`` に格納する。
 
     Args:
@@ -334,9 +330,7 @@ def setup_scheduler(
     return scheduler
 
 
-def reconcile_collector_jobs(
-    scheduler, settings: Settings, registry
-) -> dict[str, list[str]]:
+def reconcile_collector_jobs(scheduler, settings: Settings, registry) -> dict[str, list[str]]:
     """レジストリの新世代に合わせてコレクタジョブを差分更新する。
 
     ``setup_scheduler`` はジョブを一度だけ登録するため、レジストリをホットスワップしても

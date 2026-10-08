@@ -48,9 +48,7 @@ def fetch_events_blocking(
         ca_bundle_path=ca_bundle_path,
     )
     try:
-        return fetch_events_from_connection_blocking(
-            si, since=since, max_pages=max_pages, host_label=host
-        )
+        return fetch_events_from_connection_blocking(si, since=since, max_pages=max_pages, host_label=host)
     finally:
         disconnect(si)
 

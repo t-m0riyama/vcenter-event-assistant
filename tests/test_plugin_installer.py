@@ -218,7 +218,9 @@ async def test_plugin_declaring_the_api_package_installs_offline(
     wheel.write_bytes(
         build_wheel(requires=("vcenter-event-assistant-plugin-api>=1.0.0,<2",))
     )
-    outcome = await install_plugin(plugin_settings, source=str(wheel), from_index=False)
+    outcome = await install_plugin(
+        plugin_settings, source=str(wheel), from_index=False
+    )
     assert outcome.collector_ids == ("example.temperature",)
 
 

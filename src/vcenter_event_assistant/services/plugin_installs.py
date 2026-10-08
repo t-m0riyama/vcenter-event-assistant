@@ -44,9 +44,7 @@ async def _upsert(
         )
     ).scalar_one_or_none()
     if row is None:
-        row = InstalledPlugin(
-            distribution=distribution, version="", source="", status=""
-        )
+        row = InstalledPlugin(distribution=distribution, version="", source="", status="")
         session.add(row)
     for key, value in values.items():
         setattr(row, key, value)
@@ -86,9 +84,7 @@ async def start_install(
     await session.commit()
 
     task = asyncio.create_task(
-        _run_install_job(
-            settings, distribution=distribution, source=source, from_index=from_index
-        )
+        _run_install_job(settings, distribution=distribution, source=source, from_index=from_index)
     )
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
@@ -99,7 +95,9 @@ async def _run_install_job(
     settings: Settings, *, distribution: str, source: str, from_index: bool
 ) -> None:
     try:
-        outcome = await install_plugin(settings, source=source, from_index=from_index)
+        outcome = await install_plugin(
+            settings, source=source, from_index=from_index
+        )
     except Exception as exc:
         message = (
             str(exc)

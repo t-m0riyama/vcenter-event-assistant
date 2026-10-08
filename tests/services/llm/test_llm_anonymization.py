@@ -131,9 +131,7 @@ def test_anonymize_for_llm_extra_vcenter_strings_tokenize_markdown() -> None:
 
 
 def test_anonymize_chat_for_llm_extra_vcenter_strings_in_messages() -> None:
-    from vcenter_event_assistant.services.llm.llm_anonymization import (
-        anonymize_chat_for_llm,
-    )
+    from vcenter_event_assistant.services.llm.llm_anonymization import anonymize_chat_for_llm
 
     payload = {"digest_context": {"total_events": 0}}
     contents = ["MyDisplay と vcenter02.lab.local を確認"]
@@ -149,13 +147,9 @@ def test_anonymize_chat_for_llm_extra_vcenter_strings_in_messages() -> None:
     assert deanonymize_text(out_contents[0], rev) == contents[0]
 
 
-def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqdn() -> (
-    None
-):
+def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqdn() -> None:
     """period_metrics の entity_name が FQDN のとき、第1ラベル（短縮名）も会話からトークン化する。"""
-    from vcenter_event_assistant.services.llm.llm_anonymization import (
-        anonymize_chat_for_llm,
-    )
+    from vcenter_event_assistant.services.llm.llm_anonymization import anonymize_chat_for_llm
 
     payload = {
         "digest_context": {"total_events": 0},
@@ -171,9 +165,7 @@ def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqd
         },
     }
     contents = ["mini5のCPU使用率が最も高い時間帯を教えて。"]
-    _pl, out_contents, _att, rev = anonymize_chat_for_llm(
-        payload, contents, extra_vcenter_strings=None
-    )
+    _pl, out_contents, _att, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
     assert "mini5" not in out_contents[0]
     assert "mini5.moriyama.internal" not in str(_pl)
     tok_in_json = _pl["period_metrics"]["cpu"][0]["entity_name"]
@@ -192,13 +184,7 @@ def test_settings_llm_anonymization_enabled(monkeypatch: pytest.MonkeyPatch) -> 
     from vcenter_event_assistant.settings import Settings
 
     monkeypatch.delenv("LLM_ANONYMIZATION_ENABLED", raising=False)
-    assert (
-        Settings(database_url="sqlite+aiosqlite:///:memory:").llm_anonymization_enabled
-        is True
-    )
+    assert Settings(database_url="sqlite+aiosqlite:///:memory:").llm_anonymization_enabled is True
 
     monkeypatch.setenv("LLM_ANONYMIZATION_ENABLED", "false")
-    assert (
-        Settings(database_url="sqlite+aiosqlite:///:memory:").llm_anonymization_enabled
-        is False
-    )
+    assert Settings(database_url="sqlite+aiosqlite:///:memory:").llm_anonymization_enabled is False

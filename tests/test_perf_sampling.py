@@ -62,9 +62,7 @@ def test_sample_hosts_blocking_merges_cpu_mem_host_perf_and_datastore(
         }
     ]
 
-    rows = sample_hosts_blocking(
-        host="vc.example", port=443, username="u", password="p"
-    )
+    rows = sample_hosts_blocking(host="vc.example", port=443, username="u", password="p")
 
     keys = {r["metric_key"] for r in rows}
     assert "host.cpu.usage_pct" in keys

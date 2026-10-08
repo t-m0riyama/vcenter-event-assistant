@@ -42,10 +42,8 @@ async def _insert_on_conflict_do_nothing(
     else:
         from sqlalchemy.dialects.sqlite import insert as dialect_insert
 
-    stmt = (
-        dialect_insert(model)
-        .values(**values)
-        .on_conflict_do_nothing(index_elements=index_elements)
+    stmt = dialect_insert(model).values(**values).on_conflict_do_nothing(
+        index_elements=index_elements
     )
     return await session.execute(stmt)
 
@@ -180,9 +178,7 @@ async def purge_old_events(session: AsyncSession, *, settings: Settings) -> int:
         削除した行数。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.event_retention_days)
-    res = await session.execute(
-        delete(EventRecord).where(EventRecord.occurred_at < cutoff)
-    )
+    res = await session.execute(delete(EventRecord).where(EventRecord.occurred_at < cutoff))
     return res.rowcount or 0
 
 
@@ -196,9 +192,7 @@ async def purge_old_metrics(session: AsyncSession, *, settings: Settings) -> int
         削除した行数。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.metric_retention_days)
-    res = await session.execute(
-        delete(MetricSample).where(MetricSample.sampled_at < cutoff)
-    )
+    res = await session.execute(delete(MetricSample).where(MetricSample.sampled_at < cutoff))
     return res.rowcount or 0
 
 
@@ -208,12 +202,10 @@ async def purge_old_alert_history(session: AsyncSession, *, settings: Settings) 
     if days <= 0:
         return 0
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    res = await session.execute(
-        delete(AlertHistory).where(
-            AlertHistory.notified_at < cutoff,
-            AlertHistory.delivery_status.notin_(["pending", "retrying"]),
-        )
-    )
+    res = await session.execute(delete(AlertHistory).where(
+        AlertHistory.notified_at < cutoff,
+        AlertHistory.delivery_status.notin_(["pending", "retrying"]),
+    ))
     return res.rowcount or 0
 
 
@@ -223,15 +215,11 @@ async def purge_old_digest_records(session: AsyncSession, *, settings: Settings)
     if days <= 0:
         return 0
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    res = await session.execute(
-        delete(DigestRecord).where(DigestRecord.created_at < cutoff)
-    )
+    res = await session.execute(delete(DigestRecord).where(DigestRecord.created_at < cutoff))
     return res.rowcount or 0
 
 
-async def purge_old_incident_timeline_snapshots(
-    session: AsyncSession, *, settings: Settings
-) -> int:
+async def purge_old_incident_timeline_snapshots(session: AsyncSession, *, settings: Settings) -> int:
     """保持期間を超えたインシデントタイムラインスナップショット行を削除する。"""
     days = settings.incident_timeline_snapshot_retention_days
     if days <= 0:
@@ -260,9 +248,6 @@ async def list_enabled_vcenters(session: AsyncSession) -> list[VCenter]:
 
 async def purge_old_logs(session: AsyncSession, *, settings: Settings) -> int:
     from vcenter_event_assistant.db.models import LogRecord
-
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.log_retention_days)
-    result = await session.execute(
-        delete(LogRecord).where(LogRecord.effective_at < cutoff)
-    )
+    result = await session.execute(delete(LogRecord).where(LogRecord.effective_at < cutoff))
     return result.rowcount or 0

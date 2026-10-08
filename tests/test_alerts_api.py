@@ -9,48 +9,40 @@ from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertStat
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 
-
 @pytest.mark.asyncio
 async def test_alerts_rules_crud(client: AsyncClient):
     # Create
-    resp = await client.post(
-        "/api/alerts/rules",
-        json={
-            "name": "High CPU Test",
-            "rule_type": "metric_threshold",
-            "alert_level": "error",
-            "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90},
-        },
-    )
+    resp = await client.post("/api/alerts/rules", json={
+        "name": "High CPU Test",
+        "rule_type": "metric_threshold",
+        "alert_level": "error",
+        "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90},
+    })
     assert resp.status_code == 201
     rule_id = resp.json()["id"]
     assert resp.json()["alert_level"] == "error"
-
+    
     # List
     resp = await client.get("/api/alerts/rules")
     assert resp.status_code == 200
     assert any(r["id"] == rule_id for r in resp.json())
-
+    
     # Patch
-    resp = await client.patch(
-        f"/api/alerts/rules/{rule_id}",
-        json={
-            "is_enabled": False,
-            "alert_level": "critical",
-        },
-    )
+    resp = await client.patch(f"/api/alerts/rules/{rule_id}", json={
+        "is_enabled": False,
+        "alert_level": "critical",
+    })
     assert resp.status_code == 200
     assert resp.json()["is_enabled"] is False
     assert resp.json()["alert_level"] == "critical"
-
+    
     # Delete
     resp = await client.delete(f"/api/alerts/rules/{rule_id}")
     assert resp.status_code == 204
-
+    
     # Check deleted
     resp = await client.get("/api/alerts/rules")
     assert not any(r["id"] == rule_id for r in resp.json())
-
 
 @pytest.mark.asyncio
 async def test_alerts_rules_invalid_level(client: AsyncClient):
@@ -138,11 +130,7 @@ async def test_alerts_rules_patch_config_updates_config_only(client: AsyncClient
             "name": "Patch Config Rule",
             "rule_type": "metric_threshold",
             "alert_level": "critical",
-            "config": {
-                "metric_key": "host.cpu.usage_pct",
-                "threshold": 90,
-                "window_minutes": 5,
-            },
+            "config": {"metric_key": "host.cpu.usage_pct", "threshold": 90, "window_minutes": 5},
         },
     )
     assert create_resp.status_code == 201
@@ -230,9 +218,7 @@ async def test_alert_rules_import_duplicate_name_returns_400(client: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_alert_rules_import_overwrite_existing_updates_fields(
-    client: AsyncClient,
-):
+async def test_alert_rules_import_overwrite_existing_updates_fields(client: AsyncClient):
     created = await client.post(
         "/api/alerts/rules",
         json={
@@ -254,11 +240,7 @@ async def test_alert_rules_import_overwrite_existing_updates_fields(
                     "name": "Overwrite Target",
                     "rule_type": "metric_threshold",
                     "alert_level": "critical",
-                    "config": {
-                        "metric_key": "host.cpu.usage_pct",
-                        "threshold": 95,
-                        "window_minutes": 5,
-                    },
+                    "config": {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5},
                 },
             ],
         },
@@ -272,17 +254,11 @@ async def test_alert_rules_import_overwrite_existing_updates_fields(
     target = by_name["Overwrite Target"]
     assert target["rule_type"] == "metric_threshold"
     assert target["alert_level"] == "critical"
-    assert target["config"] == {
-        "metric_key": "host.cpu.usage_pct",
-        "threshold": 95,
-        "window_minutes": 5,
-    }
+    assert target["config"] == {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5}
 
 
 @pytest.mark.asyncio
-async def test_alert_rules_import_delete_not_in_file_removes_orphans(
-    client: AsyncClient,
-):
+async def test_alert_rules_import_delete_not_in_file_removes_orphans(client: AsyncClient):
     first = await client.post(
         "/api/alerts/rules",
         json={

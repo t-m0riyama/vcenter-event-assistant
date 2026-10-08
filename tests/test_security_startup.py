@@ -55,9 +55,7 @@ def test_production_rejects_plaintext_password_flag() -> None:
         vea_allow_plaintext_passwords=True,
         vcenter_allowed_host_suffixes=".corp.local",
     )
-    with pytest.raises(
-        SecurityConfigurationError, match="VEA_ALLOW_PLAINTEXT_PASSWORDS"
-    ):
+    with pytest.raises(SecurityConfigurationError, match="VEA_ALLOW_PLAINTEXT_PASSWORDS"):
         validate_startup_settings(settings)
 
 
@@ -69,9 +67,7 @@ def test_production_requires_host_suffixes() -> None:
         vea_allow_plaintext_passwords=False,
         vcenter_allowed_host_suffixes="",
     )
-    with pytest.raises(
-        SecurityConfigurationError, match="VCENTER_ALLOWED_HOST_SUFFIXES"
-    ):
+    with pytest.raises(SecurityConfigurationError, match="VCENTER_ALLOWED_HOST_SUFFIXES"):
         validate_startup_settings(settings)
 
 
@@ -97,9 +93,7 @@ def test_production_rejects_disabled_auth() -> None:
         validate_startup_settings(settings)
 
 
-def test_development_allows_disabled_auth_with_warning(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_development_allows_disabled_auth_with_warning(caplog: pytest.LogCaptureFixture) -> None:
     settings = Settings(
         app_env="development",
         database_url="sqlite+aiosqlite:///:memory:",
@@ -113,9 +107,4 @@ def test_development_allows_disabled_auth_with_warning(
 
 def test_auth_is_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VEA_AUTH_ENABLED", raising=False)
-    assert (
-        Settings(
-            _env_file=None, database_url="sqlite+aiosqlite:///:memory:"
-        ).auth_enabled
-        is True
-    )
+    assert Settings(_env_file=None, database_url="sqlite+aiosqlite:///:memory:").auth_enabled is True

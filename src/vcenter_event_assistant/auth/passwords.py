@@ -31,9 +31,7 @@ def validate_password_policy(password: str, *, min_length: int) -> None:
     if len(password) < min_length:
         raise PasswordPolicyError(f"パスワードは {min_length} 文字以上にしてください。")
     if len(password) > PASSWORD_MAX_LENGTH:
-        raise PasswordPolicyError(
-            f"パスワードは {PASSWORD_MAX_LENGTH} 文字以下にしてください。"
-        )
+        raise PasswordPolicyError(f"パスワードは {PASSWORD_MAX_LENGTH} 文字以下にしてください。")
     if password.strip() != password or not password.strip():
         raise PasswordPolicyError("パスワードの先頭・末尾に空白は使えません。")
     if any(ord(c) < 0x20 or ord(c) == 0x7F for c in password):

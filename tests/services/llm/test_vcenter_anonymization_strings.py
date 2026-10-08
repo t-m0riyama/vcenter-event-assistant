@@ -44,9 +44,7 @@ def test_vcenter_strings_dedupes_name_equals_host() -> None:
 async def test_load_all_vcenter_anonymization_strings_merges_rows() -> None:
     from vcenter_event_assistant.db.models import VCenter
     from vcenter_event_assistant.db.session import get_session_factory
-    from vcenter_event_assistant.services.vcenter_labels import (
-        load_all_vcenter_anonymization_strings,
-    )
+    from vcenter_event_assistant.services.vcenter_labels import load_all_vcenter_anonymization_strings
 
     factory = get_session_factory()
     async with factory() as session:
@@ -67,3 +65,4 @@ async def test_load_all_vcenter_anonymization_strings_merges_rows() -> None:
     assert "B" in out
     assert "203.0.113.1" in out
     assert out.index("A") < out.index("B")
+

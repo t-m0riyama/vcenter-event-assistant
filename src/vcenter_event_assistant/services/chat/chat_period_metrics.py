@@ -119,9 +119,7 @@ def _keys_for_toggles(
     return tuple(keys)
 
 
-def _category_for_key(
-    metric_key: str,
-) -> Literal["cpu", "memory", "disk", "network"] | None:
+def _category_for_key(metric_key: str) -> Literal["cpu", "memory", "disk", "network"] | None:
     if metric_key == METRIC_CPU:
         return "cpu"
     if metric_key == METRIC_MEM:
@@ -174,9 +172,7 @@ async def build_chat_period_metrics(
             raise ValueError("bucket_sec must be >= 1")
         bucket_sec_used = bucket_sec
     else:
-        bucket_sec_used = _bucket_seconds_for_range(
-            from_utc, to_utc, max_buckets=max_buckets
-        )
+        bucket_sec_used = _bucket_seconds_for_range(from_utc, to_utc, max_buckets=max_buckets)
     bucket_minutes = max(1, bucket_sec_used // 60)
 
     clauses = [
@@ -206,14 +202,10 @@ async def build_chat_period_metrics(
         bidx = int(offset_sec // bucket_sec_used)
         key = (cat, r.entity_moid, r.metric_key, bidx)
         acc[key].append(float(r.value))
-        entity_name_by_moid[(cat, r.entity_moid)] = (
-            r.entity_name or ""
-        ).strip() or r.entity_moid
+        entity_name_by_moid[(cat, r.entity_moid)] = (r.entity_name or "").strip() or r.entity_moid
 
     # カテゴリ別に entity の代表スコア（期間内の最大バケット平均）で上位 max_hosts を選ぶ
-    peak_by_cat_entity: dict[str, dict[str, float]] = defaultdict(
-        lambda: defaultdict(float)
-    )
+    peak_by_cat_entity: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for (cat, moid, mk, _bidx), vals in acc.items():
         if not vals:
             continue
@@ -231,9 +223,7 @@ async def build_chat_period_metrics(
     ) -> list[PeriodMetricHostSeries]:
         allowed = allowed_moids.get(category, set())
         # (moid, metric_key) -> list of (bidx, avg, n)
-        per_series: dict[tuple[str, str], dict[int, tuple[float, int]]] = defaultdict(
-            dict
-        )
+        per_series: dict[tuple[str, str], dict[int, tuple[float, int]]] = defaultdict(dict)
         for (cat, moid, mk, bidx), vals in acc.items():
             if cat != category or moid not in allowed:
                 continue
@@ -241,7 +231,7 @@ async def build_chat_period_metrics(
             per_series[(moid, mk)][bidx] = (s / c, c)
 
         out: list[PeriodMetricHostSeries] = []
-        for moid, mk in sorted(per_series.keys(), key=lambda x: (x[0], x[1])):
+        for (moid, mk) in sorted(per_series.keys(), key=lambda x: (x[0], x[1])):
             name = entity_name_by_moid.get((category, moid), moid)
             buckets_map = per_series[(moid, mk)]
             points: list[PeriodMetricBucketPoint] = []
@@ -249,9 +239,7 @@ async def build_chat_period_metrics(
                 avg, n = buckets_map[bidx]
                 bucket_start = from_utc + timedelta(seconds=bidx * bucket_sec_used)
                 points.append(
-                    PeriodMetricBucketPoint(
-                        bucket_start_utc=bucket_start, avg=avg, n=n
-                    ),
+                    PeriodMetricBucketPoint(bucket_start_utc=bucket_start, avg=avg, n=n),
                 )
             out.append(
                 PeriodMetricHostSeries(

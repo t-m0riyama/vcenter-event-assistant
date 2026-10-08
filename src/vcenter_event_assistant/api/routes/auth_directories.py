@@ -37,10 +37,7 @@ from vcenter_event_assistant.api.schemas.auth_directories import (
 )
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn
-from vcenter_event_assistant.auth.directory.runner import (
-    connect_options,
-    run_directory_call,
-)
+from vcenter_event_assistant.auth.directory.runner import connect_options, run_directory_call
 from vcenter_event_assistant.auth.directory.spec import realm_key_for, spec_from_model
 from vcenter_event_assistant.auth.directory.testing import run_test
 from vcenter_event_assistant.auth.roles import Role
@@ -51,11 +48,7 @@ from vcenter_event_assistant.auth.users import (
     count_admin_directories,
     count_local_admins,
 )
-from vcenter_event_assistant.db.models import (
-    DirectoryConfig,
-    DirectoryGroupRoleMapping,
-    User,
-)
+from vcenter_event_assistant.db.models import DirectoryConfig, DirectoryGroupRoleMapping, User
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(
@@ -84,9 +77,7 @@ def _invalid(message: str) -> HTTPException:
 
 
 def _not_found() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND, detail="ディレクトリが見つかりません。"
-    )
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ディレクトリが見つかりません。")
 
 
 def _clean(value: Any) -> Any:
@@ -117,14 +108,8 @@ def _valid_server_uri(uri: str, scheme: str) -> bool:
 def _validate(config: DirectoryConfig, settings: Settings) -> None:
     """保存する前に設定の組み合わせを確かめる。不正なら 422。"""
     if config.transport_security == "none" and settings.is_production:
-        raise _invalid(
-            "本番環境では暗号化しない接続（none）は使えません。LDAPS か StartTLS を選んでください。"
-        )
-    if (
-        config.transport_security != "none"
-        and not config.tls_verify
-        and not settings.directory_allow_insecure_tls
-    ):
+        raise _invalid("本番環境では暗号化しない接続（none）は使えません。LDAPS か StartTLS を選んでください。")
+    if config.transport_security != "none" and not config.tls_verify and not settings.directory_allow_insecure_tls:
         raise _invalid(
             "証明書を検証しない設定は禁止されています（VEA_DIRECTORY_ALLOW_INSECURE_TLS=false）。"
             "CA 証明書を設定してください。"
@@ -137,38 +122,24 @@ def _validate(config: DirectoryConfig, settings: Settings) -> None:
             )
     if config.ca_cert_pem:
         if "BEGIN CERTIFICATE" not in config.ca_cert_pem:
-            raise _invalid(
-                "CA 証明書は PEM 形式（-----BEGIN CERTIFICATE-----）で指定してください。"
-            )
+            raise _invalid("CA 証明書は PEM 形式（-----BEGIN CERTIFICATE-----）で指定してください。")
         try:
             ssl.create_default_context(cadata=config.ca_cert_pem)
         except (ssl.SSLError, ValueError):
-            raise _invalid(
-                "CA 証明書を読み込めません。PEM 形式の証明書か確かめてください。"
-            ) from None
+            raise _invalid("CA 証明書を読み込めません。PEM 形式の証明書か確かめてください。") from None
     if config.bind_dn and not config.bind_password:
-        raise _invalid(
-            "サービスアカウントの DN を指定したときはパスワードも設定してください。"
-        )
-    if (
-        config.kind == "ldap"
-        and config.user_search_filter
-        and "{username}" not in config.user_search_filter
-    ):
+        raise _invalid("サービスアカウントの DN を指定したときはパスワードも設定してください。")
+    if config.kind == "ldap" and config.user_search_filter and "{username}" not in config.user_search_filter:
         raise _invalid("ユーザー検索フィルタには {username} を含めてください。")
     if config.kind == "ad" and config.group_mode == "group_search":
-        raise _invalid(
-            "AD ではグループの判定に ad_nested か member_of を使ってください。"
-        )
+        raise _invalid("AD ではグループの判定に ad_nested か member_of を使ってください。")
     if config.kind == "ldap" and config.group_mode == "ad_nested":
         raise _invalid("ad_nested は AD でだけ使えます。")
     if config.group_mode == "group_search" and not config.group_search_base:
         raise _invalid("group_search ではグループの検索ベースを指定してください。")
 
 
-def _mapping_rows(
-    mappings: list[GroupRoleMappingIn],
-) -> list[DirectoryGroupRoleMapping]:
+def _mapping_rows(mappings: list[GroupRoleMappingIn]) -> list[DirectoryGroupRoleMapping]:
     """対応表の行を作る（DN の重複は正規化した値で判定する）。"""
     seen: set[str] = set()
     rows: list[DirectoryGroupRoleMapping] = []
@@ -181,9 +152,7 @@ def _mapping_rows(
             raise _invalid(f"同じグループが重複しています: {group_dn}")
         seen.add(normalized)
         rows.append(
-            DirectoryGroupRoleMapping(
-                group_dn=group_dn, group_dn_normalized=normalized, role=m.role.value
-            )
+            DirectoryGroupRoleMapping(group_dn=group_dn, group_dn_normalized=normalized, role=m.role.value)
         )
     return rows
 
@@ -202,15 +171,9 @@ async def _load(db: AsyncSession, directory_id: uuid.UUID) -> DirectoryConfig:
 
 async def _user_counts(db: AsyncSession) -> dict[uuid.UUID, int]:
     rows = await db.execute(
-        select(User.directory_id, func.count())
-        .where(User.directory_id.is_not(None))
-        .group_by(User.directory_id)
+        select(User.directory_id, func.count()).where(User.directory_id.is_not(None)).group_by(User.directory_id)
     )
-    return {
-        directory_id: int(count)
-        for directory_id, count in rows.all()
-        if directory_id is not None
-    }
+    return {directory_id: int(count) for directory_id, count in rows.all() if directory_id is not None}
 
 
 def _to_read(config: DirectoryConfig, user_count: int) -> DirectoryRead:
@@ -238,10 +201,7 @@ def _to_read(config: DirectoryConfig, user_count: int) -> DirectoryRead:
         group_search_filter=config.group_search_filter,
         group_member_attribute=config.group_member_attribute,
         group_member_value=config.group_member_value,
-        mappings=[
-            GroupRoleMappingRead(group_dn=m.group_dn, role=Role(m.role))
-            for m in config.mappings
-        ],
+        mappings=[GroupRoleMappingRead(group_dn=m.group_dn, role=Role(m.role)) for m in config.mappings],
         user_count=user_count,
         created_at=as_utc(config.created_at),
         updated_at=as_utc(config.updated_at),
@@ -274,9 +234,7 @@ def _audit_saved(event: str, principal: Principal, config: DirectoryConfig) -> N
         )
 
 
-async def _other_admin_sources(
-    db: AsyncSession, settings: Settings, directory_id: uuid.UUID
-) -> int:
+async def _other_admin_sources(db: AsyncSession, settings: Settings, directory_id: uuid.UUID) -> int:
     """このディレクトリ以外で admin としてログインできる手段の数（ローカルログインが有効なときの
     ローカルの admin と、admin の対応を持つほかの有効なディレクトリ）。"""
     local = await count_local_admins(db) if settings.local_login_enabled else 0
@@ -291,17 +249,13 @@ def _no_admin_left(action: str) -> HTTPException:
 
 
 async def _revoke_directory_sessions(db: AsyncSession, directory_id: uuid.UUID) -> None:
-    user_ids = (
-        await db.scalars(select(User.id).where(User.directory_id == directory_id))
-    ).all()
+    user_ids = (await db.scalars(select(User.id).where(User.directory_id == directory_id))).all()
     for user_id in user_ids:
         await revoke_all_for_user(db, user_id)
 
 
 @router.get("", response_model=list[DirectoryRead])
-async def list_directories(
-    db: AsyncSession = Depends(get_session),
-) -> list[DirectoryRead]:
+async def list_directories(db: AsyncSession = Depends(get_session)) -> list[DirectoryRead]:
     rows = (
         await db.scalars(
             select(DirectoryConfig)
@@ -330,9 +284,7 @@ async def create_directory(
         data[key] = _clean(data[key]) if key != "bind_password" else (data[key] or None)
     if not data["server_uris"]:
         raise _invalid("サーバの URI を 1 つ以上指定してください。")
-    if await db.scalar(
-        select(DirectoryConfig.id).where(DirectoryConfig.name == data["name"])
-    ):
+    if await db.scalar(select(DirectoryConfig.id).where(DirectoryConfig.name == data["name"])):
         raise _invalid("同じ名前のディレクトリが既にあります。")
     now = utcnow()
     config = DirectoryConfig(**data, created_at=now, updated_at=now)
@@ -361,17 +313,13 @@ async def update_directory(
             if not name:
                 raise _invalid("名前を入力してください。")
             duplicate = await db.scalar(
-                select(DirectoryConfig.id).where(
-                    DirectoryConfig.name == name, DirectoryConfig.id != config.id
-                )
+                select(DirectoryConfig.id).where(DirectoryConfig.name == name, DirectoryConfig.id != config.id)
             )
             if duplicate:
                 raise _invalid("同じ名前のディレクトリが既にあります。")
             changes["name"] = name
         if "server_uris" in changes and changes["server_uris"] is not None:
-            changes["server_uris"] = [
-                u.strip() for u in changes["server_uris"] if u.strip()
-            ]
+            changes["server_uris"] = [u.strip() for u in changes["server_uris"] if u.strip()]
             if not changes["server_uris"]:
                 raise _invalid("サーバの URI を 1 つ以上指定してください。")
         if "user_search_base" in changes:
@@ -380,15 +328,9 @@ async def update_directory(
                 raise _invalid("ユーザーの検索ベースを入力してください。")
         new_password = changes.pop("bind_password", None)
         for key, value in changes.items():
-            if (
-                value is None
-                and key not in _OPTIONAL_TEXT_FIELDS
-                and key != "group_member_value"
-            ):
+            if value is None and key not in _OPTIONAL_TEXT_FIELDS and key != "group_member_value":
                 continue  # 必須項目の null は「変えない」と同じ
-            setattr(
-                config, key, _clean(value) if key in _OPTIONAL_TEXT_FIELDS else value
-            )
+            setattr(config, key, _clean(value) if key in _OPTIONAL_TEXT_FIELDS else value)
         if body.clear_bind_password:
             config.bind_password = None
         elif new_password:
@@ -466,12 +408,7 @@ async def delete_directory(
         removed = await db.execute(delete(User).where(User.directory_id == config.id))
         await db.delete(config)
         await db.flush()
-    audit(
-        "directory_deleted",
-        actor=principal.username,
-        directory=name,
-        users_deleted=removed.rowcount,
-    )
+    audit("directory_deleted", actor=principal.username, directory=name, users_deleted=removed.rowcount)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -502,8 +439,5 @@ async def test_directory(
     )
     return DirectoryTestResponse(
         ok=all(s.ok for s in stages),
-        stages=[
-            DirectoryTestStage(stage=s.stage, ok=s.ok, message=s.message)
-            for s in stages
-        ],
+        stages=[DirectoryTestStage(stage=s.stage, ok=s.ok, message=s.message) for s in stages],
     )

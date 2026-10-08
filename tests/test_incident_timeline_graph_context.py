@@ -33,10 +33,7 @@ def test_graph_context_accepts_full_payload() -> None:
         "chart_event_type": "VmPoweredOnEvent",
         "marker_timestamp_utc": marker.isoformat().replace("+00:00", "Z"),
         "vcenter_id": str(vid),
-        "captured_range": {
-            "from": t0.isoformat().replace("+00:00", "Z"),
-            "to": t1.isoformat().replace("+00:00", "Z"),
-        },
+        "captured_range": {"from": t0.isoformat().replace("+00:00", "Z"), "to": t1.isoformat().replace("+00:00", "Z")},
     }
     ctx = IncidentTimelineGraphContext.model_validate(raw)
     assert ctx.metric_key == "host.cpu.usage_pct"

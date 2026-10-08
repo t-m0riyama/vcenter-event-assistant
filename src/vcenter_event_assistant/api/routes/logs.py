@@ -84,9 +84,7 @@ async def list_logs(
     return LogListResponse(items=[LogRead.model_validate(r) for r in rows], total=total)
 
 
-@router.get(
-    "/export.csv", dependencies=[RequireViewer], response_class=StreamingResponse
-)
+@router.get("/export.csv", dependencies=[RequireViewer], response_class=StreamingResponse)
 async def export_logs(
     request: Request,
     conditions: list = Depends(log_conditions),

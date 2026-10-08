@@ -9,10 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from vcenter_event_assistant.collectors.events import (
-    fetch_events_blocking,
-    normalize_event,
-)
+from vcenter_event_assistant.collectors.events import fetch_events_blocking, normalize_event
 
 
 def _event_with_key(key: int) -> SimpleNamespace:
@@ -54,12 +51,8 @@ def test_normalize_event_maps_fields() -> None:
     assert row["message"] == "event key=42"
 
 
-def test_normalize_event_missing_key_logs_warning(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level(
-        logging.WARNING, logger="vcenter_event_assistant.collectors.events"
-    )
+def test_normalize_event_missing_key_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="vcenter_event_assistant.collectors.events")
     event = SimpleNamespace(
         createdTime=datetime(2026, 1, 1, tzinfo=timezone.utc),
         fullFormattedMessage="skip me",
@@ -75,9 +68,7 @@ def test_fetch_events_blocking_skips_events_without_key(
     _mock_disconnect: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(
-        logging.WARNING, logger="vcenter_event_assistant.collectors.events"
-    )
+    caplog.set_level(logging.WARNING, logger="vcenter_event_assistant.collectors.events")
     mock_collector = MagicMock()
     mock_collector.ReadNextEvents.side_effect = [
         [
@@ -90,7 +81,9 @@ def test_fetch_events_blocking_skips_events_without_key(
         [],
     ]
     mock_si = MagicMock()
-    mock_si.RetrieveContent.return_value.eventManager.CreateCollectorForEvents.return_value = mock_collector
+    mock_si.RetrieveContent.return_value.eventManager.CreateCollectorForEvents.return_value = (
+        mock_collector
+    )
     mock_connect.return_value = mock_si
 
     rows, max_ts = fetch_events_blocking(
@@ -116,13 +109,13 @@ def test_fetch_events_blocking_warns_when_max_pages_reached(
     _mock_disconnect: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(
-        logging.WARNING, logger="vcenter_event_assistant.collectors.events"
-    )
+    caplog.set_level(logging.WARNING, logger="vcenter_event_assistant.collectors.events")
     mock_collector = MagicMock()
     mock_collector.ReadNextEvents.return_value = [_event_with_key(1)]
     mock_si = MagicMock()
-    mock_si.RetrieveContent.return_value.eventManager.CreateCollectorForEvents.return_value = mock_collector
+    mock_si.RetrieveContent.return_value.eventManager.CreateCollectorForEvents.return_value = (
+        mock_collector
+    )
     mock_connect.return_value = mock_si
 
     fetch_events_blocking(
@@ -148,13 +141,13 @@ def test_fetch_events_blocking_does_not_warn_when_pages_exhausted_early(
     _mock_disconnect: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(
-        logging.WARNING, logger="vcenter_event_assistant.collectors.events"
-    )
+    caplog.set_level(logging.WARNING, logger="vcenter_event_assistant.collectors.events")
     mock_collector = MagicMock()
     mock_collector.ReadNextEvents.side_effect = [[_event_with_key(1)], []]
     mock_si = MagicMock()
-    mock_si.RetrieveContent.return_value.eventManager.CreateCollectorForEvents.return_value = mock_collector
+    mock_si.RetrieveContent.return_value.eventManager.CreateCollectorForEvents.return_value = (
+        mock_collector
+    )
     mock_connect.return_value = mock_si
 
     fetch_events_blocking(

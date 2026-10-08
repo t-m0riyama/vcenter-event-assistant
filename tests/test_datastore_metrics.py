@@ -5,9 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from vcenter_event_assistant.collectors.datastore_metrics import (
-    datastore_space_rows_from_datastores,
-)
+from vcenter_event_assistant.collectors.datastore_metrics import datastore_space_rows_from_datastores
 
 
 def test_datastore_space_rows_used_pct_and_bytes() -> None:

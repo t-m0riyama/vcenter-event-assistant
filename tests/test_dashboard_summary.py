@@ -19,9 +19,7 @@ from vcenter_event_assistant.rules.notable import final_notable_score
 
 
 @pytest.mark.asyncio
-async def test_high_cpu_hosts_one_row_per_host_uses_peak_value(
-    client: AsyncClient,
-) -> None:
+async def test_high_cpu_hosts_one_row_per_host_uses_peak_value(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={
@@ -102,9 +100,7 @@ async def test_high_cpu_hosts_returns_at_most_ten_hosts(client: AsyncClient) -> 
 
 
 @pytest.mark.asyncio
-async def test_high_mem_hosts_one_row_per_host_uses_peak_value(
-    client: AsyncClient,
-) -> None:
+async def test_high_mem_hosts_one_row_per_host_uses_peak_value(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={
@@ -184,9 +180,7 @@ async def test_high_mem_hosts_returns_at_most_ten_hosts(client: AsyncClient) -> 
 
 
 @pytest.mark.asyncio
-async def test_top_event_types_24h_orders_by_count_desc_and_excludes_stale(
-    client: AsyncClient,
-) -> None:
+async def test_top_event_types_24h_orders_by_count_desc_and_excludes_stale(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={
@@ -262,9 +256,7 @@ async def test_top_event_types_24h_orders_by_count_desc_and_excludes_stale(
 
 
 @pytest.mark.asyncio
-async def test_top_event_types_24h_returns_at_most_ten_types(
-    client: AsyncClient,
-) -> None:
+async def test_top_event_types_24h_returns_at_most_ten_types(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={
@@ -353,9 +345,7 @@ async def test_top_event_types_24h_max_notable_score_uses_current_rules_not_stor
 
 
 @pytest.mark.asyncio
-async def test_top_event_types_24h_includes_type_guide_when_registered(
-    client: AsyncClient,
-) -> None:
+async def test_top_event_types_24h_includes_type_guide_when_registered(client: AsyncClient) -> None:
     """種別ガイドが登録されている event_type は top_event_types_24h に type_guide を含む。"""
     r = await client.post(
         "/api/vcenters",
@@ -406,9 +396,7 @@ async def test_top_event_types_24h_includes_type_guide_when_registered(
 
 
 @pytest.mark.asyncio
-async def test_top_notable_events_respects_top_notable_min_score_query(
-    client: AsyncClient,
-) -> None:
+async def test_top_notable_events_respects_top_notable_min_score_query(client: AsyncClient) -> None:
     """``top_notable_min_score`` で要注意一覧が絞り込まれる。0 なら非負スコアをすべて含められる。"""
     r = await client.post(
         "/api/vcenters",
@@ -462,9 +450,7 @@ async def test_top_notable_events_respects_top_notable_min_score_query(
 
 
 @pytest.mark.asyncio
-async def test_attention_counts_notables_and_enabled_firing_alerts(
-    client: AsyncClient,
-) -> None:
+async def test_attention_counts_notables_and_enabled_firing_alerts(client: AsyncClient) -> None:
     """attention は要注意イベント（24h・score>=40）と有効ルールの firing のみ数える。"""
     r = await client.post(
         "/api/vcenters",
@@ -513,29 +499,19 @@ async def test_attention_counts_notables_and_enabled_firing_alerts(
                 notable_score=90,
             )
         )
-        rule_on = AlertRule(
-            name="attn-rule-on", rule_type="event_score", is_enabled=True
-        )
-        rule_off = AlertRule(
-            name="attn-rule-off", rule_type="event_score", is_enabled=False
-        )
+        rule_on = AlertRule(name="attn-rule-on", rule_type="event_score", is_enabled=True)
+        rule_off = AlertRule(name="attn-rule-off", rule_type="event_score", is_enabled=False)
         session.add_all([rule_on, rule_off])
         await session.flush()
         session.add(
-            AlertState(
-                rule_id=rule_on.id, state="firing", context_key="ctx-a", fired_at=base
-            )
+            AlertState(rule_id=rule_on.id, state="firing", context_key="ctx-a", fired_at=base)
         )
         session.add(
-            AlertState(
-                rule_id=rule_on.id, state="resolved", context_key="ctx-b", fired_at=base
-            )
+            AlertState(rule_id=rule_on.id, state="resolved", context_key="ctx-b", fired_at=base)
         )
         # 無効ルールの firing は数えない
         session.add(
-            AlertState(
-                rule_id=rule_off.id, state="firing", context_key="ctx-c", fired_at=base
-            )
+            AlertState(rule_id=rule_off.id, state="firing", context_key="ctx-c", fired_at=base)
         )
 
     resp = await client.get("/api/dashboard/attention")
@@ -623,9 +599,7 @@ async def test_hourly_series_buckets_events_and_notables(client: AsyncClient) ->
 
 
 @pytest.mark.asyncio
-async def test_top_notable_events_includes_type_guide_action_required(
-    client: AsyncClient,
-) -> None:
+async def test_top_notable_events_includes_type_guide_action_required(client: AsyncClient) -> None:
     """要注意イベント上位に ``type_guide``（``action_required`` 含む）が付く。"""
     r = await client.post(
         "/api/vcenters",

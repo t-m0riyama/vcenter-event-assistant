@@ -8,14 +8,8 @@ import httpx
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from vcenter_event_assistant.services.digest.digest_context import (
-    DigestContext,
-    DigestNotableEventGroup,
-)
-from vcenter_event_assistant.services.digest.digest_llm import (
-    _SYSTEM_PROMPT,
-    augment_digest_with_llm,
-)
+from vcenter_event_assistant.services.digest.digest_context import DigestContext, DigestNotableEventGroup
+from vcenter_event_assistant.services.digest.digest_llm import _SYSTEM_PROMPT, augment_digest_with_llm
 from vcenter_event_assistant.settings import Settings
 
 
@@ -42,9 +36,7 @@ def _minimal_ctx() -> DigestContext:
     )
 
 
-def _patch_digest_llm_settings(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> None:
+def _patch_digest_llm_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
     monkeypatch.setattr(
         "vcenter_event_assistant.services.digest.digest_llm.require_settings",
         lambda: settings,
@@ -52,18 +44,14 @@ def _patch_digest_llm_settings(
 
 
 @pytest.mark.asyncio
-async def test_augment_skips_http_when_no_api_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_augment_skips_http_when_no_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key=None,
     )
     _patch_digest_llm_settings(monkeypatch, s)
     md = "# t\n"
-    out, err = await augment_digest_with_llm(
-        context=_minimal_ctx(), template_markdown=md
-    )
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown=md)
     assert out == md
     assert err is None
 
@@ -80,9 +68,7 @@ async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
     _patch_digest_llm_settings(monkeypatch, s)
     fake = FakeListChatModel(responses=["## LLM 要約\n- テスト"])
 
-    def _fake_build(
-        _settings: Settings, *, purpose: object = None, config: object = None
-    ) -> FakeListChatModel:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> FakeListChatModel:
         assert _settings is s
         _ = purpose
         _ = config
@@ -93,9 +79,7 @@ async def test_augment_openai_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         _fake_build,
     )
 
-    out, err = await augment_digest_with_llm(
-        context=_minimal_ctx(), template_markdown="# base"
-    )
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# base")
     assert err is None
     assert "## LLM 要約" in out
     assert "# base" in out
@@ -112,9 +96,7 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
     _patch_digest_llm_settings(monkeypatch, s)
     fake = FakeListChatModel(responses=["## LLM 要約\n- G"])
 
-    def _fake_build(
-        _settings: Settings, *, purpose: object = None, config: object = None
-    ) -> FakeListChatModel:
+    def _fake_build(_settings: Settings, *, purpose: object = None, config: object = None) -> FakeListChatModel:
         assert _settings is s
         _ = purpose
         _ = config
@@ -125,17 +107,13 @@ async def test_augment_gemini_merges_summary(monkeypatch: pytest.MonkeyPatch) ->
         _fake_build,
     )
 
-    out, err = await augment_digest_with_llm(
-        context=_minimal_ctx(), template_markdown="# x"
-    )
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# x")
     assert err is None
     assert "G" in out
 
 
 @pytest.mark.asyncio
-async def test_augment_returns_template_on_http_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_augment_returns_template_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_api_key="sk-x",
@@ -151,9 +129,7 @@ async def test_augment_returns_template_on_http_error(
         _boom,
     )
 
-    out, err = await augment_digest_with_llm(
-        context=_minimal_ctx(), template_markdown="# only"
-    )
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# only")
     assert out == "# only"
     assert err is not None
     assert "LLM 要約は省略" in (err or "")
@@ -161,9 +137,7 @@ async def test_augment_returns_template_on_http_error(
 
 
 @pytest.mark.asyncio
-async def test_augment_uses_exception_type_when_str_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_augment_uses_exception_type_when_str_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     """str(e) が空のときは括弧内に例外型名を入れる（「LLM 要約は省略（）」を防ぐ）。"""
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
@@ -180,17 +154,13 @@ async def test_augment_uses_exception_type_when_str_empty(
         _boom,
     )
 
-    out, err = await augment_digest_with_llm(
-        context=_minimal_ctx(), template_markdown="# only"
-    )
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# only")
     assert out == "# only"
     assert err == "LLM 要約は省略（ConnectionError）"
 
 
 @pytest.mark.asyncio
-async def test_augment_timeout_shows_friendly_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_augment_timeout_shows_friendly_message(monkeypatch: pytest.MonkeyPatch) -> None:
     """httpx.ReadTimeout は str が空になりやすい。タイムアウトである旨を日本語で示す。"""
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
@@ -207,9 +177,7 @@ async def test_augment_timeout_shows_friendly_message(
         _boom,
     )
 
-    out, err = await augment_digest_with_llm(
-        context=_minimal_ctx(), template_markdown="# only"
-    )
+    out, err = await augment_digest_with_llm(context=_minimal_ctx(), template_markdown="# only")
     assert out == "# only"
     assert err is not None
     assert "ReadTimeout" in (err or "")
@@ -256,9 +224,7 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
     )
     captured: dict[str, object] = {}
 
-    async def _spy_stream(
-        model: object, lc_messages: object, *, config: object = None
-    ) -> tuple[str, int | None, float | None]:
+    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["human"] = lc_messages[1].content  # type: ignore[index]
         return "## LLM 要約\n- 補足", None, None
 
@@ -295,9 +261,7 @@ async def test_augment_digest_anonymizes_extra_vcenter_in_template(
     label = "EXTRA-VC-DISPLAY-ONLY"
     captured: dict[str, object] = {}
 
-    async def _spy_stream(
-        model: object, lc_messages: object, *, config: object = None
-    ) -> tuple[str, int | None, float | None]:
+    async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["human"] = lc_messages[1].content  # type: ignore[index]
         return "## LLM 要約\n- ok", None, None
 

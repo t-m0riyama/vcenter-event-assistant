@@ -9,12 +9,8 @@ from typing import Any
 from vcenter_event_assistant_plugin_api import vmware
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
-from vcenter_event_assistant.collectors.datastore_metrics import (
-    sample_datastore_metrics_blocking,
-)
-from vcenter_event_assistant.collectors.host_perf_counters import (
-    collect_host_perf_metric_rows,
-)
+from vcenter_event_assistant.collectors.datastore_metrics import sample_datastore_metrics_blocking
+from vcenter_event_assistant.collectors.host_perf_counters import collect_host_perf_metric_rows
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +110,7 @@ def sample_host_quickstats_from_connection_blocking(si: Any) -> list[dict[str, A
         try:
             rows.extend(_host_metrics(host))
         except Exception:
-            logger.exception(
-                "host quickStats sampling failed host=%s", getattr(host, "name", host)
-            )
+            logger.exception("host quickStats sampling failed host=%s", getattr(host, "name", host))
     return rows
 
 
@@ -128,7 +122,5 @@ def sample_host_performance_from_connection_blocking(si: Any) -> list[dict[str, 
             if _host_is_connected(host):
                 rows.extend(collect_host_perf_metric_rows(si, host))
         except Exception:
-            logger.exception(
-                "host performance sampling failed host=%s", getattr(host, "name", host)
-            )
+            logger.exception("host performance sampling failed host=%s", getattr(host, "name", host))
     return rows

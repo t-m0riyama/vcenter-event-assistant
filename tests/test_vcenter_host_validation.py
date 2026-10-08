@@ -6,9 +6,7 @@ import socket
 
 import pytest
 
-from vcenter_event_assistant.services.vcenter_host_validation import (
-    validate_vcenter_host,
-)
+from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
 
 
 def test_accepts_public_fqdn() -> None:
@@ -40,9 +38,7 @@ def test_rejects_public_ip_when_suffix_allowlist_configured() -> None:
         validate_vcenter_host("8.8.8.8", allowed_suffixes=[".corp.local"])
 
 
-def test_allowlisted_hostname_may_resolve_to_private_ip(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_allowlisted_hostname_may_resolve_to_private_ip(monkeypatch: pytest.MonkeyPatch) -> None:
     def _private_dns(host: str, *a: object, **k: object) -> list[tuple]:
         _ = (host, a, k)
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))]

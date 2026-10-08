@@ -23,7 +23,9 @@ KINDS = ("metric", "event")
 
 def _install_generated_plugin(root: Path, kind: str, *, plugin_id: str) -> None:
     distribution = "acme-sensor-collector"
-    files = scaffold.render(distribution=distribution, plugin_id=plugin_id, kind=kind)
+    files = scaffold.render(
+        distribution=distribution, plugin_id=plugin_id, kind=kind
+    )
     target = root / distribution / "0.1.0"
     package = scaffold.package_name(distribution)
 

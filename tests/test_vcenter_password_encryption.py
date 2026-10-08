@@ -8,20 +8,10 @@ import pytest
 from sqlalchemy import bindparam, select, text
 from sqlalchemy.types import Uuid as SAUuid
 
-from vcenter_event_assistant.db.encrypted_string import (
-    ENC_PREFIX,
-    SecretKeyDecryptError,
-)
+from vcenter_event_assistant.db.encrypted_string import ENC_PREFIX, SecretKeyDecryptError
 from vcenter_event_assistant.db.models import VCenter
-from vcenter_event_assistant.db.session import (
-    get_engine,
-    init_db,
-    reset_db,
-    session_scope,
-)
-from vcenter_event_assistant.db.vcenter_password_migration import (
-    ensure_vcenter_password_storage,
-)
+from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
+from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter_password_storage
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 
@@ -87,9 +77,7 @@ async def test_password_encrypted_when_secret_key_set(secret_env) -> None:
     assert stored.startswith(ENC_PREFIX)
     assert stored != "my-password"
     async with session_scope() as session:
-        vc = (
-            await session.execute(select(VCenter).where(VCenter.id == vc_id))
-        ).scalar_one()
+        vc = (await session.execute(select(VCenter).where(VCenter.id == vc_id))).scalar_one()
         assert vc.password == "my-password"
     await reset_db()
 
@@ -118,9 +106,7 @@ async def test_startup_migrates_legacy_plaintext_passwords(secret_env) -> None:
     stored = await _raw_password(vc_id)
     assert stored.startswith(ENC_PREFIX)
     async with session_scope() as session:
-        vc = (
-            await session.execute(select(VCenter).where(VCenter.id == vc_id))
-        ).scalar_one()
+        vc = (await session.execute(select(VCenter).where(VCenter.id == vc_id))).scalar_one()
         assert vc.password == "legacy-plain"
     await reset_db()
 
@@ -148,9 +134,7 @@ async def test_decrypt_fails_when_secret_key_rotated(secret_env) -> None:
     try:
         with pytest.raises(SecretKeyDecryptError, match="Failed to decrypt"):
             async with session_scope() as session:
-                vc = (
-                    await session.execute(select(VCenter).where(VCenter.id == vc_id))
-                ).scalar_one()
+                vc = (await session.execute(select(VCenter).where(VCenter.id == vc_id))).scalar_one()
                 assert vc.password
     finally:
         monkeypatch.undo()
@@ -160,9 +144,7 @@ async def test_decrypt_fails_when_secret_key_rotated(secret_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_warning_when_secret_key_missing(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+async def test_warning_when_secret_key_missing(caplog: pytest.LogCaptureFixture) -> None:
     await reset_db()
     await init_db()
     with caplog.at_level("WARNING"):

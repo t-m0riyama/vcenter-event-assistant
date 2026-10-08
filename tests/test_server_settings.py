@@ -61,9 +61,7 @@ def test_main_passes_configured_port_to_uvicorn(
 @pytest.mark.parametrize(
     "compose_file", ["docker-compose.sqlite.yml", "docker-compose.postgres.yml"]
 )
-def test_compose_uses_same_configurable_port_for_app_and_publish(
-    compose_file: str,
-) -> None:
+def test_compose_uses_same_configurable_port_for_app_and_publish(compose_file: str) -> None:
     compose = (REPO_ROOT / compose_file).read_text(encoding="utf-8")
 
     assert '"127.0.0.1:${UVICORN_PORT:-8000}:${UVICORN_PORT:-8000}"' in compose

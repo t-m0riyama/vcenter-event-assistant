@@ -8,9 +8,7 @@ import smtplib
 from email.message import EmailMessage
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState
-from vcenter_event_assistant.services.alerting.notification.base import (
-    NotificationChannel,
-)
+from vcenter_event_assistant.services.alerting.notification.base import NotificationChannel
 from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
     NotificationDeliveryOutcome,
 )
@@ -79,9 +77,7 @@ class EmailChannel(NotificationChannel):
         msg = EmailMessage()
         msg.set_content(body)
         msg["Subject"] = subject
-        msg["From"] = (
-            from_address if from_address is not None else settings.alert_email_from
-        )
+        msg["From"] = from_address if from_address is not None else settings.alert_email_from
         msg["To"] = to_address if to_address is not None else settings.alert_email_to
         if message_id is not None:
             msg["Message-ID"] = message_id

@@ -107,9 +107,7 @@ async def test_list_events_min_score_filters_total(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_events_message_contains_case_insensitive(
-    client: AsyncClient,
-) -> None:
+async def test_list_events_message_contains_case_insensitive(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={
@@ -155,9 +153,7 @@ async def test_list_events_message_contains_case_insensitive(
 
 
 @pytest.mark.asyncio
-async def test_list_events_event_type_and_severity_contains(
-    client: AsyncClient,
-) -> None:
+async def test_list_events_event_type_and_severity_contains(client: AsyncClient) -> None:
     r = await client.post(
         "/api/vcenters",
         json={

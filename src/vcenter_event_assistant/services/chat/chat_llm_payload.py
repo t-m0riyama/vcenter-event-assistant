@@ -22,20 +22,12 @@ from vcenter_event_assistant.services.chat.chat_attachments import (
     render_attachment_text_block,
     text_attachments,
 )
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
-    EventTimeBucketsPayload,
-)
-from vcenter_event_assistant.services.chat.chat_incident_timeline import (
-    IncidentTimelinePayload,
-)
-from vcenter_event_assistant.services.chat.chat_period_metrics import (
-    PeriodMetricsPayload,
-)
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
 from vcenter_event_assistant.services.digest.digest_llm import _trim_context_json
-from vcenter_event_assistant.services.llm.llm_anonymization import (
-    anonymize_chat_for_llm,
-)
+from vcenter_event_assistant.services.llm.llm_anonymization import anonymize_chat_for_llm
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -95,7 +87,9 @@ DEFAULT_WEB_SEARCH_SCOPE: WebSearchScope = "vmware_ecosystem"
 DEFAULT_WEB_SEARCH_AGGRESSIVENESS: WebSearchAggressiveness = "balanced"
 
 _WEB_SEARCH_SCOPE_BLURBS: dict[WebSearchScope, str] = {
-    "incidents": ("障害・イベントの原因と対処、および関連する KB・公式ドキュメント"),
+    "incidents": (
+        "障害・イベントの原因と対処、および関連する KB・公式ドキュメント"
+    ),
     "vsphere_ops": (
         "障害・イベントの原因と対処、KB・公式ドキュメント、設定手順、"
         "ベストプラクティス、互換性・バージョン（vSphere 運用全般）"
@@ -235,10 +229,7 @@ def _best_json_string_for_budget(
     """
     full = raw_json
     block = merged_context_user_block(full)
-    if (
-        estimate_chat_input_tokens(block, trimmed, attachment_block, image_count)
-        <= max_tokens
-    ):
+    if estimate_chat_input_tokens(block, trimmed, attachment_block, image_count) <= max_tokens:
         return full, False
 
     lo, hi = 1, max(1, len(full) - 1)
@@ -247,10 +238,7 @@ def _best_json_string_for_budget(
         mid = (lo + hi) // 2
         ctx = _trim_json_raw(full, mid)
         blk = merged_context_user_block(ctx)
-        if (
-            estimate_chat_input_tokens(blk, trimmed, attachment_block, image_count)
-            <= max_tokens
-        ):
+        if estimate_chat_input_tokens(blk, trimmed, attachment_block, image_count) <= max_tokens:
             best = ctx
             lo = mid + 1
         else:
@@ -276,8 +264,7 @@ def _best_attachment_block_for_budget(
 
     def fits(candidate: str | None) -> bool:
         return (
-            estimate_chat_input_tokens(block, trimmed, candidate, image_count)
-            <= max_tokens
+            estimate_chat_input_tokens(block, trimmed, candidate, image_count) <= max_tokens
         )
 
     if fits(attachment_block):
@@ -333,13 +320,7 @@ def fit_chat_payload_to_token_budget(
             estimate_chat_input_tokens(block, trimmed, attachment_block, image_count)
             <= max_tokens
         ):
-            return (
-                ctx_json,
-                trimmed,
-                json_truncated,
-                attachment_block,
-                attachment_truncated,
-            )
+            return ctx_json, trimmed, json_truncated, attachment_block, attachment_truncated
         if len(trimmed) > 1:
             trimmed = trimmed[1:]
             continue
@@ -348,9 +329,7 @@ def fit_chat_payload_to_token_budget(
                 attachment_block, block, trimmed, max_tokens, image_count
             )
             if (
-                estimate_chat_input_tokens(
-                    block, trimmed, attachment_block, image_count
-                )
+                estimate_chat_input_tokens(block, trimmed, attachment_block, image_count)
                 <= max_tokens
             ):
                 return (
@@ -424,8 +403,7 @@ def prepare_chat_payload(
         )
         payload = pl
         trimmed_msgs = [
-            ChatMessage(role=m.role, content=c)
-            for m, c in zip(trimmed_msgs, contents, strict=True)
+            ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
         ]
 
     attachment_block = render_attachment_text_block(attachment_list, attachment_bodies)
@@ -502,9 +480,7 @@ def build_chat_llm_context(
         )
     )
     block = merged_context_user_block(ctx_json)
-    est_tokens = estimate_chat_input_tokens(
-        block, trimmed, attachment_block, len(images)
-    )
+    est_tokens = estimate_chat_input_tokens(block, trimmed, attachment_block, len(images))
     text_count = len(text_attachments(attachment_list)) if attachment_block else 0
     meta = ChatLlmContextMeta(
         json_truncated=json_truncated,
