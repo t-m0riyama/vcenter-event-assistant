@@ -13,14 +13,14 @@
 | 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [PR #247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [PR #248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [PR #249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
-| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
+| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
 1. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
-   - [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）も PR7 のマージまでに入れる。保存前の接続試験には、未保存の設定を受け取る試験用の API が要る（今の `POST /api/auth/directories/{id}/test` は保存済みの設定しか試せない）
+   - [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）と [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258)（その確認の抜け）を、同じ PR で PR7 のマージまでに入れる。PR7 の中でも、PR7 の前の小さな PR でもよい。設計は下の「ディレクトリ API」の予定と、Issue #254 の引き継ぎコメントにまとめてある
 2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
 3. [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
 
@@ -33,6 +33,7 @@
   - 方針で接続を拒否されるディレクトリは、「使える admin」・発行済みセッション・realm の一覧のすべてで除く
   - ディレクトリのログインでロールが変わったら、ほかのセッションを失効させる
   - ログイン中の無効化・同じ名前の並行作成・検索ベースの不在の扱い
+- PR #257（この計画の更新）でも、Codex の指摘は Issue #254 の設計の詰めへ続いた。妥当なものは計画と Issue #254 に追記し、最後の 1 件は利用者の指示で Issue #258 にした
 
 ### PR6 からの持ち越し（Issue）
 
@@ -41,6 +42,7 @@
 | [Issue #253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
 | [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
 | [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけのとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | PR7 のマージまでに（保存前の接続試験・確認ダイアログと合わせて設計する。未保存の設定を試す API が要る） |
+| [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | Issue #254 と同じ PR で（確認の条件に最初から含める） |
 | [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | いつでも（`FOR UPDATE` を足す小さな修正。Issue #252 と同じ PR でよい） |
 | [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
@@ -178,7 +180,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `POST /api/auth/directories/{id}/test`（connect / user_search / user_bind / groups の段階ごとの結果）。保存済みの設定で試す
 - 予定（PR7・Issue #254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
 - 予定（PR7・Issue #254）: 試験した設定と対応表を 1 回でまとめて保存する API（1 つのトランザクションで反映し、セッションの失効も 1 回にする）。設定の PATCH と対応表の PUT に分けて送ると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなるため
-  - admin の経路がこのディレクトリだけのときは、サーバ側で前提を確かめる。リクエストに含めた資格情報で、新しい設定と対応表のもとで本番のログインと同じ処理（`directory_backend.authenticate`。ユーザーの検索・ID 属性の確認・本人としての bind・グループの判定のすべて）を通し、admin に解決されたときだけ保存する。段階を個別に並べて試すと、ID 属性の確認のような段階が抜けるため、ログインの処理そのものを使う。満たさなければ 409。画面で試験を促すだけでは、試験を省いたり途中まで（今の接続試験はユーザー名やパスワードを省くと途中の段階で終わる）にしたりしても保存できてしまうため
+  - admin の経路がこのディレクトリだけのときは、サーバ側で前提を確かめる。リクエストに含めた資格情報で、新しい設定と対応表のもとで本番のログインと同じ処理（`directory_backend.authenticate`。ユーザーの検索・ID 属性の確認・本人としての bind・グループの判定のすべて）を通し、admin に解決されたときだけ保存する。段階を個別に並べて試すと、ID 属性の確認のような段階が抜けるため、ログインの処理そのものを使う。あわせて、確かめた ID のユーザー行があれば有効であること（またはリクエストしている admin 本人と一致すること）も条件にする（`authenticate` はアプリ側の `is_active` を見ないため。Issue #258）。満たさなければ 409。画面で試験を促すだけでは、試験を省いたり途中まで（今の接続試験はユーザー名やパスワードを省くと途中の段階で終わる）にしたりしても保存できてしまうため
   - 今の `PATCH /api/auth/directories/{id}`（認証に関わる項目）と `PUT /api/auth/directories/{id}/mappings` も、admin の経路がこのディレクトリだけのときは 409 で断り、このまとめて保存する API を使うよう案内する（今は無効化と、admin の対応をすべてなくす変更しか止めていないので、誤った接続先や存在しないグループ DN への変更で確認をすり抜けられる）
 
 ## バックエンドの構成
