@@ -209,21 +209,43 @@ def _audit_saved(event: str, principal: Principal, config: DirectoryConfig) -> N
         )
 
 
-async def _other_login_admins(db: AsyncSession, directory_id: uuid.UUID) -> int:
-    """このディレクトリ以外でログインできる、有効な admin の人数（ローカルと、ほかの有効なディレクトリ）。"""
-    enabled_dirs = select(DirectoryConfig.id).where(
-        DirectoryConfig.is_enabled.is_(True), DirectoryConfig.id != directory_id
-    )
-    count = await db.scalar(
-        select(func.count())
-        .select_from(User)
-        .where(
-            User.role == Role.ADMIN.value,
-            User.is_active.is_(True),
-            (User.realm_key == LOCAL_REALM) | User.directory_id.in_(enabled_dirs),
+async def _other_admin_sources(db: AsyncSession, settings: Settings, directory_id: uuid.UUID) -> int:
+    """このディレクトリ以外で admin としてログインできる手段の数。
+
+    - ローカルログインが有効なら、有効なローカルの admin（無効ならローカルユーザーはログインできない）
+    - ほかの有効なディレクトリのうち、admin に対応づけたグループを持つもの（ロールはログインのたびに
+      対応表から決めるので、既存の admin 行ではなく対応表で数える。初回ログイン前の admin も含まれる）
+    """
+    local = 0
+    if settings.local_login_enabled:
+        local = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(User.realm_key == LOCAL_REALM, User.role == Role.ADMIN.value, User.is_active.is_(True))
+            )
+            or 0
         )
+    directories = int(
+        await db.scalar(
+            select(func.count(func.distinct(DirectoryGroupRoleMapping.directory_id)))
+            .join(DirectoryConfig, DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id)
+            .where(
+                DirectoryConfig.is_enabled.is_(True),
+                DirectoryConfig.id != directory_id,
+                DirectoryGroupRoleMapping.role == Role.ADMIN.value,
+            )
+        )
+        or 0
     )
-    return int(count or 0)
+    return local + directories
+
+
+def _no_admin_left(action: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"{action}と、管理者としてログインできる手段がなくなります（管理者がいなくなります）。",
+    )
 
 
 async def _revoke_directory_sessions(db: AsyncSession, directory_id: uuid.UUID) -> None:
@@ -313,11 +335,8 @@ async def update_directory(
             config.bind_password = new_password
         _validate(config, settings)
         if was_enabled and not config.is_enabled:
-            if await _other_login_admins(db, config.id) == 0:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="このディレクトリを無効にすると、ログインできる管理者がいなくなります。",
-                )
+            if await _other_admin_sources(db, settings, config.id) == 0:
+                raise _no_admin_left("このディレクトリを無効にする")
             # 無効にしたディレクトリのユーザーは、使用中のセッションも使えなくする
             await _revoke_directory_sessions(db, config.id)
         config.updated_at = utcnow()
@@ -334,15 +353,26 @@ async def replace_mappings(
     body: DirectoryMappingsUpdate,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> DirectoryRead:
-    config = await _load(db, directory_id)
     rows = _mapping_rows(body.mappings)
-    # 古い行を先に消して確定させる（同じグループを残すと、追加が先に走って一意制約に反するため）
-    config.mappings.clear()
-    await db.flush()
-    config.mappings = rows
-    config.updated_at = utcnow()
-    await db.flush()
+    async with admin_change_guard(db):
+        config = await _load(db, directory_id)
+        had_admin = any(m.role == Role.ADMIN.value for m in config.mappings)
+        keeps_admin = any(r.role == Role.ADMIN.value for r in rows)
+        if (
+            config.is_enabled
+            and had_admin
+            and not keeps_admin
+            and await _other_admin_sources(db, settings, config.id) == 0
+        ):
+            raise _no_admin_left("admin の対応をなくす")
+        # 古い行を先に消して確定させる（同じグループを残すと、追加が先に走って一意制約に反するため）
+        config.mappings.clear()
+        await db.flush()
+        config.mappings = rows
+        config.updated_at = utcnow()
+        await db.flush()
     audit(
         "directory_mappings_updated",
         actor=principal.username,
@@ -357,6 +387,7 @@ async def delete_directory(
     directory_id: uuid.UUID,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> Response:
     async with admin_change_guard(db):
         config = await _load(db, directory_id)
@@ -365,11 +396,8 @@ async def delete_directory(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="有効なディレクトリは削除できません。先に無効にしてください。",
             )
-        if await _other_login_admins(db, config.id) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="このディレクトリを削除すると、ログインできる管理者がいなくなります。",
-            )
+        if await _other_admin_sources(db, settings, config.id) == 0:
+            raise _no_admin_left("このディレクトリを削除する")
         name = config.name
         # 配下のユーザー（とセッション）も消す。users.directory_id には外部キーがないので明示的に消す
         removed = await db.execute(delete(User).where(User.directory_id == config.id))

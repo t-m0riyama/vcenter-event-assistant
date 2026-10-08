@@ -12,7 +12,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.tokens import hash_token, new_session_token
-from vcenter_event_assistant.db.models import AuthSession, User
+from vcenter_event_assistant.db.models import AuthSession, DirectoryConfig, User
 
 # last_seen_at の更新はこの間隔より古いときだけ行う（毎リクエストの書き込みを避ける）。
 # 無操作タイムアウトが短い設定でも、アクセスが続く限り失効しないよう ``touch_interval`` で縮める。
@@ -121,7 +121,12 @@ async def resolve_session(
             return None
         row = fresh
     user = await db.get(User, row.user_id)
-    if user is None or not user.is_active or row.credential_marker != credential_marker(user):
+    if (
+        user is None
+        or not user.is_active
+        or row.credential_marker != credential_marker(user)
+        or not await _directory_enabled(db, user)
+    ):
         # 無効化されたユーザーのセッションも消す（再度有効にしたときに復活させないため）。
         # 重なったリクエストが先に消していても失敗しないよう、件数を問わない DELETE にする
         await db.execute(
@@ -135,6 +140,19 @@ async def resolve_session(
     if touch and now - as_utc(row.last_seen_at) >= policy.touch_interval:
         touched = await _touch(db, row, now)
     return ResolvedSession(session=row, user=user, touched=touched)
+
+
+async def _directory_enabled(db: AsyncSession, user: User) -> bool:
+    """ディレクトリのユーザーなら、そのディレクトリが今も有効か（ローカルユーザーは常に ``True``）。
+
+    無効化と並行したログインが、無効化の後にセッションを作ってしまっても使えないようにする。
+    """
+    if user.directory_id is None:
+        return True
+    enabled = await db.scalar(
+        select(DirectoryConfig.is_enabled).where(DirectoryConfig.id == user.directory_id)
+    )
+    return bool(enabled)
 
 
 async def _delete_if_still_expired(

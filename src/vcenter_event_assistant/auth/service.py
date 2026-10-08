@@ -178,6 +178,14 @@ async def _authenticate_directory(
     except Exception:
         logger.exception("Unexpected error while authenticating against directory %r", config.name)
         return LoginOutcome(None, "directory_error")
+    # 認証している間に無効化されていたら、ログインさせない（無効化で失効させた後にセッションを作らない）
+    still_enabled = await db.scalar(
+        select(DirectoryConfig.is_enabled)
+        .where(DirectoryConfig.id == config.id)
+        .execution_options(populate_existing=True)
+    )
+    if not still_enabled:
+        return LoginOutcome(None, "directory_disabled")
     user = await _upsert_directory_user(db, config, identity, utcnow())
     if user is None:
         return LoginOutcome(None, "inactive")

@@ -554,3 +554,84 @@ def test_connection_test_uses_the_resolved_username(directory: FakeDirectory) ->
     assert stages[-1].stage == "groups" and stages[-1].ok, stages
     assert backend.authenticate(spec, "bob@example.com", "bob-secret", OPTIONS).role == Role.VIEWER
 
+
+
+async def test_sessions_of_a_disabled_directory_stop_working(client, directory: FakeDirectory) -> None:
+    """無効化と並行したログインが、無効化の後にセッションを作ってしまっても使えない。"""
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    realm = f"dir:{directory_id}"
+    _rate_limiter._hits.clear()
+    async with _raw_client() as ac:
+        assert (
+            await ac.post(
+                "/api/auth/login",
+                json={"username": "alice", "password": "alice-secret", "realm": realm},
+                headers=XHR,
+            )
+        ).status_code == 200
+        # セッションの失効を経ずに、ディレクトリだけが無効になった状態
+        from vcenter_event_assistant.db.models import DirectoryConfig
+
+        async with session_scope() as db:
+            config = await db.get(DirectoryConfig, uuid.UUID(directory_id))
+            assert config is not None
+            config.is_enabled = False
+        assert (await ac.get("/api/auth/me")).status_code == 401
+
+
+async def test_login_is_refused_if_the_directory_was_disabled_during_authentication(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vcenter_event_assistant.auth import service
+    from vcenter_event_assistant.db.models import DirectoryConfig
+
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    original = service.run_directory_call
+
+    async def disable_while_authenticating(*args: Any, **kwargs: Any) -> Any:
+        result = await original(*args, **kwargs)
+        async with session_scope() as db:
+            config = await db.get(DirectoryConfig, uuid.UUID(directory_id))
+            assert config is not None
+            config.is_enabled = False
+        return result
+
+    monkeypatch.setattr(service, "run_directory_call", disable_while_authenticating)
+    resp, _ = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
+    assert resp.status_code == 401
+    async with session_scope() as db:
+        users = (await db.scalars(select(User).where(User.realm_key == f"dir:{directory_id}"))).all()
+    assert users == []
+
+
+async def test_local_admins_do_not_count_when_local_login_is_disabled(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
+    get_settings.cache_clear()
+    resp = await client.patch(f"/api/auth/directories/{directory_id}", json={"is_enabled": False})
+    assert resp.status_code == 409
+    assert (await client.delete(f"/api/auth/directories/{directory_id}")).status_code == 409
+
+
+async def test_removing_the_last_admin_mapping_is_guarded(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
+    url = f"/api/auth/directories/{directory_id}/mappings"
+    without_admin = {"mappings": [{"group_dn": OPS, "role": "operator"}]}
+
+    # ローカルの admin がログインできる間は、admin の対応をなくしてもよい
+    assert (await client.put(url, json=without_admin)).status_code == 200
+    assert (await client.put(url, json={"mappings": [{"group_dn": ADMINS, "role": "admin"}]})).status_code == 200
+
+    # ディレクトリ専用の運用では、唯一の admin の対応はなくせない
+    monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
+    get_settings.cache_clear()
+    resp = await client.put(url, json=without_admin)
+    assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
+    # ほかに admin の対応を持つ有効なディレクトリがあればよい
+    other = _directory_body(name="Other LDAP")
+    assert (await client.post("/api/auth/directories", json=other)).status_code == 201
+    assert (await client.put(url, json=without_admin)).status_code == 200
