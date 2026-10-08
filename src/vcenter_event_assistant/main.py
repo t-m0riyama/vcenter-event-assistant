@@ -51,7 +51,7 @@ from vcenter_event_assistant.auth.principal_header import PrincipalHeaderMiddlew
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.db.session import init_db
-from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter_password_storage
+from vcenter_event_assistant.db.secret_storage_migration import ensure_secret_storage
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.logging_config import configure_logging
 from vcenter_event_assistant.services.digest.legacy_settings_deprecation import (
@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
     cleanup_stale_ssh_files()
     await init_db(settings=settings)
     await ensure_bootstrap_admin(settings)
-    await ensure_vcenter_password_storage(settings=settings)
+    await ensure_secret_storage(settings=settings)
     registry = await build_initial_collector_registry(settings)
     await run_screenshot_e2e_seed_if_enabled()
     await run_mock_mode_seed_if_enabled()

@@ -327,7 +327,7 @@ async def test_lifespan_stops_before_followup_initialization(monkeypatch):
         called.append(True)
 
     monkeypatch.setattr(app_module, "init_db", fail)
-    monkeypatch.setattr(app_module, "ensure_vcenter_password_storage", followup)
+    monkeypatch.setattr(app_module, "ensure_secret_storage", followup)
     with pytest.raises(DbMigrationError):
         async with app_module.lifespan(app_module.create_app()):
             pytest.fail("application must not accept requests")
