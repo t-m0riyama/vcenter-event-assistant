@@ -13,18 +13,16 @@
 | 3 | ユーザー管理 API、初期 admin の自動作成、期限切れセッションの掃除、監査ログ | マージ済み [#247](https://github.com/t-m0riyama/vcenter-event-assistant/pull/247) |
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [#248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [#249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
-| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255） |
+| 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [#250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255。#253 は [#256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. PR6（#250）のマージ（利用者の判断）
-2. [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) の修正（ID 属性を設定できるようにし、取れなければログインを拒否する）をマージする
-3. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
-4. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
-
-[#254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）は PR7 のマージまでに入れる。
+1. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
+   - [#254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）も PR7 のマージまでに入れる。保存前の接続試験には、未保存の設定を受け取る試験用の API が要る（今の `POST /api/auth/directories/{id}/test` は保存済みの設定しか試せない）
+2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
+3. [#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[#255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
 
 ### PR6 のレビューの経過
 
@@ -40,9 +38,9 @@
 
 | Issue | 内容 | 対応の時期 |
 |---|---|---|
-| [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | PR7 の前に修正（ID 属性を設定できるようにし、取れなければ拒否する。DN は ID にしない） |
+| [#253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[#256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
 | [#252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
-| [#254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけのとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | PR7 のマージまでに（保存前の接続試験・確認ダイアログと合わせて設計する） |
+| [#254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけのとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | PR7 のマージまでに（保存前の接続試験・確認ダイアログと合わせて設計する。未保存の設定を試す API が要る） |
 | [#255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | いつでも（`FOR UPDATE` を足す小さな修正。#252 と同じ PR でよい） |
 | [#251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
@@ -177,7 +175,8 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `PATCH /api/auth/directories/{id}`（無効化と、ほかに admin の経路がないときの無効化は 409）
 - `PUT /api/auth/directories/{id}/mappings`（admin の対応をなくすとき、ほかに経路がなければ 409）
 - `DELETE /api/auth/directories/{id}`（無効なときだけ）
-- `POST /api/auth/directories/{id}/test`（connect / user_search / user_bind / groups の段階ごとの結果）
+- `POST /api/auth/directories/{id}/test`（connect / user_search / user_bind / groups の段階ごとの結果）。保存済みの設定で試す
+- 予定（PR7・#254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
 
 ## バックエンドの構成
 - `src/vcenter_event_assistant/auth/`: `roles.py`、`passwords.py`、`tokens.py`、`sessions.py`、`local_backend.py`、`service.py`（`authenticate(realm, username, password, ip)` が入口）、`users.py`、`bootstrap.py`、`csrf.py`、`audit.py`、`cli.py`
@@ -196,7 +195,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - 接続試験の結果は段階（connect / user_search / unique_id / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
   - user_search の結果には ID 属性の値が出る。取れなければ unique_id の段階が失敗し、「このユーザーはログインできない」と警告する
   - ディレクトリの削除は、無効にしてから確認ダイアログを出して行う
-  - 認証に関わる設定や対応表を保存する前に接続試験を促し、「ログイン中の利用者は全員ログアウトされる」ことを確認ダイアログで伝える（#254）
+  - 認証に関わる設定や対応表を保存する前に、編集中の値で接続試験を促し（未保存の設定を試す API を使う）、「ログイン中の利用者は全員ログアウトされる」ことを確認ダイアログで伝える（#254）
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
 ## テスト
