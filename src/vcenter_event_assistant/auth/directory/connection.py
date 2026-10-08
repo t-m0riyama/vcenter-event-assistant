@@ -142,6 +142,8 @@ def connect(
         raise BindRejected("パスワードが空です。")
 
     last_error: DirectoryError | None = None
+    # 設定の誤りと分かった理由。後のサーバが停止していても、その一般的な失敗で上書きしない
+    config_error: DirectoryConfigError | None = None
     for uri in spec.server_uris:
         conn = Connection(
             _server(spec, uri),
@@ -181,11 +183,13 @@ def connect(
         if result.get("description") == "invalidCredentials":
             raise BindRejected(f"{uri}: 資格情報が正しくありません。")
         if result.get("description") == "strongerAuthRequired":
-            # AD は暗号化しない接続での simple bind を断る（サーバの設定なので、ほかのサーバも同じはず）
-            last_error = DirectoryConfigError(
+            # AD は暗号化しない接続での simple bind を断る。DC ごとに設定が違い得るので次のサーバも試す
+            config_error = config_error or DirectoryConfigError(
                 f"{uri}: サーバが暗号化した接続を求めています。接続の暗号化を LDAPS か StartTLS にしてください。"
             )
             continue
         last_error = DirectoryUnavailable(f"{uri}: bind に失敗しました（{result.get('description')}）")
+    if config_error is not None:
+        raise config_error
     assert last_error is not None
     raise last_error

@@ -184,7 +184,7 @@
 - `server_uris` は `ldap(s)://ホスト名[:ポート]` の形だけを受け付ける（パス・クエリ・資格情報付き（ユーザー名が空でパスワードだけのものも）・範囲外のポートは 422）。ldap3 の `Server` は URI からホスト・ポート・SSL を読み取る
 - 複数の URI は順に試す（フェイルオーバー）。StartTLS に失敗したら中止する
 - 接続を閉じるとき（`unbind`）の失敗は無視する（`connection.close_quietly`）。StartTLS の失敗の後はソケットが閉じていて送信が例外になり、本来のエラーを隠して次のサーバも試さなかった（PR8a の実機確認で発見）
-- サーバが `strongerAuthRequired` で bind を断ったとき（AD は暗号化しない接続での simple bind を断る）は、設定の誤り（`DirectoryConfigError`）として LDAPS か StartTLS を使うよう伝える
+- サーバが `strongerAuthRequired` で bind を断ったとき（AD は暗号化しない接続での simple bind を断る）は、設定の誤り（`DirectoryConfigError`）として LDAPS か StartTLS を使うよう伝える。DC ごとに設定が違い得るので次のサーバも試すが、どこにも接続できなければ、後のサーバの一般的な失敗ではなくこの理由を返す（PR #267 の Codex レビューの指摘）
 - `tls_verify=true` なら `CERT_REQUIRED` で、`ca_cert_pem` があれば `ca_certs_data` に使う。false なら `CERT_NONE`
 - `VEA_DIRECTORY_ALLOW_INSECURE_TLS=false` のときは `tls_verify=false` の保存を 422 にし、既存の設定でも接続時にエラーにする
 - 本番では `transport_security=none` を保存も接続も拒否する

@@ -617,6 +617,25 @@ def test_plaintext_bind_refused_by_the_server_is_a_config_error(monkeypatch: pyt
         connection.connect(spec, user=SVC_DN, password="x", options=OPTIONS)
 
 
+def test_config_error_is_kept_when_later_servers_also_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """設定の誤りが分かった後で、次のサーバが接続できなくても、対処が分かる理由を返す。"""
+
+    class _Conn(_ClosedSocketConn):
+        def open(self) -> None:
+            if self.uri == "ldap://down":
+                raise OSError("connection refused")
+
+        def bind(self) -> bool:
+            self.result = {"description": "strongerAuthRequired"}
+            return False
+
+    monkeypatch.setattr(connection, "Connection", _Conn)
+    monkeypatch.setattr(connection, "_server", lambda spec, uri: uri)
+    spec = _spec(transport_security="none", server_uris=("ldap://dc", "ldap://down"))
+    with pytest.raises(DirectoryConfigError, match="LDAPS か StartTLS"):
+        connection.connect(spec, user=SVC_DN, password="x", options=OPTIONS)
+
+
 @pytest.fixture
 def failing_unbind(directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch) -> None:
     """接続を閉じるときに、サーバ側で切断済みなどの理由で unbind が失敗する。"""
