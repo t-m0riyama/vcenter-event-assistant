@@ -1,6 +1,6 @@
 # 認証・認可機能の追加（ローカル DB / AD / LDAP）
 
-最終更新: 2026-10-08
+最終更新: 2026-10-09
 
 ## 進捗
 
@@ -14,13 +14,14 @@
 | 4 | ログイン画面とロールに応じた UI、認証の既定有効化 | マージ済み [PR #248](https://github.com/t-m0riyama/vcenter-event-assistant/pull/248) |
 | 5 | ユーザー管理画面とパスワード変更 | マージ済み [PR #249](https://github.com/t-m0riyama/vcenter-event-assistant/pull/249) |
 | 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
+| 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | レビュー中 [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259) |
 | 7 | ディレクトリ管理画面と、ログイン画面の realm 選択 | 未着手 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
 1. PR7: ディレクトリ管理画面と、ログイン画面の realm 選択（下の「フロントエンド」）
-   - [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）と [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258)（その確認の抜け）を、同じ PR で PR7 のマージまでに入れる。PR7 の中でも、PR7 の前の小さな PR でもよい。設計は下の「ディレクトリ API」の予定と、Issue #254 の引き継ぎコメントにまとめてある
+   - [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254)（締め出し対策）と [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258)（その確認の抜け）のバックエンドは、PR7 の前の単独の PR（上の表の 6.5）で入れる。PR7 では、その API を使う画面を作る（下の「フロントエンド」）
 2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
 3. [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252)・[Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) の小さな修正（時期は問わない。リリースの前に入れる）
 
@@ -41,8 +42,8 @@
 |---|---|---|
 | [Issue #253](https://github.com/t-m0riyama/vcenter-event-assistant/issues/253) | entryUUID のない LDAP では DN を ID（subject）に使うので、DN が変わると別のユーザーとして作り直され、アプリ側の無効化をすり抜ける | 対応済み（[PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256)。ID 属性を設定できるようにし、値がちょうど 1 つ取れなければ拒否する。DN は ID にしない） |
 | [Issue #252](https://github.com/t-m0riyama/vcenter-event-assistant/issues/252) | 鍵（`VEA_SECRET_KEY`）を後から設定しても、起動時の暗号化の移行が `vcenters` しか見ないので、ディレクトリの bind パスワードが平文のまま残る（開発用の `VEA_ALLOW_PLAINTEXT_PASSWORDS` で作った場合のみ） | いつでも（小さな修正） |
-| [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけ（設定上はほかにあっても、実際に動いているのがそのディレクトリだけの場合を含む）のとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | PR7 のマージまでに（保存前の接続試験・確認ダイアログと合わせて設計する。未保存の設定を試す API が要る） |
-| [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | Issue #254 と同じ PR で（確認の条件に最初から含める） |
+| [Issue #254](https://github.com/t-m0riyama/vcenter-event-assistant/issues/254) | admin の経路がそのディレクトリだけ（設定上はほかにあっても、実際に動いているのがそのディレクトリだけの場合を含む）のとき、認証に関わる設定や対応表を誤って変えると、セッションがすべて失効して誰もログインできなくなる（復旧は CLI） | バックエンドは PR 6.5 で対応（下の「ディレクトリ API」）。画面は PR7 |
+| [Issue #258](https://github.com/t-m0riyama/vcenter-event-assistant/issues/258) | Issue #254 の保存前の確認（`directory_backend.authenticate`）は LDAP の資格情報と対応表しか見ないので、アプリ側で無効化されたユーザーの資格情報でも通ってしまう | PR 6.5 で対応（確かめた ID のユーザー行が無効なら 409） |
 | [Issue #255](https://github.com/t-m0riyama/vcenter-event-assistant/issues/255) | ロールの昇格と同時のログインで、先行するログインのセッションの失効が漏れる（PostgreSQL のみ。漏れるのは同じ本人がほぼ同時に作ったセッション） | いつでも（`FOR UPDATE` を足す小さな修正。Issue #252 と同じ PR でよい） |
 | [Issue #251](https://github.com/t-m0riyama/vcenter-event-assistant/issues/251) | 独自 OID の属性を使うグループ DN（`1.3.6.1.4.1.9999.1=Admins,...`）は ldap3 が解析できず、対応表の登録時に 422 になる | PR8 の実機確認で必要と分かれば |
 
@@ -172,18 +173,20 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 
 プラグイン系の既存の 404 gate は残し、その上に admin 要件を重ねる。
 
-ディレクトリ API（PR6、すべて admin）:
+ディレクトリ API（PR6・PR 6.5、すべて admin）:
 - `GET /api/auth/directories`、`POST /api/auth/directories`
-- `PATCH /api/auth/directories/{id}`（無効化と、ほかに admin の経路がないときの無効化は 409）
-- `PUT /api/auth/directories/{id}/mappings`（admin の対応をなくすとき、ほかに経路がなければ 409）
+- `PATCH /api/auth/directories/{id}`: 設定と対応表（`mappings`）をまとめて保存する（PR 6.5。1 つのトランザクションで反映し、セッションの失効も 1 回）。409 になるのは、ほかに admin の経路がないときの無効化・admin の対応をなくす変更、操作している admin が自分のログインしているディレクトリを無効にするとき、下の確認が要るのに満たさないとき
+- `PUT /api/auth/directories/{id}/mappings` は PR 6.5 で廃止した（設定と分けて送ると、1 回目で唯一の admin が締め出されるため）
 - `DELETE /api/auth/directories/{id}`（無効なときだけ）
-- `POST /api/auth/directories/{id}/test`（connect / user_search / user_bind / groups の段階ごとの結果）。保存済みの設定で試す
-- 予定（PR7・Issue #254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
-- 予定（PR7・Issue #254）: 試験した設定と対応表を 1 回でまとめて保存する API（1 つのトランザクションで反映し、セッションの失効も 1 回にする）。設定の PATCH と対応表の PUT に分けて送ると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなるため
-  - 次のどちらかに当たるときは、サーバ側で前提を確かめる。(a) 操作している admin がこのディレクトリのユーザーで、この保存で自分のセッションが失効する。(b) 設定上、ほかに admin の経路がない。「ほかの経路がある」の判定（`count_admin_directories`）は設定と方針しか見ず、そのサーバが落ちている・グループが存在しないなど実際には使えない経路も数えるので、(b) だけでは、唯一動いているディレクトリを壊して締め出されることを防げない。操作しているのがローカルの admin なら、自分のセッションは残るので直せる
-  - 確かめる内容: リクエストに含めた資格情報で、新しい設定と対応表のもとで本番のログインと同じ処理（`directory_backend.authenticate`。ユーザーの検索・ID 属性の確認・本人としての bind・グループの判定のすべて）を通し、admin に解決されたときだけ保存する。段階を個別に並べて試すと、ID 属性の確認のような段階が抜けるため、ログインの処理そのものを使う。あわせて、確かめた ID のユーザー行があれば有効であること（またはリクエストしている admin 本人と一致すること）も条件にする（`authenticate` はアプリ側の `is_active` を見ないため。Issue #258）。満たさなければ 409。画面で試験を促すだけでは、試験を省いたり途中まで（今の接続試験はユーザー名やパスワードを省くと途中の段階で終わる）にしたりしても保存できてしまうため
-  - 今の `PATCH /api/auth/directories/{id}`（認証に関わる項目）と `PUT /api/auth/directories/{id}/mappings` も、上の (a) か (b) に当たるときは 409 で断り、このまとめて保存する API を使うよう案内する（今は無効化と、admin の対応をすべてなくす変更しか止めていないので、誤った接続先や存在しないグループ DN への変更で確認をすり抜けられる）
-  - ディレクトリの無効化（`PATCH` で `is_enabled=false`）は、上の (a)（操作している admin がこのディレクトリのユーザー）なら 409 で断り、別の経路（ローカルや別のディレクトリ）でログインして操作するよう案内する。無効にしたディレクトリはログインに使えないので、新しい設定でのログインの確認では安全を確かめられないため。別の経路で実際にログインして操作していることが、その経路が使える証明になる。削除は無効化の後にしかできないので、これで削除も同じ扱いになる
+- `POST /api/auth/directories/{id}/test`（connect / user_search / unique_id / user_bind / groups の段階ごとの結果）。保存済みの設定で試す。`changes` / `mappings` を渡すと、保存せずに重ねて試す（bind パスワードを送らなければ保存済みのものを使う）
+- `POST /api/auth/directories/test`（PR 6.5）: まだ保存していない設定で試す。試験はどちらも DB に書かず、セッションも失効させない
+- 保存前の確認（PR 6.5・Issue #254・Issue #258）:
+  - 確認が要るのは、ログインの成否に関わる変更（`_IDENTITY_FIELDS`・対応表の中身・有効化・サービスアカウントのパスワード・タイムアウト）で、次のどちらかに当たるとき。(a) 操作している admin がこのディレクトリのユーザー（保存で自分のセッションも失効する）。(b) 設定上、ほかに admin の経路がない。「ほかの経路がある」の判定（`count_admin_directories`）は設定と方針しか見ず、そのサーバが落ちている・グループが存在しないなど実際には使えない経路も数えるので、(b) だけでは締め出しを防げない
+  - 確かめる内容: `verification` の資格情報で、新しい設定と対応表のもとで本番のログインと同じ処理（`directory_backend.authenticate`。ユーザーの検索・ID 属性の確認・本人としての bind・グループの判定のすべて）を通し、admin に解決されること。あわせて、確かめた ID のユーザー行があれば有効であること（`authenticate` はアプリ側の `is_active` を見ないため。Issue #258）。行がなければ初回のログインで有効な行が作られるので通す
+  - 満たさなければ 409。画面が見分けられるよう、応答ヘッダ `X-VEA-Error-Code` に `directory_verification_required`（資格情報がない）か `directory_verification_failed`（確かめられなかった）を入れる（detail は文字列のまま）
+  - LDAP の呼び出しは `admin_change_guard` の外で行う（待っている間、admin の変更やこのディレクトリへのログインを止めないため）。その前に読み取りのトランザクションを閉じる。ロックを取った後で、設定の `updated_at` が確認した時から変わっていなければ保存し、変わっていれば 409（確認していない設定を保存しない）。(b) と無効なユーザーの判定はロックの下でやり直す（ユーザーの無効化も同じロックを通る）
+  - サービスアカウントのパスワード（消す操作を含む）とタイムアウトは、セッションを失効させないが、誤るとこの後のログインがすべて失敗するので確認の対象に含める（PR #259 の Codex レビューの指摘）。名前・表示順・表示名やメールの属性だけの変更は、確かめずに保存でき、セッションも失効させない
+  - ディレクトリの無効化は、(a) なら 409 で断り、別の経路（ローカルや別のディレクトリ）でログインして操作するよう案内する。無効にしたディレクトリはログインに使えないので、新しい設定でのログインの確認では安全を確かめられないため。別の経路で実際にログインして操作していることが、その経路が使える証明になる。削除は無効化の後にしかできないので、これで削除も同じ扱いになる。(a) と (b) の両方に当たるときは、(b) の「管理者がいなくなる」を返す
 
 ## バックエンドの構成
 - `src/vcenter_event_assistant/auth/`: `roles.py`、`passwords.py`、`tokens.py`、`sessions.py`、`local_backend.py`、`service.py`（`authenticate(realm, username, password, ip)` が入口）、`users.py`、`bootstrap.py`、`csrf.py`、`audit.py`、`cli.py`
@@ -202,8 +205,9 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - 接続試験の結果は段階（connect / user_search / unique_id / user_bind / groups）ごとに出す。検索ベースの誤り（noSuchObject）は設定の誤りとして返る
   - user_search の結果には ID 属性の値が出る。取れなければ unique_id の段階が失敗し、「このユーザーはログインできない」と警告する
   - ディレクトリの削除は、無効にしてから確認ダイアログを出して行う
-  - 認証に関わる設定や対応表を保存する前に、編集中の値で接続試験を促し（未保存の設定を試す API を使う）、「このディレクトリでログイン中の利用者はログアウトされる」ことを確認ダイアログで伝える（ローカルや別のディレクトリの利用者は影響を受けない。Issue #254）
-  - 上の (a)（自分がこのディレクトリのユーザー）か (b)（ほかに admin の経路がない）に当たるときは、保存時に admin の資格情報の入力を求める（サーバが新しい設定で admin になれることを確かめる。Issue #254）
+  - 認証に関わる設定や対応表を保存する前に、編集中の値で接続試験を促し（`POST /{id}/test` の `changes` / `mappings`、新規は `POST /test`）、「このディレクトリでログイン中の利用者はログアウトされる」ことを確認ダイアログで伝える（ローカルや別のディレクトリの利用者は影響を受けない。Issue #254）
+  - 設定と対応表は 1 回の `PATCH` で保存する（分けて送らない）
+  - 409 の応答ヘッダ `X-VEA-Error-Code` が `directory_verification_required` なら、admin の資格情報の入力を求めて `verification` を付けて送り直す。`directory_verification_failed` なら理由（detail）を出す。自分のディレクトリの変更で保存できたら、自分のセッションも失効しているのでログイン画面へ戻す
   - 自分がログインしているディレクトリでは、「無効にする」を操作できないようにし、別の経路でログインして操作するよう理由を出す（API も 409 で断る。Issue #254）
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
@@ -211,13 +215,14 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - conftest: `VEA_AUTH_ENABLED=1`。`make_client(role)` で user と session を直接作る。`client` は admin
 - `tests/test_route_policy.py`: 全 APIRoute のロール宣言を snapshot で確認する
 - `tests/test_rbac_matrix.py`: 全 route について 401 / 403 / 通ることを確認する
-- `tests/test_auth_directory.py`（PR6）:
+- `tests/test_auth_directory.py`（PR6・PR 6.5）:
   - ldap3 の `MOCK_SYNC` と `FakeDirectory` で `connection.connect` を差し替える
   - AD の in-chain 照合は MOCK が対応していないので、生成するフィルタ文字列を単体テストする
   - 件数上限・`msDS-PrincipalName` のような MOCK で再現しにくい挙動は、`search` だけを持つ接続のスタブで確かめる
   - 競合（認証中の無効化・対応表の置き換え）は `service.run_directory_call` を差し替えて、認証の途中に変更を割り込ませる
   - 「読んでから書くまで」の間の割り込み（ログイン中の無効化、名前の確認後の重複）は、`Session` の `before_flush` イベントで同じ接続に UPDATE を流して再現する。同じセーブポイントの中で流れるので、拒否したときは割り込ませた変更も一緒に巻き戻る点に注意
   - 発行する SQL の回数（セッションの一括失効）は、エンジンの `before_cursor_execute` イベントで数える
+  - 保存前の確認とロックの間の割り込みは、`auth_directories.run_directory_call`（確認の LDAP 呼び出し）や `auth_directories.admin_change_guard` を差し替えて再現する
 - `tests/test_auth_bootstrap.py`: 起動時の admin 判定（ディレクトリの admin 対応、本番で使えない設定、残った admin 行）
 - `tests/test_startup_migration.py`: ディレクトリの migration の downgrade
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
