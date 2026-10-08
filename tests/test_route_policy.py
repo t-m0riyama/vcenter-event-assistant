@@ -40,6 +40,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/auth/users/{user_id}/unlock"): ADMIN,
     ("GET", "/api/auth/directories"): ADMIN,
     ("POST", "/api/auth/directories"): ADMIN,
+    ("GET", "/api/auth/directories/policy"): ADMIN,
     ("PATCH", "/api/auth/directories/{directory_id}"): ADMIN,
     ("DELETE", "/api/auth/directories/{directory_id}"): ADMIN,
     ("POST", "/api/auth/directories/test"): ADMIN,

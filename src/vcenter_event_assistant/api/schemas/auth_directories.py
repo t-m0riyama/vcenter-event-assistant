@@ -136,6 +136,15 @@ class DirectoryRead(_DirectoryFields):
     updated_at: datetime
 
 
+class DirectoryPolicy(BaseModel):
+    """今の設定で許される接続の方針。画面が操作できない項目とその理由を出すために使う。"""
+
+    # 証明書を検証しない設定（tls_verify=false）を保存できるか（VEA_DIRECTORY_ALLOW_INSECURE_TLS）
+    allow_insecure_tls: bool
+    # 暗号化しない接続（transport_security=none）を保存できるか（本番では不可）
+    allow_no_transport_security: bool
+
+
 class DirectoryTestRequest(BaseModel):
     """保存済みの設定で試す。``changes`` / ``mappings`` を渡すと、保存せずに重ねて試す。"""
 

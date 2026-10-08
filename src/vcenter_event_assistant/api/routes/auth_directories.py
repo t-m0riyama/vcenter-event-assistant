@@ -36,6 +36,7 @@ from vcenter_event_assistant.api.schemas.auth_directories import (
     DirectoryChanges,
     DirectoryCreate,
     DirectoryCredentials,
+    DirectoryPolicy,
     DirectoryRead,
     DirectoryTestRequest,
     DirectoryTestResponse,
@@ -564,6 +565,15 @@ async def list_directories(db: AsyncSession = Depends(get_session)) -> list[Dire
     ).all()
     counts = await _user_counts(db)
     return [_to_read(d, counts.get(d.id, 0)) for d in rows]
+
+
+@router.get("/policy", response_model=DirectoryPolicy)
+async def get_policy(settings: Settings = Depends(get_app_settings)) -> DirectoryPolicy:
+    # 保存時の検証（_validate）と同じ設定から決める
+    return DirectoryPolicy(
+        allow_insecure_tls=settings.directory_allow_insecure_tls,
+        allow_no_transport_security=not settings.is_production,
+    )
 
 
 @router.post("", response_model=DirectoryRead, status_code=status.HTTP_201_CREATED)

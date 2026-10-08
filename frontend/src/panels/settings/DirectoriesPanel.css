@@ -1,0 +1,125 @@
+/** 操作の実行中にまとめて無効にするための枠（見た目は持たない） */
+.directories-panel__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.directories-panel__notice {
+  margin: 0 0 var(--spacing-3);
+  color: var(--color-success);
+  font-size: var(--font-size-footnote);
+}
+
+.directories-panel__list-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+
+.directories-panel__name {
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.directories-panel__sub {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.directories-panel__table .badge {
+  margin-top: var(--spacing-1);
+}
+
+.directories-panel__editor {
+  margin-top: var(--spacing-6);
+}
+
+.directories-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.directories-panel__group {
+  min-width: 0;
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.directories-panel__group legend {
+  padding: 0 var(--spacing-1);
+  font-weight: var(--font-weight-semibold);
+}
+
+.directories-panel__group .hint {
+  margin-top: 0;
+}
+
+/** 行の全幅を使う入力欄（サーバの一覧・CA 証明書） */
+.directories-panel__wide {
+  grid-column: 1 / -1;
+}
+
+.directories-panel__wide textarea {
+  font-family: var(--font-family-mono);
+}
+
+.directories-panel__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  margin: 0;
+}
+
+.directories-panel__subheading {
+  margin: var(--spacing-3) 0 var(--spacing-1);
+}
+
+.directories-panel__mappings td input,
+.directories-panel__mappings td select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.directories-panel__test-button {
+  display: flex;
+  align-items: flex-end;
+}
+
+.directories-panel__test-ok {
+  margin: var(--spacing-2) 0;
+  color: var(--color-success);
+}
+
+.directories-panel__test-ng,
+.directories-panel__warning {
+  margin: var(--spacing-2) 0;
+  color: var(--color-error);
+}
+
+.directories-panel__stages {
+  margin: 0;
+  padding-left: var(--spacing-6);
+}
+
+.directories-panel__stages li {
+  margin-bottom: var(--spacing-1);
+}
+
+.directories-panel__stage-name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.directories-panel__stage-message {
+  display: block;
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}

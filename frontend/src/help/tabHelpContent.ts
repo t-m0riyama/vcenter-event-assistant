@@ -105,6 +105,11 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
       '【ユーザー】\nログインできるユーザーを管理します（管理者のみ）。\n- ローカルユーザーの作成、表示名・ロール・有効状態の変更、パスワード再設定、ロック解除、ログイン解除、削除ができます。\n- ロールの変更・無効化・パスワード再設定をすると、そのユーザーのログインは解除されます。',
     userGuideDoc: 'docs/user-guides/authentication.md',
   },
+  directories: {
+    summary:
+      '【認証ディレクトリ】\nログインに使う Active Directory / LDAP を管理します（管理者のみ）。\n- 接続先・ユーザーの検索・グループの調べ方と、グループとロールの対応表を設定します。保存せずに編集中の値で接続試験ができます。\n- 接続先・検索・グループの設定や対応表を変える、または無効にすると、そのディレクトリでログイン中のユーザーはログアウトされます。\n- 削除できるのは無効にしたディレクトリだけです（配下のユーザーも削除されます）。',
+    userGuideDoc: 'docs/user-guides/authentication.md',
+  },
   chat_samples: {
     summary:
       '【チャット設定】\nWEB 検索の条件（スコープ・積極度）と、チャット画面から挿入できるサンプル質問を編集します。',

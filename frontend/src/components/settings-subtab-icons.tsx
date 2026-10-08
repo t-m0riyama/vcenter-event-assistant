@@ -14,6 +14,7 @@ export type SettingsSubTabId =
   | 'alerts'
   | 'plugins'
   | 'users'
+  | 'directories'
 
 /**
  * 設定サブタブ用の装飾アイコン（`currentColor`・スクリーンリーダーからは隠す）。
@@ -81,6 +82,15 @@ export function SettingsSubTabIcon({ tabId }: { readonly tabId: SettingsSubTabId
           <path d="M2 13c0-2.3 1.8-4 4-4s4 1.7 4 4" />
           <circle cx="11.2" cy="6" r="1.7" />
           <path d="M11 9.2c1.7 0 3 1.4 3 3.3" />
+        </TabButtonSvgIcon>
+      )
+    case 'directories':
+      return (
+        <TabButtonSvgIcon>
+          <rect x="5.5" y="2" width="5" height="3.2" rx="0.5" />
+          <rect x="2" y="10.8" width="5" height="3.2" rx="0.5" />
+          <rect x="9" y="10.8" width="5" height="3.2" rx="0.5" />
+          <path d="M8 5.2v2.8M4.5 10.8V8h7v2.8" />
         </TabButtonSvgIcon>
       )
     case 'plugins':

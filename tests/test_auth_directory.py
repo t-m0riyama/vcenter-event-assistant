@@ -27,7 +27,7 @@ from vcenter_event_assistant.db.models import AuthSession, User
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.rate_limit import _rate_limiter
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings, get_settings
 
 XHR = {"X-Requested-With": "XMLHttpRequest"}
 BASE = "dc=example,dc=com"
@@ -394,6 +394,27 @@ async def test_insecure_tls_is_refused_when_disallowed(client, monkeypatch: pyte
     resp = await client.post("/api/auth/directories", json=_directory_body(tls_verify=False))
     assert resp.status_code == 422
     assert "VEA_DIRECTORY_ALLOW_INSECURE_TLS" in resp.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("production", "allow_insecure", "expected"),
+    [
+        (False, "true", {"allow_insecure_tls": True, "allow_no_transport_security": True}),
+        (False, "false", {"allow_insecure_tls": False, "allow_no_transport_security": True}),
+        (True, "true", {"allow_insecure_tls": True, "allow_no_transport_security": False}),
+        (True, "false", {"allow_insecure_tls": False, "allow_no_transport_security": False}),
+    ],
+)
+async def test_policy_reports_what_the_settings_allow(
+    client, monkeypatch: pytest.MonkeyPatch, production: bool, allow_insecure: str, expected: dict[str, bool]
+) -> None:
+    # 画面が操作できない項目とその理由を出すための値。保存時の検証（_validate）と同じ設定から決まる
+    monkeypatch.setenv("VEA_DIRECTORY_ALLOW_INSECURE_TLS", allow_insecure)
+    get_settings.cache_clear()
+    monkeypatch.setattr(Settings, "is_production", property(lambda self: production))
+    resp = await client.get("/api/auth/directories/policy")
+    assert resp.status_code == 200
+    assert resp.json() == expected
 
 
 async def test_insecure_tls_is_saved_with_a_warning(client, caplog: pytest.LogCaptureFixture) -> None:

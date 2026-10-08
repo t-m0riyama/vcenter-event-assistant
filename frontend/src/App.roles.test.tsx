@@ -86,6 +86,10 @@ describe('App のロールによる出し分け', () => {
         }
         if (url.includes('/api/alerts/rules')) return Promise.resolve(jsonResponse([ALERT_RULE]))
         if (url.includes('/api/auth/users')) return Promise.resolve(jsonResponse([]))
+        if (url.includes('/api/auth/directories/policy')) {
+          return Promise.resolve(jsonResponse({ allow_insecure_tls: true, allow_no_transport_security: true }))
+        }
+        if (url.includes('/api/auth/directories')) return Promise.resolve(jsonResponse([]))
         return Promise.resolve(new Response('not found', { status: 404 }))
       }),
     )
@@ -170,11 +174,26 @@ describe('App のロールによる出し分け', () => {
     expect(window.location.hash).toBe('#/settings/users')
   })
 
-  it('認証が無効なサーバではユーザー管理を出さない', async () => {
+  it('認証ディレクトリは admin にだけ出し、ほかのロールが URL で開いても一般に戻す', async () => {
+    window.history.replaceState(null, '', '/#/settings/directories')
+    const { unmount } = renderAs('operator')
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/general'))
+    const subNav = await screen.findByRole('navigation', { name: '設定' })
+    expect(within(subNav).queryByRole('button', { name: '認証ディレクトリ' })).not.toBeInTheDocument()
+    unmount()
+
+    window.history.replaceState(null, '', '/#/settings/directories')
+    renderAs('admin')
+    expect(await screen.findByRole('button', { name: 'ディレクトリを追加' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/settings/directories')
+  })
+
+  it('認証が無効なサーバではユーザー管理と認証ディレクトリを出さない', async () => {
     renderAs('admin', { auth_enabled: false })
     fireEvent.click(within(mainNav()).getByRole('button', { name: '設定' }))
     const subNav = await screen.findByRole('navigation', { name: '設定' })
     expect(within(subNav).queryByRole('button', { name: 'ユーザー' })).not.toBeInTheDocument()
+    expect(within(subNav).queryByRole('button', { name: '認証ディレクトリ' })).not.toBeInTheDocument()
   })
 
   it('admin には閲覧専用の表示を出さない', async () => {
