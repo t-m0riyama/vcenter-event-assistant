@@ -52,7 +52,9 @@ class PasswordChangedConcurrentlyError(UserError):
     """検証した時点のパスワードが、更新する前に別の操作で変更されていた。"""
 
     def __init__(self) -> None:
-        super().__init__("パスワードが他の操作で変更されました。もう一度ログインしてください。")
+        super().__init__(
+            "パスワードが他の操作で変更されました。もう一度ログインしてください。"
+        )
 
 
 class LastAdminError(UserError):
@@ -64,9 +66,9 @@ class LastAdminError(UserError):
 
 # asyncio.Lock は最初に競合したイベントループに束縛されるため、ループごとに用意する
 # （本番のループは 1 つだが、テストはテストごとに別のループで動く）。
-_admin_change_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
-    weakref.WeakKeyDictionary()
-)
+_admin_change_locks: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop, asyncio.Lock
+] = weakref.WeakKeyDictionary()
 
 
 def _admin_change_lock() -> asyncio.Lock:
@@ -97,19 +99,27 @@ async def admin_change_guard(db: AsyncSession) -> AsyncIterator[None]:
         await db.commit()
 
 
-async def count_local_admins(db: AsyncSession, *, exclude_user_id: uuid.UUID | None = None) -> int:
+async def count_local_admins(
+    db: AsyncSession, *, exclude_user_id: uuid.UUID | None = None
+) -> int:
     """有効なローカルの admin の人数。"""
     query = (
         select(func.count())
         .select_from(User)
-        .where(User.realm_key == LOCAL_REALM, User.role == Role.ADMIN.value, User.is_active.is_(True))
+        .where(
+            User.realm_key == LOCAL_REALM,
+            User.role == Role.ADMIN.value,
+            User.is_active.is_(True),
+        )
     )
     if exclude_user_id is not None:
         query = query.where(User.id != exclude_user_id)
     return int(await db.scalar(query) or 0)
 
 
-async def count_admin_directories(db: AsyncSession, *, exclude_directory_id: uuid.UUID | None = None) -> int:
+async def count_admin_directories(
+    db: AsyncSession, *, exclude_directory_id: uuid.UUID | None = None
+) -> int:
     """admin に対応づけたグループを持つ、有効なディレクトリの数。
 
     ディレクトリのユーザーのロールはログインのたびに対応表で決まるので、admin としてログインできるかは
@@ -117,15 +127,23 @@ async def count_admin_directories(db: AsyncSession, *, exclude_directory_id: uui
     """
     query = (
         select(func.count(func.distinct(DirectoryGroupRoleMapping.directory_id)))
-        .join(DirectoryConfig, DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id)
-        .where(DirectoryConfig.is_enabled.is_(True), DirectoryGroupRoleMapping.role == Role.ADMIN.value)
+        .join(
+            DirectoryConfig,
+            DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id,
+        )
+        .where(
+            DirectoryConfig.is_enabled.is_(True),
+            DirectoryGroupRoleMapping.role == Role.ADMIN.value,
+        )
     )
     if exclude_directory_id is not None:
         query = query.where(DirectoryConfig.id != exclude_directory_id)
     return int(await db.scalar(query) or 0)
 
 
-async def ensure_not_last_admin(db: AsyncSession, user: User, *, local_login_enabled: bool) -> None:
+async def ensure_not_last_admin(
+    db: AsyncSession, user: User, *, local_login_enabled: bool
+) -> None:
     """``user`` の降格・無効化・削除で、admin としてログインする手段がなくなるなら ``LastAdminError``。
 
     ``admin_change_guard`` の中で呼ぶこと。数えるのは実際にログインに使える admin だけ:
@@ -138,11 +156,13 @@ async def ensure_not_last_admin(db: AsyncSession, user: User, *, local_login_ena
     if user.realm_key == LOCAL_REALM:
         if not local_login_enabled:
             return  # ログインに使えない admin なので、外してもログインできる手段は減らない
-        remaining = await count_local_admins(db, exclude_user_id=user.id) + await count_admin_directories(db)
+        remaining = await count_local_admins(
+            db, exclude_user_id=user.id
+        ) + await count_admin_directories(db)
     else:
-        if user.directory_id is None or await count_admin_directories(db) == await count_admin_directories(
-            db, exclude_directory_id=user.directory_id
-        ):
+        if user.directory_id is None or await count_admin_directories(
+            db
+        ) == await count_admin_directories(db, exclude_directory_id=user.directory_id):
             return  # このユーザーのディレクトリからは admin としてログインできない
         # 同じディレクトリのほかの admin が残っていても、グループに今も属しているかはわからないので数えない
         remaining = (
@@ -167,7 +187,9 @@ def normalize_username(username: str) -> str:
     return value
 
 
-def normalize_optional_text(value: str | None, *, max_length: int, label: str) -> str | None:
+def normalize_optional_text(
+    value: str | None, *, max_length: int, label: str
+) -> str | None:
     """表示名・メールなど任意項目の正規化。空は ``None``、長すぎる値と制御文字は拒否。
 
     SQLite は VARCHAR の長さを強制しないため、DB に任せず列長をここで検査する。
@@ -190,7 +212,9 @@ def local_subject(username: str) -> str:
 
 async def get_local_user(db: AsyncSession, username: str) -> User | None:
     return await db.scalar(
-        select(User).where(User.realm_key == LOCAL_REALM, User.subject == local_subject(username))
+        select(User).where(
+            User.realm_key == LOCAL_REALM, User.subject == local_subject(username)
+        )
     )
 
 
@@ -223,7 +247,9 @@ async def create_local_user(
     display_name = normalize_optional_text(
         display_name, max_length=DISPLAY_NAME_MAX_LENGTH, label="表示名"
     )
-    email = normalize_optional_text(email, max_length=EMAIL_MAX_LENGTH, label="メールアドレス")
+    email = normalize_optional_text(
+        email, max_length=EMAIL_MAX_LENGTH, label="メールアドレス"
+    )
     validate_password_policy(password, min_length=password_min_length)
     if await get_local_user(db, name) is not None:
         raise DuplicateUserError()
@@ -278,7 +304,9 @@ async def set_local_password(
     stmt = update(User).where(User.id == user.id)
     if expected_hash is not None:
         stmt = stmt.where(User.password_hash == expected_hash)
-    result = await db.execute(stmt.values(**values).execution_options(synchronize_session=False))
+    result = await db.execute(
+        stmt.values(**values).execution_options(synchronize_session=False)
+    )
     if not result.rowcount:
         raise PasswordChangedConcurrentlyError()
     for key, value in values.items():

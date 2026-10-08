@@ -105,7 +105,11 @@ def flag_metric_spike(
 ) -> NotableResult:
     """閾値超過時にメトリクスサンプルを notable として分類する。"""
     if value >= crit_threshold:
-        return NotableResult(score=90, tags=[f"metric:{metric_key}", "threshold:critical"])
+        return NotableResult(
+            score=90, tags=[f"metric:{metric_key}", "threshold:critical"]
+        )
     if value >= warn_threshold:
-        return NotableResult(score=55, tags=[f"metric:{metric_key}", "threshold:warning"])
+        return NotableResult(
+            score=55, tags=[f"metric:{metric_key}", "threshold:warning"]
+        )
     return NotableResult(score=0, tags=[])

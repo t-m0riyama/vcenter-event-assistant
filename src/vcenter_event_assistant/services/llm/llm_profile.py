@@ -76,7 +76,9 @@ def effective_chat_api_key(settings: Settings) -> str:
     return (settings.llm_digest_api_key or "").strip()
 
 
-def resolve_llm_profile(settings: Settings, *, purpose: LlmPurpose) -> ResolvedLlmProfile:
+def resolve_llm_profile(
+    settings: Settings, *, purpose: LlmPurpose
+) -> ResolvedLlmProfile:
     """
     ``purpose`` に応じた実効プロファイルを返す。
 

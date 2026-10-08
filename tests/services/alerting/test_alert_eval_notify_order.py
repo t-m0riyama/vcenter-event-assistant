@@ -8,7 +8,13 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
-from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertHistory,
+    AlertRule,
+    AlertState,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.settings import get_settings
@@ -22,7 +28,9 @@ def clear_settings_cache():
 
 
 @pytest.mark.asyncio
-async def test_alert_history_records_none_channel_when_smtp_unconfigured(monkeypatch) -> None:
+async def test_alert_history_records_none_channel_when_smtp_unconfigured(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("SMTP_HOST", "")
     monkeypatch.setenv("ALERT_EMAIL_TO", "")
     get_settings.cache_clear()
@@ -57,10 +65,14 @@ async def test_alert_history_records_none_channel_when_smtp_unconfigured(monkeyp
 
     async with session_scope() as session:
         history = (
-            await session.execute(
-                select(AlertHistory).where(AlertHistory.rule_id == rule_id)
+            (
+                await session.execute(
+                    select(AlertHistory).where(AlertHistory.rule_id == rule_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(history) == 1
         assert history[0].channel == "none"
         assert history[0].success is None
@@ -104,19 +116,32 @@ async def test_evaluate_all_commits_state_before_notification(monkeypatch) -> No
     async def _capture_notify(*args, **kwargs):
         async with session_scope() as session:
             states = (
-                await session.execute(
-                    select(AlertState).where(AlertState.rule_id == rule_id)
+                (
+                    await session.execute(
+                        select(AlertState).where(AlertState.rule_id == rule_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             seen.append(states[0].state if states else "missing")
 
-    from vcenter_event_assistant.services.alerting.notification.email_channel import EmailChannel
-    from vcenter_event_assistant.services.alerting.notification.delivery_outcome import NotificationDeliveryOutcome
-    from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
+    from vcenter_event_assistant.services.alerting.notification.email_channel import (
+        EmailChannel,
+    )
+    from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
+        NotificationDeliveryOutcome,
+    )
+    from vcenter_event_assistant.services.alerting.notification_outbox import (
+        deliver_notifications,
+    )
+
     await evaluator.evaluate_all()
+
     async def capture(*args, **kwargs):
         await _capture_notify()
         return NotificationDeliveryOutcome(channel="email", success=True)
+
     with patch.object(EmailChannel, "notify", side_effect=capture):
         await deliver_notifications(get_settings())
 

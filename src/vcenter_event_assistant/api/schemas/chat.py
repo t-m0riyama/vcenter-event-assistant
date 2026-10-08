@@ -152,12 +152,14 @@ class ChatRequest(BaseModel):
             "enable_web_search が偽、または検索プロバイダ未構成のときは無視される。"
         ),
     )
-    web_search_aggressiveness: Literal["conservative", "balanced", "aggressive"] = Field(
-        default="balanced",
-        description=(
-            "WEB 検索をどの程度積極的に使うかの指針。"
-            "enable_web_search が偽、または検索プロバイダ未構成のときは無視される。"
-        ),
+    web_search_aggressiveness: Literal["conservative", "balanced", "aggressive"] = (
+        Field(
+            default="balanced",
+            description=(
+                "WEB 検索をどの程度積極的に使うかの指針。"
+                "enable_web_search が偽、または検索プロバイダ未構成のときは無視される。"
+            ),
+        )
     )
 
     @model_validator(mode="after")

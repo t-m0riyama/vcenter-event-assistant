@@ -11,7 +11,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import event, func, select
 
-from vcenter_event_assistant.db.models import EventRecord, IngestionState, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    EventRecord,
+    IngestionState,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import get_engine, session_scope
 from vcenter_event_assistant.services.ingestion import (
     ingest_events_for_vcenter,
@@ -88,7 +93,9 @@ async def test_ingest_events_burst_does_not_select_events_table() -> None:
             async with session_scope() as session:
                 vc = await session.get(VCenter, vcenter_id)
                 assert vc is not None
-                inserted = await ingest_events_for_vcenter(session, vc, settings=get_settings())
+                inserted = await ingest_events_for_vcenter(
+                    session, vc, settings=get_settings()
+                )
 
         assert inserted == 1000
         assert event_selects == []
@@ -100,7 +107,9 @@ async def test_ingest_events_burst_does_not_select_events_table() -> None:
             async with session_scope() as session:
                 vc = await session.get(VCenter, vcenter_id)
                 assert vc is not None
-                inserted_dup = await ingest_events_for_vcenter(session, vc, settings=get_settings())
+                inserted_dup = await ingest_events_for_vcenter(
+                    session, vc, settings=get_settings()
+                )
 
         assert inserted_dup == 0
         assert event_selects == []
@@ -163,8 +172,12 @@ async def test_ingest_metrics_skips_duplicates_without_select() -> None:
             async with session_scope() as session:
                 vc = await session.get(VCenter, vcenter_id)
                 assert vc is not None
-                first = await ingest_metrics_for_vcenter(session, vc, settings=get_settings())
-                second = await ingest_metrics_for_vcenter(session, vc, settings=get_settings())
+                first = await ingest_metrics_for_vcenter(
+                    session, vc, settings=get_settings()
+                )
+                second = await ingest_metrics_for_vcenter(
+                    session, vc, settings=get_settings()
+                )
 
         assert first == 1
         assert second == 0
@@ -209,7 +222,9 @@ async def test_ingest_events_does_not_rewind_cursor_on_empty_fetch() -> None:
         async with session_scope() as session:
             vc = await session.get(VCenter, vcenter_id)
             assert vc is not None
-            inserted = await ingest_events_for_vcenter(session, vc, settings=get_settings())
+            inserted = await ingest_events_for_vcenter(
+                session, vc, settings=get_settings()
+            )
             assert inserted == 0
 
     async with session_scope() as session:
@@ -221,4 +236,3 @@ async def test_ingest_events_does_not_rewind_cursor_on_empty_fetch() -> None:
         )
         state = row.scalar_one()
         assert state.cursor_value == cursor_ts.isoformat()
-

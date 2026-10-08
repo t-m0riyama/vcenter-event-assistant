@@ -46,7 +46,9 @@ def test_build_search_provider_returns_none_when_web_research_omitted() -> None:
 
 
 def test_build_search_provider_returns_tavily_with_api_key() -> None:
-    provider = build_search_provider(_settings(tavily_api_key="tvly-test", web_research_enabled=True))
+    provider = build_search_provider(
+        _settings(tavily_api_key="tvly-test", web_research_enabled=True)
+    )
     assert isinstance(provider, TavilySearchProvider)
     assert provider.name == "tavily"
 
@@ -74,7 +76,11 @@ def test_build_search_provider_returns_firecrawl_with_base_url_only() -> None:
 
 def test_build_search_provider_returns_firecrawl_with_api_key_only() -> None:
     provider = build_search_provider(
-        _settings(search_provider="firecrawl", firecrawl_api_key="fc-test", web_research_enabled=True)
+        _settings(
+            search_provider="firecrawl",
+            firecrawl_api_key="fc-test",
+            web_research_enabled=True,
+        )
     )
     assert isinstance(provider, FirecrawlSearchProvider)
 

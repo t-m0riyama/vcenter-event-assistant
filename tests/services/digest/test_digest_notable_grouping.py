@@ -36,8 +36,18 @@ def test_group_notable_rows_by_event_type_merges_same_type() -> None:
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     rows = [
         _snippet(id_=1, occurred_at=t0, event_type="TypeA", notable_score=15),
-        _snippet(id_=2, occurred_at=t0 + timedelta(days=1), event_type="TypeA", notable_score=15),
-        _snippet(id_=3, occurred_at=t0 + timedelta(days=2), event_type="TypeA", notable_score=15),
+        _snippet(
+            id_=2,
+            occurred_at=t0 + timedelta(days=1),
+            event_type="TypeA",
+            notable_score=15,
+        ),
+        _snippet(
+            id_=3,
+            occurred_at=t0 + timedelta(days=2),
+            event_type="TypeA",
+            notable_score=15,
+        ),
     ]
     groups = group_notable_rows_by_event_type(rows)
     assert len(groups) == 1
@@ -55,7 +65,12 @@ def test_group_notable_rows_by_event_type_sorts_by_score_then_last_time() -> Non
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     rows = [
         _snippet(id_=1, occurred_at=t0, event_type="LowScore", notable_score=5),
-        _snippet(id_=2, occurred_at=t0 + timedelta(hours=1), event_type="HighScore", notable_score=20),
+        _snippet(
+            id_=2,
+            occurred_at=t0 + timedelta(hours=1),
+            event_type="HighScore",
+            notable_score=20,
+        ),
     ]
     groups = group_notable_rows_by_event_type(rows)
     assert len(groups) == 2
@@ -67,8 +82,16 @@ def test_group_notable_rows_by_event_type_message_from_latest_occurrence() -> No
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     last_t = t0 + timedelta(days=1)
     rows = [
-        _snippet(id_=1, occurred_at=t0, event_type="T", notable_score=10, message="old"),
-        _snippet(id_=2, occurred_at=last_t, event_type="T", notable_score=10, message="newest"),
+        _snippet(
+            id_=1, occurred_at=t0, event_type="T", notable_score=10, message="old"
+        ),
+        _snippet(
+            id_=2,
+            occurred_at=last_t,
+            event_type="T",
+            notable_score=10,
+            message="newest",
+        ),
     ]
     groups = group_notable_rows_by_event_type(rows)
     assert len(groups) == 1
@@ -78,8 +101,12 @@ def test_group_notable_rows_by_event_type_message_from_latest_occurrence() -> No
 def test_group_notable_rows_by_event_type_entity_none_when_mixed() -> None:
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     rows = [
-        _snippet(id_=1, occurred_at=t0, event_type="T", notable_score=10, entity_name="a"),
-        _snippet(id_=2, occurred_at=t0, event_type="T", notable_score=10, entity_name="b"),
+        _snippet(
+            id_=1, occurred_at=t0, event_type="T", notable_score=10, entity_name="a"
+        ),
+        _snippet(
+            id_=2, occurred_at=t0, event_type="T", notable_score=10, entity_name="b"
+        ),
     ]
     groups = group_notable_rows_by_event_type(rows)
     assert groups[0].entity_name is None

@@ -46,8 +46,7 @@ async def query_top_metric_hosts(
                 order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
             )
             .label("rn"),
-        )
-        .where(*clauses)
+        ).where(*clauses)
     ).subquery()
 
     q = (

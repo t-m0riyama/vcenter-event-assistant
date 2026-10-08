@@ -20,20 +20,24 @@ T = TypeVar("T")
 MAX_CONCURRENT_DIRECTORY_CALLS = 10
 
 # CapacityLimiter はイベントループに束縛されるため、ループごとに用意する（テストはループが毎回変わる）
-_limiters: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, anyio.CapacityLimiter] = (
-    weakref.WeakKeyDictionary()
-)
+_limiters: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop, anyio.CapacityLimiter
+] = weakref.WeakKeyDictionary()
 
 
 def _limiter() -> anyio.CapacityLimiter:
     loop = asyncio.get_running_loop()
     limiter = _limiters.get(loop)
     if limiter is None:
-        limiter = _limiters[loop] = anyio.CapacityLimiter(MAX_CONCURRENT_DIRECTORY_CALLS)
+        limiter = _limiters[loop] = anyio.CapacityLimiter(
+            MAX_CONCURRENT_DIRECTORY_CALLS
+        )
     return limiter
 
 
-async def run_directory_call(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+async def run_directory_call(
+    func: Callable[P, T], *args: P.args, **kwargs: P.kwargs
+) -> T:
     def call() -> T:
         return func(*args, **kwargs)
 

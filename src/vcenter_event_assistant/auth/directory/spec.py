@@ -76,7 +76,8 @@ def spec_from_model(config: DirectoryConfig) -> DirectorySpec:
         group_member_attribute=config.group_member_attribute or None,
         group_member_value=config.group_member_value or None,
         mappings=tuple(
-            (m.group_dn_normalized or normalize_dn(m.group_dn), Role(m.role)) for m in config.mappings
+            (m.group_dn_normalized or normalize_dn(m.group_dn), Role(m.role))
+            for m in config.mappings
         ),
         mapping_labels=tuple((m.group_dn, Role(m.role)) for m in config.mappings),
     )

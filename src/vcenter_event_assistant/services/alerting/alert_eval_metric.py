@@ -29,7 +29,9 @@ async def evaluate_metric_threshold_rule(
 
     firings = 0
     resolutions = 0
-    staleness = timedelta(seconds=deps.settings.effective_metric_staleness_window_seconds)
+    staleness = timedelta(
+        seconds=deps.settings.effective_metric_staleness_window_seconds
+    )
     cutoff = datetime.now(timezone.utc) - staleness
 
     async with session_scope(settings=deps.settings) as session:
@@ -42,8 +44,7 @@ async def evaluate_metric_threshold_rule(
                     order_by=desc(MetricSample.sampled_at),
                 )
                 .label("rn"),
-            )
-            .where(
+            ).where(
                 MetricSample.metric_key == metric_key,
                 MetricSample.sampled_at >= cutoff,
             )
@@ -58,7 +59,9 @@ async def evaluate_metric_threshold_rule(
             for sample in res.scalars().all()
         }
 
-        res = await session.execute(select(AlertState).where(AlertState.rule_id == rule.id))
+        res = await session.execute(
+            select(AlertState).where(AlertState.rule_id == rule.id)
+        )
         states = {st.context_key: st for st in res.scalars().all()}
 
         if not latest_samples and not any(

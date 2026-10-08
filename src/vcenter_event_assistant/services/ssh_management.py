@@ -49,16 +49,25 @@ def ssh_objects(value, schema, *, require_connections=False):
             value.get(name)
             for name in ("host", "username", "private_key_file", "known_hosts_file")
         )
-        if field and require_connections and not value.get(field) and not legacy_connection:
+        if (
+            field
+            and require_connections
+            and not value.get(field)
+            and not legacy_connection
+        ):
             raise ValueError("各収集対象のSSH接続先を選択して保存してください。")
         if field and value.get(field):
             yield value, str(value[field])
         for key, child in schema.get("properties", {}).items():
             if key in value:
-                yield from ssh_objects(value[key], child, require_connections=require_connections)
+                yield from ssh_objects(
+                    value[key], child, require_connections=require_connections
+                )
     elif isinstance(value, list):
         for item in value:
-            yield from ssh_objects(item, schema.get("items", {}), require_connections=require_connections)
+            yield from ssh_objects(
+                item, schema.get("items", {}), require_connections=require_connections
+            )
 
 
 async def reference_digest(session, config, schema):

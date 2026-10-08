@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from vcenter_event_assistant.api.auth_deps import RequireOperator
 from vcenter_event_assistant.api.deps import get_app_settings
-from vcenter_event_assistant.services.ingest_runner import IngestBusyError, run_ingest_all
+from vcenter_event_assistant.services.ingest_runner import (
+    IngestBusyError,
+    run_ingest_all,
+)
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -23,16 +26,23 @@ async def run_ingest_now(
             detail="ingest already running",
         ) from None
     response: dict[str, object] = {
-        "status": "partial" if any(item.status == "failed" for item in result.plugins) else "ok",
+        "status": "partial"
+        if any(item.status == "failed" for item in result.plugins)
+        else "ok",
         "events_inserted": result.events_inserted,
         "metrics_inserted": result.metrics_inserted,
         "logs_inserted": result.logs_inserted,
     }
     if result.plugins:
         response["plugins"] = [
-            {"plugin_id": item.plugin_id, "status": item.status,
-             "events_inserted": item.events_inserted, "metrics_inserted": item.metrics_inserted, "logs_inserted": item.logs_inserted,
-             "error": item.error}
+            {
+                "plugin_id": item.plugin_id,
+                "status": item.status,
+                "events_inserted": item.events_inserted,
+                "metrics_inserted": item.metrics_inserted,
+                "logs_inserted": item.logs_inserted,
+                "error": item.error,
+            }
             for item in result.plugins
         ]
     return response

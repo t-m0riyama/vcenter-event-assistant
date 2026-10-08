@@ -17,7 +17,9 @@ class TestVcenterHttpProxySetting:
             assert s.vcenter_http_proxy is None
 
     def test_reads_from_env(self) -> None:
-        with patch.dict(os.environ, {"VCENTER_HTTP_PROXY": "http://proxy.local:3128"}, clear=False):
+        with patch.dict(
+            os.environ, {"VCENTER_HTTP_PROXY": "http://proxy.local:3128"}, clear=False
+        ):
             s = Settings(database_url="sqlite+aiosqlite:///:memory:")
             assert s.vcenter_http_proxy == "http://proxy.local:3128"
 

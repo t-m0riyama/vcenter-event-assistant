@@ -46,7 +46,10 @@ def _llm_failure_detail_for_user(exc: BaseException) -> str:
             "LLM_CHAT_MODEL / LLM_DIGEST_MODEL に Copilot CLI で利用可能なモデル名"
             "（copilot コマンドの /model で確認できます）を設定してください）"
         )
-    if "Personal Access Tokens are not supported" in raw or "third-party user token" in raw:
+    if (
+        "Personal Access Tokens are not supported" in raw
+        or "third-party user token" in raw
+    ):
         return (
             "このモデル／エンドポイントでは GitHub PAT を SDK に渡せません。"
             "環境変数 LLM_COPILOT_CLI_SESSION_AUTH=true にし、LLM_CHAT_API_KEY を空にするか外し、"

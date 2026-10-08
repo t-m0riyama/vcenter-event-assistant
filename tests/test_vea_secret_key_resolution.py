@@ -13,7 +13,9 @@ from vcenter_event_assistant.settings_binding import (
 )
 
 
-def test_resolve_vea_secret_key_prefers_bound_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_vea_secret_key_prefers_bound_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("VEA_SECRET_KEY", "from-env")
     bind_settings(Settings(vea_secret_key="from-bind"))
     try:
@@ -22,7 +24,9 @@ def test_resolve_vea_secret_key_prefers_bound_settings(monkeypatch: pytest.Monke
         clear_settings_binding()
 
 
-def test_resolve_vea_secret_key_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_vea_secret_key_falls_back_to_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     clear_settings_binding()
     monkeypatch.setenv("VEA_SECRET_KEY", "from-env")
     try:
@@ -31,7 +35,9 @@ def test_resolve_vea_secret_key_falls_back_to_env(monkeypatch: pytest.MonkeyPatc
         monkeypatch.delenv("VEA_SECRET_KEY", raising=False)
 
 
-def test_encrypted_string_uses_env_secret_without_bind(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_encrypted_string_uses_env_secret_without_bind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     clear_settings_binding()
     monkeypatch.setenv("VEA_SECRET_KEY", "env-only-key")
     col = EncryptedString(2048)

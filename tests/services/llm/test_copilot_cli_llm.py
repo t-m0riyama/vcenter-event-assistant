@@ -188,6 +188,7 @@ async def test_run_period_chat_copilot_cli_calls_completion_and_returns_text(
         llm_chat_api_key="ghp_chat_token",
         llm_chat_model="gpt-4.1",
     )
+
     async def _fake_completion(
         *args: object,
         **kwargs: object,
@@ -203,9 +204,10 @@ async def test_run_period_chat_copilot_cli_calls_completion_and_returns_text(
         raising=True,
     )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_llm.require_settings", lambda: s
+    )
     out, err, meta, _, _ = await run_period_chat(
-        
         context=_minimal_ctx(),
         messages=[ChatMessage(role="user", content="質問")],
     )
@@ -306,7 +308,7 @@ async def test_run_copilot_cli_does_not_retry_on_unrelated_session_error(
         async def create_session(self, **kwargs: object) -> object:
             create_calls.append(kwargs)
             raise RuntimeError(
-                'JSON-RPC Error -32603: Request session.create failed with message: '
+                "JSON-RPC Error -32603: Request session.create failed with message: "
                 'Model "gpt-4o-mini" is not available.'
             )
 
@@ -349,7 +351,7 @@ def test_llm_failure_detail_guides_copilot_model_unavailable() -> None:
     )
 
     exc = RuntimeError(
-        'JSON-RPC Error -32603: Request session.create failed with message: '
+        "JSON-RPC Error -32603: Request session.create failed with message: "
         'Model "gpt-4o-mini" is not available.'
     )
     detail = _llm_failure_detail_for_user(exc)

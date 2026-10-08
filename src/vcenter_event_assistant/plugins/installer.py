@@ -60,9 +60,7 @@ def parse_requirement(requirement: str) -> tuple[str, str | None]:
     """``name`` または ``name==version`` を検証して分解する。"""
     match = _REQUIREMENT_RE.fullmatch(requirement.strip())
     if match is None:
-        raise PluginInstallError(
-            "requirement must be '<name>' or '<name>==<version>'"
-        )
+        raise PluginInstallError("requirement must be '<name>' or '<name>==<version>'")
     return normalize_distribution(match.group("name")), match.group("version")
 
 

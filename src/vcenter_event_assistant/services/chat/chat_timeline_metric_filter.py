@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelineEntry
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelineEntry,
+)
 from vcenter_event_assistant.services.chat.chat_period_metrics import (
     DISK_KEYS,
     METRIC_CPU,

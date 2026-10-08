@@ -17,7 +17,9 @@ def _to_utc_instant(n: datetime | None) -> datetime:
     return t.astimezone(timezone.utc)
 
 
-def zoned_yesterday_window(now: datetime | None, tz: ZoneInfo) -> tuple[datetime, datetime]:
+def zoned_yesterday_window(
+    now: datetime | None, tz: ZoneInfo
+) -> tuple[datetime, datetime]:
     """
     直前の **指定タイムゾーンの暦日** ``[昨日 0:00, 今日 0:00)`` を UTC 瞬間で返す。
 
@@ -31,7 +33,9 @@ def zoned_yesterday_window(now: datetime | None, tz: ZoneInfo) -> tuple[datetime
     return from_local.astimezone(timezone.utc), to_local.astimezone(timezone.utc)
 
 
-def zoned_previous_week_window(now: datetime | None, tz: ZoneInfo) -> tuple[datetime, datetime]:
+def zoned_previous_week_window(
+    now: datetime | None, tz: ZoneInfo
+) -> tuple[datetime, datetime]:
     """
     直前に完了した **指定 TZ・日曜 0:00 始まり** の暦週の半開区間 ``[from, to)``（ちょうど 7 日）。
 
@@ -44,10 +48,14 @@ def zoned_previous_week_window(now: datetime | None, tz: ZoneInfo) -> tuple[date
     days_since_sunday = (start_today.weekday() + 1) % 7
     this_week_sunday = start_today - timedelta(days=days_since_sunday)
     prev_week_start = this_week_sunday - timedelta(days=7)
-    return prev_week_start.astimezone(timezone.utc), this_week_sunday.astimezone(timezone.utc)
+    return prev_week_start.astimezone(timezone.utc), this_week_sunday.astimezone(
+        timezone.utc
+    )
 
 
-def zoned_previous_calendar_month_window(now: datetime | None, tz: ZoneInfo) -> tuple[datetime, datetime]:
+def zoned_previous_calendar_month_window(
+    now: datetime | None, tz: ZoneInfo
+) -> tuple[datetime, datetime]:
     """
     直前の **指定 TZ の暦月**の半開区間 ``[from, to)`` を UTC で返す。
 
@@ -60,7 +68,9 @@ def zoned_previous_calendar_month_window(now: datetime | None, tz: ZoneInfo) -> 
     first_this_month = start_today.replace(day=1)
     last_day_prev_month = first_this_month - timedelta(days=1)
     first_prev_month = last_day_prev_month.replace(day=1)
-    return first_prev_month.astimezone(timezone.utc), first_this_month.astimezone(timezone.utc)
+    return first_prev_month.astimezone(timezone.utc), first_this_month.astimezone(
+        timezone.utc
+    )
 
 
 def utc_yesterday_window(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -82,7 +92,9 @@ def utc_previous_week_window(now: datetime | None = None) -> tuple[datetime, dat
     return zoned_previous_week_window(now, _UTC_ZONE)
 
 
-def utc_previous_calendar_month_window(now: datetime | None = None) -> tuple[datetime, datetime]:
+def utc_previous_calendar_month_window(
+    now: datetime | None = None,
+) -> tuple[datetime, datetime]:
     """
     直前の **UTC 暦月**の半開区間 ``[from, to)`` を返す。
 

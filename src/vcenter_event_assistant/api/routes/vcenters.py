@@ -9,9 +9,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireOperator, RequireViewer
+from vcenter_event_assistant.api.auth_deps import (
+    RequireAdmin,
+    RequireOperator,
+    RequireViewer,
+)
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
+from vcenter_event_assistant.api.schemas import (
+    VCenterCreate,
+    VCenterRead,
+    VCenterUpdate,
+)
 from vcenter_event_assistant.collectors.connection import (
     connect_vcenter,
     disconnect,
@@ -20,11 +28,12 @@ from vcenter_event_assistant.collectors.connection import (
 )
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.security_startup import passwords_may_be_stored
-from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
+from vcenter_event_assistant.services.vcenter_host_validation import (
+    validate_vcenter_host,
+)
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/vcenters", tags=["vcenters"])
-
 
 
 def _ensure_secure_protocol(protocol: str, settings: Settings) -> None:
@@ -33,6 +42,7 @@ def _ensure_secure_protocol(protocol: str, settings: Settings) -> None:
             status_code=400,
             detail="APP_ENV=production では vCenter protocol は https のみ許可されます",
         )
+
 
 def _ensure_password_storage_allowed(settings: Settings) -> None:
     if not passwords_may_be_stored(settings):
@@ -63,7 +73,12 @@ async def list_vcenters(
     return list(res.scalars().all())
 
 
-@router.post("", dependencies=[RequireAdmin], response_model=VCenterRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    dependencies=[RequireAdmin],
+    response_model=VCenterRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_vcenter(
     body: VCenterCreate,
     session: AsyncSession = Depends(get_session),
@@ -125,7 +140,9 @@ async def update_vcenter(
     return vc
 
 
-@router.delete("/{vcenter_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{vcenter_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_vcenter(
     vcenter_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),

@@ -11,7 +11,9 @@ import os
 # 子プロセスに引き継がない環境変数（大文字で比較）。
 # Settings は環境変数名の大文字小文字を区別せず、フィールド名の別名も受け付けるため、
 # 受け付けるすべての綴りを対象にする（``settings.AuthSettingsMixin.bootstrap_admin_password``）。
-WITHHELD_ENV_VARS = frozenset({"VEA_BOOTSTRAP_ADMIN_PASSWORD", "BOOTSTRAP_ADMIN_PASSWORD"})
+WITHHELD_ENV_VARS = frozenset(
+    {"VEA_BOOTSTRAP_ADMIN_PASSWORD", "BOOTSTRAP_ADMIN_PASSWORD"}
+)
 
 
 def child_process_env() -> dict[str, str]:

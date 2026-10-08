@@ -744,7 +744,9 @@ async def test_post_chat_returns_422_when_attachments_disabled(
     get_settings.cache_clear()
     _spy_run_period_chat(monkeypatch, {})
 
-    r = await client.post("/api/chat", json=_chat_body(attachments=[_text_attachment()]))
+    r = await client.post(
+        "/api/chat", json=_chat_body(attachments=[_text_attachment()])
+    )
     assert r.status_code == 422
 
 

@@ -34,7 +34,9 @@ def test_legacy_digest_env_vars_in_use_legacy_daily_path() -> None:
     ) == ("DIGEST_SCHEDULER_ENABLED", "DIGEST_CRON")
 
 
-def test_warn_if_legacy_digest_settings_in_use_logs(caplog: pytest.LogCaptureFixture) -> None:
+def test_warn_if_legacy_digest_settings_in_use_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     caplog.set_level(logging.WARNING)
     warn_if_legacy_digest_settings_in_use(
         Settings(digest_scheduler_enabled=True, digest_daily_enabled=False)

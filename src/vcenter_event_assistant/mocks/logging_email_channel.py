@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState
-from vcenter_event_assistant.services.alerting.notification.base import NotificationChannel
+from vcenter_event_assistant.services.alerting.notification.base import (
+    NotificationChannel,
+)
 from vcenter_event_assistant.services.alerting.notification.delivery_outcome import (
     NotificationDeliveryOutcome,
 )

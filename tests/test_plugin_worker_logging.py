@@ -37,7 +37,7 @@ from vcenter_event_assistant.settings import Settings
 
 WORKER_TIMEOUT = 60
 
-_LOGGING_PLUGIN_BODY = '''
+_LOGGING_PLUGIN_BODY = """
 import logging
 from datetime import datetime, timezone
 
@@ -89,7 +89,7 @@ class Collector:
 
 def build_collector():
     return Collector()
-'''
+"""
 
 # import そのものが失敗する配布物。オフライン（--no-deps）導入で最も多い失敗形。
 _MISSING_DEPENDENCY_BODY = """
@@ -101,7 +101,7 @@ def build_collector():
 """
 
 # KeyError のメッセージは「見つからなかったキー」そのもの。allow-list の境界確認用。
-_KEYERROR_PLUGIN_BODY = '''
+_KEYERROR_PLUGIN_BODY = """
 from vcenter_event_assistant_plugin_api import CollectorManifest, MetricDefinition
 
 
@@ -129,7 +129,7 @@ class Collector:
 
 def build_collector():
     return Collector()
-'''
+"""
 
 
 def _install(root, module_body: str, *, entry_point: str, distribution: str):
@@ -245,7 +245,9 @@ def test_worker_logging_never_opens_a_rotating_file_handler(tmp_path) -> None:
 
 
 def test_worker_log_level_defaults_to_log_level() -> None:
-    config = build_worker_logging_dict(Settings(log_level="WARNING"), stream=io.StringIO())
+    config = build_worker_logging_dict(
+        Settings(log_level="WARNING"), stream=io.StringIO()
+    )
 
     assert config["root"]["level"] == "WARNING"
     assert config["loggers"][PLUGIN_LOGGER_NAMESPACE]["level"] == "WARNING"
@@ -442,7 +444,9 @@ def test_discovery_worker_stderr_is_transcribed_on_failure(
         distribution="example-broken",
     )
 
-    with caplog.at_level(logging.WARNING, logger="vcenter_event_assistant.plugins.remote"):
+    with caplog.at_level(
+        logging.WARNING, logger="vcenter_event_assistant.plugins.remote"
+    ):
         build_remote_plugins(str(root), include_environment=False)
 
     transcribed = "\n".join(
@@ -488,9 +492,7 @@ def test_safe_error_hides_keyerror_messages() -> None:
 
 def test_safe_error_shows_messages_of_allow_listed_types() -> None:
     exc = ModuleNotFoundError("No module named 'pyvmomi_extra'")
-    assert _safe_error(exc) == (
-        "ModuleNotFoundError: No module named 'pyvmomi_extra'"
-    )
+    assert _safe_error(exc) == ("ModuleNotFoundError: No module named 'pyvmomi_extra'")
 
 
 def test_safe_error_truncates_long_details() -> None:
@@ -500,7 +502,9 @@ def test_safe_error_truncates_long_details() -> None:
 
 @pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR"])
 def test_collector_worker_log_level_accepts_valid_levels(level: str) -> None:
-    assert Settings(collector_worker_log_level=level).collector_worker_log_level == level
+    assert (
+        Settings(collector_worker_log_level=level).collector_worker_log_level == level
+    )
 
 
 def test_collector_worker_log_level_rejects_garbage() -> None:

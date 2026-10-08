@@ -75,15 +75,21 @@ async def _reset_password(settings: Settings, args: argparse.Namespace) -> str:
     password = _read_password(args)
     async with session_scope(settings) as db:
         user = await _get_user_or_fail(db, args.username)
-        await set_local_password(db, user, password, password_min_length=settings.password_min_length)
-        return f"ユーザー '{user.username}' のパスワードを変更し、ロックを解除しました。"
+        await set_local_password(
+            db, user, password, password_min_length=settings.password_min_length
+        )
+        return (
+            f"ユーザー '{user.username}' のパスワードを変更し、ロックを解除しました。"
+        )
 
 
 async def _set_role(settings: Settings, args: argparse.Namespace) -> str:
     async with session_scope(settings) as db, admin_change_guard(db):
         user = await _get_user_or_fail(db, args.username)
         if args.role != Role.ADMIN.value:
-            await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
+            await ensure_not_last_admin(
+                db, user, local_login_enabled=settings.local_login_enabled
+            )
         user.role = Role(args.role).value
         await revoke_all_for_user(db, user.id)
         return f"ユーザー '{user.username}' のロールを {user.role} にしました。"
@@ -102,12 +108,16 @@ async def _unlock(settings: Settings, args: argparse.Namespace) -> str:
 
 async def _list_users(settings: Settings, _args: argparse.Namespace) -> str:
     async with session_scope(settings) as db:
-        rows = (await db.scalars(select(User).order_by(User.realm_key, User.username))).all()
+        rows = (
+            await db.scalars(select(User).order_by(User.realm_key, User.username))
+        ).all()
     if not rows:
         return "ユーザーはいません。"
     lines = [f"{'USERNAME':<32} {'REALM':<44} {'ROLE':<9} ACTIVE"]
     for u in rows:
-        lines.append(f"{u.username:<32} {u.realm_key:<44} {u.role:<9} {'yes' if u.is_active else 'no'}")
+        lines.append(
+            f"{u.username:<32} {u.realm_key:<44} {u.role:<9} {'yes' if u.is_active else 'no'}"
+        )
     return "\n".join(lines)
 
 
@@ -133,11 +143,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", choices=roles, default=Role.VIEWER.value)
     p.add_argument("--display-name")
     p.add_argument("--email")
-    p.add_argument("--password-stdin", action="store_true", help="パスワードを標準入力の 1 行目から読む")
+    p.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="パスワードを標準入力の 1 行目から読む",
+    )
 
-    p = sub.add_parser("reset-password", help="ローカルユーザーのパスワードを再設定する")
+    p = sub.add_parser(
+        "reset-password", help="ローカルユーザーのパスワードを再設定する"
+    )
     p.add_argument("username")
-    p.add_argument("--password-stdin", action="store_true", help="パスワードを標準入力の 1 行目から読む")
+    p.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="パスワードを標準入力の 1 行目から読む",
+    )
 
     p = sub.add_parser("set-role", help="ローカルユーザーのロールを変更する")
     p.add_argument("username")
@@ -150,7 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def run(argv: Sequence[str] | None = None, *, settings: Settings | None = None) -> str:
+async def run(
+    argv: Sequence[str] | None = None, *, settings: Settings | None = None
+) -> str:
     args = build_parser().parse_args(argv)
     s = settings or get_settings()
     bind_settings(s)

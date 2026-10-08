@@ -66,7 +66,9 @@ async def test_build_digest_context_counts_and_top_rows() -> None:
         )
 
     async with session_scope() as session:
-        ctx = await build_digest_context(session, window_start, window_end, top_notable_min_score=1)
+        ctx = await build_digest_context(
+            session, window_start, window_end, top_notable_min_score=1
+        )
 
     assert ctx.total_events == 2
     assert ctx.notable_events_count == 1
@@ -114,7 +116,9 @@ async def test_build_digest_context_groups_same_event_type() -> None:
             )
 
     async with session_scope() as session:
-        ctx = await build_digest_context(session, window_start, window_end, top_notable_min_score=1)
+        ctx = await build_digest_context(
+            session, window_start, window_end, top_notable_min_score=1
+        )
 
     assert ctx.total_events == 3
     same = [g for g in ctx.top_notable_event_groups if g.event_type == "SameTypeEvent"]

@@ -94,7 +94,6 @@ async def test_post_run_explicit_window_normalizes_kind_for_weekly_template(
     tpl.write_text("# BRANCH_WEEKLY_ONLY\n", encoding="utf-8")
     monkeypatch.setenv("DIGEST_TEMPLATE_WEEKLY_PATH", str(tpl))
 
-
     from vcenter_event_assistant.main import create_app
     from vcenter_event_assistant.settings import get_settings
 
@@ -119,7 +118,9 @@ async def test_post_run_explicit_window_normalizes_kind_for_weekly_template(
 
 
 @pytest.mark.asyncio
-async def test_list_digests_filters_by_kind_and_updates_total(client: AsyncClient) -> None:
+async def test_list_digests_filters_by_kind_and_updates_total(
+    client: AsyncClient,
+) -> None:
     for digest_kind in ("daily", "weekly", "monthly", "weekly"):
         r = await client.post(
             "/api/digests/run",
@@ -144,7 +145,9 @@ async def test_list_digests_filters_by_kind_and_updates_total(client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_list_digests_kind_filter_pagination_keeps_total(client: AsyncClient) -> None:
+async def test_list_digests_kind_filter_pagination_keeps_total(
+    client: AsyncClient,
+) -> None:
     for digest_kind in ("weekly", "daily", "weekly", "monthly"):
         r = await client.post(
             "/api/digests/run",
@@ -156,8 +159,12 @@ async def test_list_digests_kind_filter_pagination_keeps_total(client: AsyncClie
         )
         assert r.status_code == 200
 
-    r_page0 = await client.get("/api/digests", params={"kind": "weekly", "limit": 1, "offset": 0})
-    r_page1 = await client.get("/api/digests", params={"kind": "weekly", "limit": 1, "offset": 1})
+    r_page0 = await client.get(
+        "/api/digests", params={"kind": "weekly", "limit": 1, "offset": 0}
+    )
+    r_page1 = await client.get(
+        "/api/digests", params={"kind": "weekly", "limit": 1, "offset": 1}
+    )
 
     assert r_page0.status_code == 200
     assert r_page1.status_code == 200

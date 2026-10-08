@@ -9,7 +9,10 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
-from vcenter_event_assistant.api.schemas.chat import ChatRequest, IncidentTimelineBuildRequest
+from vcenter_event_assistant.api.schemas.chat import (
+    ChatRequest,
+    IncidentTimelineBuildRequest,
+)
 from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
     EventTimeBucketsPayload,
     build_chat_event_time_buckets,
@@ -26,7 +29,10 @@ from vcenter_event_assistant.services.chat.chat_period_metrics import (
     build_chat_period_metrics,
     compute_chat_bucket_seconds,
 )
-from vcenter_event_assistant.services.digest.digest_context import DigestContext, build_digest_context
+from vcenter_event_assistant.services.digest.digest_context import (
+    DigestContext,
+    build_digest_context,
+)
 
 
 @dataclass(frozen=True)
@@ -113,10 +119,18 @@ async def _build_context_payloads_common(
             bucket_minutes=timeline_period_metrics.bucket_minutes,
             from_utc=timeline_period_metrics.from_utc,
             to_utc=timeline_period_metrics.to_utc,
-            cpu=timeline_period_metrics.cpu if body.include_period_metrics_cpu else None,
-            memory=timeline_period_metrics.memory if body.include_period_metrics_memory else None,
-            disk=timeline_period_metrics.disk if body.include_period_metrics_disk_io else None,
-            network=timeline_period_metrics.network if body.include_period_metrics_network_io else None,
+            cpu=timeline_period_metrics.cpu
+            if body.include_period_metrics_cpu
+            else None,
+            memory=timeline_period_metrics.memory
+            if body.include_period_metrics_memory
+            else None,
+            disk=timeline_period_metrics.disk
+            if body.include_period_metrics_disk_io
+            else None,
+            network=timeline_period_metrics.network
+            if body.include_period_metrics_network_io
+            else None,
         )
         event_time_buckets = timeline_event_time_buckets
 

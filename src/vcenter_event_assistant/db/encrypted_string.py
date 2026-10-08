@@ -29,7 +29,11 @@ def fernet_key_bytes(secret: str) -> bytes:
 
 def encrypt_for_storage(plaintext: str, secret: str) -> str:
     """平文を ``enc:`` 付き DB 値にエンコードする。"""
-    token = Fernet(fernet_key_bytes(secret)).encrypt(plaintext.encode("utf-8")).decode("ascii")
+    token = (
+        Fernet(fernet_key_bytes(secret))
+        .encrypt(plaintext.encode("utf-8"))
+        .decode("ascii")
+    )
     return f"{ENC_PREFIX}{token}"
 
 
@@ -39,7 +43,11 @@ def decrypt_from_storage(stored: str, secret: str) -> str:
         return stored
     ciphertext = stored[len(ENC_PREFIX) :]
     try:
-        return Fernet(fernet_key_bytes(secret)).decrypt(ciphertext.encode("ascii")).decode("utf-8")
+        return (
+            Fernet(fernet_key_bytes(secret))
+            .decrypt(ciphertext.encode("ascii"))
+            .decode("utf-8")
+        )
     except InvalidToken as exc:
         msg = (
             "Failed to decrypt vCenter password with VEA_SECRET_KEY. "

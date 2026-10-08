@@ -88,7 +88,9 @@ def test_event_score_should_notify_true_after_cooldown_with_new_qualifying() -> 
     )
 
 
-def test_event_score_should_notify_false_after_cooldown_without_new_qualifying() -> None:
+def test_event_score_should_notify_false_after_cooldown_without_new_qualifying() -> (
+    None
+):
     now = datetime(2026, 5, 23, 12, 0, tzinfo=timezone.utc)
     qualifying = now - timedelta(minutes=20)
     assert not event_score_should_notify(

@@ -6,13 +6,22 @@ from sqlalchemy import delete, select, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireOperator, RequireViewer
+from vcenter_event_assistant.api.auth_deps import (
+    RequireAdmin,
+    RequireOperator,
+    RequireViewer,
+)
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.import_guards import reject_empty_destructive_import
 from vcenter_event_assistant.api.schemas import (
-    AlertRuleRead, AlertRuleCreate, AlertRuleUpdate,
-    AlertHistoryListResponse, AlertHistoryRead, AlertRulesImportRequest,
-    AlertRulesImportResponse, AlertStateResolveRequest,
+    AlertRuleRead,
+    AlertRuleCreate,
+    AlertRuleUpdate,
+    AlertHistoryListResponse,
+    AlertHistoryRead,
+    AlertRulesImportRequest,
+    AlertRulesImportResponse,
+    AlertStateResolveRequest,
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
@@ -36,18 +45,29 @@ def _is_alert_rule_name_unique_violation(exc: IntegrityError) -> bool:
     message = " ".join(parts).lower()
     return "unique" in message and "alert_rules" in message and "name" in message
 
+
 @router.get("/rules", dependencies=[RequireViewer], response_model=list[AlertRuleRead])
 async def list_alert_rules(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(AlertRule).order_by(AlertRule.name.asc()))
     return list(res.scalars().all())
 
-@router.post("/rules", dependencies=[RequireAdmin], response_model=AlertRuleRead, status_code=status.HTTP_201_CREATED)
-async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depends(get_session)):
+
+@router.post(
+    "/rules",
+    dependencies=[RequireAdmin],
+    response_model=AlertRuleRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_alert_rule(
+    body: AlertRuleCreate, session: AsyncSession = Depends(get_session)
+):
     # 同名のルールがないかチェック
     res = await session.execute(select(AlertRule.id).where(AlertRule.name == body.name))
     if res.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Alert rule with this name already exists")
-    
+        raise HTTPException(
+            status_code=409, detail="Alert rule with this name already exists"
+        )
+
     rule = AlertRule(
         name=body.name,
         rule_type=body.rule_type,
@@ -60,26 +80,37 @@ async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depen
         await session.flush()
     except IntegrityError as exc:
         if _is_alert_rule_name_unique_violation(exc):
-            raise HTTPException(status_code=409, detail="Alert rule with this name already exists") from exc
+            raise HTTPException(
+                status_code=409, detail="Alert rule with this name already exists"
+            ) from exc
         raise
     await session.refresh(rule)
     return rule
 
-@router.patch("/rules/{rule_id}", dependencies=[RequireAdmin], response_model=AlertRuleRead)
-async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSession = Depends(get_session)):
+
+@router.patch(
+    "/rules/{rule_id}", dependencies=[RequireAdmin], response_model=AlertRuleRead
+)
+async def patch_alert_rule(
+    rule_id: int, body: AlertRuleUpdate, session: AsyncSession = Depends(get_session)
+):
     rule = await session.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Alert rule not found")
 
     previous_name = rule.name
     name_changed = body.name is not None and body.name != previous_name
-    
+
     if body.name is not None:
         existing = await session.execute(
-            select(AlertRule.id).where(AlertRule.name == body.name, AlertRule.id != rule_id)
+            select(AlertRule.id).where(
+                AlertRule.name == body.name, AlertRule.id != rule_id
+            )
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="Alert rule with this name already exists")
+            raise HTTPException(
+                status_code=409, detail="Alert rule with this name already exists"
+            )
         rule.name = body.name
     if body.is_enabled is not None:
         rule.is_enabled = body.is_enabled
@@ -92,12 +123,19 @@ async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSe
         await session.flush()
     except IntegrityError as exc:
         if name_changed and _is_alert_rule_name_unique_violation(exc):
-            raise HTTPException(status_code=409, detail="Alert rule with this name already exists") from exc
+            raise HTTPException(
+                status_code=409, detail="Alert rule with this name already exists"
+            ) from exc
         raise
     await session.refresh(rule)
     return rule
 
-@router.delete("/rules/{rule_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
+
+@router.delete(
+    "/rules/{rule_id}",
+    dependencies=[RequireAdmin],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_alert_rule(rule_id: int, session: AsyncSession = Depends(get_session)):
     rule = await session.get(AlertRule, rule_id)
     if not rule:
@@ -106,7 +144,11 @@ async def delete_alert_rule(rule_id: int, session: AsyncSession = Depends(get_se
     await session.flush()
 
 
-@router.post("/rules/import", dependencies=[RequireAdmin], response_model=AlertRulesImportResponse)
+@router.post(
+    "/rules/import",
+    dependencies=[RequireAdmin],
+    response_model=AlertRulesImportResponse,
+)
 async def import_alert_rules(
     body: AlertRulesImportRequest,
     session: AsyncSession = Depends(get_session),
@@ -119,7 +161,9 @@ async def import_alert_rules(
         )
 
     for imported_rule in body.rules:
-        res = await session.execute(select(AlertRule).where(AlertRule.name == imported_rule.name))
+        res = await session.execute(
+            select(AlertRule).where(AlertRule.name == imported_rule.name)
+        )
         existing = res.scalar_one_or_none()
         if existing is None:
             session.add(
@@ -147,7 +191,9 @@ async def import_alert_rules(
         if not names:
             await session.execute(delete(AlertRule))
         else:
-            await session.execute(delete(AlertRule).where(~AlertRule.name.in_(sorted(names))))
+            await session.execute(
+                delete(AlertRule).where(~AlertRule.name.in_(sorted(names)))
+            )
 
     await session.flush()
 
@@ -155,14 +201,14 @@ async def import_alert_rules(
     rules_count = len(list(count_res.scalars().all()))
     return AlertRulesImportResponse(rules_count=rules_count)
 
+
 def _history_item_to_read(
     item: AlertHistory,
     firing_keys: set[tuple[int, str]],
 ) -> AlertHistoryRead:
     rule_type = item.rule.rule_type if item.rule else ""
     can_resolve = (
-        rule_type == "event_score"
-        and (item.rule_id, item.context_key) in firing_keys
+        rule_type == "event_score" and (item.rule_id, item.context_key) in firing_keys
     )
     return AlertHistoryRead(
         id=item.id,
@@ -184,7 +230,9 @@ def _history_item_to_read(
     )
 
 
-@router.get("/history", dependencies=[RequireViewer], response_model=AlertHistoryListResponse)
+@router.get(
+    "/history", dependencies=[RequireViewer], response_model=AlertHistoryListResponse
+)
 async def list_alert_history(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -193,7 +241,7 @@ async def list_alert_history(
     # 合計件数
     count_res = await session.execute(select(func.count(AlertHistory.id)))
     total = count_res.scalar_one()
-    
+
     # 履歴取得 (rule を結合して名前を取得できるようにする)
     res = await session.execute(
         select(AlertHistory)
@@ -224,7 +272,11 @@ async def list_alert_history(
     )
 
 
-@router.post("/states/resolve", dependencies=[RequireOperator], status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/states/resolve",
+    dependencies=[RequireOperator],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def resolve_alert_state(
     body: AlertStateResolveRequest,
     settings: Settings = Depends(get_app_settings),
@@ -233,18 +285,28 @@ async def resolve_alert_state(
     try:
         await evaluator.resolve_event_score_manually(body.rule_id, body.context_key)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
 
 
-@router.delete("/history/{history_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/history/{history_id}",
+    dependencies=[RequireAdmin],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_alert_history(
     history_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
     history = await session.get(AlertHistory, history_id)
     if history is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert history not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Alert history not found"
+        )
     await session.delete(history)
     await session.flush()

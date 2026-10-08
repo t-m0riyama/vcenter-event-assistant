@@ -26,17 +26,27 @@ def log_llm_failure(
         base = (prof.base_url or "").rstrip("/")
         _logger.warning(
             "%s LLM 呼び出しに失敗 provider=openai_compatible base_url=%s model=%s exc=%r",
-            purpose, base, prof.model, exc, exc_info=True,
+            purpose,
+            base,
+            prof.model,
+            exc,
+            exc_info=True,
         )
     elif prof.provider == "copilot_cli":
         _logger.warning(
             "%s LLM 呼び出しに失敗 provider=copilot_cli model=%s exc=%r",
-            purpose, prof.model, exc, exc_info=True,
+            purpose,
+            prof.model,
+            exc,
+            exc_info=True,
         )
     else:
         _logger.warning(
             "%s LLM 呼び出しに失敗 provider=gemini model=%s exc=%r",
-            purpose, prof.model, exc, exc_info=True,
+            purpose,
+            prof.model,
+            exc,
+            exc_info=True,
         )
 
 
@@ -66,7 +76,9 @@ async def stream_chat_to_text(
     end_time = time.perf_counter()
     text = "".join(parts).strip()
     if not text:
-        raise ValueError("LLM ストリーミング応答に assistant 本文がありません（内容が空）")
+        raise ValueError(
+            "LLM ストリーミング応答に assistant 本文がありません（内容が空）"
+        )
 
     latency_ms = None
     if first_token_time is not None:

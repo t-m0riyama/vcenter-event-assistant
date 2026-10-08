@@ -111,13 +111,17 @@ async def test_vcenter_test_recommends_ssl_verification_when_disabled(
         api_version="8.0",
         instance_uuid="uuid-1",
     )
-    with patch(
-        "vcenter_event_assistant.api.routes.vcenters.connect_vcenter",
-        return_value=MagicMock(),
-    ), patch(
-        "vcenter_event_assistant.api.routes.vcenters.read_connection_info",
-        return_value=mock_info,
-    ), patch("vcenter_event_assistant.api.routes.vcenters.disconnect"):
+    with (
+        patch(
+            "vcenter_event_assistant.api.routes.vcenters.connect_vcenter",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "vcenter_event_assistant.api.routes.vcenters.read_connection_info",
+            return_value=mock_info,
+        ),
+        patch("vcenter_event_assistant.api.routes.vcenters.disconnect"),
+    ):
         test_r = await client.get(f"/api/vcenters/{vid}/test")
 
     assert test_r.status_code == 200

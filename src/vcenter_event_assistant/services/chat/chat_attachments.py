@@ -76,7 +76,6 @@ def render_attachment_text_block(
         note = "（長いため末尾を省略）" if attachment.truncated else ""
         fence = _fence_for(body)
         parts.append(
-            f"### 添付ファイル: {attachment.filename}{note}\n"
-            f"{fence}\n{body}\n{fence}\n"
+            f"### 添付ファイル: {attachment.filename}{note}\n{fence}\n{body}\n{fence}\n"
         )
     return "\n".join(parts).rstrip() + "\n"

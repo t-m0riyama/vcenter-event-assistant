@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricBucketPoint, PeriodMetricHostSeries
-from vcenter_event_assistant.services.chat.chat_timeline_metric_filter import build_timeline_metric_entries
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricBucketPoint,
+    PeriodMetricHostSeries,
+)
+from vcenter_event_assistant.services.chat.chat_timeline_metric_filter import (
+    build_timeline_metric_entries,
+)
 
 
 def _point(avg: float) -> PeriodMetricBucketPoint:
@@ -99,4 +104,6 @@ def test_build_timeline_metric_entries_uses_trimmed_host_when_not_fqdn() -> None
         threshold_network_pct=None,
     )
 
-    assert [row.title for row in rows] == ["esxi-standalone host.cpu.usage_pct: avg=10.00"]
+    assert [row.title for row in rows] == [
+        "esxi-standalone host.cpu.usage_pct: avg=10.00"
+    ]

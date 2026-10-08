@@ -38,7 +38,9 @@ async def test_event_type_guides_crud(client: AsyncClient) -> None:
     )
     assert dup.status_code == 409
 
-    bad = await client.post("/api/event-type-guides", json={"event_type": "  ", "general_meaning": "x"})
+    bad = await client.post(
+        "/api/event-type-guides", json={"event_type": "  ", "general_meaning": "x"}
+    )
     assert bad.status_code == 422
 
     patch = await client.patch(
@@ -75,13 +77,17 @@ async def test_create_event_type_guide_action_required(client: AsyncClient) -> N
     assert r.json()["action_required"] is True
     gid = r.json()["id"]
 
-    patch = await client.patch(f"/api/event-type-guides/{gid}", json={"action_required": False})
+    patch = await client.patch(
+        f"/api/event-type-guides/{gid}", json={"action_required": False}
+    )
     assert patch.status_code == 200
     assert patch.json()["action_required"] is False
 
 
 @pytest.mark.asyncio
-async def test_event_type_guides_import_duplicate_event_type_returns_400(client: AsyncClient) -> None:
+async def test_event_type_guides_import_duplicate_event_type_returns_400(
+    client: AsyncClient,
+) -> None:
     r = await client.post(
         "/api/event-type-guides/import",
         json={
@@ -98,7 +104,9 @@ async def test_event_type_guides_import_duplicate_event_type_returns_400(client:
 
 
 @pytest.mark.asyncio
-async def test_event_type_guides_import_overwrite_and_delete_orphans(client: AsyncClient) -> None:
+async def test_event_type_guides_import_overwrite_and_delete_orphans(
+    client: AsyncClient,
+) -> None:
     a = await client.post(
         "/api/event-type-guides",
         json={"event_type": "orphan.Type", "general_meaning": "o"},
@@ -139,7 +147,9 @@ async def test_event_type_guides_import_overwrite_and_delete_orphans(client: Asy
 
 
 @pytest.mark.asyncio
-async def test_event_type_guides_import_skip_overwrite_keeps_text(client: AsyncClient) -> None:
+async def test_event_type_guides_import_skip_overwrite_keeps_text(
+    client: AsyncClient,
+) -> None:
     created = await client.post(
         "/api/event-type-guides",
         json={"event_type": "vim.event.SkipGuide", "general_meaning": "original"},
@@ -169,8 +179,12 @@ async def test_event_type_guides_import_skip_overwrite_keeps_text(client: AsyncC
 
 
 @pytest.mark.asyncio
-async def test_event_type_guides_import_empty_file_rejected_with_delete_flag(client: AsyncClient) -> None:
-    await client.post("/api/event-type-guides", json={"event_type": "t.only", "general_meaning": "x"})
+async def test_event_type_guides_import_empty_file_rejected_with_delete_flag(
+    client: AsyncClient,
+) -> None:
+    await client.post(
+        "/api/event-type-guides", json={"event_type": "t.only", "general_meaning": "x"}
+    )
     imp = await client.post(
         "/api/event-type-guides/import",
         json={
@@ -183,7 +197,9 @@ async def test_event_type_guides_import_empty_file_rejected_with_delete_flag(cli
 
 
 @pytest.mark.asyncio
-async def test_event_type_guides_import_priority_v1_seed_file(client: AsyncClient) -> None:
+async def test_event_type_guides_import_priority_v1_seed_file(
+    client: AsyncClient,
+) -> None:
     """リポジトリのシード JSON が `POST /import` でそのまま取り込めること（Task 5 Step 6 の自動検証）。"""
     raw = json.loads(_SEED_JSON.read_text(encoding="utf-8"))
     assert raw["format"] == "vea-event-type-guides"

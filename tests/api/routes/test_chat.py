@@ -8,8 +8,12 @@ import pytest
 from httpx import AsyncClient
 
 from vcenter_event_assistant.api.schemas import ChatLlmContextMeta
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelinePayload,
+)
 from vcenter_event_assistant.services.chat.chat_period_metrics import (
     PeriodMetricBucketPoint,
     PeriodMetricHostSeries,
@@ -92,16 +96,32 @@ async def test_post_chat_applies_metric_threshold_and_label_format_in_timeline_e
         captured["entries"] = a[0]
         return IncidentTimelinePayload(columns=[])
 
-    async def _fake_run(*a: object, **k: object) -> tuple[str, str | None, object, int | None, float | None]:
+    async def _fake_run(
+        *a: object, **k: object
+    ) -> tuple[str, str | None, object, int | None, float | None]:
         _ = a
         _ = k
         return ("ok", None, None, None, None)
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context", _fake_digest_context)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics", _fake_period_metrics)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets", _fake_event_buckets)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_incident_timeline", _fake_timeline)
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.run_period_chat", _fake_run)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context",
+        _fake_digest_context,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics",
+        _fake_period_metrics,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
+        _fake_event_buckets,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_incident_timeline",
+        _fake_timeline,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.run_period_chat", _fake_run
+    )
 
     r = await client.post("/api/chat", json=_chat_body(metric_threshold_cpu_pct=75))
     assert r.status_code == 200
@@ -173,7 +193,9 @@ async def test_post_chat_preview_applies_metric_threshold_and_metric_title_forma
         captured["entries"] = a[0]
         return IncidentTimelinePayload(columns=[])
 
-    def _fake_build_preview(*a: object, **k: object) -> tuple[str, list, ChatLlmContextMeta | None]:
+    def _fake_build_preview(
+        *a: object, **k: object
+    ) -> tuple[str, list, ChatLlmContextMeta | None]:
         from vcenter_event_assistant.api.schemas import ChatMessage
 
         _ = a
@@ -189,11 +211,26 @@ async def test_post_chat_preview_applies_metric_threshold_and_metric_title_forma
             ),
         )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context", _fake_digest_context)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics", _fake_period_metrics)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets", _fake_event_buckets)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_incident_timeline", _fake_timeline)
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_chat_preview", _fake_build_preview)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context",
+        _fake_digest_context,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics",
+        _fake_period_metrics,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
+        _fake_event_buckets,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_incident_timeline",
+        _fake_timeline,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.build_chat_preview",
+        _fake_build_preview,
+    )
 
     r = await client.post(
         "/api/chat/preview",
@@ -214,19 +251,28 @@ async def test_post_chat_preview_applies_metric_threshold_and_metric_title_forma
             "host.mem.usage_pct",
             "metric_threshold_memory_pct",
             70.0,
-            {"include_period_metrics_cpu": False, "include_period_metrics_memory": True},
+            {
+                "include_period_metrics_cpu": False,
+                "include_period_metrics_memory": True,
+            },
         ),
         (
             "host.disk.usage_pct",
             "metric_threshold_disk_pct",
             80.0,
-            {"include_period_metrics_cpu": False, "include_period_metrics_disk_io": True},
+            {
+                "include_period_metrics_cpu": False,
+                "include_period_metrics_disk_io": True,
+            },
         ),
         (
             "host.net.usage_kbps",
             "metric_threshold_network_pct",
             90.0,
-            {"include_period_metrics_cpu": False, "include_period_metrics_network_io": True},
+            {
+                "include_period_metrics_cpu": False,
+                "include_period_metrics_network_io": True,
+            },
         ),
     ],
 )
@@ -267,7 +313,9 @@ async def test_post_chat_preview_applies_threshold_for_memory_disk_network(
             entity_moid="host-2",
             metric_key=metric_key,
             series=[
-                PeriodMetricBucketPoint(bucket_start_utc=t0, avg=threshold_value - 0.1, n=1),
+                PeriodMetricBucketPoint(
+                    bucket_start_utc=t0, avg=threshold_value - 0.1, n=1
+                ),
                 PeriodMetricBucketPoint(bucket_start_utc=t0, avg=threshold_value, n=1),
             ],
         )
@@ -296,7 +344,9 @@ async def test_post_chat_preview_applies_threshold_for_memory_disk_network(
         captured["entries"] = a[0]
         return IncidentTimelinePayload(columns=[])
 
-    def _fake_build_preview(*a: object, **k: object) -> tuple[str, list, ChatLlmContextMeta | None]:
+    def _fake_build_preview(
+        *a: object, **k: object
+    ) -> tuple[str, list, ChatLlmContextMeta | None]:
         from vcenter_event_assistant.api.schemas import ChatMessage
 
         _ = a
@@ -312,11 +362,26 @@ async def test_post_chat_preview_applies_threshold_for_memory_disk_network(
             ),
         )
 
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context", _fake_digest_context)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics", _fake_period_metrics)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets", _fake_event_buckets)
-    monkeypatch.setattr("vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_incident_timeline", _fake_timeline)
-    monkeypatch.setattr("vcenter_event_assistant.api.routes.chat.build_chat_preview", _fake_build_preview)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_digest_context",
+        _fake_digest_context,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_period_metrics",
+        _fake_period_metrics,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
+        _fake_event_buckets,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_incident_timeline",
+        _fake_timeline,
+    )
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.build_chat_preview",
+        _fake_build_preview,
+    )
 
     body = _chat_body(**include_overrides, **{threshold_key: threshold_value})
     r = await client.post("/api/chat/preview", json=body)

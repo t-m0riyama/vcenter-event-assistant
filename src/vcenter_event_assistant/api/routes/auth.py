@@ -33,7 +33,11 @@ from vcenter_event_assistant.auth.service import (
     session_policy,
 )
 from vcenter_event_assistant.auth.principal_header import principal_marker
-from vcenter_event_assistant.auth.sessions import create_session, resolve_session, revoke_session
+from vcenter_event_assistant.auth.sessions import (
+    create_session,
+    resolve_session,
+    revoke_session,
+)
 from vcenter_event_assistant.auth.tokens import hash_token
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
@@ -130,7 +134,9 @@ async def login(
     )
     user = outcome.user
     session_id = (
-        await db.execute(select(AuthSession.id).where(AuthSession.token_hash == hash_token(token)))
+        await db.execute(
+            select(AuthSession.id).where(AuthSession.token_hash == hash_token(token))
+        )
     ).scalar_one()
     payload = MeResponse(
         auth_enabled=True,
@@ -167,7 +173,9 @@ async def logout(
     if settings.auth_enabled and token:
         # 別のタブで別の利用者にログインし直されていたら、前の利用者の画面からのログアウトで
         # 新しい利用者のセッションを消さない（クライアントが表示中の利用者を送ってきたときだけ照合する）
-        resolved = await resolve_session(db, token, session_policy(settings), touch=False)
+        resolved = await resolve_session(
+            db, token, session_policy(settings), touch=False
+        )
         if resolved is not None:
             refuse_if_principal_switched(
                 request, principal_marker(resolved.user.id, resolved.session.id)
@@ -209,7 +217,9 @@ async def change_own_password(
         )
     user = await db.get(User, principal.user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="ログインが必要です。")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="ログインが必要です。"
+        )
     # この値を条件に更新するので、検証中に別の変更が確定していたら上書きしない
     verified_hash = user.password_hash
     if not (await verify_password(verified_hash, body.current_password)).ok:
@@ -232,8 +242,12 @@ async def change_own_password(
             expected_hash=verified_hash,
         )
     except PasswordChangedConcurrentlyError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
     except (PasswordPolicyError, UserError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
     audit("password_changed", username=user.username, ip=_client_ip(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

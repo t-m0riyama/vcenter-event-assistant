@@ -25,18 +25,29 @@ router = APIRouter(prefix="/event-type-guides", tags=["event-type-guides"])
 async def list_event_type_guides(
     session: AsyncSession = Depends(get_session),
 ) -> list[EventTypeGuide]:
-    res = await session.execute(select(EventTypeGuide).order_by(EventTypeGuide.event_type.asc()))
+    res = await session.execute(
+        select(EventTypeGuide).order_by(EventTypeGuide.event_type.asc())
+    )
     return list(res.scalars().all())
 
 
-@router.post("", dependencies=[RequireAdmin], response_model=EventTypeGuideRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    dependencies=[RequireAdmin],
+    response_model=EventTypeGuideRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_event_type_guide(
     body: EventTypeGuideCreate,
     session: AsyncSession = Depends(get_session),
 ) -> EventTypeGuide:
     if not body.event_type.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="event_type is required")
-    dup = await session.execute(select(EventTypeGuide.id).where(EventTypeGuide.event_type == body.event_type))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="event_type is required"
+        )
+    dup = await session.execute(
+        select(EventTypeGuide.id).where(EventTypeGuide.event_type == body.event_type)
+    )
     if dup.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -55,7 +66,9 @@ async def create_event_type_guide(
     return row
 
 
-@router.post("/import", dependencies=[RequireAdmin], response_model=EventTypeGuidesImportResponse)
+@router.post(
+    "/import", dependencies=[RequireAdmin], response_model=EventTypeGuidesImportResponse
+)
 async def import_event_type_guides(
     body: EventTypeGuidesImportRequest,
     session: AsyncSession = Depends(get_session),
@@ -69,7 +82,9 @@ async def import_event_type_guides(
         )
 
     for g in body.guides:
-        res = await session.execute(select(EventTypeGuide).where(EventTypeGuide.event_type == g.event_type))
+        res = await session.execute(
+            select(EventTypeGuide).where(EventTypeGuide.event_type == g.event_type)
+        )
         existing = res.scalar_one_or_none()
         if existing is None:
             session.add(
@@ -97,7 +112,9 @@ async def import_event_type_guides(
         if not s:
             await session.execute(delete(EventTypeGuide))
         else:
-            await session.execute(delete(EventTypeGuide).where(~EventTypeGuide.event_type.in_(sorted(s))))
+            await session.execute(
+                delete(EventTypeGuide).where(~EventTypeGuide.event_type.in_(sorted(s)))
+            )
 
     await session.flush()
 
@@ -107,7 +124,9 @@ async def import_event_type_guides(
     return EventTypeGuidesImportResponse(guides_count=guides_count)
 
 
-@router.patch("/{guide_id}", dependencies=[RequireAdmin], response_model=EventTypeGuideRead)
+@router.patch(
+    "/{guide_id}", dependencies=[RequireAdmin], response_model=EventTypeGuideRead
+)
 async def patch_event_type_guide(
     guide_id: int,
     body: EventTypeGuideUpdate,
@@ -115,7 +134,9 @@ async def patch_event_type_guide(
 ) -> EventTypeGuide:
     row = await session.get(EventTypeGuide, guide_id)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guide not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="guide not found"
+        )
     data = body.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(row, k, v)
@@ -124,13 +145,17 @@ async def patch_event_type_guide(
     return row
 
 
-@router.delete("/{guide_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{guide_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_event_type_guide(
     guide_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
     row = await session.get(EventTypeGuide, guide_id)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guide not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="guide not found"
+        )
     await session.delete(row)
     await session.flush()

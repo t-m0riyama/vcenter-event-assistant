@@ -15,17 +15,29 @@ from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 
 
 @pytest.mark.asyncio
-async def test_evaluate_all_logs_summary_with_zero_rules(caplog: pytest.LogCaptureFixture) -> None:
-    caplog.set_level(logging.INFO, logger="vcenter_event_assistant.services.alerting.alert_eval")
+async def test_evaluate_all_logs_summary_with_zero_rules(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(
+        logging.INFO, logger="vcenter_event_assistant.services.alerting.alert_eval"
+    )
     evaluator = AlertEvaluator(get_settings())
     summary = await evaluator.evaluate_all()
     assert summary.rules_enabled == 0
-    messages = [r.message for r in caplog.records if r.name == "vcenter_event_assistant.services.alerting.alert_eval"]
-    assert any("alert evaluation complete" in m and "rules_enabled=0" in m for m in messages)
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "vcenter_event_assistant.services.alerting.alert_eval"
+    ]
+    assert any(
+        "alert evaluation complete" in m and "rules_enabled=0" in m for m in messages
+    )
 
 
 @pytest.mark.asyncio
-async def test_evaluate_metric_firing_increments_summary_count(caplog: pytest.LogCaptureFixture) -> None:
+async def test_evaluate_metric_firing_increments_summary_count(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     async with session_scope() as session:
         vc = VCenter(name="vc_log", host="vc_log", username="u", password="p")
         session.add(vc)
@@ -50,13 +62,19 @@ async def test_evaluate_metric_firing_increments_summary_count(caplog: pytest.Lo
         )
         await session.flush()
 
-    caplog.set_level(logging.INFO, logger="vcenter_event_assistant.services.alerting.alert_eval")
+    caplog.set_level(
+        logging.INFO, logger="vcenter_event_assistant.services.alerting.alert_eval"
+    )
     evaluator = AlertEvaluator(get_settings())
     summary = await evaluator.evaluate_all()
 
     assert summary.rules_enabled == 1
     assert summary.firings == 1
-    messages = [r.message for r in caplog.records if r.name == "vcenter_event_assistant.services.alerting.alert_eval"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "vcenter_event_assistant.services.alerting.alert_eval"
+    ]
     assert any("firings=1" in m for m in messages)
 
 
@@ -74,8 +92,14 @@ async def test_evaluate_event_score_invalid_config_logs_warning(
         session.add(rule)
         await session.flush()
 
-    caplog.set_level(logging.WARNING, logger="vcenter_event_assistant.services.alerting.alert_eval")
+    caplog.set_level(
+        logging.WARNING, logger="vcenter_event_assistant.services.alerting.alert_eval"
+    )
     evaluator = AlertEvaluator(get_settings())
     await evaluator.evaluate_all()
-    messages = [r.message for r in caplog.records if r.name == "vcenter_event_assistant.services.alerting.alert_eval"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "vcenter_event_assistant.services.alerting.alert_eval"
+    ]
     assert any("invalid config" in m for m in messages)

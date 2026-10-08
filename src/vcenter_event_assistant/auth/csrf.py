@@ -24,7 +24,9 @@ CSRF_HEADER_VALUE = "XMLHttpRequest"
 class CsrfMiddleware:
     def __init__(self, app: ASGIApp, *, trusted_origins: Iterable[str] = ()) -> None:
         self.app = app
-        self.trusted_origins = {o.rstrip("/").lower() for o in trusted_origins if o.strip()}
+        self.trusted_origins = {
+            o.rstrip("/").lower() for o in trusted_origins if o.strip()
+        }
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["method"] in UNSAFE_METHODS:
@@ -37,7 +39,10 @@ class CsrfMiddleware:
         await self.app(scope, receive, send)
 
     def _violation(self, scope: Scope) -> str | None:
-        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        headers = {
+            k.decode("latin-1").lower(): v.decode("latin-1")
+            for k, v in scope.get("headers", [])
+        }
         if headers.get(CSRF_HEADER) != CSRF_HEADER_VALUE:
             return "missing_header"
         origin = headers.get("origin")
@@ -53,7 +58,10 @@ class CsrfMiddleware:
 
 async def _forbidden(send: Send, reason: str) -> None:
     body = json.dumps(
-        {"detail": "リクエストを検証できませんでした。画面を再読み込みしてください。", "code": f"csrf_{reason}"},
+        {
+            "detail": "リクエストを検証できませんでした。画面を再読み込みしてください。",
+            "code": f"csrf_{reason}",
+        },
         ensure_ascii=False,
     ).encode("utf-8")
     await send(

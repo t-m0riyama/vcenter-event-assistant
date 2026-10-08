@@ -21,7 +21,9 @@ from vcenter_event_assistant.services.llm.llm_profile import (
     is_chat_llm_configured,
     is_digest_llm_configured,
 )
-from vcenter_event_assistant.services.research.search_provider import build_search_provider
+from vcenter_event_assistant.services.research.search_provider import (
+    build_search_provider,
+)
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 
@@ -33,14 +35,22 @@ def _enable_mock_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch, open_client) -> None:
+async def test_mock_mode_seed_and_config_api(
+    monkeypatch: pytest.MonkeyPatch, open_client
+) -> None:
     _enable_mock_mode(monkeypatch)
     await run_mock_mode_seed_if_enabled()
 
     async with session_scope() as session:
-        n_vc = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
-        n_ev = (await session.execute(select(func.count()).select_from(EventRecord))).scalar_one()
-        n_m = (await session.execute(select(func.count()).select_from(MetricSample))).scalar_one()
+        n_vc = (
+            await session.execute(select(func.count()).select_from(VCenter))
+        ).scalar_one()
+        n_ev = (
+            await session.execute(select(func.count()).select_from(EventRecord))
+        ).scalar_one()
+        n_m = (
+            await session.execute(select(func.count()).select_from(MetricSample))
+        ).scalar_one()
     assert n_vc == 1
     assert n_ev >= 3
     assert n_m >= 1
@@ -48,7 +58,9 @@ async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch, op
     # 冪等: 2 回目は増やさない
     await run_mock_mode_seed_if_enabled()
     async with session_scope() as session:
-        n_vc2 = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
+        n_vc2 = (
+            await session.execute(select(func.count()).select_from(VCenter))
+        ).scalar_one()
     assert n_vc2 == 1
 
     app = create_app()
@@ -69,7 +81,9 @@ async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch, op
 
         with patch(
             "vcenter_event_assistant.collectors.connection.connect_vcenter",
-            side_effect=AssertionError("connect_vcenter must not be called in MOCK_MODE"),
+            side_effect=AssertionError(
+                "connect_vcenter must not be called in MOCK_MODE"
+            ),
         ):
             test = await ac.get(f"/api/vcenters/{vc_id}/test")
         assert test.status_code == 200
@@ -78,7 +92,9 @@ async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch, op
 
 
 @pytest.mark.asyncio
-async def test_mock_mode_ingestion_skips_pyvmomi(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mock_mode_ingestion_skips_pyvmomi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _enable_mock_mode(monkeypatch)
     await run_mock_mode_seed_if_enabled()
     settings = get_settings()
@@ -162,29 +178,41 @@ async def test_mock_mode_alert_notify_skips_smtp(
     with patch("smtplib.SMTP") as mock_smtp:
         evaluator = AlertEvaluator(settings)
         summary = await evaluator.evaluate_all()
-        from vcenter_event_assistant.services.alerting.notification_outbox import deliver_notifications
+        from vcenter_event_assistant.services.alerting.notification_outbox import (
+            deliver_notifications,
+        )
+
         await deliver_notifications(settings)
         mock_smtp.assert_not_called()
 
     assert summary.rules_enabled >= 1
     async with session_scope() as session:
         from vcenter_event_assistant.db.models import AlertHistory
+
         rows = (await session.scalars(select(AlertHistory))).all()
-        assert rows and all(row.channel == 'mock' and row.delivery_status == 'succeeded' for row in rows)
+        assert rows and all(
+            row.channel == "mock" and row.delivery_status == "succeeded" for row in rows
+        )
 
 
 @pytest.mark.asyncio
 async def test_mock_mode_seed_skipped_when_disabled() -> None:
     await run_mock_mode_seed_if_enabled()
     async with session_scope() as session:
-        n_vc = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
+        n_vc = (
+            await session.execute(select(func.count()).select_from(VCenter))
+        ).scalar_one()
     assert n_vc == 0
 
 
 @pytest.mark.asyncio
-async def test_mock_mode_digest_skips_copilot_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mock_mode_digest_skips_copilot_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from vcenter_event_assistant.services.digest.digest_context import DigestContext
-    from vcenter_event_assistant.services.digest.digest_llm import augment_digest_with_llm
+    from vcenter_event_assistant.services.digest.digest_llm import (
+        augment_digest_with_llm,
+    )
     from vcenter_event_assistant.settings import Settings
 
     s = Settings(
@@ -232,8 +260,12 @@ async def test_mock_mode_digest_skips_copilot_cli(monkeypatch: pytest.MonkeyPatc
 async def test_mock_mode_research_summary_skips_copilot_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vcenter_event_assistant.services.research.research_service import _summarize_results
-    from vcenter_event_assistant.services.research.search_provider import WebSearchResult
+    from vcenter_event_assistant.services.research.research_service import (
+        _summarize_results,
+    )
+    from vcenter_event_assistant.services.research.search_provider import (
+        WebSearchResult,
+    )
     from vcenter_event_assistant.settings import Settings
 
     s = Settings(
@@ -270,7 +302,9 @@ async def test_mock_mode_research_summary_skips_copilot_cli(
 
 
 def test_mock_mode_disables_langsmith_tracer() -> None:
-    from vcenter_event_assistant.services.llm.llm_tracing import build_llm_runnable_config
+    from vcenter_event_assistant.services.llm.llm_tracing import (
+        build_llm_runnable_config,
+    )
     from vcenter_event_assistant.settings import Settings
 
     s = Settings(

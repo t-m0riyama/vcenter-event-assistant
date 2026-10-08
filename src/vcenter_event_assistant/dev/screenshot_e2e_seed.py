@@ -14,7 +14,12 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    EventRecord,
+    EventTypeGuide,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import session_scope
 
 _SCREENSHOT_VC_NAME = "screenshot-e2e-vc"
@@ -31,7 +36,9 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         return
 
     async with session_scope() as session:
-        res = await session.execute(select(VCenter).where(VCenter.name == _SCREENSHOT_VC_NAME))
+        res = await session.execute(
+            select(VCenter).where(VCenter.name == _SCREENSHOT_VC_NAME)
+        )
         if res.scalar_one_or_none() is not None:
             return
 

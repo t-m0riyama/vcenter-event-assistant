@@ -9,7 +9,9 @@ import re
 
 import pytest
 from httpx import AsyncClient
-from vcenter_event_assistant.api.routes import incident_timeline as incident_timeline_route
+from vcenter_event_assistant.api.routes import (
+    incident_timeline as incident_timeline_route,
+)
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
 from vcenter_event_assistant.db.session import session_scope
@@ -19,7 +21,9 @@ from vcenter_event_assistant.services.chat.chat_period_metrics import (
     PeriodMetricsPayload,
 )
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelinePayload,
+)
 
 
 def _request_body(**overrides: object) -> dict:
@@ -67,7 +71,9 @@ async def test_post_incident_timeline_returns_incident_timeline_payload(
     assert set(data.keys()) == {"columns"}
     assert isinstance(data["columns"], list)
     for column in data["columns"]:
-        assert {"timestamp_utc", "items", "visible_items", "hidden_count"} <= set(column.keys())
+        assert {"timestamp_utc", "items", "visible_items", "hidden_count"} <= set(
+            column.keys()
+        )
         assert isinstance(column.get("bucket_start_utc"), str)
         assert isinstance(column.get("bucket_end_utc"), str)
         assert isinstance(column["timestamp_utc"], str)
@@ -329,9 +335,16 @@ async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
     # 前提確認: フィクスチャは「高notableイベント多発 + 高CPU持続」を発生させる
     # （GREENではこの入力から trigger_id が構造化フィールドとして返ることを期待）
     assert len(alert_items) >= 3
-    emitted_trigger_ids = {item.get("trigger_id") for item in alert_items if item.get("trigger_id") is not None}
+    emitted_trigger_ids = {
+        item.get("trigger_id")
+        for item in alert_items
+        if item.get("trigger_id") is not None
+    }
     assert all(isinstance(trigger_id, str) for trigger_id in emitted_trigger_ids)
-    assert all(re.fullmatch(r"[a-z]+(?:_[a-z]+)*", trigger_id) for trigger_id in emitted_trigger_ids)
+    assert all(
+        re.fullmatch(r"[a-z]+(?:_[a-z]+)*", trigger_id)
+        for trigger_id in emitted_trigger_ids
+    )
     assert emitted_trigger_ids == expected_triggers
 
 
@@ -512,9 +525,15 @@ async def test_post_manual_snapshot_creates_snapshot_when_operator_note_present(
     assert isinstance(data.get("build_request_payload"), dict)
     assert data.get("snapshot_kind") == "manual"
     assert data.get("trigger_id") is None
-    build_request = IncidentTimelineBuildRequest.model_validate(data["build_request_payload"])
-    assert build_request.from_time == datetime.fromisoformat(request_body["from"].replace("Z", "+00:00"))
-    assert build_request.to_time == datetime.fromisoformat(request_body["to"].replace("Z", "+00:00"))
+    build_request = IncidentTimelineBuildRequest.model_validate(
+        data["build_request_payload"]
+    )
+    assert build_request.from_time == datetime.fromisoformat(
+        request_body["from"].replace("Z", "+00:00")
+    )
+    assert build_request.to_time == datetime.fromisoformat(
+        request_body["to"].replace("Z", "+00:00")
+    )
     assert build_request.alert_top_n == 11
     assert build_request.include_period_metrics_cpu is True
 
@@ -535,9 +554,15 @@ async def test_post_manual_snapshot_persists_build_request_payload(
     async with session_scope() as session:
         snapshot = await session.get(IncidentTimelineManualSnapshot, snapshot_id)
         assert snapshot is not None
-        build_request = IncidentTimelineBuildRequest.model_validate(snapshot.build_request_payload)
-        assert build_request.from_time == datetime.fromisoformat(request_body["from"].replace("Z", "+00:00"))
-        assert build_request.to_time == datetime.fromisoformat(request_body["to"].replace("Z", "+00:00"))
+        build_request = IncidentTimelineBuildRequest.model_validate(
+            snapshot.build_request_payload
+        )
+        assert build_request.from_time == datetime.fromisoformat(
+            request_body["from"].replace("Z", "+00:00")
+        )
+        assert build_request.to_time == datetime.fromisoformat(
+            request_body["to"].replace("Z", "+00:00")
+        )
         assert build_request.alert_top_n == 11
         assert build_request.metric_threshold_cpu_pct == 90
         assert "timestamp_utc" not in snapshot.build_request_payload
@@ -632,9 +657,15 @@ async def test_get_manual_snapshots_returns_paginated_list_with_limit_offset(
     assert isinstance(data["items"][0]["to"], str)
     assert data["items"][0]["from"].endswith("Z")
     assert data["items"][0]["to"].endswith("Z")
-    build_request = IncidentTimelineBuildRequest.model_validate(data["items"][0]["build_request_payload"])
-    assert build_request.from_time == datetime.fromisoformat(data["items"][0]["from"].replace("Z", "+00:00"))
-    assert build_request.to_time == datetime.fromisoformat(data["items"][0]["to"].replace("Z", "+00:00"))
+    build_request = IncidentTimelineBuildRequest.model_validate(
+        data["items"][0]["build_request_payload"]
+    )
+    assert build_request.from_time == datetime.fromisoformat(
+        data["items"][0]["from"].replace("Z", "+00:00")
+    )
+    assert build_request.to_time == datetime.fromisoformat(
+        data["items"][0]["to"].replace("Z", "+00:00")
+    )
 
 
 @pytest.mark.asyncio
@@ -647,7 +678,10 @@ async def test_post_manual_snapshot_persists_graph_context_round_trip(
         "chart_event_type": "VmPoweredOnEvent",
         "vcenter_id": vid,
         "marker_timestamp_utc": "2026-03-22T06:30:00Z",
-        "captured_range": {"from": "2026-03-22T00:00:00Z", "to": "2026-03-23T00:00:00Z"},
+        "captured_range": {
+            "from": "2026-03-22T00:00:00Z",
+            "to": "2026-03-23T00:00:00Z",
+        },
     }
     request_body = _manual_snapshot_request_body(
         operator_note="graph ctx 付き保存",
@@ -667,7 +701,9 @@ async def test_post_manual_snapshot_persists_graph_context_round_trip(
     )
     assert list_r.status_code == 200
     items = list_r.json()["items"]
-    match = next((x for x in items if x.get("operator_note") == "graph ctx 付き保存"), None)
+    match = next(
+        (x for x in items if x.get("operator_note") == "graph ctx 付き保存"), None
+    )
     assert match is not None
     assert match.get("graph_context") == graph_context
 

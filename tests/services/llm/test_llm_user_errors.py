@@ -7,7 +7,9 @@ import pytest
 
 
 def test_llm_failure_detail_timeout_uses_japanese_hint() -> None:
-    from vcenter_event_assistant.services.llm.llm_user_errors import _llm_failure_detail_for_user
+    from vcenter_event_assistant.services.llm.llm_user_errors import (
+        _llm_failure_detail_for_user,
+    )
 
     d = _llm_failure_detail_for_user(httpx.ReadTimeout(""))
     assert "タイムアウト" in d
@@ -15,7 +17,9 @@ def test_llm_failure_detail_timeout_uses_japanese_hint() -> None:
 
 
 def test_llm_failure_detail_github_pat_not_supported_hint() -> None:
-    from vcenter_event_assistant.services.llm.llm_user_errors import _llm_failure_detail_for_user
+    from vcenter_event_assistant.services.llm.llm_user_errors import (
+        _llm_failure_detail_for_user,
+    )
 
     exc = Exception(
         'Session error: ... 400 "checking third-party user token: bad request: '

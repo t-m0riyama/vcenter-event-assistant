@@ -29,18 +29,29 @@ router = APIRouter(prefix="/event-score-rules", tags=["event-score-rules"])
 async def list_event_score_rules(
     session: AsyncSession = Depends(get_session),
 ) -> list[EventScoreRule]:
-    res = await session.execute(select(EventScoreRule).order_by(EventScoreRule.event_type.asc()))
+    res = await session.execute(
+        select(EventScoreRule).order_by(EventScoreRule.event_type.asc())
+    )
     return list(res.scalars().all())
 
 
-@router.post("", dependencies=[RequireAdmin], response_model=EventScoreRuleRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    dependencies=[RequireAdmin],
+    response_model=EventScoreRuleRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_event_score_rule(
     body: EventScoreRuleCreate,
     session: AsyncSession = Depends(get_session),
 ) -> EventScoreRule:
     if not body.event_type.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="event_type is required")
-    dup = await session.execute(select(EventScoreRule.id).where(EventScoreRule.event_type == body.event_type))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="event_type is required"
+        )
+    dup = await session.execute(
+        select(EventScoreRule.id).where(EventScoreRule.event_type == body.event_type)
+    )
     if dup.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -58,7 +69,9 @@ async def create_event_score_rule(
     return rule
 
 
-@router.post("/import", dependencies=[RequireAdmin], response_model=EventScoreRulesImportResponse)
+@router.post(
+    "/import", dependencies=[RequireAdmin], response_model=EventScoreRulesImportResponse
+)
 async def import_event_score_rules(
     body: EventScoreRulesImportRequest,
     session: AsyncSession = Depends(get_session),
@@ -72,10 +85,14 @@ async def import_event_score_rules(
         )
 
     for rule in body.rules:
-        res = await session.execute(select(EventScoreRule).where(EventScoreRule.event_type == rule.event_type))
+        res = await session.execute(
+            select(EventScoreRule).where(EventScoreRule.event_type == rule.event_type)
+        )
         existing = res.scalar_one_or_none()
         if existing is None:
-            session.add(EventScoreRule(event_type=rule.event_type, score_delta=rule.score_delta))
+            session.add(
+                EventScoreRule(event_type=rule.event_type, score_delta=rule.score_delta)
+            )
         elif body.overwrite_existing:
             existing.score_delta = rule.score_delta
 
@@ -89,7 +106,9 @@ async def import_event_score_rules(
         if not s:
             await session.execute(delete(EventScoreRule))
         else:
-            await session.execute(delete(EventScoreRule).where(~EventScoreRule.event_type.in_(sorted(s))))
+            await session.execute(
+                delete(EventScoreRule).where(~EventScoreRule.event_type.in_(sorted(s)))
+            )
 
     await session.flush()
     events_updated = await recalculate_all_notable_scores(session)
@@ -97,10 +116,14 @@ async def import_event_score_rules(
     cnt_res = await session.execute(select(EventScoreRule.id))
     rules_count = len(list(cnt_res.scalars().all()))
 
-    return EventScoreRulesImportResponse(rules_count=rules_count, events_updated=events_updated)
+    return EventScoreRulesImportResponse(
+        rules_count=rules_count, events_updated=events_updated
+    )
 
 
-@router.patch("/{rule_id}", dependencies=[RequireAdmin], response_model=EventScoreRuleRead)
+@router.patch(
+    "/{rule_id}", dependencies=[RequireAdmin], response_model=EventScoreRuleRead
+)
 async def patch_event_score_rule(
     rule_id: int,
     body: EventScoreRuleUpdate,
@@ -108,7 +131,9 @@ async def patch_event_score_rule(
 ) -> EventScoreRule:
     row = await session.get(EventScoreRule, rule_id)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="rule not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="rule not found"
+        )
     row.score_delta = body.score_delta
     await session.flush()
     await recalculate_notable_scores_for_event_type(
@@ -120,15 +145,21 @@ async def patch_event_score_rule(
     return row
 
 
-@router.delete("/{rule_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{rule_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_event_score_rule(
     rule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
     row = await session.get(EventScoreRule, rule_id)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="rule not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="rule not found"
+        )
     et = row.event_type
     await session.delete(row)
     await session.flush()
-    await recalculate_notable_scores_for_event_type(session, event_type=et, score_delta=0)
+    await recalculate_notable_scores_for_event_type(
+        session, event_type=et, score_delta=0
+    )

@@ -20,14 +20,20 @@ from ldap3.core.exceptions import LDAPException
 from ldap3.utils.conv import escape_filter_chars
 
 from vcenter_event_assistant.auth.directory import connection
-from vcenter_event_assistant.auth.directory.connection import BindRejected, ConnectOptions
+from vcenter_event_assistant.auth.directory.connection import (
+    BindRejected,
+    ConnectOptions,
+)
 from vcenter_event_assistant.auth.directory.errors import (
     DirectoryAuthFailed,
     DirectoryConfigError,
     DirectoryNoRole,
     DirectoryUnavailable,
 )
-from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
+from vcenter_event_assistant.auth.directory.role_mapping import (
+    normalize_dn,
+    resolve_role,
+)
 from vcenter_event_assistant.auth.directory.spec import DirectorySpec
 from vcenter_event_assistant.auth.roles import Role
 
@@ -65,7 +71,9 @@ class _Entry:
             if key.casefold() == name.casefold():
                 items = values if isinstance(values, list) else [values]
                 for v in items:
-                    text = v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+                    text = (
+                        v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+                    )
                     if text.strip():
                         return text.strip()
         return None
@@ -74,7 +82,10 @@ class _Entry:
         for key, values in self.attributes.items():
             if key.casefold() == name.casefold():
                 items = values if isinstance(values, list) else [values]
-                return [v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) for v in items]
+                return [
+                    v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+                    for v in items
+                ]
         return []
 
     def raw_first(self, name: str) -> bytes | None:
@@ -87,7 +98,11 @@ class _Entry:
 def clean_username(username: str) -> str:
     """入力されたユーザー名の正規化。空・長すぎる・制御文字を含む値は拒否する。"""
     value = unicodedata.normalize("NFKC", username).strip()
-    if not value or len(value) > USERNAME_MAX_LENGTH or any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
+    if (
+        not value
+        or len(value) > USERNAME_MAX_LENGTH
+        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in value)
+    ):
         raise DirectoryAuthFailed("ユーザー名が不正です。", reason="invalid_username")
     return value
 
@@ -106,7 +121,9 @@ def ad_user_filter(username: str, upn_suffix: str | None) -> str:
     else:
         clauses = [f"(sAMAccountName={escape_filter_chars(name)})"]
         if upn_suffix:
-            clauses.append(f"(userPrincipalName={escape_filter_chars(f'{name}@{upn_suffix}')})")
+            clauses.append(
+                f"(userPrincipalName={escape_filter_chars(f'{name}@{upn_suffix}')})"
+            )
         match = clauses[0] if len(clauses) == 1 else f"(|{''.join(clauses)})"
     return f"(&(objectCategory=person)(objectClass=user){AD_ENABLED_ACCOUNT_FILTER}{match})"
 
@@ -114,7 +131,9 @@ def ad_user_filter(username: str, upn_suffix: str | None) -> str:
 def ldap_user_filter(spec: DirectorySpec, username: str) -> str:
     """汎用 LDAP のユーザー検索フィルタ。テンプレートの ``{username}`` をエスケープした値に置き換える。"""
     escaped = escape_filter_chars(username)
-    template = spec.user_search_filter or f"({spec.username_attribute or 'uid'}={{username}})"
+    template = (
+        spec.user_search_filter or f"({spec.username_attribute or 'uid'}={{username}})"
+    )
     if "{username}" not in template:
         raise DirectoryConfigError("ユーザー検索フィルタに {username} がありません。")
     return template.replace("{username}", escaped)
@@ -136,20 +155,41 @@ def _entries(conn: Connection) -> Iterator[_Entry]:
         )
 
 
-def _search(conn: Connection, base: str, search_filter: str, *, scope: Any = SUBTREE, attributes: list[str], size_limit: int = 0) -> list[_Entry]:
+def _search(
+    conn: Connection,
+    base: str,
+    search_filter: str,
+    *,
+    scope: Any = SUBTREE,
+    attributes: list[str],
+    size_limit: int = 0,
+) -> list[_Entry]:
     try:
-        conn.search(base, search_filter, search_scope=scope, attributes=attributes, size_limit=size_limit)
+        conn.search(
+            base,
+            search_filter,
+            search_scope=scope,
+            attributes=attributes,
+            size_limit=size_limit,
+        )
     except LDAPException as exc:
         raise DirectoryUnavailable(f"検索に失敗しました（{str(exc)[:200]}）") from None
     result = conn.result or {}
     # sizeLimitExceeded は 2 件目まで取れていれば「複数見つかった」として扱う
-    if result.get("result", 0) not in (0, 4, 32):  # success / sizeLimitExceeded / noSuchObject
+    if result.get("result", 0) not in (
+        0,
+        4,
+        32,
+    ):  # success / sizeLimitExceeded / noSuchObject
         raise DirectoryUnavailable(f"検索に失敗しました（{result.get('description')}）")
     return list(_entries(conn))
 
 
 def _user_attributes(spec: DirectorySpec) -> list[str]:
-    attrs = {spec.display_name_attribute or "displayName", spec.email_attribute or "mail"}
+    attrs = {
+        spec.display_name_attribute or "displayName",
+        spec.email_attribute or "mail",
+    }
     if spec.kind == "ad":
         attrs |= {"objectGUID", "sAMAccountName", "userPrincipalName"}
     else:
@@ -190,7 +230,9 @@ def _ad_sam_only_filter(sam: str) -> str:
     )
 
 
-def _find_ad_qualified(conn: Connection, spec: DirectorySpec, domain: str, sam: str) -> list[_Entry]:
+def _find_ad_qualified(
+    conn: Connection, spec: DirectorySpec, domain: str, sam: str
+) -> list[_Entry]:
     """``DOMAIN\\user`` の入力で、ドメインまで一致するアカウントだけを返す。
 
     ドメイン部分を捨てて sAMAccountName だけで探すと、検索ベースが複数のドメインにまたがるとき、
@@ -208,7 +250,13 @@ def _find_ad_qualified(conn: Connection, spec: DirectorySpec, domain: str, sam: 
     matched: list[_Entry] = []
     for entry in candidates:
         # 構築属性はエントリ自身を対象にした検索でしか返らないことがあるため、1 件ずつ読む
-        principal = _search(conn, entry.dn, "(objectClass=*)", scope=BASE, attributes=["msDS-PrincipalName"])
+        principal = _search(
+            conn,
+            entry.dn,
+            "(objectClass=*)",
+            scope=BASE,
+            attributes=["msDS-PrincipalName"],
+        )
         name = principal[0].first("msDS-PrincipalName") if principal else None
         if name and name.casefold() == expected:
             matched.append(entry)
@@ -220,28 +268,48 @@ def find_user(conn: Connection, spec: DirectorySpec, username: str) -> _Entry:
     if spec.kind == "ad" and "\\" in username:
         domain, sam = username.split("\\", 1)
         if not domain or not sam or "\\" in sam:
-            raise DirectoryAuthFailed("ユーザー名が不正です。", reason="invalid_username")
+            raise DirectoryAuthFailed(
+                "ユーザー名が不正です。", reason="invalid_username"
+            )
         found = _find_ad_qualified(conn, spec, domain, sam)
     else:
         search_filter = (
-            ad_user_filter(username, spec.ad_upn_suffix) if spec.kind == "ad" else ldap_user_filter(spec, username)
+            ad_user_filter(username, spec.ad_upn_suffix)
+            if spec.kind == "ad"
+            else ldap_user_filter(spec, username)
         )
-        found = _search(conn, spec.user_search_base, search_filter, attributes=_user_attributes(spec), size_limit=2)
+        found = _search(
+            conn,
+            spec.user_search_base,
+            search_filter,
+            attributes=_user_attributes(spec),
+            size_limit=2,
+        )
     if not found:
         raise DirectoryAuthFailed("ユーザーが見つかりません。", reason="unknown_user")
     if len(found) > 1:
-        raise DirectoryAuthFailed("同じ名前のユーザーが複数見つかりました。", reason="ambiguous_user")
+        raise DirectoryAuthFailed(
+            "同じ名前のユーザーが複数見つかりました。", reason="ambiguous_user"
+        )
     return found[0]
 
 
-def member_groups(conn: Connection, spec: DirectorySpec, entry: _Entry, username: str) -> set[str]:
+def member_groups(
+    conn: Connection, spec: DirectorySpec, entry: _Entry, username: str
+) -> set[str]:
     """ユーザーが属するグループ（正規化済み DN）。AD の入れ子判定では対応表のグループだけを調べる。"""
     if spec.group_mode == "member_of":
         return {normalize_dn(dn) for dn in entry.all("memberOf")}
     if spec.group_mode == "ad_nested":
         groups: set[str] = set()
         for label, _role in spec.mapping_labels:
-            if _search(conn, entry.dn, ad_in_chain_filter(label), scope=BASE, attributes=["1.1"]):
+            if _search(
+                conn,
+                entry.dn,
+                ad_in_chain_filter(label),
+                scope=BASE,
+                attributes=["1.1"],
+            ):
                 groups.add(normalize_dn(label))
         return groups
     if spec.group_mode == "group_search":
@@ -251,7 +319,12 @@ def member_groups(conn: Connection, spec: DirectorySpec, entry: _Entry, username
         value = username if spec.group_member_value == "username" else entry.dn
         member = f"({attribute}={escape_filter_chars(value)})"
         base_filter = spec.group_search_filter or "(objectClass=*)"
-        found = _search(conn, spec.group_search_base, f"(&{base_filter}{member})", attributes=["1.1"])
+        found = _search(
+            conn,
+            spec.group_search_base,
+            f"(&{base_filter}{member})",
+            attributes=["1.1"],
+        )
         return {normalize_dn(e.dn) for e in found}
     raise DirectoryConfigError(f"未対応のグループ判定方式です: {spec.group_mode}")
 
@@ -259,18 +332,28 @@ def member_groups(conn: Connection, spec: DirectorySpec, entry: _Entry, username
 def service_connection(spec: DirectorySpec, options: ConnectOptions) -> Connection:
     """ユーザー検索に使う接続（サービスアカウント、未設定なら匿名）。"""
     if spec.bind_dn and not spec.bind_password:
-        raise DirectoryConfigError("サービスアカウントのパスワードが設定されていません。")
+        raise DirectoryConfigError(
+            "サービスアカウントのパスワードが設定されていません。"
+        )
     try:
-        return connection.connect(spec, user=spec.bind_dn, password=spec.bind_password, options=options)
+        return connection.connect(
+            spec, user=spec.bind_dn, password=spec.bind_password, options=options
+        )
     except BindRejected:
-        raise DirectoryUnavailable("サービスアカウントで bind できません（DN またはパスワードを確認してください）。") from None
+        raise DirectoryUnavailable(
+            "サービスアカウントで bind できません（DN またはパスワードを確認してください）。"
+        ) from None
 
 
-def verify_user_password(spec: DirectorySpec, dn: str, password: str, options: ConnectOptions) -> None:
+def verify_user_password(
+    spec: DirectorySpec, dn: str, password: str, options: ConnectOptions
+) -> None:
     try:
         conn = connection.connect(spec, user=dn, password=password, options=options)
     except BindRejected:
-        raise DirectoryAuthFailed("パスワードが正しくありません。", reason="bad_password") from None
+        raise DirectoryAuthFailed(
+            "パスワードが正しくありません。", reason="bad_password"
+        ) from None
     conn.unbind()
 
 

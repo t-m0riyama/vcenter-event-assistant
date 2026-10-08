@@ -35,7 +35,9 @@ async def test_chat_rejects_excessive_time_range(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_incident_timeline_rejects_excessive_time_range(client: AsyncClient) -> None:
+async def test_incident_timeline_rejects_excessive_time_range(
+    client: AsyncClient,
+) -> None:
     r = await client.post(
         "/api/incident-timeline",
         json={

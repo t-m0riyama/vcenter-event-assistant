@@ -9,7 +9,10 @@ from sqlalchemy import select
 
 from vcenter_event_assistant.db.models import AlertRule, AlertState, EventRecord
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.alerting.alert_eval_common import AlertEvaluationDeps, as_utc
+from vcenter_event_assistant.services.alerting.alert_eval_common import (
+    AlertEvaluationDeps,
+    as_utc,
+)
 from vcenter_event_assistant.services.alerting.alert_eval_event_score_config import (
     event_eval_window_start,
     event_score_should_notify,
@@ -70,7 +73,9 @@ async def evaluate_event_score_rule(
             len(merged),
         )
 
-        res = await session.execute(select(AlertState).where(AlertState.rule_id == rule.id))
+        res = await session.execute(
+            select(AlertState).where(AlertState.rule_id == rule.id)
+        )
         states = {state.context_key: state for state in res.scalars().all()}
 
         for event_type, last_at in merged.items():
@@ -112,8 +117,7 @@ async def evaluate_event_score_rule(
                     notify_state,
                     {
                         "details": (
-                            f"Notable event detected: {message} "
-                            f"(Score: {score})"
+                            f"Notable event detected: {message} (Score: {score})"
                         ),
                     },
                 )

@@ -256,7 +256,11 @@ async def test_build_chat_event_time_buckets_alert_top_n_and_other_per_bucket() 
     assert len(out.buckets) == 1
     row = out.buckets[0]
     # max_notable_score desc -> count desc -> event_type asc
-    assert [x.event_type for x in row.alert_top_types] == ["Alert-A", "Alert-B", "Alert-D"]
+    assert [x.event_type for x in row.alert_top_types] == [
+        "Alert-A",
+        "Alert-B",
+        "Alert-D",
+    ]
     assert [x.max_notable_score for x in row.alert_top_types] == [90, 90, 80]
     assert [x.count for x in row.alert_top_types] == [2, 2, 2]
     assert row.alert_other_count == 2

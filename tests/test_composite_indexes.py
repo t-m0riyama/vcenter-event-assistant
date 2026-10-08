@@ -10,7 +10,12 @@ from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
-from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
+from vcenter_event_assistant.db.session import (
+    get_engine,
+    init_db,
+    reset_db,
+    session_scope,
+)
 
 pytestmark = pytest.mark.real_db_init
 
@@ -90,7 +95,9 @@ async def test_composite_indexes_exist_after_init_db() -> None:
 
 
 @pytest.mark.asyncio
-async def test_events_list_query_uses_composite_index(seeded_engine: AsyncEngine) -> None:
+async def test_events_list_query_uses_composite_index(
+    seeded_engine: AsyncEngine,
+) -> None:
     async with session_scope() as session:
         vcenter_id = (await session.execute(select(VCenter.id).limit(1))).scalar_one()
 
@@ -112,7 +119,9 @@ async def test_events_list_query_uses_composite_index(seeded_engine: AsyncEngine
 
 
 @pytest.mark.asyncio
-async def test_metrics_list_query_uses_composite_index(seeded_engine: AsyncEngine) -> None:
+async def test_metrics_list_query_uses_composite_index(
+    seeded_engine: AsyncEngine,
+) -> None:
     async with session_scope() as session:
         vcenter_id = (await session.execute(select(VCenter.id).limit(1))).scalar_one()
 

@@ -18,7 +18,10 @@ from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.directory import backend as directory_backend
 from vcenter_event_assistant.auth.directory.backend import DirectoryIdentity
 from vcenter_event_assistant.auth.directory.errors import DirectoryError
-from vcenter_event_assistant.auth.directory.runner import connect_options, run_directory_call
+from vcenter_event_assistant.auth.directory.runner import (
+    connect_options,
+    run_directory_call,
+)
 from vcenter_event_assistant.auth.directory.spec import spec_from_model
 from vcenter_event_assistant.auth.passwords import (
     PASSWORD_MAX_LENGTH,
@@ -83,7 +86,9 @@ async def list_realms(db: AsyncSession, settings: Settings) -> list[Realm]:
         .order_by(DirectoryConfig.sort_order, DirectoryConfig.name)
     )
     for d in directories:
-        realms.append(Realm(id=f"{DIRECTORY_REALM_PREFIX}{d.id}", name=d.name, kind=d.kind))
+        realms.append(
+            Realm(id=f"{DIRECTORY_REALM_PREFIX}{d.id}", name=d.name, kind=d.kind)
+        )
     return realms
 
 
@@ -118,7 +123,10 @@ def _clip(value: str | None, limit: int) -> str | None:
 
 
 async def _upsert_directory_user(
-    db: AsyncSession, config: DirectoryConfig, identity: DirectoryIdentity, now: datetime
+    db: AsyncSession,
+    config: DirectoryConfig,
+    identity: DirectoryIdentity,
+    now: datetime,
 ) -> User | None:
     """ディレクトリのユーザーの行を作るか更新する（ロールはログインのたびに対応表から決め直す）。
 
@@ -148,7 +156,13 @@ async def _upsert_directory_user(
                 setattr(user, key, value)
             await db.flush()
             return user
-        user = User(realm_key=realm_key, subject=subject, is_active=True, failed_login_count=0, **values)
+        user = User(
+            realm_key=realm_key,
+            subject=subject,
+            is_active=True,
+            failed_login_count=0,
+            **values,
+        )
         try:
             async with db.begin_nested():
                 db.add(user)
@@ -168,7 +182,11 @@ async def _authenticate_directory(
     spec = spec_from_model(config)
     try:
         identity = await run_directory_call(
-            directory_backend.authenticate, spec, username, password, connect_options(settings)
+            directory_backend.authenticate,
+            spec,
+            username,
+            password,
+            connect_options(settings),
         )
     except DirectoryError as exc:
         if exc.reason.startswith("directory_"):
@@ -176,7 +194,9 @@ async def _authenticate_directory(
             logger.warning("Directory %r is unavailable: %s", config.name, exc)
         return LoginOutcome(None, exc.reason)
     except Exception:
-        logger.exception("Unexpected error while authenticating against directory %r", config.name)
+        logger.exception(
+            "Unexpected error while authenticating against directory %r", config.name
+        )
         return LoginOutcome(None, "directory_error")
     # 認証している間に無効化されていたら、ログインさせない（無効化で失効させた後にセッションを作らない）
     still_enabled = await db.scalar(
@@ -214,7 +234,12 @@ async def _authenticate_local(
     result = await verify_password(user.password_hash, password)
     if not result.ok:
         if await _record_failure(db, settings, user.id, now):
-            audit("login_lockout", level=logging.WARNING, realm=LOCAL_REALM, username=user.username)
+            audit(
+                "login_lockout",
+                level=logging.WARNING,
+                realm=LOCAL_REALM,
+                username=user.username,
+            )
         return LoginOutcome(None, "bad_password")
 
     if not user.is_active:
@@ -259,7 +284,10 @@ async def _record_failure(
         return False
     locked = await db.execute(
         update(User)
-        .where(User.id == user_id, User.failed_login_count >= settings.login_max_failed_attempts)
+        .where(
+            User.id == user_id,
+            User.failed_login_count >= settings.login_max_failed_attempts,
+        )
         .values(
             locked_until=now + timedelta(minutes=settings.login_lockout_minutes),
             failed_login_count=0,
@@ -324,7 +352,13 @@ async def authenticate(
 
     if outcome.ok:
         assert outcome.user is not None
-        audit("login_success", realm=realm, username=outcome.user.username, role=outcome.user.role, ip=client_ip)
+        audit(
+            "login_success",
+            realm=realm,
+            username=outcome.user.username,
+            role=outcome.user.role,
+            ip=client_ip,
+        )
     else:
         audit(
             "login_failure",

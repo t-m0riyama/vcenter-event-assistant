@@ -14,7 +14,9 @@ def test_score_event_severity() -> None:
 
 
 def test_score_event_high_risk_type() -> None:
-    r = score_event(event_type="VmFailedToPowerOnEvent", severity="info", message="failed")
+    r = score_event(
+        event_type="VmFailedToPowerOnEvent", severity="info", message="failed"
+    )
     assert "high_risk_type" in r.tags
 
 
@@ -31,7 +33,9 @@ def test_clamp_notable_total() -> None:
 
 
 def test_final_notable_score_additive() -> None:
-    base = score_event(event_type="UserLoginSessionEvent", severity="info", message="x").score
+    base = score_event(
+        event_type="UserLoginSessionEvent", severity="info", message="x"
+    ).score
     delta = 12
     assert final_notable_score(
         event_type="UserLoginSessionEvent",

@@ -32,8 +32,14 @@ async def directory_admin_available(db: AsyncSession) -> bool:
     """admin に対応づけたグループを持つ、有効なディレクトリがあるか。"""
     found = await db.scalar(
         select(DirectoryGroupRoleMapping.id)
-        .join(DirectoryConfig, DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id)
-        .where(DirectoryConfig.is_enabled.is_(True), DirectoryGroupRoleMapping.role == Role.ADMIN.value)
+        .join(
+            DirectoryConfig,
+            DirectoryConfig.id == DirectoryGroupRoleMapping.directory_id,
+        )
+        .where(
+            DirectoryConfig.is_enabled.is_(True),
+            DirectoryGroupRoleMapping.role == Role.ADMIN.value,
+        )
         .limit(1)
     )
     return found is not None
@@ -72,7 +78,9 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
         # 認証が無効なら初期 admin は使われない。不完全な設定が残っていても起動は止めず、
         # 使われないアカウントも作らない（認証を有効にした次の起動で作る）
         if username or password:
-            logger.warning("VEA_BOOTSTRAP_ADMIN_* is ignored because VEA_AUTH_ENABLED=false.")
+            logger.warning(
+                "VEA_BOOTSTRAP_ADMIN_* is ignored because VEA_AUTH_ENABLED=false."
+            )
         return
     if not settings.local_login_enabled:
         # 初期 admin はローカルユーザーなので、ローカルログインが無効だと誰も管理できない
@@ -99,7 +107,9 @@ async def _ensure_bootstrap_admin(settings: Settings) -> None:
                     "VEA_BOOTSTRAP_ADMIN_PASSWORD is set but users already exist; it is ignored. "
                     "Remove it from the environment."
                 )
-            if await count_active_admins(db) == 0 and not await directory_admin_available(db):
+            if await count_active_admins(
+                db
+            ) == 0 and not await directory_admin_available(db):
                 # 例: CLI の create-user を既定ロール（viewer）で実行しただけの状態
                 _report_missing_admin(
                     settings,

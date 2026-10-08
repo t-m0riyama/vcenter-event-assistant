@@ -18,7 +18,12 @@ from vcenter_event_assistant.api.schemas import (
     HighMemHostRow,
 )
 from vcenter_event_assistant.api.schemas.dashboard import DashboardAttention
-from vcenter_event_assistant.db.models import AlertRule, AlertState, EventRecord, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertRule,
+    AlertState,
+    EventRecord,
+    VCenter,
+)
 from vcenter_event_assistant.services.vcenter_labels import load_vcenter_labels_map
 from vcenter_event_assistant.services.event_type_guide_attach import (
     attach_type_guides_to_event_reads,
@@ -35,7 +40,9 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 _TOP_EVENT_TYPES_LIMIT = 10
 
 
-@router.get("/attention", dependencies=[RequireViewer], response_model=DashboardAttention)
+@router.get(
+    "/attention", dependencies=[RequireViewer], response_model=DashboardAttention
+)
 async def dashboard_attention(
     session: AsyncSession = Depends(get_session),
 ) -> DashboardAttention:
@@ -78,7 +85,9 @@ async def dashboard_summary(
 
     vc_count = await session.execute(select(func.count()).select_from(VCenter))
     ev_24 = await session.execute(
-        select(func.count()).select_from(EventRecord).where(EventRecord.occurred_at >= day_ago)
+        select(func.count())
+        .select_from(EventRecord)
+        .where(EventRecord.occurred_at >= day_ago)
     )
     notable_24 = await session.execute(
         select(func.count())
@@ -128,7 +137,9 @@ async def dashboard_summary(
         )
         for b in bucket_results
     ]
-    top_event_types = await attach_type_guides_to_event_type_count_rows(session, top_event_types)
+    top_event_types = await attach_type_guides_to_event_type_count_rows(
+        session, top_event_types
+    )
 
     cpu_rows = await query_top_metric_hosts(session, "host.cpu.usage_pct", day_ago)
     mem_rows = await query_top_metric_hosts(session, "host.mem.usage_pct", day_ago)
@@ -136,8 +147,12 @@ async def dashboard_summary(
     ids_for_label = {r.vcenter_id for r in cpu_rows} | {r.vcenter_id for r in mem_rows}
     label_map = await load_vcenter_labels_map(session, ids_for_label)
 
-    high_cpu = metric_samples_to_high_host_rows(cpu_rows, label_map, row_class=HighCpuHostRow)
-    high_mem = metric_samples_to_high_host_rows(mem_rows, label_map, row_class=HighMemHostRow)
+    high_cpu = metric_samples_to_high_host_rows(
+        cpu_rows, label_map, row_class=HighCpuHostRow
+    )
+    high_mem = metric_samples_to_high_host_rows(
+        mem_rows, label_map, row_class=HighMemHostRow
+    )
 
     top_notable_events = await attach_type_guides_to_event_reads(session, top)
 

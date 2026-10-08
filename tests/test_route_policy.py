@@ -203,7 +203,9 @@ def _plugin_management_enabled(monkeypatch: pytest.MonkeyPatch, no_external_coll
 
 @pytest.mark.usefixtures("_plugin_management_enabled")
 @pytest.mark.parametrize(("key", "required"), _PROTECTED, ids=lambda x: str(x))
-async def test_route_enforces_role(open_client, key: tuple[str, str], required: str) -> None:
+async def test_route_enforces_role(
+    open_client, key: tuple[str, str], required: str
+) -> None:
     method, path = key
     async with open_client(None) as anon:
         assert (await _call(anon, method, path)).status_code == 401

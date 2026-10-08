@@ -24,14 +24,21 @@ def normalize_dn(dn: str) -> str:
     except (LDAPInvalidDnError, IndexError, ValueError):
         return value.casefold()
     # 区切り（RDN の間の ``,`` と、複数値 RDN の中の ``+``）は保つ。``cn=a+uid=b`` と ``cn=a,uid=b`` は別の DN
-    return "".join(f"{attr.strip().casefold()}={val.strip().casefold()}{sep}" for attr, val, sep in parts)
+    return "".join(
+        f"{attr.strip().casefold()}={val.strip().casefold()}{sep}"
+        for attr, val, sep in parts
+    )
 
 
-def resolve_role(group_dns: Iterable[str], mappings: Iterable[tuple[str, Role]]) -> Role | None:
+def resolve_role(
+    group_dns: Iterable[str], mappings: Iterable[tuple[str, Role]]
+) -> Role | None:
     """所属グループ（正規化済み DN）と対応表から、最も強いロールを返す。どれにも一致しなければ ``None``。"""
     groups = set(group_dns)
     best: Role | None = None
     for normalized, role in mappings:
-        if normalized in groups and (best is None or _ROLE_ORDER[role] > _ROLE_ORDER[best]):
+        if normalized in groups and (
+            best is None or _ROLE_ORDER[role] > _ROLE_ORDER[best]
+        ):
             best = role
     return best

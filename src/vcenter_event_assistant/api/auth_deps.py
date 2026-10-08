@@ -55,20 +55,26 @@ class Principal:
 
 
 # 認証無効時（従来動作）の暗黙の admin。
-DISABLED_PRINCIPAL = Principal(username="anonymous", role=Role.ADMIN, realm=AUTH_DISABLED_SOURCE)
+DISABLED_PRINCIPAL = Principal(
+    username="anonymous", role=Role.ADMIN, realm=AUTH_DISABLED_SOURCE
+)
 
 
 def session_cookie_name(settings: Settings) -> str:
     # ``__Host-`` 接頭辞は Secure・Path=/・Domain なしを強制するので、Secure のときだけ使う。
-    return "__Host-vea_session" if settings.effective_session_cookie_secure else "vea_session"
+    return (
+        "__Host-vea_session"
+        if settings.effective_session_cookie_secure
+        else "vea_session"
+    )
 
 
 def refuse_if_principal_switched(request: Request, marker: str) -> None:
     """応答に利用者を付け、クライアントが表示中の利用者（ヘッダ）と違えば 409 で断る。"""
     setattr(request.state, PRINCIPAL_STATE_KEY, marker)
-    expected = request.headers.get(EXPECTED_PRINCIPAL_HEADER) or request.query_params.get(
-        EXPECTED_PRINCIPAL_QUERY
-    )
+    expected = request.headers.get(
+        EXPECTED_PRINCIPAL_HEADER
+    ) or request.query_params.get(EXPECTED_PRINCIPAL_QUERY)
     if expected and expected != marker:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -85,7 +91,9 @@ async def get_current_principal(
         return DISABLED_PRINCIPAL
     token = request.cookies.get(session_cookie_name(settings))
     background = request.headers.get(BACKGROUND_REQUEST_HEADER) == "1"
-    resolved = await resolve_session(db, token, session_policy(settings), touch=not background)
+    resolved = await resolve_session(
+        db, token, session_policy(settings), touch=not background
+    )
     if resolved is None:
         # 期限切れ・世代不一致で削除した行を確定させる（例外で get_session がロールバックするため）
         await db.commit()
@@ -102,7 +110,9 @@ async def get_current_principal(
     user = resolved.user
     # 応答に利用者とセッションの ID を付ける（PrincipalHeaderMiddleware）。クライアントが別アカウントへの
     # 切り替わりや、同じ利用者の再ログイン（ロール変更後など）に気づくため
-    refuse_if_principal_switched(request, principal_marker(user.id, resolved.session.id))
+    refuse_if_principal_switched(
+        request, principal_marker(user.id, resolved.session.id)
+    )
     return Principal(
         username=user.username,
         role=Role(user.role),
@@ -114,7 +124,9 @@ async def get_current_principal(
 
 
 def require_role(role: Role) -> Callable[..., Awaitable[Principal]]:
-    async def dependency(principal: Principal = Depends(get_current_principal)) -> Principal:
+    async def dependency(
+        principal: Principal = Depends(get_current_principal),
+    ) -> Principal:
         if not role_at_least(principal.role, role):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

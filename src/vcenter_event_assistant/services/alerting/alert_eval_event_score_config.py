@@ -89,7 +89,10 @@ def event_score_should_notify(
         return True
     if last_notified_at is None:
         return True
-    if last_fired_qualifying_at is not None and last_qualifying_at <= last_fired_qualifying_at:
+    if (
+        last_fired_qualifying_at is not None
+        and last_qualifying_at <= last_fired_qualifying_at
+    ):
         return False
     if now - last_notified_at >= timedelta(minutes=cooldown_minutes):
         return True

@@ -11,7 +11,9 @@ from urllib.parse import urlparse
 
 from pyVim.connect import Disconnect, SmartConnect
 
-from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
+from vcenter_event_assistant.services.vcenter_host_validation import (
+    validate_vcenter_host,
+)
 from vcenter_event_assistant.settings_binding import require_settings
 
 
@@ -37,7 +39,9 @@ def parse_proxy_url(url: str | None) -> tuple[str | None, int | None]:
     return host, port
 
 
-def build_ssl_context(*, verify_ssl: bool, ca_bundle_path: str | None = None) -> ssl.SSLContext:
+def build_ssl_context(
+    *, verify_ssl: bool, ca_bundle_path: str | None = None
+) -> ssl.SSLContext:
     """HTTPS 接続用 ``SSLContext`` を組み立てる。"""
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     if verify_ssl:
@@ -73,7 +77,9 @@ def connect_vcenter(
         allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
     )
     proxy_host, proxy_port = parse_proxy_url(proxy_url)
-    kwargs: dict = dict(host=host, user=username, pwd=password, port=port, protocol=protocol)
+    kwargs: dict = dict(
+        host=host, user=username, pwd=password, port=port, protocol=protocol
+    )
     if protocol == "https":
         kwargs["sslContext"] = build_ssl_context(
             verify_ssl=verify_ssl,

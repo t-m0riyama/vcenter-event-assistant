@@ -87,7 +87,9 @@ def test_is_chat_llm_configured_copilot_session_without_keys() -> None:
     assert is_chat_llm_configured(s) is True
 
 
-def test_is_chat_llm_configured_false_when_copilot_without_session_and_no_keys() -> None:
+def test_is_chat_llm_configured_false_when_copilot_without_session_and_no_keys() -> (
+    None
+):
     s = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         llm_digest_provider="openai_compatible",

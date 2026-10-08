@@ -55,7 +55,13 @@ class DigestRunRequest(BaseModel):
     @model_validator(mode="after")
     def validate_window(self) -> DigestRunRequest:
         if (self.from_time is None) != (self.to_time is None):
-            raise ValueError("from_time と to_time は両方指定するか、両方省略してください")
-        if self.from_time is not None and self.to_time is not None and self.from_time >= self.to_time:
+            raise ValueError(
+                "from_time と to_time は両方指定するか、両方省略してください"
+            )
+        if (
+            self.from_time is not None
+            and self.to_time is not None
+            and self.from_time >= self.to_time
+        ):
             raise ValueError("from_time は to_time より前である必要があります")
         return self

@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelineEntry
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
-from vcenter_event_assistant.services.chat.chat_timeline_metric_filter import build_timeline_metric_entries
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelineEntry,
+)
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_timeline_metric_filter import (
+    build_timeline_metric_entries,
+)
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
 
 
@@ -29,7 +37,8 @@ def build_auto_trigger_alert_entries(
     )
     critical_burst_timestamp: datetime | None = None
     has_critical_burst = bool(
-        busiest_bucket is not None and int(getattr(busiest_bucket, "total", 0) or 0) >= 10
+        busiest_bucket is not None
+        and int(getattr(busiest_bucket, "total", 0) or 0) >= 10
     )
     if has_critical_burst and busiest_bucket is not None:
         critical_burst_timestamp = busiest_bucket.bucket_start_utc
@@ -173,10 +182,26 @@ def build_chat_incident_timeline_entries(
             )
     if timeline_period_metrics is not None:
         selected_metric_series = [
-            *((timeline_period_metrics.cpu or []) if include_period_metrics_cpu else []),
-            *((timeline_period_metrics.memory or []) if include_period_metrics_memory else []),
-            *((timeline_period_metrics.disk or []) if include_period_metrics_disk_io else []),
-            *((timeline_period_metrics.network or []) if include_period_metrics_network_io else []),
+            *(
+                (timeline_period_metrics.cpu or [])
+                if include_period_metrics_cpu
+                else []
+            ),
+            *(
+                (timeline_period_metrics.memory or [])
+                if include_period_metrics_memory
+                else []
+            ),
+            *(
+                (timeline_period_metrics.disk or [])
+                if include_period_metrics_disk_io
+                else []
+            ),
+            *(
+                (timeline_period_metrics.network or [])
+                if include_period_metrics_network_io
+                else []
+            ),
         ]
         timeline_entries.extend(
             build_timeline_metric_entries(

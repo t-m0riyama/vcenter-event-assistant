@@ -366,7 +366,10 @@ async def test_a_rejected_batch_still_persists_nothing() -> None:
 
 def test_manifest_survives_the_worker_round_trip() -> None:
     """ワーカーはマニフェストを JSON で返す。説明が落ちると画面から消える。"""
-    from vcenter_event_assistant.plugins.wire import manifest_from_json, manifest_to_json
+    from vcenter_event_assistant.plugins.wire import (
+        manifest_from_json,
+        manifest_to_json,
+    )
 
     manifest = stub_manifest(description="ホストの温度を集めるサンプル。")
 
@@ -375,7 +378,10 @@ def test_manifest_survives_the_worker_round_trip() -> None:
 
 def test_a_manifest_without_a_description_is_still_accepted() -> None:
     """説明を知らない版のワーカーからの応答でも壊れないこと。"""
-    from vcenter_event_assistant.plugins.wire import manifest_from_json, manifest_to_json
+    from vcenter_event_assistant.plugins.wire import (
+        manifest_from_json,
+        manifest_to_json,
+    )
 
     raw = manifest_to_json(stub_manifest())
     del raw["description"]

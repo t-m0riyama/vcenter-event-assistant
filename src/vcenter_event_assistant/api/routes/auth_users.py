@@ -76,7 +76,9 @@ async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
     # 認証時に同じセッションへ読み込まれた行が古いまま返らないよう、DB から読み直す
     user = await db.get(User, user_id, populate_existing=True)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません。")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません。"
+        )
     return user
 
 
@@ -90,7 +92,9 @@ def _actor(principal: Principal) -> str:
 
 @router.get("", response_model=list[UserRead])
 async def list_users(db: AsyncSession = Depends(get_session)) -> list[UserRead]:
-    rows = (await db.scalars(select(User).order_by(User.realm_key, User.username))).all()
+    rows = (
+        await db.scalars(select(User).order_by(User.realm_key, User.username))
+    ).all()
     return [_to_read(u) for u in rows]
 
 
@@ -113,7 +117,9 @@ async def create_user(
         )
     except (UserError, PasswordPolicyError) as exc:
         raise _bad_request(str(exc)) from None
-    audit("user_created", actor=_actor(principal), username=user.username, role=user.role)
+    audit(
+        "user_created", actor=_actor(principal), username=user.username, role=user.role
+    )
     return _to_read(user)
 
 
@@ -130,7 +136,9 @@ async def update_user(
         # 作成時と同じ検査（列長・制御文字）。ロックを取る前に入力エラーを返す
         if "display_name" in changes:
             changes["display_name"] = normalize_optional_text(
-                changes["display_name"], max_length=DISPLAY_NAME_MAX_LENGTH, label="表示名"
+                changes["display_name"],
+                max_length=DISPLAY_NAME_MAX_LENGTH,
+                label="表示名",
             )
         if "email" in changes:
             changes["email"] = normalize_optional_text(
@@ -145,16 +153,22 @@ async def update_user(
             new_role = changes.get("role")
             if new_role is not None and Role(new_role).value != user.role:
                 if user.realm_key != LOCAL_REALM:
-                    raise _bad_request("ディレクトリのユーザーのロールはグループの対応表で決まります。")
+                    raise _bad_request(
+                        "ディレクトリのユーザーのロールはグループの対応表で決まります。"
+                    )
                 if new_role != Role.ADMIN:
-                    await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
+                    await ensure_not_last_admin(
+                        db, user, local_login_enabled=settings.local_login_enabled
+                    )
                 user.role = Role(new_role).value
                 revoke = True
 
             new_active = changes.get("is_active")
             if new_active is not None and new_active != user.is_active:
                 if not new_active:
-                    await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
+                    await ensure_not_last_admin(
+                        db, user, local_login_enabled=settings.local_login_enabled
+                    )
                 # 無効化では使用中のセッションを切り、再有効化では無効化前の（盗まれた可能性の
                 # ある）セッションを復活させない。どちらも全セッションを失効させる
                 revoke = True
@@ -194,7 +208,9 @@ async def delete_user(
     try:
         async with admin_change_guard(db):
             user = await _get_user(db, user_id)
-            await ensure_not_last_admin(db, user, local_login_enabled=settings.local_login_enabled)
+            await ensure_not_last_admin(
+                db, user, local_login_enabled=settings.local_login_enabled
+            )
             username = user.username
             await db.delete(user)
             await db.flush()

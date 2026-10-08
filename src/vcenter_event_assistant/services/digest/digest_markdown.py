@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment
 
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
-from vcenter_event_assistant.services.digest.digest_timezone import resolve_digest_timezone
+from vcenter_event_assistant.services.digest.digest_timezone import (
+    resolve_digest_timezone,
+)
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -34,7 +36,9 @@ def _load_default_template_source(settings: Settings) -> str:
     if dir_opt:
         p = Path(dir_opt) / settings.digest_template_file
         if not p.is_file():
-            msg = f"digest template under digest_template_dir is not a readable file: {p}"
+            msg = (
+                f"digest template under digest_template_dir is not a readable file: {p}"
+            )
             raise FileNotFoundError(msg)
         return p.read_text(encoding="utf-8")
 
@@ -75,7 +79,9 @@ def _parse_to_utc(value: object) -> datetime:
         s = value.replace("Z", "+00:00")
         dt = datetime.fromisoformat(s)
     else:
-        raise TypeError(f"fmt_ts は str または datetime を想定しています: {type(value)!r}")
+        raise TypeError(
+            f"fmt_ts は str または datetime を想定しています: {type(value)!r}"
+        )
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
@@ -87,7 +93,9 @@ def _format_ts_value(value: object, display_tz: ZoneInfo) -> str:
     return local.isoformat(timespec="seconds")
 
 
-def render_digest_markdown(ctx: DigestContext, *, kind: str, settings: Settings | None = None) -> str:
+def render_digest_markdown(
+    ctx: DigestContext, *, kind: str, settings: Settings | None = None
+) -> str:
     """
     ``DigestContext`` を Jinja2 で Markdown にレンダリングする。
 
@@ -102,4 +110,6 @@ def render_digest_markdown(ctx: DigestContext, *, kind: str, settings: Settings 
     env.filters["fmt_ts"] = lambda v: _format_ts_value(v, display_tz)
     tpl = env.from_string(source)
     ctx_dict: dict[str, Any] = ctx.model_dump(mode="json")
-    return str(tpl.render(kind=kind, ctx=ctx_dict, display_timezone=display_label)) + "\n"
+    return (
+        str(tpl.render(kind=kind, ctx=ctx_dict, display_timezone=display_label)) + "\n"
+    )

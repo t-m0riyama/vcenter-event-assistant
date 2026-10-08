@@ -1,7 +1,10 @@
-from vcenter_event_assistant.services.alerting.notification.renderer import NotificationRenderer
+from vcenter_event_assistant.services.alerting.notification.renderer import (
+    NotificationRenderer,
+)
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.settings import get_settings
 from datetime import datetime, timezone
+
 
 def test_render_firing_alert():
     renderer = NotificationRenderer(get_settings())
@@ -9,7 +12,7 @@ def test_render_firing_alert():
     state = AlertState(
         state="firing",
         context_key="host-123",
-        fired_at=datetime(2026, 4, 23, 10, 0, 0, tzinfo=timezone.utc)
+        fired_at=datetime(2026, 4, 23, 10, 0, 0, tzinfo=timezone.utc),
     )
     # config 等のコンテキストデータ
     context = {
@@ -17,9 +20,9 @@ def test_render_firing_alert():
         "state": state.state,
         "context_key": state.context_key,
         "fired_at": state.fired_at,
-        "details": "Usage is 95%"
+        "details": "Usage is 95%",
     }
-    
+
     subject, body = renderer.render(rule, state, context)
 
     assert "[FIRING]" in subject
@@ -31,6 +34,7 @@ def test_render_firing_alert():
     assert "host-123" in body
     assert "95%" in body
 
+
 def test_render_resolved_alert():
     renderer = NotificationRenderer(get_settings())
     rule = AlertRule(name="High CPU", rule_type="metric_threshold")
@@ -38,7 +42,7 @@ def test_render_resolved_alert():
         state="resolved",
         context_key="host-123",
         fired_at=datetime(2026, 4, 23, 10, 0, 0, tzinfo=timezone.utc),
-        resolved_at=datetime(2026, 4, 23, 11, 0, 0, tzinfo=timezone.utc)
+        resolved_at=datetime(2026, 4, 23, 11, 0, 0, tzinfo=timezone.utc),
     )
     context = {
         "rule_name": rule.name,
@@ -46,9 +50,9 @@ def test_render_resolved_alert():
         "context_key": state.context_key,
         "fired_at": state.fired_at,
         "resolved_at": state.resolved_at,
-        "details": "Usage is now 20%"
+        "details": "Usage is now 20%",
     }
-    
+
     subject, body = renderer.render(rule, state, context)
 
     assert "[RESOLVED]" in subject

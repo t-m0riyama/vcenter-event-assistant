@@ -30,7 +30,11 @@ def test_build_chat_model_rejects_copilot_cli() -> None:
     ("provider", "patch_target", "model_cls_name"),
     [
         ("openai_compatible", "langchain_openai.ChatOpenAI", "ChatOpenAI"),
-        ("gemini", "langchain_google_genai.ChatGoogleGenerativeAI", "ChatGoogleGenerativeAI"),
+        (
+            "gemini",
+            "langchain_google_genai.ChatGoogleGenerativeAI",
+            "ChatGoogleGenerativeAI",
+        ),
     ],
 )
 def test_build_chat_model_instantiates_expected_class_for_digest(

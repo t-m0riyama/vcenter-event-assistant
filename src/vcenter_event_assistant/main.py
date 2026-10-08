@@ -21,14 +21,20 @@ from vcenter_event_assistant.rate_limit import check_rate_limit
 
 from vcenter_event_assistant.api.auth_deps import get_current_principal
 from vcenter_event_assistant.api.routes.auth import router as auth_router
-from vcenter_event_assistant.api.routes.auth_directories import router as auth_directories_router
+from vcenter_event_assistant.api.routes.auth_directories import (
+    router as auth_directories_router,
+)
 from vcenter_event_assistant.api.routes.auth_users import router as auth_users_router
 from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
 from vcenter_event_assistant.api.routes.digests import router as digests_router
-from vcenter_event_assistant.api.routes.event_score_rules import router as event_score_rules_router
-from vcenter_event_assistant.api.routes.event_type_guides import router as event_type_guides_router
+from vcenter_event_assistant.api.routes.event_score_rules import (
+    router as event_score_rules_router,
+)
+from vcenter_event_assistant.api.routes.event_type_guides import (
+    router as event_type_guides_router,
+)
 from vcenter_event_assistant.api.routes.events import router as events_router
 from vcenter_event_assistant.api.routes.logs import router as logs_router
 from vcenter_event_assistant.api.routes.health import router as health_router
@@ -49,9 +55,13 @@ from vcenter_event_assistant.auth.bootstrap import ensure_bootstrap_admin
 from vcenter_event_assistant.auth.csrf import CsrfMiddleware
 from vcenter_event_assistant.auth.principal_header import PrincipalHeaderMiddleware
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
-from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
+from vcenter_event_assistant.dev.screenshot_e2e_seed import (
+    run_screenshot_e2e_seed_if_enabled,
+)
 from vcenter_event_assistant.db.session import init_db
-from vcenter_event_assistant.db.vcenter_password_migration import ensure_vcenter_password_storage
+from vcenter_event_assistant.db.vcenter_password_migration import (
+    ensure_vcenter_password_storage,
+)
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.logging_config import configure_logging
 from vcenter_event_assistant.services.digest.legacy_settings_deprecation import (
@@ -102,6 +112,7 @@ async def lifespan(app: FastAPI):
             "LangSmith tracing is enabled in production; LLM prompts may be sent to external services."
         )
     from vcenter_event_assistant.services.ssh_management import cleanup_stale_ssh_files
+
     cleanup_stale_ssh_files()
     await init_db(settings=settings)
     await ensure_bootstrap_admin(settings)
@@ -165,7 +176,9 @@ def create_app() -> FastAPI:
             response = await call_next(request)
             response.headers.setdefault("X-Content-Type-Options", "nosniff")
             response.headers.setdefault("X-Frame-Options", "DENY")
-            response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+            response.headers.setdefault(
+                "Referrer-Policy", "strict-origin-when-cross-origin"
+            )
             response.headers.setdefault(
                 "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
             )
@@ -248,13 +261,22 @@ def create_app() -> FastAPI:
 
     # プラグイン管理の変更系は、無効時に存在を伏せる 404 gate をログイン確認より先に評価する。
     # 親 router の依存は子より先に走るため、``api`` には入れずにここで順序を指定してマウントする。
-    from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
+    from vcenter_event_assistant.api.routes.plugin_setup import (
+        router as plugin_setup_router,
+    )
 
-    for gated in (plugins_management_router, plugins_installed_router, plugin_setup_router):
+    for gated in (
+        plugins_management_router,
+        plugins_installed_router,
+        plugin_setup_router,
+    ):
         app.include_router(
             gated,
             prefix="/api",
-            dependencies=[Depends(plugins_management_gate), Depends(get_current_principal)],
+            dependencies=[
+                Depends(plugins_management_gate),
+                Depends(get_current_principal),
+            ],
         )
 
     if FRONTEND_DIST.is_dir() and (FRONTEND_DIST / "index.html").is_file():
@@ -266,14 +288,17 @@ def create_app() -> FastAPI:
         async def spa_fallback(full_path: str):
             if is_spa_fallback_reserved_path(full_path):
                 raise HTTPException(status_code=404, detail="Not found")
-            
+
             target_path = (FRONTEND_DIST / full_path).resolve()
             try:
-                if target_path.is_relative_to(FRONTEND_DIST.resolve()) and target_path.is_file():
+                if (
+                    target_path.is_relative_to(FRONTEND_DIST.resolve())
+                    and target_path.is_file()
+                ):
                     return FileResponse(target_path)
             except ValueError:
                 pass  # Fallback to index.html if resolution fails or is not relative
-            
+
             return FileResponse(FRONTEND_DIST / "index.html")
 
     return app

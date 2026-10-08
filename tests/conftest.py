@@ -38,11 +38,19 @@ from vcenter_event_assistant.auth.service import session_policy
 from vcenter_event_assistant.auth.sessions import create_session
 from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.db.models import User
-from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
+from vcenter_event_assistant.db.session import (
+    get_engine,
+    init_db,
+    reset_db,
+    session_scope,
+)
 from vcenter_event_assistant.db.startup_migration import run_startup_migration
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.settings import Settings, get_settings
-from vcenter_event_assistant.settings_binding import bind_settings, clear_settings_binding
+from vcenter_event_assistant.settings_binding import (
+    bind_settings,
+    clear_settings_binding,
+)
 
 get_settings.cache_clear()
 bind_settings(get_settings())
@@ -104,7 +112,9 @@ def _mock_vcenter_host_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     """`test_digest*` / `test_digests_api*` を高負荷マーカーに付与（既定の addopts で除外）。
 
     `test_digest_llm.py` / `test_digest_status.py` は HTTP モックまたは純粋ユニットのため `digest_heavy` に含めない。
@@ -190,7 +200,9 @@ def open_client():
     """
 
     @asynccontextmanager
-    async def _open(role: str | None = "admin", *, app=None, username: str | None = None) -> AsyncIterator[AsyncClient]:
+    async def _open(
+        role: str | None = "admin", *, app=None, username: str | None = None
+    ) -> AsyncIterator[AsyncClient]:
         target = app if app is not None else create_app()
         cookies = {}
         if role is not None:

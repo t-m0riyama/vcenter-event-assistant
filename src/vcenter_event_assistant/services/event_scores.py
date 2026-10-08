@@ -21,7 +21,9 @@ async def load_event_score_delta_map(session: AsyncSession) -> dict[str, int]:
     Returns:
         イベント種別をキー、加算 delta を値とする辞書。
     """
-    res = await session.execute(select(EventScoreRule.event_type, EventScoreRule.score_delta))
+    res = await session.execute(
+        select(EventScoreRule.event_type, EventScoreRule.score_delta)
+    )
     return {str(et): int(d) for et, d in res.all()}
 
 
@@ -32,7 +34,9 @@ async def recalculate_notable_scores_for_event_type(
     score_delta: int,
 ) -> int:
     """``event_type`` に一致する全行の ``notable_score`` を再計算する。更新行数を返す。"""
-    res = await session.execute(select(EventRecord).where(EventRecord.event_type == event_type))
+    res = await session.execute(
+        select(EventRecord).where(EventRecord.event_type == event_type)
+    )
     rows = list(res.scalars().all())
     for row in rows:
         row.notable_score = final_notable_score(

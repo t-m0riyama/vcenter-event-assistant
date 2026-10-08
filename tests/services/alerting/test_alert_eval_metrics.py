@@ -4,10 +4,17 @@ from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import delete, select
 
-from vcenter_event_assistant.db.models import AlertRule, AlertState, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertRule,
+    AlertState,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
-from vcenter_event_assistant.services.alerting.alert_eval_common import metric_context_key
+from vcenter_event_assistant.services.alerting.alert_eval_common import (
+    metric_context_key,
+)
 from vcenter_event_assistant.settings import get_settings
 
 
@@ -48,7 +55,9 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
     evaluator = AlertEvaluator(get_settings())
 
     # 1. 発火の確認
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.called
         pending = mock_deliver.call_args[0][0]
@@ -56,7 +65,9 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
         assert pending.context_key == metric_context_key(vc_id, "host-1")
 
     # 2. 継続（通知が飛ばないこと）
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert not mock_deliver.called
 
@@ -73,7 +84,9 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
         session.add(s2)
         await session.flush()
 
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.called
         pending = mock_deliver.call_args[0][0]
@@ -81,7 +94,9 @@ async def test_evaluate_metric_threshold_firing_and_resolution():
 
 
 @pytest.mark.asyncio
-async def test_metric_threshold_does_not_fire_when_metric_key_mismatches_collector() -> None:
+async def test_metric_threshold_does_not_fire_when_metric_key_mismatches_collector() -> (
+    None
+):
     async with session_scope() as session:
         vc = VCenter(name="vc_key", host="vc_key", username="u", password="p")
         session.add(vc)
@@ -107,7 +122,9 @@ async def test_metric_threshold_does_not_fire_when_metric_key_mismatches_collect
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert not mock_deliver.called
 
@@ -139,7 +156,9 @@ async def test_metric_threshold_fires_when_metric_key_matches_collector() -> Non
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.called
 
@@ -182,7 +201,9 @@ async def test_metric_threshold_uses_latest_sample_per_entity() -> None:
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         mock_deliver.assert_not_called()
 
@@ -226,14 +247,22 @@ async def test_metric_threshold_refires_by_updating_resolved_state() -> None:
         rule_id = rule.id
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.call_count == 1
 
     async with session_scope() as session:
         states = (
-            await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
-        ).scalars().all()
+            (
+                await session.execute(
+                    select(AlertState).where(AlertState.rule_id == rule_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(states) == 1
         assert states[0].id == state_id
         assert states[0].state == "firing"
@@ -270,7 +299,9 @@ async def test_metric_threshold_separates_same_moid_across_vcenters() -> None:
         await session.flush()
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.call_count == 2
         keys = {call.args[0].context_key for call in mock_deliver.call_args_list}
@@ -278,7 +309,9 @@ async def test_metric_threshold_separates_same_moid_across_vcenters() -> None:
 
 
 @pytest.mark.asyncio
-async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypatch) -> None:
+async def test_metric_threshold_firing_becomes_stale_and_notifies_once(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("METRIC_STALENESS_WINDOW_SECONDS", "300")
     get_settings.cache_clear()
 
@@ -310,7 +343,9 @@ async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypat
         vc_id = vc.id
 
     evaluator = AlertEvaluator(get_settings())
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.call_count == 1
 
@@ -328,17 +363,23 @@ async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypat
             )
         )
 
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         assert mock_deliver.call_count == 1
         assert mock_deliver.call_args[0][0].state == "stale"
 
     async with session_scope() as session:
         state = (
-            await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))
+            await session.execute(
+                select(AlertState).where(AlertState.rule_id == rule_id)
+            )
         ).scalar_one()
         assert state.state == "stale"
 
-    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+    with patch.object(
+        evaluator, "_enqueue_notification", new_callable=AsyncMock
+    ) as mock_deliver:
         await evaluator.evaluate_all()
         mock_deliver.assert_not_called()

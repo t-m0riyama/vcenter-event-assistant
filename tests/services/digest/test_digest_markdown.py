@@ -14,7 +14,9 @@ from vcenter_event_assistant.services.digest.digest_context import (
     DigestEventTypeBucket,
     DigestNotableEventGroup,
 )
-from vcenter_event_assistant.services.digest.digest_markdown import render_digest_markdown
+from vcenter_event_assistant.services.digest.digest_markdown import (
+    render_digest_markdown,
+)
 from vcenter_event_assistant.settings import Settings
 
 
@@ -26,7 +28,9 @@ def _minimal_settings(**kwargs: object) -> Settings:
     )
 
 
-def _patch_digest_markdown_settings(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
+def _patch_digest_markdown_settings(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
     monkeypatch.setattr(
         "vcenter_event_assistant.services.digest.digest_markdown.require_settings",
         lambda: settings,
@@ -49,7 +53,9 @@ def _empty_ctx() -> DigestContext:
     )
 
 
-def test_weekly_template_path_used_when_kind_is_weekly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_weekly_template_path_used_when_kind_is_weekly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     w = tmp_path / "w.j2"
     w.write_text("# WEEKLY_ONLY\n", encoding="utf-8")
     ctx = _empty_ctx()
@@ -61,7 +67,9 @@ def test_weekly_template_path_used_when_kind_is_weekly(tmp_path: Path, monkeypat
     assert "WEEKLY_ONLY" in md
 
 
-def test_weekly_template_path_not_used_when_kind_is_daily(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_weekly_template_path_not_used_when_kind_is_daily(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     w = tmp_path / "w.j2"
     w.write_text("# WEEKLY_ONLY\n", encoding="utf-8")
     ctx = _empty_ctx()
@@ -93,7 +101,9 @@ def test_weekly_falls_back_to_digest_template_dir_when_weekly_path_empty(
     assert "weekly" in md
 
 
-def test_weekly_template_path_missing_file_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_weekly_template_path_missing_file_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ctx = _empty_ctx()
     _patch_digest_markdown_settings(
         monkeypatch,
@@ -103,7 +113,9 @@ def test_weekly_template_path_missing_file_raises(monkeypatch: pytest.MonkeyPatc
         render_digest_markdown(ctx, kind="weekly")
 
 
-def test_monthly_template_path_used_when_kind_is_monthly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_monthly_template_path_used_when_kind_is_monthly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     m = tmp_path / "m.j2"
     m.write_text("# MONTHLY_ONLY\n", encoding="utf-8")
     ctx = _empty_ctx()
@@ -115,7 +127,9 @@ def test_monthly_template_path_used_when_kind_is_monthly(tmp_path: Path, monkeyp
     assert "MONTHLY_ONLY" in md
 
 
-def test_monthly_template_path_not_used_when_kind_is_daily(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_monthly_template_path_not_used_when_kind_is_daily(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     m = tmp_path / "m.j2"
     m.write_text("# MONTHLY_ONLY\n", encoding="utf-8")
     ctx = _empty_ctx()
@@ -128,7 +142,9 @@ def test_monthly_template_path_not_used_when_kind_is_daily(tmp_path: Path, monke
     assert "MONTHLY_ONLY" not in md
 
 
-def test_monthly_template_path_missing_file_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_monthly_template_path_missing_file_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ctx = _empty_ctx()
     _patch_digest_markdown_settings(
         monkeypatch,
@@ -138,7 +154,9 @@ def test_monthly_template_path_missing_file_raises(monkeypatch: pytest.MonkeyPat
         render_digest_markdown(ctx, kind="monthly")
 
 
-def test_render_digest_markdown_uses_kind_not_title(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_digest_markdown_uses_kind_not_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
     ctx = DigestContext(
@@ -159,7 +177,9 @@ def test_render_digest_markdown_uses_kind_not_title(monkeypatch: pytest.MonkeyPa
             )
         ],
         top_event_types=[
-            DigestEventTypeBucket(event_type="VmPoweredOnEvent", event_count=40, max_notable_score=10)
+            DigestEventTypeBucket(
+                event_type="VmPoweredOnEvent", event_count=40, max_notable_score=10
+            )
         ],
         high_cpu_hosts=[
             HighCpuHostRow(
@@ -216,16 +236,22 @@ def test_invalid_display_timezone_warns_and_falls_back(
         monkeypatch,
         _minimal_settings(digest_display_timezone="Not/A/Zone"),
     )
-    caplog.set_level("WARNING", logger="vcenter_event_assistant.services.digest.digest_timezone")
+    caplog.set_level(
+        "WARNING", logger="vcenter_event_assistant.services.digest.digest_timezone"
+    )
     md = render_digest_markdown(ctx, kind="daily")
     assert "無効な DIGEST_DISPLAY_TIMEZONE" in caplog.text
     assert "+00:00" in md or "Z" in md
 
 
-def test_render_digest_markdown_uses_digest_template_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_digest_markdown_uses_digest_template_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``DIGEST_TEMPLATE_DIR`` + ``DIGEST_TEMPLATE_FILE`` 分岐（PATH 空）を検証する。"""
     tpl = tmp_path / "custom.j2"
-    tpl.write_text("# DIR_BRANCH_OK\n{{ kind }} / {{ display_timezone }}\n", encoding="utf-8")
+    tpl.write_text(
+        "# DIR_BRANCH_OK\n{{ kind }} / {{ display_timezone }}\n", encoding="utf-8"
+    )
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
     ctx = DigestContext(
@@ -253,7 +279,9 @@ def test_render_digest_markdown_uses_digest_template_dir(tmp_path: Path, monkeyp
     assert "UTC" in md
 
 
-def test_digest_template_path_missing_file_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_digest_template_path_missing_file_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
     ctx = DigestContext(
