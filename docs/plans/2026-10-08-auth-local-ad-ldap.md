@@ -179,6 +179,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - 予定（PR7・Issue #254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
 - 予定（PR7・Issue #254）: 試験した設定と対応表を 1 回でまとめて保存する API（1 つのトランザクションで反映し、セッションの失効も 1 回にする）。設定の PATCH と対応表の PUT に分けて送ると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなるため
   - admin の経路がこのディレクトリだけのときは、サーバ側で前提を確かめる。リクエストに含めた資格情報で、新しい設定と対応表のもとでの認証（ユーザーの検索・本人としての bind・グループの判定）をすべて通し、admin に解決されたときだけ保存する。満たさなければ 409。画面で試験を促すだけでは、試験を省いたり途中まで（今の接続試験はユーザー名やパスワードを省くと途中の段階で終わる）にしたりしても保存できてしまうため
+  - 今の `PATCH /api/auth/directories/{id}`（認証に関わる項目）と `PUT /api/auth/directories/{id}/mappings` も、admin の経路がこのディレクトリだけのときは 409 で断り、このまとめて保存する API を使うよう案内する（今は無効化と、admin の対応をすべてなくす変更しか止めていないので、誤った接続先や存在しないグループ DN への変更で確認をすり抜けられる）
 
 ## バックエンドの構成
 - `src/vcenter_event_assistant/auth/`: `roles.py`、`passwords.py`、`tokens.py`、`sessions.py`、`local_backend.py`、`service.py`（`authenticate(realm, username, password, ip)` が入口）、`users.py`、`bootstrap.py`、`csrf.py`、`audit.py`、`cli.py`
