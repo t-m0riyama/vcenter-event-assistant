@@ -177,6 +177,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `DELETE /api/auth/directories/{id}`（無効なときだけ）
 - `POST /api/auth/directories/{id}/test`（connect / user_search / user_bind / groups の段階ごとの結果）。保存済みの設定で試す
 - 予定（PR7・#254）: 未保存の設定を試す API。新規作成用と、既存のディレクトリに編集中の変更を重ねて試すもの（bind パスワードを送らなければ保存済みのものを使う）。DB には書かず、セッションも失効させない。編集中の対応表で、操作している admin が admin のままになるかも確かめられるとよい
+- 予定（PR7・#254）: 試験した設定と対応表を 1 回でまとめて保存する API（1 つのトランザクションで反映し、セッションの失効も 1 回にする）。設定の PATCH と対応表の PUT に分けて送ると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなるため
 
 ## バックエンドの構成
 - `src/vcenter_event_assistant/auth/`: `roles.py`、`passwords.py`、`tokens.py`、`sessions.py`、`local_backend.py`、`service.py`（`authenticate(realm, username, password, ip)` が入口）、`users.py`、`bootstrap.py`、`csrf.py`、`audit.py`、`cli.py`
