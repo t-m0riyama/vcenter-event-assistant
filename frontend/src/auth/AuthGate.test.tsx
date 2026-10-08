@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { StrictMode, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGet } from '../api'
 import { AuthGate } from './AuthGate'
@@ -450,6 +450,40 @@ describe('AuthGate', () => {
     fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
     expect(await screen.findByText('管理者権限なし')).toBeInTheDocument()
     expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
+  })
+
+  it('利用者が切り替わって作り直した画面の最初の要求は、新しい利用者として送る', async () => {
+    const initialHeaders: (string | null)[] = []
+    function InitialLoader() {
+      useEffect(() => {
+        void apiGet('/api/initial').catch(() => {})
+      }, [])
+      return null
+    }
+    let switched = false
+    stubFetch((url, init) => {
+      if (url === '/api/auth/me') {
+        return json({ ...ADMIN_ME, principal_id: switched ? 'id-bob:s1' : 'id-alice:s1' })
+      }
+      if (url === '/api/initial') {
+        initialHeaders.push(new Headers(init?.headers).get('X-VEA-Expected-Principal'))
+        return json({})
+      }
+      if (url === '/api/protected') {
+        switched = true
+        return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-bob:s1' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+        <InitialLoader />
+      </AuthGate>,
+    )
+    await waitFor(() => expect(initialHeaders).toEqual(['id-alice:s1']))
+    fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
+    await waitFor(() => expect(initialHeaders).toEqual(['id-alice:s1', 'id-bob:s1']))
   })
 
   it('照合中に届いた食い違いは、照合が一時的に失敗しても後でやり直す', async () => {

@@ -46,7 +46,14 @@ type State =
  * 子要素はアンマウントされるので、前の利用者の画面の状態は残らない。
  */
 export function AuthGate({ children }: { readonly children: ReactNode }) {
-  const [state, setState] = useState<State>({ status: 'loading' })
+  const [state, setRawState] = useState<State>({ status: 'loading' })
+  // 表示中の利用者（API 層が要求に付けてサーバが照合する）は、状態を切り替えるのと同時に更新する。
+  // 利用者が替わるとアプリを作り直し、子の初回の取得は親の useEffect より先に走るため、effect での
+  // 更新では前の利用者のまま送られて 409 で断られてしまう
+  const setState = useCallback((next: State) => {
+    setExpectedPrincipal(next.status === 'authenticated' ? (next.me.principal_id ?? null) : null)
+    setRawState(next)
+  }, [])
   const authenticatedRef = useRef(false)
   const checkingRef = useRef(false)
   // 認証状態が変わるたびに進む世代。非同期の確認結果が古い状態に対するものかを見分ける
@@ -55,8 +62,6 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     authenticatedRef.current = state.status === 'authenticated'
     meRef.current = state.status === 'authenticated' ? state.me : null
-    // 表示中の利用者と違う利用者の応答を、API 呼び出し側で画面に渡さないため
-    setExpectedPrincipal(meRef.current?.principal_id ?? null)
     generationRef.current += 1
   }, [state])
   useEffect(() => () => setExpectedPrincipal(null), [])
@@ -83,7 +88,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
         setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
       }
     },
-    [beginOperation],
+    [beginOperation, setState],
   )
 
   // 初期状態が loading なので、ここでは同期的に state を変えない（再試行時は呼び出し側で loading にする）
@@ -101,7 +106,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
       if (op !== operationRef.current) return
       setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
     }
-  }, [beginOperation, showLogin])
+  }, [beginOperation, setState, showLogin])
 
   useEffect(() => {
     void load()
@@ -121,7 +126,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
         setState({ status: 'authenticated', me: current })
       }
     },
-    [beginOperation],
+    [beginOperation, setState],
   )
 
   /** 今のセッションを問い合わせて照合する。無効なら 401 と同じ流れ（確かめ直してログイン画面へ）にする。 */
