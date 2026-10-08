@@ -644,3 +644,17 @@ async def test_logout_from_a_stale_tab_keeps_the_new_session() -> None:
         )
         assert resp.status_code == 204
         assert (await ac.get("/api/auth/me")).status_code == 401
+
+
+async def test_browser_downloads_are_bound_by_query() -> None:
+    """ヘッダを付けられない CSV のダウンロードも、クエリで渡した表示中の利用者と照合する。"""
+    await _make_user("alice")
+    await _make_user("bob")
+    async with _raw_client() as ac:
+        alice_id = (await _login(ac, "alice")).json()["principal_id"]
+        bob_id = (await _login(ac, "bob")).json()["principal_id"]
+        url = "/api/logs/export.csv"
+        resp = await ac.get(url, params={"time_zone": "UTC", "vea_expected_principal": alice_id})
+        assert resp.status_code == 409
+        resp = await ac.get(url, params={"time_zone": "UTC", "vea_expected_principal": bob_id})
+        assert resp.status_code == 200

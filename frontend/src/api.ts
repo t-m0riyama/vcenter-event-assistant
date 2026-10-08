@@ -58,6 +58,19 @@ export function expectedPrincipalHeaders(): Record<string, string> {
   return expectedPrincipal ? { 'X-VEA-Expected-Principal': expectedPrincipal } : {}
 }
 
+/**
+ * ``fetch`` を通らないブラウザ自身の要求（ファイルのダウンロードなど）の直前に呼び、送る URL を返す。
+ * 先にセッションと表示中の利用者を確かめ（401 ならログイン画面へ、別の利用者なら照合して例外）、
+ * URL にも表示中の利用者を付けてサーバに照合させる（確かめた後に切り替わっても別の利用者として実行しない）。
+ * 値は利用者とセッションの行の ID で、Cookie のトークンのような資格情報ではない。
+ */
+export async function prepareBrowserRequest(url: string): Promise<string> {
+  await apiGet<unknown>('/api/auth/me')
+  if (!expectedPrincipal) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}vea_expected_principal=${encodeURIComponent(expectedPrincipal)}`
+}
+
 /** 応答が示す利用者を通知し、表示中の利用者と違えば true を返す。 */
 export function principalMismatched(r: Response): boolean {
   const principalId = r.headers.get('X-VEA-Principal')

@@ -29,6 +29,8 @@ BACKGROUND_REQUEST_HEADER = "x-vea-background"
 # クライアントが画面に表示中の利用者とセッション（/api/auth/me の principal_id）。別のタブで別の利用者に
 # ログインし直されて Cookie が替わっていたら、前の利用者の画面からの要求を実行せずに 409 で断る
 EXPECTED_PRINCIPAL_HEADER = "x-vea-expected-principal"
+# ヘッダを付けられないブラウザ自身の要求（CSV のダウンロードなど）は、同じ値をこのクエリで渡す
+EXPECTED_PRINCIPAL_QUERY = "vea_expected_principal"
 MIN_ROLE_ATTR = "__vea_min_role__"
 
 
@@ -60,7 +62,9 @@ def session_cookie_name(settings: Settings) -> str:
 def refuse_if_principal_switched(request: Request, marker: str) -> None:
     """応答に利用者を付け、クライアントが表示中の利用者（ヘッダ）と違えば 409 で断る。"""
     setattr(request.state, PRINCIPAL_STATE_KEY, marker)
-    expected = request.headers.get(EXPECTED_PRINCIPAL_HEADER)
+    expected = request.headers.get(EXPECTED_PRINCIPAL_HEADER) or request.query_params.get(
+        EXPECTED_PRINCIPAL_QUERY
+    )
     if expected and expected != marker:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
