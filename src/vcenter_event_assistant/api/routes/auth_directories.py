@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -96,6 +97,25 @@ def _clean(value: Any) -> Any:
     return value
 
 
+_DUPLICATE_NAME_MESSAGE = "同じ名前のディレクトリが既にあります。"
+
+
+def _is_duplicate_name(exc: IntegrityError) -> bool:
+    """ディレクトリ名の一意制約の違反か（SQLite は列名、PostgreSQL は制約名がメッセージに入る）。"""
+    message = f"{exc} {getattr(exc, 'orig', '')}".lower()
+    return "directory_configs.name" in message or "directory_configs_name_key" in message
+
+
+async def _flush_checking_name(db: AsyncSession) -> None:
+    """書き込みを確定する。名前の確認の後に並行したリクエストが同じ名前を確定させていたら 422 にする。"""
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        if _is_duplicate_name(exc):
+            raise _invalid(_DUPLICATE_NAME_MESSAGE) from exc
+        raise
+
+
 def _valid_server_uri(uri: str, scheme: str) -> bool:
     """``ldap(s)://host[:port]`` の形か（ldap3 の Server はこの URI からホスト・ポート・SSL を読み取る）。"""
     try:
@@ -109,7 +129,9 @@ def _valid_server_uri(uri: str, scheme: str) -> bool:
         and parsed.path in ("", "/")
         and not parsed.query
         and not parsed.fragment
-        and not parsed.username
+        # 資格情報は URI に入れさせない（ユーザー名が空でパスワードだけのものも。保存され、応答にも出てしまう）
+        and parsed.username is None
+        and parsed.password is None
         and (port is None or 0 < port < 65536)
     )
 
@@ -316,13 +338,13 @@ async def create_directory(
     if not data["server_uris"]:
         raise _invalid("サーバの URI を 1 つ以上指定してください。")
     if await db.scalar(select(DirectoryConfig.id).where(DirectoryConfig.name == data["name"])):
-        raise _invalid("同じ名前のディレクトリが既にあります。")
+        raise _invalid(_DUPLICATE_NAME_MESSAGE)
     now = utcnow()
     config = DirectoryConfig(**data, created_at=now, updated_at=now)
     config.mappings = _mapping_rows(body.mappings)
     _validate(config, settings)
     db.add(config)
-    await db.flush()
+    await _flush_checking_name(db)
     _audit_saved("directory_created", principal, config)
     return _to_read(config, 0)
 
@@ -348,7 +370,7 @@ async def update_directory(
                 select(DirectoryConfig.id).where(DirectoryConfig.name == name, DirectoryConfig.id != config.id)
             )
             if duplicate:
-                raise _invalid("同じ名前のディレクトリが既にあります。")
+                raise _invalid(_DUPLICATE_NAME_MESSAGE)
             changes["name"] = name
         if "server_uris" in changes and changes["server_uris"] is not None:
             changes["server_uris"] = [u.strip() for u in changes["server_uris"] if u.strip()]
@@ -380,7 +402,7 @@ async def update_directory(
             await _touch(db, config)
             await _revoke_directory_sessions(db, config.id)
         config.updated_at = utcnow()
-        await db.flush()
+        await _flush_checking_name(db)
         user_count = (await _user_counts(db)).get(config.id, 0)
         result = _to_read(config, user_count)
     _audit_saved("directory_updated", principal, config)

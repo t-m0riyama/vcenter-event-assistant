@@ -114,7 +114,7 @@ def is_valid_dn(dn: str) -> bool:
 def normalize_dn(dn: str) -> str:
     """照合用の DN。属性名の大文字小文字と、区切りの前後の空白の違いをならす。
 
-    値の大文字小文字は、比較で区別しないと決まっている属性（cn・ou・dc など）だけならす。
+    値の大文字小文字と空白の連続は、比較で区別しないと決まっている属性（cn・ou・dc など）だけならす。
     値のエスケープは実際の文字に戻してから決まった形でエスケープし直す（``\\,`` と ``\\2C`` は同じ）。
     対応表に登録した DN とディレクトリが返す DN の表記ゆれで一致しなくならないようにしつつ、
     大文字小文字を区別する属性で別のグループを同じものとみなさないため。
@@ -131,7 +131,8 @@ def normalize_dn(dn: str) -> str:
     avas: list[str] = []
     for attr, val, sep in parts:
         name = attr.strip().casefold()
-        text = val.casefold() if name in _CASE_INSENSITIVE_ATTRS else val
+        # caseIgnoreMatch の属性は、大文字小文字に加えて、連続する空白と前後の空白も比較に影響しない（RFC 4518）
+        text = " ".join(val.split()).casefold() if name in _CASE_INSENSITIVE_ATTRS else val
         # 戻した値に区切りなどが含まれ得るので、決まった形でエスケープし直す（空の値はそのまま）
         avas.append(f"{name}={escape_rdn(text) if text else text}")
         if sep != "+":

@@ -366,6 +366,8 @@ async def test_directory_crud_hides_the_bind_password(client, monkeypatch: pytes
         ({"server_uris": ["ldaps://ldap.example.com/dc=example"]}, "パス"),
         ({"server_uris": ["ldaps://"]}, "ldaps://"),
         ({"server_uris": ["ldaps://ldap.example.com:99999"]}, "ldaps://"),
+        ({"server_uris": ["ldaps://:secret@ldap.example.com"]}, "ldaps://"),
+        ({"server_uris": ["ldaps://user:secret@ldap.example.com"]}, "ldaps://"),
         ({"bind_password": None}, "パスワード"),
         ({"user_search_filter": "(uid=fixed)"}, "{username}"),
         ({"group_mode": "group_search"}, "検索ベース"),
@@ -961,9 +963,9 @@ def test_normalize_dn_treats_escape_notations_alike() -> None:
     # 戻した文字が区切りでも、本物の区切りとは区別する
     assert normalize_dn(r"cn=a\2Bb=c,dc=example") != normalize_dn("cn=a+b=c,dc=example")
     assert normalize_dn(r"cn=a\2Cdc=example") != normalize_dn("cn=a,dc=example")
-    # エスケープした先頭の空白は値の一部
-    assert normalize_dn(r"cn=\20ops,dc=example") == normalize_dn(r"cn=\ ops,dc=example")
-    assert normalize_dn(r"cn=\20ops,dc=example") != normalize_dn("cn=ops,dc=example")
+    # 大文字小文字を区別する属性では、エスケープした先頭の空白は値の一部
+    assert normalize_dn(r"customId=\20ops,dc=example") == normalize_dn(r"customId=\ ops,dc=example")
+    assert normalize_dn(r"customId=\20ops,dc=example") != normalize_dn("customId=ops,dc=example")
 
 
 def test_group_dn_with_invalid_escape_is_not_valid() -> None:
@@ -1004,3 +1006,50 @@ async def test_login_is_refused_if_the_user_was_disabled_while_updating(client, 
         assert len((await db.scalars(select(AuthSession))).all()) == sessions_before
         # ログイン側の更新も取り消す（割り込ませた無効化は同じセーブポイントの中なので一緒に巻き戻る）
         assert await db.scalar(select(User.last_login_at).where(User.realm_key == realm)) == last_login_before
+
+
+def test_normalize_dn_ignores_insignificant_spaces_of_case_ignore_attributes() -> None:
+    """caseIgnoreMatch の属性（cn など）では、連続する空白と前後の空白は比較に影響しない（RFC 4518）。"""
+    assert normalize_dn("cn=Ops  Team,dc=example") == normalize_dn("cn=Ops Team,dc=example")
+    assert normalize_dn(r"cn=\20Ops Team\20,dc=example") == normalize_dn("cn=Ops Team,dc=example")
+    assert normalize_dn("cn=OpsTeam,dc=example") != normalize_dn("cn=Ops Team,dc=example")
+    # 大文字小文字を区別する属性の空白はならさない
+    assert normalize_dn("customId=Ops  Team,dc=example") != normalize_dn("customId=Ops Team,dc=example")
+
+
+async def test_concurrent_duplicate_directory_name_is_rejected(client, directory: FakeDirectory) -> None:
+    """名前の確認の後に同じ名前が確定しても（並行した作成・変更）、500 ではなく 422 にする。"""
+    from sqlalchemy import event, update
+    from sqlalchemy.orm import Session
+
+    from vcenter_event_assistant.db.models import DirectoryConfig
+
+    other = (await client.post("/api/auth/directories", json=_directory_body(name="Other"))).json()["id"]
+    target = {"name": ""}
+
+    def take_name_before_flush(session: Session, _context: Any, _instances: Any) -> None:
+        # 並行したリクエストが、名前の確認の後・こちらの書き込みの前に同じ名前を確定させた状態を作る
+        if any(isinstance(obj, DirectoryConfig) for obj in (*session.new, *session.dirty)):
+            session.connection().execute(
+                update(DirectoryConfig).where(DirectoryConfig.id == uuid.UUID(other)).values(name=target["name"])
+            )
+
+    event.listen(Session, "before_flush", take_name_before_flush)
+    try:
+        target["name"] = "Corp LDAP"
+        created = await client.post("/api/auth/directories", json=_directory_body(name="Corp LDAP"))
+    finally:
+        event.remove(Session, "before_flush", take_name_before_flush)
+    assert created.status_code == 422, created.text
+    assert "同じ名前" in created.json()["detail"]
+
+    # 名前の変更でも同じ
+    directory_id = (await client.post("/api/auth/directories", json=_directory_body(name="Third"))).json()["id"]
+    event.listen(Session, "before_flush", take_name_before_flush)
+    try:
+        target["name"] = "Renamed"
+        renamed = await client.patch(f"/api/auth/directories/{directory_id}", json={"name": "Renamed"})
+    finally:
+        event.remove(Session, "before_flush", take_name_before_flush)
+    assert renamed.status_code == 422, renamed.text
+    assert "同じ名前" in renamed.json()["detail"]
