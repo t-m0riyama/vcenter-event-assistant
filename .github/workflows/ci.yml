@@ -44,10 +44,13 @@ jobs:
             case "$file" in
               "") ;;
               # テストやビルドが読む Markdown は対象に戻す:
-              # - docs/user-guides/: ヘルプのリンク先として tabHelpContent.test.ts が見出しを確かめる
+              # - docs/user-guides/: 利用者向けガイド（ヘルプのリンク先）
               # - README.md: パッケージのメタデータ（pyproject.toml の readme）として読まれる
               docs/user-guides/* | README.md | packages/*/README.md) code=true ;;
-              docs/* | *.md) ;;
+              # ヘルプが参照するドキュメント（docs/backend.md など）は、tabHelpContent.test.ts が
+              # 存在と見出しを確かめるので走らせる。参照先はファイル名を並べず、ヘルプの定義から引く
+              docs/* | *.md)
+                if grep -qF "'$file'" frontend/src/help/tabHelpContent.ts; then code=true; fi ;;
               *) code=true ;;
             esac
           done <<< "$(git diff --name-only "$from" "$AFTER")"
