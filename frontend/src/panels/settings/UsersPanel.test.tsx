@@ -182,8 +182,26 @@ describe('UsersPanel', () => {
     expect(calls.find((c) => c.method === 'PATCH')).toEqual({
       url: '/api/auth/users/u-alice',
       method: 'PATCH',
-      body: { display_name: 'Alice', email: null, role: 'operator' },
+      body: { role: 'operator' },
     })
+  })
+
+  it('表示名だけを変えたら表示名だけを送り、何も変えなければ送らない', async () => {
+    const calls = stubApi()
+    renderPanel()
+    await screen.findByText('alice')
+    fireEvent.click(within(row('alice')).getByRole('button', { name: '編集' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument())
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+
+    fireEvent.click(within(row('alice')).getByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByLabelText('alice の表示名'), { target: { value: ' Alice Liddell ' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await screen.findByText('alice を更新しました。')
+    expect(calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([
+      { display_name: 'Alice Liddell' },
+    ])
   })
 
   it('確認で取り消したら更新しない', async () => {

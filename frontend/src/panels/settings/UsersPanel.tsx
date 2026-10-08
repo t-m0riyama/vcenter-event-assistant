@@ -125,14 +125,20 @@ export function UsersPanel({ onError }: { onError: (e: string | null) => void })
   }
 
   const saveEdit = async (u: ManagedUser) => {
-    const body: Record<string, unknown> = {
-      display_name: optionalText(editForm.display_name),
-      email: optionalText(editForm.email),
-    }
+    // 変えた項目だけを送る（別の管理者が同時に変えたほかの項目を、編集開始時の値で上書きしないため）
+    const body: Record<string, unknown> = {}
+    const displayName = optionalText(editForm.display_name)
+    const email = optionalText(editForm.email)
+    if (displayName !== (u.display_name ?? null)) body.display_name = displayName
+    if (email !== (u.email ?? null)) body.email = email
     const roleChanged = editForm.role !== u.role
     const activeChanged = editForm.is_active !== u.is_active
     if (roleChanged) body.role = editForm.role
     if (activeChanged) body.is_active = editForm.is_active
+    if (Object.keys(body).length === 0) {
+      setEditingId(null)
+      return
+    }
     if (roleChanged || activeChanged) {
       const target = u.id === selfId ? 'あなた自身' : u.username
       if (!confirm(`${target} のログインはすべて解除されます。よろしいですか？`)) return
