@@ -417,6 +417,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    // 応答の利用者を受け取るリスナーは effect で登録するので、流してから操作する（CI でまれに取りこぼした）
+    await flushEffects()
     fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
     expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
     expect(screen.getByText('管理者権限なし')).toBeInTheDocument()
@@ -449,6 +451,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     expect(await screen.findByText('マウント 1')).toBeInTheDocument()
+    // 応答の利用者を受け取るリスナーは effect で登録するので、流してから操作する（CI でまれに取りこぼした）
+    await flushEffects()
     fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
     expect(await screen.findByText('マウント 2')).toBeInTheDocument()
     expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
@@ -476,6 +480,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     expect(await screen.findByText('管理者権限あり')).toBeInTheDocument()
+    // 応答の利用者を受け取るリスナーは effect で登録するので、流してから操作する（CI でまれに取りこぼした）
+    await flushEffects()
     fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
     expect(await screen.findByText('管理者権限なし')).toBeInTheDocument()
     expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
@@ -511,6 +517,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await waitFor(() => expect(initialHeaders).toEqual(['id-alice:s1']))
+    // 応答の利用者を受け取るリスナーは effect で登録するので、流してから操作する（CI でまれに取りこぼした）
+    await flushEffects()
     fireEvent.click(screen.getByRole('button', { name: '保護された API' }))
     await waitFor(() => expect(initialHeaders).toEqual(['id-alice:s1', 'id-bob:s1']))
   })
@@ -537,6 +545,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    // 応答の利用者を受け取るリスナーは effect で登録するので、流してから操作する（CI でまれに取りこぼした）
+    await flushEffects()
     fireEvent.click(screen.getByRole('button', { name: '出る' }))
     expect(await screen.findByText('ようこそ bob')).toBeInTheDocument()
     const logoutCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/auth/logout')
@@ -569,6 +579,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
     await screen.findByText('ようこそ alice')
+    // 応答の利用者を受け取るリスナーは effect で登録するので、流してから操作する（CI でまれに取りこぼした）
+    await flushEffects()
     fireEvent.click(screen.getByRole('button', { name: '保護された API' })) // 照合が始まる
     await waitFor(() => expect(meCalls).toBe(2))
     fireEvent.click(screen.getByRole('button', { name: '保護された API' })) // 照合中に届いた食い違い

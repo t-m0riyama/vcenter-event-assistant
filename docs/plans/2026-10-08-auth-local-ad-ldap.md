@@ -254,7 +254,7 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
 - `tests/test_startup_migration.py`: ディレクトリの migration の downgrade
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
 - PostgreSQL 固有の挙動（行ロック・デッドロック）は CI の SQLite では再現できない
-- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）
+- フロントのテストで `visibilitychange` などのイベントを送るときは、表示を待った後に `act` で保留中の effect を流してから送る（リスナーを登録する effect がまだ走っておらず、CI でまれにイベントを取りこぼした。`AuthGate.test.tsx` の `flushEffects`）。応答の利用者（`X-VEA-Principal`）を受け取る `onPrincipalSeen` のリスナーも effect で登録するので、それに頼るテストは表示を待った後に `flushEffects` してから操作する（PR #264 の CI でまれに取りこぼした）
 
 ## 確認方法
 - テスト: `uv run pytest -n auto`、`cd frontend && npm test && npm run e2e`、ruff、mypy
