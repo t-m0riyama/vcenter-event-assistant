@@ -171,9 +171,11 @@
 - **PostgreSQL**: 本番・複数 vCenter・同時負荷向け。接続プールと書き込み性能に余裕がある。
 - 取り込みトランザクションが長大になると SQLite では API が待たされる。緩和策としてイベント挿入の途中 commit 分割は将来検討（現状は vCenter 単位で 1 トランザクション）。
 
-**vCenter パスワード暗号化（`VEA_SECRET_KEY`）:**
+**パスワード・秘密鍵の暗号化（`VEA_SECRET_KEY`）:**
 
-- 鍵は bind 済み Settings または環境変数 `VEA_SECRET_KEY` から解決する（`resolve_vea_secret_key`）。Alembic・単発スクリプトでは **環境変数を設定**してから vCenter 行に触れる。
+- 対象は `EncryptedString` の列: vCenter のパスワード（`vcenters.password`）、AD/LDAP のサービスアカウントの bind パスワード（`directory_configs.bind_password`）、プラグインの SSH 秘密鍵（`ssh_credentials.private_key`）。一覧は `db/secret_storage_migration.py` の `ENCRYPTED_COLUMNS`。
+- 起動時に `ensure_secret_storage()` が、鍵があれば平文の行を `enc:` 形式へ一括更新する（鍵を後から設定した場合の移行）。鍵がなければ WARNING を出す。
+- 鍵は bind 済み Settings または環境変数 `VEA_SECRET_KEY` から解決する（`resolve_vea_secret_key`）。Alembic・単発スクリプトでは **環境変数を設定**してから対象の行に触れる。
 - API では `enc:` で始まるパスワード文字列は拒否される。DB 直接投入では `enc:` 始まりの平文が暗号化済みと誤判定されうる（稀な縁ケース）。
 
 #### E) SMTP/メール通知（配信経路）

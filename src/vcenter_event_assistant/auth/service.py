@@ -127,9 +127,13 @@ async def _upsert_directory_user(
         "updated_at": now,
     }
     for _attempt in range(2):
+        # 行をロックしてから読む。ロックせずに読んでロールを比べると、PostgreSQL では同じユーザーの並行した
+        # ログインがまだ確定していないセッションを失効させられず、それが新しいロールで使えてしまう（#255）。
+        # ロックを待つので、先行するログインの確定後の行と比べ、そのセッションも消せる
         user = await db.scalar(
             select(User)
             .where(User.realm_key == realm_key, User.subject == subject)
+            .with_for_update()
             .execution_options(populate_existing=True)
         )
         if user is not None:
@@ -144,8 +148,8 @@ async def _upsert_directory_user(
             await db.flush()
             # 読んでから更新するまでの間に無効化されていないか、更新の後で読み直す。
             # 更新は変更した列だけを書くので行は無効のまま残るが、ログインを通すと使えない Cookie を返してしまう。
-            # 更新で行ロックを取った後に読むので、無効化が先に確定していれば必ず見える（後なら無効化側が待ち、
-            # このログインのセッションも失効させる）
+            # PostgreSQL では読むときに行ロックを取るので、無効化が先に確定していれば上の読み取りで見え、
+            # 後なら無効化側が待ってこのログインのセッションも失効させる。行ロックのない SQLite に備えて読み直す
             if not await db.scalar(select(User.is_active).where(User.id == user.id)):
                 return None
             return user

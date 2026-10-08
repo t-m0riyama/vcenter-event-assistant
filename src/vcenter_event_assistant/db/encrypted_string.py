@@ -42,8 +42,9 @@ def decrypt_from_storage(stored: str, secret: str) -> str:
         return Fernet(fernet_key_bytes(secret)).decrypt(ciphertext.encode("ascii")).decode("utf-8")
     except InvalidToken as exc:
         msg = (
-            "Failed to decrypt vCenter password with VEA_SECRET_KEY. "
-            "Restore the previous key or re-enter vCenter passwords in the UI."
+            "Failed to decrypt a stored secret (vCenter password, directory bind password "
+            "or SSH private key) with VEA_SECRET_KEY. "
+            "Restore the previous key or re-enter the secrets in the UI."
         )
         raise SecretKeyDecryptError(msg) from exc
 
