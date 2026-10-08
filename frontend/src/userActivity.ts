@@ -118,15 +118,25 @@ export function activityHeaders(now: number = Date.now()): Record<string, string
   return takeActivity(now).headers
 }
 
-/** ``fetch`` に操作の報告を付けて送る。通信エラーなら操作を未報告に戻して例外を投げ直す。 */
+/** 認証を通った応答に付くヘッダ（サーバの PrincipalHeaderMiddleware）。 */
+const PRINCIPAL_HEADER = 'X-VEA-Principal'
+
+/**
+ * ``fetch`` に操作の報告を付けて送る。通信エラーなら操作を未報告に戻して例外を投げ直す。
+ * 応答が返っても認証を通った印（``X-VEA-Principal``）がなければ、サーバはセッションを更新していない
+ * （レート制限の 429 や、手前のプロキシが返した 502/503 など）ので、同じく未報告に戻す。
+ */
 export async function fetchWithActivity(input: string, init: RequestInit = {}): Promise<Response> {
   const ticket = takeActivity()
+  let response: Response
   try {
-    return await fetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), ...ticket.headers } })
+    response = await fetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), ...ticket.headers } })
   } catch (e) {
     ticket.restore()
     throw e
   }
+  if (!response.headers.has(PRINCIPAL_HEADER)) ticket.restore()
+  return response
 }
 
 if (typeof window !== 'undefined') {

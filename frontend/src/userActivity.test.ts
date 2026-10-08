@@ -130,4 +130,29 @@ describe('userActivity の操作報告', () => {
     expect(report).toHaveBeenCalledTimes(1) // T=60s の期限より前
     off()
   })
+
+  it('応答に認証を通った印がなければ（429 や 502）、操作を未報告に戻す', async () => {
+    const m = await freshModule()
+    const fetchMock = vi.fn(async () => new Response('busy', { status: 429 }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      m.markUserActivity()
+      vi.advanceTimersByTime(m.USER_ACTIVITY_WINDOW_MS + 1)
+      await m.fetchWithActivity('/api/config')
+      // セッションは更新されていないので、次の要求もバックグラウンド扱いにしない
+      expect(m.isUserIdle()).toBe(false)
+      expect(m.activityHeaders()).toEqual({})
+
+      m.markUserActivity()
+      vi.advanceTimersByTime(m.USER_ACTIVITY_WINDOW_MS + 1)
+      fetchMock.mockImplementation(
+        async () => new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-alice:s1' } }),
+      )
+      await m.fetchWithActivity('/api/config')
+      // 認証を通った応答なら伝わったものとして扱う
+      expect(m.isUserIdle()).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

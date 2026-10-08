@@ -586,3 +586,17 @@ async def test_responses_carry_the_principal_id() -> None:
         await ac.post("/api/auth/logout", headers=XHR)
         resp = await ac.get("/api/config")
         assert resp.status_code == 401 and "x-vea-principal" not in resp.headers
+
+
+async def test_cors_preflight_allows_the_background_marker(client: AsyncClient) -> None:
+    """別オリジンの UI（認証無効の開発構成）でも、定期更新の要求に付く X-VEA-Background が CORS で拒否されない。"""
+    resp = await client.options(
+        "/api/config",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-vea-background",
+        },
+    )
+    assert resp.status_code == 200
+    assert "x-vea-background" in resp.headers["access-control-allow-headers"].lower()

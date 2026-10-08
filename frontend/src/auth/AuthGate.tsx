@@ -172,7 +172,9 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
 
   // ログイン中は、API を呼ばない操作もサーバの無操作期限が切れる前に伝える（間隔はサーバの更新間隔）
   const activityIntervalSeconds =
-    state.status === 'authenticated' ? (state.me.session_activity_interval_seconds ?? null) : undefined
+    state.status === 'authenticated' && state.me.auth_enabled
+      ? (state.me.session_activity_interval_seconds ?? null)
+      : undefined
   useEffect(() => {
     if (activityIntervalSeconds === undefined) return undefined
     return setActivityReporter(

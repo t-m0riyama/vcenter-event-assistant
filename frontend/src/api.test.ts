@@ -5,6 +5,11 @@ import { markUserActivity, USER_ACTIVITY_WINDOW_MS } from './userActivity'
 
 const GENERIC = 'リクエストに失敗しました。時間をおいて再度お試しください。'
 
+/** 認証を通った応答（サーバが X-VEA-Principal を付ける）。 */
+function authedResponse(): Response {
+  return new Response('{}', { status: 200, headers: { 'X-VEA-Principal': 'id-alice:s1' } })
+}
+
 describe('api', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -167,7 +172,7 @@ describe('api', () => {
     const now = Date.now()
     // 古い操作は 1 回目の要求で伝わる（バックグラウンド扱いにしない）
     markUserActivity(now - USER_ACTIVITY_WINDOW_MS - 1)
-    fetchMock().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+    fetchMock().mockImplementation(() => Promise.resolve(authedResponse()))
     await apiGet('/api/foo')
     expect(bg(0)).toBeNull()
     // 以後、操作がないまま出る要求はバックグラウンド
@@ -183,7 +188,7 @@ describe('api', () => {
   it('定期取得の間隔より前の操作も、次の要求で必ず伝わる', async () => {
     const bg = (i: number) =>
       new Headers((fetchMock().mock.calls[i]?.[1] as RequestInit).headers).get('X-VEA-Background')
-    fetchMock().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+    fetchMock().mockImplementation(() => Promise.resolve(authedResponse()))
     const now = Date.now()
     markUserActivity(now - 120_000)
     await apiGet('/api/foo') // 未報告の操作を伝える
@@ -214,7 +219,7 @@ describe('api', () => {
     await expect(apiGet('/api/foo')).rejects.toThrow('Failed to fetch')
     expect(bg(0)).toBeNull()
 
-    fetchMock().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+    fetchMock().mockImplementation(() => Promise.resolve(authedResponse()))
     await apiGet('/api/foo')
     expect(bg(1)).toBeNull() // 届かなかった操作をここで伝える
     await apiGet('/api/foo')
