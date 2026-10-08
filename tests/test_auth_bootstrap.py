@@ -119,6 +119,22 @@ async def test_bootstrap_rejected_when_local_login_disabled(monkeypatch: pytest.
         assert await count_users(db) == 0
 
 
+async def test_local_login_disabled_is_ignored_when_auth_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """認証が無効なら、ローカルログイン無効と初期 admin の設定が残っていても起動を止めない。"""
+    settings = _settings(
+        monkeypatch,
+        VEA_AUTH_ENABLED="false",
+        VEA_LOCAL_LOGIN_ENABLED="false",
+        VEA_BOOTSTRAP_ADMIN_USERNAME="root",
+        VEA_BOOTSTRAP_ADMIN_PASSWORD=BOOT_PASSWORD,
+    )
+    await ensure_bootstrap_admin(settings)
+    async with session_scope() as db:
+        assert await count_users(db) == 0
+
+
 async def test_no_usable_realm_is_reported(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     """ローカルの admin がいても、ローカルログインが無効なら誰もログインできない。"""
     async with session_scope() as db:
