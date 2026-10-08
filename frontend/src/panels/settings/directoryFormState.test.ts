@@ -8,6 +8,8 @@ import {
   mappingsChanged,
   mappingsFromForm,
   parseServerUris,
+  affectsLogin,
+  revokesSessions,
   withKind,
 } from './directoryFormState'
 
@@ -136,5 +138,27 @@ describe('mappingsChanged', () => {
     const changed = { ...form, mappings: [{ group_dn: 'cn=admins,dc=example,dc=com', role: 'operator' as const }] }
     expect(mappingsChanged(DIRECTORY, changed)).toBe(true)
     expect(mappingsFromForm(changed)).toEqual([{ group_dn: 'cn=admins,dc=example,dc=com', role: 'operator' }])
+  })
+})
+
+describe('revokesSessions / affectsLogin', () => {
+  it('名前・表示順・表示名やメールの属性だけなら、ログアウトもログインの確認も起きない', () => {
+    const changes = { name: 'x', sort_order: 1, display_name_attribute: null, email_attribute: 'mail' }
+    expect(revokesSessions(changes, false)).toBe(false)
+    expect(affectsLogin(changes, false)).toBe(false)
+  })
+
+  it('認証やロールに関わる項目・対応表・無効化はログアウトさせる', () => {
+    expect(revokesSessions({ user_search_base: 'dc=x' }, false)).toBe(true)
+    expect(revokesSessions({ tls_verify: false }, false)).toBe(true)
+    expect(revokesSessions({}, true)).toBe(true)
+    expect(revokesSessions({ is_enabled: false }, false)).toBe(true)
+  })
+
+  it('サービスアカウントのパスワード・タイムアウト・有効化は、ログアウトさせないがログインの成否に関わる', () => {
+    for (const changes of [{ bind_password: 'x' }, { clear_bind_password: true }, { timeout_seconds: 5 }, { is_enabled: true }]) {
+      expect(revokesSessions(changes, false)).toBe(false)
+      expect(affectsLogin(changes, false)).toBe(true)
+    }
   })
 })

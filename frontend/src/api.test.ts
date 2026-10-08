@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  ApiError,
   apiDelete,
   apiGet,
   apiPatch,
@@ -113,6 +114,25 @@ describe('api', () => {
     } catch (e) {
       expect((e as Error).message).toBe('bad')
     }
+  })
+
+  it('失敗の状態コードと X-VEA-Error-Code を ApiError で渡す（画面が 409 の理由を見分けるため）', async () => {
+    fetchMock().mockResolvedValueOnce(
+      new Response('{"detail":"確かめてください"}', {
+        status: 409,
+        headers: { 'X-VEA-Error-Code': 'directory_verification_required' },
+      }),
+    )
+    const error = await apiPatch('/api/foo', {}).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      message: '確かめてください',
+      status: 409,
+      errorCode: 'directory_verification_required',
+    })
+
+    fetchMock().mockResolvedValueOnce(new Response('{"detail":"x"}', { status: 422 }))
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ status: 422, errorCode: null })
   })
 
   it('apiPost surfaces 422 validation body exactly', async () => {

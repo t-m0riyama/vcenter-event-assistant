@@ -16,15 +16,15 @@
 | 6 | AD/LDAP のバックエンド（ldap3、directory テーブル、`auth/directory/*`、realm、ディレクトリ API） | マージ済み [PR #250](https://github.com/t-m0riyama/vcenter-event-assistant/pull/250)（Codex レビュー 21 回分を確認し、利用者の判断で区切った。持ち越しは Issue #251〜#255・#258。Issue #253 は [PR #256](https://github.com/t-m0riyama/vcenter-event-assistant/pull/256) で対応済み） |
 | 6.5 | 締め出し対策（Issue #254・Issue #258）: 未保存の設定の試験、設定と対応表のまとめて保存、保存前の確認、`PUT /mappings` の廃止 | マージ済み [PR #259](https://github.com/t-m0riyama/vcenter-event-assistant/pull/259)（Codex の指摘 1 件に対応し、再レビューで指摘なし。Issue #258 は閉じた。Issue #254 は画面が残るので PR7 で閉じる） |
 | 6.6 | PR6 からの持ち越しの小さな修正（Issue #252・Issue #255）: 起動時の暗号化の移行を全列に、ログイン時のユーザー行のロック | マージ済み [PR #260](https://github.com/t-m0riyama/vcenter-event-assistant/pull/260)（Codex のレビューで指摘なし） |
-| 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ待ち [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし。CI 成功） |
-| 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | 未着手 |
+| 7a | ディレクトリ管理画面の基本（一覧・作成・編集・削除・接続試験）、接続の方針を返す API、ログイン画面の realm 選択の確認（PR4 で実装とテスト済み） | マージ済み [PR #261](https://github.com/t-m0riyama/vcenter-event-assistant/pull/261)（Codex のレビューで指摘なし） |
+| 7b | 保存前の確認の画面（409 と `X-VEA-Error-Code`、admin の資格情報の入力、ログアウトの確認、自分のディレクトリの無効化を止める）。Issue #254 を閉じる | 作業中 |
 | 8 | 仕上げ: AD/LDAP 設定手順のユーザーガイド、実サーバでの確認、監査レポートへの対応記録 | 未着手 |
 
 ### 次にやること
 
-1. PR 7a: ディレクトリ管理画面の基本と、接続の方針を返す API（下の「フロントエンド」）。ログイン画面の realm 選択は PR4 で実装とテスト（`AuthGate.test.tsx`）が済んでいる
-2. PR 7b: 保存前の確認の画面（PR 6.5 の 409 と `X-VEA-Error-Code` を使う）。量が多いので 7a と分けた（利用者の判断）
-3. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
+1. PR 7b: 保存前の確認の画面（PR 6.5 の 409 と `X-VEA-Error-Code` を使う）。量が多いので 7a と分けた（利用者の判断）
+2. PR8: ユーザーガイドと、Samba AD / OpenLDAP での実機確認（下の「確認方法」「PR8 で書くこと」）
+3. [Issue #262](https://github.com/t-m0riyama/vcenter-event-assistant/issues/262): ドキュメントだけの変更では CI を実行しない（計画書の更新のたびに CI を待たないため。認証の PR とは別に進める）
 
 ### PR6 のレビューの経過
 
@@ -225,6 +225,11 @@ P は公開、A はログインしていれば誰でも、V は viewer、O は o
   - 設定と対応表は 1 回の `PATCH` で保存する（分けて送らない）
   - 409 の応答ヘッダ `X-VEA-Error-Code` が `directory_verification_required` なら、admin の資格情報の入力を求めて `verification` を付けて送り直す。`directory_verification_failed` なら理由（detail）を出す。自分のディレクトリの変更で保存できたら、自分のセッションも失効しているのでログイン画面へ戻す
   - 自分がログインしているディレクトリでは、「無効にする」を操作できないようにし、別の経路でログインして操作するよう理由を出す（API も 409 で断る。Issue #254）
+- 7b の実装（PR 7b）:
+  - `api.ts` の失敗は `ApiError`（`status` と `X-VEA-Error-Code` の `errorCode`）で投げる。`message` は従来どおり
+  - `notifyUnauthorized(notice)` でログイン画面に出す理由を渡せる（自分のディレクトリの保存の後に使う）
+  - 保存の前の判定は `directoryFormState.ts` の `revokesSessions`（サーバの失効の条件）と `affectsLogin`（サーバの確認の対象）。サーバの `_SESSION_NEUTRAL_FIELDS` と `_LOGIN_CRITICAL_NEUTRAL_FIELDS` にそろえる
+  - 資格情報は `DirectoryVerificationDialog` で入力し、送った時点でパスワード欄を空にする
 - スタイルは `variables.css` のトークンを使う。UI での制御は見た目のためだけで、権限の最終判断は常にサーバ側で行う
 
 ## テスト

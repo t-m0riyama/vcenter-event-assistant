@@ -5,7 +5,8 @@ const GENERIC_API_ERROR =
 export const SESSION_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。再度ログインしてください。'
 export const FORBIDDEN_MESSAGE = 'この操作を行う権限がありません。'
 
-type UnauthorizedListener = () => void
+/** ``notice`` はログイン画面に出す理由（省略するとセッション切れの文言）。 */
+type UnauthorizedListener = (notice?: string) => void
 const unauthorizedListeners = new Set<UnauthorizedListener>()
 
 /**
@@ -79,8 +80,12 @@ export function principalMismatched(r: Response): boolean {
   return Boolean(expectedPrincipal && principalId !== expectedPrincipal)
 }
 
-export function notifyUnauthorized(): void {
-  unauthorizedListeners.forEach((listener) => listener())
+/**
+ * セッションが無効になった可能性を認証ゲートに伝える。``notice`` はログイン画面に出す理由
+ * （自分のセッションも失効させる操作の後など。省略するとセッション切れの文言）。
+ */
+export function notifyUnauthorized(notice?: string): void {
+  unauthorizedListeners.forEach((listener) => listener(notice))
 }
 
 export function onUnauthorized(listener: UnauthorizedListener): () => void {
@@ -140,10 +145,29 @@ async function errorMessageFromResponse(r: Response): Promise<string> {
   return GENERIC_API_ERROR
 }
 
+/** API の失敗。``message`` は利用者向けの文言。 */
+export class ApiError extends Error {
+  /** HTTP の状態コード。 */
+  readonly status: number
+  /** サーバが理由を見分けられるよう付けた ``X-VEA-Error-Code``（なければ null）。 */
+  readonly errorCode: string | null
+
+  constructor(message: string, status: number, errorCode: string | null) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.errorCode = errorCode
+  }
+}
+
+async function apiError(r: Response): Promise<ApiError> {
+  return new ApiError(await errorMessageFromResponse(r), r.status, r.headers.get('X-VEA-Error-Code'))
+}
+
 /** JSON GET（``cache: 'no-store'``）。 */
 export async function apiGet<T>(path: string): Promise<T> {
   const r = await send(path, { ...fetchNoStore, headers: headers() })
-  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (!r.ok) throw await apiError(r)
   return r.json() as Promise<T>
 }
 
@@ -155,7 +179,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     headers: mutationHeaders(),
     body: JSON.stringify(body),
   })
-  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (!r.ok) throw await apiError(r)
   if (r.status === 204) return undefined as T
   return r.json() as Promise<T>
 }
@@ -172,7 +196,7 @@ export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
     headers: { ...headers(), 'X-Requested-With': 'XMLHttpRequest' },
     body,
   })
-  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (!r.ok) throw await apiError(r)
   if (r.status === 204) return undefined as T
   return r.json() as Promise<T>
 }
@@ -185,7 +209,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     headers: mutationHeaders(),
     body: JSON.stringify(body),
   })
-  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (!r.ok) throw await apiError(r)
   return r.json() as Promise<T>
 }
 
@@ -196,12 +220,12 @@ export async function apiDelete(path: string): Promise<void> {
     method: 'DELETE',
     headers: mutationHeaders(),
   })
-  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (!r.ok) throw await apiError(r)
 }
 
 /** JSON PUT. */
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const r = await send(path, { ...fetchNoStore, method: 'PUT', headers: mutationHeaders(), body: JSON.stringify(body) })
-  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  if (!r.ok) throw await apiError(r)
   return r.json() as Promise<T>
 }

@@ -3,7 +3,10 @@
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Directory, DirectoryPolicy } from '../../api/schemas'
+import { onUnauthorized } from '../../api'
+import type { Directory, DirectoryPolicy, Me } from '../../api/schemas'
+import { AuthContext } from '../../auth/authContext'
+import { roleAtLeast } from '../../auth/roles'
 import { DirectoriesPanel } from './DirectoriesPanel'
 
 function directory(overrides: Partial<Directory>): Directory {
@@ -90,9 +93,34 @@ function stubApi(
   return calls
 }
 
-function renderPanel(onError = vi.fn()) {
-  render(<DirectoriesPanel onError={onError} />)
+const LOCAL_ADMIN: Me = {
+  auth_enabled: true,
+  username: 'admin',
+  display_name: null,
+  role: 'admin',
+  realm: 'local',
+  can_change_password: true,
+}
+
+/** Corp LDAP（d-ldap）でログインしている admin。 */
+const LDAP_ADMIN: Me = { ...LOCAL_ADMIN, username: 'alice', realm: 'dir:d-ldap', can_change_password: false }
+
+function renderPanel(onError = vi.fn(), me: Me = LOCAL_ADMIN) {
+  render(
+    <AuthContext.Provider
+      value={{ me, hasRole: (r) => roleAtLeast(me.role, r), logout: async () => {}, refresh: async () => {} }}
+    >
+      <DirectoriesPanel onError={onError} />
+    </AuthContext.Provider>,
+  )
   return onError
+}
+
+function verificationError(code: string, detail: string) {
+  return new Response(JSON.stringify({ detail }), {
+    status: 409,
+    headers: { 'Content-Type': 'application/json', 'X-VEA-Error-Code': code },
+  })
 }
 
 function row(name: string): HTMLElement {
@@ -371,5 +399,174 @@ describe('DirectoriesPanel', () => {
 
     await waitFor(() => expect(onError).toHaveBeenCalledWith('グループの DN の形式が正しくありません: bad'))
     expect(screen.getByRole('region', { name: 'ディレクトリの設定' })).toBeInTheDocument()
+  })
+
+  describe('保存の前の確認（Issue #254）', () => {
+    it('名前だけの変更は確かめずに保存する', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      const calls = stubApi()
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('名前'), { target: { value: 'Renamed' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      await screen.findByRole('status')
+      expect(confirmSpy).not.toHaveBeenCalled()
+      expect(mutations(calls)).toHaveLength(1)
+    })
+
+    it('認証に関わる変更は、試験を促し、ログイン中の利用者がログアウトされることを確かめる', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      stubApi()
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('検索ベース'), { target: { value: 'ou=staff,dc=example,dc=com' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      await screen.findByRole('status')
+      expect(confirmSpy.mock.calls.map(([m]) => m)).toEqual([
+        expect.stringContaining('接続試験が成功していません'),
+        expect.stringContaining('ローカルや別のディレクトリの利用者は影響を受けません'),
+      ])
+    })
+
+    it('ログアウトの確認を断れば送らない', async () => {
+      vi.spyOn(window, 'confirm').mockImplementation((m) => !String(m).includes('ログアウト'))
+      const calls = stubApi()
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('1 行目のロール'), { target: { value: 'operator' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(2))
+      expect(mutations(calls)).toEqual([])
+    })
+
+    it('編集中の値で試験が成功していれば、試験は促さない（値を変えたら再び促す）', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      stubApi()
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('タイムアウト（秒）'), { target: { value: '20' } })
+      fireEvent.click(within(form).getByRole('button', { name: '接続試験' }))
+      await screen.findByLabelText('接続試験の結果')
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      await screen.findByText('Corp LDAP を保存しました。')
+      // タイムアウトはログアウトさせないので、ログアウトの確認も出ない
+      expect(confirmSpy).not.toHaveBeenCalled()
+    })
+
+    it('資格情報を求められたら入力してもらい、同じ変更に verification を付けて送り直す', async () => {
+      let attempts = 0
+      const calls = stubApi((call) => {
+        if (call.method !== 'PATCH') return undefined
+        attempts += 1
+        if (attempts === 1) return verificationError('directory_verification_required', '確かめてください')
+        if (attempts === 2) return verificationError('directory_verification_failed', '管理者として確かめられませんでした')
+        return undefined
+      })
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('1 行目のロール'), { target: { value: 'operator' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+
+      const dialog = await screen.findByRole('dialog', { name: '管理者としてログインできるか確かめる' })
+      expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
+      fireEvent.change(within(dialog).getByLabelText('確認に使うユーザー名'), { target: { value: ' alice ' } })
+      fireEvent.change(within(dialog).getByLabelText('確認に使うパスワード'), { target: { value: 'wrong' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: '確かめて保存' }))
+
+      // 確かめられなければ理由を出し、パスワードを入れ直してもらう
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('管理者として確かめられませんでした')
+      expect(within(dialog).getByLabelText('確認に使うパスワード')).toHaveValue('')
+      fireEvent.change(within(dialog).getByLabelText('確認に使うパスワード'), { target: { value: 'secret' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: '確かめて保存' }))
+
+      expect(await screen.findByText('Corp LDAP を保存しました。')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      const patches = mutations(calls).filter((c) => c.method === 'PATCH')
+      const changes = { mappings: [{ group_dn: 'cn=admins,dc=example,dc=com', role: 'operator' }] }
+      expect(patches.map((c) => c.body)).toEqual([
+        changes,
+        { ...changes, verification: { username: 'alice', password: 'wrong' } },
+        { ...changes, verification: { username: 'alice', password: 'secret' } },
+      ])
+    })
+
+    it('資格情報の入力をやめたら保存しない', async () => {
+      const calls = stubApi((call) =>
+        call.method === 'PATCH' ? verificationError('directory_verification_required', '確かめてください') : undefined,
+      )
+      renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('1 行目のロール'), { target: { value: 'operator' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      const dialog = await screen.findByRole('dialog', { name: '管理者としてログインできるか確かめる' })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(mutations(calls)).toHaveLength(1)
+      // 編集中の値は残る
+      expect(within(editor()).getByLabelText('1 行目のロール')).toHaveValue('operator')
+    })
+
+    it('ほかの 409（管理者がいなくなる変更など）は理由を出すだけで、資格情報は求めない', async () => {
+      stubApi((call) =>
+        call.method === 'PATCH'
+          ? json({ detail: 'ログインできる管理者がいなくなるため、この対応表は保存できません。' }, 409)
+          : undefined,
+      )
+      const onError = renderPanel()
+      const form = await openEdit('Corp LDAP')
+      fireEvent.change(within(form).getByLabelText('1 行目のロール'), { target: { value: 'operator' } })
+      fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+      await waitFor(() =>
+        expect(onError).toHaveBeenCalledWith('ログインできる管理者がいなくなるため、この対応表は保存できません。'),
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('自分がログインしているディレクトリは無効にできず、理由を出す', async () => {
+      stubApi()
+      renderPanel(vi.fn(), LDAP_ADMIN)
+      const form = await openEdit('Corp LDAP')
+      const enabled = within(form).getByLabelText(/^有効/)
+      expect(enabled).toBeDisabled()
+      expect(enabled).toHaveAccessibleDescription(/このディレクトリでログインしているため、無効にできません/)
+
+      // 別のディレクトリは無効にできる
+      fireEvent.click(within(form).getByRole('button', { name: 'キャンセル' }))
+      const other = await openEdit('Corp AD')
+      expect(within(other).getByLabelText(/^有効/)).toBeEnabled()
+    })
+
+    it('自分のディレクトリの認証に関わる変更を保存したら、理由を添えてログイン画面に戻す', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const listener = vi.fn()
+      const off = onUnauthorized(listener)
+      try {
+        stubApi()
+        renderPanel(vi.fn(), LDAP_ADMIN)
+        const form = await openEdit('Corp LDAP')
+        fireEvent.change(within(form).getByLabelText('1 行目のロール'), { target: { value: 'operator' } })
+        fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+        await waitFor(() => expect(listener).toHaveBeenCalledWith(expect.stringContaining('ログアウトしました')))
+        expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringContaining('あなたもこのディレクトリでログインしている'))
+      } finally {
+        off()
+      }
+    })
+
+    it('自分のディレクトリでも、ログアウトさせない変更ならログイン画面に戻さない', async () => {
+      const listener = vi.fn()
+      const off = onUnauthorized(listener)
+      try {
+        stubApi()
+        renderPanel(vi.fn(), LDAP_ADMIN)
+        const form = await openEdit('Corp LDAP')
+        fireEvent.change(within(form).getByLabelText('名前'), { target: { value: 'Renamed' } })
+        fireEvent.click(within(form).getByRole('button', { name: '保存' }))
+        await screen.findByText('Renamed を保存しました。')
+        expect(listener).not.toHaveBeenCalled()
+      } finally {
+        off()
+      }
+    })
   })
 })

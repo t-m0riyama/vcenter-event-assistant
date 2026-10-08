@@ -4,7 +4,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode, useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiGet } from '../api'
+import { apiGet, notifyUnauthorized } from '../api'
 import { AuthGate } from './AuthGate'
 import { useAuth } from './useAuth'
 
@@ -227,6 +227,25 @@ describe('AuthGate', () => {
     fireEvent.click(await screen.findByRole('button', { name: '保護された API' }))
     expect(await screen.findByRole('status')).toHaveTextContent('ログインの有効期限が切れました')
     expect(screen.queryByText('ようこそ alice')).not.toBeInTheDocument()
+  })
+
+  it('ログイン画面に戻す理由を渡されたら、その文言を表示する', async () => {
+    let sessionValid = true
+    stubFetch((url) => {
+      if (url === '/api/auth/me') return sessionValid ? json(ADMIN_ME) : json({ detail: 'ログインが必要です。' }, 401)
+      if (url === '/api/auth/realms') return json(LOCAL_ONLY)
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    // 自分のセッションも失効させる操作（ディレクトリの設定の保存など）の後
+    sessionValid = false
+    act(() => notifyUnauthorized('設定を保存したため、ログアウトしました。'))
+    expect(await screen.findByRole('status')).toHaveTextContent('設定を保存したため、ログアウトしました。')
   })
 
   it('前のセッションの遅れた 401 では、有効な今のセッションを追い出さない', async () => {
