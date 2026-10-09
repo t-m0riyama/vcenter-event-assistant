@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-09（PR1・PR2・PR3a マージ済み。PR3a（PR #273）は 8 回目の指摘にも対応し、利用者の判断で再レビューなしでマージした。次は PR3b）
+最終更新: 2026-10-09（PR1・PR2・PR3a マージ済み。PR3b を実装し、PR の作成前）
 
 ## Context
 
@@ -17,7 +17,7 @@
 | 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
 | 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
 | 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | マージ済み [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 8 回。指摘 11 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
-| 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 未着手 |
+| 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 実装済み・PR 作成前（下の「PR3b」。ブランチ `fix/docker-app-root-owned`） |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
 
@@ -100,15 +100,59 @@
 
 ## PR3b: Docker イメージと脅威モデル（Issue #235）
 
-- `Dockerfile`: `uv sync --frozen --no-dev` を root で実行してから `USER appuser` に切り替える。`/app` は root 所有で `appuser` は書けない。`appuser` が書けるのは `/data`（DB・プラグインの `VEA_PLUGIN_DIR=/data/plugins`）と `/var/log/vea` だけ
-  - `uv` が実行時に `.venv` や `/app` のキャッシュへ書かないこと（起動コマンドが `uv run` なら `--no-sync` などが要るか）を確かめる
-  - compose（`docker-compose.sqlite.yml`・`docker-compose.postgres.yml`）でビルドして起動し、プラグインのインストール・収集が動くことを確かめる
-- `docs/collector-plugins.md` に脅威モデルを書く
-  - プラグインは本体と同じ UID で動く。プロセスの分離はハングを打ち切るためのもので、セキュリティの境界ではない
-  - 3a で鍵と DB の資格情報は渡さないが、SQLite の DB ファイル（`/data/vea.db`）は同じ UID なので直接読み書きできる。PostgreSQL なら資格情報がない限り DB に入れない
-  - インストールするプラグインは信頼できるものだけにする
-  - PR3a で書いた「プロセス分離」の内容（渡す環境変数、`prctl`、現在のバージョンの制約、exec での起動）と合わせて、ひとつの脅威モデルにまとめる
-- 別の UID でワーカーを動かす・read-only rootfs は、本体を root で起動して権限を落とす仕組みが要り、変更が大きいので今回はしない。PR3a のレビューで、同じ UID では防げないもの（インストール中の uv の資格情報、起動した親プロセスの環境変数）がはっきりしたので、将来の分離の検討の材料にする。Issue #235 には残りとして書き、閉じるか開けたままにするかはこの PR のときに決める
+### 今の状態（2026-10-09 に調べた）
+
+- `Dockerfile`: `chown -R appuser:appuser /app` の後に `USER appuser` で `uv sync` するので、`.venv` とアプリのコードを `appuser`（ワーカーと同じ UID）が書き換えられる。プラグインが本体のコードに永続的な改変を残せる（監査 M-1 の ②）
+- compose の 2 つのテンプレートは、既に `read_only: true`・`cap_drop: ALL`・`no-new-privileges`・tmpfs の `/tmp` を使っている。compose で動かす限り `/app` には今も書けない。効くのは compose を使わない `docker run` のとき
+- `docker run` で環境変数を何も渡さないと、DB（既定 `sqlite+aiosqlite:///./data/vea.dev.db`）とプラグインの置き場所（既定 `data/plugins`）が `/app/data` になる。`/app` を root 所有にするだけでは起動できなくなる
+- 本体は実行時に `/app` の下へ書かない（一時ファイルは `tempfile`、uv のキャッシュは compose では `/tmp/uv-cache`、それ以外は `HOME`）。インストーラは `uv pip install --target <VEA_PLUGIN_DIR>/...` で、`.venv` に書かない
+- `alembic_runner._PROJECT_ROOT` と `main.FRONTEND_DIST` は `__file__` からリポジトリのルートを求めるので、プロジェクトは今の editable のインストールのままにする（`--no-editable` にすると `alembic.ini` と `frontend/dist` を見つけられない）
+
+### 変更
+
+- `Dockerfile`
+  - `useradd` と、`/var/log/vea`・`/data` の作成と `chown` はそのまま。`/app` は `chown` しない（root 所有のまま）
+  - `uv sync --frozen --no-dev` を root で実行し、その後に `USER appuser` にする。`.venv` も root 所有になる
+  - editable のソース（`src/`・`packages/`）はビルド時に `python -m compileall -q` でバイトコードにしておく（実行時に `__pycache__` を書けないので。書けなくても動くが、起動のたびにコンパイルし直す）。site-packages は `UV_COMPILE_BYTECODE=1` で `uv sync` がコンパイルする
+  - 既定の置き場所を `/data` に寄せる（利用者の判断）: `ENV DATABASE_URL=sqlite+aiosqlite:////data/vea.db`、`ENV VEA_PLUGIN_DIR=/data/plugins`。compose のテンプレートと同じ値。`.env`・compose・`docker run -e` で上書きできる
+  - `docker-entrypoint.sh` は変えない（root で起動したときに `/var/log/vea` を `chown` して `runuser` で `appuser` に落とす）
+- compose のテンプレートは変えない（`read_only` などは既にある）。コメントだけ、`/app` は root 所有で読み取り専用であることに合わせる
+- `docs/collector-plugins.md` に「脅威モデル」の節を設け、今の「プロセス分離」の後半（渡す環境変数・`prctl`・現在のバージョンの制約・起動方法の注意）と合わせて 1 か所にまとめる
+  - プラグイン（とインストール中の sdist のビルドのコード）は本体と同じ OS のユーザーで動く。プロセスの分離はハングやクラッシュを閉じ込めるためのもので、セキュリティの境界ではない
+  - 守っているもの: 秘密の環境変数（許可リスト）、本体のプロセスの環境変数とメモリ（`prctl`、Linux）、本体のコードと `.venv`（Docker イメージでは root 所有。compose では rootfs も読み取り専用）
+  - 守れないもの: 同じユーザーが読めるファイル（SQLite の DB ファイル `/data/vea.db`、`.env`、`/data/plugins` の他のプラグイン）、インストール中の uv のコマンドラインと環境変数、同じユーザーで残った親プロセスの環境変数。PostgreSQL なら、資格情報を渡さない限り DB には入れない
+  - 第三者のプラグインが自分で開く接続（SSH・HTTP）の宛先は本体からは強制できない（PR4 の SSRF の対策は同梱のプラグインだけ）
+  - 結論: インストールするプラグインは信頼できるものだけにし、管理機能（`VEA_PLUGIN_MANAGEMENT_ENABLED`）は必要なときだけ有効にする
+- `docs/backend-operations.md`: アップグレードの注意（4.2）に、Docker イメージで `/app` が読み取り専用になったこと、compose を使わない `docker run` では DB とプラグインの既定の置き場所が `/data` に変わったこと（今まで `/app/data` に置いていたなら、ボリュームを `/data` にマウントし直すか、`DATABASE_URL`・`VEA_PLUGIN_DIR` で元の場所を指定する）を書く
+- `docs/getting-started.md`: Docker の節に、compose を使わず `docker run` する場合は `/data` にボリュームをマウントすることを一言書く（今の記述を見て、必要なら）
+
+### 実装と確認の結果（2026-10-09）
+
+- 上の「変更」のとおりに実装した。`docs/getting-started.md` には Docker の追記をしていない（compose の手順だけで `docker run` の手順はないため。`docker run` の利用者向けの注意は `docs/backend-operations.md` の 4.2 の 8 に書いた）。参照先の節の名前を「プロセス分離」から「脅威モデル」に直した
+- `docs/collector-plugins.md` の「脅威モデル」には、SQLite の DB は読み書きできるが、`VEA_SECRET_KEY` を同じユーザーが読めるファイルに置かない限り、暗号化した値は復号できないことも書いた
+- 確かめたこと（Docker 29.8、Compose v5.5）
+  - `appuser` で `/app`・`/app/.venv/bin`・`site-packages`・`/app/src` に書けず、`/data`・`/var/log/vea`・`/tmp` に書ける。`/app/src` の `__pycache__` はビルド時に作られている
+  - 環境変数なしの `docker run`（`read_only` なし）で起動し、DB が `/data/vea.db` にできる
+  - compose（sqlite・postgres）で起動・ログイン・`examples/example-event-collector` の wheel のアップロードとインストール・「変更を反映」でコレクタが一覧に出る・アンインストール。ログにエラーなし
+  - 変更前のイメージでデータとプラグインを作ったボリュームを、変更後のイメージで引き継げる（ログインでき、プラグインが残り、所有者は `appuser` のまま）
+- `tests/test_server_settings.py`（compose のファイルを読むテスト）が通る
+
+### Issue #235 の扱い（利用者の判断）
+
+- この PR のマージで Issue #235 を閉じる（PR の本文に `Closes #235`）。閉じるときのコメントに、PR3a（PR #273）と PR3b で対応したことと、同じユーザーでは防げない残りをまとめる
+- 残りは新しい Issue に切り出す: 「プラグインのワーカーとインストーラを別の OS のユーザーで動かす」。本体を root で起動して権限を落とす仕組み・ワーカー用の UID・`/data/plugins` と DB ファイルのパーミッション・SQLite の扱い、を検討の材料として書く。PR3a のレビューで分かった、同じ UID では防げないもの（インストール中の uv の資格情報、起動した親プロセスの環境変数）も書く
+- Issue の作成とクローズは、文面を確かめてから行う
+
+### 確認
+
+- `docker build` が通ること
+- コンテナの中で `appuser` として `/app`・`/app/.venv`・`site-packages` に書けないこと（`touch` が失敗する、`stat` で所有者が root）。`/data`・`/var/log/vea`・`/tmp` には書けること
+- compose（sqlite と postgres のテンプレート）で起動し、ログインできること、マイグレーションが適用されること、ログが `/var/log/vea` に出ること
+- `VEA_PLUGIN_MANAGEMENT_ENABLED=true` で、同梱のプラグインの wheel（`uv build packages/remote-log-collector` など）をアップロードしてインストールでき、検出のワーカーが動いてコレクタが一覧に出ること。アンインストールもできること
+- `docker run`（`read_only` なし、環境変数なし）で起動し、DB とプラグインが `/data` に作られること
+- 既存のボリュームの引き継ぎ: 変更前のイメージで compose を起動してデータを作り、変更後のイメージに差し替えても、DB が読めて、ボリュームの所有者が `appuser` のままであること
+- 起動時に `__pycache__` を書こうとする警告やエラーが出ないこと
+- `uv run pytest -n auto`・ruff・mypy（Python のコードは変えない見込みだが、`tests/test_server_settings.py` が compose のファイルを読むので）
 
 ## PR4: SSRF と rate limit（Issue #237）
 

@@ -30,6 +30,8 @@ services:
       VEA_PLUGIN_DIR: /data/plugins
       # uv のキャッシュも書き込み可能な場所へ（tmpfs の /tmp）
       UV_CACHE_DIR: /tmp/uv-cache
+    # /app（アプリのコードと .venv）はイメージで root 所有。さらにルートファイルシステムを読み取り専用にし、
+    # 書けるのはボリューム（/data・/var/log/vea）と tmpfs（/tmp）だけにする
     read_only: true
     cap_drop:
       - ALL

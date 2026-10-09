@@ -382,7 +382,7 @@ TLS:
 - 認証: `VEA_AUTH_ENABLED`（既定 `true`、本番では無効にできない）、`VEA_SESSION_*`、`VEA_LOGIN_*`、`VEA_BOOTSTRAP_ADMIN_PASSWORD` が残っていないこと（起動時に警告）
 - プラグイン管理: `VEA_PLUGIN_MANAGEMENT_ENABLED`（既定 `false`）、`VEA_PLUGIN_ALLOW_INDEX_INSTALL`（既定 `false`）、`VEA_PLUGIN_DIR`
 - コレクタワーカーのログ: `VEA_COLLECTOR_WORKER_LOG_LEVEL`（未設定時は `LOG_LEVEL` を継承）
-- コレクタワーカーの環境変数: `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（プラグインが独自の環境変数を読むときだけ）、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`、Linux のみ）。詳細は `docs/collector-plugins.md` の「プロセス分離」
+- コレクタワーカーの環境変数: `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（プラグインが独自の環境変数を読むときだけ）、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`、Linux のみ）。詳細は `docs/collector-plugins.md` の「脅威モデル」
 
 ## 4.1 プラグイン管理を有効化する場合
 
@@ -394,8 +394,8 @@ TLS:
 - `VEA_PLUGIN_ALLOW_INDEX_INSTALL` は原則 `false` のままにし、アップロード経路のみを使う
   （`true` にすると実行時に外部インデックスから取得するため、サプライチェーンリスクが増える）
 - インデックスは `VEA_PLUGIN_INDEX_URL` で指定する。`UV_INDEX_URL` などの uv の環境変数はインストーラに渡さない。URL かプロキシの環境変数に資格情報を含めると、wheel だけを入れる（`--no-build`）。そのときアップロードした sdist は、インデックスを使わずに入れる（依存は解決されない）
-- 本番ではアプリを `exec` で起動する（`uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する。`exec` を付けずに対話シェルから実行すると、シェルが親として残る。Docker イメージはそうなっている）。同じユーザーの親プロセスが秘密の環境変数（資格情報を含むプロキシやインデックスの URL も）を持ったまま残ると、プラグインから読める。動き続けるプロセス管理ツールは exec では解決しないので、別のユーザー（root の systemd など）で動かすか、秘密を持たせない。この警告は変数の名前で判定する目安で、すべての秘密を見つけられるわけではない（判定の条件は [コレクタプラグイン](collector-plugins.md) の「起動方法の注意」）。起動時に `the parent process ... keeps secret environment variables` の WARNING が出たら起動方法を見直す
-- インデックスやプロキシの資格情報は、インストールの間、既に動いているプラグインから読める（現在のバージョンの制約。`docs/collector-plugins.md` の「プロセス分離」）。資格情報の要らない社内ミラーを、接続元を制限して使うことを勧める
+- 本番ではアプリを `exec` で起動する（`uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する。`exec` を付けずに対話シェルから実行すると、シェルが親として残る。Docker イメージはそうなっている）。同じユーザーの親プロセスが秘密の環境変数（資格情報を含むプロキシやインデックスの URL も）を持ったまま残ると、プラグインから読める。動き続けるプロセス管理ツールは exec では解決しないので、別のユーザー（root の systemd など）で動かすか、秘密を持たせない。この警告は変数の名前で判定する目安で、すべての秘密を見つけられるわけではない（判定の条件は [コレクタプラグイン](collector-plugins.md) の「脅威モデル」）。起動時に `the parent process ... keeps secret environment variables` の WARNING が出たら起動方法を見直す
+- インデックスやプロキシの資格情報は、インストールの間、既に動いているプラグインから読める（現在のバージョンの制約。`docs/collector-plugins.md` の「脅威モデル」）。資格情報の要らない社内ミラーを、接続元を制限して使うことを勧める
 - `VEA_PLUGIN_DIR` を永続ボリュームに割り当てる（コンテナ入れ替えでインストール済みプラグインが消えないようにする）
 - 本番で有効化すると起動時に WARNING が出ます（`security_startup.py`）。ログで有効化を検知できます。
 
@@ -452,7 +452,8 @@ kill され、アプリ本体は停止しません。
 4. リバースプロキシで行っていた認証は、二重になるため外してもかまいません（TLS 終端とネットワーク制限は引き続きプロキシで行う）
 5. ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から削除する
 6. アラートメールの STARTTLS で、SMTP サーバの証明書を検証するようになりました。自己署名や社内 CA の証明書の SMTP では、`SMTP_CA_BUNDLE` に CA バンドルを指定してください（検証用の環境なら `SMTP_TLS_VERIFY=false`）。指定しないとメールが届かなくなります（詳細は「E) SMTP/メール通知」）
-7. プラグインのワーカーには、許可した環境変数しか渡さなくなりました。プラグインが独自の環境変数（機密値など）を読む場合は、その名前を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` にカンマ区切りで書いてください。インデックスからのインストールでは、`UV_INDEX_URL` などの uv の環境変数は効かなくなったので、`VEA_PLUGIN_INDEX_URL` で指定してください（詳細は `docs/collector-plugins.md` の「プロセス分離」と「動的インストール」）
+7. プラグインのワーカーには、許可した環境変数しか渡さなくなりました。プラグインが独自の環境変数（機密値など）を読む場合は、その名前を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` にカンマ区切りで書いてください。インデックスからのインストールでは、`UV_INDEX_URL` などの uv の環境変数は効かなくなったので、`VEA_PLUGIN_INDEX_URL` で指定してください（詳細は `docs/collector-plugins.md` の「脅威モデル」と「動的インストール」）
+8. Docker イメージで、アプリのコードと `.venv`（`/app`）を root の所有にし、実行ユーザー（`appuser`）からは書き込めなくしました（プラグインに本体を書き換えさせないため）。compose のテンプレートで動かしている場合は、何もしなくてかまいません。compose を使わずに `docker run` で動かしている場合は、DB とプラグインの既定の置き場所が `/app/data` から `/data`（`DATABASE_URL=sqlite+aiosqlite:////data/vea.db`、`VEA_PLUGIN_DIR=/data/plugins`）に変わりました。今まで `/app/data` にボリュームをマウントしていたなら、`/data` にマウントし直してください（DB のファイル名を `vea.dev.db` から `vea.db` に変えるか、`DATABASE_URL` で元のファイル名を指定する）
 
 ログインの失敗・ロックアウト・ユーザー変更は、ロガー `vcenter_event_assistant.audit` に `AUDIT event=...` の形式で出力されます。
 

@@ -124,7 +124,7 @@ React / Vite のホットリロードで UI を開発する場合は **別ター
 uv run vcenter-event-assistant
 ```
 
-`uv run` は開発用の起動方法です。本番では `exec .venv/bin/vcenter-event-assistant` で起動します（`exec` を付けないとシェルが親として残ります。理由は [コレクタプラグイン](collector-plugins.md) の「プロセス分離」）。
+`uv run` は開発用の起動方法です。本番では `exec .venv/bin/vcenter-event-assistant` で起動します（`exec` を付けないとシェルが親として残ります。理由は [コレクタプラグイン](collector-plugins.md) の「脅威モデル」）。
 
 **ターミナル 2（フロント）** — `npm install` は初回または `package.json` 更新時。
 
