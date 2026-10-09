@@ -453,7 +453,7 @@ kill され、アプリ本体は停止しません。
 5. ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から削除する
 6. アラートメールの STARTTLS で、SMTP サーバの証明書を検証するようになりました。自己署名や社内 CA の証明書の SMTP では、`SMTP_CA_BUNDLE` に CA バンドルを指定してください（検証用の環境なら `SMTP_TLS_VERIFY=false`）。指定しないとメールが届かなくなります（詳細は「E) SMTP/メール通知」）
 7. プラグインのワーカーには、許可した環境変数しか渡さなくなりました。プラグインが独自の環境変数（機密値など）を読む場合は、その名前を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` にカンマ区切りで書いてください。インデックスからのインストールでは、`UV_INDEX_URL` などの uv の環境変数は効かなくなったので、`VEA_PLUGIN_INDEX_URL` で指定してください（詳細は `docs/collector-plugins.md` の「脅威モデル」と「動的インストール」）
-8. Docker イメージで、アプリのコードと `.venv`（`/app`）を root の所有にし、実行ユーザー（`appuser`）からは書き込めなくしました（プラグインに本体を書き換えさせないため）。compose のテンプレートで動かしている場合は、何もしなくてかまいません。compose を使わずに `docker run` で動かしている場合は、DB とプラグインの既定の置き場所が `/app/data` から `/data`（`DATABASE_URL=sqlite+aiosqlite:////data/vea.db`、`VEA_PLUGIN_DIR=/data/plugins`）に変わりました。今まで `/app/data` にボリュームをマウントしていたなら、`/data` にマウントし直してください（DB のファイル名を `vea.dev.db` から `vea.db` に変えるか、`DATABASE_URL` で元のファイル名を指定する）
+8. Docker イメージで、アプリのコードと `.venv`（`/app`）を root の所有にし、実行ユーザー（`appuser`）からは書き込めなくしました（プラグインに本体を書き換えさせないため）。DB とプラグインの既定の置き場所（`/app/data`）は `/data` へのシンボリックリンクになり、実体は `/data` に置かれます。compose のテンプレートで動かしている場合も、`docker run` で `/app/data` にボリュームをマウントしている場合も、そのまま動きます（マウントはリンクをたどって `/data` に入ります）。`/app` の下に他のファイルを書き込む構成にしている場合は、`/data` に移してください
 
 ログインの失敗・ロックアウト・ユーザー変更は、ロガー `vcenter_event_assistant.audit` に `AUDIT event=...` の形式で出力されます。
 
