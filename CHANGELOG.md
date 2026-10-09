@@ -10,7 +10,8 @@
 
 ### 更新の前に（互換性のない変更）
 
-- **認証が既定で有効になった**（`VEA_AUTH_ENABLED=true`）。更新の前に初期 admin を用意する（`VEA_BOOTSTRAP_ADMIN_USERNAME`・`VEA_BOOTSTRAP_ADMIN_PASSWORD` か、`vcenter-event-assistant-admin create-user`）。本番（`APP_ENV=production`）では admin がいないと起動しない
+- **認証が既定で有効になった**（`VEA_AUTH_ENABLED=true`）。更新の前に初期 admin を用意する（`VEA_BOOTSTRAP_ADMIN_USERNAME`・`VEA_BOOTSTRAP_ADMIN_PASSWORD` か、`vcenter-event-assistant-admin create-user <ユーザー名> --role admin`）。本番（`APP_ENV=production`）では admin がいないと起動しない
+  - `create-user` の既定のロールは viewer なので、`--role admin` を必ず付ける。ユーザーが 1 人でもいると bootstrap の環境変数は使われないので、付け忘れたら `vcenter-event-assistant-admin set-role <ユーザー名> admin` で admin に変える
   - HTTPS で配信していて `APP_ENV=production` でなければ、`VEA_SESSION_COOKIE_SECURE=true` を設定する
   - `curl` などで API を直接呼んでいるスクリプトは、ログインしてセッション Cookie を使う必要がある。POST / PUT / PATCH / DELETE には `X-Requested-With: XMLHttpRequest` ヘッダが要る
   - リバースプロキシで行っていた認証は、二重になるので外してよい。ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から消す
