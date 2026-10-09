@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 
 from vcenter_event_assistant.settings import Settings
 
@@ -40,16 +41,12 @@ _RUNTIME_ENV_VARS = frozenset(
         "SSL_CERT_DIR",
         "REQUESTS_CA_BUNDLE",
         "CURL_CA_BUNDLE",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
         "NO_PROXY",
-        "ALL_PROXY",
-        "http_proxy",
-        "https_proxy",
         "no_proxy",
-        "all_proxy",
     }
 )
+# プロキシの URL。資格情報（``http://user:pass@proxy``）を含むものは既定では渡さない。
+PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 _RUNTIME_ENV_PREFIXES = ("LC_",)
 
 # インストーラ（uv）だけに渡す変数。インデックスの URL と資格情報（UV_INDEX_URL、
@@ -71,12 +68,32 @@ _INSTALLER_ENV_VARS = frozenset(
 )
 
 
-def _runtime_env() -> dict[str, str]:
+def url_has_credentials(url: str | None) -> bool:
+    """URL にユーザー情報（資格情報）が含まれるか。解析できない URL は含むとみなす。"""
+    if not url:
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return True
+    return bool(parts.username or parts.password)
+
+
+def proxy_has_credentials() -> bool:
+    """プロキシの環境変数のどれかが資格情報を含むか。"""
+    return any(url_has_credentials(os.environ.get(name)) for name in PROXY_ENV_VARS)
+
+
+def _runtime_env(*, with_proxy_credentials: bool = False) -> dict[str, str]:
     env = {
         name: value
         for name, value in os.environ.items()
         if name in _RUNTIME_ENV_VARS or name.startswith(_RUNTIME_ENV_PREFIXES)
     }
+    for name in PROXY_ENV_VARS:
+        value = os.environ.get(name)
+        if value and (with_proxy_credentials or not url_has_credentials(value)):
+            env[name] = value
     env[IGNORE_DOTENV_ENV_VAR] = "1"
     return env
 
@@ -88,6 +105,7 @@ def _passthrough_names(settings: Settings) -> list[str]:
 def worker_env(settings: Settings) -> dict[str, str]:
     """コレクタワーカー（検出用を含む）に渡す環境変数。"""
     env = _runtime_env()
+    # 資格情報付きのプロキシは、運用者が VEA_PLUGIN_WORKER_ENV_PASSTHROUGH に書いたときだけ渡す。
     # ワーカーが Settings で読む値（logging_config.configure_worker_logging と
     # collectors.connection.connect_vcenter）。
     env["LOG_LEVEL"] = settings.log_level
@@ -100,8 +118,12 @@ def worker_env(settings: Settings) -> dict[str, str]:
     return env
 
 
-def installer_env() -> dict[str, str]:
-    """プラグインのインストーラ（``uv pip install``）に渡す環境変数。"""
-    env = _runtime_env()
+def installer_env(*, with_credentials: bool = False) -> dict[str, str]:
+    """プラグインのインストーラ（``uv pip install``）に渡す環境変数。
+
+    資格情報付きのプロキシは ``with_credentials`` のときだけ渡す。sdist のビルドのコードから
+    読めるので、呼び出し側はビルドしない（``--no-build``）ときだけ True にする。
+    """
+    env = _runtime_env(with_proxy_credentials=with_credentials)
     env.update({name: value for name, value in os.environ.items() if name in _INSTALLER_ENV_VARS})
     return env

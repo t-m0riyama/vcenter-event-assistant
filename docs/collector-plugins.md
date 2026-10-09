@@ -93,10 +93,10 @@ ID 中のドットとハイフンはアンダースコアになります。た�
 インデックスは `VEA_PLUGIN_INDEX_URL` で指定します。インストーラ（uv）には、インデックスの URL や
 資格情報を表す環境変数（`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_INDEX_<名前>_PASSWORD`・
 `PIP_INDEX_URL` など）を渡しません。sdist のビルドのコード（`setup.py` など）が読めてしまうためです。
-同じ理由で、`VEA_PLUGIN_INDEX_URL` に資格情報（`https://user:pass@...`）が含まれるときは `--no-build` で
-wheel だけを入れます。sdist しかないパッケージは、wheel を用意するかアップロードで入れてください。
+同じ理由で、`VEA_PLUGIN_INDEX_URL` かプロキシの環境変数（`HTTPS_PROXY` など）に資格情報
+（`https://user:pass@...`）が含まれるときは `--no-build` で wheel だけを入れます。sdist しかないパッケージは、wheel を用意するかアップロードで入れてください。
 インデックスからのインストールを許可しているときは、アップロードしたパッケージの依存も同じ
-インデックスから解決します。ただし、資格情報付きのインデックスでは、アップロードした sdist
+インデックスから解決します。ただし、資格情報があるときは、アップロードした sdist
 （`.tar.gz`）はインデックスを使わずに入れます（`--no-index --no-deps`。ビルドのコードに資格情報を
 渡さないため）。依存は解決されないので、依存のあるプラグインは wheel でアップロードしてください。
 
@@ -144,7 +144,9 @@ vCenter への接続はワーカー側でアプリケーションが開き、プ
 ワーカーとインストーラには、アプリの環境変数をそのまま渡しません。渡すのは次のものだけです。
 
 - 実行環境: `PATH`・`HOME`・`LANG`・`LC_*`・`TZ`・`TMPDIR`・`SSL_CERT_FILE` などの証明書の場所・
-  プロキシ（`HTTP(S)_PROXY`・`NO_PROXY`）
+  プロキシ（`HTTP(S)_PROXY`・`NO_PROXY`）。資格情報付きのプロキシ（`http://user:pass@proxy`）は、
+  ワーカーには `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` に書いたときだけ、インストーラには wheel だけを
+  入れるとき（`--no-build`）だけ渡します
 - ワーカーの設定: `LOG_LEVEL`・`VEA_COLLECTOR_WORKER_LOG_LEVEL`・`VCENTER_ALLOWED_HOST_SUFFIXES`。
   `.env` で指定した値も、アプリが読んだ値を渡します
 - `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（カンマ区切り）に書いた名前の環境変数（ワーカーだけ）
@@ -155,6 +157,14 @@ vCenter への接続はワーカー側でアプリケーションが開き、プ
 SQLite のデータベースファイルなど）は読めます。Linux では、アプリのプロセスを
 `prctl(PR_SET_DUMPABLE, 0)` にして、ワーカーから `/proc/<アプリの pid>/environ` やメモリを読めない
 ようにしています（`VEA_PROCESS_NON_DUMPABLE`、既定 `true`）。
+
+**現在のバージョンの制約**: インストーラ（uv）が使う資格情報（`VEA_PLUGIN_INDEX_URL` の資格情報、
+資格情報付きのプロキシ）は、インストールの間、uv のコマンドラインと環境変数に載ります。uv は
+アプリと同じ OS のユーザーで動くので、そのとき既に動いているプラグインのワーカーは
+`/proc/<uv の pid>/cmdline` や `/proc/<uv の pid>/environ` から読めます。`--no-build` で防げるのは、
+インストールするパッケージ自身のビルドのコードからの読み取りだけです。同じユーザーで動かす限り、
+根本的には防げません。資格情報の要らない社内ミラー（ネットワークや IP アドレスで接続元を制限する）を
+使うことを勧めます。将来、インストーラやワーカーを別の OS のユーザーで動かすなどの分離を検討します。
 
 ## トラブルシュート
 

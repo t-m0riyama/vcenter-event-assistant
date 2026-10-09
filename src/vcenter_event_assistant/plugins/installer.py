@@ -18,9 +18,12 @@ import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from vcenter_event_assistant.plugins.subprocess_env import installer_env
+from vcenter_event_assistant.plugins.subprocess_env import (
+    installer_env,
+    proxy_has_credentials,
+    url_has_credentials,
+)
 from vcenter_event_assistant.plugins.remote import discover_collectors_at
 from vcenter_event_assistant.settings import Settings
 
@@ -112,10 +115,10 @@ def _install_command(
         _python_executable(),
     ]
     # sdist のビルドバックエンドは uv と同じ UID で動き、uv のコマンドライン
-    # （/proc/<pid>/cmdline）からインデックスの資格情報を読める（監査 M-1）。
-    credentialed = _index_has_credentials(settings.plugin_index_url)
-    # アップロードした sdist はビルドが要るので、資格情報付きのインデックスには渡さず、
-    # インデックスを使わない経路で入れる（依存は解決されない）。
+    # （/proc/<pid>/cmdline）と環境変数から、インデックスやプロキシの資格情報を読める（監査 M-1）。
+    credentialed = url_has_credentials(settings.plugin_index_url) or proxy_has_credentials()
+    # アップロードした sdist はビルドが要るので、資格情報があるときはインデックスもプロキシも
+    # 使わない経路で入れる（依存は解決されない）。
     local_sdist = not from_index and source.endswith(_SDIST_SUFFIX)
     use_index = from_index or (
         settings.plugin_allow_index_install and not (local_sdist and credentialed)
@@ -141,16 +144,6 @@ def _install_command(
     return command + [source]
 
 
-def _index_has_credentials(index_url: str | None) -> bool:
-    if not index_url:
-        return False
-    try:
-        parts = urlsplit(index_url)
-    except ValueError:
-        return True
-    return bool(parts.username or parts.password)
-
-
 def _python_executable() -> str:
     import sys
 
@@ -162,7 +155,8 @@ async def _run_install(command: list[str]) -> None:
         *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        env=installer_env(),
+        # ビルドしないときだけ、資格情報付きのプロキシを渡す。
+        env=installer_env(with_credentials="--no-build" in command),
     )
     try:
         stdout, _ = await asyncio.wait_for(

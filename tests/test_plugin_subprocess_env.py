@@ -252,3 +252,76 @@ def test_sdist_upload_uses_an_index_without_credentials(tmp_path) -> None:
     assert command[command.index("--index-url") + 1] == "https://mirror.example/simple"
     assert "--no-build" not in command
     assert "--no-index" not in command
+
+
+_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+
+
+@pytest.fixture
+def no_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in _PROXY_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.usefixtures("no_proxy_env")
+@pytest.mark.parametrize("name", _PROXY_NAMES)
+def test_credentialed_proxy_is_not_passed(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    # PR #273 の Codex レビューの指摘。プロキシの資格情報もプラグインに渡さない。
+    monkeypatch.setenv(name, "http://user:proxy-secret@proxy:8080")
+    assert name not in worker_env(_settings())
+    assert name not in installer_env()
+    assert installer_env(with_credentials=True)[name] == "http://user:proxy-secret@proxy:8080"
+
+
+@pytest.mark.usefixtures("no_proxy_env")
+def test_credentialed_proxy_can_be_passed_to_workers_explicitly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:proxy-secret@proxy:8080")
+    env = worker_env(_settings(plugin_worker_env_passthrough="HTTPS_PROXY"))
+    assert env["HTTPS_PROXY"] == "http://user:proxy-secret@proxy:8080"
+
+
+@pytest.mark.usefixtures("no_proxy_env")
+def test_credentialed_proxy_installs_wheels_only(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.setenv("https_proxy", "http://user:proxy-secret@proxy:8080")
+    settings = _settings(
+        plugin_allow_index_install=True,
+        plugin_index_url="https://mirror.example/simple",
+        uv_bin="/usr/bin/uv",
+    )
+    index_install = _install_command(settings, tmp_path, "example-collector==1.0", from_index=True)
+    assert "--no-build" in index_install
+    sdist_upload = _install_command(settings, tmp_path, str(tmp_path / "pkg-0.1.0.tar.gz"), from_index=False)
+    assert "--no-index" in sdist_upload
+    assert "--no-build" not in sdist_upload
+
+
+@pytest.mark.usefixtures("no_proxy_env")
+@pytest.mark.parametrize(("extra", "expect_proxy"), [(["--no-build"], True), (["--no-index", "--no-deps"], False)])
+async def test_installer_gets_proxy_credentials_only_without_builds(
+    monkeypatch: pytest.MonkeyPatch, extra: list[str], expect_proxy: bool
+) -> None:
+    from vcenter_event_assistant.plugins import installer
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:proxy-secret@proxy:8080")
+    captured: dict[str, dict[str, str]] = {}
+
+    class _Process:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", None
+
+    async def fake_exec(*args, env, **kwargs):
+        captured["env"] = env
+        return _Process()
+
+    monkeypatch.setattr(installer.asyncio, "create_subprocess_exec", fake_exec)
+    await installer._run_install(["uv", "pip", "install", *extra, "pkg"])
+    assert ("HTTPS_PROXY" in captured["env"]) is expect_proxy
+
+
+@pytest.mark.usefixtures("no_proxy_env")
+def test_proxy_without_credentials_is_passed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy:8080")
+    assert worker_env(_settings())["HTTPS_PROXY"] == "http://proxy:8080"
+    assert installer_env()["HTTPS_PROXY"] == "http://proxy:8080"
