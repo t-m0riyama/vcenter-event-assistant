@@ -48,7 +48,8 @@ _TEXT_COLUMNS = (
     "message",
     "file_generation",
 )
-_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+# 改行と全角の記号も含める（日本語の環境の表計算ソフトは全角の ``＝`` も式とみなし得る）。
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠")
 
 
 def neutralize_csv_formula(value: str) -> str:

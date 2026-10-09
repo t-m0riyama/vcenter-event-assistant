@@ -3,10 +3,11 @@ import type { MetricPoint } from './normalizeMetricSeriesResponse'
 
 /**
  * 表計算ソフトが式として評価する先頭文字なら `'` を前置する（OWASP CSV Injection）。
+ * 改行と全角の記号も含める（日本語の環境の表計算ソフトは全角の `＝` も式とみなし得る）。
  * 数値の列には使わない（負の数が文字列になる）。
  */
 export function neutralizeCsvFormula(value: string): string {
-  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  return /^[=+\-@\t\r\n＝＋－＠]/.test(value) ? `'${value}` : value
 }
 
 /** 文字列の CSV フィールドを、式を無害化したうえで RFC 4180 相当にエスケープする。 */

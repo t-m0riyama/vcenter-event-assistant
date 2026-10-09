@@ -28,7 +28,7 @@ describe('escapeCsvField', () => {
     expect(escapeCsvField('a\nb')).toBe('"a\nb"')
   })
 
-  it.each(['=', '+', '-', '@', '\t', '\r'])('neutralizes a value starting with %j', (prefix) => {
+  it.each(['=', '+', '-', '@', '\t', '\r', '\n', '＝', '＋', '－', '＠'])('neutralizes a value starting with %j', (prefix) => {
     const value = `${prefix}HYPERLINK("http://evil.example/")`
     const escaped = escapeCsvField(value)
     const unquoted = escaped.startsWith('"') ? escaped.slice(1, -1).replace(/""/g, '"') : escaped

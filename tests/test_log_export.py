@@ -327,7 +327,7 @@ def _parse_csv_row(line: str) -> dict[str, str]:
     return dict(zip(log_export.HEADER, next(csv.reader(io.StringIO(line)))))
 
 
-@pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r"])
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠"])
 def test_csv_row_neutralizes_formula_prefix(prefix):
     payload = f"{prefix}HYPERLINK(\"http://evil.example/\",\"x\")"
     line = log_export.csv_row(
