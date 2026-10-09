@@ -14,8 +14,8 @@
 
 | PR | 内容 | Issue | 状態 |
 |---|---|---|---|
-| 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | PR 作成済み |
-| 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | 未着手 |
+| 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
+| 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | PR 作成済み |
 | 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | 未着手 |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 未着手 |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
@@ -58,7 +58,7 @@
 
 ### 一時ディレクトリ（Issue #239）
 - `install_from_upload` の `staging_dir` を、インストールのジョブが終わったとき（成功・失敗とも）と、`start_install` が例外を投げたときに `shutil.rmtree(..., ignore_errors=True)` で消す。ジョブはバックグラウンドで続くので、消す場所はジョブの `finally`（`start_install` に後始末の対象を渡す）
-- 起動時に、作成から一定時間（例: 1 日）たった `vea-plugin-upload-*` を `tempfile.gettempdir()` から掃除する
+- 起動時に `vea-plugin-upload-*` を `tempfile.gettempdir()` から掃除する。名前にプロセス ID を入れ（`vea-plugin-upload-<pid>-*`）、そのプロセスが終了していれば消す（`services/ssh_management.cleanup_stale_ssh_files` と同じ考え方）。プロセス ID のない以前の形式は、作成から 1 日たったものだけ消す
 - テスト: 成功・失敗・`start_install` の例外のそれぞれで、ディレクトリが残らないこと
 
 ## PR3a: 子プロセスの環境変数を許可リストにする（Issue #235）

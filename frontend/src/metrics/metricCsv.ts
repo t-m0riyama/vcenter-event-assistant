@@ -1,12 +1,21 @@
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import type { MetricPoint } from './normalizeMetricSeriesResponse'
 
-/** CSV フィールドを RFC 4180 相当にエスケープする。 */
+/**
+ * 表計算ソフトが式として評価する先頭文字なら `'` を前置する（OWASP CSV Injection）。
+ * 数値の列には使わない（負の数が文字列になる）。
+ */
+export function neutralizeCsvFormula(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+}
+
+/** 文字列の CSV フィールドを、式を無害化したうえで RFC 4180 相当にエスケープする。 */
 export function escapeCsvField(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`
+  const safe = neutralizeCsvFormula(value)
+  if (/[",\r\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`
   }
-  return value
+  return safe
 }
 
 const HEADER = [

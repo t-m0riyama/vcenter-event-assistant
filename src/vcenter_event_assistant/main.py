@@ -103,6 +103,8 @@ async def lifespan(app: FastAPI):
         )
     from vcenter_event_assistant.services.ssh_management import cleanup_stale_ssh_files
     cleanup_stale_ssh_files()
+    from vcenter_event_assistant.services.plugin_installs import cleanup_stale_upload_dirs
+    cleanup_stale_upload_dirs()
     await init_db(settings=settings)
     await ensure_bootstrap_admin(settings)
     await ensure_secret_storage(settings=settings)

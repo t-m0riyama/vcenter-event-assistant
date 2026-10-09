@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
+import shutil
+import tempfile
+import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +32,48 @@ logger = logging.getLogger(__name__)
 
 # 稼働中のインストールタスク。イベントループが破棄されるまでの弱い参照切れを防ぐ。
 _tasks: set[asyncio.Task] = set()
+
+_UPLOAD_DIR_PREFIX = "vea-plugin-upload-"
+_UPLOAD_DIR_RE = re.compile(rf"{_UPLOAD_DIR_PREFIX}(\d+)-.+")
+# プロセス ID を名前に持たない以前の形式のディレクトリは、作成から十分たったものだけ消す。
+_LEGACY_UPLOAD_DIR_MAX_AGE_SECONDS = 86400
+
+
+def create_upload_dir() -> Path:
+    """アップロードされたパッケージを置く一時ディレクトリを作る。
+
+    名前にプロセス ID を入れ、異常終了で残ったものを次の起動時に見分けられるようにする。
+    """
+    return Path(tempfile.mkdtemp(prefix=f"{_UPLOAD_DIR_PREFIX}{os.getpid()}-"))
+
+
+def remove_upload_dir(path: Path) -> None:
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def cleanup_stale_upload_dirs() -> None:
+    """起動時に、終了したプロセスが残したアップロードの一時ディレクトリを消す（監査 L-1）。"""
+    root = Path(tempfile.gettempdir())
+    for path in root.glob(f"{_UPLOAD_DIR_PREFIX}*"):
+        try:
+            if path.is_symlink() or not path.is_dir() or path.stat().st_uid != os.getuid():
+                continue
+            match = _UPLOAD_DIR_RE.fullmatch(path.name)
+            if match is None:
+                if time.time() - path.stat().st_mtime > _LEGACY_UPLOAD_DIR_MAX_AGE_SECONDS:
+                    remove_upload_dir(path)
+                continue
+            pid = int(match[1])
+            if pid == os.getpid():
+                continue
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                remove_upload_dir(path)
+            except PermissionError:
+                pass
+        except OSError:
+            logger.warning("failed to inspect plugin upload directory %s", path, exc_info=True)
 
 
 async def list_installed_plugins(session: AsyncSession) -> list[InstalledPlugin]:
@@ -60,8 +108,13 @@ async def start_install(
     source: str,
     origin: str,
     from_index: bool,
+    upload_dir: Path | None = None,
 ) -> InstalledPlugin:
-    """``installing`` 行を作り、実際のインストールをバックグラウンドへ投げる。"""
+    """``installing`` 行を作り、実際のインストールをバックグラウンドへ投げる。
+
+    ``upload_dir`` を渡すと、ジョブの終了時（成功・失敗とも）に削除する。
+    この関数が例外を投げたときは削除しないので、呼び出し元が削除する。
+    """
     existing = (
         await session.execute(
             select(InstalledPlugin).where(InstalledPlugin.distribution == distribution)
@@ -84,7 +137,13 @@ async def start_install(
     await session.commit()
 
     task = asyncio.create_task(
-        _run_install_job(settings, distribution=distribution, source=source, from_index=from_index)
+        _run_install_job(
+            settings,
+            distribution=distribution,
+            source=source,
+            from_index=from_index,
+            upload_dir=upload_dir,
+        )
     )
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
@@ -92,6 +151,23 @@ async def start_install(
 
 
 async def _run_install_job(
+    settings: Settings,
+    *,
+    distribution: str,
+    source: str,
+    from_index: bool,
+    upload_dir: Path | None = None,
+) -> None:
+    try:
+        await _install_and_record(
+            settings, distribution=distribution, source=source, from_index=from_index
+        )
+    finally:
+        if upload_dir is not None:
+            await asyncio.to_thread(remove_upload_dir, upload_dir)
+
+
+async def _install_and_record(
     settings: Settings, *, distribution: str, source: str, from_index: bool
 ) -> None:
     try:
