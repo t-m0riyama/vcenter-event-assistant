@@ -16,6 +16,7 @@
   - `curl` などで API を直接呼んでいるスクリプトは、ログインしてセッション Cookie を使う必要がある。POST / PUT / PATCH / DELETE には `X-Requested-With: XMLHttpRequest` ヘッダが要る
   - リバースプロキシで行っていた認証は、二重になるので外してよい。ログインできたら `VEA_BOOTSTRAP_ADMIN_PASSWORD` を `.env` から消す
 - **アラートメールの STARTTLS で、SMTP サーバの証明書を検証するようになった。自己署名や社内 CA の証明書の SMTP では、更新すると通知が止まる。** 社内 CA なら `SMTP_CA_BUNDLE` に CA のファイルを、どうしても検証できなければ `SMTP_TLS_VERIFY=false` を設定する（起動時に WARNING が出る）
+  - `SMTP_CA_BUNDLE` に指定したファイルがないと起動しない。Docker では、CA のファイルをコンテナに読み取り専用でマウントし（compose なら `volumes:` に `./certs/smtp-ca.pem:/etc/vea/smtp-ca.pem:ro`）、`SMTP_CA_BUNDLE` にはコンテナの中のパス（`/etc/vea/smtp-ca.pem`）を指定する。ファイルはコンテナの実行ユーザー（UID 1000）が読める権限にする
 - **プラグインのワーカーには、許可した環境変数しか渡さなくなった。** プラグインが独自の環境変数（機密値など）を読む場合は、その名前を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` に書く。インデックスからのインストールでは `UV_INDEX_URL` などが効かなくなったので、`VEA_PLUGIN_INDEX_URL` で指定する。本番では `uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する
 - **Docker イメージで、アプリのコードと `.venv`（`/app`）を root の所有にした。** compose のテンプレートと、`docker run` で `/app/data` にボリュームをマウントしている場合は、そのまま動く。`/app` の下に他のファイルを書き込む構成なら、`/data` に移す
 - **SSH の接続先（リモートログの収集）は、接続の直前に名前解決し、ループバック・リンクローカル（メタデータ）・マルチキャスト・予約済み・未指定のアドレスに解決される名前には接続しなくなった**（RFC1918 は今までどおり）。SSH のホスト鍵の取得・セットアップのアクション・ESXi の一覧・vCenter の接続テストに rate limit（`RATE_LIMIT_PROBE_PER_MINUTE`、既定 20 回/分）がかかる。同梱のリモートログのプラグイン 0.3.0 は plugin-api 1.5 以降が必要
