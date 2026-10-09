@@ -69,7 +69,7 @@
 - インストーラにインデックスの資格情報を渡さない（PR #270 の Codex レビューの指摘）
   - sdist はインストールのときにビルドされ、ビルドバックエンド（`setup.py` など）が同じ環境で動く。`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_EXTRA_INDEX_URL`・`UV_INDEX_<名前>_USERNAME`/`_PASSWORD`・`PIP_INDEX_URL`・`PIP_EXTRA_INDEX_URL` などを通すと、ビルドのコードが読めてしまう
   - 今は `VEA_PLUGIN_INDEX_URL` を `--index-url` でコマンドラインに渡しているので、URL に資格情報（`https://user:pass@...`）があればビルドのコードから `/proc/<uv の pid>/cmdline` で読める
-  - そのため、資格情報のあるインデックスを使うとき（`VEA_PLUGIN_INDEX_URL` にユーザー情報があるとき）は `--no-build` を付けて wheel だけを入れる。資格情報のないインデックスと、オフラインのアップロード（`--no-index`）では今までどおり sdist も入れられる。インデックスからのインストールを許可しているときは、アップロードの依存も `VEA_PLUGIN_INDEX_URL` から解決する（今までは渡しておらず、uv の既定のインデックスを使っていた）
+  - そのため、資格情報のあるインデックスを使うとき（`VEA_PLUGIN_INDEX_URL` にユーザー情報があるとき）は `--no-build` を付けて wheel だけを入れる。資格情報のないインデックスと、オフラインのアップロード（`--no-index`）では今までどおり sdist も入れられる。インデックスからのインストールを許可しているときは、アップロードの依存も `VEA_PLUGIN_INDEX_URL` から解決する（今までは渡しておらず、uv の既定のインデックスを使っていた）。資格情報付きのインデックスでは、アップロードした sdist はビルドが要るので `--no-build` を付けられない。インデックスを使わない経路（`--no-index --no-deps`）で入れる（PR #273 の Codex レビューの指摘）
   - `HOME` の `~/.netrc` などのファイルは、同じ UID なら読める。ドキュメントで、資格情報のファイルをアプリの実行ユーザーの `HOME` に置かないよう伝える
   - プラグインの設定 `VEA_COLLECTOR__<ID>__*` は渡さない（実装時に確認。本体が解決して要求の `context.config` で渡すので、ワーカーには要らない）
   - プラグインが独自の環境変数（機密値など）を読む場合に備え、`VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（カンマ区切り）に書いた名前だけをワーカーに渡す

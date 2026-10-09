@@ -393,7 +393,7 @@ TLS:
 - admin ロールは信頼できる利用者だけに付与する（`vcenter-event-assistant-admin list-users` で定期的に確認する）
 - `VEA_PLUGIN_ALLOW_INDEX_INSTALL` は原則 `false` のままにし、アップロード経路のみを使う
   （`true` にすると実行時に外部インデックスから取得するため、サプライチェーンリスクが増える）
-- インデックスは `VEA_PLUGIN_INDEX_URL` で指定する。`UV_INDEX_URL` などの uv の環境変数はインストーラに渡さない。URL に資格情報を含めると、wheel だけを入れる（`--no-build`）
+- インデックスは `VEA_PLUGIN_INDEX_URL` で指定する。`UV_INDEX_URL` などの uv の環境変数はインストーラに渡さない。URL に資格情報を含めると、wheel だけを入れる（`--no-build`）。そのときアップロードした sdist は、インデックスを使わずに入れる（依存は解決されない）
 - `VEA_PLUGIN_DIR` を永続ボリュームに割り当てる（コンテナ入れ替えでインストール済みプラグインが消えないようにする）
 - 本番で有効化すると起動時に WARNING が出ます（`security_startup.py`）。ログで有効化を検知できます。
 

@@ -224,3 +224,31 @@ def test_harden_process_is_a_no_op_off_linux(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(process_hardening.sys, "platform", "darwin")
     assert process_hardening.harden_process(_settings()) is False
+
+
+def test_sdist_upload_does_not_use_a_credentialed_index(tmp_path) -> None:
+    # sdist はビルドが要るので --no-build は付けられない。資格情報を渡さないよう、
+    # インデックスを使わないオフラインの経路で入れる（PR #273 の Codex レビューの指摘）。
+    settings = _settings(
+        plugin_allow_index_install=True,
+        plugin_index_url="https://user:pass@mirror.example/simple",
+        uv_bin="/usr/bin/uv",
+    )
+    command = _install_command(settings, tmp_path, str(tmp_path / "pkg-0.1.0.tar.gz"), from_index=False)
+    assert "--index-url" not in command
+    assert "--no-build" not in command
+    assert "--no-index" in command
+    assert "--no-deps" in command
+    assert not any("pass@" in part for part in command)
+
+
+def test_sdist_upload_uses_an_index_without_credentials(tmp_path) -> None:
+    settings = _settings(
+        plugin_allow_index_install=True,
+        plugin_index_url="https://mirror.example/simple",
+        uv_bin="/usr/bin/uv",
+    )
+    command = _install_command(settings, tmp_path, str(tmp_path / "pkg-0.1.0.tar.gz"), from_index=False)
+    assert command[command.index("--index-url") + 1] == "https://mirror.example/simple"
+    assert "--no-build" not in command
+    assert "--no-index" not in command

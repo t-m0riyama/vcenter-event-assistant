@@ -111,16 +111,23 @@ def _install_command(
         "--python",
         _python_executable(),
     ]
-    if from_index or settings.plugin_allow_index_install:
+    # sdist のビルドバックエンドは uv と同じ UID で動き、uv のコマンドライン
+    # （/proc/<pid>/cmdline）からインデックスの資格情報を読める（監査 M-1）。
+    credentialed = _index_has_credentials(settings.plugin_index_url)
+    # アップロードした sdist はビルドが要るので、資格情報付きのインデックスには渡さず、
+    # インデックスを使わない経路で入れる（依存は解決されない）。
+    local_sdist = not from_index and source.endswith(_SDIST_SUFFIX)
+    use_index = from_index or (
+        settings.plugin_allow_index_install and not (local_sdist and credentialed)
+    )
+    if use_index:
         # アップロードでも依存はインデックスから解決するので、同じインデックスを使う。
         if settings.plugin_index_url:
             command += ["--index-url", settings.plugin_index_url]
-        if _index_has_credentials(settings.plugin_index_url):
-            # sdist のビルドバックエンドは uv と同じ UID で動き、uv のコマンドライン
-            # （/proc/<pid>/cmdline）からインデックスの資格情報を読める（監査 M-1）。
+        if credentialed:
             # 資格情報があるときは wheel だけを入れる。
             command.append("--no-build")
-    if not from_index and not settings.plugin_allow_index_install:
+    else:
         # アップロード経路は既定でネットワークへ出ないため、依存解決もできない。
         # `--no-deps` を付けないと、正しく `vcenter-event-assistant-plugin-api` を
         # 宣言したプラグインすら「解決できない」で失敗する。この API パッケージは
