@@ -336,13 +336,17 @@ def test_proxy_without_credentials_is_passed(monkeypatch: pytest.MonkeyPatch) ->
         ("user:pass@proxy:8080", True),
         ("user@proxy", True),
         ("//user:pass@proxy:8080", True),
-        # エンコードしていない "/" を含むパスワード。
+        # エンコードしていない "/" を含むパスワード。ホストの後ろにパスがあっても見逃さない
+        # （PR #273 の Codex レビューの指摘）。
         ("user:pa/ss@proxy:8080", True),
         ("http://user:pa/ss@proxy:8080", True),
+        ("user:pa/ss@proxy:8080/", True),
+        ("http://user:pa/ss@proxy:8080/path", True),
         ("http://proxy:8080", False),
         ("proxy:8080", False),
-        ("https://mirror.example/simple/@scope/pkg", False),
-        ("https://mirror.example/simple?user=a@b", False),
+        ("https://mirror.example/simple/", False),
+        # "@" がどこにあっても資格情報とみなす。誤判定は安全側（wheel だけ・プロキシを渡さない）に倒れる。
+        ("https://mirror.example/simple/@scope/pkg", True),
         ("", False),
         (None, False),
     ],
