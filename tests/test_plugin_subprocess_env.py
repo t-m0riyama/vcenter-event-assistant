@@ -390,6 +390,10 @@ def _fake_parent(tmp_path, *, uid: int, environ: bytes, pid: int = 4242):
         (True, b"PATH=/usr/bin\0https_proxy=http://u:p@proxy:8080\0", True),
         (True, b"PATH=/usr/bin\0VCENTER_HTTP_PROXY=u:p@proxy:8080\0", True),
         (True, b"PATH=/usr/bin\0UV_INDEX_URL=https://u:p@pypi.example/simple\0", True),
+        # 名前の形（末尾が PROXY・_URL など）で判定するので、一覧にない変数も対象になる。
+        (True, b"PATH=/usr/bin\0search_http_proxy=http://u:p@proxy:8080\0", True),
+        (True, b"PATH=/usr/bin\0LLM_CHAT_BASE_URL=https://u:p@llm.example/v1\0", True),
+        (True, b"PATH=/usr/bin\0LANGSMITH_ENDPOINT=https://u:p@ls.example\0", True),
         (True, b"PATH=/usr/bin\0HTTPS_PROXY=http://proxy:8080\0VEA_PLUGIN_INDEX_URL=https://pypi.example\0", False),
         (True, b"PATH=/usr/bin\0HOME=/home/app\0", False),
         (False, b"PATH=/usr/bin\0VEA_SECRET_KEY=k\0", False),

@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-09（PR1・PR2 マージ済み。PR3a は PR #273 でレビュー中。7 回目の指摘 2 件にも対応し、8 回目の再レビューを待つところ）
+最終更新: 2026-10-09（PR1・PR2・PR3a マージ済み。PR3a（PR #273）は 8 回目の指摘にも対応し、利用者の判断で再レビューなしでマージした。次は PR3b）
 
 ## Context
 
@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
 | 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
-| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | レビュー中 [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 7 回。指摘 10 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
+| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | マージ済み [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 8 回。指摘 11 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 未着手 |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
@@ -77,21 +77,22 @@
 - `installer._install_command`: インデックスかプロキシに資格情報があるときは `--no-build` で wheel だけを入れる。sdist のビルドのコードは、uv のコマンドライン（`/proc/<pid>/cmdline`）と環境変数を読めるため。その場合、アップロードした sdist はインデックスを使わずに入れる（`--no-index --no-deps`、依存は解決されない）。インデックスからのインストールを許可しているときは、アップロードの依存も `VEA_PLUGIN_INDEX_URL` から解決する（今までは渡しておらず、uv の既定のインデックスを使っていた）
 - `process_hardening.py`（起動時に `main.lifespan` から呼ぶ）
   - `harden_process`: Linux で本体のプロセスを `prctl(PR_SET_DUMPABLE, 0)` にする。同じ UID のワーカーから `/proc/<pid>/environ` やメモリを読めなくなる。コアダンプが出なくなり、root 以外のデバッガ（py-spy など）も接続できなくなるので、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`）で切れる
-  - `warn_if_parent_keeps_secrets`: 親プロセスが同じ UID で、秘密らしい名前の環境変数（大文字と小文字を区別しない）か、資格情報を含むプロキシ・インデックスの URL を持っていれば WARNING を出す（値は出さない）。`uv run` や同じ UID のプロセス管理ツールから起動すると、親が起動時の環境を持ったまま残り、ワーカーが `/proc/<親>/environ` を読めるため。Docker イメージは exec で起動するので影響しない
+  - `warn_if_parent_keeps_secrets`: 親プロセスが同じ UID で、秘密らしい名前の環境変数（大文字と小文字を区別しない）か、名前の末尾が `PROXY`・`_URL`・`_URI`・`_ENDPOINT`・`_INDEX` で値に資格情報を含む変数を持っていれば WARNING を出す（値は出さない。名前による目安で、すべての秘密は見つけられない）。`uv run` や同じ UID のプロセス管理ツールから起動すると、親が起動時の環境を持ったまま残り、ワーカーが `/proc/<親>/environ` を読めるため。Docker イメージは exec で起動するので影響しない
 - ドキュメント: `docs/collector-plugins.md`（「プロセス分離」「動的インストール」）、`docs/backend-operations.md`（設定の一覧、4.1、アップグレードの注意の 4.2 の 7）、`docs/getting-started.md`（`uv run` は開発用）、`.env.example`
 - 現在のバージョンの制約（ドキュメントに書いた。利用者の判断）: インストールの間、uv が使う資格情報（インデックスとプロキシ）は uv のコマンドラインと環境変数に載り、既に動いているワーカーが `/proc/<uv の pid>/` から読める。同じ UID では防げないので、資格情報の要らない社内ミラーを勧め、将来、インストーラやワーカーを別の UID に分けることを検討する
 
 ### PR3a のレビューの経過
 
-- Codex のレビューは 7 回（`e1d209c`〜`0d5ed05`）
+- Codex のレビューは 8 回（`e1d209c`〜`388b1ca`）
   - `e1d209c`: 資格情報付きのインデックスで、アップロードした sdist にも `--no-build` が付いて必ず失敗する（P2）→ `1a58692` でオフラインの経路に
   - `1a58692`: 資格情報付きのプロキシが子プロセスに渡る（P1）→ `aeb2c47` で対応。インストール中に uv の `/proc/<pid>/cmdline`・`environ` を既存のワーカーが読める（P1）→ 同じ UID では防げないので、制約としてドキュメントに書いた
   - `aeb2c47`: スキームのないプロキシ（`user:pass@proxy:8080`）の資格情報を見逃す（P1）→ `6d01825`
   - `6d01825`: ホストの後ろにパスがあると見逃す（P1）→ `2bc79b0` で「`@` があれば資格情報あり」に単純化
   - `2bc79b0`: `uv run` などの親プロセスが秘密を持ったまま残る（P1）→ `20d7a13` で起動時の警告とドキュメント
   - `20d7a13`: 下の 2 件（P2）→ 利用者の判断で両方直した（`0d5ed05`）
-  - `0d5ed05`: 資格情報を含む URL の変数（`VEA_PLUGIN_INDEX_URL`・プロキシ・`VCENTER_HTTP_PROXY`）を親の警告で見逃す（P2）→ 名前を決めて持ち、値を `url_has_credentials` で判定する。同じユーザーで動き続けるプロセス管理ツールに exec を勧めたのは誤り（P2。前回書き足した案内）→ 別のユーザーで動かすか秘密を持たせない、に直した。どちらも利用者の判断で直した
-- 指摘への対応の繰り返しは、利用者の判断で `20d7a13` で区切った。8 回目の再レビューで P2 以下の指摘が出たら、制約としてドキュメントに書いてマージする
+  - `0d5ed05`: 資格情報を含む URL の変数（`VEA_PLUGIN_INDEX_URL`・プロキシ・`VCENTER_HTTP_PROXY`）を親の警告で見逃す（P2）→ 名前を決めて持ち、値を `url_has_credentials` で判定する。同じユーザーで動き続けるプロセス管理ツールに exec を勧めたのは誤り（P2。前回書き足した案内）→ 別のユーザーで動かすか秘密を持たせない、に直した。どちらも利用者の判断で直した（`388b1ca`）
+  - `388b1ca`: `SEARCH_HTTP_PROXY` を見逃す（P2）。`FIRECRAWL_BASE_URL`・`LLM_*_BASE_URL`・`LANGSMITH_ENDPOINT` も同じく漏れていた → 名前の一覧をやめ、名前の末尾（`PROXY`・`_URL`・`_URI`・`_ENDPOINT`・`_INDEX`）と値の資格情報で判定する。警告は名前による目安で、出ないことは安全の保証にならない、とドキュメントに注記した。利用者の判断で、9 回目の再レビューは頼まずにマージした
+- 指摘への対応の繰り返しは、利用者の判断で `20d7a13` で区切った。その後も、レビューのたびに細かい指摘が続いたので、8 回目の対応で区切った
 - `20d7a13` の指摘（どちらも P2）と対応
   1. `process_hardening.py:27`: 親プロセスの秘密の名前を探す正規表現が大文字だけを見る。Settings は大文字と小文字を区別しないので、`database_url` などの小文字の名前では警告が出ない。見立て: 妥当。正規表現で大文字と小文字を区別しないようにすれば数行で直る。→ `re.IGNORECASE` を付け、小文字の名前のテストを足した
   2. `process_hardening.py:77`: 対話シェルから `.venv/bin/vcenter-event-assistant` を実行してもシェルは置き換わらない。警告とドキュメントでは `exec .venv/bin/vcenter-event-assistant` と明示すべき。見立て: おおむね妥当（シェルの起動後に `export` した値は `/proc/<pid>/environ` に載らないが、起動時から持つ秘密は載る）。警告の文言と 3 つのドキュメントの例を書き換える。→ 警告と `docs/collector-plugins.md`・`docs/backend-operations.md`・`docs/getting-started.md` の例を `exec .venv/bin/vcenter-event-assistant` にした

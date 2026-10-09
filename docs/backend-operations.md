@@ -394,7 +394,7 @@ TLS:
 - `VEA_PLUGIN_ALLOW_INDEX_INSTALL` は原則 `false` のままにし、アップロード経路のみを使う
   （`true` にすると実行時に外部インデックスから取得するため、サプライチェーンリスクが増える）
 - インデックスは `VEA_PLUGIN_INDEX_URL` で指定する。`UV_INDEX_URL` などの uv の環境変数はインストーラに渡さない。URL かプロキシの環境変数に資格情報を含めると、wheel だけを入れる（`--no-build`）。そのときアップロードした sdist は、インデックスを使わずに入れる（依存は解決されない）
-- 本番ではアプリを `exec` で起動する（`uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する。`exec` を付けずに対話シェルから実行すると、シェルが親として残る。Docker イメージはそうなっている）。同じユーザーの親プロセスが秘密の環境変数（資格情報を含むプロキシやインデックスの URL も）を持ったまま残ると、プラグインから読める。動き続けるプロセス管理ツールは exec では解決しないので、別のユーザー（root の systemd など）で動かすか、秘密を持たせない。起動時に `the parent process ... keeps secret environment variables` の WARNING が出たら起動方法を見直す
+- 本番ではアプリを `exec` で起動する（`uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する。`exec` を付けずに対話シェルから実行すると、シェルが親として残る。Docker イメージはそうなっている）。同じユーザーの親プロセスが秘密の環境変数（資格情報を含むプロキシやインデックスの URL も）を持ったまま残ると、プラグインから読める。動き続けるプロセス管理ツールは exec では解決しないので、別のユーザー（root の systemd など）で動かすか、秘密を持たせない。この警告は変数の名前で判定する目安で、すべての秘密を見つけられるわけではない（判定の条件は [コレクタプラグイン](collector-plugins.md) の「起動方法の注意」）。起動時に `the parent process ... keeps secret environment variables` の WARNING が出たら起動方法を見直す
 - インデックスやプロキシの資格情報は、インストールの間、既に動いているプラグインから読める（現在のバージョンの制約。`docs/collector-plugins.md` の「プロセス分離」）。資格情報の要らない社内ミラーを、接続元を制限して使うことを勧める
 - `VEA_PLUGIN_DIR` を永続ボリュームに割り当てる（コンテナ入れ替えでインストール済みプラグインが消えないようにする）
 - 本番で有効化すると起動時に WARNING が出ます（`security_startup.py`）。ログで有効化を検知できます。

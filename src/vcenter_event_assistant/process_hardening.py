@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-from vcenter_event_assistant.plugins.subprocess_env import PROXY_ENV_VARS, url_has_credentials
+from vcenter_event_assistant.plugins.subprocess_env import url_has_credentials
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -29,20 +29,11 @@ _SECRET_ENV_NAME_RE = re.compile(
     r"VEA_SECRET_KEY|DATABASE_URL|[A-Z0-9_]*(?:PASSWORD|API_KEY|SECRET|TOKEN)",
     re.IGNORECASE,
 )
-# 値に資格情報（``user:pass@``）を含むときだけ危ない URL の変数（大文字で比べる）。
-_CREDENTIAL_URL_ENV_NAMES = frozenset(
-    {name.upper() for name in PROXY_ENV_VARS}
-    | {
-        "VCENTER_HTTP_PROXY",
-        "VEA_PLUGIN_INDEX_URL",
-        "UV_INDEX_URL",
-        "UV_EXTRA_INDEX_URL",
-        "UV_DEFAULT_INDEX",
-        "UV_INDEX",
-        "PIP_INDEX_URL",
-        "PIP_EXTRA_INDEX_URL",
-    }
-)
+# 値に資格情報（``user:pass@``）を含むときだけ危ない URL の変数。``HTTP_PROXY``・
+# ``SEARCH_HTTP_PROXY``・``VEA_PLUGIN_INDEX_URL``・``UV_DEFAULT_INDEX``・``LLM_CHAT_BASE_URL``・
+# ``LANGSMITH_ENDPOINT`` など。名前を 1 つずつ並べると漏れるので、名前の形で判定する。
+# 関係のない変数を拾っても、出るのは警告だけ。
+_CREDENTIAL_URL_ENV_NAME_RE = re.compile(r".*(?:PROXY|_URL|_URI|_ENDPOINT|_INDEX)", re.IGNORECASE)
 
 
 def _secret_env_names(environ: bytes) -> list[str]:
@@ -53,7 +44,7 @@ def _secret_env_names(environ: bytes) -> list[str]:
         if not sep:
             continue
         if _SECRET_ENV_NAME_RE.fullmatch(name) or (
-            name.upper() in _CREDENTIAL_URL_ENV_NAMES and url_has_credentials(value)
+            _CREDENTIAL_URL_ENV_NAME_RE.fullmatch(name) and url_has_credentials(value)
         ):
             names.add(name)
     return sorted(names)
