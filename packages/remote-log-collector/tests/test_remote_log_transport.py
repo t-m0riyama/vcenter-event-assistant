@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from vea_remote_log_collector import transport
 from vea_remote_log_collector.config import Source, sources_from_config
 from vea_remote_log_collector.transport import LogFileChanged, RemoteFile, SSHReader, ShellAccessError, open_reader
 
@@ -13,6 +14,12 @@ def source(product="esxi"):
     return Source(
         "s", uuid4(), product, "host.local", 22, "reader", "/keys/id", "/keys/hosts"
     )
+
+
+def _resolve_to(address):
+    async def resolve(host, port):
+        return address
+    return resolve
 
 
 class Connection:
@@ -170,6 +177,7 @@ async def test_ssh_connection_uses_only_explicit_keys_and_strict_host_verificati
         return Context()
 
     monkeypatch.setitem(sys.modules, "asyncssh", SimpleNamespace(connect=connect))
+    monkeypatch.setattr(transport, "resolve_ssh_address", _resolve_to("192.0.2.10"))
     async with open_reader(source()):
         pass
     assert options["known_hosts"] == "/keys/hosts"
@@ -178,6 +186,60 @@ async def test_ssh_connection_uses_only_explicit_keys_and_strict_host_verificati
     assert options["password_auth"] is False
     assert options["kbdint_auth"] is False
     assert closed
+
+
+
+def _capture_connect(monkeypatch):
+    calls = []
+
+    class Context:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *args):
+            return None
+
+    def connect(host, **kwargs):
+        calls.append({"host": host, **kwargs})
+        return Context()
+
+    monkeypatch.setitem(sys.modules, "asyncssh", SimpleNamespace(connect=connect))
+    return calls
+
+
+async def test_connects_to_the_checked_address_even_if_dns_answers_change(monkeypatch):
+    # 監査 M-3（Issue #237）。名前のまま接続すると、asyncssh がもう一度名前解決し、
+    # 2 回目の答え（ループバック）に接続してしまう（DNS rebinding）。
+    import socket
+
+    from vcenter_event_assistant_plugin_api import network
+
+    answers = [["10.0.0.5"], ["127.0.0.1"]]
+
+    async def getaddrinfo(host, port):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (answers.pop(0)[0], port))]
+
+    monkeypatch.setattr(network, "_getaddrinfo", getaddrinfo)
+    calls = _capture_connect(monkeypatch)
+    async with open_reader(Source("s", uuid4(), "esxi", "esxi.example.com", 2222, "reader", "/k", "/h")):
+        pass
+    assert len(calls) == 1
+    assert calls[0]["host"] == "10.0.0.5"
+    assert calls[0]["port"] == 2222
+    # ホスト鍵は元のホスト名で照合する（known_hosts は [esxi.example.com]:2222 の行）。
+    assert calls[0]["host_key_alias"] == "esxi.example.com"
+
+
+async def test_does_not_connect_to_a_name_that_resolves_to_a_blocked_address(monkeypatch):
+    async def resolve(host, port):
+        raise ValueError("blocked")
+
+    monkeypatch.setattr(transport, "resolve_ssh_address", resolve)
+    calls = _capture_connect(monkeypatch)
+    with pytest.raises(ValueError):
+        async with open_reader(source()):
+            pass
+    assert calls == []
 
 
 def test_config_requires_stable_ids_key_files_and_known_hosts(tmp_path):

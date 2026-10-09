@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-09（PR1・PR2・PR3a マージ済み。PR3b は PR #275 でレビュー中。残りは Issue #274）
+最終更新: 2026-10-10（PR1〜PR3b マージ済み。Issue #235 は閉じ、残りは Issue #274。PR4 は実装済みで PR の作成前）
 
 ## Context
 
@@ -17,8 +17,8 @@
 | 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
 | 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
 | 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | マージ済み [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 8 回。指摘 11 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
-| 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | レビュー中 [PR #275](https://github.com/t-m0riyama/vcenter-event-assistant/pull/275)（Codex の指摘 1 件（`ENV` が `.env` より優先される）に対応。下の「PR3b」。残りは Issue #274） |
-| 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
+| 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | マージ済み [PR #275](https://github.com/t-m0riyama/vcenter-event-assistant/pull/275)（Codex の指摘 1 件（`ENV` が `.env` より優先される）に対応し、再レビューで指摘なし。Issue #235 は閉じ、残りは Issue #274） |
+| 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 実装済み・PR 作成前（下の「PR4」。ブランチ `fix/ssh-ssrf-rate-limit`） |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。Codex のレビューは今までと同じ進め方（PR 作成時に自動。直したら「@codex review」に観点を添えて依頼）。
@@ -160,15 +160,81 @@
 
 ## PR4: SSRF と rate limit（Issue #237）
 
-- SSH の接続先は、名前解決して検証した IP に接続する（`services/vcenter_host_validation.validate_vcenter_host(..., resolve_dns=True)` と同じ判定）。検証の後に名前で接続すると、もう一度名前解決が起き、DNS の応答を操作できる攻撃者は、検証にはグローバルな IP、接続にはループバックを返せる（DNS rebinding。PR #270 の Codex レビューの指摘）
-  - 拒否するもの: ループバック・リンクローカル・メタデータ・マルチキャスト・予約済み・未指定。RFC1918 は今と同じく許す
-  - ホスト鍵の照合は元のホスト名で行う。asyncssh の `host_key_alias` にホスト名を渡し、接続先には検証した IP を渡す（known_hosts の行はホスト名のまま使える）
-  - 本体の経路: `api/routes/plugin_setup.py` の host-key の probe（`asyncssh.get_server_host_key`）・セットアップのアクション・ホストの一覧
-  - ワーカーの経路: 同梱のプラグイン `packages/remote-log-collector` の `transport.open_reader`（`asyncssh.connect`）。ワーカーの中で名前解決して検証し、その IP に接続する（本体で解決した IP を渡しても、収集までの間に DNS が変わるので、接続する側で解決と検証を 1 回で済ませるのが確実）。判定は本体の関数を使えないので、プラグイン API のパッケージに置くか、プラグインの中に持つかは実装時に決める
-  - 第三者のプラグインが自分で接続する経路は強制できない。PR3b の脅威モデルに書く
-- ポート: 設定で許すポートを絞れるようにする。既定は制限なし（既定を 22 だけにすると既存の設定が壊れ得るため）
-- rate limit: `main.py` の `RateLimitMiddleware` の照合を、完全一致に加えてパターン（パスの部品の一致）にも対応させ、`/api/plugins/ssh/connections/*/host-key`・`/api/plugins/collectors/*/draft/actions/*`・`/api/vcenters/*/hosts` を加える。GET が対象なら、メソッドの条件も見直す。バケットは既存の `plugins` を使うか、新しく設けるかは実装時に決める
-- テスト: ループバックに解決されるホスト名（名前解決を差し替える）を拒否すること、RFC1918 は通ること、1 回目と 2 回目で名前解決の答えが変わっても検証した IP に接続すること（asyncssh に渡す引数で確かめる）、`host_key_alias` にホスト名が渡ること、パターンの rate limit が効くこと（`VEA_PYTEST=1` で無効になる点に注意し、テストでは有効にする）
+### 今の状態（2026-10-09 に調べた）
+
+- SSH の接続先の登録（`api/routes/plugin_setup.py` の `validate_host`）は、IP リテラルならループバック・リンクローカル・マルチキャスト・未指定・予約済みを拒否し、名前なら `validate_vcenter_host(..., resolve_dns=False)` で形とサフィックスだけを見る。名前解決しないので、`127.0.0.1` や `169.254.169.254` に解決される名前で拒否を迂回できる
+- 接続する箇所は 2 つで、どちらも名前のまま接続し、解決後の IP を検証しない
+  - 本体: host-key の probe（`probe_host_key` の `asyncssh.get_server_host_key(row.host, row.port)`）
+  - ワーカー: 同梱のプラグイン `packages/remote-log-collector` の `transport.open_reader`（`asyncssh.connect(source.host, ...)`）。セットアップのアクション（`draft/actions/*`）も収集も、ワーカーの中でここを通る。接続情報は本体の `services/ssh_management.materialize_ssh` が DB から取り出し、known_hosts を `<host> <key>`（22 以外は `[<host>]:<port> <key>`）の形で一時ファイルに書いて渡す
+- `validate_vcenter_host` はサフィックスの設定がないと RFC1918 も拒否するので、SSH（ESXi は普通プライベートな IP）にはそのまま使えない
+- asyncssh 2.24 は `host_key_alias` を known_hosts の照合に使い、ポートが 22 以外なら `[<alias>]:<port>` で照合する。接続先に IP、`host_key_alias` にホスト名を渡せば、今の known_hosts の書き方のまま使える
+- ポートは 1〜65535 を自由に指定できる
+- rate limit（`main.py` の `RateLimitMiddleware`）は POST で、パスの完全一致（`_RATE_LIMITED_POST_PATHS`）だけ。Issue の本文の `/api/vcenters/*/hosts` は、実際は `GET /api/plugins/vcenters/{id}/hosts`
+- vCenter への接続（`collectors/connection.connect_vcenter`）は接続の直前に名前解決して検証するが、接続は名前で行う（pyVmomi に IP を渡すと TLS の証明書の検証ができない）。Issue #237 の対象外とし、この PR では変えない
+
+### 変更
+
+**接続先の検証（plugin-api に置く。利用者の判断）**
+
+- `packages/plugin-api` に `network` モジュールを足し、`vcenter-event-assistant-plugin-api` を 1.4.0 → 1.5.0 にする（関数の追加だけなので `PLUGIN_API_VERSION` は 1 のまま）
+  - `check_ssh_address(ip)`: ループバック・リンクローカル（メタデータの `169.254.169.254` を含む）・マルチキャスト・予約済み・未指定と、`fd00:ec2::254` を拒否する。RFC1918 と IPv6 の ULA は許す。IPv4 射影の IPv6（`::ffff:127.0.0.1`）は IPv4 に直してから判定する
+  - `async resolve_ssh_address(host, port) -> str`: IP リテラルならそのまま判定し、名前なら `loop.getaddrinfo` で解決し、解決した**すべて**の IP を判定する（1 つでも拒否なら拒否。`validate_vcenter_host` と同じ考え方）。通った最初の IP を返す。拒否は `ValueError`（値は接続先の名前だけ。解決した IP をメッセージに入れるかは実装時に決める）
+- 本体
+  - `validate_host`（登録時）の IP リテラルの判定を `check_ssh_address` に置き換える（判定を 1 か所にする）。名前の形とサフィックスの判定は今のまま
+  - `probe_host_key`: 接続の直前に `resolve_ssh_address` で解決・検証し、その IP に接続する。拒否したら 422（今の「ホスト鍵を取得できません」と分けて「この接続先には接続できません」のように返す）
+- 同梱のプラグイン（`packages/remote-log-collector`、0.2.0 → 0.3.0、依存を `vcenter-event-assistant-plugin-api>=1.5,<2` に）
+  - `open_reader`: `resolve_ssh_address(source.host, source.port)` で解決・検証し、`asyncssh.connect(<IP>, host_key_alias=source.host, ...)` で接続する。解決と接続を同じプロセスで続けて行うので、検証と接続の間に DNS の答えが変わっても、検証した IP に接続する
+- 第三者のプラグインが自分で接続する経路は強制できない。`docs/collector-plugins.md` の「脅威モデル」の「プラグインが自分で開く接続」に、`resolve_ssh_address` を使うよう勧める一文を足す。プラグインの作り方のドキュメント（plugin-api の README など）にも書く
+
+**ポートの制限**
+
+- `Settings` に `ssh_allowed_ports`（`VEA_SSH_ALLOWED_PORTS`、カンマ区切り。空なら制限なし＝既定）を足す。既定を 22 だけにすると既存の設定が壊れ得るため
+- 登録・更新（`create_connection`・`update_connection`）で拒否し（422）、probe と `materialize_ssh`（ワーカーに渡す直前）でも拒否する。設定を後から絞ったときに、登録済みの接続先にも効くようにするため。ワーカーには許可するポートを渡さない（本体が渡す接続情報だけを使うので）
+
+**rate limit**
+
+- `main.py` の照合を、`(メソッド, パスのパターン)` に広げる。パターンは `/` で区切った部品ごとの一致で、`*` は部品 1 つに一致する。既存の完全一致の POST はそのまま
+- 加えるもの（新しいバケット `probe`、`RATE_LIMIT_PROBE_PER_MINUTE`、既定 20/分。キーは今と同じくクライアントの IP ごと）
+  - `POST /api/plugins/ssh/connections/*/host-key`
+  - `POST /api/plugins/collectors/*/draft/actions/*`
+  - `GET /api/plugins/vcenters/*/hosts`
+  - `GET /api/vcenters/*/test`（vCenter の接続テスト。operator 以上が呼べる。利用者の判断で加える）
+- 429 の応答は今と同じ（`{"detail": "Too many requests"}`）。画面がこれをエラーとして表示できることを確かめる
+
+**ドキュメント**
+
+- `docs/backend-operations.md`: 設定の一覧に `VEA_SSH_ALLOWED_PORTS`・`RATE_LIMIT_PROBE_PER_MINUTE`。アップグレードの注意（4.2 の 9）に、SSH の接続先がループバックなどに解決される名前だと probe と収集が失敗するようになったことと、probe 系の API に rate limit がかかったこと
+- `docs/collector-plugins.md`: 上の「脅威モデル」の一文。同梱のプラグインの説明に、接続の直前に名前解決して検証すること
+- `.env.example`: 2 つの設定
+- plugin-api と remote-log-collector の CHANGELOG があれば追記する（なければ作らない）
+
+### テスト
+
+- plugin-api: `check_ssh_address` の許可・拒否の表（`127.0.0.1`・`::1`・`169.254.169.254`・`fe80::1`・`224.0.0.1`・`240.0.0.1`・`0.0.0.0`・`::`・`fd00:ec2::254`・`::ffff:127.0.0.1` は拒否、`10.0.0.1`・`192.168.1.1`・`172.16.0.1`・`fd12::1`・グローバルは許可）。`resolve_ssh_address` は `getaddrinfo` を差し替え、ループバックに解決される名前の拒否・RFC1918 の許可・複数の答えの 1 つが拒否なら拒否・解決できない名前
+- 本体: `probe_host_key` がループバックに解決される名前で 422 になり、`asyncssh.get_server_host_key` を呼ばないこと。許可される名前で、解決した IP が渡ること。ポートの制限（登録・更新・probe・`materialize_ssh`）
+- 同梱のプラグイン: `open_reader` が、1 回目と 2 回目で名前解決の答えが変わっても（1 回目だけを使うので）検証した IP で `asyncssh.connect` を呼ぶこと、`host_key_alias` に元のホスト名が渡ること、拒否される名前では接続しないこと（`asyncssh.connect` を差し替える）
+- rate limit: パターンの照合の単体テストと、各パスで上限を超えると 429 になること（`VEA_PYTEST` を外し、`RATE_LIMIT_PROBE_PER_MINUTE` を小さくする。`tests/test_auth_api.py` の `test_login_is_rate_limited` と同じ形）。対象外のパス（`/api/plugins/ssh/connections`）とメソッドが違うもの（`GET .../host-key` はない）が制限されないこと
+- 各テストが修正前のコードで失敗することを確かめる
+
+### 確認
+
+- `uv run pytest -n auto`、ruff、mypy。plugin-api と remote-log-collector のテストも（ワークスペースで一緒に走るか確かめる）
+- `cd frontend && npm test`（画面は変えない見込み。429 の表示だけ確かめる）
+- 手で: ローカルの SSH サーバ（例: `linuxserver/openssh-server` のコンテナ）を 2222 番で立て、接続先に登録して probe と承認、セットアップのアクションが通ること（`host_key_alias` で 22 以外のポートの known_hosts が照合されること）。`localhost` に解決される名前（例: `/etc/hosts` か、`127.0.0.1.nip.io` のような外部のワイルドカード DNS）を登録して probe が拒否されること。probe を続けて呼ぶと 429 になること
+- 公開: plugin-api 1.5.0 と remote-log-collector 0.3.0 の PyPI への公開は、今の公開の手順（人手の設定待ち）に従う。この PR では版を上げるだけ
+
+### 実装と確認の結果（2026-10-10）
+
+- 上の「変更」のとおりに実装した。違いは次のとおり
+  - 拒否の理由は `ValueError` のメッセージに入れる（`connections to loopback addresses are not allowed` など）。解決した IP そのものは入れない。probe は 422 で「この接続先には接続できません。ホスト名の名前解決の結果を確認してください。」を返す
+  - 名前解決は `network._getaddrinfo`（`loop.getaddrinfo`）を通し、テストではここを差し替える
+  - 同梱のプラグインの既存の結合テスト（`test_remote_log_ssh_integration.py`、本物の asyncssh のサーバ）は `127.0.0.1` に接続していたので、名前（`esxi.test`）で接続し、名前解決だけを差し替えて `127.0.0.1` に向ける形にした。known_hosts は `[esxi.test]:<port>` の行。`host_key_alias` を外すとこのテストが失敗することを確かめた（ポートが 22 以外でもホスト名で照合できる）
+  - 画面は変えていない。429 は汎用の「リクエストに失敗しました。時間をおいて再度お試しください。」になり、意味が通る
+- 確かめたこと
+  - `uv run pytest -n auto`（1535 件）、plugin-api と remote-log-collector のテスト、ruff、mypy
+  - 追加したテストは、実装前に失敗することを確かめた（plugin-api と同梱のプラグインと rate limit はモジュールや関数がない段階、本体の probe とポートは `resolve_ssh_address` を差し替えられない段階で失敗）
+  - Docker（compose の sqlite に `linuxserver/openssh-server` を足し、アプリのコンテナに `extra_hosts` で `evil.test` → `127.0.0.1`、`meta.test` → `169.254.169.254`）で、名前で登録した 3 つの接続先のうち、`sshd`（172.20.0.2、2222 番）はホスト鍵を取得でき、`evil.test` と `meta.test` は 422。`RATE_LIMIT_PROBE_PER_MINUTE=5` で 6 回目の probe が 429
+  - ワーカーの中のセットアップのアクションを、実際の SSH サーバに対して手で動かすことはしていない（vCenter の登録と、サーバへの公開鍵の配置が要るため）。同じ経路は、本物の asyncssh のサーバへの結合テストと、`open_reader` の単体テストで確かめた
 
 ## 保留（必要になったら）
 

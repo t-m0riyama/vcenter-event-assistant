@@ -157,6 +157,15 @@ class AppLogSettingsMixin(BaseModel):
     rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_plugins_per_minute: int = Field(default=10, ge=1, le=1000)
+    rate_limit_probe_per_minute: int = Field(
+        default=20,
+        ge=1,
+        le=1000,
+        description=(
+            "外へ接続して確かめる API（SSH のホスト鍵の取得、セットアップのアクション、ESXi の一覧、"
+            "vCenter の接続テスト）の 1 分あたりの上限（クライアントの IP ごと、``RATE_LIMIT_PROBE_PER_MINUTE``）。"
+        ),
+    )
     uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
     uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
@@ -188,6 +197,14 @@ class AppLogSettingsMixin(BaseModel):
         default=None,
         validation_alias=AliasChoices("collector_config_file", "VEA_COLLECTOR_CONFIG_FILE"),
         description="Optional TOML configuration for collector plugins (VEA_COLLECTOR_CONFIG_FILE).",
+    )
+    ssh_allowed_ports: str = Field(
+        default="",
+        validation_alias=AliasChoices("ssh_allowed_ports", "VEA_SSH_ALLOWED_PORTS"),
+        description=(
+            "SSH の接続先に許可するポート（カンマ区切り、``VEA_SSH_ALLOWED_PORTS``）。"
+            "空のときは制限しない。登録・ホスト鍵の取得・ワーカーへの受け渡しで確かめる。"
+        ),
     )
     plugin_dir: str = Field(
         default="data/plugins",
@@ -279,6 +296,19 @@ class AppLogSettingsMixin(BaseModel):
     def vcenter_allowed_host_suffix_list(self) -> list[str]:
         """``VCENTER_ALLOWED_HOST_SUFFIXES`` をリスト化。"""
         return [s.strip() for s in self.vcenter_allowed_host_suffixes.split(",") if s.strip()]
+
+    @property
+    def ssh_allowed_port_list(self) -> list[int]:
+        """``VEA_SSH_ALLOWED_PORTS`` をリスト化。空なら制限なし。"""
+        return [int(p) for p in self.ssh_allowed_ports.split(",") if p.strip()]
+
+    @field_validator("ssh_allowed_ports")
+    @classmethod
+    def _validate_ssh_allowed_ports(cls, value: str) -> str:
+        for part in value.split(","):
+            if part.strip() and not (part.strip().isdigit() and 1 <= int(part) <= 65535):
+                raise ValueError("VEA_SSH_ALLOWED_PORTS must be comma-separated port numbers (1-65535)")
+        return value
 
     @property
     def effective_chat_preview_enabled(self) -> bool:

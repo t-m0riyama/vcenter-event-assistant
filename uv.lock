@@ -2143,7 +2143,7 @@ dev = [
 
 [[package]]
 name = "vcenter-event-assistant-plugin-api"
-version = "1.4.0"
+version = "1.5.0"
 source = { editable = "packages/plugin-api" }
 
 [package.optional-dependencies]
@@ -2157,7 +2157,7 @@ provides-extras = ["vmware"]
 
 [[package]]
 name = "vea-remote-log-collector"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/remote-log-collector" }
 dependencies = [
     { name = "asyncssh" },

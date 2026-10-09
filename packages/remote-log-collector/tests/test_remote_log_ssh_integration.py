@@ -5,6 +5,7 @@ import gzip
 
 import pytest
 
+from vea_remote_log_collector import transport
 from vea_remote_log_collector.config import Source
 from vea_remote_log_collector.transport import open_reader
 from uuid import uuid4
@@ -45,7 +46,7 @@ async def execute(process):
 
 
 @pytest.mark.parametrize("product", ["esxi", "vcenter"])
-async def test_real_key_authentication_verified_host_and_binary_ranges(tmp_path, product):
+async def test_real_key_authentication_verified_host_and_binary_ranges(tmp_path, monkeypatch, product):
     server_key = asyncssh.generate_private_key("ssh-ed25519")
     client_key = asyncssh.generate_private_key("ssh-ed25519")
     key_file = tmp_path / "id"
@@ -60,14 +61,23 @@ async def test_real_key_authentication_verified_host_and_binary_ranges(tmp_path,
         encoding=None,
     )
     port = server.get_port()
+
+    # The checked address is used for the connection; loopback is rejected in
+    # production, so point the name at the local server only here. The known_hosts
+    # line keeps the name and a non-default port, as materialize_ssh writes it.
+    async def resolve(host, resolved_port):
+        assert (host, resolved_port) == ("esxi.test", port)
+        return "127.0.0.1"
+
+    monkeypatch.setattr(transport, "resolve_ssh_address", resolve)
     hosts = tmp_path / "known_hosts"
-    hosts.write_bytes(f"[127.0.0.1]:{port} ".encode() + server_key.export_public_key())
+    hosts.write_bytes(f"[esxi.test]:{port} ".encode() + server_key.export_public_key())
     data_file = tmp_path / "test.log"
     data_file.write_bytes(("日本語\n" * 100).encode())
     compressed_file = tmp_path / "test.log.gz"
     compressed_file.write_bytes(gzip.compress(data_file.read_bytes()))
     source = Source(
-        "s", uuid4(), product, "127.0.0.1", port, "reader", str(key_file), str(hosts)
+        "s", uuid4(), product, "esxi.test", port, "reader", str(key_file), str(hosts)
     )
     try:
         async with open_reader(source) as reader:

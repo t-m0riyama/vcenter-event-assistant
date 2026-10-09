@@ -2,12 +2,14 @@
 
 VEA-provided, bundled collector `vea.remote.logs` for vCenter Event Assistant.
 The collector runs in an independent worker and collects ESXi and vCenter logs.
-Requires plugin-api **1.4 or later**, Python 3.12+, and AsyncSSH 2.24+.
+Requires plugin-api **1.5 or later**, Python 3.12+, and AsyncSSH 2.24+.
 The application must include the remote-log storage migration and search API.
 
 Reads ESXi 8 `vmkernel`, `hostd`, `vpxa`, and vCenter 8 `vpxd` through SSH.
 Uses explicit key authentication and known_hosts verification, fixed read-only shell
-commands, and no vCenter API session, remote agent installation, SFTP dependency,
+commands, a connection to the address resolved and checked right before connecting
+(loopback, link-local/cloud metadata, multicast, reserved and unspecified addresses
+are refused; the host key is still matched by the configured name), and no vCenter API session, remote agent installation, SFTP dependency,
 or changes to the server's default shell.
 
 For the standard application, this independent package and AsyncSSH are now
@@ -25,8 +27,8 @@ For plugin developers or custom application distributions:
 uv build --package vcenter-event-assistant-plugin-api
 uv build --package vea-remote-log-collector
 uv pip install --python /path/to/application/python \
-  dist/vcenter_event_assistant_plugin_api-1.4.0-py3-none-any.whl \
-  dist/vea_remote_log_collector-0.2.0-py3-none-any.whl
+  dist/vcenter_event_assistant_plugin_api-1.5.0-py3-none-any.whl \
+  dist/vea_remote_log_collector-0.3.0-py3-none-any.whl
 ```
 
 UI wheel upload continues to use `--no-deps`. For third-party/custom distributions,
