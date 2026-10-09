@@ -1,18 +1,107 @@
 """プラグイン関連の子プロセスに渡す環境変数。
 
-ワーカーやインストーラは第三者コードを実行するため、起動にしか使わない秘密は渡さない
-（監査 M-1 の一部対応）。
+ワーカーやインストーラは第三者のコード（プラグイン、sdist のビルドバックエンド）を実行する
+ため、親の環境変数をそのまま引き継がず、許可したものだけを渡す（監査 M-1、Issue #235）。
+``VEA_SECRET_KEY``・``DATABASE_URL``・LLM や SMTP の資格情報は渡さない。
+
+子プロセスの Settings は ``.env`` も読まない（``VEA_SETTINGS_IGNORE_DOTENV``）。ワーカーが
+必要とする設定は、``.env`` で指定されていても効くよう、親の Settings から値を取り出して渡す。
 """
 
 from __future__ import annotations
 
 import os
 
-# 子プロセスに引き継がない環境変数（大文字で比較）。
-# Settings は環境変数名の大文字小文字を区別せず、フィールド名の別名も受け付けるため、
-# 受け付けるすべての綴りを対象にする（``settings.AuthSettingsMixin.bootstrap_admin_password``）。
-WITHHELD_ENV_VARS = frozenset({"VEA_BOOTSTRAP_ADMIN_PASSWORD", "BOOTSTRAP_ADMIN_PASSWORD"})
+from vcenter_event_assistant.settings import Settings
+
+#: 子プロセスの Settings に ``.env`` を読ませない印（``settings._settings_env_file``）。
+IGNORE_DOTENV_ENV_VAR = "VEA_SETTINGS_IGNORE_DOTENV"
+
+# OS・Python・TLS・プロキシなど、秘密を含まない実行環境の変数。
+_RUNTIME_ENV_VARS = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LANGUAGE",
+        "TZ",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "SYSTEMROOT",
+        "VIRTUAL_ENV",
+        "PYTHONPATH",
+        "PYTHONIOENCODING",
+        "PYTHONUTF8",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "all_proxy",
+    }
+)
+_RUNTIME_ENV_PREFIXES = ("LC_",)
+
+# インストーラ（uv）だけに渡す変数。インデックスの URL と資格情報（UV_INDEX_URL、
+# UV_DEFAULT_INDEX、UV_INDEX_<名前>_PASSWORD など）は、sdist のビルドのコードから読めるので
+# 渡さない。インデックスは ``VEA_PLUGIN_INDEX_URL`` で指定する。
+_INSTALLER_ENV_VARS = frozenset(
+    {
+        "UV_CACHE_DIR",
+        "UV_NO_CACHE",
+        "UV_NATIVE_TLS",
+        "UV_HTTP_TIMEOUT",
+        "UV_CONCURRENT_DOWNLOADS",
+        "UV_CONCURRENT_BUILDS",
+        "UV_LINK_MODE",
+        "UV_OFFLINE",
+        "UV_NO_PROGRESS",
+        "XDG_CACHE_HOME",
+    }
+)
 
 
-def child_process_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k.upper() not in WITHHELD_ENV_VARS}
+def _runtime_env() -> dict[str, str]:
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name in _RUNTIME_ENV_VARS or name.startswith(_RUNTIME_ENV_PREFIXES)
+    }
+    env[IGNORE_DOTENV_ENV_VAR] = "1"
+    return env
+
+
+def _passthrough_names(settings: Settings) -> list[str]:
+    return [name.strip() for name in settings.plugin_worker_env_passthrough.split(",") if name.strip()]
+
+
+def worker_env(settings: Settings) -> dict[str, str]:
+    """コレクタワーカー（検出用を含む）に渡す環境変数。"""
+    env = _runtime_env()
+    # ワーカーが Settings で読む値（logging_config.configure_worker_logging と
+    # collectors.connection.connect_vcenter）。
+    env["LOG_LEVEL"] = settings.log_level
+    if settings.collector_worker_log_level:
+        env["VEA_COLLECTOR_WORKER_LOG_LEVEL"] = settings.collector_worker_log_level
+    env["VCENTER_ALLOWED_HOST_SUFFIXES"] = settings.vcenter_allowed_host_suffixes
+    for name in _passthrough_names(settings):
+        if name in os.environ:
+            env[name] = os.environ[name]
+    return env
+
+
+def installer_env() -> dict[str, str]:
+    """プラグインのインストーラ（``uv pip install``）に渡す環境変数。"""
+    env = _runtime_env()
+    env.update({name: value for name, value in os.environ.items() if name in _INSTALLER_ENV_VARS})
+    return env

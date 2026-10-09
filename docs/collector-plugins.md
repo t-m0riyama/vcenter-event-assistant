@@ -29,7 +29,9 @@ timeout_seconds = 60
 sensor = "system-board"
 ```
 
-プラグイン固有の機密値は、そのプラグインが所有し文書化した環境変数から読み取るべきです。共通
+プラグイン固有の機密値は、そのプラグインが所有し文書化した環境変数から読み取るべきです。ワーカーには
+許可した環境変数しか渡らないので、その変数名を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` に書きます（下の
+「プロセス分離」）。共通
 設定と単純なプラグイン値は、`VEA_COLLECTOR__<正規化したプラグインID>__ENABLED`、
 `__INTERVAL_SECONDS`、`__TIMEOUT_SECONDS`、`__<設定キー>` により TOML を上書きできます。
 ID 中のドットとハイフンはアンダースコアになります。たとえば
@@ -73,8 +75,8 @@ ID 中のドットとハイフンはアンダースコアになります。た�
 | TOML ファイル | すべて | `VEA_COLLECTOR_CONFIG_FILE`。 |
 | マニフェストの既定値 | `default_interval_seconds` | プラグインが宣言します。 |
 
-機密値は、そのプラグインが所有する環境変数に置きます。データベースや TOML ファイルには
-保存されません。
+機密値は、そのプラグインが所有する環境変数に置き、その名前を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` に
+書きます。データベースや TOML ファイルには保存されません。
 
 ## 動的インストール
 
@@ -87,6 +89,14 @@ ID 中のドットとハイフンはアンダースコアになります。た�
 パッケージインデックスから名前でインストールするには `VEA_PLUGIN_ALLOW_INDEX_INSTALL=true` が
 必要です（必要に応じて `VEA_PLUGIN_INDEX_URL` も）。サプライチェーンのリスクがあるため既定では
 無効です。要求指定は `<名前>` または `<名前>==<バージョン>` に限定されます。
+
+インデックスは `VEA_PLUGIN_INDEX_URL` で指定します。インストーラ（uv）には、インデックスの URL や
+資格情報を表す環境変数（`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_INDEX_<名前>_PASSWORD`・
+`PIP_INDEX_URL` など）を渡しません。sdist のビルドのコード（`setup.py` など）が読めてしまうためです。
+同じ理由で、`VEA_PLUGIN_INDEX_URL` に資格情報（`https://user:pass@...`）が含まれるときは `--no-build` で
+wheel だけを入れます。sdist しかないパッケージは、wheel を用意するかアップロードで入れてください。
+インデックスからのインストールを許可しているときは、アップロードしたパッケージの依存も同じ
+インデックスから解決します。
 
 オフラインのアップロードでは、インデックスがなく依存を解決できないため、パッケージ単体を
 インストールします（`--no-index --no-deps`）。これは、`vcenter-event-assistant-plugin-api` を正しく
@@ -128,6 +138,21 @@ vCenter への接続はワーカー側でアプリケーションが開き、プ
 これによりクラッシュ、ハング、依存の衝突が分離されます。ただし悪意あるコードに対する
 サンドボックスでは**ありません**。プラグインは、そのワーカーに渡された認証情報とワーカー
 プロセスを共有します。信頼できるパッケージのみをインストールしてください。
+
+ワーカーとインストーラには、アプリの環境変数をそのまま渡しません。渡すのは次のものだけです。
+
+- 実行環境: `PATH`・`HOME`・`LANG`・`LC_*`・`TZ`・`TMPDIR`・`SSL_CERT_FILE` などの証明書の場所・
+  プロキシ（`HTTP(S)_PROXY`・`NO_PROXY`）
+- ワーカーの設定: `LOG_LEVEL`・`VEA_COLLECTOR_WORKER_LOG_LEVEL`・`VCENTER_ALLOWED_HOST_SUFFIXES`。
+  `.env` で指定した値も、アプリが読んだ値を渡します
+- `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（カンマ区切り）に書いた名前の環境変数（ワーカーだけ）
+- インストーラだけ: 資格情報を含まない uv の設定（`UV_CACHE_DIR`・`UV_NATIVE_TLS`・`UV_HTTP_TIMEOUT` など）
+
+`VEA_SECRET_KEY`・`DATABASE_URL`・LLM や SMTP の資格情報は渡しません。ワーカーは `.env` も読みません。
+ただしワーカーはアプリと同じ OS のユーザーで動くので、そのユーザーが読めるファイル（`.env`、
+SQLite のデータベースファイルなど）は読めます。Linux では、アプリのプロセスを
+`prctl(PR_SET_DUMPABLE, 0)` にして、ワーカーから `/proc/<アプリの pid>/environ` やメモリを読めない
+ようにしています（`VEA_PROCESS_NON_DUMPABLE`、既定 `true`）。
 
 ## トラブルシュート
 

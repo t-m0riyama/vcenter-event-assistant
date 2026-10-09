@@ -15,8 +15,8 @@
 | PR | 内容 | Issue | 状態 |
 |---|---|---|---|
 | 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
-| 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | PR 作成済み |
-| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | 未着手 |
+| 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
+| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | PR 作成済み |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 未着手 |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
@@ -69,13 +69,14 @@
 - インストーラにインデックスの資格情報を渡さない（PR #270 の Codex レビューの指摘）
   - sdist はインストールのときにビルドされ、ビルドバックエンド（`setup.py` など）が同じ環境で動く。`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_EXTRA_INDEX_URL`・`UV_INDEX_<名前>_USERNAME`/`_PASSWORD`・`PIP_INDEX_URL`・`PIP_EXTRA_INDEX_URL` などを通すと、ビルドのコードが読めてしまう
   - 今は `VEA_PLUGIN_INDEX_URL` を `--index-url` でコマンドラインに渡しているので、URL に資格情報（`https://user:pass@...`）があればビルドのコードから `/proc/<uv の pid>/cmdline` で読める
-  - そのため、資格情報のあるインデックスを使うとき（`VEA_PLUGIN_INDEX_URL` にユーザー情報があるとき）は `--no-build` を付けて wheel だけを入れる。資格情報のないインデックスと、アップロード（`--no-index`）では今までどおり sdist も入れられる
+  - そのため、資格情報のあるインデックスを使うとき（`VEA_PLUGIN_INDEX_URL` にユーザー情報があるとき）は `--no-build` を付けて wheel だけを入れる。資格情報のないインデックスと、オフラインのアップロード（`--no-index`）では今までどおり sdist も入れられる。インデックスからのインストールを許可しているときは、アップロードの依存も `VEA_PLUGIN_INDEX_URL` から解決する（今までは渡しておらず、uv の既定のインデックスを使っていた）
   - `HOME` の `~/.netrc` などのファイルは、同じ UID なら読める。ドキュメントで、資格情報のファイルをアプリの実行ユーザーの `HOME` に置かないよう伝える
-  - プラグインの設定: `VEA_COLLECTOR__<ID>__*`（`plugins/config.py` の `collector_environment_prefix`。Issue の本文の `VEA_COLLECTOR_<ID>_*` は誤り）
+  - プラグインの設定 `VEA_COLLECTOR__<ID>__*` は渡さない（実装時に確認。本体が解決して要求の `context.config` で渡すので、ワーカーには要らない）
+  - プラグインが独自の環境変数（機密値など）を読む場合に備え、`VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（カンマ区切り）に書いた名前だけをワーカーに渡す
   - ワーカーが `get_settings()` で読む設定: ログ（`log_level`・`collector_worker_log_level`・`app_log_file` など、`logging_config.configure_worker_logging` が使うもの）と vCenter の接続（`vcenter_allowed_host_suffix_list` など、`collectors/connection.connect_vcenter` が使うもの）。Settings のフィールドの別名から環境変数名を作り、手で書いた一覧と食い違わないようにする
 - ワーカーの Settings が `.env` を読まないようにする。今は `_settings_env_file()` が cwd の `.env` を読むので、環境変数を絞っても `.env` の秘密が入る。ワーカーとインストーラには `.env` を読まない印（例: 専用の環境変数）を渡し、`_settings_env_file()` で見る
 - 渡さなくなった値で Settings の検証（本番での必須項目など）がワーカーで失敗しないことを確かめる。失敗するならワーカー用に検証を緩めるのではなく、必要な値だけを渡す
-- Linux では、本体のプロセスを `prctl(PR_SET_DUMPABLE, 0)` にして、同じ UID の子プロセスから `/proc/<親の pid>/environ` を読めないようにする（環境変数を絞っても親の環境は読めるため）。副作用（コアダンプが出なくなる、`py-spy` などで覗けなくなる）を確かめ、設定で切れるようにするかは実装時に決める
+- Linux では、本体のプロセスを `prctl(PR_SET_DUMPABLE, 0)` にして、同じ UID の子プロセスから `/proc/<親の pid>/environ` を読めないようにする（環境変数を絞っても親の環境は読めるため）。副作用（コアダンプが出なくなる、`py-spy` などで覗けなくなる）があるので、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`）で切れるようにした。起動時（`main.lifespan`）に `process_hardening.harden_process` で行う
 - テスト: 秘密の環境変数（`VEA_SECRET_KEY`・`DATABASE_URL`・`SMTP_PASSWORD`・LLM の API キー）が子プロセスの環境に入らないこと、プラグインの設定とログの設定は入ること。既存のワーカーのテスト（実際に子プロセスを起動するもの）が通ること
 
 ## PR3b: Docker イメージと脅威モデル（Issue #235）

@@ -59,6 +59,7 @@ from vcenter_event_assistant.services.digest.legacy_settings_deprecation import 
 )
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
+from vcenter_event_assistant.process_hardening import harden_process
 from vcenter_event_assistant.security_startup import validate_startup_settings
 from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
@@ -96,6 +97,8 @@ def is_spa_fallback_reserved_path(full_path: str) -> bool:
 async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
     settings = get_settings()
+    # プラグインのワーカーを起動する前に行う。
+    harden_process(settings)
     warn_if_legacy_digest_settings_in_use(settings)
     if settings.is_production and settings.langsmith_tracing_enabled:
         logger.warning(

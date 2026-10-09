@@ -24,6 +24,7 @@ from vcenter_event_assistant.plugins.remote import (
     plugin_search_paths,
 )
 from vcenter_event_assistant.plugins.wire import ConnectionParams
+from vcenter_event_assistant.settings import get_settings
 
 COLLECT_TIMEOUT = 30.0
 
@@ -60,6 +61,13 @@ def _install_test_plugin(root, *, distribution="example-collector", version="0.1
     )
     (dist_info / "RECORD").write_text("", encoding="utf-8")
     return target
+
+
+@pytest.fixture(autouse=True)
+def _pass_fault_switch_to_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    # ワーカーには許可した環境変数しか渡らないので、障害注入の切り替えを明示的に許す。
+    monkeypatch.setenv("VEA_PLUGIN_WORKER_ENV_PASSTHROUGH", "VEA_TEST_PLUGIN_MODE")
+    get_settings.cache_clear()
 
 
 @pytest.fixture
@@ -136,6 +144,39 @@ async def test_remote_collect_round_trip(plugin_dir) -> None:
     # context がワーカー側へ正しく渡っている。
     assert sample.entity_name == "Alpha"
     assert sample.sampled_at.tzinfo is not None
+
+
+async def test_worker_does_not_see_parent_secrets(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """プラグインのコードから、親の秘密の環境変数は見えない（監査 M-1）。"""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    target = _install_test_plugin(root)
+    module = target / "example_collector.py"
+    source = module.read_text(encoding="utf-8")
+    probe = (
+        "','.join(sorted(name for name in ('VEA_SECRET_KEY', 'DATABASE_URL', "
+        "'SMTP_PASSWORD', 'VEA_TEST_PLUGIN_MODE') if name in os.environ))"
+    )
+    assert "next_cursor='cursor-1'" in source
+    module.write_text(source.replace("next_cursor='cursor-1'", f"next_cursor={probe}"), encoding="utf-8")
+    monkeypatch.setenv("VEA_SECRET_KEY", "worker-must-not-see-this")
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    monkeypatch.setenv("SMTP_PASSWORD", "smtp-secret")
+    monkeypatch.setenv("VEA_TEST_PLUGIN_MODE", "ok")
+    get_settings.cache_clear()
+
+    plugins, _ = build_remote_plugins(str(root), include_environment=False)
+    plugin = plugins[0]
+    await plugin.start()
+    try:
+        batch = await plugin.collect_with_connection(_context(), _params(), timeout=COLLECT_TIMEOUT)
+    finally:
+        await plugin.stop()
+
+    # 許可した変数だけが見える。
+    assert batch.next_cursor == "VEA_TEST_PLUGIN_MODE"
 
 
 async def test_plugin_stdout_does_not_corrupt_the_protocol(plugin_dir) -> None:

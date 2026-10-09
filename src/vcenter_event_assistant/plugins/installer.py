@@ -18,8 +18,9 @@ import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from vcenter_event_assistant.plugins.subprocess_env import child_process_env
+from vcenter_event_assistant.plugins.subprocess_env import installer_env
 from vcenter_event_assistant.plugins.remote import discover_collectors_at
 from vcenter_event_assistant.settings import Settings
 
@@ -110,10 +111,16 @@ def _install_command(
         "--python",
         _python_executable(),
     ]
-    if from_index:
+    if from_index or settings.plugin_allow_index_install:
+        # アップロードでも依存はインデックスから解決するので、同じインデックスを使う。
         if settings.plugin_index_url:
             command += ["--index-url", settings.plugin_index_url]
-    elif not settings.plugin_allow_index_install:
+        if _index_has_credentials(settings.plugin_index_url):
+            # sdist のビルドバックエンドは uv と同じ UID で動き、uv のコマンドライン
+            # （/proc/<pid>/cmdline）からインデックスの資格情報を読める（監査 M-1）。
+            # 資格情報があるときは wheel だけを入れる。
+            command.append("--no-build")
+    if not from_index and not settings.plugin_allow_index_install:
         # アップロード経路は既定でネットワークへ出ないため、依存解決もできない。
         # `--no-deps` を付けないと、正しく `vcenter-event-assistant-plugin-api` を
         # 宣言したプラグインすら「解決できない」で失敗する。この API パッケージは
@@ -127,6 +134,16 @@ def _install_command(
     return command + [source]
 
 
+def _index_has_credentials(index_url: str | None) -> bool:
+    if not index_url:
+        return False
+    try:
+        parts = urlsplit(index_url)
+    except ValueError:
+        return True
+    return bool(parts.username or parts.password)
+
+
 def _python_executable() -> str:
     import sys
 
@@ -138,7 +155,7 @@ async def _run_install(command: list[str]) -> None:
         *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        env=child_process_env(),
+        env=installer_env(),
     )
     try:
         stdout, _ = await asyncio.wait_for(

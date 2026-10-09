@@ -12,7 +12,7 @@ from vcenter_event_assistant.auth.bootstrap import BootstrapError, ensure_bootst
 from vcenter_event_assistant.auth.passwords import verify_password
 from vcenter_event_assistant.auth.users import count_users, create_local_user, get_local_user
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.plugins.subprocess_env import child_process_env
+from vcenter_event_assistant.plugins.subprocess_env import installer_env, worker_env
 from vcenter_event_assistant.settings import get_settings
 
 BOOT_PASSWORD = "bootstrap long password"
@@ -203,12 +203,10 @@ async def test_concurrent_duplicate_that_is_not_admin_is_reported(monkeypatch: p
 def test_child_process_env_withholds_bootstrap_password(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     # Settings が受け付ける綴りはすべて除外する
     monkeypatch.setenv(name, "secret")
-    monkeypatch.setenv("SOME_OTHER_VAR", "kept")
     get_settings.cache_clear()
     assert get_settings().bootstrap_admin_password is not None
-    env = child_process_env()
-    assert "secret" not in env.values()
-    assert env["SOME_OTHER_VAR"] == "kept"
+    for env in (worker_env(get_settings()), installer_env()):
+        assert "secret" not in env.values()
 
 
 async def test_concurrent_bootstrap_by_another_process_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
