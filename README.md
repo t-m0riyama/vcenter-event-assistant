@@ -65,6 +65,7 @@ flowchart TB
 
 ## ドキュメント
 
+- **変更履歴**（リリースごとの変更と更新するときの注意）: [CHANGELOG.md](CHANGELOG.md)
 - **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
 - **ログインとロール**（初期 admin・ユーザー管理・権限）: [docs/user-guides/authentication.md](docs/user-guides/authentication.md)
 - **AD / LDAP でのログイン**（認証ディレクトリの設定手順・対応表・締め出しの防止と復旧）: [docs/user-guides/directory-auth.md](docs/user-guides/directory-auth.md)

@@ -1,6 +1,6 @@
 [project]
 name = "vcenter-event-assistant"
-version = "0.1.0"
+version = "0.2.0"
 description = "vCenter events and host metrics dashboard (FastAPI + React)"
 readme = "README.md"
 authors = [

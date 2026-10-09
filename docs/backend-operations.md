@@ -439,7 +439,7 @@ kill され、アプリ本体は停止しません。
 
 ## 4.2 認証を導入したバージョンへの更新
 
-このバージョンから、認証が既定で有効になります（`VEA_AUTH_ENABLED=true`）。更新前に次を準備してください。
+0.2.0 から、認証が既定で有効になります（`VEA_AUTH_ENABLED=true`）。項目 6〜9 も 0.2.0 の変更です（変更の一覧は [CHANGELOG](../CHANGELOG.md)）。更新前に次を準備してください。
 
 1. 初期 admin を用意する（手順は下の「4.2.1 初回起動時の admin の指定」）。本番（`APP_ENV=production`）では admin がいないと起動を止めます
 2. HTTPS で配信している場合、`APP_ENV=production` でなければ `VEA_SESSION_COOKIE_SECURE=true` を設定する
