@@ -16,6 +16,7 @@ import re
 import sys
 from pathlib import Path
 
+from vcenter_event_assistant.plugins.subprocess_env import PROXY_ENV_VARS, url_has_credentials
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,37 @@ _PR_SET_DUMPABLE = 4
 # 親プロセスの環境変数に残っていると危ない名前（値は見ない）。Settings は大文字と小文字を
 # 区別せずに読むので、``database_url`` などの小文字の名前も対象にする。
 _SECRET_ENV_NAME_RE = re.compile(
-    rb"(?:^|\0)(VEA_SECRET_KEY|DATABASE_URL|[A-Z0-9_]*(?:PASSWORD|API_KEY|SECRET|TOKEN))=",
+    r"VEA_SECRET_KEY|DATABASE_URL|[A-Z0-9_]*(?:PASSWORD|API_KEY|SECRET|TOKEN)",
     re.IGNORECASE,
 )
+# 値に資格情報（``user:pass@``）を含むときだけ危ない URL の変数（大文字で比べる）。
+_CREDENTIAL_URL_ENV_NAMES = frozenset(
+    {name.upper() for name in PROXY_ENV_VARS}
+    | {
+        "VCENTER_HTTP_PROXY",
+        "VEA_PLUGIN_INDEX_URL",
+        "UV_INDEX_URL",
+        "UV_EXTRA_INDEX_URL",
+        "UV_DEFAULT_INDEX",
+        "UV_INDEX",
+        "PIP_INDEX_URL",
+        "PIP_EXTRA_INDEX_URL",
+    }
+)
+
+
+def _secret_env_names(environ: bytes) -> list[str]:
+    """``/proc/<pid>/environ`` の中身から、秘密を持つ変数の名前を返す（値は返さない）。"""
+    names: set[str] = set()
+    for entry in environ.decode("utf-8", errors="replace").split("\0"):
+        name, sep, value = entry.partition("=")
+        if not sep:
+            continue
+        if _SECRET_ENV_NAME_RE.fullmatch(name) or (
+            name.upper() in _CREDENTIAL_URL_ENV_NAMES and url_has_credentials(value)
+        ):
+            names.add(name)
+    return sorted(names)
 
 
 def harden_process(settings: Settings) -> bool:
@@ -68,7 +97,7 @@ def warn_if_parent_keeps_secrets(*, proc_root: Path = Path("/proc")) -> bool:
     uids = uid_line.split()[1:]
     if not uids or int(uids[0]) != os.getuid():
         return False
-    names = sorted({match.decode() for match in _SECRET_ENV_NAME_RE.findall(environ)})
+    names = _secret_env_names(environ)
     if not names:
         return False
     name_line = next((line for line in status.splitlines() if line.startswith("Name:")), "Name:\t?")
@@ -77,8 +106,9 @@ def warn_if_parent_keeps_secrets(*, proc_root: Path = Path("/proc")) -> bool:
         "variables (%s); plugin workers can read them from /proc/%s/environ. "
         "In production, start the app so that it replaces the launcher, for example "
         "'exec .venv/bin/vcenter-event-assistant' instead of 'uv run' (without exec, an "
-        "interactive shell stays as the parent); configure a process manager to exec it, "
-        "or run the manager as a different user.",
+        "interactive shell stays as the parent). A process manager that keeps running must "
+        "run as a different user (e.g. systemd as root) or must not hold these variables; "
+        "exec does not help there.",
         ppid,
         name_line.split(None, 1)[-1].strip(),
         ", ".join(names),

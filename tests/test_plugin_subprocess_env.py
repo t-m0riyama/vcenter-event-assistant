@@ -385,6 +385,12 @@ def _fake_parent(tmp_path, *, uid: int, environ: bytes, pid: int = 4242):
         # Settings は大文字と小文字を区別しないので、小文字の名前も秘密として扱う。
         (True, b"PATH=/usr/bin\0database_url=postgresql://u:p@db/x\0", True),
         (True, b"PATH=/usr/bin\0vea_bootstrap_admin_password=p\0", True),
+        # 資格情報を含む URL の変数も秘密として扱う。含まなければ警告しない。
+        (True, b"PATH=/usr/bin\0VEA_PLUGIN_INDEX_URL=https://u:p@pypi.example/simple\0", True),
+        (True, b"PATH=/usr/bin\0https_proxy=http://u:p@proxy:8080\0", True),
+        (True, b"PATH=/usr/bin\0VCENTER_HTTP_PROXY=u:p@proxy:8080\0", True),
+        (True, b"PATH=/usr/bin\0UV_INDEX_URL=https://u:p@pypi.example/simple\0", True),
+        (True, b"PATH=/usr/bin\0HTTPS_PROXY=http://proxy:8080\0VEA_PLUGIN_INDEX_URL=https://pypi.example\0", False),
         (True, b"PATH=/usr/bin\0HOME=/home/app\0", False),
         (False, b"PATH=/usr/bin\0VEA_SECRET_KEY=k\0", False),
     ],
@@ -406,8 +412,11 @@ def test_warns_when_the_parent_keeps_secrets(
     assert warned is expect_warning
     # 対話シェルから exec を付けずに起動するとシェルが親として残るので、exec を明示して案内する。
     assert ("exec .venv/bin/vcenter-event-assistant" in caplog.text) is expect_warning
+    # 同じユーザーのプロセス管理ツールは exec しても残るので、exec を解決策として示さない。
+    assert "different user" in caplog.text or not expect_warning
+    assert "process manager to exec" not in caplog.text
     # 値はログに出さない。
-    assert "postgresql://u:p@db/x" not in caplog.text
+    assert "u:p@" not in caplog.text
 
 
 def test_parent_check_ignores_unreadable_parents(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

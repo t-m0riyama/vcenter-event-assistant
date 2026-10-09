@@ -167,14 +167,14 @@ SQLite のデータベースファイルなど）は読めます。Linux では�
 使うことを勧めます。将来、インストーラやワーカーを別の OS のユーザーで動かすなどの分離を検討します。
 
 **起動方法の注意**: `uv run vcenter-event-assistant` や、アプリと同じ OS のユーザーで動くプロセス管理
-ツールから起動すると、起動した側のプロセスが、秘密の環境変数（`VEA_SECRET_KEY`・`DATABASE_URL` など）を
-持ったまま親として残ります。`prctl` で守れるのはアプリのプロセスだけなので、プラグインのワーカーは
+ツールから起動すると、起動した側のプロセスが、秘密の環境変数（`VEA_SECRET_KEY`・`DATABASE_URL`、
+資格情報を含む `VEA_PLUGIN_INDEX_URL`・`HTTPS_PROXY`・`VCENTER_HTTP_PROXY` など）を持ったまま親として残ります。`prctl` で守れるのはアプリのプロセスだけなので、プラグインのワーカーは
 `/proc/<親の pid>/environ` から読めます。本番では、アプリが起動した側のプロセスを置き換える形
 （`exec`）で起動してください（例: `uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する。
-対話シェルから `exec` を付けずに実行すると、シェルが親として残ります。プロセス管理ツールは exec する設定にします。
-Docker イメージはそうなっています）。この状態を見つけると、起動時に WARNING を出します
-（`the parent process ... keeps secret environment variables`）。root で動く systemd などの管理ツールは、
-アプリと別のユーザーなので問題ありません。
+対話シェルから `exec` を付けずに実行すると、シェルが親として残ります。Docker イメージはそうなっています）。この状態を見つけると、起動時に WARNING を出します
+（`the parent process ... keeps secret environment variables`）。動き続けるプロセス管理ツールは、子の起動に
+`exec` を使っても自分は残るので解決になりません。root で動く systemd など、アプリと別のユーザーで動かすか、
+ツール自身に秘密の環境変数を持たせないでください。
 
 ## トラブルシュート
 
