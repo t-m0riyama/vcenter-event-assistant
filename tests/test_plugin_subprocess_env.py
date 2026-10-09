@@ -325,3 +325,39 @@ def test_proxy_without_credentials_is_passed(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy:8080")
     assert worker_env(_settings())["HTTPS_PROXY"] == "http://proxy:8080"
     assert installer_env()["HTTPS_PROXY"] == "http://proxy:8080"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://user:pass@proxy:8080", True),
+        ("http://token@proxy:8080", True),
+        # スキームのない形は urlsplit が user をスキームと解釈する（PR #273 の Codex レビューの指摘）。
+        ("user:pass@proxy:8080", True),
+        ("user@proxy", True),
+        ("//user:pass@proxy:8080", True),
+        # エンコードしていない "/" を含むパスワード。
+        ("user:pa/ss@proxy:8080", True),
+        ("http://user:pa/ss@proxy:8080", True),
+        ("http://proxy:8080", False),
+        ("proxy:8080", False),
+        ("https://mirror.example/simple/@scope/pkg", False),
+        ("https://mirror.example/simple?user=a@b", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_url_has_credentials(url: str | None, expected: bool) -> None:
+    from vcenter_event_assistant.plugins.subprocess_env import url_has_credentials
+
+    assert url_has_credentials(url) is expected
+
+
+@pytest.mark.usefixtures("no_proxy_env")
+def test_schemeless_credentialed_proxy_is_not_passed(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "user:proxy-secret@proxy:8080")
+    assert "HTTP_PROXY" not in worker_env(_settings())
+    assert "HTTP_PROXY" not in installer_env()
+    settings = _settings(plugin_allow_index_install=True, uv_bin="/usr/bin/uv")
+    sdist_upload = _install_command(settings, tmp_path, str(tmp_path / "pkg-0.1.0.tar.gz"), from_index=False)
+    assert "--no-index" in sdist_upload

@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import urlsplit
+import re
 
 from vcenter_event_assistant.settings import Settings
 
@@ -69,14 +69,20 @@ _INSTALLER_ENV_VARS = frozenset(
 
 
 def url_has_credentials(url: str | None) -> bool:
-    """URL にユーザー情報（資格情報）が含まれるか。解析できない URL は含むとみなす。"""
+    """URL のホストの部分にユーザー情報（資格情報）が含まれるか。
+
+    ``urlsplit`` の解析結果には頼らない。スキームのない ``user:pass@proxy:8080`` では
+    ``user`` がスキームと解釈され、ユーザー情報が空になるため（プロキシはこの形も受け付ける）。
+    """
     if not url:
         return False
-    try:
-        parts = urlsplit(url)
-    except ValueError:
+    rest = url.split("://", 1)[1] if "://" in url else url.removeprefix("//")
+    rest = re.split(r"[?#]", rest, maxsplit=1)[0]
+    if "@" in rest.split("/", 1)[0]:
         return True
-    return bool(parts.username or parts.password)
+    # エンコードしていない "/" を含むパスワード（user:pa/ss@proxy:8080）。最後の "@" の後が
+    # ホスト（とポート）だけなら、その前はユーザー情報とみなす（パスの中の "@" とは区別する）。
+    return "@" in rest and "/" not in rest.rsplit("@", 1)[1]
 
 
 def proxy_has_credentials() -> bool:
