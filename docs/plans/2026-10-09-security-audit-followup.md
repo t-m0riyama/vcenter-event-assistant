@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-10（PR1〜PR3b マージ済み。Issue #235 は閉じ、残りは Issue #274。PR4 は実装済みで PR の作成前）
+最終更新: 2026-10-10（PR1〜PR3b マージ済み。Issue #235 は閉じ、残りは Issue #274。PR4 は PR #276 でレビュー中）
 
 ## Context
 
@@ -18,7 +18,7 @@
 | 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
 | 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | マージ済み [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 8 回。指摘 11 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | マージ済み [PR #275](https://github.com/t-m0riyama/vcenter-event-assistant/pull/275)（Codex の指摘 1 件（`ENV` が `.env` より優先される）に対応し、再レビューで指摘なし。Issue #235 は閉じ、残りは Issue #274） |
-| 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 実装済み・PR 作成前（下の「PR4」。ブランチ `fix/ssh-ssrf-rate-limit`） |
+| 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | レビュー中 [PR #276](https://github.com/t-m0riyama/vcenter-event-assistant/pull/276)（Codex の指摘 1 件（本体の依存の下限）に対応。下の「PR4」） |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。Codex のレビューは今までと同じ進め方（PR 作成時に自動。直したら「@codex review」に観点を添えて依頼）。
@@ -234,6 +234,7 @@
   - `uv run pytest -n auto`（1535 件）、plugin-api と remote-log-collector のテスト、ruff、mypy
   - 追加したテストは、実装前に失敗することを確かめた（plugin-api と同梱のプラグインと rate limit はモジュールや関数がない段階、本体の probe とポートは `resolve_ssh_address` を差し替えられない段階で失敗）
   - Docker（compose の sqlite に `linuxserver/openssh-server` を足し、アプリのコンテナに `extra_hosts` で `evil.test` → `127.0.0.1`、`meta.test` → `169.254.169.254`）で、名前で登録した 3 つの接続先のうち、`sshd`（172.20.0.2、2222 番）はホスト鍵を取得でき、`evil.test` と `meta.test` は 422。`RATE_LIMIT_PROBE_PER_MINUTE=5` で 6 回目の probe が 429
+  - Codex のレビュー（`8c38deb`）で、ルートの `pyproject.toml` の依存の下限が `plugin-api>=1.4`・`remote-log-collector>=0.2` のままで、ロックファイルを使わずに入れると `network` がなく起動できない（P1）と指摘された。下限を `>=1.5`・`>=0.3` に上げた（ワークスペースのパッケージは `uv.lock` に範囲を記録しないので、ロックファイルは変わらない）
   - ワーカーの中のセットアップのアクションを、実際の SSH サーバに対して手で動かすことはしていない（vCenter の登録と、サーバへの公開鍵の配置が要るため）。同じ経路は、本物の asyncssh のサーバへの結合テストと、`open_reader` の単体テストで確かめた
 
 ## 保留（必要になったら）
