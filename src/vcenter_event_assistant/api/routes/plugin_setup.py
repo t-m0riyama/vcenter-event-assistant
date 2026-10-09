@@ -44,11 +44,13 @@ from vcenter_event_assistant.services.plugin_configuration import (
 )
 from vcenter_event_assistant.services.plugin_settings import load_collector_db_overrides
 from vcenter_event_assistant.services.ssh_management import (
+    check_ssh_port,
     connection_read,
     fingerprint,
     reference_digest,
 )
 from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant_plugin_api.network import check_ssh_address, resolve_ssh_address
 
 
 async def mutation_gate():
@@ -463,6 +465,7 @@ def validate_host(host, settings):
 
     # Explicit operator-managed SSH endpoints may be RFC1918 appliance IPs.
     # Loopback, metadata/link-local, multicast and unspecified addresses remain blocked.
+    # Names are resolved and checked again right before each connection (resolve_ssh_address).
     normalized = host.strip()
     try:
         address = ipaddress.ip_address(normalized)
@@ -477,15 +480,18 @@ def validate_host(host, settings):
             raise HTTPException(
                 422, "ホスト名またはIPアドレスを確認してください。"
             ) from None
-    if (
-        address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_unspecified
-        or address.is_reserved
-    ):
-        raise HTTPException(422, "このIPアドレスにはSSH接続できません。")
+    try:
+        check_ssh_address(str(address))
+    except ValueError:
+        raise HTTPException(422, "このIPアドレスにはSSH接続できません。") from None
     return str(address)
+
+
+def validate_port(port, settings):
+    try:
+        check_ssh_port(settings, port)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 
 @router.post("/ssh/connections", dependencies=[Depends(mutation_gate)])
@@ -500,6 +506,7 @@ async def create_connection(
         raise HTTPException(422, "SSH鍵を選択してください。")
     row = SSHConnection(**body.model_dump(), revision=1)
     row.host = validate_host(body.host, settings)
+    validate_port(body.port, settings)
     session.add(row)
     await session.flush()
     return connection_read(row)
@@ -554,6 +561,7 @@ async def update_connection(
     ):
         raise HTTPException(422, "SSH鍵が見つかりません。")
     host = validate_host(body.host, settings)
+    validate_port(body.port, settings)
     if (row.host, row.port) != (host, body.port):
         row.candidate_key = row.approved_key = None
     for key, value in body.model_dump().items():
@@ -566,14 +574,26 @@ async def update_connection(
     "/ssh/connections/{identifier}/host-key", dependencies=[Depends(mutation_gate)]
 )
 async def probe_host_key(
-    identifier: UUID, session: AsyncSession = Depends(get_session)
+    identifier: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ):
     import asyncssh
 
     row = await get_connection(session, identifier)
+    validate_port(row.port, settings)
+    # 名前のまま接続すると、もう一度名前解決が起き、検証していない IP（ループバックや
+    # メタデータ）に接続し得る（DNS rebinding、監査 M-3）。解決して検証した IP に接続する。
     try:
         async with asyncio.timeout(10):
-            key = await asyncssh.get_server_host_key(row.host, row.port, config=None)
+            address = await resolve_ssh_address(row.host, row.port)
+    except (ValueError, TimeoutError):
+        raise HTTPException(
+            422, "この接続先には接続できません。ホスト名の名前解決の結果を確認してください。"
+        ) from None
+    try:
+        async with asyncio.timeout(10):
+            key = await asyncssh.get_server_host_key(address, row.port, config=None)
         if key is None:
             raise ValueError()
     except Exception:

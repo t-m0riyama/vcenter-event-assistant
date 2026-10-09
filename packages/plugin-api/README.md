@@ -80,6 +80,7 @@ dependencies = ["vcenter-event-assistant-plugin-api>=1.1,<2"]
 | `blocking` | `run_blocking()`。キャンセル安全なスレッド退避 |
 | `logs` | `get_plugin_logger()`。ロガー名の規約 |
 | `vmware` | pyVmomi でのインベントリ走査（pyVmomi は遅延 import） |
+| `network` | `resolve_ssh_address()`。接続先を名前解決して検証し、接続に使う IP を返す（DNS rebinding 対策） |
 | `testing` | アプリを起動せずにコレクタを回すテストハーネス |
 | `scaffold` | そのまま動くプロジェクトを生成する CLI |
 

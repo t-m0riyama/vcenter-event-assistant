@@ -382,6 +382,8 @@ TLS:
 - 認証: `VEA_AUTH_ENABLED`（既定 `true`、本番では無効にできない）、`VEA_SESSION_*`、`VEA_LOGIN_*`、`VEA_BOOTSTRAP_ADMIN_PASSWORD` が残っていないこと（起動時に警告）
 - プラグイン管理: `VEA_PLUGIN_MANAGEMENT_ENABLED`（既定 `false`）、`VEA_PLUGIN_ALLOW_INDEX_INSTALL`（既定 `false`）、`VEA_PLUGIN_DIR`
 - コレクタワーカーのログ: `VEA_COLLECTOR_WORKER_LOG_LEVEL`（未設定時は `LOG_LEVEL` を継承）
+- SSH の接続先: `VEA_SSH_ALLOWED_PORTS`（許可するポートのカンマ区切り。既定は空で制限しない）。接続先の名前は、ホスト鍵の取得と収集の直前に名前解決し、ループバック・リンクローカル（メタデータ）・マルチキャスト・予約済み・未指定のアドレスに解決されると接続しない（RFC1918 は許可）
+- 外へ接続して確かめる API の rate limit: `RATE_LIMIT_PROBE_PER_MINUTE`（既定 20 回/分、クライアントの IP ごと）。SSH のホスト鍵の取得・セットアップのアクション・ESXi の一覧・vCenter の接続テストが対象
 - コレクタワーカーの環境変数: `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（プラグインが独自の環境変数を読むときだけ）、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`、Linux のみ）。詳細は `docs/collector-plugins.md` の「脅威モデル」
 
 ## 4.1 プラグイン管理を有効化する場合
@@ -454,6 +456,7 @@ kill され、アプリ本体は停止しません。
 6. アラートメールの STARTTLS で、SMTP サーバの証明書を検証するようになりました。自己署名や社内 CA の証明書の SMTP では、`SMTP_CA_BUNDLE` に CA バンドルを指定してください（検証用の環境なら `SMTP_TLS_VERIFY=false`）。指定しないとメールが届かなくなります（詳細は「E) SMTP/メール通知」）
 7. プラグインのワーカーには、許可した環境変数しか渡さなくなりました。プラグインが独自の環境変数（機密値など）を読む場合は、その名前を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` にカンマ区切りで書いてください。インデックスからのインストールでは、`UV_INDEX_URL` などの uv の環境変数は効かなくなったので、`VEA_PLUGIN_INDEX_URL` で指定してください（詳細は `docs/collector-plugins.md` の「脅威モデル」と「動的インストール」）
 8. Docker イメージで、アプリのコードと `.venv`（`/app`）を root の所有にし、実行ユーザー（`appuser`）からは書き込めなくしました（プラグインに本体を書き換えさせないため）。DB とプラグインの既定の置き場所（`/app/data`）は `/data` へのシンボリックリンクになり、実体は `/data` に置かれます。compose のテンプレートで動かしている場合も、`docker run` で `/app/data` にボリュームをマウントしている場合も、そのまま動きます（マウントはリンクをたどって `/data` に入ります）。`/app` の下に他のファイルを書き込む構成にしている場合は、`/data` に移してください
+9. SSH の接続先（リモートログの収集）は、ホスト鍵の取得と収集の直前に名前解決し、ループバック・リンクローカル（メタデータ）・マルチキャスト・予約済み・未指定のアドレスに解決される名前には接続しなくなりました（RFC1918 のプライベートな IP は今までどおり接続できます）。また、SSH のホスト鍵の取得・セットアップのアクション・ESXi の一覧・vCenter の接続テストに rate limit（`RATE_LIMIT_PROBE_PER_MINUTE`、既定 20 回/分）がかかります。同梱のリモートログのプラグインは 0.3.0（plugin-api 1.5 以降が必要）になりました。別にインストールしている場合は、両方を更新してください
 
 ログインの失敗・ロックアウト・ユーザー変更は、ロガー `vcenter_event_assistant.audit` に `AUDIT event=...` の形式で出力されます。
 

@@ -6,6 +6,7 @@ import re
 import shlex
 
 from vcenter_event_assistant_plugin_api.logs import get_plugin_logger
+from vcenter_event_assistant_plugin_api.network import resolve_ssh_address
 
 from .config import PRESETS
 
@@ -189,9 +190,14 @@ async def open_reader(source):
     # Lazy import lets parsing and mock tests run without network dependencies.
     import asyncssh
 
+    # Resolve and check once, then connect to that address: connecting by name would
+    # resolve again and could reach loopback or cloud metadata (DNS rebinding, Issue #237).
+    # The host key is still matched against the configured name.
+    address = await resolve_ssh_address(source.host, source.port)
     async with asyncssh.connect(
-        source.host,
+        address,
         port=source.port,
+        host_key_alias=source.host,
         username=source.username,
         client_keys=[source.private_key_file],
         known_hosts=source.known_hosts_file,

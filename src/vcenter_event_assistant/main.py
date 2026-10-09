@@ -83,6 +83,31 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     "/api/plugins/installed/upload": ("plugins", 60),
 }
 
+# 外へ接続して確かめる API。繰り返し呼ぶと応答時間の差でポートスキャンができる（監査 M-3）。
+# パスに ID が入るので、``/`` で区切った部品ごとに照合し、``*`` は部品 1 つに一致する。
+_RATE_LIMITED_PATTERNS: tuple[tuple[str, tuple[str, ...], str, int], ...] = tuple(
+    (method, tuple(pattern.split("/")), bucket, window)
+    for method, pattern, bucket, window in (
+        ("POST", "/api/plugins/ssh/connections/*/host-key", "probe", 60),
+        ("POST", "/api/plugins/collectors/*/draft/actions/*", "probe", 60),
+        ("GET", "/api/plugins/vcenters/*/hosts", "probe", 60),
+        ("GET", "/api/vcenters/*/test", "probe", 60),
+    )
+)
+
+
+def _rate_limit_spec(method: str, path: str) -> tuple[str, int] | None:
+    """rate limit をかけるリクエストなら ``(バケット, 窓の秒数)`` を返す。"""
+    if method == "POST" and path in _RATE_LIMITED_POST_PATHS:
+        return _RATE_LIMITED_POST_PATHS[path]
+    parts = path.split("/")
+    for spec_method, pattern, bucket, window in _RATE_LIMITED_PATTERNS:
+        if spec_method == method and len(pattern) == len(parts) and all(
+            (p == "*" and part != "") or p == part for p, part in zip(pattern, parts)
+        ):
+            return bucket, window
+    return None
+
 
 def is_spa_fallback_reserved_path(full_path: str) -> bool:
     """SPA フォールバックで配信してはいけないパス（API / OpenAPI）かどうか。"""
@@ -188,25 +213,25 @@ def create_app() -> FastAPI:
         async def dispatch(self, request: Request, call_next):
             if os.environ.get("VEA_PYTEST") == "1":
                 return await call_next(request)
-            if request.method == "POST":
-                spec = _RATE_LIMITED_POST_PATHS.get(request.url.path)
-                if spec is not None:
-                    bucket, window = spec
-                    client_host = request.client.host if request.client else "unknown"
-                    key = f"{bucket}:{client_host}"
-                    limit = {
-                        "chat": settings.rate_limit_chat_per_minute,
-                        "chat_preview": settings.rate_limit_chat_per_minute * 2,
-                        "ingest": settings.rate_limit_ingest_per_minute,
-                        "digests": settings.rate_limit_digests_per_minute,
-                        "plugins": settings.rate_limit_plugins_per_minute,
-                        "login": settings.rate_limit_login_per_minute,
-                    }[bucket]
-                    if not check_rate_limit(key, limit=limit, window_seconds=window):
-                        return JSONResponse(
-                            status_code=429,
-                            content={"detail": "Too many requests"},
-                        )
+            spec = _rate_limit_spec(request.method, request.url.path)
+            if spec is not None:
+                bucket, window = spec
+                client_host = request.client.host if request.client else "unknown"
+                key = f"{bucket}:{client_host}"
+                limit = {
+                    "chat": settings.rate_limit_chat_per_minute,
+                    "chat_preview": settings.rate_limit_chat_per_minute * 2,
+                    "ingest": settings.rate_limit_ingest_per_minute,
+                    "digests": settings.rate_limit_digests_per_minute,
+                    "plugins": settings.rate_limit_plugins_per_minute,
+                    "login": settings.rate_limit_login_per_minute,
+                    "probe": settings.rate_limit_probe_per_minute,
+                }[bucket]
+                if not check_rate_limit(key, limit=limit, window_seconds=window):
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many requests"},
+                    )
             return await call_next(request)
 
     app.add_middleware(RateLimitMiddleware)

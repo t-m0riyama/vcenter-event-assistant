@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.0
+
+- `network` submodule: `check_ssh_address` and `resolve_ssh_address` resolve an SSH target once and reject loopback, link-local (cloud metadata), multicast, unspecified and reserved addresses, so that plugins connect to the checked IP instead of resolving the name again (DNS rebinding).
+
 ## 1.4.0
 
 - Optional JSON Schema configuration and setup action declarations on CollectorManifest.

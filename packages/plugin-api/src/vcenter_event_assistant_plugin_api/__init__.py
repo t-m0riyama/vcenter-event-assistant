@@ -23,7 +23,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 #: 配布パッケージのバージョン（SemVer）。機能検出に使える。
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 #: 契約世代。アプリが ``manifest.api_version`` と突き合わせる。**安易に上げないこと。**
 PLUGIN_API_VERSION = 1

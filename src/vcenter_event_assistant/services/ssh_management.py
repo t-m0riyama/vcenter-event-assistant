@@ -17,6 +17,13 @@ from vcenter_event_assistant.db.models import SSHConnection, SSHCredential
 from vcenter_event_assistant.db.session import session_scope
 
 
+def check_ssh_port(settings, port: int) -> None:
+    """``VEA_SSH_ALLOWED_PORTS`` で許可していないポートなら ValueError（空なら制限しない）。"""
+    allowed = settings.ssh_allowed_port_list
+    if allowed and port not in allowed:
+        raise ValueError(f"SSHのポート {port} は許可されていません（VEA_SSH_ALLOWED_PORTS）。")
+
+
 def fingerprint(public_key: str) -> str:
     import asyncssh
 
@@ -118,6 +125,8 @@ async def materialize_ssh(settings, config, schema, target_id=None):
                 c = await session.get(SSHConnection, UUID(identifier))
                 if not c or not c.approved_key:
                     raise ValueError("SSH接続先のホスト鍵を承認してください。")
+                # 設定を後から絞ったときも、登録済みの接続先をワーカーに渡さない。
+                check_ssh_port(settings, c.port)
                 credential = await session.get(SSHCredential, c.credential_id)
                 if not credential:
                     raise ValueError("SSH鍵が見つかりません。")

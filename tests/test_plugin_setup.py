@@ -136,10 +136,18 @@ async def prepare(client, monkeypatch):
     c = connection.json()
     host_key = asyncssh.generate_private_key("ssh-ed25519")
 
+    async def resolve(host, port):
+        return "192.0.2.10"
+
     async def probe(*args, **kwargs):
+        # 名前ではなく、解決して検証した IP に接続する（監査 M-3、Issue #237）。
+        assert args[0] == "192.0.2.10"
         assert kwargs == {"config": None}
         return host_key
 
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.plugin_setup.resolve_ssh_address", resolve
+    )
     monkeypatch.setattr(asyncssh, "get_server_host_key", probe)
     return vc.json()["id"], key.json(), c
 
@@ -407,9 +415,63 @@ async def test_ssh_ip_validation_accepts_appliance_networks_but_not_metadata():
     from vcenter_event_assistant.api.routes.plugin_setup import validate_host
 
     assert validate_host("192.168.10.20", get_settings()) == "192.168.10.20"
-    for host in ["127.0.0.1", "169.254.169.254", "::1", "0.0.0.0"]:
+    for host in ["127.0.0.1", "169.254.169.254", "::1", "0.0.0.0", "::ffff:127.0.0.1", "fd00:ec2::254"]:
         with pytest.raises(HTTPException):
             validate_host(host, get_settings())
+
+
+async def test_probe_rejects_a_name_that_resolves_to_loopback(client, setup_enabled, monkeypatch):
+    # 監査 M-3（Issue #237）。登録時は名前を解決しないので、接続の直前に解決して検証する。
+    import socket
+
+    from vcenter_event_assistant_plugin_api import network
+
+    vc, key, c = await prepare(client, monkeypatch)
+    # prepare が差し替えた名前解決を本物に戻し、その下の getaddrinfo だけを差し替える。
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.plugin_setup.resolve_ssh_address",
+        network.resolve_ssh_address,
+    )
+    probed = []
+
+    async def getaddrinfo(host, port):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    async def probe(*args, **kwargs):
+        probed.append(args)
+
+    monkeypatch.setattr(network, "_getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(asyncssh, "get_server_host_key", probe)
+    response = await client.post("/api/plugins/ssh/connections/" + c["id"] + "/host-key")
+    assert response.status_code == 422
+    assert probed == []
+
+
+def _restrict_ports(monkeypatch, value):
+    monkeypatch.setenv("VEA_SSH_ALLOWED_PORTS", value)
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+
+
+async def test_allowed_ports_apply_to_registration_probe_and_worker(
+    client, setup_enabled, monkeypatch
+):
+    vc, key, c = await prepare(client, monkeypatch)
+    await approve(client, c)
+    d = await draft(client, vc, c)
+    _restrict_ports(monkeypatch, "2222")
+    body = {"name": "esxi", "host": "esxi.example.net", "username": "reader", "credential_id": key["id"]}
+    created = await client.post("/api/plugins/ssh/connections", json={**body, "port": 22})
+    assert created.status_code == 422
+    assert (await client.post("/api/plugins/ssh/connections", json={**body, "port": 2222})).status_code == 200
+    # 設定を後から絞ったとき、登録済みの接続先にも効く。
+    assert (await client.post("/api/plugins/ssh/connections/" + c["id"] + "/host-key")).status_code == 422
+    with pytest.raises(ValueError):
+        async with materialize_ssh(get_settings(), d["config_values"], SCHEMA, UUID(vc)):
+            pass
+    _restrict_ports(monkeypatch, "")
+    async with materialize_ssh(get_settings(), d["config_values"], SCHEMA, UUID(vc)):
+        pass
 
 
 async def test_uploaded_key_public_download_and_unused_delete(client, setup_enabled):
