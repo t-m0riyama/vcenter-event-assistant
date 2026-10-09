@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-09（計画を作成。PR #270 の Codex レビューの指摘 2 件を反映）
+最終更新: 2026-10-09（PR1・PR2・PR3a マージ済み。PR3a（PR #273）は 8 回目の指摘にも対応し、利用者の判断で再レビューなしでマージした。次は PR3b）
 
 ## Context
 
@@ -15,8 +15,8 @@
 | PR | 内容 | Issue | 状態 |
 |---|---|---|---|
 | 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
-| 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | PR 作成済み |
-| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | 未着手 |
+| 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
+| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | マージ済み [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 8 回。指摘 11 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 未着手 |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
@@ -63,20 +63,40 @@
 
 ## PR3a: 子プロセスの環境変数を許可リストにする（Issue #235）
 
-- `plugins/subprocess_env.py` の `child_process_env()` を許可リストに変える（呼び出し元は `plugins/remote.py` の 2 か所と `plugins/installer.py` の `_run_install`。引数で用途（ワーカー・インストーラ）を分けてもよい）
-  - OS・実行環境: `PATH`・`HOME`・`LANG`・`LC_*`・`TZ`・`TMPDIR`・`SSL_CERT_FILE`・`SSL_CERT_DIR`・`REQUESTS_CA_BUNDLE`・プロキシ（`HTTP(S)_PROXY`・`NO_PROXY`、小文字も）・`VIRTUAL_ENV`
-  - インストーラだけ: `UV_*`・`PIP_*` のうち資格情報を含まないもの（キャッシュの場所・オフライン・ネットワークのタイムアウトなど）。名前の接頭辞でまとめて通さず、1 つずつ許可する
-- インストーラにインデックスの資格情報を渡さない（PR #270 の Codex レビューの指摘）
-  - sdist はインストールのときにビルドされ、ビルドバックエンド（`setup.py` など）が同じ環境で動く。`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_EXTRA_INDEX_URL`・`UV_INDEX_<名前>_USERNAME`/`_PASSWORD`・`PIP_INDEX_URL`・`PIP_EXTRA_INDEX_URL` などを通すと、ビルドのコードが読めてしまう
-  - 今は `VEA_PLUGIN_INDEX_URL` を `--index-url` でコマンドラインに渡しているので、URL に資格情報（`https://user:pass@...`）があればビルドのコードから `/proc/<uv の pid>/cmdline` で読める
-  - そのため、資格情報のあるインデックスを使うとき（`VEA_PLUGIN_INDEX_URL` にユーザー情報があるとき）は `--no-build` を付けて wheel だけを入れる。資格情報のないインデックスと、アップロード（`--no-index`）では今までどおり sdist も入れられる
-  - `HOME` の `~/.netrc` などのファイルは、同じ UID なら読める。ドキュメントで、資格情報のファイルをアプリの実行ユーザーの `HOME` に置かないよう伝える
-  - プラグインの設定: `VEA_COLLECTOR__<ID>__*`（`plugins/config.py` の `collector_environment_prefix`。Issue の本文の `VEA_COLLECTOR_<ID>_*` は誤り）
-  - ワーカーが `get_settings()` で読む設定: ログ（`log_level`・`collector_worker_log_level`・`app_log_file` など、`logging_config.configure_worker_logging` が使うもの）と vCenter の接続（`vcenter_allowed_host_suffix_list` など、`collectors/connection.connect_vcenter` が使うもの）。Settings のフィールドの別名から環境変数名を作り、手で書いた一覧と食い違わないようにする
-- ワーカーの Settings が `.env` を読まないようにする。今は `_settings_env_file()` が cwd の `.env` を読むので、環境変数を絞っても `.env` の秘密が入る。ワーカーとインストーラには `.env` を読まない印（例: 専用の環境変数）を渡し、`_settings_env_file()` で見る
-- 渡さなくなった値で Settings の検証（本番での必須項目など）がワーカーで失敗しないことを確かめる。失敗するならワーカー用に検証を緩めるのではなく、必要な値だけを渡す
-- Linux では、本体のプロセスを `prctl(PR_SET_DUMPABLE, 0)` にして、同じ UID の子プロセスから `/proc/<親の pid>/environ` を読めないようにする（環境変数を絞っても親の環境は読めるため）。副作用（コアダンプが出なくなる、`py-spy` などで覗けなくなる）を確かめ、設定で切れるようにするかは実装時に決める
-- テスト: 秘密の環境変数（`VEA_SECRET_KEY`・`DATABASE_URL`・`SMTP_PASSWORD`・LLM の API キー）が子プロセスの環境に入らないこと、プラグインの設定とログの設定は入ること。既存のワーカーのテスト（実際に子プロセスを起動するもの）が通ること
+実装（PR #273）:
+
+- `plugins/subprocess_env.py`: 除外リスト（`child_process_env`）をやめ、許可リストにした
+  - `worker_env(settings)`（ワーカーと検出用のワーカー。呼び出し元は `plugins/remote.py` の 2 か所）
+    - 実行環境: `PATH`・`HOME`・`LANG`・`LC_*`・`TZ`・`TMPDIR`・`SSL_CERT_FILE` などの証明書の場所・`NO_PROXY`・`VIRTUAL_ENV`・`PYTHONPATH` など
+    - ワーカーが Settings で読む値: `LOG_LEVEL`・`VEA_COLLECTOR_WORKER_LOG_LEVEL`・`VCENTER_ALLOWED_HOST_SUFFIXES`。`.env` の値は `os.environ` に入らないので、親の Settings から取り出して渡す
+    - `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（カンマ区切り）に書いた名前の変数。プラグインが独自の環境変数（機密値など）を読む場合に使う
+    - プラグインの設定 `VEA_COLLECTOR__<ID>__*` は渡さない。本体が解決して要求の `context.config` で渡すので、ワーカーには要らない（Issue の本文の `VEA_COLLECTOR_<ID>_*` は誤り）
+  - `installer_env(with_credentials=...)`（`plugins/installer.py` の `_run_install`）: 実行環境と、資格情報を含まない uv の変数（`UV_CACHE_DIR`・`UV_NATIVE_TLS`・`UV_HTTP_TIMEOUT` など、1 つずつ許可）だけを渡す。`UV_INDEX_URL`・`UV_DEFAULT_INDEX`・`UV_INDEX_<名前>_PASSWORD`・`PIP_INDEX_URL` などは渡さない。インデックスは `VEA_PLUGIN_INDEX_URL` で指定する
+  - プロキシ（`HTTP(S)_PROXY`・`ALL_PROXY`、小文字も）は、資格情報を含まなければ渡す。資格情報付き（`url_has_credentials`: 値に `@` があれば資格情報ありとみなす。誤判定は安全側に倒れる）は、ワーカーには passthrough に書いたときだけ、インストーラには `--no-build` のときだけ渡す
+- 子プロセスの Settings は `.env` を読まない（`VEA_SETTINGS_IGNORE_DOTENV=1`、`settings._settings_env_file`）
+- `installer._install_command`: インデックスかプロキシに資格情報があるときは `--no-build` で wheel だけを入れる。sdist のビルドのコードは、uv のコマンドライン（`/proc/<pid>/cmdline`）と環境変数を読めるため。その場合、アップロードした sdist はインデックスを使わずに入れる（`--no-index --no-deps`、依存は解決されない）。インデックスからのインストールを許可しているときは、アップロードの依存も `VEA_PLUGIN_INDEX_URL` から解決する（今までは渡しておらず、uv の既定のインデックスを使っていた）
+- `process_hardening.py`（起動時に `main.lifespan` から呼ぶ）
+  - `harden_process`: Linux で本体のプロセスを `prctl(PR_SET_DUMPABLE, 0)` にする。同じ UID のワーカーから `/proc/<pid>/environ` やメモリを読めなくなる。コアダンプが出なくなり、root 以外のデバッガ（py-spy など）も接続できなくなるので、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`）で切れる
+  - `warn_if_parent_keeps_secrets`: 親プロセスが同じ UID で、秘密らしい名前の環境変数（大文字と小文字を区別しない）か、名前の末尾が `PROXY`・`_URL`・`_URI`・`_ENDPOINT`・`_INDEX` で値に資格情報を含む変数を持っていれば WARNING を出す（値は出さない。名前による目安で、すべての秘密は見つけられない）。`uv run` や同じ UID のプロセス管理ツールから起動すると、親が起動時の環境を持ったまま残り、ワーカーが `/proc/<親>/environ` を読めるため。Docker イメージは exec で起動するので影響しない
+- ドキュメント: `docs/collector-plugins.md`（「プロセス分離」「動的インストール」）、`docs/backend-operations.md`（設定の一覧、4.1、アップグレードの注意の 4.2 の 7）、`docs/getting-started.md`（`uv run` は開発用）、`.env.example`
+- 現在のバージョンの制約（ドキュメントに書いた。利用者の判断）: インストールの間、uv が使う資格情報（インデックスとプロキシ）は uv のコマンドラインと環境変数に載り、既に動いているワーカーが `/proc/<uv の pid>/` から読める。同じ UID では防げないので、資格情報の要らない社内ミラーを勧め、将来、インストーラやワーカーを別の UID に分けることを検討する
+
+### PR3a のレビューの経過
+
+- Codex のレビューは 8 回（`e1d209c`〜`388b1ca`）
+  - `e1d209c`: 資格情報付きのインデックスで、アップロードした sdist にも `--no-build` が付いて必ず失敗する（P2）→ `1a58692` でオフラインの経路に
+  - `1a58692`: 資格情報付きのプロキシが子プロセスに渡る（P1）→ `aeb2c47` で対応。インストール中に uv の `/proc/<pid>/cmdline`・`environ` を既存のワーカーが読める（P1）→ 同じ UID では防げないので、制約としてドキュメントに書いた
+  - `aeb2c47`: スキームのないプロキシ（`user:pass@proxy:8080`）の資格情報を見逃す（P1）→ `6d01825`
+  - `6d01825`: ホストの後ろにパスがあると見逃す（P1）→ `2bc79b0` で「`@` があれば資格情報あり」に単純化
+  - `2bc79b0`: `uv run` などの親プロセスが秘密を持ったまま残る（P1）→ `20d7a13` で起動時の警告とドキュメント
+  - `20d7a13`: 下の 2 件（P2）→ 利用者の判断で両方直した（`0d5ed05`）
+  - `0d5ed05`: 資格情報を含む URL の変数（`VEA_PLUGIN_INDEX_URL`・プロキシ・`VCENTER_HTTP_PROXY`）を親の警告で見逃す（P2）→ 名前を決めて持ち、値を `url_has_credentials` で判定する。同じユーザーで動き続けるプロセス管理ツールに exec を勧めたのは誤り（P2。前回書き足した案内）→ 別のユーザーで動かすか秘密を持たせない、に直した。どちらも利用者の判断で直した（`388b1ca`）
+  - `388b1ca`: `SEARCH_HTTP_PROXY` を見逃す（P2）。`FIRECRAWL_BASE_URL`・`LLM_*_BASE_URL`・`LANGSMITH_ENDPOINT` も同じく漏れていた → 名前の一覧をやめ、名前の末尾（`PROXY`・`_URL`・`_URI`・`_ENDPOINT`・`_INDEX`）と値の資格情報で判定する。警告は名前による目安で、出ないことは安全の保証にならない、とドキュメントに注記した。利用者の判断で、9 回目の再レビューは頼まずにマージした
+- 指摘への対応の繰り返しは、利用者の判断で `20d7a13` で区切った。その後も、レビューのたびに細かい指摘が続いたので、8 回目の対応で区切った
+- `20d7a13` の指摘（どちらも P2）と対応
+  1. `process_hardening.py:27`: 親プロセスの秘密の名前を探す正規表現が大文字だけを見る。Settings は大文字と小文字を区別しないので、`database_url` などの小文字の名前では警告が出ない。見立て: 妥当。正規表現で大文字と小文字を区別しないようにすれば数行で直る。→ `re.IGNORECASE` を付け、小文字の名前のテストを足した
+  2. `process_hardening.py:77`: 対話シェルから `.venv/bin/vcenter-event-assistant` を実行してもシェルは置き換わらない。警告とドキュメントでは `exec .venv/bin/vcenter-event-assistant` と明示すべき。見立て: おおむね妥当（シェルの起動後に `export` した値は `/proc/<pid>/environ` に載らないが、起動時から持つ秘密は載る）。警告の文言と 3 つのドキュメントの例を書き換える。→ 警告と `docs/collector-plugins.md`・`docs/backend-operations.md`・`docs/getting-started.md` の例を `exec .venv/bin/vcenter-event-assistant` にした
+- 引き継ぎのメモは PR #273 のコメントにも書いた
 
 ## PR3b: Docker イメージと脅威モデル（Issue #235）
 
@@ -87,7 +107,8 @@
   - プラグインは本体と同じ UID で動く。プロセスの分離はハングを打ち切るためのもので、セキュリティの境界ではない
   - 3a で鍵と DB の資格情報は渡さないが、SQLite の DB ファイル（`/data/vea.db`）は同じ UID なので直接読み書きできる。PostgreSQL なら資格情報がない限り DB に入れない
   - インストールするプラグインは信頼できるものだけにする
-- 別の UID でワーカーを動かす・read-only rootfs は、本体を root で起動して権限を落とす仕組みが要り、変更が大きいので今回はしない。Issue #235 には残りとして書き、閉じるか開けたままにするかはこの PR のときに決める
+  - PR3a で書いた「プロセス分離」の内容（渡す環境変数、`prctl`、現在のバージョンの制約、exec での起動）と合わせて、ひとつの脅威モデルにまとめる
+- 別の UID でワーカーを動かす・read-only rootfs は、本体を root で起動して権限を落とす仕組みが要り、変更が大きいので今回はしない。PR3a のレビューで、同じ UID では防げないもの（インストール中の uv の資格情報、起動した親プロセスの環境変数）がはっきりしたので、将来の分離の検討の材料にする。Issue #235 には残りとして書き、閉じるか開けたままにするかはこの PR のときに決める
 
 ## PR4: SSRF と rate limit（Issue #237）
 
@@ -115,14 +136,17 @@
 - 修正のたびに、追加したテストが修正前のコードで失敗することを確かめる
 - PR1: 自己署名の SMTP（例: ローカルの SMTP のコンテナ）に、CA なしでは失敗し、`SMTP_CA_BUNDLE` か `SMTP_TLS_VERIFY=false` で送れること
 - PR2: 書き出した CSV を表計算ソフトで開き、`=HYPERLINK(...)` が文字列として表示されること
-- PR3a: ワーカーの中から環境変数を出力するテスト用プラグインで、秘密の値が見えないこと。Linux（コンテナ）で `/proc/<親の pid>/environ` を読めないこと
+- PR3a: ワーカーの中から環境変数を出力するテスト用プラグインで、秘密の値が見えないこと（`test_worker_does_not_see_parent_secrets`）。Linux で `/proc/<親の pid>/environ` を読めないこと
+  - Linux 専用のテスト（`prctl`、親プロセスの警告）は macOS でスキップされる。`python:3.12-slim` のコンテナに、`.venv` を除いてリポジトリをコピーし（`tar --exclude=./.venv`）、`UV_PROJECT_ENVIRONMENT=/tmp/venv` で `uv sync --frozen` する。そのうえで、root 以外のユーザーとして `tests/test_plugin_subprocess_env.py` を実行する（root はパーミッションを無視するので確かめられない）
+  - 同じ方法で、`uv run` から起動すると親プロセスの警告が出て、`exec` で起動すると出ないことを確かめた
 - PR3b: コンテナの中で `appuser` として `/app` に書けないこと。プラグインのインストール・収集が動くこと
 - PR4: ループバックに解決されるホスト名で probe が拒否されること、繰り返し呼ぶと 429 になること
 
 ## リスク
 
 - PR1 で、自己署名の SMTP を使っている環境はアップグレード後に通知が止まる。リリースノートで周知する
-- PR3a で、プラグインが今まで暗黙に読んでいた環境変数（プロキシや独自の変数）が渡らなくなる。許可リストに足す方法（設定で追加を許すか）をドキュメントに書く
 - PR3a の `PR_SET_DUMPABLE` は Linux だけ。macOS の開発環境では効かない
-- PR3a の `--no-build` で、資格情報のあるインデックスからは sdist しかないプラグインを入れられなくなる。wheel を用意するか、アップロードで入れる
+- PR3a の `--no-build` で、資格情報のあるインデックスやプロキシからは sdist しかないプラグインを入れられなくなる。wheel を用意するか、アップロードで入れる（アップロードした sdist の依存は解決されない）
+- PR3a で、独自の環境変数を読むプラグインは `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` に名前を書かないと値を受け取れなくなる。`UV_INDEX_URL` などの uv の環境変数も効かなくなる。アップグレードの注意（`docs/backend-operations.md` の 4.2 の 7）に書いた
+- `uv run` や同じ UID のプロセス管理ツールから起動すると、親プロセスの環境変数がプラグインから読める。本番は exec で起動する（Docker イメージは影響なし）
 - PR3b の変更は compose の利用者に影響する。ボリュームの所有者が変わらないことを確かめる

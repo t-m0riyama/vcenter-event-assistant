@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from vcenter_event_assistant.plugins.subprocess_env import child_process_env
+from vcenter_event_assistant.plugins.subprocess_env import worker_env
 from vcenter_event_assistant_plugin_api import CollectionBatch, CollectorManifest
 
 from vcenter_event_assistant.plugins.wire import (
@@ -24,6 +24,7 @@ from vcenter_event_assistant.plugins.wire import (
     context_to_json,
     manifest_from_json,
 )
+from vcenter_event_assistant.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class CollectorWorker:
             stdout=asyncio.subprocess.PIPE,
             stderr=None,
             limit=MAX_RESPONSE_BYTES + 1,
-            env=child_process_env(),
+            env=worker_env(get_settings()),
         )
         logger.info(
             "collector worker started label=%s pid=%s", self._label, self._process.pid
@@ -304,7 +305,7 @@ def discover_collectors_at(
             capture_output=True,
             text=True,
             timeout=_DISCOVER_TIMEOUT_SECONDS,
-            env=child_process_env(),
+            env=worker_env(get_settings()),
         )
     except subprocess.TimeoutExpired:
         logger.error("collector plugin discovery timed out")

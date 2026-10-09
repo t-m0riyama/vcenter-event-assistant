@@ -13,8 +13,15 @@ AppEnv = Literal["development", "production"]
 
 
 def _settings_env_file() -> str | None:
-    """pytest 時（`VEA_PYTEST=1`）は `.env` を読まず、開発者の LLM キーがテストに混入しないようにする。"""
-    return None if os.environ.get("VEA_PYTEST") == "1" else ".env"
+    """`.env` を読むか。
+
+    pytest 時（`VEA_PYTEST=1`）は読まず、開発者の LLM キーがテストに混入しないようにする。
+    プラグインの子プロセス（`VEA_SETTINGS_IGNORE_DOTENV=1`）も読まない。`.env` の秘密を
+    第三者のコードに渡さないため（監査 M-1）。必要な値は親が環境変数で渡す。
+    """
+    if os.environ.get("VEA_PYTEST") == "1" or os.environ.get("VEA_SETTINGS_IGNORE_DOTENV") == "1":
+        return None
+    return ".env"
 
 
 def _normalize_empty_to_none(v: object) -> str | None:
@@ -233,6 +240,26 @@ class AppLogSettingsMixin(BaseModel):
             "コレクタワーカープロセスのログレベル（``VEA_COLLECTOR_WORKER_LOG_LEVEL``）。"
             "未設定時は ``log_level`` を継承する。外部プラグインのログだけを "
             "``DEBUG`` にしたい場合に使う。"
+        ),
+    )
+    plugin_worker_env_passthrough: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "plugin_worker_env_passthrough", "VEA_PLUGIN_WORKER_ENV_PASSTHROUGH"
+        ),
+        description=(
+            "コレクタワーカーに追加で渡す環境変数の名前（カンマ区切り、"
+            "``VEA_PLUGIN_WORKER_ENV_PASSTHROUGH``）。ワーカーには許可した変数しか渡さないので、"
+            "プラグインが独自の環境変数を読む場合に指定する。"
+        ),
+    )
+    process_non_dumpable: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("process_non_dumpable", "VEA_PROCESS_NON_DUMPABLE"),
+        description=(
+            "Linux で本体のプロセスを ``prctl(PR_SET_DUMPABLE, 0)`` にする（``VEA_PROCESS_NON_DUMPABLE``）。"
+            "同じ UID の子プロセス（プラグイン）から ``/proc/<pid>/environ`` やメモリを読めなくする。"
+            "コアダンプが出なくなり、root 以外のデバッガ（py-spy など）も接続できなくなる。"
         ),
     )
     mock_mode: bool = Field(

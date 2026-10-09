@@ -19,7 +19,11 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from vcenter_event_assistant.plugins.subprocess_env import child_process_env
+from vcenter_event_assistant.plugins.subprocess_env import (
+    installer_env,
+    proxy_has_credentials,
+    url_has_credentials,
+)
 from vcenter_event_assistant.plugins.remote import discover_collectors_at
 from vcenter_event_assistant.settings import Settings
 
@@ -110,10 +114,23 @@ def _install_command(
         "--python",
         _python_executable(),
     ]
-    if from_index:
+    # sdist のビルドバックエンドは uv と同じ UID で動き、uv のコマンドライン
+    # （/proc/<pid>/cmdline）と環境変数から、インデックスやプロキシの資格情報を読める（監査 M-1）。
+    credentialed = url_has_credentials(settings.plugin_index_url) or proxy_has_credentials()
+    # アップロードした sdist はビルドが要るので、資格情報があるときはインデックスもプロキシも
+    # 使わない経路で入れる（依存は解決されない）。
+    local_sdist = not from_index and source.endswith(_SDIST_SUFFIX)
+    use_index = from_index or (
+        settings.plugin_allow_index_install and not (local_sdist and credentialed)
+    )
+    if use_index:
+        # アップロードでも依存はインデックスから解決するので、同じインデックスを使う。
         if settings.plugin_index_url:
             command += ["--index-url", settings.plugin_index_url]
-    elif not settings.plugin_allow_index_install:
+        if credentialed:
+            # 資格情報があるときは wheel だけを入れる。
+            command.append("--no-build")
+    else:
         # アップロード経路は既定でネットワークへ出ないため、依存解決もできない。
         # `--no-deps` を付けないと、正しく `vcenter-event-assistant-plugin-api` を
         # 宣言したプラグインすら「解決できない」で失敗する。この API パッケージは
@@ -138,7 +155,8 @@ async def _run_install(command: list[str]) -> None:
         *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        env=child_process_env(),
+        # ビルドしないときだけ、資格情報付きのプロキシを渡す。
+        env=installer_env(with_credentials="--no-build" in command),
     )
     try:
         stdout, _ = await asyncio.wait_for(
