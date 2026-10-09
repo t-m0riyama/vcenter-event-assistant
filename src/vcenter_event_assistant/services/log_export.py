@@ -37,6 +37,25 @@ HEADER = (
     "utc_offset",
 )
 
+# ログの内容など外部から入り得る文字列の列。時刻・オフセット・数値など、
+# アプリが組み立てる列は含めない（``utc_offset`` の ``-04:00`` を壊さないため）。
+_TEXT_COLUMNS = (
+    "vcenter_name",
+    "source_id",
+    "host",
+    "log_kind",
+    "severity",
+    "message",
+    "file_generation",
+)
+# 改行と全角の記号も含める（日本語の環境の表計算ソフトは全角の ``＝`` も式とみなし得る）。
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠")
+
+
+def neutralize_csv_formula(value: str) -> str:
+    """表計算ソフトが式として評価する先頭文字なら ``'`` を前置する（OWASP CSV Injection）。"""
+    return "'" + value if value.startswith(_FORMULA_PREFIXES) else value
+
 
 async def read_log_batch(
     factory: async_sessionmaker[AsyncSession],
@@ -94,6 +113,9 @@ def csv_row(row: RowMapping, zone: ZoneInfo) -> str:
     if seconds_part:
         fields["utc_offset"] += f":{seconds_part:02d}"
     fields["time_zone"] = zone.key
+    for key in _TEXT_COLUMNS:
+        if isinstance(fields[key], str):
+            fields[key] = neutralize_csv_formula(fields[key])
     output = io.StringIO(newline="")
     csv.writer(output, lineterminator="\r\n").writerow([fields[key] for key in HEADER])
     return output.getvalue()

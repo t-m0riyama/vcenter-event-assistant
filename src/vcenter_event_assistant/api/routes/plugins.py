@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -35,8 +34,10 @@ from vcenter_event_assistant.plugins.registry import (
 )
 from vcenter_event_assistant.plugins.reload import reload_collector_registry
 from vcenter_event_assistant.services.plugin_installs import (
+    create_upload_dir,
     list_installed_plugins,
     remove_installed_plugin,
+    remove_upload_dir,
     start_install,
 )
 from vcenter_event_assistant.services.plugin_settings import (
@@ -368,11 +369,11 @@ async def install_from_upload(
         raise HTTPException(status_code=422, detail="uploaded file is empty")
 
     # インストーラは自分で管理するパスだけを uv へ渡す（引数注入を避けるため）。
-    staging_dir = Path(tempfile.mkdtemp(prefix="vea-plugin-upload-"))
-    staged = staging_dir / Path(file.filename or "package").name
-    staged.write_bytes(payload)
-
+    staging_dir = create_upload_dir()
     try:
+        staged = staging_dir / Path(file.filename or "package").name
+        staged.write_bytes(payload)
+        # 以後の削除はジョブが受け持つ（監査 L-1）。
         await start_install(
             session,
             settings,
@@ -380,9 +381,13 @@ async def install_from_upload(
             source=str(staged),
             origin=Path(file.filename or "").name,
             from_index=False,
+            upload_dir=staging_dir,
         )
-    except PluginInstallError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except BaseException as exc:
+        remove_upload_dir(staging_dir)
+        if isinstance(exc, PluginInstallError):
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise
 
     rows = await list_installed_plugins(session)
     return InstalledPluginListResponse(

@@ -27,6 +27,17 @@ describe('escapeCsvField', () => {
   it('wraps on newline', () => {
     expect(escapeCsvField('a\nb')).toBe('"a\nb"')
   })
+
+  it.each(['=', '+', '-', '@', '\t', '\r', '\n', '＝', '＋', '－', '＠'])('neutralizes a value starting with %j', (prefix) => {
+    const value = `${prefix}HYPERLINK("http://evil.example/")`
+    const escaped = escapeCsvField(value)
+    const unquoted = escaped.startsWith('"') ? escaped.slice(1, -1).replace(/""/g, '"') : escaped
+    expect(unquoted).toBe(`'${value}`)
+  })
+
+  it('does not change a formula character in the middle', () => {
+    expect(escapeCsvField('a=b')).toBe('a=b')
+  })
 })
 
 describe('metricPointsToCsv', () => {
@@ -52,6 +63,11 @@ describe('metricPointsToCsv', () => {
       'sampled_at,value,entity_name,entity_moid,metric_key,vcenter_id\r\n' +
         '2024-01-01T00:00:00Z,1.5,host-a,moid-1,host.cpu.usage_pct,00000000-0000-0000-0000-000000000001\r\n',
     )
+  })
+
+  it('neutralizes formula-like entity_name but keeps a negative value', () => {
+    const csv = metricPointsToCsv([{ ...base, value: -1.5, entity_name: '=cmd' }])
+    expect(csv).toContain("2024-01-01T00:00:00Z,-1.5,'=cmd,")
   })
 
   it('escapes fields with commas in entity_name', () => {

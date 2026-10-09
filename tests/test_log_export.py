@@ -300,3 +300,59 @@ async def test_real_batch_boundary_releases_connection_before_every_chunk():
     finally:
         event.remove(engine, "checkout", checkout)
         event.remove(engine, "checkin", checkin)
+
+
+def _log_row(**overrides):
+    when = datetime(2026, 10, 9, 0, 0, tzinfo=timezone.utc)
+    row = {
+        "id": 1,
+        "vcenter_id": uuid.UUID(int=1),
+        "vcenter_name": "lab-vc",
+        "source_id": "esxi-01",
+        "host": "esxi-01.lab",
+        "log_kind": "auth",
+        "effective_at": when,
+        "occurred_at": when,
+        "collected_at": when,
+        "severity": "info",
+        "message": "hello",
+        "file_generation": "gen-1",
+        "byte_offset": 0,
+    }
+    row.update(overrides)
+    return row
+
+
+def _parse_csv_row(line: str) -> dict[str, str]:
+    return dict(zip(log_export.HEADER, next(csv.reader(io.StringIO(line)))))
+
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠"])
+def test_csv_row_neutralizes_formula_prefix(prefix):
+    payload = f"{prefix}HYPERLINK(\"http://evil.example/\",\"x\")"
+    line = log_export.csv_row(
+        _log_row(
+            message=payload,
+            host=payload,
+            source_id=payload,
+            log_kind=payload,
+            severity=payload,
+            vcenter_name=payload,
+            file_generation=payload,
+        ),
+        ZoneInfo("UTC"),
+    )
+    fields = _parse_csv_row(line)
+    for key in ("message", "host", "source_id", "log_kind", "severity", "vcenter_name", "file_generation"):
+        assert fields[key] == "'" + payload
+
+
+def test_csv_row_keeps_plain_values_and_generated_columns():
+    line = log_export.csv_row(_log_row(message="user root failed"), ZoneInfo("America/New_York"))
+    fields = _parse_csv_row(line)
+    assert fields["message"] == "user root failed"
+    assert fields["host"] == "esxi-01.lab"
+    # 生成した列（負のオフセット・数値）は無害化しない。
+    assert fields["utc_offset"] == "-04:00"
+    assert fields["byte_offset"] == "0"
+    assert fields["id"] == "1"

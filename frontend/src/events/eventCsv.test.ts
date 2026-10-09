@@ -45,6 +45,21 @@ describe('eventRowsToCsv', () => {
     expect(csv).toContain('"line1\nline2"')
   })
 
+  it('neutralizes formula-like text but not numeric columns', () => {
+    const csv = eventRowsToCsv([
+      {
+        ...base,
+        user_name: '=HYPERLINK("http://evil.example/")',
+        entity_name: '@SUM(A1)',
+        message: '-cmd',
+        notable_score: -5,
+      },
+    ])
+    expect(csv).toContain(`,"'=HYPERLINK(""http://evil.example/"")",'@SUM(A1),`)
+    expect(csv).toContain(",'-cmd,")
+    expect(csv).toContain(',-5,')
+  })
+
   it('uses empty notable_tags when null', () => {
     const csv = eventRowsToCsv([{ ...base, notable_tags: null }])
     expect(csv).toMatch(/,10,,\r\n$/)

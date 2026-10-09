@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -362,6 +363,96 @@ async def test_upload_rejects_an_empty_file(
         files={"file": ("example_collector-0.1.0-py3-none-any.whl", b"")},
     )
     assert response.status_code == 422
+
+
+@pytest.fixture
+def upload_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Path:
+    """アップロードの一時ディレクトリを作る場所をテストごとに分ける。"""
+    root = tmp_path / "tmp"
+    root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(root))
+    return root
+
+
+def _upload_dirs(root: Path) -> list[Path]:
+    return sorted(root.glob("vea-plugin-upload-*"))
+
+
+@pytest.mark.parametrize("with_entry_point", [True, False])
+async def test_upload_removes_the_staged_package_after_the_job(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    upload_tmp: Path,
+    with_entry_point: bool,
+) -> None:
+    _enable_management(monkeypatch, tmp_path)
+    response = await client.post(
+        "/api/plugins/installed/upload",
+        files={
+            "file": (
+                "example_collector-0.1.0-py3-none-any.whl",
+                build_wheel(with_entry_point=with_entry_point),
+                "application/octet-stream",
+            )
+        },
+    )
+    assert response.status_code == 202
+    await wait_for_installs()
+
+    entry = (await client.get("/api/plugins/installed")).json()["plugins"][0]
+    assert entry["status"] == ("installed" if with_entry_point else "failed")
+    assert _upload_dirs(upload_tmp) == []
+
+
+async def test_upload_removes_the_staged_package_when_start_fails(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path, upload_tmp: Path
+) -> None:
+    from vcenter_event_assistant.api.routes import plugins as plugins_routes
+
+    _enable_management(monkeypatch, tmp_path)
+
+    async def refuse(*args, **kwargs):
+        raise PluginInstallError("an installation of example-collector is already in progress")
+
+    monkeypatch.setattr(plugins_routes, "start_install", refuse)
+    response = await client.post(
+        "/api/plugins/installed/upload",
+        files={"file": ("example_collector-0.1.0-py3-none-any.whl", build_wheel())},
+    )
+    assert response.status_code == 422
+    assert _upload_dirs(upload_tmp) == []
+
+
+def test_cleanup_removes_upload_dirs_left_by_other_processes(upload_tmp: Path) -> None:
+    import os
+    import subprocess
+    import sys
+    import time
+
+    from vcenter_event_assistant.services.plugin_installs import cleanup_stale_upload_dirs
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+
+    stale = upload_tmp / f"vea-plugin-upload-{dead.pid}-abc"
+    live = upload_tmp / f"vea-plugin-upload-{os.getpid()}-abc"
+    legacy_old = upload_tmp / "vea-plugin-upload-k3j2h1"
+    legacy_new = upload_tmp / "vea-plugin-upload-p9q8r7"
+    unrelated = upload_tmp / "other-dir"
+    for path in (stale, live, legacy_old, legacy_new, unrelated):
+        path.mkdir()
+        (path / "pkg.whl").write_bytes(b"x")
+    two_days_ago = time.time() - 2 * 86400
+    os.utime(legacy_old, (two_days_ago, two_days_ago))
+
+    cleanup_stale_upload_dirs()
+
+    assert not stale.exists()
+    assert not legacy_old.exists()
+    assert live.exists()
+    assert legacy_new.exists()
+    assert unrelated.exists()
 
 
 async def test_index_install_endpoint_is_refused_when_disabled(
