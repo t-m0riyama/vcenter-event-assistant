@@ -59,7 +59,7 @@ from vcenter_event_assistant.services.digest.legacy_settings_deprecation import 
 )
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
-from vcenter_event_assistant.process_hardening import harden_process
+from vcenter_event_assistant.process_hardening import harden_process, warn_if_parent_keeps_secrets
 from vcenter_event_assistant.security_startup import validate_startup_settings
 from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     # プラグインのワーカーを起動する前に行う。
     harden_process(settings)
+    warn_if_parent_keeps_secrets()
     warn_if_legacy_digest_settings_in_use(settings)
     if settings.is_production and settings.langsmith_tracing_enabled:
         logger.warning(

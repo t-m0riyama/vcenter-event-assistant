@@ -365,3 +365,52 @@ def test_schemeless_credentialed_proxy_is_not_passed(monkeypatch: pytest.MonkeyP
     settings = _settings(plugin_allow_index_install=True, uv_bin="/usr/bin/uv")
     sdist_upload = _install_command(settings, tmp_path, str(tmp_path / "pkg-0.1.0.tar.gz"), from_index=False)
     assert "--no-index" in sdist_upload
+
+
+def _fake_parent(tmp_path, *, uid: int, environ: bytes, pid: int = 4242):
+    proc = tmp_path / "proc"
+    (proc / str(pid)).mkdir(parents=True)
+    (proc / str(pid) / "status").write_text(f"Name:\tuv\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n", encoding="utf-8")
+    (proc / str(pid) / "environ").write_bytes(environ)
+    return proc, pid
+
+
+@pytest.mark.parametrize(
+    ("same_uid", "environ", "expect_warning"),
+    [
+        (True, b"PATH=/usr/bin\0VEA_SECRET_KEY=k\0", True),
+        (True, b"PATH=/usr/bin\0DATABASE_URL=postgresql://u:p@db/x\0", True),
+        (True, b"PATH=/usr/bin\0SMTP_PASSWORD=p\0", True),
+        (True, b"PATH=/usr/bin\0LLM_CHAT_API_KEY=k\0", True),
+        (True, b"PATH=/usr/bin\0HOME=/home/app\0", False),
+        (False, b"PATH=/usr/bin\0VEA_SECRET_KEY=k\0", False),
+    ],
+)
+def test_warns_when_the_parent_keeps_secrets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, caplog, same_uid: bool, environ: bytes, expect_warning: bool
+) -> None:
+    # PR #273 の Codex レビューの指摘。uv run などの親が同じ UID で秘密の環境変数を持ったまま残ると、
+    # ワーカーは /proc/<親>/environ を読める。
+    from vcenter_event_assistant import process_hardening
+
+    uid = 1000
+    proc, pid = _fake_parent(tmp_path, uid=uid if same_uid else 0, environ=environ)
+    monkeypatch.setattr(process_hardening.sys, "platform", "linux")
+    monkeypatch.setattr(process_hardening.os, "getppid", lambda: pid)
+    monkeypatch.setattr(process_hardening.os, "getuid", lambda: uid)
+    with caplog.at_level("WARNING"):
+        warned = process_hardening.warn_if_parent_keeps_secrets(proc_root=proc)
+    assert warned is expect_warning
+    assert ("exec" in caplog.text) is expect_warning
+    # 値はログに出さない。
+    assert "postgresql://u:p@db/x" not in caplog.text
+
+
+def test_parent_check_ignores_unreadable_parents(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from vcenter_event_assistant import process_hardening
+
+    monkeypatch.setattr(process_hardening.sys, "platform", "linux")
+    monkeypatch.setattr(process_hardening.os, "getppid", lambda: 999999)
+    assert process_hardening.warn_if_parent_keeps_secrets(proc_root=tmp_path / "proc") is False
+    monkeypatch.setattr(process_hardening.sys, "platform", "darwin")
+    assert process_hardening.warn_if_parent_keeps_secrets() is False

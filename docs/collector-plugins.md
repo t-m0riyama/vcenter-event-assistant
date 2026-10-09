@@ -166,6 +166,15 @@ SQLite のデータベースファイルなど）は読めます。Linux では�
 根本的には防げません。資格情報の要らない社内ミラー（ネットワークや IP アドレスで接続元を制限する）を
 使うことを勧めます。将来、インストーラやワーカーを別の OS のユーザーで動かすなどの分離を検討します。
 
+**起動方法の注意**: `uv run vcenter-event-assistant` や、アプリと同じ OS のユーザーで動くプロセス管理
+ツールから起動すると、起動した側のプロセスが、秘密の環境変数（`VEA_SECRET_KEY`・`DATABASE_URL` など）を
+持ったまま親として残ります。`prctl` で守れるのはアプリのプロセスだけなので、プラグインのワーカーは
+`/proc/<親の pid>/environ` から読めます。本番では、アプリが起動した側のプロセスを置き換える形
+（`exec`）で起動してください（例: `uv run` を使わず `.venv/bin/vcenter-event-assistant` を直接起動する。
+Docker イメージはそうなっています）。この状態を見つけると、起動時に WARNING を出します
+（`the parent process ... keeps secret environment variables`）。root で動く systemd などの管理ツールは、
+アプリと別のユーザーなので問題ありません。
+
 ## トラブルシュート
 
 ### ログの出どころ
