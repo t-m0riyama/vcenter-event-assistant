@@ -170,7 +170,8 @@ SQLite のデータベースファイルなど）は読めます。Linux では�
 ツールから起動すると、起動した側のプロセスが、秘密の環境変数（`VEA_SECRET_KEY`・`DATABASE_URL` など）を
 持ったまま親として残ります。`prctl` で守れるのはアプリのプロセスだけなので、プラグインのワーカーは
 `/proc/<親の pid>/environ` から読めます。本番では、アプリが起動した側のプロセスを置き換える形
-（`exec`）で起動してください（例: `uv run` を使わず `.venv/bin/vcenter-event-assistant` を直接起動する。
+（`exec`）で起動してください（例: `uv run` を使わず `exec .venv/bin/vcenter-event-assistant` で起動する。
+対話シェルから `exec` を付けずに実行すると、シェルが親として残ります。プロセス管理ツールは exec する設定にします。
 Docker イメージはそうなっています）。この状態を見つけると、起動時に WARNING を出します
 （`the parent process ... keeps secret environment variables`）。root で動く systemd などの管理ツールは、
 アプリと別のユーザーなので問題ありません。

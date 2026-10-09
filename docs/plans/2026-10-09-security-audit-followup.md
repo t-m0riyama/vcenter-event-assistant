@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-09（PR1・PR2 マージ済み。PR3a は PR #273 でレビュー中。残っている指摘 2 件の対応を決めるところ）
+最終更新: 2026-10-09（PR1・PR2 マージ済み。PR3a は PR #273 でレビュー中。6 回目の指摘 2 件に対応し、再レビューを待つところ）
 
 ## Context
 
@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 1 | SMTP の STARTTLS で証明書を検証する | Issue #236 | マージ済み [PR #271](https://github.com/t-m0riyama/vcenter-event-assistant/pull/271)（Codex のレビューで指摘なし） |
 | 2 | CSV の数式インジェクション対策、アップロードの一時ディレクトリの削除 | Issue #238・Issue #239 | マージ済み [PR #272](https://github.com/t-m0riyama/vcenter-event-assistant/pull/272)（Codex の指摘 1 件（改行と全角の記号）に対応し、再レビューで指摘なし） |
-| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | レビュー中 [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 6 回。指摘 6 件に対応し（うち 1 件は制約としてドキュメントに書いた）、6 回目の指摘 2 件（P2）は未対応。下の「PR3a のレビューの経過」） |
+| 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | レビュー中 [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 6 回。指摘 8 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | 未着手 |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | 未着手 |
 | ― | リリース（認証機能のアップグレードの注意と SMTP の検証の注意をリリースノートに書く） | ― | 未着手 |
@@ -89,11 +89,11 @@
   - `aeb2c47`: スキームのないプロキシ（`user:pass@proxy:8080`）の資格情報を見逃す（P1）→ `6d01825`
   - `6d01825`: ホストの後ろにパスがあると見逃す（P1）→ `2bc79b0` で「`@` があれば資格情報あり」に単純化
   - `2bc79b0`: `uv run` などの親プロセスが秘密を持ったまま残る（P1）→ `20d7a13` で起動時の警告とドキュメント
-  - `20d7a13`: 下の 2 件（未対応）
-- 指摘への対応の繰り返しは、利用者の判断で `20d7a13` で区切った
-- 残っている指摘（`20d7a13`、どちらも P2）。直すかどうかは未決定
-  1. `process_hardening.py:27`: 親プロセスの秘密の名前を探す正規表現が大文字だけを見る。Settings は大文字と小文字を区別しないので、`database_url` などの小文字の名前では警告が出ない。見立て: 妥当。正規表現で大文字と小文字を区別しないようにすれば数行で直る
-  2. `process_hardening.py:77`: 対話シェルから `.venv/bin/vcenter-event-assistant` を実行してもシェルは置き換わらない。警告とドキュメントでは `exec .venv/bin/vcenter-event-assistant` と明示すべき。見立て: おおむね妥当（シェルの起動後に `export` した値は `/proc/<pid>/environ` に載らないが、起動時から持つ秘密は載る）。警告の文言と 3 つのドキュメントの例を書き換える
+  - `20d7a13`: 下の 2 件（P2）→ 利用者の判断で両方直した（7 回目の再レビューを依頼する）
+- 指摘への対応の繰り返しは、利用者の判断で `20d7a13` で区切った。7 回目の再レビューで P2 以下の指摘が出たら、制約としてドキュメントに書いてマージする
+- `20d7a13` の指摘（どちらも P2）と対応
+  1. `process_hardening.py:27`: 親プロセスの秘密の名前を探す正規表現が大文字だけを見る。Settings は大文字と小文字を区別しないので、`database_url` などの小文字の名前では警告が出ない。見立て: 妥当。正規表現で大文字と小文字を区別しないようにすれば数行で直る。→ `re.IGNORECASE` を付け、小文字の名前のテストを足した
+  2. `process_hardening.py:77`: 対話シェルから `.venv/bin/vcenter-event-assistant` を実行してもシェルは置き換わらない。警告とドキュメントでは `exec .venv/bin/vcenter-event-assistant` と明示すべき。見立て: おおむね妥当（シェルの起動後に `export` した値は `/proc/<pid>/environ` に載らないが、起動時から持つ秘密は載る）。警告の文言と 3 つのドキュメントの例を書き換える。→ 警告と `docs/collector-plugins.md`・`docs/backend-operations.md`・`docs/getting-started.md` の例を `exec .venv/bin/vcenter-event-assistant` にした
 - 引き継ぎのメモは PR #273 のコメントにも書いた
 
 ## PR3b: Docker イメージと脅威モデル（Issue #235）

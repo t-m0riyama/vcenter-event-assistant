@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 
 _PR_SET_DUMPABLE = 4
 
-# 親プロセスの環境変数に残っていると危ない名前（値は見ない）。
+# 親プロセスの環境変数に残っていると危ない名前（値は見ない）。Settings は大文字と小文字を
+# 区別せずに読むので、``database_url`` などの小文字の名前も対象にする。
 _SECRET_ENV_NAME_RE = re.compile(
-    rb"(?:^|\0)(VEA_SECRET_KEY|DATABASE_URL|[A-Z0-9_]*(?:PASSWORD|API_KEY|SECRET|TOKEN))="
+    rb"(?:^|\0)(VEA_SECRET_KEY|DATABASE_URL|[A-Z0-9_]*(?:PASSWORD|API_KEY|SECRET|TOKEN))=",
+    re.IGNORECASE,
 )
 
 
@@ -73,8 +75,10 @@ def warn_if_parent_keeps_secrets(*, proc_root: Path = Path("/proc")) -> bool:
     logger.warning(
         "the parent process (pid=%s, %s) runs as the same user and keeps secret environment "
         "variables (%s); plugin workers can read them from /proc/%s/environ. "
-        "In production, start the app so that it replaces the launcher (exec), for example "
-        "run .venv/bin/vcenter-event-assistant directly instead of 'uv run'.",
+        "In production, start the app so that it replaces the launcher, for example "
+        "'exec .venv/bin/vcenter-event-assistant' instead of 'uv run' (without exec, an "
+        "interactive shell stays as the parent); configure a process manager to exec it, "
+        "or run the manager as a different user.",
         ppid,
         name_line.split(None, 1)[-1].strip(),
         ", ".join(names),

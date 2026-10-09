@@ -382,6 +382,9 @@ def _fake_parent(tmp_path, *, uid: int, environ: bytes, pid: int = 4242):
         (True, b"PATH=/usr/bin\0DATABASE_URL=postgresql://u:p@db/x\0", True),
         (True, b"PATH=/usr/bin\0SMTP_PASSWORD=p\0", True),
         (True, b"PATH=/usr/bin\0LLM_CHAT_API_KEY=k\0", True),
+        # Settings は大文字と小文字を区別しないので、小文字の名前も秘密として扱う。
+        (True, b"PATH=/usr/bin\0database_url=postgresql://u:p@db/x\0", True),
+        (True, b"PATH=/usr/bin\0vea_bootstrap_admin_password=p\0", True),
         (True, b"PATH=/usr/bin\0HOME=/home/app\0", False),
         (False, b"PATH=/usr/bin\0VEA_SECRET_KEY=k\0", False),
     ],
@@ -401,7 +404,8 @@ def test_warns_when_the_parent_keeps_secrets(
     with caplog.at_level("WARNING"):
         warned = process_hardening.warn_if_parent_keeps_secrets(proc_root=proc)
     assert warned is expect_warning
-    assert ("exec" in caplog.text) is expect_warning
+    # 対話シェルから exec を付けずに起動するとシェルが親として残るので、exec を明示して案内する。
+    assert ("exec .venv/bin/vcenter-event-assistant" in caplog.text) is expect_warning
     # 値はログに出さない。
     assert "postgresql://u:p@db/x" not in caplog.text
 
