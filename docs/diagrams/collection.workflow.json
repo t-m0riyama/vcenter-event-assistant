@@ -1,0 +1,88 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "定期収集",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "poll",
+        "label": "定期収集",
+        "focus": ["tick", "events", "vcenter", "score", "save", "perf"],
+        "note": "イベントはスコアを付けてから保存する。性能サンプルも vCenter から取得して保存する。"
+      },
+      {
+        "id": "alerts",
+        "label": "アラート",
+        "focus": ["tick", "alerts", "save", "outbox", "mail"],
+        "note": "評価は保存済みを読み、送信待ちへ書く。配送は別ジョブで、設定時だけメールサーバへ送る。"
+      },
+      {
+        "id": "digest",
+        "label": "ダイジェスト",
+        "focus": ["tick", "save", "digest", "llm"],
+        "note": "ダイジェストの cron は poll_events と独立し、保存済みの期間を集約する。生成結果の保存はダイジェスト生成の図に示す。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "collect", "label": "収集" },
+    { "id": "jobs", "label": "別スケジュール" }
+  ],
+  "mainPath": ["tick", "events", "vcenter", "score", "save"],
+  "nodes": [
+    { "id": "tick", "lane": "collect", "col": 0, "type": "backend", "label": "APScheduler", "sublabel": "定期起動" },
+    { "id": "events", "lane": "collect", "col": 1, "type": "backend", "label": "イベント収集", "sublabel": "poll_events" },
+    { "id": "vcenter", "lane": "collect", "col": 2, "type": "external", "label": "vCenter", "sublabel": "pyVmomi" },
+    { "id": "score", "lane": "collect", "col": 3, "type": "backend", "label": "スコア", "sublabel": "挿入前" },
+    { "id": "save", "lane": "collect", "col": 4, "type": "database", "label": "DB 保存", "sublabel": "SQLAlchemy" },
+    { "id": "mail", "lane": "jobs", "col": 0, "type": "external", "label": "メールサーバ", "sublabel": "プロジェクト外", "tag": "任意" },
+    { "id": "digest", "lane": "jobs", "col": 1, "type": "backend", "label": "ダイジェスト", "sublabel": "日次・週次・月次" },
+    { "id": "perf", "lane": "jobs", "col": 2, "type": "backend", "label": "性能サンプル", "sublabel": "quickStats" },
+    { "id": "llm", "lane": "jobs", "col": 3, "type": "external", "label": "LLM API", "sublabel": "要約", "tag": "任意" },
+    { "id": "outbox", "lane": "jobs", "col": 4, "type": "database", "label": "送信待ち", "sublabel": "outbox" },
+    { "id": "alerts", "lane": "jobs", "col": 5, "type": "security", "label": "アラート評価", "sublabel": "evaluate_alerts" }
+  ],
+  "edges": [
+    { "id": "tick-events", "from": "tick", "to": "events", "label": "定期", "variant": "emphasis", "role": "main" },
+    { "id": "events-vcenter", "from": "events", "to": "vcenter", "label": "pyVmomi", "variant": "emphasis", "role": "main" },
+    { "id": "vcenter-score", "from": "vcenter", "to": "score", "label": "イベント", "variant": "emphasis", "role": "main" },
+    { "id": "score-save", "from": "score", "to": "save", "label": "挿入", "variant": "emphasis", "role": "main" },
+    { "id": "tick-perf", "from": "tick", "to": "perf", "label": "性能", "role": "branch" },
+    { "id": "perf-vcenter", "from": "perf", "to": "vcenter", "label": "取得", "role": "branch" },
+    { "id": "perf-save", "from": "perf", "to": "save", "label": "quickStats", "role": "branch" },
+    { "id": "tick-alerts", "from": "tick", "to": "alerts", "label": "別間隔", "variant": "security", "role": "branch" },
+    { "id": "tick-mail", "from": "tick", "to": "mail", "label": "配送", "role": "branch" },
+    { "id": "alerts-outbox", "from": "alerts", "to": "outbox", "label": "書き込み", "role": "branch" },
+    { "id": "tick-digest", "from": "tick", "to": "digest", "label": "cron", "role": "branch" },
+    { "id": "save-alerts", "from": "save", "to": "alerts", "label": "保存済み", "role": "branch" },
+    { "id": "save-digest", "from": "save", "to": "digest", "label": "期間", "role": "branch" },
+    { "id": "digest-llm", "from": "digest", "to": "llm", "label": "要約", "variant": "dashed", "role": "async" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "収集",
+      "items": [
+        "APScheduler が poll_events と性能サンプルを別々に起動する",
+        "性能サンプルも vCenter から取り、イベントは挿入前にスコアが付く"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "別スケジュール",
+      "items": [
+        "評価は送信待ちを書き、別ジョブが設定時だけメールサーバへ送る",
+        "ダイジェストの cron も poll_events とは独立している"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "任意の要約",
+      "items": [
+        "LLM はダイジェスト本文への追記に使う",
+        "未設定でもテンプレートのダイジェストは残る"
+      ]
+    }
+  ]
+}

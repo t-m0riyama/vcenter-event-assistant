@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "イベントと性能の流れ",
+    "quality_profile": "showcase",
+    "viewBox": [1068, 400],
+    "views": [
+      {
+        "id": "events",
+        "label": "イベント",
+        "focus": ["vc_events", "collect_events", "score", "db", "spa"],
+        "note": "取得したイベントは種別スコアを付けてから DB に入り、画面に出る。"
+      },
+      {
+        "id": "perf",
+        "label": "性能",
+        "focus": ["vc_perf", "collect_perf", "db", "spa"],
+        "note": "quickStats のサンプルはスコアせず同じ DB に入り、推移として読まれる。"
+      },
+      {
+        "id": "digest",
+        "label": "ダイジェスト",
+        "focus": ["db", "digest"],
+        "note": "保存済みの期間データを集約し、任意で LLM が要約する。"
+      }
+    ]
+  },
+  "stages": [
+    { "label": "取得元" },
+    { "label": "収集" },
+    { "label": "スコア" },
+    { "label": "保存" },
+    { "label": "利用" }
+  ],
+  "nodes": [
+    { "id": "vc_events", "type": "external", "label": "vCenter イベント", "sublabel": "イベント履歴", "stage": 0, "row": 0 },
+    { "id": "vc_perf", "type": "external", "label": "quickStats", "sublabel": "CPU とメモリ", "stage": 0, "row": 1 },
+    { "id": "collect_events", "type": "backend", "label": "イベント収集", "sublabel": "pyVmomi", "stage": 1, "row": 0 },
+    { "id": "collect_perf", "type": "backend", "label": "性能サンプル", "sublabel": "pyVmomi", "stage": 1, "row": 1 },
+    { "id": "score", "type": "backend", "label": "スコアルール", "sublabel": "挿入前", "stage": 2, "row": 0 },
+    { "id": "db", "type": "database", "label": "PostgreSQL / SQLite", "sublabel": "DATABASE_URL", "stage": 3, "row": 1, "yOffset": -7 },
+    { "id": "spa", "type": "frontend", "label": "React SPA", "sublabel": "一覧とグラフ", "brand": "react", "stage": 4, "row": 0 },
+    { "id": "digest", "type": "backend", "label": "ダイジェスト", "sublabel": "期間集約", "stage": 4, "row": 1 }
+  ],
+  "flows": [
+    { "id": "events-in", "from": "vc_events", "to": "collect_events", "label": "イベント", "variant": "emphasis" },
+    { "id": "perf-in", "from": "vc_perf", "to": "collect_perf", "label": "quickStats", "variant": "emphasis" },
+    { "id": "events-score", "from": "collect_events", "to": "score", "label": "種別", "variant": "emphasis" },
+    { "id": "score-store", "from": "score", "to": "db", "label": "挿入", "variant": "emphasis" },
+    { "id": "perf-store", "from": "collect_perf", "to": "db", "label": "サンプル", "variant": "default" },
+    { "id": "db-spa", "from": "db", "to": "spa", "label": "一覧", "variant": "emphasis" },
+    { "id": "db-digest", "from": "db", "to": "digest", "label": "期間集約", "variant": "emphasis", "labelDy": 28 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "取り込み",
+      "items": [
+        "イベントは挿入前に種別スコアが付く",
+        "quickStats はスコアせず、同じ DB にサンプルとして残る"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "画面",
+      "items": [
+        "SPA は保存済みの一覧と性能推移を読む",
+        "ルール変更時は保存済みの notable_score を再計算する"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "ダイジェスト",
+      "items": [
+        "期間集約は保存済みデータだけを材料にする",
+        "LLM 要約は設定があるときだけ追記する"
+      ]
+    }
+  ]
+}
