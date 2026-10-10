@@ -24,8 +24,8 @@
       {
         "id": "optional",
         "label": "任意の外部連携",
-        "focus": ["proxy", "api", "llm"],
-        "note": "TLS 終端、LLM、ディレクトリ認証は環境に応じて有効にする。"
+        "focus": ["proxy", "api", "llm", "smtp"],
+        "note": "LLM は任意。アラートは設定時だけ、プロジェクト外のメールサーバへ SMTP 送信する。"
       }
     ]
   },
@@ -84,6 +84,15 @@
       "tag": "ベータ",
       "pos": [756, 8],
       "size": [176, 72]
+    },
+    {
+      "id": "smtp",
+      "type": "external",
+      "label": "メールサーバ",
+      "sublabel": "プロジェクト外",
+      "tag": "任意",
+      "pos": [260, 268],
+      "size": [184, 72]
     },
     {
       "id": "scheduler",
@@ -182,6 +191,13 @@
       "label": "保存"
     },
     {
+      "id": "scheduler-smtp",
+      "from": "scheduler",
+      "to": "smtp",
+      "label": "SMTP 送信",
+      "variant": "dashed"
+    },
+    {
       "id": "api-llm",
       "from": "api",
       "to": "llm",
@@ -211,7 +227,7 @@
       "title": "任意の連携",
       "items": [
         "TLS はリバースプロキシで終端し、ログインとロールはアプリが持つ",
-        "LLM は要約とチャット、AD / LDAP はディレクトリログインで使う"
+        "LLM は任意。アラートは設定時だけ、プロジェクト外のメールサーバへ SMTP 送信する"
       ]
     }
   ]

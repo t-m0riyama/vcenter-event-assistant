@@ -14,8 +14,8 @@
       {
         "id": "alerts",
         "label": "アラート",
-        "focus": ["tick", "alerts", "save"],
-        "note": "evaluate_alerts は別間隔で、保存済みの notable_score を読む。"
+        "focus": ["tick", "alerts", "save", "mail"],
+        "note": "評価は別間隔で保存済みを読む。配送は別ジョブで、設定時だけプロジェクト外のメールサーバへ送る。"
       },
       {
         "id": "digest",
@@ -36,6 +36,7 @@
     { "id": "vcenter", "lane": "collect", "col": 2, "type": "external", "label": "vCenter", "sublabel": "pyVmomi" },
     { "id": "score", "lane": "collect", "col": 3, "type": "backend", "label": "スコア", "sublabel": "挿入前" },
     { "id": "save", "lane": "collect", "col": 4, "type": "database", "label": "DB 保存", "sublabel": "SQLAlchemy" },
+    { "id": "mail", "lane": "jobs", "col": 0, "type": "external", "label": "メールサーバ", "sublabel": "プロジェクト外", "tag": "任意" },
     { "id": "perf", "lane": "jobs", "col": 1, "type": "backend", "label": "性能サンプル", "sublabel": "quickStats" },
     { "id": "alerts", "lane": "jobs", "col": 5, "type": "security", "label": "アラート評価", "sublabel": "evaluate_alerts" },
     { "id": "digest", "lane": "jobs", "col": 2, "type": "backend", "label": "ダイジェスト", "sublabel": "日次・週次・月次" },
@@ -49,6 +50,7 @@
     { "id": "tick-perf", "from": "tick", "to": "perf", "label": "性能", "role": "branch" },
     { "id": "perf-save", "from": "perf", "to": "save", "label": "quickStats", "role": "branch", "channelY": 304, "labelDx": 140 },
     { "id": "tick-alerts", "from": "tick", "to": "alerts", "label": "別間隔", "variant": "security", "role": "branch" },
+    { "id": "tick-mail", "from": "tick", "to": "mail", "label": "SMTP 送信", "variant": "dashed", "role": "branch" },
     { "id": "tick-digest", "from": "tick", "to": "digest", "label": "cron", "role": "branch" },
     { "id": "save-alerts", "from": "save", "to": "alerts", "label": "保存済み", "role": "branch" },
     { "id": "save-digest", "from": "save", "to": "digest", "label": "期間", "role": "branch" },
@@ -67,7 +69,7 @@
       "dot": "emerald",
       "title": "別スケジュール",
       "items": [
-        "アラート評価は収集の続きではなく、保存済みの notable_score を読む",
+        "評価は保存済みを読む。配送は別間隔で、設定時だけプロジェクト外のメールサーバへ送る",
         "ダイジェストの cron も poll_events とは独立している"
       ]
     },
