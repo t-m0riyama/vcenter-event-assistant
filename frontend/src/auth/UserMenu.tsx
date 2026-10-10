@@ -125,8 +125,10 @@ export function UserMenu() {
             type="button"
             role="menuitem"
             className="user-menu__item"
-            disabled={loggingOut}
+            // disabled にするとフォーカスを置けず、処理中に開き直したメニューをキーボードで操作できなくなる。
+            aria-disabled={loggingOut || undefined}
             onClick={() => {
+              if (loggingOut) return
               close(true)
               setLoggingOut(true)
               setLogoutError(null)

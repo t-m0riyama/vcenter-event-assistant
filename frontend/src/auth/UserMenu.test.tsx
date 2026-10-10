@@ -95,6 +95,25 @@ describe('UserMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it('ログアウトの処理中に開き直しても、項目にフォーカスが移り Esc で閉じられる', async () => {
+    let reject: (e: Error) => void = () => {}
+    const logout = vi.fn(() => new Promise<void>((_, r) => (reject = r)))
+    renderMenu({ can_change_password: false }, logout)
+    fireEvent.click(avatar())
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ログアウト' }))
+    fireEvent.click(avatar())
+    const item = screen.getByRole('menuitem', { name: 'ログアウト' })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveFocus()
+    // 処理中にもう一度押しても 2 回目は送らない
+    fireEvent.click(item)
+    expect(logout).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    reject(new Error('network'))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+  })
+
   it('認証が無効なら何も出さない', () => {
     renderMenu({ auth_enabled: false })
     expect(screen.queryByRole('button', { name: /アカウントメニュー/ })).not.toBeInTheDocument()
