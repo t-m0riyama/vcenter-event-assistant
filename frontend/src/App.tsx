@@ -284,8 +284,8 @@ export default function App() {
         panelLabel: 'チャット設定',
         render: (onError) => (
           <>
-            <ChatWebSearchPrefsPanel />
             <ChatSamplePromptsPanel onError={onError} />
+            <ChatWebSearchPrefsPanel />
           </>
         ),
       },
