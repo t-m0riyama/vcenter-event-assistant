@@ -6,9 +6,12 @@
   margin-bottom: var(--spacing-2);
 }
 
+/* 期間メトリクスのチェックボックスは横に並べる（縦に積むと高さを取りすぎる）。 */
 .timeline-panel__checkbox-label {
-  display: block;
-  margin-bottom: var(--spacing-1);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-right: var(--spacing-3);
 }
 
 .timeline-panel__threshold-grid {
