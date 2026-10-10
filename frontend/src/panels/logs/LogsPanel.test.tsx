@@ -1,9 +1,12 @@
 /** @vitest-environment happy-dom */
 import { Profiler } from 'react'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LogsPanel } from './LogsPanel'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
+
+/** 上のページ切り替え。下にも同じボタンと件数があるので、上に絞って探す。 */
+const pager = () => within(screen.getByRole('navigation', { name: 'ページ切り替え（上）' }))
 
 const row = {
   id: 1, vcenter_id: 'vc-1', source_id: 'esxi-1', host: 'esxi.local', log_kind: 'vmkernel',
@@ -149,7 +152,7 @@ describe('LogsPanel', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
-    await waitFor(() => expect(screen.getByText('全 101 件中 1–50 件を表示')).toBeInTheDocument())
+    await waitFor(() => expect(pager().getByText('全 101 件中 1–50 件を表示')).toBeInTheDocument())
     const summary = screen.getByText('絞り込み条件').closest('summary')!
     const details = summary.closest('details')!
     expect(details).not.toHaveAttribute('open')
@@ -157,8 +160,8 @@ describe('LogsPanel', () => {
     expect(summary).toHaveTextContent('条件なし')
 
     const lastLogRequest = () => new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/logs')).at(-1)![0]), 'http://test')
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(screen.getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
+    fireEvent.click(pager().getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(pager().getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
     expect(lastLogRequest().searchParams.get('offset')).toBe('50')
     fireEvent.click(summary)
     expect(details).toHaveAttribute('open')
@@ -175,9 +178,9 @@ describe('LogsPanel', () => {
     expect(details).not.toHaveAttribute('open')
     expect(summary).toHaveTextContent('接続先ID「esxi-1」 · 種別「hostd」 · 重大度「error」 · 本文「Storage」')
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '次へ' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(screen.getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
+    await waitFor(() => expect(pager().getByRole('button', { name: '次へ' })).toBeEnabled())
+    fireEvent.click(pager().getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(pager().getByText('全 101 件中 51–100 件を表示')).toBeInTheDocument())
     fireEvent.click(summary)
     fireEvent.click(screen.getByRole('button', { name: '過去 24 時間' }))
     await waitFor(() => expect(lastLogRequest().searchParams.has('from')).toBe(true))
@@ -199,11 +202,11 @@ describe('LogsPanel', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     render(<TimeZoneProvider><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
-    await screen.findByText('全 101 件中 1–50 件を表示')
+    await pager().findByText('全 101 件中 1–50 件を表示')
     // These controls keep their identity across page updates. Query each only once.
     const pageSize = screen.getByLabelText('表示件数')
-    const next = screen.getByRole('button', { name: '次へ' })
-    const previous = screen.getByRole('button', { name: '前へ' })
+    const next = pager().getByRole('button', { name: '次へ' })
+    const previous = pager().getByRole('button', { name: '前へ' })
     const status = screen.getByRole('status')
     const lastLogRequest = () => new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/logs')).at(-1)![0]), 'http://test')
     const expectPage = async (text: string) => {
@@ -285,13 +288,13 @@ describe('LogsPanel', () => {
     render(<TimeZoneProvider><Profiler id="logs" onRender={() => {
       statuses.push(screen.getByRole('status').textContent)
     }}><LogsPanel onError={onError} /></Profiler></TimeZoneProvider>)
-    await screen.findByText('全 101 件中 1–50 件を表示')
+    await pager().findByText('全 101 件中 1–50 件を表示')
     fireEvent.change(screen.getByLabelText('表示件数'), { target: { value: '20' } })
-    await screen.findByText('全 101 件中 1–20 件を表示')
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await screen.findByText('全 101 件中 21–40 件を表示')
+    await pager().findByText('全 101 件中 1–20 件を表示')
+    fireEvent.click(pager().getByRole('button', { name: '次へ' }))
+    await pager().findByText('全 101 件中 21–40 件を表示')
     deferLogs = true
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    fireEvent.click(pager().getByRole('button', { name: '次へ' }))
     await waitFor(() => expect(pending).toHaveLength(1))
     expect(pending[0].params.get('offset')).toBe('40')
     statuses.length = 0
@@ -314,16 +317,16 @@ describe('LogsPanel', () => {
     expect(statuses.length).toBeGreaterThan(0)
     expect(statuses.every((status) => status === '読み込み中…')).toBe(true)
     expect(screen.queryByText('Out-of-range response', { selector: 'summary' })).not.toBeInTheDocument()
-    expect(screen.queryByText(text)).not.toBeInTheDocument()
+    expect(pager().queryByText(text)).not.toBeInTheDocument()
     for (const name of ['前へ', '次へ', 'CSVをダウンロード']) {
-      expect(screen.getByRole('button', { name })).toBeDisabled()
+      for (const button of screen.getAllByRole('button', { name })) expect(button).toBeDisabled()
     }
     await act(async () => {
       pending[1].resolve(await response({ items: total ? [{ ...row, message: 'Corrected page' }] : [], total }))
     })
-    await screen.findByText(text)
-    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+    await pager().findByText(text)
+    expect(pager().queryByText('読み込み中…')).not.toBeInTheDocument()
+    expect(pager().getByRole('button', { name: '次へ' })).toBeDisabled()
     if (total) {
       expect(screen.getByText('Corrected page', { selector: 'summary' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled()
@@ -331,7 +334,7 @@ describe('LogsPanel', () => {
       expect(screen.getByText('条件に一致するログはありません')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeDisabled()
     }
-    const previous = screen.getByRole('button', { name: '前へ' })
+    const previous = pager().getByRole('button', { name: '前へ' })
     if (offset === '0') expect(previous).toBeDisabled()
     else expect(previous).toBeEnabled()
     expect(pending).toHaveLength(2)
@@ -341,7 +344,7 @@ describe('LogsPanel', () => {
     const { pending, onError } = await startPageCorrection(15)
     await act(async () => { pending[1].reject(new Error('corrected page offline')) })
     expect(onError).toHaveBeenCalledWith('corrected page offline')
-    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+    expect(pager().queryByText('読み込み中…')).not.toBeInTheDocument()
     expect(screen.queryByText('Out-of-range response', { selector: 'summary' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled()
   })
@@ -356,14 +359,14 @@ describe('LogsPanel', () => {
     await act(async () => {
       pending[1].resolve(await response({ items: [{ ...row, message: 'Stale corrected page' }], total: 15 }))
     })
-    expect(screen.getByText('読み込み中…')).toBeInTheDocument()
+    expect(pager().getByText('読み込み中…')).toBeInTheDocument()
     expect(screen.queryByText('Stale corrected page', { selector: 'summary' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeDisabled()
     await act(async () => {
       pending[2].resolve(await response({ items: [{ ...row, message: 'New filtered page' }], total: 1 }))
     })
     expect(screen.getByText('New filtered page', { selector: 'summary' })).toBeInTheDocument()
-    expect(screen.getByText('全 1 件中 1–1 件を表示')).toBeInTheDocument()
+    expect(pager().getByText('全 1 件中 1–1 件を表示')).toBeInTheDocument()
     expect(onError).not.toHaveBeenCalledWith(expect.any(String))
   })
 
@@ -373,7 +376,7 @@ describe('LogsPanel', () => {
     fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-02' } })
     await waitFor(() => expect(pending).toHaveLength(3))
     fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2026-01-01' } })
-    await waitFor(() => expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument())
+    await waitFor(() => expect(pager().queryByText('読み込み中…')).not.toBeInTheDocument())
     expect(onError).toHaveBeenCalledWith(expect.any(String))
     expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeDisabled()
     await act(async () => {

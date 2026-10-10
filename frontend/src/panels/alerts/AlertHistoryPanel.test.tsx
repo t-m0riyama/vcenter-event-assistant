@@ -57,3 +57,32 @@ describe('delivery history', () => {
     confirm.mockRestore()
   })
 })
+
+describe('pagination', () => {
+  it('requests one page at a time and moves with the bottom controls too', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 120, items: [
+      { ...base, id: 1, delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    show()
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/api/alerts/history?limit=50&offset=0'))
+    const top = await screen.findByRole('navigation', { name: 'ページ切り替え（上）' })
+    expect(within(top).getByText('全 120 件中 1–50 件を表示')).toBeInTheDocument()
+    const bottom = screen.getByRole('navigation', { name: 'ページ切り替え（下）' })
+    fireEvent.click(within(bottom).getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/api/alerts/history?limit=50&offset=50'))
+    expect(within(top).getByText('全 120 件中 51–100 件を表示')).toBeInTheDocument()
+  })
+
+  it('goes back to the last page when the current page becomes empty', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 60, items: [
+      { ...base, id: 1, delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    show()
+    const top = await screen.findByRole('navigation', { name: 'ページ切り替え（上）' })
+    fireEvent.click(within(top).getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/api/alerts/history?limit=50&offset=50'))
+    vi.mocked(apiGet).mockResolvedValue({ total: 50, items: [] })
+    fireEvent.click(screen.getByRole('button', { name: '一覧を更新' }))
+    await waitFor(() => expect(within(top).getByText('全 50 件中 1–50 件を表示')).toBeInTheDocument())
+  })
+})

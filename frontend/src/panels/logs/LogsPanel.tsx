@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { apiGet, prepareBrowserRequest } from '../../api'
 import { SeverityBadge } from '../../components/badges'
+import { Pagination } from '../../components/Pagination'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
 import { collectorStatusListSchema } from '../../api/schemas/plugins'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
@@ -41,6 +42,16 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
   const rangeSummary = resolvedRange.ok
     ? `${eventRange?.from ? formatIsoInTimeZone(eventRange.from, timeZone) : '開始指定なし'} ～ ${eventRange?.to ? formatIsoInTimeZone(eventRange.to, timeZone) : '終了指定なし'}（${timeZone}）`
     : `期間: ${inputs.rangeFromInput || '開始指定なし'} ～ ${inputs.rangeToInput || '終了指定なし'}（入力を確認）`
+  const pagination = {
+    total: data.total,
+    start: page * pageSize + 1,
+    end: Math.min((page + 1) * pageSize, data.total),
+    canPrev: page > 0,
+    canNext: (page + 1) * pageSize < data.total,
+    onPrev: () => setPage(page - 1),
+    onNext: () => setPage(page + 1),
+    loading,
+  }
   const filterSummary = [
     ['接続先ID', source], ['種別', kind], ['重大度', severity], ['本文', message],
   ].filter(([, value]) => value.trim()).map(([label, value]) => {
@@ -170,13 +181,7 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
           {EVENT_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
-      <div className="toolbar__pagination">
-        <button type="button" className="btn" disabled={page === 0 || loading} onClick={() => setPage(page - 1)}>前へ</button>
-        <button type="button" className="btn" disabled={(page + 1) * pageSize >= data.total || loading} onClick={() => setPage(page + 1)}>次へ</button>
-      </div>
-      <span className="toolbar__meta" role="status">
-        {loading ? '読み込み中…' : data.total === 0 ? '全 0 件' : `全 ${data.total} 件中 ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, data.total)} 件を表示`}
-      </span>
+      <Pagination position="top" {...pagination} />
       <button type="button" className="btn btn--gray" disabled={loading || !resolvedRange.ok || data.total === 0} onClick={() => void downloadCsv()}>
         CSVをダウンロード
       </button>
@@ -214,5 +219,6 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
         <td><details><summary>{r.message.split('\n')[0].slice(0, 160)}</summary><pre>{r.message}</pre><small>世代: {r.file_generation} / バイト位置: {r.byte_offset}</small><p><a href={correlationHash('events', { vcenterId: r.vcenter_id, from: new Date(Date.parse(r.effective_at) - 300_000).toISOString(), to: new Date(Date.parse(r.effective_at) + 300_000).toISOString() })}>前後5分のイベント</a></p></details></td>
       </tr>)}
     </tbody></table></div>}
+    {data.total > 0 && <Pagination position="bottom" {...pagination} />}
   </div>
 }

@@ -127,3 +127,12 @@
   font-size: var(--font-size-footnote);
   color: var(--color-text-secondary);
 }
+
+.toolbar__pagination--bottom {
+  margin-top: var(--spacing-4);
+}
+
+/* 数値など短い値の入力欄。既定の幅（約 20 文字）だと隣の select より大きく広がる。 */
+.toolbar__input--short {
+  width: 7rem;
+}

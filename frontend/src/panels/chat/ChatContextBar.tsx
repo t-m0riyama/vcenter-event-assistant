@@ -1,5 +1,6 @@
 import type { VCenter } from '../../api/schemas'
-import { ZonedRangeFields, type ZonedRangeParts } from '../../datetime/ZonedRangeFields'
+import { ZonedRangeDetails } from '../../datetime/ZonedRangeDetails'
+import type { ZonedRangeParts } from '../../datetime/ZonedRangeFields'
 
 type MetricThresholdFieldProps = {
   label: string
@@ -36,6 +37,8 @@ function MetricThresholdField({
 type ChatContextBarProps = {
   rangeParts: ZonedRangeParts
   setRangeParts: (next: ZonedRangeParts) => void
+  applyRollingPreset: (durationMs: number) => void
+  rangeDisplayLabel: string
   vcenters: VCenter[]
   vcenterId: string
   setVcenterId: (value: string) => void
@@ -75,6 +78,8 @@ type ChatContextBarProps = {
 export function ChatContextBar({
   rangeParts,
   setRangeParts,
+  applyRollingPreset,
+  rangeDisplayLabel,
   vcenters,
   vcenterId,
   setVcenterId,
@@ -107,8 +112,14 @@ export function ChatContextBar({
 }: ChatContextBarProps) {
   return (
     <>
-      <section className="chat-panel__section" aria-label="集計期間">
-        <ZonedRangeFields value={rangeParts} onChange={setRangeParts} />
+      <section className="chat-panel__section">
+        <ZonedRangeDetails
+          displayLabel={rangeDisplayLabel}
+          hint="表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。開始・終了の両方を指定してください。日付のみの場合は開始は 0:00・終了は 23:59 です。クイックで直近の範囲を入れられます。"
+          value={rangeParts}
+          onChange={setRangeParts}
+          onQuickPreset={applyRollingPreset}
+        />
       </section>
 
       <section className="chat-panel__section" aria-label="vCenter">

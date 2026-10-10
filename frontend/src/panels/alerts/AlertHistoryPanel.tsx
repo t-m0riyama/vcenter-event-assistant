@@ -3,6 +3,8 @@ import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useAuth } from '../../auth/useAuth'
+import { Pagination } from '../../components/Pagination'
+import { EVENT_PAGE_SIZES } from '../../events/constants'
 import './AlertHistoryPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -52,18 +54,39 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
   const canDelete = hasRole('admin')
   const { timeZone } = useTimeZone()
   const [history, setHistory] = useState<AlertHistory[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
   const [loading, setLoading] = useState(true)
 
   const fetchHistory = useCallback(async () => {
     try {
-      const data = await apiGet<HistoryResponse>('/api/alerts/history')
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String((page - 1) * pageSize) })
+      const data = await apiGet<HistoryResponse>(`/api/alerts/history?${params}`)
       setHistory(data.items)
+      setTotal(data.total)
     } catch (e) {
       onError(String(e))
     } finally {
       setLoading(false)
     }
-  }, [onError])
+  }, [onError, page, pageSize])
+
+  // 削除などで最後のページが空になったら、残っている最後のページに戻す。
+  const lastPage = Math.max(1, Math.ceil(total / pageSize))
+  useEffect(() => {
+    if (page > lastPage) setPage(lastPage)
+  }, [page, lastPage])
+
+  const pagination = {
+    total,
+    start: total === 0 ? 0 : (page - 1) * pageSize + 1,
+    end: Math.min(page * pageSize, total),
+    canPrev: page > 1,
+    canNext: page * pageSize < total,
+    onPrev: () => setPage((p) => Math.max(1, p - 1)),
+    onNext: () => setPage((p) => p + 1),
+  }
 
   useEffect(() => {
     fetchHistory()
@@ -122,6 +145,26 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
         <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
           一覧を更新
         </button>
+      </div>
+
+      <div className="toolbar">
+        <label>
+          表示件数
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value) as (typeof EVENT_PAGE_SIZES)[number])
+              setPage(1)
+            }}
+          >
+            {EVENT_PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Pagination position="top" {...pagination} />
       </div>
 
       {history.length === 0 ? (
@@ -203,6 +246,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
           </table>
         </div>
       )}
+      {total > 0 && <Pagination position="bottom" {...pagination} />}
     </div>
   )
 }

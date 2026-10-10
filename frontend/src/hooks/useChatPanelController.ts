@@ -50,7 +50,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const { prefs: webSearchPrefs } = useChatWebSearchPrefs()
   const thresholdFields = usePeriodMetricThresholdFields()
 
-  const { rangeParts, setRangeParts } = useRollingZonedRangeParts(timeZone)
+  const { rangeParts, setRangeParts, applyRollingPreset, rangeDisplayLabel } =
+    useRollingZonedRangeParts(timeZone)
   const [vcenterId, setVcenterId] = useState<string>('')
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -422,6 +423,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     timeZone,
     rangeParts,
     setRangeParts,
+    applyRollingPreset,
+    rangeDisplayLabel,
     vcenters,
     vcenterId,
     setVcenterId,

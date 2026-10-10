@@ -55,6 +55,28 @@ describe(
       expect(screen.getByRole('button', { name: 'タイムラインを生成' })).toBeEnabled()
     })
 
+    it('期間はグラフと同じ折りたたみの「表示期間」で、要約が手入力とクイックで切り替わる', async () => {
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/vcenters')) return Promise.resolve(jsonResponse([]))
+        if (url.includes('/api/incident-timeline/snapshots/manual?')) {
+          return Promise.resolve(jsonResponse({ items: [], total: 0, limit: 20, offset: 0 }))
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      renderTimeline()
+      const summary = screen.getByText('表示期間').closest('summary')!
+      expect(summary.closest('details')).not.toHaveAttribute('open')
+      expect(within(summary).getByText('直近24時間')).toBeInTheDocument()
+      fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-01' } })
+      fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2026-01-02' } })
+      expect(within(summary).getByText('2026-01-01 ～ 2026-01-02')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '過去 7 日' }))
+      expect(within(summary).getByText('直近 7 日')).toBeInTheDocument()
+    })
+
     it('生成前でも監査ビューから保存済みスナップショットを選択してタイムラインへ切り替えできる', async () => {
       const timelinePayloads: Record<string, unknown>[] = []
       const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {

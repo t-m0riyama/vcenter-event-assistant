@@ -1,5 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { summarizeGraphRangePreview } from '../datetime/graphRange'
 import {
+  formatRollingDurationLabel,
   METRICS_DEFAULT_ROLLING_DURATION_MS,
   presetRelativeRangeWallPartsWithUtcFallback,
   type ZonedRangeParts,
@@ -13,7 +15,7 @@ type RangeFollowMode = 'rolling' | 'manual'
  */
 export function useRollingZonedRangeParts(timeZone: string) {
   const [rangeFollowMode, setRangeFollowMode] = useState<RangeFollowMode>('rolling')
-  const [rollingDurationMs] = useState(METRICS_DEFAULT_ROLLING_DURATION_MS)
+  const [rollingDurationMs, setRollingDurationMs] = useState(METRICS_DEFAULT_ROLLING_DURATION_MS)
   const [rangeParts, setRangePartsState] = useState<ZonedRangeParts>(() =>
     presetRelativeRangeWallPartsWithUtcFallback(
       METRICS_DEFAULT_ROLLING_DURATION_MS,
@@ -27,6 +29,25 @@ export function useRollingZonedRangeParts(timeZone: string) {
     setRangePartsState(next)
   }, [])
 
+  /** クイックの「過去 N」。ローリングに戻し、要約も「直近 N」にする。 */
+  const applyRollingPreset = useCallback(
+    (durationMs: number) => {
+      setRangeFollowMode('rolling')
+      setRollingDurationMs(durationMs)
+      setRangePartsState(presetRelativeRangeWallPartsWithUtcFallback(durationMs, timeZone))
+    },
+    [timeZone],
+  )
+
+  /** 折りたたんだ「表示期間」の要約（グラフタブと同じ表記）。 */
+  const rangeDisplayLabel = useMemo(
+    () =>
+      rangeFollowMode === 'rolling'
+        ? formatRollingDurationLabel(rollingDurationMs)
+        : summarizeGraphRangePreview(rangeParts),
+    [rangeFollowMode, rollingDurationMs, rangeParts],
+  )
+
   if (previousTimeZone !== timeZone) {
     setPreviousTimeZone(timeZone)
     if (rangeFollowMode === 'rolling') {
@@ -36,5 +57,5 @@ export function useRollingZonedRangeParts(timeZone: string) {
     }
   }
 
-  return { rangeParts, setRangeParts }
+  return { rangeParts, setRangeParts, applyRollingPreset, rangeDisplayLabel }
 }
