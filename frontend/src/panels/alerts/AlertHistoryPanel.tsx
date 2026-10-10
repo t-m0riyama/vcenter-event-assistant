@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
@@ -59,16 +59,23 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
   const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
   const [loading, setLoading] = useState(true)
 
+  // apiGet は取り消せないので、ページを素早く送ったときや定期の再取得と重なったときに、
+  // 古い要求の応答が後から届いて新しいページを上書きしないよう、最新の要求の応答だけを使う。
+  const latestRequestRef = useRef(0)
+
   const fetchHistory = useCallback(async () => {
+    const request = ++latestRequestRef.current
     try {
       const params = new URLSearchParams({ limit: String(pageSize), offset: String((page - 1) * pageSize) })
       const data = await apiGet<HistoryResponse>(`/api/alerts/history?${params}`)
+      if (request !== latestRequestRef.current) return
       setHistory(data.items)
       setTotal(data.total)
     } catch (e) {
+      if (request !== latestRequestRef.current) return
       onError(String(e))
     } finally {
-      setLoading(false)
+      if (request === latestRequestRef.current) setLoading(false)
     }
   }, [onError, page, pageSize])
 

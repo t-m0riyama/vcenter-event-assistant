@@ -85,4 +85,48 @@ describe('pagination', () => {
     fireEvent.click(screen.getByRole('button', { name: '一覧を更新' }))
     await waitFor(() => expect(within(top).getByText('全 50 件中 1–50 件を表示')).toBeInTheDocument())
   })
+
+  it('ignores a response for a page the user has already left', async () => {
+    let resolveFirstPage: (value: unknown) => void = () => {}
+    vi.mocked(apiGet).mockImplementation((path: string) => {
+      if (path.endsWith('offset=0')) {
+        return new Promise((resolve) => {
+          resolveFirstPage = resolve
+        })
+      }
+      return Promise.resolve({ total: 120, items: [
+        { ...base, id: 2, context_key: 'page-2', delivery_status: 'succeeded', success: true, attempt_count: 1 },
+      ] })
+    })
+    show()
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/api/alerts/history?limit=50&offset=0'))
+    // 最初の応答を待たずに次のページへ進むため、件数が分かっている状態を作る。
+    resolveFirstPage({ total: 120, items: [
+      { ...base, id: 1, context_key: 'page-1', delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    expect(await screen.findByText('page-1')).toBeInTheDocument()
+    vi.mocked(apiGet).mockImplementation((path: string) => {
+      if (path.endsWith('offset=0')) {
+        return new Promise((resolve) => {
+          resolveFirstPage = resolve
+        })
+      }
+      return Promise.resolve({ total: 120, items: [
+        { ...base, id: 2, context_key: 'page-2', delivery_status: 'succeeded', success: true, attempt_count: 1 },
+      ] })
+    })
+    // 1 ページ目の再取得（応答待ち）の間に 2 ページ目へ進む。
+    fireEvent.click(screen.getByRole('button', { name: '一覧を更新' }))
+    const top = screen.getByRole('navigation', { name: 'ページ切り替え（上）' })
+    fireEvent.click(within(top).getByRole('button', { name: '次へ' }))
+    expect(await screen.findByText('page-2')).toBeInTheDocument()
+    // 古い 1 ページ目の応答が後から届いても、2 ページ目の表示は変わらない。
+    resolveFirstPage({ total: 120, items: [
+      { ...base, id: 3, context_key: 'stale-page-1', delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByText('stale-page-1')).not.toBeInTheDocument()
+    expect(screen.getByText('page-2')).toBeInTheDocument()
+    expect(within(top).getByText('全 120 件中 51–100 件を表示')).toBeInTheDocument()
+  })
 })
