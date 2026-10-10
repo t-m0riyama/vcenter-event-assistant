@@ -152,4 +152,31 @@ describe('AlertRulesPanel list', () => {
     await waitFor(() => expect(patches).toHaveLength(2))
     expect(patches[1]).toEqual({ url: '/api/alerts/rules/7', body: { name: 'High score 2' } })
   })
+
+  it('削除したルールの id が使い回されても、消したルールの編集を新しいルールに重ねない', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let list: (typeof rule)[] = [rule]
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/metrics/catalog') return jsonResponse({ metrics: [] })
+      if (init?.method === 'DELETE') {
+        // 削除の後、別のルールが同じ id 7 で作られたことにする
+        list = [{ ...rule, name: 'New rule', alert_level: 'warning', created_at: '2026-10-10T00:00:00Z' }]
+        return new Response(null, { status: 204 })
+      }
+      return jsonResponse(list)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AlertRulesPanel onError={vi.fn()} />)
+
+    fireEvent.click(await screen.findByLabelText(/^High score、/))
+    fireEvent.change(screen.getByLabelText('High score のルール名'), { target: { value: 'Edited' } })
+    fireEvent.change(screen.getByLabelText('High score のアラートレベル'), { target: { value: 'error' } })
+    fireEvent.click(screen.getByRole('button', { name: '削除' }))
+
+    fireEvent.click(await screen.findByLabelText(/^New rule、警告、/))
+    expect(screen.getByLabelText('New rule のルール名')).toHaveValue('New rule')
+    expect(screen.getByLabelText('New rule のアラートレベル')).toHaveValue('warning')
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+  })
 })
