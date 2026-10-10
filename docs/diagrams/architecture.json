@@ -16,6 +16,12 @@
         "note": "ブラウザから /api を通り、DB の一覧とグラフを返す。"
       },
       {
+        "id": "auth",
+        "label": "ログイン",
+        "focus": ["api", "db", "directory"],
+        "note": "ローカルは DB のユーザーを照合する。AD / LDAP は設定した認証先だけ外部へ問い合わせる。"
+      },
+      {
         "id": "collect",
         "label": "収集",
         "focus": ["api", "scheduler", "collectors", "vcenter", "db"],
@@ -24,8 +30,8 @@
       {
         "id": "optional",
         "label": "任意の外部連携",
-        "focus": ["proxy", "api", "llm", "smtp"],
-        "note": "LLM は任意。アラートは設定時だけ、プロジェクト外のメールサーバへ SMTP 送信する。"
+        "focus": ["proxy", "api", "llm", "smtp", "directory"],
+        "note": "LLM と AD / LDAP は任意。アラートは設定時だけ、プロジェクト外のメールサーバへ SMTP 送信する。"
       }
     ]
   },
@@ -84,6 +90,15 @@
       "tag": "ベータ",
       "pos": [756, 8],
       "size": [176, 72]
+    },
+    {
+      "id": "directory",
+      "type": "external",
+      "label": "AD / LDAP",
+      "sublabel": "認証ディレクトリ",
+      "tag": "任意",
+      "pos": [516, 8],
+      "size": [168, 72]
     },
     {
       "id": "smtp",
@@ -155,7 +170,16 @@
       "from": "api",
       "to": "db",
       "label": "SQLAlchemy",
-      "variant": "emphasis"
+      "variant": "emphasis",
+      "labelDy": -28
+    },
+    {
+      "id": "api-db-login",
+      "from": "api",
+      "to": "db",
+      "label": "ローカルログイン",
+      "labelDy": 48,
+      "labelDx": -50
     },
     {
       "id": "api-scheduler",
@@ -203,6 +227,14 @@
       "to": "llm",
       "label": "要約・チャット",
       "variant": "dashed"
+    },
+    {
+      "id": "api-directory",
+      "from": "api",
+      "to": "directory",
+      "label": "LDAP",
+      "variant": "dashed",
+      "via": [[756, 100], [700, 100], [700, 44]]
     }
   ],
   "cards": [
@@ -227,7 +259,8 @@
       "title": "任意の連携",
       "items": [
         "TLS はリバースプロキシで終端し、ログインとロールはアプリが持つ",
-        "LLM は任意。アラートは設定時だけ、プロジェクト外のメールサーバへ SMTP 送信する"
+        "LLM は任意。アラートは設定時だけ、プロジェクト外のメールサーバへ SMTP 送信する",
+        "ローカルログインは DB のユーザーを照合する。AD / LDAP は設定したときだけ外部へ問い合わせる"
       ]
     }
   ]
