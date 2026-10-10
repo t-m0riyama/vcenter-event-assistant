@@ -159,7 +159,6 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   if (loadState === 'loading') {
     return (
       <div className="panel digests-panel">
-        <h2>ダイジェスト</h2>
         <p>読み込み中…</p>
       </div>
     )
@@ -168,7 +167,6 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   if (loadState === 'error') {
     return (
       <div className="panel digests-panel">
-        <h2>ダイジェスト</h2>
         <p className="hint">ダイジェストを読み込めませんでした。上部のメッセージを確認してください。</p>
       </div>
     )
@@ -177,7 +175,6 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   return (
     <div className="panel digests-panel">
       <div className="digests-panel-header">
-        <h2>ダイジェスト</h2>
         <button type="button" className="btn btn--gray digests-refresh" onClick={() => void load()}>
           一覧を更新
         </button>
