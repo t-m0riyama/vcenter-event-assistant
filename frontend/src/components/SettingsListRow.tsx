@@ -7,7 +7,10 @@ type SettingsListRowProps = {
   badges?: ReactNode
   /** 見出しの下に 2 行まで出す要約。 */
   preview?: ReactNode
-  /** 折りたたんだ行の読み上げ名。 */
+  /**
+   * 折りたたんだ行の読み上げ名（名前やバッジの内容）。開閉の状態は `<details>` が伝えるので、
+   * 「折りたたみ」「クリックで展開」などの状態の言葉は入れない（開いた後も同じ名前で読まれるため）。
+   */
   ariaLabel: string
   /** 最初から開いておく（追加した直後の行など）。 */
   defaultOpen?: boolean

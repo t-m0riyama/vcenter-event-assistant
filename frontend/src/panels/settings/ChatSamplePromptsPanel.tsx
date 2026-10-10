@@ -200,7 +200,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
                 ) : null
               }
               preview={row.text.trim() || undefined}
-              ariaLabel={`${label || '表示ラベルなし'}${incomplete ? '、チャットに表示されません' : ''}、折りたたみ、クリックで展開`}
+              ariaLabel={`${label || '表示ラベルなし'}${incomplete ? '、チャットに表示されません' : ''}`}
               defaultOpen={addedIds.has(row.id)}
             >
               <div className="settings-row__fields">

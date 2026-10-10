@@ -127,7 +127,7 @@ describe('App のロールによる出し分け', () => {
   it('アラートルールは viewer でも行を展開して詳細（再通知間隔）を確認できる', async () => {
     renderAs('viewer')
     await openSettings('アラート')
-    fireEvent.click(await screen.findByLabelText(/^高スコアイベント、.*クリックで展開/))
+    fireEvent.click(await screen.findByLabelText(/^高スコアイベント、/))
     const cooldown = await screen.findByLabelText(/高スコアイベント の再通知間隔/)
     expect(cooldown).toHaveValue(45)
     expect(cooldown).toHaveAttribute('readonly')

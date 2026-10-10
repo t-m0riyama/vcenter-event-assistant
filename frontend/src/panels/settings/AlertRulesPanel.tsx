@@ -389,7 +389,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                   </>
                 }
                 preview={condition}
-                ariaLabel={`${r.name}、${ALERT_LEVEL_LABELS[level]}、${typeLabel}、${r.is_enabled ? '有効' : '無効'}、折りたたみ、クリックで展開`}
+                ariaLabel={`${r.name}、${ALERT_LEVEL_LABELS[level]}、${typeLabel}、${r.is_enabled ? '有効' : '無効'}`}
               >
                 <div className="settings-row__fields">
                   <label>

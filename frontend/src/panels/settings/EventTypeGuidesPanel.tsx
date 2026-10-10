@@ -283,7 +283,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
         {list.map((r) => {
           const d = draft[r.id] ?? rowToDraft(r)
           const preview = formatEventTypeGuideCollapsedPreview(d, { maxChars: 200 })
-          const summaryAria = `${r.event_type}、${d.action_required ? '要対処' : '対処不要'}、折りたたみ、クリックで展開`
+          const summaryAria = `${r.event_type}、${d.action_required ? '要対処' : '対処不要'}`
           return (
             <SettingsListRow
               key={r.id}

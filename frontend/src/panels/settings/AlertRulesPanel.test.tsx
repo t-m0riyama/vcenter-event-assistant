@@ -94,7 +94,7 @@ describe('AlertRulesPanel list', () => {
 
     render(<AlertRulesPanel onError={vi.fn()} />)
 
-    const summary = await screen.findByLabelText(/^High score、クリティカル、イベントスコア、有効、/)
+    const summary = await screen.findByLabelText(/^High score、クリティカル、イベントスコア、有効$/)
     expect(summary).toHaveTextContent('スコア 80 以上')
     fireEvent.click(summary)
 
@@ -112,6 +112,6 @@ describe('AlertRulesPanel list', () => {
       expect(body).toMatchObject({ name: 'High score', alert_level: 'warning', is_enabled: false })
     })
     expect(fetchMock.mock.calls.filter((c) => (c[1] as RequestInit)?.method === 'PATCH')).toHaveLength(1)
-    await screen.findByLabelText(/^High score、警告、イベントスコア、無効、/)
+    await screen.findByLabelText(/^High score、警告、イベントスコア、無効$/)
   })
 })
