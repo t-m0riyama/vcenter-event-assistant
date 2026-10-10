@@ -307,16 +307,18 @@ export default function App() {
             <img src="/favicon-small-light.svg" alt="" className="header__logo header__logo--light" width={44} height={44} />
             <img src="/favicon-small.svg" alt="" className="header__logo header__logo--dark" width={44} height={44} />
             <h1>vCenter Event Assistant</h1>
-            <button
-              type="button"
-              className="help-toggle-button"
-              onClick={() => setShowHelp(!showHelp)}
-              aria-label="使い方を表示"
-            >
-              <HelpIcon />
-              <span>使い方を表示</span>
-            </button>
-            <UserMenu />
+            <div className="header__actions">
+              <button
+                type="button"
+                className="help-toggle-button"
+                onClick={() => setShowHelp(!showHelp)}
+                aria-label="使い方を表示"
+              >
+                <HelpIcon />
+                <span>使い方を表示</span>
+              </button>
+              <UserMenu />
+            </div>
           </div>
           {retention && (
             <p className="retention-hint">

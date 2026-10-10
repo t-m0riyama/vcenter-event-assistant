@@ -222,17 +222,20 @@ describe('App のロールによる出し分け', () => {
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
-  it('ヘッダーに利用者名とロールを出す（ディレクトリの利用者にはパスワード変更を出さない）', async () => {
+  it('ヘッダーのアバターから利用者名とロールを出す（ディレクトリの利用者にはパスワード変更を出さない）', async () => {
     renderAs('operator', { display_name: 'Olivia', can_change_password: false })
-    expect(await screen.findByText('Olivia')).toBeInTheDocument()
-    expect(screen.getByText('オペレーター')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ログアウト' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'パスワード変更' })).not.toBeInTheDocument()
+    const avatar = await screen.findByRole('button', { name: 'アカウントメニュー（Olivia・オペレーター）' })
+    fireEvent.click(avatar)
+    const menu = screen.getByRole('menu', { name: 'アカウント' })
+    expect(within(menu).getByText('Olivia')).toBeInTheDocument()
+    expect(within(menu).getByText('オペレーター')).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'ログアウト' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'パスワード変更' })).not.toBeInTheDocument()
   })
 
   it('認証が無効なサーバではユーザーメニューを出さない', async () => {
     renderAs('admin', { auth_enabled: false })
     await screen.findByRole('heading', { name: 'vCenter Event Assistant' })
-    expect(screen.queryByRole('button', { name: 'ログアウト' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /アカウントメニュー/ })).not.toBeInTheDocument()
   })
 })

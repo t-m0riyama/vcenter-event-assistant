@@ -68,6 +68,13 @@ html[data-theme='dark'] .header__logo--dark {
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.12s ease;
+}
+
+/* 「使い方を表示」とアバターを右上にまとめ、縦の中心を揃える。 */
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
   margin-left: auto;
   align-self: flex-start;
 }
