@@ -136,3 +136,31 @@
 .toolbar__input--short {
   width: 7rem;
 }
+
+/* ツールバーの中のチェックボックスの組。ほかの項目と同じく見出しが上、選択肢が下（高さはコントロールに揃える）。 */
+.toolbar__checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-footnote);
+}
+
+.toolbar__checks-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 44px;
+}
+
+.toolbar .toolbar__check {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-right: var(--spacing-3);
+}
+
+/* ツールバーの下に 1 行で出す説明。 */
+.toolbar > .toolbar__note {
+  flex-basis: 100%;
+  margin: 0;
+}

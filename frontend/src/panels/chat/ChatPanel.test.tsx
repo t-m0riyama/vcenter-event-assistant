@@ -947,7 +947,7 @@ describe(
       expect(fetchMock).toHaveBeenCalled()
     })
 
-    fireEvent.change(screen.getByLabelText('対象 vCenter'), { target: { value: 'vc-1' } })
+    fireEvent.change(screen.getByLabelText('vCenter'), { target: { value: 'vc-1' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /^CPU 使用率$/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: /^ネットワーク IO$/ }))
     fireEvent.change(screen.getByRole('spinbutton', { name: 'CPU 閾値（%）' }), {

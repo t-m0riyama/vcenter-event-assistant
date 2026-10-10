@@ -2,7 +2,7 @@
   margin-bottom: var(--spacing-4);
 }
 
-/* 期間メトリクスのチェックボックス。タイムラインと同じ間隔で横に並べる。 */
+/* WEB 検索を許可するチェックボックス。 */
 .chat-panel__checkbox-label {
   display: inline-flex;
   align-items: center;
@@ -137,26 +137,6 @@
   gap: var(--spacing-2);
   align-items: center;
   max-width: min(100%, 960px);
-}
-
-.chat-panel__threshold-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--spacing-2);
-  width: 100%;
-  max-width: min(100%, 960px);
-}
-
-.chat-panel__threshold-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-}
-
-.chat-panel__threshold-field input {
-  width: 100%;
-  box-sizing: border-box;
-  font: inherit;
 }
 
 .chat-custom-samples-actions {
