@@ -4,7 +4,8 @@ Playwright ドキュメント用スクリーンショット向けの最小 DB �
 環境変数 ``SCREENSHOT_E2E_SEED=1`` のときのみ実行する。本番では無効のままとする。
 
 投入内容: vCenter・イベント種別ガイド・イベントに加え、グラフタブ既定キー向けの
-``MetricSample``（``datastore.space.used_bytes`` の時系列）を含む。
+``MetricSample``（``datastore.space.used_bytes`` の時系列）、日次ダイジェスト 1 件、
+イベントスコア型アラートルール 1 件と通知履歴 1 行を含む。
 """
 
 from __future__ import annotations
@@ -14,7 +15,15 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertHistory,
+    AlertRule,
+    DigestRecord,
+    EventRecord,
+    EventTypeGuide,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import session_scope
 
 _SCREENSHOT_VC_NAME = "screenshot-e2e-vc"
@@ -26,7 +35,7 @@ _EVENT_TYPES = (
 
 
 async def run_screenshot_e2e_seed_if_enabled() -> None:
-    """``SCREENSHOT_E2E_SEED=1`` のとき、未シードなら vCenter・ガイド・イベントを挿入する。"""
+    """``SCREENSHOT_E2E_SEED=1`` のとき、未シードならドキュメント用の最小行を挿入する。"""
     if os.environ.get("SCREENSHOT_E2E_SEED") != "1":
         return
 
@@ -101,3 +110,44 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                     value=float(1_000_000_000 + i * 12_500_000),
                 ),
             )
+
+        period_end = now.replace(minute=0, second=0, microsecond=0)
+        period_start = period_end - timedelta(days=1)
+        session.add(
+            DigestRecord(
+                period_start=period_start,
+                period_end=period_end,
+                kind="daily",
+                body_markdown=(
+                    "# 日次ダイジェスト（デモ）\n\n"
+                    "## 概要\n\nスクリーンショット用の最小サンプルです。\n"
+                ),
+                status="ok",
+                llm_model=None,
+                created_at=now,
+            ),
+        )
+
+        rule = AlertRule(
+            name="デモ: イベントスコア",
+            rule_type="event_score",
+            is_enabled=True,
+            alert_level="warning",
+            config={"threshold": 50, "cooldown_minutes": 60},
+        )
+        session.add(rule)
+        await session.flush()
+        session.add(
+            AlertHistory(
+                rule_id=rule.id,
+                alert_level="warning",
+                state="firing",
+                context_key=_EVENT_TYPES[0],
+                notified_at=now,
+                channel="email",
+                success=True,
+                delivery_status="succeeded",
+                attempt_count=1,
+                last_attempt_at=now,
+            ),
+        )

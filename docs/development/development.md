@@ -391,11 +391,22 @@ Windows のコマンドプロンプトでは環境変数の付け方が異なる
 
 | ファイル名 | 画面 |
 |-----------|------|
+| `login.png` | ログイン（未ログイン・資格情報は空欄） |
 | `summary.png` | 概要 |
 | `events.png` | イベント |
 | `events-event-type-guide-expanded.png` | イベント → ガイド列「表示」展開 |
+| `logs.png` | ログ |
 | `metrics.png` | グラフ |
+| `digests.png` | ダイジェスト |
+| `alerts-history.png` | 通知履歴 |
+| `chat.png` | チャット |
+| `timeline.png` | タイムライン（生成前） |
 | `settings-general.png` | 設定 → 一般 |
 | `settings-vcenters.png` | 設定 → vCenter |
 | `settings-score-rules.png` | 設定 → スコアルール |
 | `settings-event-type-guides-list.png` | 設定 → イベント種別ガイド（一覧先頭付近） |
+| `settings-alerts.png` | 設定 → アラート |
+| `settings-plugins.png` | 設定 → プラグイン |
+| `settings-chat.png` | 設定 → チャット |
+
+エージェント向けの再取得手順はプロジェクト Skill [capture-ui-screenshots](../../skills/capture-ui-screenshots/SKILL.md)（正本は `skills/`。公開は `uv run python scripts/link_skills.py`）を参照する。

@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import func, select
 
-from vcenter_event_assistant.db.models import EventRecord, EventTypeGuide, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertHistory,
+    AlertRule,
+    DigestRecord,
+    EventRecord,
+    EventTypeGuide,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.main import create_app
@@ -24,10 +32,16 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
         n_g = (await session.execute(select(func.count()).select_from(EventTypeGuide))).scalar_one()
         n_ev = (await session.execute(select(func.count()).select_from(EventRecord))).scalar_one()
         n_m = (await session.execute(select(func.count()).select_from(MetricSample))).scalar_one()
+        n_d = (await session.execute(select(func.count()).select_from(DigestRecord))).scalar_one()
+        n_rules = (await session.execute(select(func.count()).select_from(AlertRule))).scalar_one()
+        n_hist = (await session.execute(select(func.count()).select_from(AlertHistory))).scalar_one()
     assert n_vc == 1
     assert n_g == 3
     assert n_ev == 1
     assert n_m >= 1
+    assert n_d == 1
+    assert n_rules == 1
+    assert n_hist == 1
 
     app = create_app()
     async with open_client(app=app) as ac:

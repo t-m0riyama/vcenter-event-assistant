@@ -136,7 +136,9 @@ vCenter Event Assistant の **イベント** タブは、取り込み済みの *
 
 ### イベント（メインタブ）
 
-画面例: [イベントタブ](../images/events.png)、[ガイド展開](../images/events-event-type-guide-expanded.png)
+![イベントタブ](../images/events.png)
+
+![イベントタブ・ガイド展開](../images/events-event-type-guide-expanded.png)
 
 #### 一覧の更新
 

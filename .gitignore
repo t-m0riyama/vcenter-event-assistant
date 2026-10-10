@@ -167,3 +167,7 @@ docker-compose.yml
 # Antigravity Superpowers
 .agent/
 docs/plans/task.md
+
+# Project Skill の実行時エイリアス（正本は skills/）
+.agents/
+.claude/skills/

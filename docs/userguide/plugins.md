@@ -77,6 +77,8 @@ vCenter Event Assistant は、vCenter からデータを取り込む処理を **
 
 ## 4. 画面の見方
 
+![設定のプラグイン](../images/settings-plugins.png)
+
 ### 4.1 一覧
 
 | 列 | 意味 |
