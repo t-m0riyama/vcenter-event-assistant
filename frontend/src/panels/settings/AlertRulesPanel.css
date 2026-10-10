@@ -59,3 +59,9 @@
 .edit-row-hint {
   margin: 0 0 var(--spacing-3);
 }
+
+/* 編集中にほかの操作でルールが変わったときの注記（保存を止めている理由）。 */
+.alert-rules-conflict {
+  margin: 0 0 var(--spacing-3);
+  color: var(--color-warning-text);
+}

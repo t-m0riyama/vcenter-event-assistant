@@ -25,8 +25,16 @@ import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImpor
 import { useSettingsListFetch } from './useSettingsListCrud'
 import './AlertRulesPanel.css'
 import { SettingsListRow } from '../../components/SettingsListRow'
-
-type AlertLevel = 'critical' | 'error' | 'warning'
+import {
+  applyAlertRuleEdit,
+  discardAlertRuleDraft,
+  draftKey,
+  draftValues,
+  reconcileAlertRuleDrafts,
+  type AlertLevel,
+  type AlertRuleDrafts,
+  type EditDraft,
+} from './alertRuleDrafts'
 
 const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
   critical: 'クリティカル',
@@ -40,23 +48,6 @@ type AlertRule = AlertRuleRow & {
     metric_key?: string
     cooldown_minutes?: number
   }
-}
-
-interface EditDraft {
-  name: string
-  alert_level: AlertLevel
-  is_enabled: boolean
-  threshold: number
-  metric_key: string
-  cooldown_minutes: number
-}
-
-/**
- * 下書きのキー。削除した後に同じ id が使い回されても（SQLite など）、別のルールの下書きを
- * 重ねないよう作成日時も含める。
- */
-function draftKey(rule: Pick<AlertRule, 'id' | 'created_at'>): string {
-  return `${rule.id}:${rule.created_at}`
 }
 
 /** レベルのバッジの色（通知履歴と同じ。クリティカルは赤、エラーは黄、警告は無彩色）。 */
@@ -92,11 +83,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
   const [newThreshold, setNewThreshold] = useState(60)
   const [newMetricKey, setNewMetricKey] = useState<string>(DEFAULT_ALERT_METRIC_KEY)
-  /**
-   * 行ごとの編集中の値。利用者が変えた項目だけを持つ（インポートなどで一覧を読み直しても、
-   * 変えていない項目は読み直した値を出し、保存でも送らない）。キーは `draftKey`。
-   */
-  const [drafts, setDrafts] = useState<Record<string, Partial<EditDraft>>>({})
+  /** 行ごとの編集中の値（持ち方と、読み直したときの比べ方は `alertRuleDrafts.ts`）。 */
+  const [drafts, setDrafts] = useState<AlertRuleDrafts>({})
   const [metricKeyOptions, setMetricKeyOptions] = useState<string[]>([...KNOWN_METRIC_KEYS])
 
   useEffect(() => {
@@ -163,53 +151,24 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     }
   }
 
-  const makeDraftFromRule = (rule: AlertRule): EditDraft => ({
-    name: rule.name,
-    alert_level: rule.alert_level as AlertLevel,
-    is_enabled: rule.is_enabled,
-    threshold: Number(rule.config.threshold ?? 0),
-    metric_key: rule.config.metric_key ?? '',
-    cooldown_minutes: Number(rule.config.cooldown_minutes ?? 10),
-  })
-
   const updateDraft = (rule: AlertRule, patch: Partial<EditDraft>) => {
-    const key = draftKey(rule)
-    const current = makeDraftFromRule(rule)
-    setDrafts((prev) => {
-      const merged: Partial<EditDraft> = { ...prev[key], ...patch }
-      // 今のルールと同じ値に戻した項目は外す（残すと、後で読み直した新しい値を古い値で上書きしてしまう）。
-      for (const field of Object.keys(merged) as (keyof EditDraft)[]) {
-        if (merged[field] === current[field]) delete merged[field]
-      }
-      const next = { ...prev }
-      if (Object.keys(merged).length === 0) delete next[key]
-      else next[key] = merged
-      return next
-    })
+    setDrafts((prev) => applyAlertRuleEdit(prev, rule, patch))
   }
-
-  /** 画面に出す値（今のルールの値に、編集した項目だけを重ねる）。 */
-  const draftFor = (rule: AlertRule): EditDraft => ({ ...makeDraftFromRule(rule), ...drafts[draftKey(rule)] })
 
   const discardDraft = (rule: AlertRule) => {
-    setDrafts((prev) => {
-      const next = { ...prev }
-      delete next[draftKey(rule)]
-      return next
-    })
+    setDrafts((prev) => discardAlertRuleDraft(prev, rule))
   }
 
-  // 読み直した一覧にもうないルール（ほかの画面で削除されたものなど）の下書きは捨てる。
+  // 一覧を読み直すたびに下書きと比べ直す（消えたルールの下書きを捨て、競合に印を付ける）。
   useEffect(() => {
-    setDrafts((prev) => {
-      const live = new Set(rules.map(draftKey))
-      const stale = Object.keys(prev).filter((key) => !live.has(key))
-      if (stale.length === 0) return prev
-      const next = { ...prev }
-      for (const key of stale) delete next[key]
-      return next
-    })
+    setDrafts((prev) => reconcileAlertRuleDrafts(prev, rules))
   }, [rules])
+
+  /** 競合した行で、編集を捨ててサーバの値を読み直す。 */
+  const handleDiscardConflict = (rule: AlertRule) => {
+    discardDraft(rule)
+    fetchRules()
+  }
 
   const isDraftChanged = (rule: AlertRule, draft: EditDraft): boolean => {
     if (draft.name.trim() !== rule.name) return true
@@ -221,8 +180,10 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   }
 
   const handleSaveEdit = async (rule: AlertRule) => {
-    const edits = drafts[draftKey(rule)] ?? {}
-    const draft = draftFor(rule)
+    const entry = drafts[draftKey(rule)]
+    if (entry?.conflict) return
+    const edits = entry?.edits ?? {}
+    const draft = draftValues(rule, entry)
     const nextName = draft.name.trim()
     if (!nextName) {
       onError('ルール名は必須です。')
@@ -417,7 +378,9 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       ) : (
         <ul className="settings-list alert-rules-list">
           {rules.map((r) => {
-            const draft = draftFor(r)
+            const entry = drafts[draftKey(r)]
+            const draft = draftValues(r, entry)
+            const conflict = entry?.conflict ?? false
             const changed = isDraftChanged(r, draft)
             const level = r.alert_level as AlertLevel
             const typeLabel = r.rule_type === 'event_score' ? 'イベントスコア' : 'メトリクス閾値'
@@ -434,10 +397,13 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                     <span className={ALERT_LEVEL_BADGE_CLASS[level]}>{ALERT_LEVEL_LABELS[level]}</span>
                     <span className="settings-row__badge">{typeLabel}</span>
                     {r.is_enabled ? null : <span className="settings-row__badge">無効</span>}
+                    {conflict ? (
+                      <span className="settings-row__badge settings-row__badge--caution">ほかの操作で変更あり</span>
+                    ) : null}
                   </>
                 }
                 preview={condition}
-                ariaLabel={`${r.name}、${ALERT_LEVEL_LABELS[level]}、${typeLabel}、${r.is_enabled ? '有効' : '無効'}`}
+                ariaLabel={`${r.name}、${ALERT_LEVEL_LABELS[level]}、${typeLabel}、${r.is_enabled ? '有効' : '無効'}${conflict ? '、ほかの操作で変更あり' : ''}`}
               >
                 <div className="settings-row__fields">
                   <label>
@@ -515,11 +481,21 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                     <p className="hint edit-row-hint">
                       ルールのタイプは変更できません。変更する場合は、既存のルールを削除してから作成し直してください。
                     </p>
+                    {conflict && (
+                      <p className="hint alert-rules-conflict" role="alert">
+                        編集中に、ほかの操作（インポートや別の画面での変更など）で、このルールの変更した項目がサーバー上でも変更されました。上書きを防ぐため保存できません。「編集を破棄して読み直す」を押して最新の内容を確認してから、改めて編集してください。
+                      </p>
+                    )}
                     <div className="settings-row__actions">
+                      {conflict && (
+                        <button type="button" className="btn btn--gray" onClick={() => handleDiscardConflict(r)}>
+                          編集を破棄して読み直す
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn btn--filled"
-                        disabled={!changed}
+                        disabled={!changed || conflict}
                         onClick={() => void handleSaveEdit(r)}
                       >
                         保存

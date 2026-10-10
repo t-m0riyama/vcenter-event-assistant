@@ -209,4 +209,40 @@ describe('AlertRulesPanel list', () => {
     expect(screen.getByLabelText('High score のアラートレベル')).toHaveValue('error')
     expect(screen.getAllByRole('button', { name: '保存' })[0]).toBeDisabled()
   })
+
+  it('変えた項目が編集中にサーバでも変わったら、知らせて保存を止め、破棄して読み直せる', async () => {
+    const other = { ...rule, id: 8, name: 'Other', alert_level: 'warning' }
+    let first = rule
+    const patches: unknown[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/metrics/catalog') return jsonResponse({ metrics: [] })
+      if (init?.method === 'PATCH') {
+        patches.push(JSON.parse(String(init.body)))
+        // 同じ時期に、id 7 のレベルがほかの操作でエラーに変わる
+        first = { ...first, alert_level: 'error' }
+        return jsonResponse({})
+      }
+      return jsonResponse([first, other])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AlertRulesPanel onError={vi.fn()} />)
+
+    fireEvent.click(await screen.findByLabelText(/^High score、/))
+    fireEvent.change(screen.getByLabelText('High score のアラートレベル'), { target: { value: 'warning' } })
+    fireEvent.click(screen.getByLabelText(/^Other、/))
+    fireEvent.change(screen.getByLabelText('Other の閾値'), { target: { value: '70' } })
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[1])
+
+    await screen.findByLabelText(/^High score、エラー、イベントスコア、有効、ほかの操作で変更あり$/)
+    expect(screen.getByRole('alert')).toHaveTextContent('上書きを防ぐため保存できません')
+    // 利用者の値はそのまま見えるが、保存はできない
+    expect(screen.getByLabelText('High score のアラートレベル')).toHaveValue('warning')
+    expect(screen.getAllByRole('button', { name: '保存' })[0]).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: '編集を破棄して読み直す' }))
+    await waitFor(() => expect(screen.getByLabelText('High score のアラートレベル')).toHaveValue('error'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(patches).toHaveLength(1)
+  })
 })
