@@ -174,7 +174,18 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
 
   const updateDraft = (rule: AlertRule, patch: Partial<EditDraft>) => {
     const key = draftKey(rule)
-    setDrafts((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+    const current = makeDraftFromRule(rule)
+    setDrafts((prev) => {
+      const merged: Partial<EditDraft> = { ...prev[key], ...patch }
+      // 今のルールと同じ値に戻した項目は外す（残すと、後で読み直した新しい値を古い値で上書きしてしまう）。
+      for (const field of Object.keys(merged) as (keyof EditDraft)[]) {
+        if (merged[field] === current[field]) delete merged[field]
+      }
+      const next = { ...prev }
+      if (Object.keys(merged).length === 0) delete next[key]
+      else next[key] = merged
+      return next
+    })
   }
 
   /** 画面に出す値（今のルールの値に、編集した項目だけを重ねる）。 */
