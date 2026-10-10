@@ -96,7 +96,7 @@ export function TimelineFilters({
       {/* イベント・ログと同じツールバーの形（ラベルが上、入力欄が下で横に並べる）。 */}
       <div className="toolbar timeline-panel__toolbar" aria-label="タイムラインの条件">
         <label>
-          対象 vCenter
+          vCenter
           <select value={vcenterId} onChange={(e) => setVcenterId(e.target.value)}>
             <option value="">すべて（登録済み全体の集約）</option>
             {vcenters.map((v) => (
