@@ -1,6 +1,6 @@
+/* ウインドウの幅に合わせて広げる（以前は 720px まで）。 */
 .score-rules-import-options {
   margin: 0 0 var(--spacing-4);
-  max-width: 720px;
   padding: var(--spacing-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 4px);
@@ -17,8 +17,13 @@
   color: var(--color-text-primary);
 }
 
-.score-rules-import-options__grid {
+/* チェックボックスは文の長さに合わせて横に並べ、幅が足りないときだけ折り返す。 */
+.score-rules-import-options .score-rules-import-options__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-6);
   margin: 0;
+  max-width: none; /* .score-rules-form の 720px の上限を外す */
 }
 
 .score-rules-file-actions {
