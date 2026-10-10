@@ -16,4 +16,4 @@
 - **`main` へのマージ・`git push origin main`** はユーザーの明示がない限りエージェントから実行しない。
 - **`git push` / PR 作成前**（`tests/` を変更した場合は必須）: `uv run ruff check tests/`。広い変更や CI と完全に揃えるときは `uv run ruff check src tests`（[development.md](../development/development.md) の「PR 前のローカルチェック」）。
 
-詳細と例外は [git-branch-worktree-before-changes の Cursor ルール](../../../.cursor/rules/git-branch-worktree-before-changes.mdc) に合わせる。
+Cursor のローカルルール `.cursor/rules/git-branch-worktree-before-changes.mdc` を使う場合は、本スニペットと内容を揃える（`.cursor/` は `.gitignore` の対象であり、リポジトリには含まれない）。

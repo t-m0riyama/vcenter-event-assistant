@@ -11,7 +11,7 @@
 
 ## チャット話題ガード（オフトピック連続・クールダウン）のフォローアップ
 
-MVP はプロセス内メモリ（[MemoryChatTopicGuardStore](../../src/vcenter_event_assistant/services/chat_topic_guard_store.py)）・[classify_chat_user_message](../../src/vcenter_event_assistant/services/chat_topic_classify.py)・[post_chat のガード](../../src/vcenter_event_assistant/api/routes/chat.py)・フロントの `chat_session_id` / 429 処理まで実装済み。以下は**未実装または任意**。
+話題ガードの MVP（プロセス内メモリの `MemoryChatTopicGuardStore`、`classify_chat_user_message` による分類、`post_chat` でのガード、フロントの `chat_session_id` / 429 処理）は、**このリポジトリには取り込まれていない**（コミット履歴にも存在しない）。以下は、MVP を取り込む場合の**フォローアップ候補**として残す。
 
 ### インフラ・一貫性（マルチワーカー）
 

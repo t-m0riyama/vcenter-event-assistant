@@ -6,7 +6,7 @@
 
 - **役割**: HTTP API（`/api`）、永続化、vCenter からの収集、定期ジョブ、環境設定に応じた LLM 呼び出し（ダイジェスト要約・ベータ）などを担う。
 - **実装の所在**: [`src/vcenter_event_assistant/`](../../src/vcenter_event_assistant/)（エントリは [`main.py`](../../src/vcenter_event_assistant/main.py) の `create_app()`）。
-- **主要要素**: **FastAPI**、**SQLAlchemy**（`DATABASE_URL` で **PostgreSQL** または **SQLite**）、**pyVmomi** による vCenter 接続、**APScheduler** による定期ポーリングとメトリクス削除、アプリ内蔵のログイン（Cookie セッション）とロール（admin / operator / viewer）による認可。本番ではビルド済みの [`frontend/dist`](../../frontend/dist) を同一プロセスから配信できる。
+- **主要要素**: **FastAPI**、**SQLAlchemy**（`DATABASE_URL` で **PostgreSQL** または **SQLite**）、**pyVmomi** による vCenter 接続、**APScheduler** による定期ポーリングとメトリクス削除、アプリ内蔵のログイン（Cookie セッション）とロール（admin / operator / viewer）による認可。本番ではビルド済みの `frontend/dist` を同一プロセスから配信できる。
 
 ## フロントエンド
 
