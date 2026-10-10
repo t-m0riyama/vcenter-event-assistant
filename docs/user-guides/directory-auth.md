@@ -15,22 +15,114 @@ Active Directory（AD）や汎用の LDAP サーバのアカウントで、vCent
 |---|---|
 | 接続先 | サーバの URI（`ldaps://dc1.example.com` など）。複数あれば上から順に試す（フェイルオーバー） |
 | 接続の暗号化 | LDAPS（`ldaps://`、既定のポート 636）か StartTLS（`ldap://`、既定のポート 389）。本番（`APP_ENV=production`）では暗号化しない接続は使えない |
-| CA 証明書 | サーバ証明書を発行した CA の証明書（PEM）。社内 CA や自己署名の証明書なら必須。公的な CA ならアプリのサーバの証明書ストアで検証できるので空でよい |
-| サービスアカウント | ユーザーを検索するためのアカウントとパスワード。ユーザーとグループの検索、ID 属性（下の 4 章）の読み取りができる権限が要る。空にすると匿名で検索する |
+| CA 証明書 | サーバ証明書を発行した CA の証明書（PEM）。取り方は 2 章。社内 CA や自己署名なら必須。公的な CA ならアプリのサーバの証明書ストアで検証できるので空でよい |
+| サービスアカウント | ユーザーを検索するためのアカウントとパスワード。ユーザーとグループの検索、ID 属性（下の 5 章）の読み取りができる権限が要る。空にすると匿名で検索する |
 | ユーザーの検索ベース | ログインさせるユーザーがいる範囲（`OU=Staff,DC=example,DC=com` など） |
 | グループとロールの対応 | admin・operator・viewer にするグループ。admin のグループは必ず 1 つ用意する |
 
 - サーバ証明書のホスト名（SAN）は、接続先の URI に書くホスト名と一致している必要がある。IP アドレスで接続するなら、証明書にもその IP アドレスが要る
-- AD は、暗号化しない接続でのパスワードによる bind を断ることが多い（`strongerAuthRequired`）。AD では LDAPS か StartTLS を使う
+- AD は、暗号化しない接続でのパスワードによる bind を断ることが多い（`strongerAuthRequired`）。AD では LDAPS か StartTLS を使う。新規の AD で LDAPS がまだ無いときの手順は 2 章
 
-## 2. AD の設定例
+## 2. Windows の AD で LDAPS を有効にし、CA 証明書を取る
+
+アプリに入れるのは、DC のサーバ証明書を発行した CA の公開証明書である。秘密鍵は要らない。形式は PEM（`-----BEGIN CERTIFICATE-----` から `-----END CERTIFICATE-----` まで）で、画面の「CA 証明書」に貼る。公的な CA が発行し、アプリのサーバがすでに信頼している場合は空でよい。
+
+以下の `dc1.example.com` は、接続先 URI に書く DC の FQDN に置き換える。証明書の SAN とこの名前を揃える。DC が複数あるときは、各 DC にサーバ証明書が要る。発行元が DC ごとに違う自己署名なら、PEM を連結してすべて貼る。同じ CA がすべての DC を発行しているなら、その CA の PEM を 1 つ貼る。
+
+StartTLS（389）も、同じサーバ証明書を使う。
+
+### 新規の AD で LDAPS を有効にする
+
+証明書の無い AD では、636 番は待ち受けていても TLS の開始で接続が切れる（`既存の接続はリモート ホストに強制的に切断されました`）。DC 上で、個人ストアにサーバ証明書が無いことを確かめる。
+
+```powershell
+Get-NetTCPConnection -LocalPort 636 | Select-Object LocalAddress, State, OwningProcess
+Get-ChildItem Cert:\LocalMachine\My |
+    Select-Object Subject, DnsNameList, Issuer, NotAfter, HasPrivateKey, EnhancedKeyUsageList
+```
+
+636 が Listen でも、`LocalMachine\My` に秘密鍵があり、用途が Server Authentication（`1.3.6.1.5.5.7.3.1`）で、DNS 名が接続先と一致する証明書が無ければ LDAPS は使えない。
+
+社内 CA がまだ無いときは、DC 上で自己署名証明書を作る。`New-SelfSignedCertificate` の既定はサーバ認証用で、Server Authentication が入る。作った証明書は、コンピュータの個人ストアに加え、信頼されたルート証明機関（`LocalMachine\Root`）にも入れる。ルートに入れないと、Schannel が証明書を選ばない。**`NTDS` の再起動中は、この DC でのドメイン認証が一時的に切れる。**
+
+```powershell
+$hostname = "dc1.example.com"
+$cert = New-SelfSignedCertificate `
+    -DnsName $hostname `
+    -CertStoreLocation "Cert:\LocalMachine\My" `
+    -NotAfter (Get-Date).AddYears(2)
+Export-Certificate -Cert $cert -FilePath C:\Windows\Temp\dc-ldaps.cer | Out-Null
+Import-Certificate -FilePath C:\Windows\Temp\dc-ldaps.cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+Restart-Service NTDS -Force
+$b64 = [Convert]::ToBase64String($cert.RawData, "InsertLineBreaks")
+"-----BEGIN CERTIFICATE-----"
+$b64
+"-----END CERTIFICATE-----"
+```
+
+自己署名では、この証明書自身が CA である。表示された PEM を「CA 証明書」に貼る。
+
+再起動のあと、PowerShell を開き直して Subject が出ることを確かめる。失敗した接続の `$ssl` は切れているので、作り直さずに `AuthenticateAsClient` だけを再実行しない。
+
+```powershell
+$hostname = "dc1.example.com"
+$tcp = New-Object System.Net.Sockets.TcpClient($hostname, 636)
+$callback = { param($sender, $cert, $chain, $errors) return $true }
+$ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, $callback)
+$ssl.AuthenticateAsClient($hostname, $null, [System.Security.Authentication.SslProtocols]::Tls12, $false)
+$ssl.RemoteCertificate.Subject
+$ssl.Dispose(); $tcp.Dispose()
+```
+
+`CN=dc1.example.com` のように Subject が出れば、LDAPS は使える。Windows PowerShell 5.1 は、ホスト名だけの `AuthenticateAsClient` だと古い TLS で交渉して切られることがある。TLS 1.2 を明示する。
+
+社内 CA（AD CS など）があるときは、自己署名の代わりに DC の `certlm.msc` で **個人 → すべてのタスク → 新しい証明書の要求** を開き、「Domain Controller Authentication」または「Kerberos Authentication」を発行する。SAN に接続先の FQDN を含める。発行後に `Restart-Service NTDS -Force` し、次の手順で CA の PEM を取る。
+
+### CA 証明書を取る
+
+自己署名で上の手順を実行したときは、その場で表示した PEM を使う。それ以外で LDAPS が既に使えるときは、DC に届く Windows で発行元だけを取り出す。先頭のサーバ証明書は貼らない。中間 CA とルートの両方が出たときは、ブロックを連結したまま貼る。何も出ないときは自己署名なので、`$leaf` を同じ形式にして貼る。
+
+```powershell
+$hostname = "dc1.example.com"
+$tcp = New-Object System.Net.Sockets.TcpClient($hostname, 636)
+$callback = { param($sender, $cert, $chain, $errors) return $true }
+$ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, $callback)
+$ssl.AuthenticateAsClient(
+    $hostname,
+    $null,
+    [System.Security.Authentication.SslProtocols]::Tls12,
+    $false
+)
+$leaf = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($ssl.RemoteCertificate)
+$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+$chain.ChainPolicy.RevocationMode = "NoCheck"
+[void]$chain.Build($leaf)
+$chain.ChainElements | Select-Object -Skip 1 | ForEach-Object {
+    $b64 = [Convert]::ToBase64String($_.Certificate.RawData, "InsertLineBreaks")
+    "-----BEGIN CERTIFICATE-----"
+    $b64
+    "-----END CERTIFICATE-----"
+}
+$ssl.Dispose(); $tcp.Dispose()
+```
+
+AD CS の発行元 CA では、次でも PEM にできる。下位 CA が DC の証明書を出しているときは、ルートではなくその下位 CA で実行する。
+
+```cmd
+certutil -ca.cert C:\Windows\Temp\ca.cer
+certutil -encode C:\Windows\Temp\ca.cer C:\Windows\Temp\ca.pem
+```
+
+`ca.pem` の中身を貼る。GUI なら、CA サーバの `certsrv.msc` で CA 名のプロパティを開き、**全般 → 証明書の表示 → 詳細 → ファイルにコピー** で **Base 64 encoded X.509 (.CER)** を選ぶ。
+
+## 3. AD の設定例
 
 | 項目 | 例 | 説明 |
 |---|---|---|
 | 種類 | Active Directory | |
 | サーバ | `ldaps://dc1.example.com`（1 行に 1 つ） | DC を複数書くと、接続できない DC を飛ばして次を使う |
 | 暗号化 | LDAPS | StartTLS でもよい |
-| CA 証明書 | 社内 CA の PEM | |
+| CA 証明書 | 2 章で取った PEM | 自己署名なら、その証明書自身 |
 | サービスアカウントの DN | `svc-vea@example.com` | UPN でも DN（`CN=svc-vea,OU=Service,DC=example,DC=com`）でもよい |
 | 検索ベース | `OU=Staff,DC=example,DC=com` | |
 | UPN サフィックス | `example.com` | ユーザー名だけの入力で UPN も探すときに使う（任意） |
@@ -56,7 +148,7 @@ Active Directory（AD）や汎用の LDAP サーバのアカウントで、vCent
 
 **primary group（通常は Domain Users）は対応表に使えない。** AD は primary group を memberOf に含めないので、どちらの調べ方でも一致しない。ロールに使うグループには、ユーザーを通常のメンバーとして入れる。
 
-## 3. OpenLDAP などの設定例
+## 4. OpenLDAP などの設定例
 
 | 項目 | 例 | 説明 |
 |---|---|---|
@@ -67,7 +159,7 @@ Active Directory（AD）や汎用の LDAP サーバのアカウントで、vCent
 | 検索ベース | `ou=people,dc=example,dc=com` | |
 | 検索フィルタ | 空（既定は `(uid={username})`） | 変えるときは `{username}` を含める。例: `(&(objectClass=inetOrgPerson)(mail={username}))` |
 | ユーザー名の属性 | 空（既定は `uid`） | 検索フィルタが空のときの検索に使う属性。グループの検索で memberUid と比べるユーザー名も、この属性から取る |
-| ID 属性 | 空（既定は entryUUID） | 下の 4 章 |
+| ID 属性 | 空（既定は entryUUID） | 下の 5 章 |
 
 グループの調べ方は、ディレクトリの構成に合わせて選ぶ。
 
@@ -79,7 +171,7 @@ Active Directory（AD）や汎用の LDAP サーバのアカウントで、vCent
 
 memberUid のグループでメンバーの値を既定（DN）のままにすると、どのグループにも一致しない。
 
-## 4. ID 属性（ユーザーを見分ける属性）
+## 5. ID 属性（ユーザーを見分ける属性）
 
 アプリは、ディレクトリのユーザーを ID 属性の値で見分け、その値でユーザー行を作る。AD は objectGUID を使うので設定は要らない。LDAP では「ID 属性」で指定する。
 
@@ -92,9 +184,9 @@ memberUid のグループでメンバーの値を既定（DN）のままにす�
 
 - 値がちょうど 1 つで、変わらない属性を選ぶ。DN は使わない（ユーザーの改名や移動で変わると別のユーザーとして作り直され、アプリでの無効化をすり抜けるため）
 - サービスアカウントにその属性の読み取り権限が要る。読めないと値がないものとして扱われ、そのユーザーはログインできない
-- **ID 属性は、そのディレクトリのユーザーが 1 人でもログインした後は変えられない。** 変えるには、ディレクトリを無効にして削除し、作り直す（配下のユーザーとグループの対応表も消える）。最初の設定で、次の 5 章の接続試験で ID 属性の値が取れることを確かめる
+- **ID 属性は、そのディレクトリのユーザーが 1 人でもログインした後は変えられない。** 変えるには、ディレクトリを無効にして削除し、作り直す（配下のユーザーとグループの対応表も消える）。最初の設定で、次の 6 章の接続試験で ID 属性の値が取れることを確かめる
 
-## 5. 接続試験と保存
+## 6. 接続試験と保存
 
 フォームの下の「接続試験（保存しません）」で、編集中の値のまま試せる。DB には書かず、ログイン中の利用者にも影響しない。
 
@@ -125,7 +217,7 @@ memberUid のグループでメンバーの値を既定（DN）のままにす�
 
 「保存前の確認」がある変更は、誤るとこの後のログインがすべて失敗する。画面は、編集中の値での接続試験が成功していなければ、このまま保存するかを確かめる。ログアウトされる変更では、その旨も確かめる。ログアウトされる変更を、自分がログインしているディレクトリで保存したときは、保存の後に自分もログイン画面に戻る。
 
-## 6. グループとロールの対応表の書き方
+## 7. グループとロールの対応表の書き方
 
 グループの DN とロール（管理者・オペレーター・閲覧者）を 1 行ずつ登録する。ユーザーが複数のグループに一致したら、最も強いロールになる。
 
@@ -144,7 +236,7 @@ DN は、ディレクトリが返す表記と多少違っていても一致す�
 
 DN が分からないときは、ディレクトリの管理ツールでグループの distinguishedName を確かめる。接続試験の groups の段階は、一致したグループを表示する。
 
-## 7. 運用
+## 8. 運用
 
 ### ロールの変更が反映される時期
 
@@ -165,7 +257,7 @@ DN が分からないときは、ディレクトリの管理ツールでグル�
 - 削除できるのは、無効にしたディレクトリだけ。配下のユーザーとグループの対応表も削除する（元に戻せない）
 - 自分がログインしているディレクトリは、無効にできない。ローカルや別のディレクトリの管理者でログインし直してから操作する
 
-## 8. 締め出しの防止
+## 9. 締め出しの防止
 
 admin としてログインする手段がなくなる操作は、サーバが 409 で断る。
 
@@ -185,14 +277,14 @@ admin としてログインする手段がなくなる操作は、サーバが 4
 
 ### 保存前の資格情報の確認
 
-次のどちらかに当たるとき、ログインの成否に関わる変更（5 章の表で「保存前の確認」があるもの）を保存するには、**新しい設定で admin としてログインできるユーザーの資格情報**が要る。
+次のどちらかに当たるとき、ログインの成否に関わる変更（6 章の表で「保存前の確認」があるもの）を保存するには、**新しい設定で admin としてログインできるユーザーの資格情報**が要る。
 
 - 操作している admin 自身がそのディレクトリでログインしている。ログアウトされる変更なら自分もログアウトされ、そうでない変更（サービスアカウントのパスワード・タイムアウト）でも、今のセッションが切れた後にログインし直せなくなるおそれがあるため
 - ほかに admin としてログインする手段がない
 
 画面では、資格情報を入力するダイアログが出る。サーバは、新しい設定で本番のログインと同じ処理（ユーザーの検索・ID 属性・本人としての bind・グループの判定）を行い、admin になることを確かめてから保存する。確かめられなければ理由が出るので、入れ直す。資格情報は確認にだけ使い、保存しない。アプリで無効にしたユーザーの資格情報では確かめられない。
 
-## 9. 締め出されたときの復旧
+## 10. 締め出されたときの復旧
 
 ディレクトリ側の変更（admin のグループからの削除、サービスアカウントのパスワードの期限切れなど）で、admin が誰もログインできなくなったときは、サーバ上の CLI で復旧する。
 
@@ -223,21 +315,21 @@ admin としてログインする手段がなくなる操作は、サーバが 4
 - CLI は、アプリと同じ `DATABASE_URL` と `VEA_SECRET_KEY` で実行する。Docker Compose では `docker compose exec app vcenter-event-assistant-admin ...` のように実行する
 - パスワードは対話で入力するか、`--password-stdin` で標準入力から渡す（コマンドライン引数では受け取らない）
 
-## 10. ディレクトリだけで運用する
+## 11. ディレクトリだけで運用する
 
 ローカルのユーザーでのログインを止め、ディレクトリのアカウントだけで運用するときは、`VEA_LOCAL_LOGIN_ENABLED=false` にする。
 
 - admin のロールに対応づけたグループを持つ、有効なディレクトリが必要（本番では、ないと起動しない）
 - **`VEA_BOOTSTRAP_ADMIN_USERNAME` / `VEA_BOOTSTRAP_ADMIN_PASSWORD` は環境から消す。** 残っていると、初期 admin（ローカルユーザー）ではログインできないため、アプリは起動を止める
-- 締め出されたときは 9 章の手順でローカルログインを一時的に有効にする
+- 締め出されたときは 10 章の手順でローカルログインを一時的に有効にする
 
-## 11. うまくいかないとき
+## 12. うまくいかないとき
 
 接続試験の結果と、サーバのログ（`vcenter_event_assistant.audit` の `login_failure` の `reason`）で原因を絞り込む。ログイン画面には、どの原因でも「ユーザー名またはパスワードが正しくありません。」とだけ出る（存在するユーザー名を推測させないため）。
 
 | 接続試験の表示・ログの reason | 主な原因と対処 |
 |---|---|
-| connect:「サーバ証明書の発行元（CA）を信頼できません」 | CA 証明書が未設定か違う。サーバ証明書を発行した CA の PEM を設定する（`directory_tls_error`） |
+| connect:「サーバ証明書の発行元（CA）を信頼できません」 | CA 証明書が未設定か違う。2 章の手順で、サーバ証明書を発行した CA の PEM を設定する（`directory_tls_error`） |
 | connect:「サーバ証明書のホスト名が接続先と一致しません」 | 接続先の URI のホスト名が証明書の SAN にない。証明書に載っている名前で接続する（`directory_tls_error`） |
 | connect:「サーバが暗号化した接続を求めています」 | AD に暗号化しない接続をしている。LDAPS か StartTLS にする（`directory_config_error`） |
 | connect:「接続できません」 | ホスト名・ポート・ファイアウォール。LDAPS は 636、StartTLS は 389 が既定（`directory_unavailable`） |
@@ -258,4 +350,4 @@ admin としてログインする手段がなくなる操作は、サーバが 4
 | `VEA_SECRET_KEY` | なし | サービスアカウントのパスワードの暗号化に使う。本番では必須 |
 | `APP_ENV` | `development` | `production` では暗号化しない接続を禁止する |
 
-証明書を検証しない設定は、中間者攻撃でサービスアカウントや利用者のパスワードを盗まれるおそれがある。検証用の環境以外では使わず、自己署名の証明書なら CA 証明書を設定する。証明書を検証しないディレクトリには、一覧とフォームに警告が出て、保存時には監査ログに警告が残る。
+証明書を検証しない設定は、中間者攻撃でサービスアカウントや利用者のパスワードを盗まれるおそれがある。検証用の環境以外では使わず、自己署名の証明書なら CA 証明書を設定する（作り方と取り方は 2 章）。証明書を検証しないディレクトリには、一覧とフォームに警告が出て、保存時には監査ログに警告が残る。
