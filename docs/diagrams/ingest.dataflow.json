@@ -4,19 +4,19 @@
   "meta": {
     "title": "イベントと性能の流れ",
     "quality_profile": "showcase",
-    "viewBox": [940, 400],
+    "viewBox": [1068, 400],
     "views": [
       {
         "id": "events",
         "label": "イベント",
-        "focus": ["vc_events", "collect_events", "db", "score", "spa"],
-        "note": "vCenter のイベントが収集、保存、スコアを経て画面に出る。"
+        "focus": ["vc_events", "collect_events", "score", "db", "spa"],
+        "note": "取得したイベントは種別スコアを付けてから DB に入り、画面に出る。"
       },
       {
         "id": "perf",
         "label": "性能",
         "focus": ["vc_perf", "collect_perf", "db", "spa"],
-        "note": "quickStats のサンプルは同じ DB に入り、推移として読まれる。"
+        "note": "quickStats のサンプルはスコアせず同じ DB に入り、推移として読まれる。"
       },
       {
         "id": "digest",
@@ -29,6 +29,7 @@
   "stages": [
     { "label": "取得元" },
     { "label": "収集" },
+    { "label": "スコア" },
     { "label": "保存" },
     { "label": "利用" }
   ],
@@ -37,27 +38,27 @@
     { "id": "vc_perf", "type": "external", "label": "quickStats", "sublabel": "CPU とメモリ", "stage": 0, "row": 1 },
     { "id": "collect_events", "type": "backend", "label": "イベント収集", "sublabel": "pyVmomi", "stage": 1, "row": 0 },
     { "id": "collect_perf", "type": "backend", "label": "性能サンプル", "sublabel": "pyVmomi", "stage": 1, "row": 1 },
-    { "id": "db", "type": "database", "label": "PostgreSQL / SQLite", "sublabel": "DATABASE_URL", "stage": 2, "row": 0, "yOffset": 7 },
-    { "id": "score", "type": "backend", "label": "スコアルール", "sublabel": "種別ごと", "stage": 2, "row": 1 },
-    { "id": "spa", "type": "frontend", "label": "React SPA", "sublabel": "一覧とグラフ", "brand": "react", "stage": 3, "row": 0 },
-    { "id": "digest", "type": "backend", "label": "ダイジェスト", "sublabel": "期間集約", "stage": 3, "row": 1 }
+    { "id": "score", "type": "backend", "label": "スコアルール", "sublabel": "挿入前", "stage": 2, "row": 0 },
+    { "id": "db", "type": "database", "label": "PostgreSQL / SQLite", "sublabel": "DATABASE_URL", "stage": 3, "row": 1, "yOffset": -7 },
+    { "id": "spa", "type": "frontend", "label": "React SPA", "sublabel": "一覧とグラフ", "brand": "react", "stage": 4, "row": 0 },
+    { "id": "digest", "type": "backend", "label": "ダイジェスト", "sublabel": "期間集約", "stage": 4, "row": 1 }
   ],
   "flows": [
     { "id": "events-in", "from": "vc_events", "to": "collect_events", "label": "イベント", "variant": "emphasis" },
     { "id": "perf-in", "from": "vc_perf", "to": "collect_perf", "label": "quickStats", "variant": "emphasis" },
-    { "id": "events-store", "from": "collect_events", "to": "db", "label": "挿入", "variant": "emphasis" },
+    { "id": "events-score", "from": "collect_events", "to": "score", "label": "種別", "variant": "emphasis" },
+    { "id": "score-store", "from": "score", "to": "db", "label": "挿入", "variant": "emphasis" },
     { "id": "perf-store", "from": "collect_perf", "to": "db", "label": "サンプル", "variant": "default" },
-    { "id": "db-score", "from": "db", "to": "score", "label": "種別", "variant": "default", "labelDy": 28 },
     { "id": "db-spa", "from": "db", "to": "spa", "label": "一覧", "variant": "emphasis" },
-    { "id": "db-digest", "from": "db", "to": "digest", "label": "期間集約", "variant": "emphasis" }
+    { "id": "db-digest", "from": "db", "to": "digest", "label": "期間集約", "variant": "emphasis", "labelDy": 28 }
   ],
   "cards": [
     {
       "dot": "cyan",
       "title": "取り込み",
       "items": [
-        "イベントと quickStats は別の収集で vCenter から入る",
-        "どちらも SQLAlchemy 経由で同じ DB に残る"
+        "イベントは挿入前に種別スコアが付く",
+        "quickStats はスコアせず、同じ DB にサンプルとして残る"
       ]
     },
     {
@@ -65,7 +66,7 @@
       "title": "画面",
       "items": [
         "SPA は保存済みの一覧と性能推移を読む",
-        "注目度は種別ごとのスコアルールから出る"
+        "ルール変更時は保存済みの notable_score を再計算する"
       ]
     },
     {

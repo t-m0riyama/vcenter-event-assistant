@@ -5040,7 +5040,8 @@
         <path data-edge-from="api" data-edge-to="scheduler" data-edge-label="同一プロセス" data-edge-key="4" data-edge-id="api-scheduler" data-composition-points="844,200;844,268" d="M 844 200 L 844 268" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="scheduler" data-edge-to="collectors" data-edge-label="定期取得" data-edge-key="5" data-edge-id="scheduler-collectors" data-composition-points="932,304;1004,304" d="M 932 304 L 1004 304" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="collectors" data-edge-to="vcenter" data-edge-label="pyVmomi" data-edge-key="6" data-edge-id="collectors-vcenter" data-composition-points="1108,340;1108,392" d="M 1108 340 L 1108 392" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="7" data-edge-id="api-llm" data-composition-points="844,128;844,80" d="M 844 128 L 844 80" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="collectors" data-edge-to="db" data-edge-label="保存" data-edge-key="7" data-edge-id="collectors-db" data-composition-points="1108,268;1108,200" d="M 1108 268 L 1108 200" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="8" data-edge-id="api-llm" data-composition-points="844,128;844,80" d="M 844 128 L 844 80" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
         <g id="node-browser" data-node-id="browser" data-node-label="ブラウザ" tabindex="0" role="button" aria-label="Focus ブラウザ, 利用者, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="利用者" data-node-context="Architecture component">
@@ -5191,7 +5192,11 @@
           <rect x="1086.2" y="352" width="43.6" height="14" rx="3" class="c-mask"/>
           <text x="1108" y="362" class="t-muted" font-size="8" text-anchor="middle">pyVmomi</text>
         </g>
-        <g data-detail="context" data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="7" data-edge-id="api-llm">
+        <g data-detail="context" data-edge-from="collectors" data-edge-to="db" data-edge-label="保存" data-edge-key="7" data-edge-id="collectors-db">
+          <rect x="1093" y="248" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="1108" y="258" class="t-muted" font-size="8" text-anchor="middle">保存</text>
+        </g>
+        <g data-detail="context" data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="8" data-edge-id="api-llm">
           <rect x="805.4" y="108" width="77.2" height="14" rx="3" class="c-mask"/>
           <text x="844" y="118" class="t-messagebus" font-size="8" text-anchor="middle">要約・チャット</text>
         </g>

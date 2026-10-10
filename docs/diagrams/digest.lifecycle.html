@@ -5041,9 +5041,13 @@
         <path d="M 154 157 L 748 157" class="a-emphasis" stroke-width="2.2" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- Transition paths -->
-        <path data-edge-from="template" data-edge-to="template_error" data-edge-label="描画失敗" data-edge-key="0" data-edge-id="template-failed" data-composition-points="402,188;402,450" d="M 402 188 L 402 450" class="a-security" stroke-width="1.1" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="llm" data-edge-to="llm_failed" data-edge-label="追記失敗" data-edge-key="1" data-edge-id="llm-degraded" data-composition-points="556,188;556,450" d="M 556 188 L 556 450" class="a-security" stroke-width="1.1" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="llm_failed" data-edge-to="saved" data-edge-label="テンプレートで保存" data-edge-key="2" data-edge-id="keep-template" data-composition-points="615,479;633,479;633,157;651,157" d="M 615 479 L 624 479 Q 633 479 633 470 L 633 166 Q 633 157 642 157 L 651 157" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="accepted" data-edge-to="aggregate" data-edge-label="材料" data-edge-key="0" data-edge-id="accept-aggregate" data-composition-points="153,157;189,157" d="M 153 157 L 189 157" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="aggregate" data-edge-to="template" data-edge-label="Markdown" data-edge-key="1" data-edge-id="aggregate-template" data-composition-points="307,157;343,157" d="M 307 157 L 343 157" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="template" data-edge-to="llm" data-edge-label="追記へ" data-edge-key="2" data-edge-id="template-llm" data-composition-points="461,157;497,157" d="M 461 157 L 497 157" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="llm" data-edge-to="saved" data-edge-label="status=ok" data-edge-key="3" data-edge-id="llm-saved" data-composition-points="615,157;651,157" d="M 615 157 L 651 157" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="template" data-edge-to="template_error" data-edge-label="描画失敗" data-edge-key="4" data-edge-id="template-failed" data-composition-points="402,188;402,450" d="M 402 188 L 402 450" class="a-security" stroke-width="1.1" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="llm" data-edge-to="llm_failed" data-edge-label="追記失敗" data-edge-key="5" data-edge-id="llm-degraded" data-composition-points="556,188;556,450" d="M 556 188 L 556 450" class="a-security" stroke-width="1.1" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="llm_failed" data-edge-to="saved" data-edge-label="テンプレートで保存" data-edge-key="6" data-edge-id="keep-template" data-composition-points="615,479;633,479;633,157;651,157" d="M 615 479 L 624 479 Q 633 479 633 470 L 633 166 Q 633 157 642 157 L 651 157" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- States -->
         <g id="node-accepted" data-node-id="accepted" data-node-label="期間確定" tabindex="0" role="button" aria-label="Focus 期間確定, 生成" aria-pressed="false" data-node-kind="start" data-node-context="生成">
@@ -5122,15 +5126,31 @@
         </g>
 
         <!-- Transition labels -->
-        <g data-detail="context" data-edge-from="template" data-edge-to="template_error" data-edge-label="描画失敗" data-edge-key="0" data-edge-id="template-failed">
+        <g data-detail="context" data-edge-from="accepted" data-edge-to="aggregate" data-edge-label="材料" data-edge-key="0" data-edge-id="accept-aggregate">
+          <rect x="155" y="136" width="32" height="16" rx="4" class="c-mask"/>
+          <text x="171" y="147" class="t-backend" font-size="8" text-anchor="middle">材料</text>
+        </g>
+        <g data-detail="context" data-edge-from="aggregate" data-edge-to="template" data-edge-label="Markdown" data-edge-key="1" data-edge-id="aggregate-template">
+          <rect x="299.4" y="191" width="51.2" height="16" rx="4" class="c-mask"/>
+          <text x="325" y="202" class="t-backend" font-size="8" text-anchor="middle">Markdown</text>
+        </g>
+        <g data-detail="context" data-edge-from="template" data-edge-to="llm" data-edge-label="追記へ" data-edge-key="2" data-edge-id="template-llm">
+          <rect x="458.3" y="191" width="41.400000000000006" height="16" rx="4" class="c-mask"/>
+          <text x="479" y="202" class="t-backend" font-size="8" text-anchor="middle">追記へ</text>
+        </g>
+        <g data-detail="context" data-edge-from="llm" data-edge-to="saved" data-edge-label="status=ok" data-edge-key="3" data-edge-id="llm-saved">
+          <rect x="604.95" y="96" width="56.1" height="16" rx="4" class="c-mask"/>
+          <text x="633" y="107" class="t-backend" font-size="8" text-anchor="middle">status=ok</text>
+        </g>
+        <g data-detail="context" data-edge-from="template" data-edge-to="template_error" data-edge-label="描画失敗" data-edge-key="4" data-edge-id="template-failed">
           <rect x="376.4" y="195" width="51.2" height="16" rx="4" class="c-mask"/>
           <text x="402" y="206" class="t-security" font-size="8" text-anchor="middle">描画失敗</text>
         </g>
-        <g data-detail="context" data-edge-from="llm" data-edge-to="llm_failed" data-edge-label="追記失敗" data-edge-key="1" data-edge-id="llm-degraded">
+        <g data-detail="context" data-edge-from="llm" data-edge-to="llm_failed" data-edge-label="追記失敗" data-edge-key="5" data-edge-id="llm-degraded">
           <rect x="530.4" y="195" width="51.2" height="16" rx="4" class="c-mask"/>
           <text x="556" y="206" class="t-security" font-size="8" text-anchor="middle">追記失敗</text>
         </g>
-        <g data-detail="context" data-edge-from="llm_failed" data-edge-to="saved" data-edge-label="テンプレートで保存" data-edge-key="2" data-edge-id="keep-template">
+        <g data-detail="context" data-edge-from="llm_failed" data-edge-to="saved" data-edge-label="テンプレートで保存" data-edge-key="6" data-edge-id="keep-template">
           <rect x="582.9" y="297" width="100.2" height="16" rx="4" class="c-mask"/>
           <text x="633" y="308" class="t-backend" font-size="8" text-anchor="middle">テンプレートで保存</text>
         </g>

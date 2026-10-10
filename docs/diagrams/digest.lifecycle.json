@@ -40,6 +40,10 @@
     { "id": "template_error", "type": "failure", "label": "生成失敗", "lane": "terminal", "col": 0 }
   ],
   "transitions": [
+    { "id": "accept-aggregate", "from": "accepted", "to": "aggregate", "label": "材料", "variant": "emphasis" },
+    { "id": "aggregate-template", "from": "aggregate", "to": "template", "label": "Markdown", "variant": "emphasis", "labelDy": 55 },
+    { "id": "template-llm", "from": "template", "to": "llm", "label": "追記へ", "variant": "emphasis", "labelDy": 55 },
+    { "id": "llm-saved", "from": "llm", "to": "saved", "label": "status=ok", "variant": "emphasis", "labelDy": -40, "route": "straight" },
     { "id": "template-failed", "from": "template", "to": "template_error", "label": "描画失敗", "variant": "security", "labelDy": 28 },
     { "id": "llm-degraded", "from": "llm", "to": "llm_failed", "label": "追記失敗", "variant": "security", "labelDy": 28 },
     { "id": "keep-template", "from": "llm_failed", "to": "saved", "label": "テンプレートで保存", "variant": "emphasis" }

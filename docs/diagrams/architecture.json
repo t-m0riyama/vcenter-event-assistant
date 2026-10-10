@@ -169,6 +169,12 @@
       "labelDy": 32
     },
     {
+      "id": "collectors-db",
+      "from": "collectors",
+      "to": "db",
+      "label": "保存"
+    },
+    {
       "id": "api-llm",
       "from": "api",
       "to": "llm",
