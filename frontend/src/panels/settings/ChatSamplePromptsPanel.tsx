@@ -116,13 +116,12 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
   return (
     <div className="panel">
       <p className="hint">
-        チャットタブの「サンプルの質問」チップに並ぶ行を編集します。保存先はこのブラウザの
-        localStorage です。既定の行もここから編集・削除できます。
+        チャットタブの「サンプルの質問」に表示する行を編集します。設定はこのブラウザの localStorage に保存されます。既定の行も、ここから編集・削除できます。
       </p>
 
       <h2>エクスポート・インポート</h2>
       <p className="hint">
-        サンプル一覧を JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。
+        サンプルの一覧を JSON 形式でエクスポート・インポートできます。下の「インポート時のオプション」は、「ファイルからインポート」の場合にのみ適用されます。
       </p>
       <fieldset className="score-rules-import-options">
         <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
@@ -170,10 +169,10 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
 
       <h2>一覧</h2>
       <p className="hint">
-        ラベルと本文の両方に文字が入っている行だけがチャットのチップに表示されます。
+        ラベルと本文の両方が入力されている行のみ、チャットタブのサンプルとして表示されます。
       </p>
       <p className="hint">
-        「既定に戻す」は一覧をアプリ同梱の初期サンプルだけに置き換えます（編集・追加行は失われます）。
+        「既定に戻す」を押すと、一覧はアプリに同梱されている初期のサンプルのみに置き換えられます（編集・追加した行は失われます）。
       </p>
       <div className="chat-custom-samples-actions">
         <button type="button" className="btn btn--gray" onClick={addRow}>
@@ -221,7 +220,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
         ))}
       </ul>
       {chatSamplePrompts.length === 0 && (
-        <p className="hint">サンプルがありません。「サンプルを追加」で作成できます。</p>
+        <p className="hint">サンプルはありません。「サンプルを追加」から作成できます。</p>
       )}
     </div>
   )

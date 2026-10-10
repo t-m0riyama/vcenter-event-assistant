@@ -150,7 +150,7 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
   return (
     <div className="panel">
       <p className="hint">
-        イベント種別（event_type、収集ログの種別文字列と完全一致）ごとに、一般的な意味・想定される原因・対処方法をサーバーに保存します。「対処が必要」をオンにすると、概要・イベント一覧で該当行を強調します。
+        イベント種別（event_type。収集したイベントの種別文字列と完全に一致するもの）ごとに、一般的な意味・想定される原因・対処方法をサーバーに保存します。「対処が必要」をオンにすると、概要タブとイベント一覧で該当する行を強調表示します。
       </p>
 
       {canExport && (
@@ -158,8 +158,8 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
           <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
           <p className="hint">
             {canEdit
-              ? 'ガイドを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。'
-              : 'ガイドを JSON でエクスポートできます。'}
+              ? 'ガイドを JSON 形式でエクスポート・インポートできます。下の「インポート時のオプション」は、「ファイルからインポート」の場合にのみ適用されます。'
+              : 'ガイドを JSON 形式でエクスポートできます。'}
           </p>
           {canEdit && (
             <>
@@ -275,8 +275,8 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
       <h2>一覧</h2>
       <p className="hint event-type-guides-list__hint">
         {canEdit
-          ? '行をクリックすると展開し、内容の編集・保存・削除ができます。'
-          : '行をクリックすると展開し、内容を確認できます。'}
+          ? '行をクリックすると展開され、内容の編集・保存・削除を行えます。'
+          : '行をクリックすると展開され、内容を確認できます。'}
       </p>
       <ul className="event-type-guides-list">
         {list.map((r) => {

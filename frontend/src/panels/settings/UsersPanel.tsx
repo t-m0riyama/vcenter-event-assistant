@@ -227,7 +227,7 @@ export function UsersPanel({
     <div className="panel users-panel">
       <fieldset className="users-panel__fieldset" disabled={busy} aria-busy={busy}>
       <p className="hint">
-        ログインできるユーザーを管理します。ロールの変更・無効化・パスワード再設定をすると、そのユーザーのログインは解除されます。最後の有効な管理者は降格・無効化・削除できません。
+        ログインできるユーザーを管理します。ロールの変更、無効化、またはパスワードの再設定を行うと、そのユーザーのログイン中のセッションは終了します。最後の有効な管理者は、降格・無効化・削除できません。
       </p>
       {notice && (
         <p className="users-panel__notice" role="status">

@@ -159,7 +159,7 @@ describe('App のロールによる出し分け', () => {
   it('ブラウザに保存する設定（一般）は viewer でも編集できる', async () => {
     renderAs('viewer')
     await openSettings('一般')
-    await screen.findByText((content, el) => el?.tagName === 'P' && content.includes('このブラウザで使う基本設定'))
+    await screen.findByText((content, el) => el?.tagName === 'P' && content.includes('このブラウザで使用する基本設定'))
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 

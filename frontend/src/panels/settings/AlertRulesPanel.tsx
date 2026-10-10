@@ -228,15 +228,15 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   return (
     <div className="panel alert-rules-panel">
       <p className="hint">
-        イベントスコアやメトリクスに基づくアラート判定ルールをサーバーに保存します。判定対象になるのは有効化したルールだけです。
+        イベントのスコアやメトリクスに基づくアラートの判定ルールをサーバーに保存します。判定の対象となるのは、有効にしたルールのみです。
       </p>
       {canExport && (
         <>
           <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
           <p className="hint">
             {canEdit
-              ? 'アラートルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。'
-              : 'アラートルールを JSON でエクスポートできます。'}
+              ? 'アラートルールを JSON 形式でエクスポート・インポートできます。下の「インポート時のオプション」は、「ファイルからインポート」の場合にのみ適用されます。'
+              : 'アラートルールを JSON 形式でエクスポートできます。'}
           </p>
           {canEdit && (
             <>
@@ -506,7 +506,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                         {canEdit && (
                           <>
                             <p className="hint edit-row-hint">
-                              タイプは変更できません。変更する場合は既存ルールを削除して再作成してください。
+                              ルールのタイプは変更できません。変更する場合は、既存のルールを削除してから作成し直してください。
                             </p>
                             <div className="form-actions">
                               <button type="button" className="btn btn--filled" disabled={!changed} onClick={() => void handleSaveEdit(r)}>
