@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "期間チャット",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1000, 520],
+    "views": [
+      {
+        "id": "ask",
+        "label": "質問",
+        "focus": ["user", "spa", "api"],
+        "note": "ブラウザの質問が React SPA から POST /api/chat になる。"
+      },
+      {
+        "id": "context",
+        "label": "コンテキスト",
+        "focus": ["api", "db", "llm"],
+        "note": "DB の期間データと Web 検索設定を LLM に渡す。"
+      },
+      {
+        "id": "answer",
+        "label": "回答",
+        "focus": ["llm", "api", "spa", "user"],
+        "note": "回答を SPA が返し、関連調査はサーバ側で連結できる。"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "ブラウザ", "sublabel": "利用者" },
+    { "id": "spa", "type": "frontend", "label": "React SPA", "sublabel": "チャット", "brand": "react" },
+    { "id": "api", "type": "backend", "label": "FastAPI", "sublabel": "POST /api/chat", "brand": "fastapi" },
+    { "id": "db", "type": "database", "label": "DB", "sublabel": "期間データ" },
+    { "id": "llm", "type": "external", "label": "LLM API", "sublabel": "チャット" }
+  ],
+  "segments": [
+    { "from": 165, "to": 220, "label": "質問" },
+    { "from": 230, "to": 310, "label": "コンテキスト" },
+    { "from": 312, "to": 440, "label": "回答" }
+  ],
+  "messages": [
+    { "id": "ask", "from": "user", "to": "spa", "y": 170, "label": "期間と質問", "variant": "default" },
+    { "id": "post", "from": "spa", "to": "api", "y": 205, "label": "POST /api/chat", "variant": "emphasis" },
+    { "id": "load", "from": "api", "to": "db", "y": 245, "label": "期間のイベントと指標", "variant": "emphasis" },
+    { "id": "rows", "from": "db", "to": "api", "y": 280, "label": "コンテキスト", "variant": "return" },
+    { "id": "prompt", "from": "api", "to": "llm", "y": 332, "label": "プロンプト", "variant": "emphasis" },
+    { "id": "completion", "from": "llm", "to": "api", "y": 364, "label": "回答", "variant": "return" },
+    { "id": "response", "from": "api", "to": "spa", "y": 396, "label": "ChatResponse", "variant": "return" },
+    { "id": "show", "from": "spa", "to": "user", "y": 428, "label": "回答を表示", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "spa", "from": 170, "to": 432, "type": "frontend" },
+    { "participant": "api", "from": 205, "to": 400, "type": "backend" },
+    { "participant": "db", "from": 245, "to": 285, "type": "database" },
+    { "participant": "llm", "from": 332, "to": 368, "type": "external" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "質問",
+      "items": [
+        "SPA は期間とメッセージを POST /api/chat で送る",
+        "LLM 未設定のときは API が 503 を返す"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "コンテキスト",
+      "items": [
+        "DB から期間のイベント、指標、タイムラインを読む",
+        "Web 検索の有無はリクエストの設定に従う"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "回答",
+      "items": [
+        "関連調査は LLM の成功後にサーバ側で連結する",
+        "プロンプトには関連調査を混ぜない"
+      ]
+    }
+  ]
+}

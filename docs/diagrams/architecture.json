@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "vCenter Event Assistant",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/t-m0riyama/vcenter-event-assistant",
+      "revision": "4a62cb300e4bbcf071d580af5c8239cf76e88219"
+    },
+    "views": [
+      {
+        "id": "request",
+        "label": "画面と API",
+        "focus": ["browser", "proxy", "spa", "api", "db"],
+        "note": "ブラウザから /api を通り、DB の一覧とグラフを返す。"
+      },
+      {
+        "id": "collect",
+        "label": "収集",
+        "focus": ["api", "scheduler", "collectors", "vcenter", "db"],
+        "note": "定期ジョブと手動収集が vCenter から取得し、DB に書く。"
+      },
+      {
+        "id": "optional",
+        "label": "任意の外部連携",
+        "focus": ["proxy", "api", "llm"],
+        "note": "TLS 終端、LLM、ディレクトリ認証は環境に応じて有効にする。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "ブラウザ",
+      "sublabel": "利用者",
+      "pos": [28, 128],
+      "size": [160, 72]
+    },
+    {
+      "id": "proxy",
+      "type": "security",
+      "label": "リバースプロキシ",
+      "sublabel": "TLS 終端",
+      "tag": "任意",
+      "pos": [260, 128],
+      "size": [184, 72]
+    },
+    {
+      "id": "spa",
+      "type": "frontend",
+      "label": "React SPA",
+      "sublabel": "ダッシュボード UI",
+      "brand": "react",
+      "pos": [516, 128],
+      "size": [168, 72],
+      "sources": [{ "path": "frontend/src/main.tsx", "label": "Vite + React" }]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "FastAPI",
+      "sublabel": "/api と静的配信",
+      "brand": "fastapi",
+      "pos": [756, 128],
+      "size": [176, 72],
+      "sources": [{ "path": "src/vcenter_event_assistant/main.py", "label": "create_app()" }]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL / SQLite",
+      "sublabel": "DATABASE_URL",
+      "pos": [1004, 128],
+      "size": [208, 72],
+      "sources": [{ "path": "src/vcenter_event_assistant/db/session.py", "label": "SQLAlchemy" }]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "LLM API",
+      "sublabel": "要約・チャット",
+      "tag": "ベータ",
+      "pos": [756, 8],
+      "size": [176, 72]
+    },
+    {
+      "id": "scheduler",
+      "type": "backend",
+      "label": "APScheduler",
+      "sublabel": "定期収集ジョブ",
+      "pos": [756, 268],
+      "size": [176, 72],
+      "sources": [{ "path": "src/vcenter_event_assistant/jobs/scheduler.py", "label": "定期ジョブ" }]
+    },
+    {
+      "id": "collectors",
+      "type": "backend",
+      "label": "pyVmomi 収集",
+      "sublabel": "イベントと quickStats",
+      "pos": [1004, 268],
+      "size": [208, 72],
+      "sources": [{ "path": "src/vcenter_event_assistant/collectors/events.py", "label": "収集" }]
+    },
+    {
+      "id": "vcenter",
+      "type": "external",
+      "label": "vCenter",
+      "sublabel": "イベントとホスト指標",
+      "pos": [1004, 392],
+      "size": [208, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "vCenter Event Assistant",
+      "wraps": ["spa", "api", "scheduler", "collectors"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-proxy",
+      "from": "browser",
+      "to": "proxy",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "proxy-spa",
+      "from": "proxy",
+      "to": "spa",
+      "label": "終端後",
+      "variant": "emphasis"
+    },
+    {
+      "id": "spa-api",
+      "from": "spa",
+      "to": "api",
+      "label": "HTTP /api",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-db",
+      "from": "api",
+      "to": "db",
+      "label": "SQLAlchemy",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-scheduler",
+      "from": "api",
+      "to": "scheduler",
+      "label": "同一プロセス",
+      "labelDy": 32
+    },
+    {
+      "id": "scheduler-collectors",
+      "from": "scheduler",
+      "to": "collectors",
+      "label": "定期取得"
+    },
+    {
+      "id": "collectors-vcenter",
+      "from": "collectors",
+      "to": "vcenter",
+      "label": "pyVmomi",
+      "labelDy": 32
+    },
+    {
+      "id": "api-llm",
+      "from": "api",
+      "to": "llm",
+      "label": "要約・チャット",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "画面",
+      "items": [
+        "React SPA がダッシュボードとイベント、メトリクスを表示する",
+        "本番では FastAPI が frontend/dist を同一オリジンで配信する"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "収集と保存",
+      "items": [
+        "定期ジョブと手動収集が pyVmomi 経由で vCenter から取得する",
+        "SQLAlchemy が PostgreSQL または SQLite に書く"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "任意の連携",
+      "items": [
+        "TLS はリバースプロキシで終端し、ログインとロールはアプリが持つ",
+        "LLM は要約とチャット、AD / LDAP はディレクトリログインで使う"
+      ]
+    }
+  ]
+}

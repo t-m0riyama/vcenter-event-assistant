@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "定期収集",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "poll",
+        "label": "定期収集",
+        "focus": ["tick", "events", "vcenter", "save"],
+        "note": "APScheduler が vCenter からイベントを取り、DB に書く。"
+      },
+      {
+        "id": "score",
+        "label": "スコアとアラート",
+        "focus": ["save", "score", "alerts"],
+        "note": "保存したイベントを種別ルールでスコアし、アラートを評価する。"
+      },
+      {
+        "id": "digest",
+        "label": "ダイジェスト",
+        "focus": ["score", "digest", "llm"],
+        "note": "期間集約のあと、設定があれば LLM が要約を追記する。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "flow", "label": "本線" },
+    { "id": "branch", "label": "分岐" }
+  ],
+  "mainPath": ["tick", "events", "vcenter", "save", "score", "digest"],
+  "nodes": [
+    { "id": "tick", "lane": "flow", "col": 0, "type": "backend", "label": "APScheduler", "sublabel": "定期起動" },
+    { "id": "events", "lane": "flow", "col": 1, "type": "backend", "label": "イベント収集", "sublabel": "poll_events" },
+    { "id": "vcenter", "lane": "flow", "col": 2, "type": "external", "label": "vCenter", "sublabel": "pyVmomi" },
+    { "id": "save", "lane": "flow", "col": 3, "type": "database", "label": "DB 保存", "sublabel": "SQLAlchemy" },
+    { "id": "score", "lane": "flow", "col": 4, "type": "backend", "label": "スコア", "sublabel": "種別ルール" },
+    { "id": "digest", "lane": "flow", "col": 5, "type": "backend", "label": "ダイジェスト", "sublabel": "日次・週次・月次" },
+    { "id": "perf", "lane": "branch", "col": 1, "type": "backend", "label": "性能サンプル", "sublabel": "quickStats" },
+    { "id": "alerts", "lane": "branch", "col": 4, "type": "security", "label": "アラート評価", "sublabel": "evaluate_alerts" },
+    { "id": "llm", "lane": "branch", "col": 5, "type": "external", "label": "LLM API", "sublabel": "要約", "tag": "任意" }
+  ],
+  "edges": [
+    { "id": "tick-events", "from": "tick", "to": "events", "label": "定期", "variant": "emphasis", "role": "main" },
+    { "id": "events-vcenter", "from": "events", "to": "vcenter", "label": "pyVmomi", "variant": "emphasis", "role": "main" },
+    { "id": "vcenter-save", "from": "vcenter", "to": "save", "label": "イベント", "variant": "emphasis", "role": "main" },
+    { "id": "save-score", "from": "save", "to": "score", "label": "保存済み", "variant": "emphasis", "role": "main" },
+    { "id": "score-digest", "from": "score", "to": "digest", "label": "期間集約", "variant": "emphasis", "role": "main" },
+    { "id": "tick-perf", "from": "tick", "to": "perf", "label": "性能", "role": "branch" },
+    { "id": "perf-save", "from": "perf", "to": "save", "label": "quickStats", "role": "branch" },
+    { "id": "score-alerts", "from": "score", "to": "alerts", "label": "評価", "variant": "security", "role": "branch" },
+    { "id": "digest-llm", "from": "digest", "to": "llm", "label": "要約", "variant": "dashed", "role": "async" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "定期収集",
+      "items": [
+        "APScheduler がイベント収集と性能サンプルを起動する",
+        "pyVmomi で得た内容を SQLAlchemy が DB に書く"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "保存のあと",
+      "items": [
+        "種別ルールでスコアを付け、アラート評価へ渡す",
+        "ダイジェストは日次・週次・月次の期間で集約する"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "任意の要約",
+      "items": [
+        "LLM はダイジェスト本文への追記に使う",
+        "未設定でもテンプレートのダイジェストは残る"
+      ]
+    }
+  ]
+}
