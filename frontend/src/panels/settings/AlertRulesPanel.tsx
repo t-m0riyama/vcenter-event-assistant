@@ -68,7 +68,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     fetchList,
   })
 
-  const [isAdding, setIsAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<'event_score' | 'metric_threshold'>('event_score')
   const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
@@ -125,7 +124,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         config,
       })
       setNewName('')
-      setIsAdding(false)
       fetchRules()
     } catch (e) {
       onError(toErrorMessage(e))
@@ -229,18 +227,9 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
 
   return (
     <div className="panel alert-rules-panel">
-      <div className="alert-rules-panel-header">
-        <p className="hint">
-          イベントスコアやメトリクスに基づくアラート判定ルールをサーバーに保存します。判定対象になるのは有効化したルールだけです。
-        </p>
-        {canEdit && (
-          <>
-            <button type="button" className="btn btn--filled" onClick={() => setIsAdding(true)}>
-              新規ルール追加
-            </button>
-          </>
-        )}
-      </div>
+      <p className="hint">
+        イベントスコアやメトリクスに基づくアラート判定ルールをサーバーに保存します。判定対象になるのは有効化したルールだけです。
+      </p>
       {canExport && (
         <>
           <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
@@ -303,76 +292,79 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
         </>
       )}
 
-      {isAdding && canEdit && (
-        <form className="add-rule-form" onSubmit={handleAdd}>
-          <h3>新規ルールの作成</h3>
-          <div className="form-grid">
-            <label>
-              ルール名
-              <input 
-                type="text" 
-                value={newName} 
-                onChange={(e) => setNewName(e.target.value)} 
-                placeholder="例: 高負荷CPUアラート"
-                required 
-              />
-            </label>
-            <label>
-              タイプ
-              <select value={newType} onChange={(e) => setNewType(e.target.value as 'event_score' | 'metric_threshold')}>
-                <option value="event_score">イベントスコア</option>
-                <option value="metric_threshold">メトリクス閾値</option>
-              </select>
-            </label>
-            <label>
-              レベル
-              <select
-                value={newAlertLevel}
-                onChange={(e) => setNewAlertLevel(e.target.value as AlertLevel)}
-                title="クリティカル: すぐ対処 / エラー: 対処必須 / 警告: 検討"
-              >
-                <option value="critical">{ALERT_LEVEL_LABELS.critical}</option>
-                <option value="error">{ALERT_LEVEL_LABELS.error}</option>
-                <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
-              </select>
-            </label>
-
-            {newType === 'metric_threshold' && (
+      {canEdit && (
+        <>
+          <h2>追加</h2>
+          {/* スコアルール・イベント種別ガイドと同じく、見出しの下にフォームを常に出す。 */}
+          <form className="alert-rules-add-form" onSubmit={handleAdd}>
+            <div className="form-grid alert-rules-form">
               <label>
-                メトリクスキー
-                <input
-                  type="text"
-                  list="alert-metric-key-options"
-                  value={newMetricKey}
-                  onChange={(e) => setNewMetricKey(e.target.value)}
-                  placeholder={DEFAULT_ALERT_METRIC_KEY}
+                ルール名
+                <input 
+                  type="text" 
+                  value={newName} 
+                  onChange={(e) => setNewName(e.target.value)} 
+                  placeholder="例: 高負荷CPUアラート"
+                  required 
                 />
-                <datalist id="alert-metric-key-options">
-                  {metricKeyOptions.map((key) => (
-                    <option key={key} value={key} />
-                  ))}
-                </datalist>
               </label>
-            )}
+              <label>
+                タイプ
+                <select value={newType} onChange={(e) => setNewType(e.target.value as 'event_score' | 'metric_threshold')}>
+                  <option value="event_score">イベントスコア</option>
+                  <option value="metric_threshold">メトリクス閾値</option>
+                </select>
+              </label>
+              <label>
+                レベル
+                <select
+                  value={newAlertLevel}
+                  onChange={(e) => setNewAlertLevel(e.target.value as AlertLevel)}
+                  title="クリティカル: すぐ対処 / エラー: 対処必須 / 警告: 検討"
+                >
+                  <option value="critical">{ALERT_LEVEL_LABELS.critical}</option>
+                  <option value="error">{ALERT_LEVEL_LABELS.error}</option>
+                  <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
+                </select>
+              </label>
 
-            <label>
-              閾値
-              <input 
-                type="number" 
-                value={newThreshold} 
-                onChange={(e) => setNewThreshold(Number(e.target.value))} 
-                required 
-              />
-            </label>
-          </div>
+              {newType === 'metric_threshold' && (
+                <label>
+                  メトリクスキー
+                  <input
+                    type="text"
+                    list="alert-metric-key-options"
+                    value={newMetricKey}
+                    onChange={(e) => setNewMetricKey(e.target.value)}
+                    placeholder={DEFAULT_ALERT_METRIC_KEY}
+                  />
+                  <datalist id="alert-metric-key-options">
+                    {metricKeyOptions.map((key) => (
+                      <option key={key} value={key} />
+                    ))}
+                  </datalist>
+                </label>
+              )}
 
-          <div className="form-actions">
-            <button type="submit" className="btn btn--filled">保存</button>
-            <button type="button" className="btn btn--gray" onClick={() => setIsAdding(false)}>キャンセル</button>
-          </div>
-        </form>
+              <label>
+                閾値
+                <input 
+                  type="number" 
+                  value={newThreshold} 
+                  onChange={(e) => setNewThreshold(Number(e.target.value))} 
+                  required 
+                />
+              </label>
+            </div>
+
+            <button type="submit" className="btn btn--filled">
+              追加
+            </button>
+          </form>
+        </>
       )}
 
+      <h2>一覧</h2>
       <table className="table">
         <thead>
           <tr>

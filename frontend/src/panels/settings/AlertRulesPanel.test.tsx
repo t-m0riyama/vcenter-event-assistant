@@ -44,7 +44,6 @@ describe('AlertRulesPanel metric_threshold create', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/alerts/rules', expect.any(Object))
     })
 
-    fireEvent.click(screen.getByRole('button', { name: '新規ルール追加' }))
     fireEvent.change(screen.getByLabelText('ルール名'), { target: { value: 'CPU rule' } })
     fireEvent.change(screen.getByLabelText('タイプ'), { target: { value: 'metric_threshold' } })
 
@@ -52,7 +51,7 @@ describe('AlertRulesPanel metric_threshold create', () => {
     expect(metricInput.value).toBe('host.cpu.usage_pct')
 
     fireEvent.change(screen.getByLabelText('閾値'), { target: { value: '90' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
 
     await waitFor(() => {
       const postCall = fetchMock.mock.calls.find(

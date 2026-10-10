@@ -1,16 +1,3 @@
-/* 説明文の下に「新規ルール追加」を置く。 */
-.alert-rules-panel-header {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-3);
-  margin-bottom: var(--spacing-4);
-}
-
-.alert-rules-panel-header .hint {
-  margin: 0;
-}
-
 .score-rules-import-options {
   margin: 0 0 var(--spacing-4);
   max-width: 720px;
@@ -54,24 +41,13 @@
   border: 0;
 }
 
-.add-rule-form {
-  background: var(--color-background-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 4px);
-  padding: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
+/* 追加のフォーム（スコアルール・イベント種別ガイドの「追加」と同じ幅）。 */
+.alert-rules-form {
   max-width: 720px;
 }
 
-.add-rule-form h3 {
-  font-size: var(--font-size-subhead);
-  margin: 0 0 var(--spacing-4);
-}
-
-.add-rule-form .form-actions {
-  display: flex;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-4);
+.alert-rules-add-form {
+  margin-bottom: var(--spacing-2);
 }
 
 .disabled-row td {

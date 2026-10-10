@@ -134,7 +134,8 @@ describe('App のロールによる出し分け', () => {
     expect(screen.getByLabelText('高スコアイベント のアラートレベル')).toBeDisabled()
     expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '新規ルール追加' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '追加' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '追加' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'ファイルにエクスポート' })).not.toBeInTheDocument()
   })
 
