@@ -6,6 +6,12 @@
 
 ## 画面の例
 
+### ログイン
+
+認証が有効なときのログイン画面です。利用者向けの操作説明は [authentication.md](../userguide/authentication.md) を参照してください。
+
+![ログイン画面](../images/login.png)
+
 ### 概要
 
 登録 vCenter 数や直近のイベント件数、スコアの高い要注意イベントの俯瞰を表示します。利用者向けの操作説明は [summary.md](../userguide/summary.md) を参照してください。
@@ -22,6 +28,12 @@
 
 ![イベントタブ・ガイド展開](../images/events-event-type-guide-expanded.png)
 
+### ログ
+
+リモートログ収集の検索画面です。接続先・種別・重大度などで絞り込み、CSV 出力もできます。
+
+![ログタブ](../images/logs.png)
+
 ### グラフ（メトリクス）
 
 ホストの CPU・メモリなどの時系列を、vCenter とメトリクス種別を選んで表示します。利用者向けの操作説明は [graph.md](../userguide/graph.md) を参照してください。
@@ -32,12 +44,26 @@
 
 サーバーが生成した日次などのダイジェストを一覧し、本文（表・LLM 要約を含む Markdown）を表示します。LLM 要約が記録されていない場合は `## LLM 要約` ブロックは表示しません。利用者向けの操作説明は [digests.md](../userguide/digests.md) を参照してください。
 
+![ダイジェストタブ](../images/digests.png)
+
+### 通知履歴
+
+アラートルールの発火・回復の履歴を一覧します。利用者向けの操作説明は [alerts.md](../userguide/alerts.md) を参照してください。
+
+![通知履歴タブ](../images/alerts-history.png)
+
 ### チャット
 
 収集済みのイベントやホストメトリクスをコンテキストとして、LLM に質問できます。
 利用者向けの操作説明は **[chat.md](../userguide/chat.md)** を参照してください。概要・活用例の補助は [features/chat.md](../features/chat.md) です。
 
 ![チャットタブ](../images/chat.png)
+
+### タイムライン
+
+指定期間のイベント・メトリクスなどをまとめて表示する画面です。利用者向けの操作説明は [alerts.md](../userguide/alerts.md) を参照してください。
+
+![タイムラインタブ](../images/timeline.png)
 
 ### 設定（一般）
 
@@ -47,7 +73,7 @@
 
 ### 設定（イベント種別ガイド）
 
-イベント種別ごとの意味・想定原因・対処を登録・編集し、JSON のエクスポート／インポートも行えます。。
+イベント種別ごとの意味・想定原因・対処を登録・編集し、JSON のエクスポート／インポートも行えます。
 
 ![設定のイベント種別ガイド](../images/settings-event-type-guides-list.png)
 
@@ -63,6 +89,18 @@ vCenter の接続情報を登録・編集・管理します。
 
 ![設定のスコアルール](../images/settings-score-rules.png)
 
+### 設定（アラート）
+
+イベントスコア型・メトリクス閾値型のアラートルールを管理します。利用者向けの操作説明は [alerts.md](../userguide/alerts.md) を参照してください。
+
+![設定のアラート](../images/settings-alerts.png)
+
+### 設定（プラグイン）
+
+コレクタプラグインの構成と実行状態を確認します。利用者向けの操作説明は [plugins.md](../userguide/plugins.md) を参照してください。
+
+![設定のプラグイン](../images/settings-plugins.png)
+
 ### 設定（チャット）
 
 チャットパネルの下部に表示する、よく使う質問のスニペット（サンプルプロンプト）を設定・編集できます。
@@ -71,13 +109,13 @@ vCenter の接続情報を登録・編集・管理します。
 
 ### その他の画面・キャプチャの更新
 
-全タブの一覧と PNG の再取得手順は **[開発者向けメモ（`docs/development/development.md`）](development.md)** を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。
+全タブの一覧と PNG の再取得手順は **[開発者向けメモ（`docs/development/development.md`）](development.md)** とプロジェクト Skill **[capture-ui-screenshots](../../skills/capture-ui-screenshots/SKILL.md)** を参照してください。リポジトリルートで次を実行すると `docs/images/*.png` を更新できます。
 
 ```bash
 # 既定: 起動済みの http://127.0.0.1:8000 に接続（フロントを更新したら build してサーバー再起動）
 uv run scripts/capture_ui_screenshots.py
 uv run scripts/capture_ui_screenshots.py --build
-# メモリ DB ＋シード付きで Playwright が API を起動するとき（CI 等）
+# メモリ DB ＋シード付きで Playwright が API を起動するとき（CI 等・ドキュメント再取得の推奨）
 uv run scripts/capture_ui_screenshots.py --spawn-server
 ```
 

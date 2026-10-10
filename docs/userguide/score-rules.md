@@ -126,7 +126,7 @@ vCenter Event Assistant では、取り込んだ **イベント** に **要注�
 
 ### 設定 → スコアルール
 
-画面の構成は [設定のスコアルール（スクリーンショット）](../images/settings-score-rules.png) を参照する。
+![設定のスコアルール](../images/settings-score-rules.png)
 
 #### エクスポート・インポート
 
