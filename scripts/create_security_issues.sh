@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPORT="docs/security-audit-report-2026-08-23.md"
+REPORT="docs/reports/security-audit-report-2026-08-23.md"
 LABEL="bug"
 
 create_issue() {
@@ -51,7 +51,7 @@ API に到達可能な攻撃者（リバースプロキシ内側の悪意ある�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（H-1）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（H-1）
 EOF
 )"
 
@@ -88,7 +88,7 @@ DB バックアップ、ボリューム、SQL ダンプ等への不正アクセ�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（H-2）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（H-2）
 EOF
 )"
 
@@ -124,7 +124,7 @@ create_issue "H-3" "高" "vCenter TLS 証明書検証がデフォルト OFF" "$(
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（H-3）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（H-3）
 EOF
 )"
 
@@ -159,7 +159,7 @@ DB ポートへの到達（Compose では Postgres はホスト非公開だが�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（H-4）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（H-4）
 EOF
 )"
 
@@ -193,7 +193,7 @@ API に到達可能な任意の呼び出し元
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（H-5）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（H-5）
 EOF
 )"
 
@@ -226,7 +226,7 @@ LLM チャット、手動インジェスト、ダイジェスト生成、重い 
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-1）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-1）
 EOF
 )"
 
@@ -253,7 +253,7 @@ create_issue "M-2" "中" "アラート履歴 API のページネーション未�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-2）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-2）
 EOF
 )"
 
@@ -281,7 +281,7 @@ create_issue "M-3" "中" "チャット系 API の時間範囲上限なし（DoS�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-3）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-3）
 EOF
 )"
 
@@ -311,7 +311,7 @@ JSON インポート API で空リスト + 削除フラグにより全件削除�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-4）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-4）
 EOF
 )"
 
@@ -340,7 +340,7 @@ API には `Cache-Control: no-store` のみ。CSP、`X-Frame-Options`、`X-Conte
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-5）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-5）
 EOF
 )"
 
@@ -368,7 +368,7 @@ FastAPI の Swagger / ReDoc / OpenAPI JSON が常時公開されている。
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-6）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-6）
 EOF
 )"
 
@@ -398,7 +398,7 @@ CORS が credentials + 全メソッド + 全ヘッダーを許可している。
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-7）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-7）
 EOF
 )"
 
@@ -427,7 +427,7 @@ Uvicorn が `0.0.0.0:8000` で待受。Compose は `8000:8000` でホスト全 I
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-8）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-8）
 EOF
 )"
 
@@ -456,7 +456,7 @@ Docker コンテナの PID 1 が root で起動する。
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-9）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-9）
 EOF
 )"
 
@@ -486,7 +486,7 @@ API キー設定時、イベント種別文字列が外部検索 API（Tavily/Fi
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-10）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-10）
 EOF
 )"
 
@@ -517,7 +517,7 @@ LangSmith 有効時に LLM プロンプト（運用データ含む）が外部�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-11）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-11）
 EOF
 )"
 
@@ -545,7 +545,7 @@ create_issue "M-12" "中" "依存パッケージの既知脆弱性" "$(cat <<'EO
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-12）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-12）
 EOF
 )"
 
@@ -574,7 +574,7 @@ create_issue "M-13" "中" "チャット履歴の localStorage 平文保存" "$(c
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-13）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-13）
 EOF
 )"
 
@@ -602,7 +602,7 @@ create_issue "M-14" "中" "CSRF 対策インフラ未整備（将来リスク）
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（M-14）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（M-14）
 EOF
 )"
 
@@ -626,7 +626,7 @@ vCenter 登録 UI が HTTP プロトコルを選択可能。
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-1）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-1）
 EOF
 )"
 
@@ -650,7 +650,7 @@ create_issue "L-2" "低" "Markdown レンダリングで外部画像読み込み
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-2）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-2）
 EOF
 )"
 
@@ -673,7 +673,7 @@ API エラーレスポンス本文が UI にそのまま表示される。
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-3）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-3）
 EOF
 )"
 
@@ -696,7 +696,7 @@ create_issue "L-4" "低" "WEB 検索クエリの INFO ログ出力" "$(cat <<'EO
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-4）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-4）
 EOF
 )"
 
@@ -720,7 +720,7 @@ MOCK_MODE / SCREENSHOT_E2E_SEED が弱いパスワードを DB に投入する�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-5）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-5）
 EOF
 )"
 
@@ -743,7 +743,7 @@ create_issue "L-6" "低" "MOCK_MODE の本番誤設定ガードなし" "$(cat <<
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-6）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-6）
 EOF
 )"
 
@@ -766,7 +766,7 @@ create_issue "L-7" "低" "アラートルール config のスキーマ未検証"
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-7）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-7）
 EOF
 )"
 
@@ -790,7 +790,7 @@ Docker Compose にセキュリティハードニングオプションがない�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-8）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-8）
 EOF
 )"
 
@@ -815,7 +815,7 @@ Dockerfile および CI で依存バージョンが未固定（supply chain リ�
 
 ## 参照
 
-- 監査レポート: `docs/security-audit-report-2026-08-23.md`（L-9）
+- 監査レポート: `docs/reports/security-audit-report-2026-08-23.md`（L-9）
 EOF
 )"
 
