@@ -331,6 +331,11 @@ html[data-theme='dark'] .header__logo--dark {
   max-width: 76ch;
 }
 
+/* 設定タブの説明は、ウインドウの幅に合わせて折り返す（途中の幅で改行しない）。 */
+.settings-view .hint {
+  max-width: none;
+}
+
 .panel h2 {
   font-size: var(--font-size-title3);
   margin: var(--spacing-6) 0 var(--spacing-2);

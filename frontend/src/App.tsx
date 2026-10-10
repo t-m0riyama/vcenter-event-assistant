@@ -375,7 +375,7 @@ export default function App() {
 
         <main className="main">
           {mountedMainTabs.has('settings') && (
-            <div hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
+            <div className="settings-view" hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
               <nav className="settings-subtabs" aria-label="設定">
                 {visibleSettingsSubTabs.map((sub) => (
                   <button
