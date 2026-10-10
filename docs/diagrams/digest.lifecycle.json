@@ -9,8 +9,8 @@
       {
         "id": "rail",
         "label": "生成",
-        "focus": ["accepted", "aggregate", "template", "llm", "saved"],
-        "note": "テンプレートのあと、LLM 未設定ならそのまま保存する。設定があれば追記してから保存する。"
+        "focus": ["accepted", "aggregate", "template", "llm", "research", "saved"],
+        "note": "日次は保存前に調査情報を連結する。週次・月次はテンプレートか追記のまま保存する。"
       },
       {
         "id": "template-error",
@@ -22,7 +22,7 @@
         "id": "llm-degraded",
         "label": "LLM 失敗",
         "focus": ["llm", "llm_failed", "saved"],
-        "note": "LLM 追記に失敗してもテンプレート本文で保存し、status は ok_llm_failed になる。"
+        "note": "追記に失敗してもテンプレートで保存する。日次はその前に調査情報を連結する。"
       }
     ]
   },
@@ -36,6 +36,7 @@
     { "id": "template", "type": "decision", "label": "テンプレート", "lane": "main", "col": 2 },
     { "id": "llm", "type": "active", "label": "LLM 追記", "tag": "任意", "lane": "main", "col": 3 },
     { "id": "saved", "type": "success", "label": "保存", "lane": "main", "col": 4 },
+    { "id": "research", "type": "active", "label": "調査情報", "tag": "日次", "lane": "terminal", "col": 2 },
     { "id": "llm_failed", "type": "failure", "label": "LLM 失敗", "lane": "terminal", "col": 1 },
     { "id": "template_error", "type": "failure", "label": "生成失敗", "lane": "terminal", "col": 0 }
   ],
@@ -47,7 +48,9 @@
     { "id": "llm-saved", "from": "llm", "to": "saved", "label": "ok", "variant": "dashed", "route": "straight", "labelDy": -40, "labelDx": -12 },
     { "id": "template-failed", "from": "template", "to": "template_error", "label": "描画失敗", "variant": "security", "labelDy": 28 },
     { "id": "llm-degraded", "from": "llm", "to": "llm_failed", "label": "追記失敗", "variant": "security", "labelDy": 28 },
-    { "id": "keep-template", "from": "llm_failed", "to": "saved", "label": "テンプレートで保存", "variant": "emphasis" }
+    { "id": "keep-template", "from": "llm_failed", "to": "saved", "label": "テンプレートで保存", "variant": "emphasis" },
+    { "id": "template-research", "from": "template", "to": "research", "label": "日次", "variant": "dashed", "via": [[461, 40], [900, 40], [900, 479]] },
+    { "id": "research-saved", "from": "research", "to": "saved", "label": "連結", "variant": "emphasis" }
   ],
   "cards": [
     {
@@ -55,14 +58,14 @@
       "title": "本線",
       "items": [
         "集約のあとテンプレート Markdown を作る",
-        "未設定はテンプレートのまま、追記の成功時も status=ok で保存する"
+        "日次は追記の有無にかかわらず保存前に調査情報を連結し、週次・月次は付けない"
       ]
     },
     {
       "dot": "amber",
       "title": "LLM 失敗",
       "items": [
-        "追記に失敗してもテンプレート本文は保存する",
+        "追記に失敗してもテンプレート本文は保存する。日次は調査情報も足す",
         "status は ok_llm_failed になる"
       ]
     },
