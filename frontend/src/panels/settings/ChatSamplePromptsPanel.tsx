@@ -9,6 +9,7 @@ import { downloadJsonFile } from '../../utils/downloadJsonFile'
 import { toErrorMessage } from '../../utils/errors'
 import { randomId } from '../../utils/randomId'
 import { useChatSamplePrompts } from '../../preferences/useChatSamplePrompts'
+import { SettingsListRow } from '../../components/SettingsListRow'
 import {
   buildChatSamplePromptsExportPayload,
   chatSamplePromptsFileSchema,
@@ -32,6 +33,8 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
   const { chatSamplePrompts, setChatSamplePrompts } = useChatSamplePrompts()
   const [overwriteExisting, setOverwriteExisting] = useState(true)
   const [deleteSamplesNotInImport, setDeleteSamplesNotInImport] = useState(false)
+  /** この画面で追加した行（最初から開いて、すぐ編集できるようにする）。 */
+  const [addedIds, setAddedIds] = useState<ReadonlySet<string>>(() => new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const addRow = useCallback(() => {
@@ -41,6 +44,7 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
       text: 'ここに質問文を入力してください。',
     }
     setChatSamplePrompts([...chatSamplePrompts, row])
+    setAddedIds((prev) => new Set(prev).add(row.id))
   }, [chatSamplePrompts, setChatSamplePrompts])
 
   const updateRow = useCallback(
@@ -116,13 +120,12 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
   return (
     <div className="panel">
       <p className="hint">
-        チャットタブの「サンプルの質問」チップに並ぶ行を編集します。保存先はこのブラウザの
-        localStorage です。既定の行もここから編集・削除できます。
+        チャットタブの「サンプルの質問」に表示する行を編集します。設定はこのブラウザの localStorage に保存されます。既定の行も、ここから編集・削除できます。
       </p>
 
       <h2>エクスポート・インポート</h2>
       <p className="hint">
-        サンプル一覧を JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。
+        サンプルの一覧を JSON 形式でエクスポート・インポートできます。下の「インポート時のオプション」は、「ファイルからインポート」の場合にのみ適用されます。
       </p>
       <fieldset className="score-rules-import-options">
         <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
@@ -169,11 +172,11 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
       </div>
 
       <h2>一覧</h2>
-      <p className="hint">
-        ラベルと本文の両方に文字が入っている行だけがチャットのチップに表示されます。
+      <p className="hint settings-list__hint">
+        ラベルと本文の両方が入力されている行のみ、チャットタブのサンプルとして表示されます。行をクリックすると展開され、内容を編集できます（変更は直ちに保存されます）。
       </p>
-      <p className="hint">
-        「既定に戻す」は一覧をアプリ同梱の初期サンプルだけに置き換えます（編集・追加行は失われます）。
+      <p className="hint settings-list__hint">
+        「既定に戻す」を押すと、一覧はアプリに同梱されている初期のサンプルのみに置き換えられます（編集・追加した行は失われます）。
       </p>
       <div className="chat-custom-samples-actions">
         <button type="button" className="btn btn--gray" onClick={addRow}>
@@ -183,45 +186,64 @@ export function ChatSamplePromptsPanel({ onError }: { onError: (e: string | null
           既定に戻す
         </button>
       </div>
-      <ul className="chat-custom-samples-list">
-        {chatSamplePrompts.map((row) => (
-          <li key={row.id} className="chat-custom-samples-row">
-            <label className="chat-custom-samples-field">
-              表示ラベル
-              <input
-                type="text"
-                value={row.label}
-                onChange={(e) => {
-                  updateRow(row.id, { label: e.target.value })
-                }}
-                aria-label={`サンプル ${row.id} の表示ラベル`}
-              />
-            </label>
-            <label className="chat-custom-samples-field">
-              質問本文
-              <textarea
-                value={row.text}
-                rows={3}
-                onChange={(e) => {
-                  updateRow(row.id, { text: e.target.value })
-                }}
-                aria-label={`サンプル ${row.id} の質問本文`}
-              />
-            </label>
-            <button
-              type="button"
-              className="btn btn--danger"
-              onClick={() => {
-                removeRow(row.id)
-              }}
+      <ul className="settings-list chat-custom-samples-list">
+        {chatSamplePrompts.map((row) => {
+          const label = row.label.trim()
+          const incomplete = !label || !row.text.trim()
+          return (
+            <SettingsListRow
+              key={row.id}
+              title={label || '（表示ラベルなし）'}
+              badges={
+                incomplete ? (
+                  <span className="settings-row__badge settings-row__badge--caution">チャットに表示されません</span>
+                ) : null
+              }
+              preview={row.text.trim() || undefined}
+              ariaLabel={`${label || '表示ラベルなし'}${incomplete ? '、チャットに表示されません' : ''}`}
+              defaultOpen={addedIds.has(row.id)}
             >
-              削除
-            </button>
-          </li>
-        ))}
+              <div className="settings-row__fields">
+                <label>
+                  表示ラベル
+                  <input
+                    type="text"
+                    value={row.label}
+                    onChange={(e) => {
+                      updateRow(row.id, { label: e.target.value })
+                    }}
+                    aria-label={`サンプル ${row.id} の表示ラベル`}
+                  />
+                </label>
+                <label>
+                  質問本文
+                  <textarea
+                    value={row.text}
+                    rows={8}
+                    onChange={(e) => {
+                      updateRow(row.id, { text: e.target.value })
+                    }}
+                    aria-label={`サンプル ${row.id} の質問本文`}
+                  />
+                </label>
+              </div>
+              <div className="settings-row__actions">
+                <button
+                  type="button"
+                  className="btn btn--danger"
+                  onClick={() => {
+                    removeRow(row.id)
+                  }}
+                >
+                  削除
+                </button>
+              </div>
+            </SettingsListRow>
+          )
+        })}
       </ul>
       {chatSamplePrompts.length === 0 && (
-        <p className="hint">サンプルがありません。「サンプルを追加」で作成できます。</p>
+        <p className="hint">サンプルはありません。「サンプルを追加」から作成できます。</p>
       )}
     </div>
   )

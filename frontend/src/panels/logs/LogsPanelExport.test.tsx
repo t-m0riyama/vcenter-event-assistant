@@ -1,9 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TimeZoneProvider, TimeZoneSelect } from '../../datetime/TimeZoneProvider'
 import { onUnauthorized, SESSION_EXPIRED_MESSAGE, setExpectedPrincipal } from '../../api'
 import { LogsPanel } from './LogsPanel'
 import { downloadLogCsv } from './logExport'
+
+/** 上のページ切り替え。下にも同じボタンと件数があるので、上に絞って探す。 */
+const pager = () => within(screen.getByRole('navigation', { name: 'ページ切り替え（上）' }))
 
 vi.mock('./logExport', async (importOriginal) => ({
   ...await importOriginal<typeof import('./logExport')>(), downloadLogCsv: vi.fn(),
@@ -56,8 +59,8 @@ describe('LogsPanel CSV', () => {
     fireEvent.change(screen.getByLabelText('重大度'), { target: { value: 'error' } })
     fireEvent.change(screen.getByLabelText('本文（含む）'), { target: { value: 'Storage' } })
     await waitFor(() => expect(button).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    await waitFor(() => expect(screen.getByText('全 201 件中 51–100 件を表示')).toBeInTheDocument())
+    fireEvent.click(pager().getByRole('button', { name: '次へ' }))
+    await waitFor(() => expect(pager().getByText('全 201 件中 51–100 件を表示')).toBeInTheDocument())
     const requests = fetchMock.mock.calls.length
     fireEvent.click(button)
     await waitFor(() => expect(downloadLogCsv).toHaveBeenCalledTimes(1))

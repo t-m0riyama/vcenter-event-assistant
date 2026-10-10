@@ -55,6 +55,15 @@ describe('readChatPanelSnapshot / writeChatPanelSnapshot / clearChatPanelSnapsho
     sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
   })
 
+  it('「直近 N」の長さを保存して読み戻す。前の版の保存データ（長さなし）も読める', () => {
+    writeChatPanelSnapshot(minimalSnapshot({ rollingDurationMs: 7 * 86400000 }), 200)
+    expect(readChatPanelSnapshot(200)?.rollingDurationMs).toBe(7 * 86400000)
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(minimalSnapshot()))
+    const legacy = readChatPanelSnapshot(200)
+    expect(legacy).not.toBeNull()
+    expect(legacy?.rollingDurationMs).toBeUndefined()
+  })
+
   it('未設定なら null', () => {
     expect(readChatPanelSnapshot(200)).toBeNull()
   })

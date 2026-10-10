@@ -27,8 +27,7 @@ export function ChatWebSearchPrefsPanel() {
     <div className="panel">
       <h2>WEB 検索の条件</h2>
       <p className="hint">
-        入力欄の「WEB 検索を許可」が ON のときに適用されます。保存先はこのブラウザの
-        localStorage です。
+        チャットの入力欄で「WEB 検索を許可」がオンの場合に適用されます。設定はこのブラウザの localStorage に保存されます。
       </p>
       <div className="form-grid">
         <label>

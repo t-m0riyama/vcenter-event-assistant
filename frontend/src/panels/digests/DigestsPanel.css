@@ -1,19 +1,16 @@
 /* ダイジェスト参照 */
+/* 種別のボタンと「一覧を更新」を同じ行に置き、縦方向の中心を揃える（「一覧を更新」は右端）。 */
 .digests-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--spacing-3);
   flex-wrap: wrap;
-  margin-bottom: var(--spacing-2);
-}
-
-.digests-panel-header h2 {
-  margin: 0;
+  margin: 0 0 var(--spacing-3);
 }
 
 .digests-refresh {
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .digests-count-hint {
@@ -25,8 +22,8 @@
 .digests-kind-filter {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacing-2);
-  margin: 0 0 var(--spacing-3);
 }
 
 .digests-kind-filter .is-active {
@@ -163,12 +160,6 @@
   flex: 1 1 100%;
   font-size: var(--font-size-caption);
   color: var(--color-text-secondary);
-}
-
-.digests-pager {
-  display: flex;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-3);
 }
 
 .digests-detail-meta {

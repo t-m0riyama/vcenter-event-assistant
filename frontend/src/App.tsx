@@ -52,7 +52,7 @@ type SettingsSubTabConfig = {
   readonly render: (onError: (e: string | null) => void, active: boolean) => ReactNode
   /**
    * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの（お知らせを出す）。
-   * 変更系の操作部品はパネル自身がロールで出し分ける（展開・エクスポートなど閲覧の操作は残す）。
+   * 変更系の操作部品はパネル自身がロールで出し分ける（展開など閲覧の操作は残す。ファイルへのエクスポートは operator 以上）。
    */
   readonly adminOnlyEdit?: boolean
 }
@@ -284,8 +284,8 @@ export default function App() {
         panelLabel: 'チャット設定',
         render: (onError) => (
           <>
-            <ChatWebSearchPrefsPanel />
             <ChatSamplePromptsPanel onError={onError} />
+            <ChatWebSearchPrefsPanel />
           </>
         ),
       },
@@ -307,16 +307,18 @@ export default function App() {
             <img src="/favicon-small-light.svg" alt="" className="header__logo header__logo--light" width={44} height={44} />
             <img src="/favicon-small.svg" alt="" className="header__logo header__logo--dark" width={44} height={44} />
             <h1>vCenter Event Assistant</h1>
-            <button
-              type="button"
-              className="help-toggle-button"
-              onClick={() => setShowHelp(!showHelp)}
-              aria-label="使い方を表示"
-            >
-              <HelpIcon />
-              <span>使い方を表示</span>
-            </button>
-            <UserMenu />
+            <div className="header__actions">
+              <button
+                type="button"
+                className="help-toggle-button"
+                onClick={() => setShowHelp(!showHelp)}
+                aria-label="使い方を表示"
+              >
+                <HelpIcon />
+                <span>使い方を表示</span>
+              </button>
+              <UserMenu />
+            </div>
           </div>
           {retention && (
             <p className="retention-hint">
@@ -373,7 +375,7 @@ export default function App() {
 
         <main className="main">
           {mountedMainTabs.has('settings') && (
-            <div hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
+            <div className="settings-view" hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
               <nav className="settings-subtabs" aria-label="設定">
                 {visibleSettingsSubTabs.map((sub) => (
                   <button

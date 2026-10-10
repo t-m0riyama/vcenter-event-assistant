@@ -21,8 +21,11 @@ import { useSettingsListWithDrafts } from './useSettingsListCrud'
 
 /** イベントスコアルール設定パネル。 */
 export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => void }) {
-  // 追加・変更・削除・インポートは admin だけ（閲覧とエクスポートは全ロール）
-  const canEdit = useAuth().hasRole('admin')
+  // 追加・変更・削除・インポートは admin だけ。エクスポートは operator 以上で、viewer には出さない
+  // （閲覧は全ロール）
+  const { hasRole } = useAuth()
+  const canEdit = hasRole('admin')
+  const canExport = hasRole('operator')
   const [newType, setNewType] = useState('')
   const [newDelta, setNewDelta] = useState(0)
 
@@ -115,66 +118,69 @@ export function ScoreRulesPanel({ onError }: { onError: (e: string | null) => vo
   return (
     <div className="panel">
       <p className="hint">
-        イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値をサーバーに保存します。最終スコアは
-        0〜100 に収まり、ルールの保存・変更・削除は既存の取り込み済みイベントの再計算にも反映されます。
+        イベント種別（event_type）ごとに、ルールベースのスコアへ加算する値をサーバーに保存します。最終的なスコアは 0〜100 の範囲に収まります。ルールの追加・変更・削除は、取り込み済みのイベントのスコアの再計算にも反映されます。
       </p>
-      <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
-      <p className="hint">
-        {canEdit
-          ? 'ルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。'
-          : 'ルールを JSON でエクスポートできます。'}
-      </p>
-      {canEdit && (
+      {canExport && (
         <>
-          <fieldset className="score-rules-import-options">
-            <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
-            <div className="form-grid score-rules-form score-rules-import-options__grid">
-              <label className="check">
+          <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
+          <p className="hint">
+            {canEdit
+              ? 'ルールを JSON 形式でエクスポート・インポートできます。下の「インポート時のオプション」は、「ファイルからインポート」の場合にのみ適用されます。'
+              : 'ルールを JSON 形式でエクスポートできます。'}
+          </p>
+          {canEdit && (
+            <>
+              <fieldset className="score-rules-import-options">
+                <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
+                <div className="form-grid score-rules-form score-rules-import-options__grid">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={overwriteExisting}
+                      onChange={(e) => setOverwriteExisting(e.target.checked)}
+                      aria-label="既存の同一イベント種別を上書き"
+                    />
+                    既存の同一イベント種別を上書き
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={deleteNotInImport}
+                      onChange={(e) => setDeleteNotInImport(e.target.checked)}
+                      aria-label="ファイルに含まれないイベント種別のルールを削除"
+                    />
+                    ファイルに含まれないイベント種別のルールを削除
+                  </label>
+                </div>
+              </fieldset>
+            </>
+          )}
+          <div className="score-rules-file-actions">
+            <button type="button" className="btn btn--gray" onClick={exportToFile}>
+              ファイルにエクスポート
+            </button>
+            {canEdit && (
+              <>
                 <input
-                  type="checkbox"
-                  checked={overwriteExisting}
-                  onChange={(e) => setOverwriteExisting(e.target.checked)}
-                  aria-label="既存の同一イベント種別を上書き"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden-file-input"
+                  aria-label="スコアルール JSON を選択"
+                  onChange={(ev) => void onImportFileChange(ev)}
                 />
-                既存の同一イベント種別を上書き
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={deleteNotInImport}
-                  onChange={(e) => setDeleteNotInImport(e.target.checked)}
-                  aria-label="ファイルに含まれないイベント種別のルールを削除"
-                />
-                ファイルに含まれないイベント種別のルールを削除
-              </label>
-            </div>
-          </fieldset>
+                <button
+                  type="button"
+                  className="btn btn--filled"
+                  onClick={openImportFilePicker}
+                >
+                  ファイルからインポート
+                </button>
+              </>
+            )}
+          </div>
         </>
       )}
-      <div className="score-rules-file-actions">
-        <button type="button" className="btn btn--gray" onClick={exportToFile}>
-          ファイルにエクスポート
-        </button>
-        {canEdit && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden-file-input"
-              aria-label="スコアルール JSON を選択"
-              onChange={(ev) => void onImportFileChange(ev)}
-            />
-            <button
-              type="button"
-              className="btn btn--filled"
-              onClick={openImportFilePicker}
-            >
-              ファイルからインポート
-            </button>
-          </>
-        )}
-      </div>
 
       {canEdit && (
         <>

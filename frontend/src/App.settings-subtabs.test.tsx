@@ -42,13 +42,13 @@ const SETTINGS_SUBTAB_LABELS = [
 ] as const
 
 const SETTINGS_SUBTAB_INTRO_MARKERS: Record<(typeof SETTINGS_SUBTAB_LABELS)[number], string> = {
-  一般: 'このブラウザで使う基本設定を管理します',
+  一般: 'このブラウザで使用する基本設定',
   vCenter: 'パスワードは暗号化',
-  スコアルール: '既存の取り込み済みイベントの再計算にも反映されます',
+  スコアルール: '取り込み済みのイベントのスコアの再計算にも反映されます',
   イベント種別ガイド: '「対処が必要」をオンにすると',
-  アラート: '判定対象になるのは有効化したルールだけです',
-  プラグイン: '設定は TOML または環境変数で変更し',
-  チャット: '既定の行もここから編集・削除できます',
+  アラート: '判定の対象となるのは、有効にしたルールのみです',
+  プラグイン: '設定は TOML ファイルまたは環境変数で変更し',
+  チャット: '既定の行も、ここから編集・削除できます',
 }
 
 async function openSettingsSubtab(label: (typeof SETTINGS_SUBTAB_LABELS)[number]) {
@@ -122,7 +122,7 @@ describe('App 設定サブタブ', () => {
     expect(within(subNav).getByRole('button', { name: 'プラグイン' }))
       .toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText((content, element) => {
-      return element?.tagName === 'P' && content.includes('設定は TOML または環境変数で変更し')
+      return element?.tagName === 'P' && content.includes('設定は TOML ファイルまたは環境変数で変更し')
     })).toBeInTheDocument()
   })
 
@@ -131,27 +131,19 @@ describe('App 設定サブタブ', () => {
     async (label) => {
       const panel = await openSettingsSubtab(label)
 
-      if (label === 'アラート') {
-        expect(panel.firstElementChild).toHaveClass('alert-rules-panel-header')
-        expect(panel.firstElementChild?.firstElementChild).toHaveClass('hint')
-        expect(panel.firstElementChild?.firstElementChild?.tagName).toBe('P')
-        return
-      }
-
       expect(panel.firstElementChild).toHaveClass('hint')
       expect(panel.firstElementChild?.tagName).toBe('P')
     },
   )
 
-  it('アラート設定サブタブは概要ヒントと新規ルール追加ボタンを同じヘッダー行に表示する', async () => {
+  it('アラート設定サブタブはスコアルールと同じく「追加」の見出しの下に追加フォームを出す', async () => {
     const panel = await openSettingsSubtab('アラート')
-    const header = panel.firstElementChild as HTMLElement
 
-    expect(header).toHaveClass('alert-rules-panel-header')
-    expect(within(header).getByText((content, element) => {
-      return element?.tagName === 'P' && content.includes(SETTINGS_SUBTAB_INTRO_MARKERS.アラート)
-    })).toHaveClass('hint')
-    expect(within(header).getByRole('button', { name: '新規ルール追加' })).toBeInTheDocument()
+    expect(within(panel).getByRole('heading', { level: 2, name: '追加' })).toBeInTheDocument()
+    expect(within(panel).getByLabelText('ルール名')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: '追加' })).toBeInTheDocument()
+    expect(within(panel).getByRole('heading', { level: 2, name: '一覧' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: '新規ルール追加' })).not.toBeInTheDocument()
   })
 
   it('チャット設定サブタブは旧見出し「プロンプトスニペット」を表示しない', async () => {

@@ -12,6 +12,7 @@ import { downloadTextFile } from '../../utils/downloadTextFile'
 import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
 import { digestStatusLabel, resolveDigestEffectiveStatus } from './digestStatusDisplay'
 import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
+import { Pagination } from '../../components/Pagination'
 
 /** 1 ページあたりのダイジェスト件数（`GET /api/digests` の `limit`） */
 export const DIGEST_LIST_PAGE_SIZE = 50
@@ -158,7 +159,6 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   if (loadState === 'loading') {
     return (
       <div className="panel digests-panel">
-        <h2>ダイジェスト</h2>
         <p>読み込み中…</p>
       </div>
     )
@@ -167,7 +167,6 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
   if (loadState === 'error') {
     return (
       <div className="panel digests-panel">
-        <h2>ダイジェスト</h2>
         <p className="hint">ダイジェストを読み込めませんでした。上部のメッセージを確認してください。</p>
       </div>
     )
@@ -175,28 +174,28 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
 
   return (
     <div className="panel digests-panel">
+      {/* 種別のボタンと「一覧を更新」を同じ行に置き、縦方向の中心を揃える。 */}
       <div className="digests-panel-header">
-        <h2>ダイジェスト</h2>
+        <div className="digests-kind-filter" role="group" aria-label="ダイジェスト種別">
+          {DIGEST_KIND_FILTERS.map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className={selectedKind === kind ? 'btn btn--gray is-active' : 'btn btn--gray'}
+              aria-pressed={selectedKind === kind}
+              onClick={() => {
+                setSelectedKind(kind)
+                setOffset(0)
+                setSelectedId(null)
+              }}
+            >
+              {kind}
+            </button>
+          ))}
+        </div>
         <button type="button" className="btn btn--gray digests-refresh" onClick={() => void load()}>
           一覧を更新
         </button>
-      </div>
-      <div className="digests-kind-filter" role="group" aria-label="ダイジェスト種別">
-        {DIGEST_KIND_FILTERS.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            className={selectedKind === kind ? 'btn btn--gray is-active' : 'btn btn--gray'}
-            aria-pressed={selectedKind === kind}
-            onClick={() => {
-              setSelectedKind(kind)
-              setOffset(0)
-              setSelectedId(null)
-            }}
-          >
-            {kind}
-          </button>
-        ))}
       </div>
       <p className="digests-count-hint">全 {total} 件</p>
 
@@ -239,28 +238,22 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
                 </ul>
               </nav>
             </div>
-            <div className="digests-pager">
-              <button
-                type="button"
-                disabled={!canPrev}
-                onClick={() => {
-                  setSelectedId(null)
-                  setOffset((o) => Math.max(0, o - DIGEST_LIST_PAGE_SIZE))
-                }}
-              >
-                前へ
-              </button>
-              <button
-                type="button"
-                disabled={!canNext}
-                onClick={() => {
-                  setSelectedId(null)
-                  setOffset((o) => o + DIGEST_LIST_PAGE_SIZE)
-                }}
-              >
-                次へ
-              </button>
-            </div>
+            <Pagination
+              position="bottom"
+              total={total}
+              start={offset + 1}
+              end={Math.min(offset + DIGEST_LIST_PAGE_SIZE, total)}
+              canPrev={canPrev}
+              canNext={canNext}
+              onPrev={() => {
+                setSelectedId(null)
+                setOffset((o) => Math.max(0, o - DIGEST_LIST_PAGE_SIZE))
+              }}
+              onNext={() => {
+                setSelectedId(null)
+                setOffset((o) => o + DIGEST_LIST_PAGE_SIZE)
+              }}
+            />
           </div>
 
           <div className="digests-detail digests-detail--sticky">

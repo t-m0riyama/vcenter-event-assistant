@@ -268,8 +268,8 @@ export function DirectoriesPanel({
     <div className="panel directories-panel">
       <fieldset className="directories-panel__fieldset" disabled={busy} aria-busy={busy}>
         <p className="hint">
-          ログインに使う Active Directory / LDAP を管理します。ユーザーのロールは、グループとロールの対応表でログインのたびに決まります。
-          接続先・検索・グループの設定や対応表を変えたり、ディレクトリを無効にしたりすると、そのディレクトリでログイン中のユーザーはログアウトされます。
+          ログインに使用する Active Directory / LDAP を管理します。ユーザーのロールは、ログインのたびにグループとロールの対応表に基づいて決定されます。
+          接続先・検索・グループの設定や対応表を変更した場合、またはディレクトリを無効にした場合は、そのディレクトリでログイン中のユーザーはログアウトされます。
         </p>
         {notice && (
           <p className="directories-panel__notice" role="status">
@@ -296,7 +296,7 @@ export function DirectoriesPanel({
           </div>
         </div>
         {list.length === 0 ? (
-          <p className="hint">ディレクトリはありません。ローカルユーザーだけがログインできます。</p>
+          <p className="hint">ディレクトリは登録されていません。ローカルユーザーのみがログインできます。</p>
         ) : (
           <table className="table directories-panel__table">
             <thead>
@@ -370,7 +370,7 @@ export function DirectoriesPanel({
               <fieldset className="directories-panel__group">
                 <legend>接続試験（保存しません）</legend>
                 <p className="hint">
-                  編集中の値で試します。ユーザー名を入れると、検索・ID 属性・グループの判定（どのロールになるか）まで試します。パスワードも入れると、本人としての認証も試します。
+                  編集中の設定値で接続を試験します。ユーザー名を入力すると、検索、ID 属性、グループの判定（割り当てられるロール）まで確認します。パスワードも入力すると、そのユーザーとしての認証も確認します。
                 </p>
                 <div className="form-grid">
                   <label>

@@ -12,6 +12,7 @@ import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
 import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
 import { ScoreBadge, SeverityBadge } from '../../components/badges'
+import { Pagination } from '../../components/Pagination'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
@@ -40,6 +41,12 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
         <label>
           最小スコア
           <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step={1}
+            className="toolbar__input--short"
             value={c.minScore}
             onChange={(e) => {
               c.setMinScore(e.target.value)
@@ -64,27 +71,16 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
             ))}
           </select>
         </label>
-        <div className="toolbar__pagination">
-          <button
-            type="button"
-            className="btn"
-            disabled={!c.canPrev}
-            onClick={() => c.setPage((p) => Math.max(1, p - 1))}
-          >
-            前へ
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={!c.canNext}
-            onClick={() => c.setPage((p) => p + 1)}
-          >
-            次へ
-          </button>
-        </div>
-        <span className="toolbar__meta">
-          {c.total === 0 ? '全 0 件' : `全 ${c.total} 件中 ${c.start}–${c.end} 件を表示`}
-        </span>
+        <Pagination
+          position="top"
+          total={c.total}
+          start={c.start}
+          end={c.end}
+          canPrev={c.canPrev}
+          canNext={c.canNext}
+          onPrev={() => c.setPage((p) => Math.max(1, p - 1))}
+          onNext={() => c.setPage((p) => p + 1)}
+        />
         <button
           type="button"
           className="btn btn--gray"
@@ -264,6 +260,18 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
           ))}
         </tbody>
       </table>
+      )}
+      {c.total > 0 && (
+        <Pagination
+          position="bottom"
+          total={c.total}
+          start={c.start}
+          end={c.end}
+          canPrev={c.canPrev}
+          canNext={c.canNext}
+          onPrev={() => c.setPage((p) => Math.max(1, p - 1))}
+          onNext={() => c.setPage((p) => p + 1)}
+        />
       )}
     </div>
   )

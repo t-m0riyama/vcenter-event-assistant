@@ -112,7 +112,7 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
   },
   chat_samples: {
     summary:
-      '【チャット設定】\nWEB 検索の条件（スコープ・積極度）と、チャット画面から挿入できるサンプル質問を編集します。',
+      '【チャット設定】\nチャット画面から挿入できるサンプル質問と、WEB 検索の条件（スコープ・積極度）を編集します。',
     userGuideDoc: 'docs/userguide/chat.md',
     markerId: 'chat',
   },
