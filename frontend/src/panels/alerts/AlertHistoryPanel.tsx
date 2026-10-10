@@ -141,13 +141,8 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
 
   return (
     <div className="panel alert-history-panel">
-      <div className="alert-history-panel-header">
-        <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
-          一覧を更新
-        </button>
-      </div>
-
-      <div className="toolbar">
+      {/* 表示件数・ページ切り替えと「一覧を更新」を同じ行に置き、縦方向の中心を揃える。 */}
+      <div className="toolbar alert-history-toolbar">
         <label>
           表示件数
           <select
@@ -165,6 +160,9 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
           </select>
         </label>
         <Pagination position="top" {...pagination} />
+        <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
+          一覧を更新
+        </button>
       </div>
 
       {history.length === 0 ? (

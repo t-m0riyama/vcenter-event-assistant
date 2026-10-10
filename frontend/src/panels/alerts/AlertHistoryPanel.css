@@ -1,15 +1,7 @@
-/* ダイジェストと同じく、「一覧を更新」だけを右端に置く。 */
-.alert-history-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--spacing-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--spacing-2);
-}
-
+/* 「一覧を更新」は表示件数・ページ切り替えと同じ行の右端に置く。 */
 .alert-history-refresh {
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .alert-history-table {

@@ -174,27 +174,28 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
 
   return (
     <div className="panel digests-panel">
+      {/* 種別のボタンと「一覧を更新」を同じ行に置き、縦方向の中心を揃える。 */}
       <div className="digests-panel-header">
+        <div className="digests-kind-filter" role="group" aria-label="ダイジェスト種別">
+          {DIGEST_KIND_FILTERS.map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className={selectedKind === kind ? 'btn btn--gray is-active' : 'btn btn--gray'}
+              aria-pressed={selectedKind === kind}
+              onClick={() => {
+                setSelectedKind(kind)
+                setOffset(0)
+                setSelectedId(null)
+              }}
+            >
+              {kind}
+            </button>
+          ))}
+        </div>
         <button type="button" className="btn btn--gray digests-refresh" onClick={() => void load()}>
           一覧を更新
         </button>
-      </div>
-      <div className="digests-kind-filter" role="group" aria-label="ダイジェスト種別">
-        {DIGEST_KIND_FILTERS.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            className={selectedKind === kind ? 'btn btn--gray is-active' : 'btn btn--gray'}
-            aria-pressed={selectedKind === kind}
-            onClick={() => {
-              setSelectedKind(kind)
-              setOffset(0)
-              setSelectedId(null)
-            }}
-          >
-            {kind}
-          </button>
-        ))}
       </div>
       <p className="digests-count-hint">全 {total} 件</p>
 
