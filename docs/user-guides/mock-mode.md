@@ -1,24 +1,24 @@
 # モックモードの使い方（デモ・開発）
 
-vCenter・メール（SMTP）・LLM・WEB 検索 API などの **外部サービスが無い環境**でも、画面と主要操作を試せるモードです。本番運用向けではありません。
+vCenter・メール（SMTP）・LLM・WEB 検索 API などの **外部サービスが無い環境**でも、画面と主要操作を試せるモードである。本番運用向けではない。
 
 ---
 
-## 1. この文書の対象
+## 1. この文書の対象と読み方
 
-| あなたの目的 | まず読む節 |
+| 目的 | まず読む節 |
 |-------------|-----------|
-| 手元で UI を触ってみたい | [§2](#2-起動手順) → [§3](#3-画面で確認できること) |
+| 画面の操作を確認する | [§2](#2-起動手順) → [§3](#3-画面で確認できること) |
 | 取り込みやアラートの動きも見たい | [§4](#4-スケジューラの有無) → [§5](#5-何がモックされるか) |
-| 本番設定との違いを知りたい | [§6](#6-注意事項) → [§7](#7-よくある質問) |
+| 本番設定との違いを知りたい | [§6](#6-注意事項) → [§7](#7-よくある質問と切り分け) |
 
-実装・テスト・モジュール構成の詳細は開発者向けの [development.md（モックモード節）](../development.md#モックモードmock_mode1) を参照してください。
+実装・テスト・モジュール構成の詳細は開発者向けの [development.md（モックモード節）](../development.md#モックモードmock_mode1) を参照する。
 
 ---
 
 ## 2. 起動手順
 
-前提: [利用開始ガイド](../getting-started.md) どおりに `uv sync` 済みであること。フロントを Vite で開く場合は通常どおり別ターミナルで `npm run dev` も起動します。
+前提: [利用開始ガイド](../getting-started.md) どおりに `uv sync` 済みであること。フロントを Vite で開く場合は通常どおり別ターミナルで `npm run dev` も起動する。
 
 ### 2.1 `.env` に書く（推奨）
 
@@ -26,7 +26,7 @@ vCenter・メール（SMTP）・LLM・WEB 検索 API などの **外部サービ
 cp .env.example .env   # 未作成の場合
 ```
 
-`.env` に次を設定します。
+`.env` に次を設定する。
 
 ```bash
 MOCK_MODE=1
@@ -40,7 +40,7 @@ VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password
 # SCHEDULER_ENABLED=true
 ```
 
-本番用の `./data/vea.db` は触らないでください。デモ・開発は `vea.dev.db` を使います（[development.md](../development.md) の DB 使い分け）。
+本番用の `./data/vea.db` は触らない。デモ・開発は `vea.dev.db` を使う（[development.md](../development.md) の DB 使い分け）。
 
 ### 2.2 起動
 
@@ -51,7 +51,7 @@ VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password
 uv run vcenter-event-assistant
 ```
 
-ブラウザで `http://localhost:8000` を開き、上で設定した初期 admin でログインします（[ログインとロール](authentication.md)）。
+ブラウザで `http://localhost:8000` を開き、上で設定した初期 admin でログインする（[ログインとロール](authentication.md)）。
 
 **開発用途（Vite）**
 
@@ -63,7 +63,7 @@ uv run vcenter-event-assistant
 cd frontend && npm run dev
 ```
 
-ブラウザは Vite の URL（既定 `http://localhost:5173`）を開きます。
+ブラウザは Vite の URL（既定 `http://localhost:5173`）を開く。
 
 ### 2.3 シェルだけで一時指定する場合
 
@@ -77,9 +77,9 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 
 ## 3. 画面で確認できること
 
-起動に成功すると、ヘッダ付近に次のバナーが出ます。
+起動に成功すると、ヘッダ付近に次のバナーが出る。
 
-> モックモード: 外部サービス（vCenter / SMTP / LLM / WEB 検索）には接続しません
+> モックモード: 外部サービス（vCenter / SMTP / LLM / WEB 検索）には接続しない
 
 | 画面 | 期待できること |
 |------|----------------|
@@ -89,7 +89,7 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 | **チャット** | API キーなしで固定の「（モック応答）」が返る。WEB 検索 ON でも外部 API は呼ばない |
 | **ダイジェスト** | LLM 要約は固定のモック文が付く（キー不要） |
 
-初回起動時にデモデータが自動投入されます。同じ DB で再起動しても **二重投入はしません**（冪等）。
+初回起動時にデモデータが自動投入される。同じ DB で再起動しても **二重投入はしない**（冪等）。
 
 ---
 
@@ -100,7 +100,7 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 | `false`（または未使用で無効にした構成） | 起動時シードのみ。データは静的 |
 | `true` | 通常どおり定期ジョブが動くが、収集は **合成データ**。時間とともにイベント／メトリクスが増える |
 
-デモで「取り込み後の一覧更新」まで見せたいときは `SCHEDULER_ENABLED=true` を推奨します。手動取り込み（取り込み API／画面操作がある場合）もモック収集経路を通ります。
+デモで「取り込み後の一覧更新」まで見せたいときは `SCHEDULER_ENABLED=true` を推奨する。手動取り込み（取り込み API／画面操作がある場合）もモック収集経路を通る。
 
 ---
 
@@ -114,37 +114,44 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 | WEB 検索（Tavily / Firecrawl） | 固定のデモ結果。実検索 API は呼ばない |
 | LangSmith | トレーシング用コールバックを付けない |
 
-`MOCK_MODE=1` のとき、実キーが `.env` にあっても上記のモック経路が優先されます（検索プロバイダのキーがあってもモック検索になります）。WEB 調査自体を止めたい場合だけ `WEB_RESEARCH_ENABLED=false` を明示してください。
+`MOCK_MODE=1` のとき、実キーが `.env` にあっても上記のモック経路が優先される（検索プロバイダのキーがあってもモック検索になる）。WEB 調査自体を止めたい場合だけ `WEB_RESEARCH_ENABLED=false` を明示する。
 
 ---
 
 ## 6. 注意事項
 
-- **本番・実 vCenter 接続用の設定と併用しない。** デモ用 DB（`vea.dev.db`）と `MOCK_MODE=1` の組み合わせを推奨します。
-- モック応答やシードデータは説明用のダミーです。運用判断の根拠にしないでください。
-- Playwright 用の `SCREENSHOT_E2E_SEED=1` とは別機能です。スクリーンショット用の最小シードであり、本モードの代替ではありません。
-- 認証は既定で有効です（上の手順で初期 admin を作ります）。それでもモックモードはデモ用なので、ネットワークに公開しないでください（[getting-started.md のセキュリティ](../getting-started.md#セキュリティ)）。
+- **本番・実 vCenter 接続用の設定と併用しない。** デモ用 DB（`vea.dev.db`）と `MOCK_MODE=1` の組み合わせを推奨する。
+- モック応答やシードデータは説明用のダミーである。運用判断の根拠にしない。
+- Playwright 用の `SCREENSHOT_E2E_SEED=1` とは別機能である。スクリーンショット用の最小シードであり、本モードの代替ではない。
+- 認証は既定で有効である（上の手順で初期 admin を作る）。それでもモックモードはデモ用なので、ネットワークに公開しない（[getting-started.md のセキュリティ](../getting-started.md#セキュリティ)）。
 
 ---
 
-## 7. よくある質問
+## 7. よくある質問と切り分け
 
-**Q. バナーが出ない**  
-`MOCK_MODE=1` がプロセスに渡っているか確認してください。`.env` 変更後はプロセスの再起動が必要です。`GET /api/config` の `mock_mode` が `true` かも確認できます。
+### バナーが出ない
 
-**Q. イベントやグラフが空**  
-別の `DATABASE_URL`（空の DB）を見ていないか確認してください。シードは vCenter 名 `mock-demo-vc` が無いときだけ投入されます。
+`MOCK_MODE=1` がプロセスに渡っているか確認する。`.env` 変更後はプロセスの再起動が必要である。`GET /api/config` の `mock_mode` が `true` かも確認できる。
 
-**Q. 実 vCenter に切り替えたい**  
-`MOCK_MODE` を外す（または `0` / `false`）にし、実ホストの接続情報と必要なら LLM / SMTP を設定して再起動します。デモ用 DB を使い続けるとデモ行が残るため、本番相当のデータと混ぜない方が安全です。
+### イベントやグラフが空
 
-**Q. メールが届かない**  
-モックモードでは意図的に SMTP しません。送信内容はアプリログに出ます。実メールの確認は `MOCK_MODE` をオフにし、`SMTP_HOST` と `ALERT_EMAIL_TO` を設定してください。
+別の `DATABASE_URL`（空の DB）を見ていないか確認する。シードは vCenter 名 `mock-demo-vc` が無いときだけ投入される。
+
+### 実 vCenter に切り替えたい
+
+`MOCK_MODE` を外す（または `0` / `false`）にし、実ホストの接続情報と必要なら LLM / SMTP を設定して再起動する。デモ用 DB を使い続けるとデモ行が残るため、本番相当のデータと混ぜない方が安全である。
+
+### メールが届かない
+
+モックモードでは意図的に SMTP しない。送信内容はアプリログに出る。実メールの確認は `MOCK_MODE` をオフにし、`SMTP_HOST` と `ALERT_EMAIL_TO` を設定する。
 
 ---
 
 ## 8. 関連ドキュメント
 
-- [利用開始ガイド](../getting-started.md) — セットアップと起動の全体
-- [開発者向けメモ（モックモード節）](../development.md#モックモードmock_mode1) — 実装・テスト観点
-- [チャットの使い方](chat.md) / [ダイジェストの使い方](digests.md) / [アラートの使い方](alerts.md) — 各画面の通常操作（モックでも UI は同じ）
+| 読者 | ドキュメント |
+|------|-------------|
+| **利用者（本書）** | 本ファイル |
+| **セットアップ・起動** | [getting-started.md](../getting-started.md) |
+| **開発者（実装・テスト）** | [development.md（モックモード節）](../development.md#モックモードmock_mode1) |
+| **画面操作（モックでも UI は同じ）** | [chat.md](chat.md)、[digests.md](digests.md)、[alerts.md](alerts.md) |

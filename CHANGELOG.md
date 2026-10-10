@@ -36,7 +36,7 @@
 ### 主な追加
 
 - **ログインとロール**: ローカルのユーザーでのログイン、viewer・operator・admin の 3 つのロール、ユーザー管理の画面と CLI（`vcenter-event-assistant-admin`）、パスワードの変更、ログインの rate limit とロックアウト、監査ログ（ロガー `vcenter_event_assistant.audit`）。[ログインとロール](docs/user-guides/authentication.md)
-- **AD / LDAP でのログイン**: 認証ディレクトリの管理画面、グループとロールの対応表、保存前の接続試験と締め出しの防止。[AD / LDAP でのログイン](docs/user-guides/directory-auth.md)
+- **AD / LDAP でのログイン**: 認証ディレクトリの管理画面、グループとロールの対応表、保存前の接続試験と管理者ログイン不能の防止。[AD / LDAP でのログイン](docs/user-guides/directory-auth.md)
 - **コレクタプラグイン**: 画面からのインストール・アンインストール・設定・「変更を反映」、プラグインごとのワーカープロセス、開発キット（`vcenter-event-assistant-plugin-api`、ひな形の生成、テストハーネス）。[プラグイン（利用者向け）](docs/user-guides/plugins.md)、[コレクタプラグインの開発](docs/collector-plugin-authoring.md)
 - **リモートログの収集**: 同梱のプラグイン VEA Remote Logs（`vea.remote.logs`）で、ESXi と vCenter のログを SSH で差分収集する。SSH 鍵の生成・ホスト鍵の承認・接続テストを画面から行う。[画面からリモートログ収集を導入する](docs/remote-log-collector.md)
 - **メール通知の配送の分離**: アラートの評価と SMTP の配送を分け、送信予定を保存して再起動後も再送する。通知履歴に配送状態と試行回数を表示する
