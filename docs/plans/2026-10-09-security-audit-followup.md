@@ -1,6 +1,6 @@
 # 2026-10 セキュリティ監査の残りの対応
 
-最終更新: 2026-10-10（PR1〜PR4 マージ済み。Issue #235・#237 は閉じ、残りは Issue #274。0.2.0 のリリースを準備中）
+最終更新: 2026-10-10（PR1〜PR4 マージ済み。Issue #235・#237 は閉じ、残りは Issue #274。0.2.0 はリリース済み）
 
 ## Context
 
@@ -19,7 +19,7 @@
 | 3a | プラグインの子プロセスに渡す環境変数を許可リストにする | Issue #235 | マージ済み [PR #273](https://github.com/t-m0riyama/vcenter-event-assistant/pull/273)（Codex のレビュー 8 回。指摘 11 件に対応した（うち 1 件は制約としてドキュメントに書いた）。下の「PR3a のレビューの経過」） |
 | 3b | Docker イメージで `/app` を root 所有にする、脅威モデルのドキュメント | Issue #235 | マージ済み [PR #275](https://github.com/t-m0riyama/vcenter-event-assistant/pull/275)（Codex の指摘 1 件（`ENV` が `.env` より優先される）に対応し、再レビューで指摘なし。Issue #235 は閉じ、残りは Issue #274） |
 | 4 | SSH 接続先の名前解決後の検証、probe 系 API の rate limit | Issue #237 | マージ済み [PR #276](https://github.com/t-m0riyama/vcenter-event-assistant/pull/276)（Codex の指摘 1 件（本体の依存の下限）に対応し、再レビューで指摘なし。Issue #237 は閉じた） |
-| ― | リリース 0.2.0（`CHANGELOG.md` を正本にし、GitHub Release にも載せる。タグ `v0.2.0`） | ― | 準備中（ブランチ `release/v0.2.0`） |
+| ― | リリース 0.2.0（`CHANGELOG.md` を正本にし、GitHub Release にも載せる。タグ `v0.2.0`） | ― | リリース済み（2026-10-10）。版の更新と CHANGELOG は [PR #277](https://github.com/t-m0riyama/vcenter-event-assistant/pull/277)、その前に画面の修正 [PR #278](https://github.com/t-m0riyama/vcenter-event-assistant/pull/278) を取り込んだ。タグ `v0.2.0` と [GitHub Release](https://github.com/t-m0riyama/vcenter-event-assistant/releases/tag/v0.2.0) |
 
 各 PR は単独でマージでき、テストが通る状態にする。Codex のレビューは今までと同じ進め方（PR 作成時に自動。直したら「@codex review」に観点を添えて依頼）。
 
