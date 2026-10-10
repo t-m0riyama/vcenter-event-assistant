@@ -20,7 +20,7 @@
       {
         "id": "digest",
         "label": "ダイジェスト",
-        "focus": ["tick", "digest", "llm"],
+        "focus": ["tick", "save", "digest", "llm"],
         "note": "ダイジェストの cron は poll_events と独立し、保存済みの期間を集約する。"
       }
     ]
@@ -47,9 +47,11 @@
     { "id": "vcenter-score", "from": "vcenter", "to": "score", "label": "イベント", "variant": "emphasis", "role": "main" },
     { "id": "score-save", "from": "score", "to": "save", "label": "挿入", "variant": "emphasis", "role": "main" },
     { "id": "tick-perf", "from": "tick", "to": "perf", "label": "性能", "role": "branch" },
-    { "id": "perf-save", "from": "perf", "to": "save", "label": "quickStats", "role": "branch", "fromSide": "bottom", "toSide": "bottom", "route": "bottom-channel" },
+    { "id": "perf-save", "from": "perf", "to": "save", "label": "quickStats", "role": "branch", "channelY": 304, "labelDx": 140 },
     { "id": "tick-alerts", "from": "tick", "to": "alerts", "label": "別間隔", "variant": "security", "role": "branch" },
     { "id": "tick-digest", "from": "tick", "to": "digest", "label": "cron", "role": "branch" },
+    { "id": "save-alerts", "from": "save", "to": "alerts", "label": "保存済み", "role": "branch" },
+    { "id": "save-digest", "from": "save", "to": "digest", "label": "期間", "role": "branch" },
     { "id": "digest-llm", "from": "digest", "to": "llm", "label": "要約", "variant": "dashed", "role": "async" }
   ],
   "cards": [

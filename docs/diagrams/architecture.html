@@ -5036,12 +5036,13 @@
         <path data-edge-from="browser" data-edge-to="proxy" data-edge-label="HTTPS" data-edge-key="0" data-edge-id="browser-proxy" data-composition-points="188,164;260,164" d="M 188 164 L 260 164" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="proxy" data-edge-to="spa" data-edge-label="終端後" data-edge-key="1" data-edge-id="proxy-spa" data-composition-points="444,164;516,164" d="M 444 164 L 516 164" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="spa" data-edge-to="api" data-edge-label="HTTP /api" data-edge-key="2" data-edge-id="spa-api" data-composition-points="684,164;756,164" d="M 684 164 L 756 164" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="api" data-edge-to="db" data-edge-label="SQLAlchemy" data-edge-key="3" data-edge-id="api-db" data-composition-points="932,164;1004,164" d="M 932 164 L 1004 164" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="api" data-edge-to="db" data-edge-label="SQLAlchemy" data-edge-key="3" data-edge-id="api-db" data-composition-points="932,157;1004,157" d="M 932 157 L 1004 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="api" data-edge-to="scheduler" data-edge-label="同一プロセス" data-edge-key="4" data-edge-id="api-scheduler" data-composition-points="844,200;844,268" d="M 844 200 L 844 268" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="scheduler" data-edge-to="collectors" data-edge-label="定期取得" data-edge-key="5" data-edge-id="scheduler-collectors" data-composition-points="932,304;1004,304" d="M 932 304 L 1004 304" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="collectors" data-edge-to="vcenter" data-edge-label="pyVmomi" data-edge-key="6" data-edge-id="collectors-vcenter" data-composition-points="1108,340;1108,392" d="M 1108 340 L 1108 392" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="collectors" data-edge-to="db" data-edge-label="保存" data-edge-key="7" data-edge-id="collectors-db" data-composition-points="1108,268;1108,200" d="M 1108 268 L 1108 200" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="8" data-edge-id="api-llm" data-composition-points="844,128;844,80" d="M 844 128 L 844 80" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="scheduler" data-edge-to="collectors" data-edge-label="定期取得" data-edge-key="5" data-edge-id="scheduler-collectors" data-composition-points="932,311;1004,311" d="M 932 311 L 1004 311" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="api" data-edge-to="collectors" data-edge-label="手動" data-edge-key="6" data-edge-id="api-collectors" data-composition-points="932,171;968,171;968,297;1004,297" d="M 932 171 L 960 171 Q 968 171 968 179 L 968 289 Q 968 297 976 297 L 1004 297" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="collectors" data-edge-to="vcenter" data-edge-label="pyVmomi" data-edge-key="7" data-edge-id="collectors-vcenter" data-composition-points="1108,340;1108,392" d="M 1108 340 L 1108 392" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="collectors" data-edge-to="db" data-edge-label="保存" data-edge-key="8" data-edge-id="collectors-db" data-composition-points="1108,268;1108,200" d="M 1108 268 L 1108 200" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="9" data-edge-id="api-llm" data-composition-points="844,128;844,80" d="M 844 128 L 844 80" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
         <g id="node-browser" data-node-id="browser" data-node-label="ブラウザ" tabindex="0" role="button" aria-label="Focus ブラウザ, 利用者, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="利用者" data-node-context="Architecture component">
@@ -5177,26 +5178,30 @@
           <text x="720" y="154" class="t-backend" font-size="8" text-anchor="middle">HTTP /api</text>
         </g>
         <g data-detail="context" data-edge-from="api" data-edge-to="db" data-edge-label="SQLAlchemy" data-edge-key="3" data-edge-id="api-db">
-          <rect x="939" y="144" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="968" y="154" class="t-backend" font-size="8" text-anchor="middle">SQLAlchemy</text>
+          <rect x="939" y="137" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="968" y="147" class="t-backend" font-size="8" text-anchor="middle">SQLAlchemy</text>
         </g>
         <g data-detail="context" data-edge-from="api" data-edge-to="scheduler" data-edge-label="同一プロセス" data-edge-key="4" data-edge-id="api-scheduler">
           <rect x="810.2" y="212" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="844" y="222" class="t-muted" font-size="8" text-anchor="middle">同一プロセス</text>
         </g>
         <g data-detail="context" data-edge-from="scheduler" data-edge-to="collectors" data-edge-label="定期取得" data-edge-key="5" data-edge-id="scheduler-collectors">
-          <rect x="943.8" y="284" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="968" y="294" class="t-muted" font-size="8" text-anchor="middle">定期取得</text>
+          <rect x="943.8" y="351" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="968" y="361" class="t-muted" font-size="8" text-anchor="middle">定期取得</text>
         </g>
-        <g data-detail="context" data-edge-from="collectors" data-edge-to="vcenter" data-edge-label="pyVmomi" data-edge-key="6" data-edge-id="collectors-vcenter">
+        <g data-detail="context" data-edge-from="api" data-edge-to="collectors" data-edge-label="手動" data-edge-key="6" data-edge-id="api-collectors">
+          <rect x="953" y="214" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="968" y="224" class="t-muted" font-size="8" text-anchor="middle">手動</text>
+        </g>
+        <g data-detail="context" data-edge-from="collectors" data-edge-to="vcenter" data-edge-label="pyVmomi" data-edge-key="7" data-edge-id="collectors-vcenter">
           <rect x="1086.2" y="352" width="43.6" height="14" rx="3" class="c-mask"/>
           <text x="1108" y="362" class="t-muted" font-size="8" text-anchor="middle">pyVmomi</text>
         </g>
-        <g data-detail="context" data-edge-from="collectors" data-edge-to="db" data-edge-label="保存" data-edge-key="7" data-edge-id="collectors-db">
+        <g data-detail="context" data-edge-from="collectors" data-edge-to="db" data-edge-label="保存" data-edge-key="8" data-edge-id="collectors-db">
           <rect x="1093" y="248" width="30" height="14" rx="3" class="c-mask"/>
           <text x="1108" y="258" class="t-muted" font-size="8" text-anchor="middle">保存</text>
         </g>
-        <g data-detail="context" data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="8" data-edge-id="api-llm">
+        <g data-detail="context" data-edge-from="api" data-edge-to="llm" data-edge-label="要約・チャット" data-edge-key="9" data-edge-id="api-llm">
           <rect x="805.4" y="108" width="77.2" height="14" rx="3" class="c-mask"/>
           <text x="844" y="118" class="t-messagebus" font-size="8" text-anchor="middle">要約・チャット</text>
         </g>
@@ -5434,7 +5439,7 @@
           <h3>収集と保存</h3>
         </div>
         <ul>
-          <li>&bull; 定期ジョブと手動収集が pyVmomi 経由で vCenter から取得する</li>
+          <li>&bull; 定期取得は APScheduler、手動は POST /api/ingest/run が収集を呼ぶ</li>
           <li>&bull; SQLAlchemy が PostgreSQL または SQLite に書く</li>
         </ul>
       </div>

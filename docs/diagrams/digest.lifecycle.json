@@ -10,7 +10,7 @@
         "id": "rail",
         "label": "生成",
         "focus": ["accepted", "aggregate", "template", "llm", "saved"],
-        "note": "期間を受けて集約し、テンプレートのあと LLM 追記を経て保存する。"
+        "note": "テンプレートのあと、LLM 未設定ならそのまま保存する。設定があれば追記してから保存する。"
       },
       {
         "id": "template-error",
@@ -34,7 +34,7 @@
     { "id": "accepted", "type": "start", "label": "期間確定", "lane": "main", "col": 0 },
     { "id": "aggregate", "type": "active", "label": "集約", "lane": "main", "col": 1 },
     { "id": "template", "type": "decision", "label": "テンプレート", "lane": "main", "col": 2 },
-    { "id": "llm", "type": "active", "label": "LLM 追記", "lane": "main", "col": 3 },
+    { "id": "llm", "type": "active", "label": "LLM 追記", "tag": "任意", "lane": "main", "col": 3 },
     { "id": "saved", "type": "success", "label": "保存", "lane": "main", "col": 4 },
     { "id": "llm_failed", "type": "failure", "label": "LLM 失敗", "lane": "terminal", "col": 1 },
     { "id": "template_error", "type": "failure", "label": "生成失敗", "lane": "terminal", "col": 0 }
@@ -42,8 +42,9 @@
   "transitions": [
     { "id": "accept-aggregate", "from": "accepted", "to": "aggregate", "label": "材料", "variant": "emphasis" },
     { "id": "aggregate-template", "from": "aggregate", "to": "template", "label": "Markdown", "variant": "emphasis", "labelDy": 55 },
-    { "id": "template-llm", "from": "template", "to": "llm", "label": "追記へ", "variant": "emphasis", "labelDy": 55 },
-    { "id": "llm-saved", "from": "llm", "to": "saved", "label": "status=ok", "variant": "emphasis", "labelDy": -40, "route": "straight" },
+    { "id": "template-saved", "from": "template", "to": "saved", "label": "未設定", "variant": "emphasis", "route": "top-channel", "channelY": 72 },
+    { "id": "template-llm", "from": "template", "to": "llm", "label": "追記へ", "variant": "dashed", "labelDy": 55 },
+    { "id": "llm-saved", "from": "llm", "to": "saved", "label": "ok", "variant": "dashed", "route": "straight", "labelDy": -40, "labelDx": -12 },
     { "id": "template-failed", "from": "template", "to": "template_error", "label": "描画失敗", "variant": "security", "labelDy": 28 },
     { "id": "llm-degraded", "from": "llm", "to": "llm_failed", "label": "追記失敗", "variant": "security", "labelDy": 28 },
     { "id": "keep-template", "from": "llm_failed", "to": "saved", "label": "テンプレートで保存", "variant": "emphasis" }
@@ -54,7 +55,7 @@
       "title": "本線",
       "items": [
         "集約のあとテンプレート Markdown を作る",
-        "LLM 追記の成功時は status=ok で保存する"
+        "未設定はテンプレートのまま、追記の成功時も status=ok で保存する"
       ]
     },
     {

@@ -159,7 +159,14 @@
       "id": "scheduler-collectors",
       "from": "scheduler",
       "to": "collectors",
-      "label": "定期取得"
+      "label": "定期取得",
+      "labelDy": 60
+    },
+    {
+      "id": "api-collectors",
+      "from": "api",
+      "to": "collectors",
+      "label": "手動"
     },
     {
       "id": "collectors-vcenter",
@@ -195,7 +202,7 @@
       "dot": "emerald",
       "title": "収集と保存",
       "items": [
-        "定期ジョブと手動収集が pyVmomi 経由で vCenter から取得する",
+        "定期取得は APScheduler、手動は POST /api/ingest/run が収集を呼ぶ",
         "SQLAlchemy が PostgreSQL または SQLite に書く"
       ]
     },
