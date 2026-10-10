@@ -52,8 +52,11 @@ interface EditDraft {
  * アラートルールの一覧・新規作成・レベル変更（PATCH）・有効切替・削除を行う設定パネル。
  */
 export function AlertRulesPanel({ onError }: { onError: (msg: string) => void }) {
-  // 追加・変更・削除・インポートは admin だけ（閲覧・詳細の展開・エクスポートは全ロール）
-  const canEdit = useAuth().hasRole('admin')
+  // 追加・変更・削除・インポートは admin だけ。エクスポートは operator 以上で、viewer には出さない
+  // （閲覧・詳細の展開は全ロール）
+  const { hasRole } = useAuth()
+  const canEdit = hasRole('admin')
+  const canExport = hasRole('operator')
   const fetchList = useCallback(async () => {
     const data = await apiGet<unknown>('/api/alerts/rules')
     const parsed = alertRuleRowSchema.array().parse(data)
@@ -238,63 +241,67 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
           </>
         )}
       </div>
-      <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
-      <p className="hint">
-        {canEdit
-          ? 'アラートルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。'
-          : 'アラートルールを JSON でエクスポートできます。'}
-      </p>
-      {canEdit && (
+      {canExport && (
         <>
-          <fieldset className="score-rules-import-options">
-            <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
-            <div className="form-grid score-rules-import-options__grid">
-              <label className="check">
+          <h2>{canEdit ? 'エクスポート・インポート' : 'エクスポート'}</h2>
+          <p className="hint">
+            {canEdit
+              ? 'アラートルールを JSON でエクスポート・インポートできます。下の「インポート時のオプション」は「ファイルからインポート」にのみ効きます。'
+              : 'アラートルールを JSON でエクスポートできます。'}
+          </p>
+          {canEdit && (
+            <>
+              <fieldset className="score-rules-import-options">
+                <legend className="score-rules-import-options__legend">インポート時のオプション</legend>
+                <div className="form-grid score-rules-import-options__grid">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={overwriteExisting}
+                      onChange={(event) => setOverwriteExisting(event.target.checked)}
+                      aria-label="既存の同一ルール名を上書き"
+                    />
+                    既存の同一ルール名を上書き
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={deleteNotInImport}
+                      onChange={(event) => setDeleteNotInImport(event.target.checked)}
+                      aria-label="ファイルに含まれないアラートルールを削除"
+                    />
+                    ファイルに含まれないアラートルールを削除
+                  </label>
+                </div>
+              </fieldset>
+            </>
+          )}
+          <div className="score-rules-file-actions">
+            <button type="button" className="btn btn--gray" onClick={exportToFile}>
+              ファイルにエクスポート
+            </button>
+            {canEdit && (
+              <>
                 <input
-                  type="checkbox"
-                  checked={overwriteExisting}
-                  onChange={(event) => setOverwriteExisting(event.target.checked)}
-                  aria-label="既存の同一ルール名を上書き"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden-file-input"
+                  aria-label="アラートルール JSON を選択"
+                  onChange={(event) => void onImportFileChange(event)}
                 />
-                既存の同一ルール名を上書き
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={deleteNotInImport}
-                  onChange={(event) => setDeleteNotInImport(event.target.checked)}
-                  aria-label="ファイルに含まれないアラートルールを削除"
-                />
-                ファイルに含まれないアラートルールを削除
-              </label>
-            </div>
-          </fieldset>
+                <button
+                  type="button"
+                  className="btn btn--filled"
+                  onClick={() => openImportFilePicker()}
+                >
+                  ファイルからインポート
+                </button>
+              </>
+            )}
+          </div>
         </>
       )}
-      <div className="score-rules-file-actions">
-        <button type="button" className="btn btn--gray" onClick={exportToFile}>
-          ファイルにエクスポート
-        </button>
-        {canEdit && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden-file-input"
-              aria-label="アラートルール JSON を選択"
-              onChange={(event) => void onImportFileChange(event)}
-            />
-            <button
-              type="button"
-              className="btn btn--filled"
-              onClick={() => openImportFilePicker()}
-            >
-              ファイルからインポート
-            </button>
-          </>
-        )}
-      </div>
 
       {isAdding && canEdit && (
         <form className="add-rule-form" onSubmit={handleAdd}>

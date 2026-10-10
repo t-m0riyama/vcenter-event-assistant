@@ -52,7 +52,7 @@ type SettingsSubTabConfig = {
   readonly render: (onError: (e: string | null) => void, active: boolean) => ReactNode
   /**
    * サーバに保存する設定で、admin 以外には閲覧専用で見せるもの（お知らせを出す）。
-   * 変更系の操作部品はパネル自身がロールで出し分ける（展開・エクスポートなど閲覧の操作は残す）。
+   * 変更系の操作部品はパネル自身がロールで出し分ける（展開など閲覧の操作は残す。ファイルへのエクスポートは operator 以上）。
    */
   readonly adminOnlyEdit?: boolean
 }
