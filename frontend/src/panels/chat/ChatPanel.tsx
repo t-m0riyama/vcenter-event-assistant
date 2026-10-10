@@ -19,13 +19,11 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
 
   return (
     <div className="panel chat-panel">
-      <p className="hint">
-        指定期間のイベント・メトリクス集約を根拠に、質問・追質問ができます（会話はブラウザに保持し、サーバーは保存しません）。
-      </p>
-
       <ChatContextBar
         rangeParts={c.rangeParts}
         setRangeParts={c.setRangeParts}
+        applyRollingPreset={c.applyRollingPreset}
+        rangeDisplayLabel={c.rangeDisplayLabel}
         vcenters={c.vcenters}
         vcenterId={c.vcenterId}
         setVcenterId={c.setVcenterId}

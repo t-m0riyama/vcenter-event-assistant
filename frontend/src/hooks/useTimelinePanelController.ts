@@ -35,7 +35,8 @@ export function useTimelinePanelController(onError: (e: string | null) => void) 
   const { timeZone } = useTimeZone()
   const thresholdFields = usePeriodMetricThresholdFields()
 
-  const { rangeParts, setRangeParts } = useRollingZonedRangeParts(timeZone)
+  const { rangeParts, setRangeParts, applyRollingPreset, rangeDisplayLabel } =
+    useRollingZonedRangeParts(timeZone)
   const [vcenterId, setVcenterId] = useState<string>('')
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [timeline, setTimeline] = useState<IncidentTimeline | null>(null)
@@ -259,6 +260,8 @@ export function useTimelinePanelController(onError: (e: string | null) => void) 
   return {
     rangeParts,
     setRangeParts,
+    applyRollingPreset,
+    rangeDisplayLabel,
     vcenters,
     vcenterId,
     setVcenterId,

@@ -17,11 +17,11 @@ test.describe('アプリのスモーク', () => {
     await page.getByRole('button', { name: '一般' }).click()
     await expect(
       page.getByText(
-        'ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。',
+        'ライト、ダーク、または OS の表示設定に合わせた外観を選択します。設定はこのブラウザに保存されます。',
       ),
     ).toBeVisible()
     await expect(
-      page.getByText('日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。'),
+      page.getByText('日時の表示に使用するタイムゾーンです。設定はこのブラウザに保存されます。'),
     ).toBeVisible()
     await expect(page.locator('[role="alert"]')).toHaveCount(0)
   })

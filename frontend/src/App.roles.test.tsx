@@ -111,13 +111,14 @@ describe('App のロールによる出し分け', () => {
     expect(await within(mainNav()).findByRole('button', { name: 'チャット' })).toBeInTheDocument()
   })
 
-  it('viewer にはサーバ保存の設定を閲覧専用で見せる（エクスポートはできる）', async () => {
+  it('viewer にはサーバ保存の設定を閲覧専用で見せ、エクスポートも出さない', async () => {
     renderAs('viewer')
     await openSettings('スコアルール')
     expect(await screen.findByRole('note')).toHaveTextContent('閲覧のみです')
     expect(await screen.findByText('vim.event.VmPoweredOnEvent')).toBeInTheDocument()
     expect(screen.getByLabelText('vim.event.VmPoweredOnEvent の加算')).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'ファイルにエクスポート' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'ファイルにエクスポート' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'エクスポート' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'ファイルからインポート' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '追加' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
@@ -126,21 +127,39 @@ describe('App のロールによる出し分け', () => {
   it('アラートルールは viewer でも行を展開して詳細（再通知間隔）を確認できる', async () => {
     renderAs('viewer')
     await openSettings('アラート')
-    fireEvent.click(await screen.findByRole('button', { name: '高スコアイベント の詳細を開く' }))
+    fireEvent.click(await screen.findByLabelText(/^高スコアイベント、/))
     const cooldown = await screen.findByLabelText(/高スコアイベント の再通知間隔/)
     expect(cooldown).toHaveValue(45)
     expect(cooldown).toHaveAttribute('readonly')
     expect(screen.getByLabelText('高スコアイベント のアラートレベル')).toBeDisabled()
     expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '新規ルール追加' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ファイルにエクスポート' })).toBeEnabled()
+    expect(screen.queryByRole('heading', { name: '追加' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '追加' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'ファイルにエクスポート' })).not.toBeInTheDocument()
   })
+
+  it.each(['スコアルール', 'イベント種別ガイド', 'アラート'])(
+    '%s のファイルへのエクスポートは operator 以上にだけ出す（インポートは admin だけ）',
+    async (label) => {
+      const { unmount } = renderAs('viewer')
+      await openSettings(label)
+      expect(await screen.findByRole('note')).toHaveTextContent('閲覧のみです')
+      expect(screen.queryByRole('button', { name: 'ファイルにエクスポート' })).not.toBeInTheDocument()
+      unmount()
+
+      renderAs('operator')
+      await openSettings(label)
+      expect(await screen.findByRole('button', { name: 'ファイルにエクスポート' })).toBeEnabled()
+      expect(screen.getByRole('heading', { name: 'エクスポート' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'ファイルからインポート' })).not.toBeInTheDocument()
+    },
+  )
 
   it('ブラウザに保存する設定（一般）は viewer でも編集できる', async () => {
     renderAs('viewer')
     await openSettings('一般')
-    await screen.findByText((content, el) => el?.tagName === 'P' && content.includes('このブラウザで使う基本設定'))
+    await screen.findByText((content, el) => el?.tagName === 'P' && content.includes('このブラウザで使用する基本設定'))
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
@@ -204,17 +223,20 @@ describe('App のロールによる出し分け', () => {
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
-  it('ヘッダーに利用者名とロールを出す（ディレクトリの利用者にはパスワード変更を出さない）', async () => {
+  it('ヘッダーのアバターから利用者名とロールを出す（ディレクトリの利用者にはパスワード変更を出さない）', async () => {
     renderAs('operator', { display_name: 'Olivia', can_change_password: false })
-    expect(await screen.findByText('Olivia')).toBeInTheDocument()
-    expect(screen.getByText('オペレーター')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ログアウト' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'パスワード変更' })).not.toBeInTheDocument()
+    const avatar = await screen.findByRole('button', { name: 'アカウントメニュー（Olivia・オペレーター）' })
+    fireEvent.click(avatar)
+    const menu = screen.getByRole('menu', { name: 'アカウント' })
+    expect(within(menu).getByText('Olivia')).toBeInTheDocument()
+    expect(within(menu).getByText('オペレーター')).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'ログアウト' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'パスワード変更' })).not.toBeInTheDocument()
   })
 
   it('認証が無効なサーバではユーザーメニューを出さない', async () => {
     renderAs('admin', { auth_enabled: false })
     await screen.findByRole('heading', { name: 'vCenter Event Assistant' })
-    expect(screen.queryByRole('button', { name: 'ログアウト' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /アカウントメニュー/ })).not.toBeInTheDocument()
   })
 })

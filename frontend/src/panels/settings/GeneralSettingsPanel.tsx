@@ -61,13 +61,11 @@ export function GeneralSettingsPanel() {
   return (
     <div className="panel">
       <p className="hint">
-        表示・チャット保持件数・自動更新など、このブラウザで使う基本設定を管理します。変更内容は
-        localStorage に保存され、同じブラウザで次回以降も適用されます。
+        このブラウザで使用する基本設定（表示、チャットの保持件数、自動更新など）を管理します。変更内容はブラウザの localStorage に保存され、同じブラウザでは次回以降も適用されます。
       </p>
       <div className="general-settings-field">
         <p className="hint">
-          チャットタブで保持する会話メッセージの最大件数です。超えた分は古いものから欠落します（FIFO）。0
-          は会話を保持しません（送信は可能）。0〜1000。選択はこのブラウザに保存されます。
+          チャットタブで保持する会話メッセージの最大件数です（0〜1000）。上限を超えた場合は、古いメッセージから順に削除されます。0 を指定すると会話を保持しません（送信は可能です）。設定はこのブラウザに保存されます。
         </p>
         <label className="tz-select">
           チャットの最大保持件数
@@ -103,20 +101,20 @@ export function GeneralSettingsPanel() {
       </div>
       <div className="general-settings-field">
         <p className="hint">
-          ライト・ダーク、または OS の表示設定に合わせます。選択はこのブラウザに保存されます。
+          ライト、ダーク、または OS の表示設定に合わせた外観を選択します。設定はこのブラウザに保存されます。
         </p>
         <ThemeAppearanceSelect />
       </div>
       <div className="general-settings-field">
         <p className="hint">
-          日時の表示に使うタイムゾーンです。選択はこのブラウザに保存されます。
+          日時の表示に使用するタイムゾーンです。設定はこのブラウザに保存されます。
         </p>
         <TimeZoneSelect />
       </div>
       <div className="general-settings-field">
         <p className="hint">
           {
-            '概要タブの「要注意イベント（上位）」に表示するイベントの、保存済みスコア（notable_score）の下限です。0 は下限なし（スコア 0 も含む）、1 以上はその値未満を一覧から除外します。0〜100。選択はこのブラウザに保存されます。'
+            '概要タブの「要注意イベント（上位）」に表示するイベントについて、保存済みスコア（notable_score）の下限を指定します（0〜100）。0 の場合は下限を設けず、スコア 0 のイベントも表示します。1 以上の場合は、その値未満のイベントを一覧から除外します。設定はこのブラウザに保存されます。'
           }
         </p>
         <label className="tz-select">
@@ -153,7 +151,7 @@ export function GeneralSettingsPanel() {
       </div>
       <div className="general-settings-field">
         <p className="hint">
-          概要・イベント・グラフの各タブを表示している間だけ、一定間隔でサーバーから最新データを再取得します。別のタブへ切り替えたあとに戻ったときは、その時点で再読み込みされます。選択はこのブラウザに保存されます。
+          概要・イベント・グラフの各タブを表示している間に限り、一定の間隔でサーバーから最新のデータを再取得します。別のタブから戻った場合は、その時点で再読み込みします。設定はこのブラウザに保存されます。
         </p>
         <label className="tz-select tz-select--inline">
           <input
@@ -166,7 +164,7 @@ export function GeneralSettingsPanel() {
         </label>
       </div>
       <div className="general-settings-field">
-        <p className="hint">自動更新の間隔です。1〜300 分。選択はこのブラウザに保存されます。</p>
+        <p className="hint">自動更新の間隔です（1〜300 分）。設定はこのブラウザに保存されます。</p>
         <label className="tz-select">
           更新の間隔（分）
           <input

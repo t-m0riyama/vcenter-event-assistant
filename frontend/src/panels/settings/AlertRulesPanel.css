@@ -1,18 +1,6 @@
-.alert-rules-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-3);
-  margin-bottom: var(--spacing-4);
-}
-
-.alert-rules-panel-header .hint {
-  margin: 0;
-}
-
+/* ウインドウの幅に合わせて広げる（以前は 720px まで）。 */
 .score-rules-import-options {
   margin: 0 0 var(--spacing-4);
-  max-width: 720px;
   padding: var(--spacing-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 4px);
@@ -29,8 +17,13 @@
   color: var(--color-text-primary);
 }
 
-.score-rules-import-options__grid {
+/* チェックボックスは文の長さに合わせて横に並べ、幅が足りないときだけ折り返す。 */
+.score-rules-import-options .score-rules-import-options__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-6);
   margin: 0;
+  max-width: none; /* .score-rules-form の 720px の上限を外す */
 }
 
 .score-rules-file-actions {
@@ -53,95 +46,22 @@
   border: 0;
 }
 
-.add-rule-form {
-  background: var(--color-background-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 4px);
-  padding: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
+/* 追加のフォーム（スコアルール・イベント種別ガイドの「追加」と同じ幅）。 */
+.alert-rules-form {
   max-width: 720px;
 }
 
-.add-rule-form h3 {
-  font-size: var(--font-size-subhead);
-  margin: 0 0 var(--spacing-4);
+.alert-rules-add-form {
+  margin-bottom: var(--spacing-2);
 }
 
-.add-rule-form .form-actions {
-  display: flex;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-4);
-}
-
-.disabled-row td {
-  color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-background-elevated) 86%, var(--color-border) 14%);
-}
-
-.disabled-row td:first-child {
-  border-left: 3px solid var(--color-border);
-}
-
-.alert-rules-panel .disabled-row:hover td {
-  background: color-mix(in srgb, var(--color-background-elevated) 78%, var(--color-border) 22%);
-}
-
-.alert-rules-panel .col-level {
-  white-space: nowrap;
-}
-
-.alert-level-select {
-  min-width: 7.5rem;
-  font-size: var(--font-size-footnote);
-  padding: 0.2rem 0.35rem;
-  border-radius: var(--radius-sm, 4px);
-  border: 1px solid var(--color-border);
-  background: var(--color-background);
-}
-
-.editable-row {
-  background: var(--color-background-elevated);
-}
-
-.alert-rules-panel .editable-row td {
-  background: var(--color-background-elevated);
-  transition: background-color 0.18s ease;
-}
-
-.alert-rules-panel .editable-row:hover td {
-  background: color-mix(in srgb, var(--color-border) 35%, var(--color-background-elevated));
-}
-
-.alert-rules-panel .disabled-row.editable-row:hover td {
-  background: color-mix(in srgb, var(--color-background-elevated) 78%, var(--color-border) 22%);
-}
-
-.expanded-row td {
-  border-bottom: none;
-}
-
-.edit-row td {
-  background: var(--color-background);
-  border-top: none;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.edit-row .form-grid,
-.edit-row .form-actions {
-  background: var(--color-background-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 4px);
-  padding: var(--spacing-3);
-}
-
-.edit-row .form-actions {
-  margin-top: var(--spacing-3);
-}
-
-.edit-row .form-grid {
-  margin-top: 0.4rem;
-}
-
+/* 展開した行の中の「タイプは変更できません」の注記。 */
 .edit-row-hint {
-  margin: 0.55rem 0 0;
+  margin: 0 0 var(--spacing-3);
+}
+
+/* 編集中にほかの操作でルールが変わったときの注記（保存を止めている理由）。 */
+.alert-rules-conflict {
+  margin: 0 0 var(--spacing-3);
+  color: var(--color-warning-text);
 }

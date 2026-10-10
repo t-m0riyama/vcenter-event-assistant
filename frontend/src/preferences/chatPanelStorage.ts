@@ -23,6 +23,8 @@ const zonedRangePartsSchema = z.object({
 const chatPanelSnapshotSchema = z.object({
   messages: z.array(chatMessageSchema),
   rangeParts: zonedRangePartsSchema,
+  /** 「直近 N」で選んだときの N（ミリ秒）。手入力なら null。前の版の保存データにはない（手入力として戻す）。 */
+  rollingDurationMs: z.number().positive().nullable().optional(),
   vcenterId: z.string(),
   includePeriodMetricsCpu: z.boolean(),
   includePeriodMetricsMemory: z.boolean(),

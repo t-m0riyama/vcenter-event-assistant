@@ -1,5 +1,6 @@
 @import "./styles/toolbar.css";
 @import "./styles/forms.css";
+@import "./styles/settings-list.css";
 @import "./styles/badges.css";
 @import "./styles/dialog.css";
 
@@ -68,6 +69,13 @@ html[data-theme='dark'] .header__logo--dark {
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.12s ease;
+}
+
+/* 「使い方を表示」とアバターを右上にまとめ、縦の中心を揃える。 */
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
   margin-left: auto;
   align-self: flex-start;
 }
@@ -322,6 +330,11 @@ html[data-theme='dark'] .header__logo--dark {
   line-height: 1.5;
   /* 長文説明がパネル幅いっぱいに伸びて読みにくくならないよう行長を制限 */
   max-width: 76ch;
+}
+
+/* 設定タブの説明は、ウインドウの幅に合わせて折り返す（途中の幅で改行しない）。 */
+.settings-view .hint {
+  max-width: none;
 }
 
 .panel h2 {

@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useAuth } from '../../auth/useAuth'
+import { Pagination } from '../../components/Pagination'
+import { EVENT_PAGE_SIZES } from '../../events/constants'
 import './AlertHistoryPanel.css'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
@@ -52,24 +54,58 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
   const canDelete = hasRole('admin')
   const { timeZone } = useTimeZone()
   const [history, setHistory] = useState<AlertHistory[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<(typeof EVENT_PAGE_SIZES)[number]>(50)
   const [loading, setLoading] = useState(true)
 
+  // apiGet は取り消せないので、ページを素早く送ったときや定期の再取得と重なったときに、
+  // 古い要求の応答が後から届いて新しいページを上書きしないよう、最新の要求の応答だけを使う。
+  const latestRequestRef = useRef(0)
+
   const fetchHistory = useCallback(async () => {
+    const request = ++latestRequestRef.current
     try {
-      const data = await apiGet<HistoryResponse>('/api/alerts/history')
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String((page - 1) * pageSize) })
+      const data = await apiGet<HistoryResponse>(`/api/alerts/history?${params}`)
+      if (request !== latestRequestRef.current) return
       setHistory(data.items)
+      setTotal(data.total)
     } catch (e) {
+      if (request !== latestRequestRef.current) return
       onError(String(e))
     } finally {
-      setLoading(false)
+      if (request === latestRequestRef.current) setLoading(false)
     }
-  }, [onError])
+  }, [onError, page, pageSize])
+
+  // 削除などで最後のページが空になったら、残っている最後のページに戻す。
+  const lastPage = Math.max(1, Math.ceil(total / pageSize))
+  useEffect(() => {
+    if (page > lastPage) setPage(lastPage)
+  }, [page, lastPage])
+
+  const pagination = {
+    total,
+    start: total === 0 ? 0 : (page - 1) * pageSize + 1,
+    end: Math.min(page * pageSize, total),
+    canPrev: page > 1,
+    canNext: page * pageSize < total,
+    onPrev: () => setPage((p) => Math.max(1, p - 1)),
+    onNext: () => setPage((p) => p + 1),
+  }
+
+  // 解消・削除・「一覧を更新」の後の再取得は、この合図を進めて effect から行う。ハンドラが
+  // 押した時点の fetchHistory を直接呼ぶと、処理中に別のページへ移ったときに元のページを
+  // 取り直し、今のページの表示を上書きしてしまうため。
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
   useEffect(() => {
     fetchHistory()
     const timer = setInterval(fetchHistory, 30000)
     return () => clearInterval(timer)
-  }, [fetchHistory])
+  }, [fetchHistory, reloadKey])
 
   const handleResolve = async (item: AlertHistory) => {
     const label = item.rule_name || `Rule #${item.rule_id}`
@@ -85,7 +121,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
         rule_id: item.rule_id,
         context_key: item.context_key,
       })
-      await fetchHistory()
+      reload()
     } catch (e) {
       onError(String(e))
     }
@@ -99,7 +135,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     if (!confirm(message)) return
     try {
       await apiDelete(`/api/alerts/history/${item.id}`)
-      await fetchHistory()
+      reload()
     } catch (e) {
       onError(String(e))
     }
@@ -111,15 +147,26 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
 
   return (
     <div className="panel alert-history-panel">
-      <div className="alert-history-panel-header">
-        <h2>通知履歴</h2>
-        <p className="alert-history-note">
-          event_score 型はイベント発生を点で検知するため、自動では「回復済み」になりません。解消ボタンで手動 resolve してください。
-        </p>
-        <p className="alert-history-note">
-          日時は配送待ちでは登録時刻、試行後は最新の試行時刻です。失敗した通知は最大24時間（サーバー設定で変更可）再送します。
-        </p>
-        <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
+      {/* 表示件数・ページ切り替えと「一覧を更新」を同じ行に置き、縦方向の中心を揃える。 */}
+      <div className="toolbar alert-history-toolbar">
+        <label>
+          表示件数
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value) as (typeof EVENT_PAGE_SIZES)[number])
+              setPage(1)
+            }}
+          >
+            {EVENT_PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Pagination position="top" {...pagination} />
+        <button type="button" className="btn btn--gray alert-history-refresh" onClick={reload}>
           一覧を更新
         </button>
       </div>
@@ -203,6 +250,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
           </table>
         </div>
       )}
+      {total > 0 && <Pagination position="bottom" {...pagination} />}
     </div>
   )
 }

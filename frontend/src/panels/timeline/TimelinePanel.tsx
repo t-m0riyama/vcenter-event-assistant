@@ -21,6 +21,8 @@ export function TimelinePanel({
       <TimelineFilters
         rangeParts={c.rangeParts}
         setRangeParts={c.setRangeParts}
+        applyRollingPreset={c.applyRollingPreset}
+        rangeDisplayLabel={c.rangeDisplayLabel}
         vcenters={c.vcenters}
         vcenterId={c.vcenterId}
         setVcenterId={c.setVcenterId}

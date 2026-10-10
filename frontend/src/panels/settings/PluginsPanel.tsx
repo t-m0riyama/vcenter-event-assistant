@@ -511,10 +511,10 @@ export function PluginsPanel({ onError }: { readonly onError: (message: string |
     <div className="panel plugin-management-panel">
       <p className="hint">
         {managementEnabled
-          ? 'コレクタプラグインの構成と実行状態を確認し、有効/無効・実行間隔の変更やパッケージの追加ができます。変更は「変更を反映」を押すと稼働中の構成に適用されます（アプリの再起動は不要です）。'
+          ? 'コレクタプラグインの構成と実行状態を確認し、有効・無効の切り替え、実行間隔の変更、パッケージの追加を行えます。変更内容は「変更を反映」を押すと稼働中の構成に適用されます（アプリの再起動は不要です）。'
           : serverManagementEnabled
             ? 'コレクタプラグインの構成と実行状態を確認します。設定の変更とパッケージの追加は管理者が行います。'
-            : 'コレクタプラグインの構成と実行状態を確認します。設定は TOML または環境変数で変更し、反映にはアプリの再起動が必要です。画面から変更するには VEA_PLUGIN_MANAGEMENT_ENABLED を有効にしてください。'}
+            : 'コレクタプラグインの構成と実行状態を確認します。設定は TOML ファイルまたは環境変数で変更し、反映にはアプリの再起動が必要です。画面から変更するには、VEA_PLUGIN_MANAGEMENT_ENABLED を有効にしてください。'}
       </p>
 
       {notice ? <p className="plugin-notice">{notice}</p> : null}

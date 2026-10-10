@@ -1,14 +1,7 @@
-.alert-history-panel-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-4);
-}
-
-.alert-history-panel-header h2 {
-  margin: 0;
+/* 「一覧を更新」は表示件数・ページ切り替えと同じ行の右端に置く。 */
+.alert-history-refresh {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .alert-history-table {
@@ -87,13 +80,6 @@
 .skipped-tag {
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption2);
-}
-
-.alert-history-note {
-  margin: 0;
-  flex: 1 1 100%;
-  font-size: var(--font-size-caption2);
-  color: var(--color-text-secondary);
 }
 
 .col-time {

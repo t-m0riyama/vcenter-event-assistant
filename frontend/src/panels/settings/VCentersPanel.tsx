@@ -176,7 +176,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
   return (
     <div className="panel">
       <p className="hint">
-        vCenter の接続先と認証情報をサーバーに保存します。パスワードは暗号化して保存し、イベント収集や接続確認の対象になるのは有効化した接続だけです。
+        vCenter の接続先と認証情報をサーバーに保存します。パスワードは暗号化して保存されます。イベントの収集と接続確認の対象となるのは、有効にした接続のみです。
       </p>
       {canEdit && (
         <>

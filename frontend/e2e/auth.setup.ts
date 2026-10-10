@@ -26,6 +26,6 @@ setup('admin でログインする', async ({ page }) => {
   await page.getByLabel('ユーザー名').fill(E2E_USERNAME)
   await page.getByLabel('パスワード').fill(E2E_PASSWORD)
   await page.getByRole('button', { name: 'ログイン' }).click()
-  await expect(page.getByRole('button', { name: 'ログアウト' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /アカウントメニュー/ })).toBeVisible()
   await page.context().storageState({ path: AUTH_STATE_FILE })
 })

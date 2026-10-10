@@ -32,11 +32,13 @@ test.describe('ログイン', () => {
     await page.getByRole('button', { name: 'ログイン' }).click()
 
     await expect(page.getByRole('heading', { name: 'vCenter Event Assistant' })).toBeVisible()
-    await expect(page.locator('.user-menu__role')).toHaveText('管理者')
+    await expect(page.getByRole('button', { name: /アカウントメニュー/ })).toHaveAccessibleName(/管理者/)
     await page.getByRole('button', { name: 'イベント' }).click()
     await expect(page.locator('[role="alert"]')).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'ログアウト' }).click()
+    await page.getByRole('button', { name: /アカウントメニュー/ }).click()
+    await expect(page.getByRole('menu', { name: 'アカウント' }).getByText('管理者')).toBeVisible()
+    await page.getByRole('menuitem', { name: 'ログアウト' }).click()
     await expect(page.getByRole('form', { name: 'ログイン' })).toBeVisible()
     // 再読み込みしてもログイン画面のまま（セッションは失効している）
     await page.reload()
