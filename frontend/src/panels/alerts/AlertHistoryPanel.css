@@ -1,14 +1,26 @@
+/* ダイジェストの見出しと同じく、見出しの右端に「一覧を更新」を置く。 */
 .alert-history-panel-header {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
   align-items: center;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-4);
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-2);
 }
 
 .alert-history-panel-header h2 {
   margin: 0;
+}
+
+.alert-history-refresh {
+  flex-shrink: 0;
+}
+
+.alert-history-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin-bottom: var(--spacing-4);
 }
 
 .alert-history-table {
@@ -91,7 +103,6 @@
 
 .alert-history-note {
   margin: 0;
-  flex: 1 1 100%;
   font-size: var(--font-size-caption2);
   color: var(--color-text-secondary);
 }

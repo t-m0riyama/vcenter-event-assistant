@@ -136,15 +136,17 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     <div className="panel alert-history-panel">
       <div className="alert-history-panel-header">
         <h2>通知履歴</h2>
+        <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
+          一覧を更新
+        </button>
+      </div>
+      <div className="alert-history-notes">
         <p className="alert-history-note">
           event_score 型はイベント発生を点で検知するため、自動では「回復済み」になりません。解消ボタンで手動 resolve してください。
         </p>
         <p className="alert-history-note">
           日時は配送待ちでは登録時刻、試行後は最新の試行時刻です。失敗した通知は最大24時間（サーバー設定で変更可）再送します。
         </p>
-        <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
-          一覧を更新
-        </button>
       </div>
 
       <div className="toolbar">
