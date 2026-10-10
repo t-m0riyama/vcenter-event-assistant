@@ -51,7 +51,7 @@ describe('tabHelpContent', () => {
 
   it('resolveTabHelp prefers settings sub tab help on settings tab', () => {
     const entry = resolveTabHelp('settings', 'score_rules')
-    expect(entry.userGuideDoc).toBe('docs/user-guides/score-rules.md')
+    expect(entry.userGuideDoc).toBe('docs/userguide/score-rules.md')
     expect(entry.markerId).toBe('score_rules')
   })
 

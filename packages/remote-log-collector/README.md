@@ -17,7 +17,7 @@ included by `uv sync` and the Docker build. Collection remains disabled until
 configured. Use **Settings → Plugins → Start setup** to select vCenters and hosts,
 generate or upload an SSH key, approve the host fingerprint, test, and enable.
 The application manages encrypted keys and known_hosts; no manual mounts are required.
-See the [Japanese walkthrough](../../docs/remote-log-collector.md).
+See the [Japanese walkthrough](../../docs/userguide/remote-log-collector.md).
 
 ## Build and install separately
 

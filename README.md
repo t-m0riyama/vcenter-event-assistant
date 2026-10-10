@@ -1,6 +1,6 @@
 # vCenter Event Assistant
 
-vCenter のイベントとホストメトリクス（CPU/メモリ利用率など）を収集し、Web ダッシュボードで一覧・傾向を確認するツールである。期間を指定した **ダイジェストレポート**の生成や、環境設定に応じた **LLM による要約やチャット（ベータ）**にも対応する。
+vCenter のイベントとホストメトリクス（CPU/メモリ利用率など）を収集し、Web ダッシュボードで一覧・傾向を確認するツールである。期間を指定した **ダイジェストレポート**の生成や、環境設定に応じた **LLM による要約やチャット** にも対応する。
 
 ## 主なユースケース
 
@@ -11,14 +11,16 @@ vCenter のイベントとホストメトリクス（CPU/メモリ利用率な�
 - 障害などの発生時、イベント（発生件数）とESXiホストの負荷情報の推移を1つのグラフに視覚化できる。
 - 期間を指定して、イベントとESXiホストの負荷情報のダイジェストを生成できる。環境設定により **LLM で要約・整形**できる。
 - 期間を指定して、イベントとESXiホストの負荷情報をLLMにコンテキストとして与え、**チャット形式で質問**できる。
-フロントエンドの画面例などは [docs/frontend.md](docs/frontend.md) を参照する。
+フロントエンドの画面例などは [docs/development/frontend.md](docs/development/frontend.md) を参照する。
+
+
 
 ## アーキテクチャ
 
-- **バックエンド**: **FastAPI** が `/api`・永続化・**pyVmomi** による vCenter 収集・**APScheduler** などを担う。DB は **`DATABASE_URL`** で **PostgreSQL** または **SQLite** を選択する。
+- **バックエンド**: **FastAPI** が `/api`・永続化・**pyVmomi** による vCenter 収集・**APScheduler** などを担う。DB は `DATABASE_URL` で **PostgreSQL** または **SQLite** を選択する。
 - **フロントエンド**: **React**（SPA）がダッシュボード等の UI を提供し、バックエンドの `/api` を呼び出す。開発時は Vite が `/api` をプロキシする。
 
-**データフローやバックエンド／フロントの詳細**は [docs/architecture.md](docs/architecture.md) を参照する。
+**データフローやバックエンド／フロントの詳細**は [docs/features/architecture.md](docs/features/architecture.md) を参照する。
 
 ```mermaid
 flowchart TB
@@ -42,6 +44,10 @@ flowchart TB
   BE -.->|ダイジェスト要約、チャット| LLM
 ```
 
+
+
+
+
 ## 特長
 
 - **オープンソース**（[Apache License 2.0](LICENSE)）であり、セルフ**ホスト**での動作が可能である。
@@ -51,13 +57,17 @@ flowchart TB
 - イベントの種別に応じて、一般的な意味・原因・対象要/不要・対処方法・のガイドを設定できる。（主要イベント(400超)について、イベント種別ガイドを同梱）
 - イベントの種別ごとに、スコアをカスタマイズすることができ、環境に応じた重要度の高いイベントを見落とさないための仕組みを提供する。
 
+
+
 ## 制約、その他
 
-- **ログインとロール（admin / operator / viewer）による権限制御を内蔵する**（[ログインとロール](docs/user-guides/authentication.md)）。TLS は持たないので、本番ではリバースプロキシ等で TLS 終端とネットワーク制限を行うこと。
+- **ログインとロール（admin / operator / viewer）による権限制御を内蔵する**（[ログインとロール](docs/userguide/authentication.md)）。TLS は持たないので、本番ではリバースプロキシ等で TLS 終端とネットワーク制限を行うこと。
 - **Broadcom / VMware の公式製品ではない**（[商標および免責](#商標および免責)）。
 - ホスト指標は `**quickStats` ベースの限定的な項目**であり、vCenter の全パフォーマンスカウンタ網羅や VM 単位の詳細キャパシティプランニング専用ツールではない。
 - **フル SIEM やコンプライアンス監査の唯一の証跡ソース**としての置き換えは想定しない（保持・改ざん耐性・長期アーカイブは運用設計が別途必要である）。
 - **LLM 利用時（ベータ）**は外部 API への送信・コスト・レイテンシ・プロンプトに載るデータ範囲に注意すること。ベータ機能のため、本番の唯一の根拠資料にしない運用を推奨する。
+
+
 
 ## 商標および免責
 
@@ -65,30 +75,16 @@ flowchart TB
 
 ## ドキュメント
 
-- **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/getting-started.md](docs/getting-started.md)
-- **ログインとロール**（初期 admin・ユーザー管理・権限）: [docs/user-guides/authentication.md](docs/user-guides/authentication.md)
-- **AD / LDAP でのログイン**（認証ディレクトリの設定手順・対応表・締め出しの防止と復旧）: [docs/user-guides/directory-auth.md](docs/user-guides/directory-auth.md)
-- **モックモード（デモ・開発）**（外部サービスなしで UI を試す）: [docs/user-guides/mock-mode.md](docs/user-guides/mock-mode.md)
-- **アラート機能（利用者向け）**（ルール・メール通知・通知履歴・タイムライン）: [docs/user-guides/alerts.md](docs/user-guides/alerts.md)
-- **スコアルール（利用者向け）**（要注目スコア・種別ごとの加算・JSON バックアップ）: [docs/user-guides/score-rules.md](docs/user-guides/score-rules.md)
-- **ダイジェスト（利用者向け）**（期間レポートの読み方・LLM 要約・画面操作）: [docs/user-guides/digests.md](docs/user-guides/digests.md)
-- **チャット（利用者向け）**（期間コンテキスト・会話の保持・サンプル質問）: [docs/user-guides/chat.md](docs/user-guides/chat.md)
-- **概要タブ（利用者向け）**（直近24h ダッシュボード・要注意一覧・自動更新）: [docs/user-guides/summary.md](docs/user-guides/summary.md)
-- **イベントタブ（利用者向け）**（一覧・絞り込み・運用メモ・CSV 出力）: [docs/user-guides/events.md](docs/user-guides/events.md)
-- **グラフタブ（利用者向け）**（メトリクス時系列・イベント件数オーバーレイ・エクスポート）: [docs/user-guides/graph.md](docs/user-guides/graph.md)
-- **プラグイン（利用者向け）**（画面の見方・導入手順・実行状況の確認・切り分け）: [docs/user-guides/plugins.md](docs/user-guides/plugins.md)
-- **バックエンドガイド**（API・設定・運用）: [docs/backend.md](docs/backend.md)
-- **コレクタプラグイン**（設定・管理画面・動的インストール・トラブルシュート）: [docs/collector-plugins.md](docs/collector-plugins.md)
-- **コレクタプラグインの開発**（ひな形の生成・実装・テスト・配布）: [docs/collector-plugin-authoring.md](docs/collector-plugin-authoring.md)
-- **アーキテクチャ**（システムコンテキスト・データフロー）: [docs/architecture.md](docs/architecture.md)
-- **開発者向け手順**（マイグレーション・テスト・UI スクリーンショット等）: [docs/development.md](docs/development.md)
-- **チャット機能の活用**（概要・補助）: [docs/chat.md](docs/chat.md) — 利用者向け正本は [docs/user-guides/chat.md](docs/user-guides/chat.md)
-- **WEB 検索が行われる条件**（事前調査ジョブ・チャット検索の実行条件・外部送出内容）: [docs/web-search-conditions.md](docs/web-search-conditions.md)
-- **設計・モジュール対応・改善タスク**（現状実装ベース）: [docs/plans/2026-03-21-vcenter-event-assistant-as-built.md](docs/plans/2026-03-21-vcenter-event-assistant-as-built.md)
+- **変更履歴**（リリースごとの変更と更新するときの注意）: [CHANGELOG.md](CHANGELOG.md)
+- **ドキュメント索引**（読者別の一覧）: [docs/README.md](docs/README.md)
+- **システム利用開始ガイド**（前提・セットアップ・起動方法）: [docs/operations/getting-started.md](docs/operations/getting-started.md)
+- **ログインとロール**: [docs/userguide/authentication.md](docs/userguide/authentication.md)
+- **AD / LDAP でのログイン**: [docs/userguide/directory-auth.md](docs/userguide/directory-auth.md)
+- **利用者向けガイド一式**: [docs/userguide/](docs/userguide/)
+- **開発者向け手順**: [docs/development/development.md](docs/development/development.md)
+- **アーキテクチャ**: [docs/features/architecture.md](docs/features/architecture.md)
 
 ## ライセンス
 
 本リポジトリは [Apache License 2.0](LICENSE) の下で提供される。著作権表示は [NOTICE](NOTICE) を参照する。
 
-- **プラグインの画面導入仕様**（共通フォーム・接続テスト・SSH管理）: [docs/plugin-onboarding.md](docs/plugin-onboarding.md)
-- **リモートログ収集・検索**（ESXi・vCenterのSSHログプラグイン）: [docs/remote-log-collector.md](docs/remote-log-collector.md)

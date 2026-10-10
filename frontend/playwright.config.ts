@@ -25,7 +25,7 @@ import { AUTH_STATE_FILE, E2E_PASSWORD, E2E_USERNAME } from './e2e/credentials'
  * `e2e/.auth/admin.json` に保存する。各 spec はそれを `storageState` として使う。起動するサーバーには
  * 同じ資格情報を `VEA_BOOTSTRAP_ADMIN_*` で渡す（`e2e/credentials.ts`）。
  *
- * @see リポジトリルートの `docs/development.md`（ドキュメント用キャプチャと E2E の前提）
+ * @see リポジトリルートの `docs/development/development.md`（ドキュメント用キャプチャと E2E の前提）
  */
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.join(__dirname, '..')

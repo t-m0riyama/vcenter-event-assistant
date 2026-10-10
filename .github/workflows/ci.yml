@@ -71,10 +71,10 @@ jobs:
             case "$file" in
               "") ;;
               # テストやビルドが読む Markdown は対象に戻す:
-              # - docs/user-guides/: 利用者向けガイド（ヘルプのリンク先）
+              # - docs/userguide/: 利用者向けガイド（ヘルプのリンク先）
               # - README.md: パッケージのメタデータ（pyproject.toml の readme）として読まれる
-              docs/user-guides/* | README.md | packages/*/README.md) code=true ;;
-              # ヘルプが参照するドキュメント（docs/backend.md など）は、tabHelpContent.test.ts が
+              docs/userguide/* | README.md | packages/*/README.md) code=true ;;
+              # ヘルプが参照するドキュメント（docs/development/backend.md など）は、tabHelpContent.test.ts が
               # 存在と見出しを確かめるので走らせる。参照先はファイル名を並べず、ヘルプの定義から引く
               docs/* | *.md)
                 if grep -qF -e "'$file'" -e "\"$file\"" frontend/src/help/tabHelpContent.ts; then code=true; fi ;;
