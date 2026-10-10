@@ -93,7 +93,8 @@ export function TimelineFilters({
 }: TimelineFiltersProps) {
   return (
     <>
-      <section className="timeline-panel__section" aria-label="vCenter">
+      {/* イベント・ログと同じツールバーの形（ラベルが上、入力欄が下で横に並べる）。 */}
+      <div className="toolbar timeline-panel__toolbar" aria-label="タイムラインの条件">
         <label>
           対象 vCenter
           <select value={vcenterId} onChange={(e) => setVcenterId(e.target.value)}>
@@ -105,146 +106,132 @@ export function TimelineFilters({
             ))}
           </select>
         </label>
-      </section>
-
-      <section className="timeline-panel__section" aria-label="期間メトリクス">
-        <p className="hint timeline-panel__metrics-hint">
-          タイムライン生成に含めるメトリクス（期間内をバケット平均で集約）
-        </p>
-        <label className="timeline-panel__checkbox-label">
+        <label>
+          CPU 閾値（%）
           <input
-            type="checkbox"
-            checked={includePeriodMetricsCpu}
-            onChange={(e) => setIncludePeriodMetricsCpu(e.target.checked)}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step={1}
+            className="toolbar__input--short"
+            value={metricThresholdCpuInput}
+            onChange={(e) =>
+              onMetricThresholdInputChange(e.target.value, setMetricThresholdCpuInput, setMetricThresholdCpuPct)
+            }
+            onBlur={() => setMetricThresholdCpuInput(String(metricThresholdCpuPct))}
             disabled={loading}
           />
-          CPU 使用率
         </label>
-        <label className="timeline-panel__checkbox-label">
+        <label>
+          Memory 閾値（%）
           <input
-            type="checkbox"
-            checked={includePeriodMetricsMemory}
-            onChange={(e) => setIncludePeriodMetricsMemory(e.target.checked)}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step={1}
+            className="toolbar__input--short"
+            value={metricThresholdMemoryInput}
+            onChange={(e) =>
+              onMetricThresholdInputChange(e.target.value, setMetricThresholdMemoryInput, setMetricThresholdMemoryPct)
+            }
+            onBlur={() => setMetricThresholdMemoryInput(String(metricThresholdMemoryPct))}
             disabled={loading}
           />
-          メモリ使用率
         </label>
-        <label className="timeline-panel__checkbox-label">
+        <label>
+          Disk 閾値（%）
           <input
-            type="checkbox"
-            checked={includePeriodMetricsDiskIo}
-            onChange={(e) => setIncludePeriodMetricsDiskIo(e.target.checked)}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step={1}
+            className="toolbar__input--short"
+            value={metricThresholdDiskInput}
+            onChange={(e) =>
+              onMetricThresholdInputChange(e.target.value, setMetricThresholdDiskInput, setMetricThresholdDiskPct)
+            }
+            onBlur={() => setMetricThresholdDiskInput(String(metricThresholdDiskPct))}
             disabled={loading}
           />
-          ディスク IO
         </label>
-        <label className="timeline-panel__checkbox-label">
+        <label>
+          Network 閾値（%）
           <input
-            type="checkbox"
-            checked={includePeriodMetricsNetworkIo}
-            onChange={(e) => setIncludePeriodMetricsNetworkIo(e.target.checked)}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step={1}
+            className="toolbar__input--short"
+            value={metricThresholdNetworkInput}
+            onChange={(e) =>
+              onMetricThresholdInputChange(e.target.value, setMetricThresholdNetworkInput, setMetricThresholdNetworkPct)
+            }
+            onBlur={() => setMetricThresholdNetworkInput(String(metricThresholdNetworkPct))}
             disabled={loading}
           />
-          ネットワーク IO
         </label>
-      </section>
-
-      <section className="timeline-panel__section" aria-label="メトリクス閾値">
-        <p className="hint timeline-panel__metrics-hint">インシデント判定に使う閾値（%）</p>
-        <div className="timeline-panel__threshold-grid">
-          <label className="timeline-panel__threshold-field">
-            CPU 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdCpuInput}
-              onChange={(e) =>
-                onMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdCpuInput,
-                  setMetricThresholdCpuPct,
-                )
-              }
-              onBlur={() => setMetricThresholdCpuInput(String(metricThresholdCpuPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="timeline-panel__threshold-field">
-            Memory 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdMemoryInput}
-              onChange={(e) =>
-                onMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdMemoryInput,
-                  setMetricThresholdMemoryPct,
-                )
-              }
-              onBlur={() => setMetricThresholdMemoryInput(String(metricThresholdMemoryPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="timeline-panel__threshold-field">
-            Disk 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdDiskInput}
-              onChange={(e) =>
-                onMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdDiskInput,
-                  setMetricThresholdDiskPct,
-                )
-              }
-              onBlur={() => setMetricThresholdDiskInput(String(metricThresholdDiskPct))}
-              disabled={loading}
-            />
-          </label>
-          <label className="timeline-panel__threshold-field">
-            Network 閾値（%）
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={metricThresholdNetworkInput}
-              onChange={(e) =>
-                onMetricThresholdInputChange(
-                  e.target.value,
-                  setMetricThresholdNetworkInput,
-                  setMetricThresholdNetworkPct,
-                )
-              }
-              onBlur={() => setMetricThresholdNetworkInput(String(metricThresholdNetworkPct))}
-              disabled={loading}
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className="timeline-panel__section" aria-label="表示オプション">
-        <label className="timeline-panel__threshold-field">
+        <label>
           アラート上位件数
           <input
             type="number"
+            inputMode="numeric"
             min={1}
             max={20}
             step={1}
+            className="toolbar__input--short"
             value={alertTopNInput}
             onChange={(e) => onAlertTopNInputChange(e.target.value)}
             onBlur={onAlertTopNBlur}
             disabled={loading}
           />
         </label>
+        <div className="timeline-panel__metrics" role="group" aria-labelledby="timeline-period-metrics-caption">
+          <span id="timeline-period-metrics-caption" className="timeline-panel__metrics-caption">
+            含めるメトリクス
+          </span>
+          <div className="timeline-panel__metrics-options">
+            <label className="timeline-panel__checkbox-label">
+              <input
+                type="checkbox"
+                checked={includePeriodMetricsCpu}
+                onChange={(e) => setIncludePeriodMetricsCpu(e.target.checked)}
+                disabled={loading}
+              />
+              CPU 使用率
+            </label>
+            <label className="timeline-panel__checkbox-label">
+              <input
+                type="checkbox"
+                checked={includePeriodMetricsMemory}
+                onChange={(e) => setIncludePeriodMetricsMemory(e.target.checked)}
+                disabled={loading}
+              />
+              メモリ使用率
+            </label>
+            <label className="timeline-panel__checkbox-label">
+              <input
+                type="checkbox"
+                checked={includePeriodMetricsDiskIo}
+                onChange={(e) => setIncludePeriodMetricsDiskIo(e.target.checked)}
+                disabled={loading}
+              />
+              ディスク IO
+            </label>
+            <label className="timeline-panel__checkbox-label">
+              <input
+                type="checkbox"
+                checked={includePeriodMetricsNetworkIo}
+                onChange={(e) => setIncludePeriodMetricsNetworkIo(e.target.checked)}
+                disabled={loading}
+              />
+              ネットワーク IO
+            </label>
+          </div>
+        </div>
         <button
           type="button"
           className="btn btn--gray"
@@ -255,7 +242,10 @@ export function TimelineFilters({
         >
           {sortOrder === 'asc' ? '表示順: 昇順' : '表示順: 降順'}
         </button>
-      </section>
+        <p className="hint toolbar__filters-hint timeline-panel__toolbar-hint">
+          閾値（%）はインシデントの判定に使います。含めるメトリクスは、期間内をバケット平均で集約してタイムラインに加えます。
+        </p>
+      </div>
 
       {/* 期間は「タイムラインを生成」の直前に置く（生成の直前に確かめる値なので）。 */}
       <section className="timeline-panel__section">

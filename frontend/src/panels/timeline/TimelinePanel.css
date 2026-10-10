@@ -2,26 +2,35 @@
   margin-bottom: var(--spacing-4);
 }
 
-.timeline-panel__metrics-hint {
-  margin-bottom: var(--spacing-2);
+/* 期間メトリクスの選択。ほかの項目と同じく、見出しが上で選択肢が下（高さはコントロールに揃える）。 */
+.timeline-panel__metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-footnote);
+}
+
+.timeline-panel__metrics-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 44px;
 }
 
 /* 期間メトリクスのチェックボックスは横に並べる（縦に積むと高さを取りすぎる）。 */
-.timeline-panel__checkbox-label {
-  display: inline-flex;
+.timeline-panel .toolbar .timeline-panel__checkbox-label {
+  flex-direction: row;
   align-items: center;
   gap: var(--spacing-1);
   margin-right: var(--spacing-3);
 }
 
-.timeline-panel__threshold-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--spacing-2);
-  width: 100%;
-  max-width: min(100%, 960px);
+.timeline-panel__toolbar-hint {
+  flex-basis: 100%;
+  margin: 0;
 }
 
+/* スナップショットの運用メモの欄（ラベルが上、入力欄が下）。 */
 .timeline-panel__threshold-field {
   display: flex;
   flex-direction: column;
