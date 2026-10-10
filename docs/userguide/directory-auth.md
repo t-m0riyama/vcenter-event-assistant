@@ -16,7 +16,7 @@ Active Directory（AD）や汎用の LDAP サーバのアカウントで、vCent
 | 接続先 | サーバの URI（`ldaps://dc1.example.com` など）。複数あれば上から順に試す（フェイルオーバー） |
 | 接続の暗号化 | LDAPS（`ldaps://`、既定のポート 636）か StartTLS（`ldap://`、既定のポート 389）。本番（`APP_ENV=production`）では暗号化しない接続は使えない |
 | CA 証明書 | サーバ証明書を発行した CA の証明書（PEM）。取得方法は 2 章。社内 CA や自己署名なら必須。公的な CA ならアプリのサーバの証明書ストアで検証できるので空でよい |
-| サービスアカウント | ユーザーを検索するためのアカウントとパスワード。ユーザーとグループの検索、ID 属性（下の 5 章）の読み取りができる権限が要る。空にすると匿名で検索する |
+| サービスアカウント | ユーザーを検索するためのアカウントとパスワード。ユーザーとグループの検索、ID 属性（下の 5 章）の読み取りができる権限が要る。空にすると匿名で検索する。AD での作り方は 3 章 |
 | ユーザーの検索ベース | ログインさせるユーザーがいる範囲（`OU=Staff,DC=example,DC=com` など） |
 | グループとロールの対応 | admin・operator・viewer にするグループ。admin のグループは必ず 1 つ用意する |
 
@@ -80,7 +80,7 @@ $ssl.Dispose(); $tcp.Dispose()
 
 ### CA 証明書を取得する
 
-自己署名で上の手順を実行したときは、その場で表示した PEM を使う。それ以外で LDAPS が既に使えるときは、DC に届く Windows で発行元の証明書だけを取得する。先頭のサーバ証明書は貼らない。中間 CA とルートの両方が出たときは、ブロックを連結したまま貼る。何も出ないときは自己署名なので、`$leaf` を同じ形式にして貼る。
+自己署名で上の手順を実行したときは、その場で表示した PEM を使う。それ以外で LDAPS が既に使えるときは、DC に届く Windows で次を実行する。発行元の CA があれば、その PEM だけが出る（先頭のサーバ証明書は出ない）。中間 CA とルートの両方が出たときは、ブロックを連結したまま貼る。自己署名で発行元が無いときは、サーバ証明書自身の PEM が出るので、それを貼る。
 
 ```powershell
 $hostname = "dc1.example.com"
@@ -97,8 +97,10 @@ $leaf = New-Object System.Security.Cryptography.X509Certificates.X509Certificate
 $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
 $chain.ChainPolicy.RevocationMode = "NoCheck"
 [void]$chain.Build($leaf)
-$chain.ChainElements | Select-Object -Skip 1 | ForEach-Object {
-    $b64 = [Convert]::ToBase64String($_.Certificate.RawData, "InsertLineBreaks")
+$certs = @($chain.ChainElements | Select-Object -Skip 1 | ForEach-Object { $_.Certificate })
+if ($certs.Count -eq 0) { $certs = @($leaf) }
+foreach ($cert in $certs) {
+    $b64 = [Convert]::ToBase64String($cert.RawData, "InsertLineBreaks")
     "-----BEGIN CERTIFICATE-----"
     $b64
     "-----END CERTIFICATE-----"
@@ -128,6 +130,45 @@ certutil -encode C:\Windows\Temp\ca.cer C:\Windows\Temp\ca.pem
 | UPN サフィックス | `example.com` | ユーザー名だけの入力で UPN も探すときに使う（任意） |
 | グループの調べ方 | 入れ子のグループも含める（AD） | 下の「入れ子のグループ」を参照 |
 | 対応表 | `CN=VEA-Admins,OU=Groups,DC=example,DC=com` → 管理者 など | |
+
+### サービスアカウントを作る
+
+AD は匿名の検索を既定で許可しない。ログインするユーザーとは別に、検索専用のユーザーを 1 つ作る。ドメインの一般ユーザーで足りる。Domain Admins などの管理グループには入れない。
+
+書き込みできるドメインコントローラー、または RSAT の Active Directory モジュールが入った Windows で、そのドメインにユーザーを作成できるアカウントとして実行する。スクリプトは、実行しているコンピューターのドメインに作る。ドキュメントの例 `DC=example,DC=com` のまま実行すると、その名前のドメインが無いサーバは `サーバーがプロセスを実行しようとしません` で拒否する。読み取り専用ドメインコントローラー（RODC）でも同じエラーになる。別のドメインに作るときは、先に `$domain = Get-ADDomain -Identity "other.example.com"` とする。`OU=Service` が直下にあれば、作成は飛ばす。スクリプト内の文字列は ASCII だけにする。Windows PowerShell 5.1 は、引用符の直前に日本語があると閉じ引用符を読み落とすことがあり、`文字列に終端記号 " がありません` になる。
+
+```powershell
+$domain = Get-ADDomain
+$domainDn = $domain.DistinguishedName
+$ouDn = "OU=Service,$domainDn"
+$existing = Get-ADOrganizationalUnit -LDAPFilter "(ou=Service)" -SearchBase $domainDn -SearchScope OneLevel -ErrorAction SilentlyContinue
+if (-not $existing) {
+    New-ADOrganizationalUnit -Name "Service" -Path $domainDn
+}
+$password = Read-Host -Prompt "Password" -AsSecureString
+$params = @{
+    Name                 = "svc-vea"
+    SamAccountName       = "svc-vea"
+    UserPrincipalName    = "svc-vea@$($domain.DNSRoot)"
+    Path                 = $ouDn
+    AccountPassword      = $password
+    Enabled              = $true
+    PasswordNeverExpires = $true
+    CannotChangePassword = $true
+    AccountNotDelegated  = $true
+    Description          = "vCenter Event Assistant directory search"
+}
+New-ADUser @params
+Get-ADUser -Identity "svc-vea" | Select-Object UserPrincipalName, DistinguishedName
+```
+
+画面には、最後に表示された UserPrincipalName か DistinguishedName を「サービスアカウントの DN」に、入力したパスワードを「サービスアカウントのパスワード」に入れる。ドメインが example.com なら、UPN は `svc-vea@example.com`、DN は `CN=svc-vea,OU=Service,DC=example,DC=com` になる。
+
+GUI なら `dsa.msc` でドメインの直下に `OU=Service` を作り、そこを右クリックして **新規作成 → ユーザー** を開く。ログオン名は `svc-vea`、UPN サフィックスはそのドメインの DNS 名にする。パスワードを設定し、「ユーザーはパスワードを変更できない」「パスワードを無期限にする」を選ぶ。作成後のプロパティの **アカウント** で「アカウントは重要なので委任できない」を選ぶ。
+
+- 検索ベース（例では `OU=Staff`）の外に置く。ロールのグループ（`VEA-Admins` など）には入れない。パスワードを知っていても、対応表のグループに入っていなければ、このアカウントではログインできない
+- 既定の ACL では、認証されたユーザーはユーザーとグループを読める。検索ベースの OU からその読み取りを外しているときは、このアカウントにその OU の読み取りを付ける。アプリが読むのは、その OU のユーザーの `sAMAccountName`、`userPrincipalName`、`objectGUID`、`displayName`、`mail` である。グループの調べ方が「ユーザーの memberOf 属性」のときは `memberOf` も読む。`DOMAIN\user` でログインさせるときは `msDS-PrincipalName` も読む。入れ子の判定は、ユーザー自身のエントリへの検索で行う
+- パスワードを無期限にできない組織では、期限が切れる前に画面の「サービスアカウントのパスワード」を新しい値へ更新する。切れると、そのディレクトリでのログインがすべて失敗する（10 章）
 
 ログイン画面では、次のどの形で入力しても同じユーザーになる。
 
