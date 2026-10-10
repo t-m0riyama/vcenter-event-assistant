@@ -32,6 +32,11 @@ describe('ChatSamplePromptsPanel', () => {
       expect(parsed.length).toBe(INITIAL_CHAT_SAMPLE_PROMPTS.length + 1)
       expect(parsed.some((r) => r.label === '新しいサンプル')).toBe(true)
     })
+    // 既存の行は折りたたみ、追加した行だけ開いてすぐ編集できる
+    const added = screen.getByLabelText(/^新しいサンプル、折りたたみ/).closest('details')
+    expect(added).toHaveAttribute('open')
+    const first = screen.getByLabelText(`サンプル ${INITIAL_CHAT_SAMPLE_PROMPTS[0].id} の表示ラベル`).closest('details')
+    expect(first).not.toHaveAttribute('open')
   })
 
   it('既定 id の行を削除できる', async () => {

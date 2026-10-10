@@ -19,6 +19,7 @@ import {
 import { EVENT_TYPE_GUIDES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmDestructiveImport'
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
 import { useSettingsListWithDrafts } from './useSettingsListCrud'
+import { SettingsListRow } from '../../components/SettingsListRow'
 
 type Draft = {
   general_meaning: string
@@ -273,137 +274,107 @@ export function EventTypeGuidesPanel({ onError }: { onError: (e: string | null) 
       )}
 
       <h2>一覧</h2>
-      <p className="hint event-type-guides-list__hint">
+      <p className="hint settings-list__hint">
         {canEdit
           ? '行をクリックすると展開され、内容の編集・保存・削除を行えます。'
           : '行をクリックすると展開され、内容を確認できます。'}
       </p>
-      <ul className="event-type-guides-list">
+      <ul className="settings-list event-type-guides-list">
         {list.map((r) => {
           const d = draft[r.id] ?? rowToDraft(r)
           const preview = formatEventTypeGuideCollapsedPreview(d, { maxChars: 200 })
           const summaryAria = `${r.event_type}、${d.action_required ? '要対処' : '対処不要'}、折りたたみ、クリックで展開`
           return (
-            <li key={r.id} className="event-type-guides-list__item">
-              <details className="event-type-guide-row">
-                <summary
-                  className="event-type-guide-row__summary"
-                  aria-label={summaryAria}
-                >
-                  <span className="event-type-guide-row__disclosure" aria-hidden="true">
-                    <svg
-                      className="event-type-guide-row__chevron"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path
-                        d="M9 6l6 6-6 6"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                  <div className="event-type-guide-row__summary-inner">
-                    <div className="event-type-guide-row__head">
-                      <span className="event-type-guide-row__type msg">{r.event_type}</span>
-                      {d.action_required ? (
-                        <span className="event-type-guide-row__badge">要対処</span>
-                      ) : null}
-                    </div>
-                    <p className="event-type-guide-row__preview">{preview}</p>
+            <SettingsListRow
+              key={r.id}
+              title={r.event_type}
+              badges={
+                d.action_required ? <span className="settings-row__badge settings-row__badge--danger">要対処</span> : null
+              }
+              preview={preview}
+              ariaLabel={summaryAria}
+            >
+              <div className="settings-row__fields event-type-guides-edit-cells">
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={draft[r.id]?.action_required ?? false}
+                    disabled={!canEdit}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), action_required: e.target.checked },
+                      }))
+                    }
+                    aria-label={`${r.event_type} は対処が必要`}
+                  />
+                  対処が必要（一覧で強調）
+                </label>
+                <label>
+                  一般的な意味
+                  <textarea
+                    className="event-type-guides-textarea"
+                    readOnly={!canEdit}
+                    aria-label={`${r.event_type} の一般的な意味`}
+                    value={draft[r.id]?.general_meaning ?? ''}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), general_meaning: e.target.value },
+                      }))
+                    }
+                    rows={2}
+                    maxLength={8000}
+                  />
+                </label>
+                <label>
+                  想定される原因
+                  <textarea
+                    className="event-type-guides-textarea"
+                    readOnly={!canEdit}
+                    aria-label={`${r.event_type} の想定される原因`}
+                    value={draft[r.id]?.typical_causes ?? ''}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), typical_causes: e.target.value },
+                      }))
+                    }
+                    rows={2}
+                    maxLength={8000}
+                  />
+                </label>
+                <label>
+                  対処方法
+                  <textarea
+                    className="event-type-guides-textarea"
+                    readOnly={!canEdit}
+                    aria-label={`${r.event_type} の対処方法`}
+                    value={draft[r.id]?.remediation ?? ''}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), remediation: e.target.value },
+                      }))
+                    }
+                    rows={2}
+                    maxLength={8000}
+                  />
+                </label>
+              </div>
+              {canEdit && (
+                <>
+                  <div className="settings-row__actions">
+                    <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
+                      保存
+                    </button>
+                    <button type="button" className="btn btn--danger" onClick={() => void remove(r.id)}>
+                      削除
+                    </button>
                   </div>
-                </summary>
-                <div className="event-type-guide-row__body">
-                  <div className="event-type-guides-edit-cells">
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={draft[r.id]?.action_required ?? false}
-                        disabled={!canEdit}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), action_required: e.target.checked },
-                          }))
-                        }
-                        aria-label={`${r.event_type} は対処が必要`}
-                      />
-                      対処が必要（一覧で強調）
-                    </label>
-                    <label>
-                      一般的な意味
-                      <textarea
-                        className="event-type-guides-textarea"
-                        readOnly={!canEdit}
-                        aria-label={`${r.event_type} の一般的な意味`}
-                        value={draft[r.id]?.general_meaning ?? ''}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), general_meaning: e.target.value },
-                          }))
-                        }
-                        rows={2}
-                        maxLength={8000}
-                      />
-                    </label>
-                    <label>
-                      想定される原因
-                      <textarea
-                        className="event-type-guides-textarea"
-                        readOnly={!canEdit}
-                        aria-label={`${r.event_type} の想定される原因`}
-                        value={draft[r.id]?.typical_causes ?? ''}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), typical_causes: e.target.value },
-                          }))
-                        }
-                        rows={2}
-                        maxLength={8000}
-                      />
-                    </label>
-                    <label>
-                      対処方法
-                      <textarea
-                        className="event-type-guides-textarea"
-                        readOnly={!canEdit}
-                        aria-label={`${r.event_type} の対処方法`}
-                        value={draft[r.id]?.remediation ?? ''}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [r.id]: { ...(prev[r.id] ?? rowToDraft(r)), remediation: e.target.value },
-                          }))
-                        }
-                        rows={2}
-                        maxLength={8000}
-                      />
-                    </label>
-                  </div>
-                  {canEdit && (
-                    <>
-                      <div className="event-type-guide-row__actions">
-                        <button type="button" className="btn btn--filled" onClick={() => void save(r.id)}>
-                          保存
-                        </button>
-                        <button type="button" className="btn btn--danger" onClick={() => void remove(r.id)}>
-                          削除
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </details>
-            </li>
+                </>
+              )}
+            </SettingsListRow>
           )
         })}
       </ul>

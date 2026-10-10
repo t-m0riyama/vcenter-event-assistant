@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../api'
 import {
   alertRuleRowSchema,
@@ -24,6 +24,7 @@ import { ALERT_RULES_DESTRUCTIVE_IMPORT_MESSAGES } from './importExport/confirmD
 import { useSettingsJsonImportExport } from './importExport/useSettingsJsonImportExport'
 import { useSettingsListFetch } from './useSettingsListCrud'
 import './AlertRulesPanel.css'
+import { SettingsListRow } from '../../components/SettingsListRow'
 
 type AlertLevel = 'critical' | 'error' | 'warning'
 
@@ -43,13 +44,23 @@ type AlertRule = AlertRuleRow & {
 
 interface EditDraft {
   name: string
+  alert_level: AlertLevel
+  is_enabled: boolean
   threshold: number
   metric_key: string
   cooldown_minutes: number
 }
 
+/** レベルのバッジの色（通知履歴と同じ。クリティカルは赤、エラーは黄、警告は無彩色）。 */
+const ALERT_LEVEL_BADGE_CLASS: Record<AlertLevel, string> = {
+  critical: 'settings-row__badge settings-row__badge--danger',
+  error: 'settings-row__badge settings-row__badge--caution',
+  warning: 'settings-row__badge',
+}
+
 /**
- * アラートルールの一覧・新規作成・レベル変更（PATCH）・有効切替・削除を行う設定パネル。
+ * アラートルールの一覧・新規作成・編集（名前・レベル・有効・閾値などを PATCH でまとめて保存）・削除を行う設定パネル。
+ * 一覧はイベント種別ガイドと同じ折りたたみ行で、行を展開して編集する。
  */
 export function AlertRulesPanel({ onError }: { onError: (msg: string) => void }) {
   // 追加・変更・削除・インポートは admin だけ。エクスポートは operator 以上で、viewer には出さない
@@ -73,7 +84,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
   const [newThreshold, setNewThreshold] = useState(60)
   const [newMetricKey, setNewMetricKey] = useState<string>(DEFAULT_ALERT_METRIC_KEY)
-  const [expandedId, setExpandedId] = useState<number | null>(null)
   const [drafts, setDrafts] = useState<Record<number, EditDraft>>({})
   const [metricKeyOptions, setMetricKeyOptions] = useState<string[]>([...KNOWN_METRIC_KEYS])
 
@@ -130,27 +140,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     }
   }
 
-  const handleLevelChange = async (rule: AlertRule, level: AlertLevel) => {
-    if (rule.alert_level === level) return
-    try {
-      await apiPatch(`/api/alerts/rules/${rule.id}`, { alert_level: level })
-      fetchRules()
-    } catch (e) {
-      onError(toErrorMessage(e))
-    }
-  }
-
-  const handleToggle = async (rule: AlertRule) => {
-    try {
-      await apiPatch(`/api/alerts/rules/${rule.id}`, {
-        is_enabled: !rule.is_enabled
-      })
-      fetchRules()
-    } catch (e) {
-      onError(toErrorMessage(e))
-    }
-  }
-
   const handleDelete = async (id: number) => {
     if (!confirm('このアラートルールを削除しますか？通知履歴と待機中の通知も削除されます。送信開始済みのメールは取り消せません。')) return
     try {
@@ -163,6 +152,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
 
   const makeDraftFromRule = (rule: AlertRule): EditDraft => ({
     name: rule.name,
+    alert_level: rule.alert_level as AlertLevel,
+    is_enabled: rule.is_enabled,
     threshold: Number(rule.config.threshold ?? 0),
     metric_key: rule.config.metric_key ?? '',
     cooldown_minutes: Number(rule.config.cooldown_minutes ?? 10),
@@ -177,13 +168,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     })
   }
 
-  const handleExpandRow = (rule: AlertRule) => {
-    setExpandedId((prev) => (prev === rule.id ? null : rule.id))
-    setDrafts((prev) => (prev[rule.id] ? prev : { ...prev, [rule.id]: makeDraftFromRule(rule) }))
-  }
-
-  const handleCancelEdit = (ruleId: number) => {
-    setExpandedId(null)
+  const discardDraft = (ruleId: number) => {
     setDrafts((prev) => {
       const next = { ...prev }
       delete next[ruleId]
@@ -193,6 +178,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
 
   const isDraftChanged = (rule: AlertRule, draft: EditDraft): boolean => {
     if (draft.name.trim() !== rule.name) return true
+    if (draft.alert_level !== rule.alert_level) return true
+    if (draft.is_enabled !== rule.is_enabled) return true
     if (Number(rule.config.threshold ?? 0) !== draft.threshold) return true
     if (rule.rule_type === 'metric_threshold') return (rule.config.metric_key ?? '') !== draft.metric_key
     return Number(rule.config.cooldown_minutes ?? 10) !== draft.cooldown_minutes
@@ -215,8 +202,13 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     if (rule.rule_type === 'event_score') nextConfig.cooldown_minutes = draft.cooldown_minutes
 
     try {
-      await apiPatch(`/api/alerts/rules/${rule.id}`, { name: nextName, config: nextConfig })
-      handleCancelEdit(rule.id)
+      await apiPatch(`/api/alerts/rules/${rule.id}`, {
+        name: nextName,
+        alert_level: draft.alert_level,
+        is_enabled: draft.is_enabled,
+        config: nextConfig,
+      })
+      discardDraft(rule.id)
       fetchRules()
     } catch (e) {
       onError(toErrorMessage(e))
@@ -338,11 +330,6 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                     onChange={(e) => setNewMetricKey(e.target.value)}
                     placeholder={DEFAULT_ALERT_METRIC_KEY}
                   />
-                  <datalist id="alert-metric-key-options">
-                    {metricKeyOptions.map((key) => (
-                      <option key={key} value={key} />
-                    ))}
-                  </datalist>
                 </label>
               )}
 
@@ -365,168 +352,141 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       )}
 
       <h2>一覧</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>名前</th>
-            <th>タイプ</th>
-            <th>条件</th>
-            <th>レベル</th>
-            <th>有効</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rules.length === 0 ? (
-            <tr>
-              <td colSpan={6} className="hint">ルールが設定されていません。</td>
-            </tr>
-          ) : (
-            rules.map((r) => {
-              const draft = drafts[r.id] ?? makeDraftFromRule(r)
-              const expanded = expandedId === r.id
-              const changed = isDraftChanged(r, draft)
-              const editRowId = `alert-rule-edit-row-${r.id}`
-              return (
-                <Fragment key={r.id}>
-                  <tr
-                    className={`${r.is_enabled ? '' : 'disabled-row'} editable-row ${expanded ? 'expanded-row' : ''}`}
-                  >
-                    <td>
+      {rules.length > 0 && (
+        <p className="hint settings-list__hint">
+          {canEdit
+            ? '行をクリックすると展開され、内容の編集・保存・削除を行えます。'
+            : '行をクリックすると展開され、内容を確認できます。'}
+        </p>
+      )}
+      <datalist id="alert-metric-key-options">
+        {metricKeyOptions.map((key) => (
+          <option key={key} value={key} />
+        ))}
+      </datalist>
+      {rules.length === 0 ? (
+        <p className="hint">ルールが設定されていません。</p>
+      ) : (
+        <ul className="settings-list alert-rules-list">
+          {rules.map((r) => {
+            const draft = drafts[r.id] ?? makeDraftFromRule(r)
+            const changed = isDraftChanged(r, draft)
+            const level = r.alert_level as AlertLevel
+            const typeLabel = r.rule_type === 'event_score' ? 'イベントスコア' : 'メトリクス閾値'
+            const condition =
+              r.rule_type === 'event_score'
+                ? `スコア ${r.config.threshold} 以上`
+                : `${r.config.metric_key} ≥ ${r.config.threshold}`
+            return (
+              <SettingsListRow
+                key={r.id}
+                title={r.name}
+                badges={
+                  <>
+                    <span className={ALERT_LEVEL_BADGE_CLASS[level]}>{ALERT_LEVEL_LABELS[level]}</span>
+                    <span className="settings-row__badge">{typeLabel}</span>
+                    {r.is_enabled ? null : <span className="settings-row__badge">無効</span>}
+                  </>
+                }
+                preview={condition}
+                ariaLabel={`${r.name}、${ALERT_LEVEL_LABELS[level]}、${typeLabel}、${r.is_enabled ? '有効' : '無効'}、折りたたみ、クリックで展開`}
+              >
+                <div className="settings-row__fields">
+                  <label>
+                    ルール名
+                    <input
+                      type="text"
+                      value={draft.name}
+                      readOnly={!canEdit}
+                      onChange={(e) => updateDraft(r.id, { name: e.target.value })}
+                      aria-label={`${r.name} のルール名`}
+                    />
+                  </label>
+                  <label>
+                    レベル
+                    <select
+                      value={draft.alert_level}
+                      disabled={!canEdit}
+                      onChange={(e) => updateDraft(r.id, { alert_level: e.target.value as AlertLevel })}
+                      aria-label={`${r.name} のアラートレベル`}
+                      title="クリティカル: すぐ対処 / エラー: 対処必須 / 警告: 検討"
+                    >
+                      <option value="critical">{ALERT_LEVEL_LABELS.critical}</option>
+                      <option value="error">{ALERT_LEVEL_LABELS.error}</option>
+                      <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
+                    </select>
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={draft.is_enabled}
+                      disabled={!canEdit}
+                      onChange={(e) => updateDraft(r.id, { is_enabled: e.target.checked })}
+                      aria-label={`${r.name} を有効にする`}
+                    />
+                    有効（判定の対象にする）
+                  </label>
+                  <label>
+                    閾値
+                    <input
+                      type="number"
+                      value={draft.threshold}
+                      readOnly={!canEdit}
+                      onChange={(e) => updateDraft(r.id, { threshold: Number(e.target.value) })}
+                      aria-label={`${r.name} の閾値`}
+                    />
+                  </label>
+                  {r.rule_type === 'metric_threshold' ? (
+                    <label>
+                      メトリクスキー
+                      <input
+                        type="text"
+                        list="alert-metric-key-options"
+                        value={draft.metric_key}
+                        readOnly={!canEdit}
+                        onChange={(e) => updateDraft(r.id, { metric_key: e.target.value })}
+                        aria-label={`${r.name} のメトリクスキー`}
+                      />
+                    </label>
+                  ) : (
+                    <label title="同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで">
+                      再通知間隔（分）
+                      <input
+                        type="number"
+                        min={1}
+                        value={draft.cooldown_minutes}
+                        readOnly={!canEdit}
+                        onChange={(e) => updateDraft(r.id, { cooldown_minutes: Number(e.target.value) })}
+                        aria-label={`${r.name} の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで`}
+                      />
+                    </label>
+                  )}
+                </div>
+                {canEdit && (
+                  <>
+                    <p className="hint edit-row-hint">
+                      ルールのタイプは変更できません。変更する場合は、既存のルールを削除してから作成し直してください。
+                    </p>
+                    <div className="settings-row__actions">
                       <button
                         type="button"
-                        className="btn btn--gray"
-                        aria-expanded={expanded}
-                        aria-controls={editRowId}
-                        aria-label={
-                          canEdit
-                            ? expanded
-                              ? `${r.name} の編集を閉じる`
-                              : `${r.name} の編集を開く`
-                            : expanded
-                              ? `${r.name} の詳細を閉じる`
-                              : `${r.name} の詳細を開く`
-                        }
-                        onClick={() => handleExpandRow(r)}
+                        className="btn btn--filled"
+                        disabled={!changed}
+                        onClick={() => void handleSaveEdit(r)}
                       >
-                        {expanded ? '▾' : '▸'}
-                      </button>{' '}
-                      {r.name}
-                    </td>
-                    <td>{r.rule_type === 'event_score' ? 'イベント' : 'メトリクス'}</td>
-                    <td>
-                      {r.rule_type === 'event_score' ? (
-                        <span>スコア {r.config.threshold} 以上</span>
-                      ) : (
-                        <span>{r.config.metric_key} ≥ {r.config.threshold}</span>
-                      )}
-                    </td>
-                    <td className="col-level">
-                      <select
-                        className="alert-level-select"
-                        disabled={!canEdit}
-                        value={r.alert_level}
-                        onChange={(e) => void handleLevelChange(r, e.target.value as AlertLevel)}
-                        aria-label={`${r.name} のアラートレベル`}
-                      >
-                        <option value="critical">{ALERT_LEVEL_LABELS.critical}</option>
-                        <option value="error">{ALERT_LEVEL_LABELS.error}</option>
-                        <option value="warning">{ALERT_LEVEL_LABELS.warning}</option>
-                      </select>
-                    </td>
-                    <td>
-                      <label className="check">
-                        <input
-                          type="checkbox"
-                          checked={r.is_enabled}
-                          disabled={!canEdit}
-                          onChange={() => handleToggle(r)}
-                          aria-label={`${r.name} を${r.is_enabled ? '無効化' : '有効化'}`}
-                        />
-                      </label>
-                    </td>
-                    <td className="actions">
-                      {canEdit && (
-                        <button type="button" className="btn btn--danger" onClick={() => handleDelete(r.id)}>削除</button>
-                      )}
-                    </td>
-                  </tr>
-                  {expanded ? (
-                    <tr id={editRowId} className="edit-row">
-                      <td colSpan={6}>
-                        <div className="form-grid">
-                          <label>
-                            ルール名
-                            <input
-                              type="text"
-                              value={draft.name}
-                              readOnly={!canEdit}
-                              onChange={(e) => updateDraft(r.id, { name: e.target.value })}
-                              aria-label={`${r.name} のルール名`}
-                            />
-                          </label>
-                          <label>
-                            閾値
-                            <input
-                              type="number"
-                              value={draft.threshold}
-                              readOnly={!canEdit}
-                              onChange={(e) => updateDraft(r.id, { threshold: Number(e.target.value) })}
-                              aria-label={`${r.name} の閾値`}
-                            />
-                          </label>
-                          {r.rule_type === 'metric_threshold' ? (
-                            <label>
-                              メトリクスキー
-                              <input
-                                type="text"
-                                list="alert-metric-key-options"
-                                value={draft.metric_key}
-                                readOnly={!canEdit}
-                                onChange={(e) => updateDraft(r.id, { metric_key: e.target.value })}
-                                aria-label={`${r.name} のメトリクスキー`}
-                              />
-                            </label>
-                          ) : (
-                            <label
-                              title="同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで"
-                            >
-                              再通知間隔（分）
-                              <input
-                                type="number"
-                                min={1}
-                                value={draft.cooldown_minutes}
-                                readOnly={!canEdit}
-                                onChange={(e) => updateDraft(r.id, { cooldown_minutes: Number(e.target.value) })}
-                                aria-label={`${r.name} の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで`}
-                              />
-                            </label>
-                          )}
-                        </div>
-                        {canEdit && (
-                          <>
-                            <p className="hint edit-row-hint">
-                              ルールのタイプは変更できません。変更する場合は、既存のルールを削除してから作成し直してください。
-                            </p>
-                            <div className="form-actions">
-                              <button type="button" className="btn btn--filled" disabled={!changed} onClick={() => void handleSaveEdit(r)}>
-                                保存
-                              </button>
-                              <button type="button" className="btn btn--gray" onClick={() => handleCancelEdit(r.id)}>
-                                キャンセル
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              )
-            })
-          )}
-        </tbody>
-      </table>
+                        保存
+                      </button>
+                      <button type="button" className="btn btn--danger" onClick={() => void handleDelete(r.id)}>
+                        削除
+                      </button>
+                    </div>
+                  </>
+                )}
+              </SettingsListRow>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }
