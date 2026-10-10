@@ -50,8 +50,14 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   const { prefs: webSearchPrefs } = useChatWebSearchPrefs()
   const thresholdFields = usePeriodMetricThresholdFields()
 
-  const { rangeParts, setRangeParts, applyRollingPreset, rangeDisplayLabel } =
-    useRollingZonedRangeParts(timeZone)
+  const {
+    rangeParts,
+    setRangeParts,
+    applyRollingPreset,
+    restoreRange,
+    rangeDisplayLabel,
+    activeRollingDurationMs,
+  } = useRollingZonedRangeParts(timeZone)
   const [vcenterId, setVcenterId] = useState<string>('')
   const [vcenters, setVcenters] = useState<VCenter[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -134,7 +140,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     const max = readStoredChatMaxStoredMessages()
     const snap = readChatPanelSnapshot(max)
     if (snap) {
-      setRangeParts(snap.rangeParts)
+      restoreRange(snap.rangeParts, snap.rollingDurationMs ?? null)
       setVcenterId(snap.vcenterId)
       setMessages(snap.messages)
       setDraft(snap.draft)
@@ -145,7 +151,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       setIncludePeriodMetricsNetworkIo(snap.includePeriodMetricsNetworkIo)
     }
     setStorageHydrated(true)
-  }, [setRangeParts])
+  }, [restoreRange])
 
   useEffect(() => {
     if (skipMaxTrimOnMountRef.current) {
@@ -167,6 +173,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       {
         messages,
         rangeParts,
+        rollingDurationMs: activeRollingDurationMs,
         vcenterId,
         includePeriodMetricsCpu,
         includePeriodMetricsMemory,
@@ -186,6 +193,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     storageHydrated,
     messages,
     rangeParts,
+    activeRollingDurationMs,
     vcenterId,
     includePeriodMetricsCpu,
     includePeriodMetricsMemory,

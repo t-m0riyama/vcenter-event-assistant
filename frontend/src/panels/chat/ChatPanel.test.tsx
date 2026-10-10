@@ -234,6 +234,30 @@ describe(
     15_000,
   )
 
+  it('「表示期間」の要約は、開き直しても「直近 N」か手入力かを保つ', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse([]))))
+    const first = renderChat()
+    const summary = () => screen.getByText('表示期間').closest('summary')!
+    expect(within(summary()).getByText('直近24時間')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '過去 7 日' }))
+    expect(within(summary()).getByText('直近 7 日')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(JSON.parse(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY) ?? '{}').rollingDurationMs).toBe(
+        7 * 86400000,
+      ),
+    )
+    first.unmount()
+    const second = renderChat()
+    await waitFor(() => expect(within(summary()).getByText('直近 7 日')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-01' } })
+    await waitFor(() =>
+      expect(JSON.parse(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY) ?? '{}').rollingDurationMs).toBeNull(),
+    )
+    second.unmount()
+    renderChat()
+    await waitFor(() => expect(within(summary()).getByText(/^2026-01-01 ～ /)).toBeInTheDocument())
+  })
+
   it('コンポーザーは入力欄ラッパーが先・送信ボタンが後の子要素順になる', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)

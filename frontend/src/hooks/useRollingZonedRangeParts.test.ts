@@ -55,4 +55,20 @@ describe('useRollingZonedRangeParts', () => {
     rerender({ tz: 'Asia/Tokyo' })
     expect(result.current.rangeParts).not.toEqual(rollingParts)
   })
+
+  it('restoreRange は保存した期間をそのまま戻し、長さがあれば「直近 N」、なければ手入力として扱う', () => {
+    const { result } = renderHook(() => useRollingZonedRangeParts('UTC'))
+    const saved = { fromDate: '2026-01-01', fromTime: '08:00', toDate: '2026-01-08', toTime: '08:00' }
+    act(() => {
+      result.current.restoreRange(saved, 7 * 86400000)
+    })
+    expect(result.current.rangeParts).toEqual(saved)
+    expect(result.current.rangeDisplayLabel).toBe('直近 7 日')
+    expect(result.current.activeRollingDurationMs).toBe(7 * 86400000)
+    act(() => {
+      result.current.restoreRange(saved, null)
+    })
+    expect(result.current.rangeDisplayLabel).toBe('2026-01-01 ～ 2026-01-08')
+    expect(result.current.activeRollingDurationMs).toBeNull()
+  })
 })

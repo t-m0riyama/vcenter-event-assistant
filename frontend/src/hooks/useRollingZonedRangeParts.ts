@@ -39,6 +39,20 @@ export function useRollingZonedRangeParts(timeZone: string) {
     [timeZone],
   )
 
+  /**
+   * 保存しておいた期間を戻す。``rollingDurationMs`` があれば「直近 N」として戻す（null は手入力）。
+   * 期間の値は保存したものを使い、今の時刻から計算し直さない。
+   */
+  const restoreRange = useCallback((parts: ZonedRangeParts, savedRollingDurationMs: number | null) => {
+    if (savedRollingDurationMs === null) {
+      setRangeFollowMode('manual')
+    } else {
+      setRangeFollowMode('rolling')
+      setRollingDurationMs(savedRollingDurationMs)
+    }
+    setRangePartsState(parts)
+  }, [])
+
   /** 折りたたんだ「表示期間」の要約（グラフタブと同じ表記）。 */
   const rangeDisplayLabel = useMemo(
     () =>
@@ -57,5 +71,13 @@ export function useRollingZonedRangeParts(timeZone: string) {
     }
   }
 
-  return { rangeParts, setRangeParts, applyRollingPreset, rangeDisplayLabel }
+  return {
+    rangeParts,
+    setRangeParts,
+    applyRollingPreset,
+    restoreRange,
+    rangeDisplayLabel,
+    /** 「直近 N」のときの N（ミリ秒）。手入力のときは null。保存して {@link restoreRange} に渡す。 */
+    activeRollingDurationMs: rangeFollowMode === 'rolling' ? rollingDurationMs : null,
+  }
 }

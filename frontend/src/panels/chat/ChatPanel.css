@@ -2,6 +2,14 @@
   margin-bottom: var(--spacing-4);
 }
 
+/* 期間メトリクスのチェックボックス。タイムラインと同じ間隔で横に並べる。 */
+.chat-panel__checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-right: var(--spacing-3);
+}
+
 .chat-panel__messages {
   /* メッセージ行の offsetTop がリスト内座標になるよう（スクロール位置計算と一致させる） */
   position: relative;
