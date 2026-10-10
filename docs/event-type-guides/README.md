@@ -10,7 +10,7 @@ Broadcom／VMware 公式ドキュメントを根拠に、vCenter が記録する
 2. **イベント種別ガイド** を選択する。
 3. **インポート** で、取り込みたいシード JSON を指定する。
    - **第1弾のみ:** [`data/seed/event-type-guides-priority-v1.json`](../../data/seed/event-type-guides-priority-v1.json)
-   - **第2弾の追加:** [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json)（第1弾と **別ファイル**。v1 適用済みの DB に **追記だけ** したい場合は、**インポート画面で「ファイルに含まれないガイドを削除」をオフ**のままにする。API の [`EventTypeGuidesImportRequest`](../../src/vcenter_event_assistant/api/schemas.py) および UI の **既定値は `overwrite_existing=true` / `delete_guides_not_in_import=false`** で、追加インポート向きです。）
+   - **第2弾の追加:** [`data/seed/event-type-guides-priority-v2.json`](../../data/seed/event-type-guides-priority-v2.json)（第1弾と **別ファイル**。v1 適用済みの DB に **追記だけ** したい場合は、**インポート画面で「ファイルに含まれないガイドを削除」をオフ**のままにする。API の [`EventTypeGuidesImportRequest`](../../src/vcenter_event_assistant/api/schemas/event_type_guides.py) および UI の **既定値は `overwrite_existing=true` / `delete_guides_not_in_import=false`** で、追加インポート向きです。）
    - 上書き・削除オプションは運用方針に合わせる。
 
 ## 一次情報の取得（イベントカタログ）

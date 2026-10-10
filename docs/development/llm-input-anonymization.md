@@ -227,5 +227,5 @@ VCenter Event Assistant は、外部 LLM サービスを利用する際にも、
 
 ## 11. 参照
 
-- コード：[`src/vcenter_event_assistant/services/llm_anonymization.py`](../../src/vcenter_event_assistant/services/llm_anonymization.py)
+- コード：[`src/vcenter_event_assistant/services/llm/llm_anonymization.py`](../../src/vcenter_event_assistant/services/llm/llm_anonymization.py)
 
