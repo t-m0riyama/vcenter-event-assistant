@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AlertHistoryPanel } from './AlertHistoryPanel'
 import { TimeZoneContext } from '../../datetime/timeZoneContext'
-import { apiDelete, apiGet } from '../../api'
+import { apiDelete, apiGet, apiPost } from '../../api'
 
 vi.mock('../../api', () => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn() }))
 
@@ -128,5 +128,44 @@ describe('pagination', () => {
     expect(screen.queryByText('stale-page-1')).not.toBeInTheDocument()
     expect(screen.getByText('page-2')).toBeInTheDocument()
     expect(within(top).getByText('全 120 件中 51–100 件を表示')).toBeInTheDocument()
+  })
+
+  it('解消の処理中に別のページへ移ったら、処理後の再取得は今のページで行う', async () => {
+    vi.mocked(apiGet).mockImplementation((path: string) =>
+      Promise.resolve({ total: 120, items: [
+        {
+          ...base,
+          id: path.endsWith('offset=0') ? 1 : 2,
+          context_key: path.endsWith('offset=0') ? 'page-1' : 'page-2',
+          rule_type: 'event_score',
+          delivery_status: 'succeeded',
+          success: true,
+          attempt_count: 1,
+          can_resolve: true,
+        },
+      ] }),
+    )
+    let finishResolve: () => void = () => {}
+    vi.mocked(apiPost).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishResolve = () => resolve(undefined)
+        }),
+    )
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    show()
+    const row = (await screen.findByText('page-1')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: '解消' }))
+    const top = screen.getByRole('navigation', { name: 'ページ切り替え（上）' })
+    fireEvent.click(within(top).getByRole('button', { name: '次へ' }))
+    expect(await screen.findByText('page-2')).toBeInTheDocument()
+    vi.mocked(apiGet).mockClear()
+    finishResolve()
+    await waitFor(() => expect(apiGet).toHaveBeenCalled())
+    expect(vi.mocked(apiGet).mock.calls.every(([path]) => String(path).endsWith('offset=50'))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByText('page-1')).not.toBeInTheDocument()
+    expect(screen.getByText('page-2')).toBeInTheDocument()
+    confirm.mockRestore()
   })
 })

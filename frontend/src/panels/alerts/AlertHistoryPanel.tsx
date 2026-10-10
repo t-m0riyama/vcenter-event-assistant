@@ -95,11 +95,17 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     onNext: () => setPage((p) => p + 1),
   }
 
+  // 解消・削除・「一覧を更新」の後の再取得は、この合図を進めて effect から行う。ハンドラが
+  // 押した時点の fetchHistory を直接呼ぶと、処理中に別のページへ移ったときに元のページを
+  // 取り直し、今のページの表示を上書きしてしまうため。
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = useCallback(() => setReloadKey((k) => k + 1), [])
+
   useEffect(() => {
     fetchHistory()
     const timer = setInterval(fetchHistory, 30000)
     return () => clearInterval(timer)
-  }, [fetchHistory])
+  }, [fetchHistory, reloadKey])
 
   const handleResolve = async (item: AlertHistory) => {
     const label = item.rule_name || `Rule #${item.rule_id}`
@@ -115,7 +121,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
         rule_id: item.rule_id,
         context_key: item.context_key,
       })
-      await fetchHistory()
+      reload()
     } catch (e) {
       onError(String(e))
     }
@@ -129,7 +135,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
     if (!confirm(message)) return
     try {
       await apiDelete(`/api/alerts/history/${item.id}`)
-      await fetchHistory()
+      reload()
     } catch (e) {
       onError(String(e))
     }
@@ -160,7 +166,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
           </select>
         </label>
         <Pagination position="top" {...pagination} />
-        <button type="button" className="btn btn--gray alert-history-refresh" onClick={() => void fetchHistory()}>
+        <button type="button" className="btn btn--gray alert-history-refresh" onClick={reload}>
           一覧を更新
         </button>
       </div>
