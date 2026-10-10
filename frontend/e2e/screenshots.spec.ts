@@ -20,7 +20,7 @@ const DOC_SCREENSHOT_HEIGHT = 720
  * ドキュメント用に主要タブの画面を PNG 保存する。
  * リポジトリの `docs/images` へ書き込むのは **`WRITE_DOC_SCREENSHOTS_TO_REPO=1` のときだけ**
  *（`capture_ui_screenshots.py` / `npm run screenshots*` が付与）。未設定時は `frontend/test-results/` のみ。
- * 再取得手順はリポジトリルートの `docs/development.md` を参照。
+ * 再取得手順はリポジトリルートの `docs/development/development.md` を参照。
  *
  * 既定の取得先は既起動の API（例: localhost:8000）。`playwright.config` の webServer は
  * `--spawn-server` 付きで `capture_ui_screenshots.py` を実行したときのみ使う。

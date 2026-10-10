@@ -95,9 +95,9 @@ pip install "vcenter-event-assistant-plugin-api[vmware]"
 
 ## ドキュメント
 
-- [コレクタプラグインの開発](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugin-authoring.md)
+- [コレクタプラグインの開発](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/development/collector-plugin-authoring.md)
   — 実装・テスト・落とし穴・配布
-- [コレクタプラグイン](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/collector-plugins.md)
+- [コレクタプラグイン](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/docs/operations/collector-plugins.md)
   — 設定・管理画面・トラブルシュート（運用側）
 - [CHANGELOG](https://github.com/t-m0riyama/vcenter-event-assistant/blob/main/packages/plugin-api/CHANGELOG.md)
 

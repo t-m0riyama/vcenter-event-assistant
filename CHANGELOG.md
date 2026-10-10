@@ -6,7 +6,7 @@
 
 ## 0.2.0 - 2026-10-10
 
-最初のリリース。今までの main（0.1.0 を名乗っていた）から更新する場合は、下の「更新の前に」を必ず読むこと。詳しい手順は [バックエンド運用ガイドの 4.2](docs/backend-operations.md#42-認証を導入したバージョンへの更新) にある。
+最初のリリース。今までの main（0.1.0 を名乗っていた）から更新する場合は、下の「更新の前に」を必ず読むこと。詳しい手順は [バックエンド運用ガイドの 4.2](docs/operations/backend-operations.md#42-認証を導入したバージョンへの更新) にある。
 
 ### 更新の前に（互換性のない変更）
 
@@ -23,25 +23,25 @@
 
 ### セキュリティ
 
-2026-10 のセキュリティ監査（`docs/security-audit-report-2026-10-05.md`）の指摘に対応した。
+2026-10 のセキュリティ監査（`docs/reports/security-audit-report-2026-10-05.md`）の指摘に対応した。
 
 - SMTP の STARTTLS で証明書を検証する（Issue #236、PR #271）
 - CSV の書き出しで、`=` `+` `-` `@` などで始まる値を数式として解釈させない（Issue #238、PR #272）
 - プラグインのアップロードの一時ディレクトリを、インストールの後と起動時に消す（Issue #239、PR #272）
 - プラグインの権限分離（Issue #235）
   - ワーカーとインストーラに渡す環境変数を許可リストにし、`VEA_SECRET_KEY`・`DATABASE_URL`・LLM や SMTP の資格情報を渡さない。資格情報付きのインデックスやプロキシでは wheel だけを入れる。Linux では本体のプロセスを dumpable でなくし（`VEA_PROCESS_NON_DUMPABLE`）、同じユーザーの親プロセスが秘密を持ったまま残っていれば起動時に警告する（PR #273）
-  - Docker イメージで `/app` を root の所有にし、プラグインが本体のコードを書き換えられないようにした。何を守り、何を守れないかを [コレクタプラグインの「脅威モデル」](docs/collector-plugins.md#脅威モデル) にまとめた（PR #275）
+  - Docker イメージで `/app` を root の所有にし、プラグインが本体のコードを書き換えられないようにした。何を守り、何を守れないかを [コレクタプラグインの「脅威モデル」](docs/operations/collector-plugins.md#脅威モデル) にまとめた（PR #275）
 - SSH の接続先を、名前解決して検証した IP に接続する（DNS rebinding の対策）。許可するポートを `VEA_SSH_ALLOWED_PORTS` で絞れる。外へ接続して確かめる API に rate limit をかけた（Issue #237、PR #276）
 
 ### 主な追加
 
-- **ログインとロール**: ローカルのユーザーでのログイン、viewer・operator・admin の 3 つのロール、ユーザー管理の画面と CLI（`vcenter-event-assistant-admin`）、パスワードの変更、ログインの rate limit とロックアウト、監査ログ（ロガー `vcenter_event_assistant.audit`）。[ログインとロール](docs/user-guides/authentication.md)
-- **AD / LDAP でのログイン**: 認証ディレクトリの管理画面、グループとロールの対応表、保存前の接続試験と管理者ログイン不能の防止。[AD / LDAP でのログイン](docs/user-guides/directory-auth.md)
-- **コレクタプラグイン**: 画面からのインストール・アンインストール・設定・「変更を反映」、プラグインごとのワーカープロセス、開発キット（`vcenter-event-assistant-plugin-api`、ひな形の生成、テストハーネス）。[プラグイン（利用者向け）](docs/user-guides/plugins.md)、[コレクタプラグインの開発](docs/collector-plugin-authoring.md)
-- **リモートログの収集**: 同梱のプラグイン VEA Remote Logs（`vea.remote.logs`）で、ESXi と vCenter のログを SSH で差分収集する。SSH 鍵の生成・ホスト鍵の承認・接続テストを画面から行う。[画面からリモートログ収集を導入する](docs/remote-log-collector.md)
+- **ログインとロール**: ローカルのユーザーでのログイン、viewer・operator・admin の 3 つのロール、ユーザー管理の画面と CLI（`vcenter-event-assistant-admin`）、パスワードの変更、ログインの rate limit とロックアウト、監査ログ（ロガー `vcenter_event_assistant.audit`）。[ログインとロール](docs/userguide/authentication.md)
+- **AD / LDAP でのログイン**: 認証ディレクトリの管理画面、グループとロールの対応表、保存前の接続試験と管理者ログイン不能の防止。[AD / LDAP でのログイン](docs/userguide/directory-auth.md)
+- **コレクタプラグイン**: 画面からのインストール・アンインストール・設定・「変更を反映」、プラグインごとのワーカープロセス、開発キット（`vcenter-event-assistant-plugin-api`、ひな形の生成、テストハーネス）。[プラグイン（利用者向け）](docs/userguide/plugins.md)、[コレクタプラグインの開発](docs/development/collector-plugin-authoring.md)
+- **リモートログの収集**: 同梱のプラグイン VEA Remote Logs（`vea.remote.logs`）で、ESXi と vCenter のログを SSH で差分収集する。SSH 鍵の生成・ホスト鍵の承認・接続テストを画面から行う。[画面からリモートログ収集を導入する](docs/userguide/remote-log-collector.md)
 - **メール通知の配送の分離**: アラートの評価と SMTP の配送を分け、送信予定を保存して再起動後も再送する。通知履歴に配送状態と試行回数を表示する
 
-機能の全体は [機能一覧](docs/features_list.md) を参照する。
+機能の全体は [機能一覧](docs/features/features_list.md) を参照する。
 
 ### 廃止予告
 
@@ -49,7 +49,7 @@
 
 ### 既知の制約
 
-- プラグインはアプリと同じ OS のユーザーで動く。SQLite の DB ファイル、インストール中の uv の資格情報、同じユーザーで残った親プロセスの環境変数は、プラグインから読める（Issue #274。[脅威モデル](docs/collector-plugins.md#脅威モデル)）
+- プラグインはアプリと同じ OS のユーザーで動く。SQLite の DB ファイル、インストール中の uv の資格情報、同じユーザーで残った親プロセスの環境変数は、プラグインから読める（Issue #274。[脅威モデル](docs/operations/collector-plugins.md#脅威モデル)）
 - Samba の AD では `DOMAIN\user` の形でログインできない（Issue #266）
 - グループの DN に独自 OID の属性が含まれると、対応表に登録できない（Issue #251）
 

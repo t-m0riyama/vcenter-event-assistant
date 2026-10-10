@@ -9,12 +9,12 @@ describe('TabHelpSection', () => {
       <TabHelpSection
         entry={{
           summary: '【概要】\nテスト要約',
-          userGuideDoc: 'docs/user-guides/summary.md',
+          userGuideDoc: 'docs/userguide/summary.md',
           markerId: 'summary',
         }}
       />,
     )
     expect(screen.getByText(/テスト要約/)).toBeInTheDocument()
-    expect(screen.getByText('docs/user-guides/summary.md')).toBeInTheDocument()
+    expect(screen.getByText('docs/userguide/summary.md')).toBeInTheDocument()
   })
 })

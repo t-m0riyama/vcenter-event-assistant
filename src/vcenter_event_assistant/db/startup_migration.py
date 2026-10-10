@@ -249,11 +249,11 @@ async def run_startup_migration(engine: AsyncEngine, *, settings: Settings) -> N
         logger.warning("DB_MIGRATION_CANCELLED")
         raise
     except (DbMigrationError, LegacySchemaStampError) as exc:
-        logger.error("DB_MIGRATION_FAILED reason=%s; see docs/development.md", exc)
+        logger.error("DB_MIGRATION_FAILED reason=%s; see docs/development/development.md", exc)
         raise
     except Exception as exc:
         # Driver/SQL exceptions may contain credentials, URLs or stored data.
         logger.error("DB_MIGRATION_FAILED error_type=%s", type(exc).__name__)
         raise DbMigrationError(
-            f"Database migration failed ({type(exc).__name__}); see docs/development.md"
+            f"Database migration failed ({type(exc).__name__}); see docs/development/development.md"
         ) from None
