@@ -165,12 +165,6 @@
   color: var(--color-text-secondary);
 }
 
-.digests-pager {
-  display: flex;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-3);
-}
-
 .digests-detail-meta {
   margin: 0 0 var(--spacing-2);
   font-size: var(--font-size-footnote);

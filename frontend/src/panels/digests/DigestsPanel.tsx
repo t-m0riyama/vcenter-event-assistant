@@ -12,6 +12,7 @@ import { downloadTextFile } from '../../utils/downloadTextFile'
 import { buildDigestDownloadFilename } from './buildDigestDownloadFilename'
 import { digestStatusLabel, resolveDigestEffectiveStatus } from './digestStatusDisplay'
 import { getDigestBodyMarkdownForDisplay } from './getDigestBodyMarkdownForDisplay'
+import { Pagination } from '../../components/Pagination'
 
 /** 1 ページあたりのダイジェスト件数（`GET /api/digests` の `limit`） */
 export const DIGEST_LIST_PAGE_SIZE = 50
@@ -239,28 +240,22 @@ export function DigestsPanel({ onError }: { onError: (e: string | null) => void 
                 </ul>
               </nav>
             </div>
-            <div className="digests-pager">
-              <button
-                type="button"
-                disabled={!canPrev}
-                onClick={() => {
-                  setSelectedId(null)
-                  setOffset((o) => Math.max(0, o - DIGEST_LIST_PAGE_SIZE))
-                }}
-              >
-                前へ
-              </button>
-              <button
-                type="button"
-                disabled={!canNext}
-                onClick={() => {
-                  setSelectedId(null)
-                  setOffset((o) => o + DIGEST_LIST_PAGE_SIZE)
-                }}
-              >
-                次へ
-              </button>
-            </div>
+            <Pagination
+              position="bottom"
+              total={total}
+              start={offset + 1}
+              end={Math.min(offset + DIGEST_LIST_PAGE_SIZE, total)}
+              canPrev={canPrev}
+              canNext={canNext}
+              onPrev={() => {
+                setSelectedId(null)
+                setOffset((o) => Math.max(0, o - DIGEST_LIST_PAGE_SIZE))
+              }}
+              onNext={() => {
+                setSelectedId(null)
+                setOffset((o) => o + DIGEST_LIST_PAGE_SIZE)
+              }}
+            />
           </div>
 
           <div className="digests-detail digests-detail--sticky">
