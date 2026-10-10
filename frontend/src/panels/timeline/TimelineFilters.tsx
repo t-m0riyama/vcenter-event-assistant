@@ -93,16 +93,6 @@ export function TimelineFilters({
 }: TimelineFiltersProps) {
   return (
     <>
-      <section className="timeline-panel__section">
-        <ZonedRangeDetails
-          displayLabel={rangeDisplayLabel}
-          hint="表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。開始・終了の両方を指定してください。日付のみの場合は開始は 0:00・終了は 23:59 です。クイックで直近の範囲を入れられます。"
-          value={rangeParts}
-          onChange={setRangeParts}
-          onQuickPreset={applyRollingPreset}
-        />
-      </section>
-
       <section className="timeline-panel__section" aria-label="vCenter">
         <label>
           対象 vCenter
@@ -265,6 +255,17 @@ export function TimelineFilters({
         >
           {sortOrder === 'asc' ? '表示順: 昇順' : '表示順: 降順'}
         </button>
+      </section>
+
+      {/* 期間は「タイムラインを生成」の直前に置く（生成の直前に確かめる値なので）。 */}
+      <section className="timeline-panel__section">
+        <ZonedRangeDetails
+          displayLabel={rangeDisplayLabel}
+          hint="表示期間は「設定 → 一般」のタイムゾーン上の壁時計です。開始・終了の両方を指定してください。日付のみの場合は開始は 0:00・終了は 23:59 です。クイックで直近の範囲を入れられます。"
+          value={rangeParts}
+          onChange={setRangeParts}
+          onQuickPreset={applyRollingPreset}
+        />
       </section>
     </>
   )
