@@ -84,7 +84,11 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
   const [newThreshold, setNewThreshold] = useState(60)
   const [newMetricKey, setNewMetricKey] = useState<string>(DEFAULT_ALERT_METRIC_KEY)
-  const [drafts, setDrafts] = useState<Record<number, EditDraft>>({})
+  /**
+   * 行ごとの編集中の値。利用者が変えた項目だけを持つ（インポートなどで一覧を読み直しても、
+   * 変えていない項目は読み直した値を出し、保存でも送らない）。
+   */
+  const [drafts, setDrafts] = useState<Record<number, Partial<EditDraft>>>({})
   const [metricKeyOptions, setMetricKeyOptions] = useState<string[]>([...KNOWN_METRIC_KEYS])
 
   useEffect(() => {
@@ -160,13 +164,11 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   })
 
   const updateDraft = (ruleId: number, patch: Partial<EditDraft>) => {
-    setDrafts((prev) => {
-      const currentRule = rules.find((rule) => rule.id === ruleId)
-      if (!currentRule) return prev
-      const base = prev[ruleId] ?? makeDraftFromRule(currentRule)
-      return { ...prev, [ruleId]: { ...base, ...patch } }
-    })
+    setDrafts((prev) => ({ ...prev, [ruleId]: { ...prev[ruleId], ...patch } }))
   }
+
+  /** 画面に出す値（今のルールの値に、編集した項目だけを重ねる）。 */
+  const draftFor = (rule: AlertRule): EditDraft => ({ ...makeDraftFromRule(rule), ...drafts[rule.id] })
 
   const discardDraft = (ruleId: number) => {
     setDrafts((prev) => {
@@ -186,7 +188,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   }
 
   const handleSaveEdit = async (rule: AlertRule) => {
-    const draft = drafts[rule.id] ?? makeDraftFromRule(rule)
+    const edits = drafts[rule.id] ?? {}
+    const draft = draftFor(rule)
     const nextName = draft.name.trim()
     if (!nextName) {
       onError('ルール名は必須です。')
@@ -197,17 +200,29 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       return
     }
 
-    const nextConfig: AlertRule['config'] = { ...rule.config, threshold: draft.threshold }
-    if (rule.rule_type === 'metric_threshold') nextConfig.metric_key = draft.metric_key.trim()
-    if (rule.rule_type === 'event_score') nextConfig.cooldown_minutes = draft.cooldown_minutes
+    // 変えた項目だけを送る（変えていない項目まで送ると、編集中に読み直した値を古い値で戻してしまう）。
+    const body: Record<string, unknown> = {}
+    if (edits.name !== undefined) body.name = nextName
+    if (edits.alert_level !== undefined) body.alert_level = edits.alert_level
+    if (edits.is_enabled !== undefined) body.is_enabled = edits.is_enabled
+    const nextConfig: AlertRule['config'] = { ...rule.config }
+    let configEdited = false
+    if (edits.threshold !== undefined) {
+      nextConfig.threshold = edits.threshold
+      configEdited = true
+    }
+    if (rule.rule_type === 'metric_threshold' && edits.metric_key !== undefined) {
+      nextConfig.metric_key = edits.metric_key.trim()
+      configEdited = true
+    }
+    if (rule.rule_type === 'event_score' && edits.cooldown_minutes !== undefined) {
+      nextConfig.cooldown_minutes = edits.cooldown_minutes
+      configEdited = true
+    }
+    if (configEdited) body.config = nextConfig
 
     try {
-      await apiPatch(`/api/alerts/rules/${rule.id}`, {
-        name: nextName,
-        alert_level: draft.alert_level,
-        is_enabled: draft.is_enabled,
-        config: nextConfig,
-      })
+      await apiPatch(`/api/alerts/rules/${rule.id}`, body)
       discardDraft(rule.id)
       fetchRules()
     } catch (e) {
@@ -369,7 +384,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       ) : (
         <ul className="settings-list alert-rules-list">
           {rules.map((r) => {
-            const draft = drafts[r.id] ?? makeDraftFromRule(r)
+            const draft = draftFor(r)
             const changed = isDraftChanged(r, draft)
             const level = r.alert_level as AlertLevel
             const typeLabel = r.rule_type === 'event_score' ? 'イベントスコア' : 'メトリクス閾値'
