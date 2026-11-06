@@ -8,8 +8,20 @@ from datetime import datetime, timezone
 import pytest
 
 from vcenter_event_assistant.api.schemas import ChatAttachment, ChatMessage
-from vcenter_event_assistant.services.chat.chat_event_time_buckets import EventTimeBucketsPayload
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelineColumn, IncidentTimelinePayload
+from vcenter_event_assistant.api.schemas.dashboard import HighCpuHostRow, HighMemHostRow
+from vcenter_event_assistant.services.chat.chat_context_timeline_entries import (
+    build_chat_incident_timeline_entries,
+)
+from vcenter_event_assistant.services.chat.chat_event_time_buckets import (
+    EventTimeBucketsPayload,
+)
+from vcenter_event_assistant.services.chat.chat_incident_timeline import (
+    IncidentTimelineColumn,
+    IncidentTimelineEntry,
+    IncidentTimelinePayload,
+    build_chat_incident_timeline,
+)
+from vcenter_event_assistant.services.chat.chat_llm import build_chat_preview
 from vcenter_event_assistant.services.chat.chat_attachments import (
     ATTACHMENT_TRUNCATION_SUFFIX,
     IMAGE_TOKENS_PER_ATTACHMENT,
@@ -26,8 +38,16 @@ from vcenter_event_assistant.services.chat.chat_llm_payload import (
     prepare_chat_payload,
     web_search_tool_description,
 )
-from vcenter_event_assistant.services.chat.chat_period_metrics import PeriodMetricsPayload
-from vcenter_event_assistant.services.digest.digest_context import DigestContext, DigestNotableEventGroup
+from vcenter_event_assistant.services.chat.chat_period_metrics import (
+    PeriodMetricBucketPoint,
+    PeriodMetricHostSeries,
+    PeriodMetricsPayload,
+)
+from vcenter_event_assistant.services.digest.digest_context import (
+    DigestContext,
+    DigestNotableEventGroup,
+)
+from vcenter_event_assistant.services.llm.llm_anonymization import deanonymize_text
 from vcenter_event_assistant.settings import Settings
 
 
@@ -228,6 +248,171 @@ def test_build_chat_llm_context_anonymizes_entity_names_when_enabled(
         extra_vcenter_strings=None,
     ).block
     assert secret not in block
+
+
+@pytest.mark.parametrize("with_period_metrics", [True, False])
+@pytest.mark.parametrize(
+    ("host", "short_host"),
+    [
+        ("secret-esxi.example.test", "secret-esxi"),
+        ("2001:db8::123", "2001:db8::123"),
+    ],
+)
+def test_timeline_metric_hosts_are_anonymized_in_chat_payload_and_preview(
+    with_period_metrics: bool, host: str, short_host: str
+) -> None:
+    t0 = _minimal_ctx().from_utc
+    host_row = dict(
+        vcenter_id="vc",
+        vcenter_label="VC",
+        entity_name=host,
+        entity_moid="host-1",
+        value=91.0,
+        sampled_at=t0,
+    )
+    context = _minimal_ctx(
+        high_cpu_hosts=[HighCpuHostRow(**host_row)],
+        high_mem_hosts=[HighMemHostRow(**host_row)],
+    )
+    metrics = None
+    if with_period_metrics:
+        metrics = PeriodMetricsPayload(
+            bucket_minutes=15,
+            from_utc=t0,
+            to_utc=t0,
+            cpu=[
+                PeriodMetricHostSeries(
+                    entity_name=host,
+                    entity_moid="host-1",
+                    metric_key="host.cpu.usage_pct",
+                    series=[
+                        PeriodMetricBucketPoint(bucket_start_utc=t0, avg=91.0, n=1)
+                    ],
+                ),
+            ],
+        )
+    entries = build_chat_incident_timeline_entries(
+        context=context,
+        timeline_event_time_buckets=None,
+        timeline_period_metrics=metrics,
+        include_period_metrics_cpu=True,
+        include_period_metrics_memory=True,
+        include_period_metrics_disk_io=False,
+        include_period_metrics_network_io=False,
+        metric_threshold_cpu_pct=None,
+        metric_threshold_memory_pct=None,
+        metric_threshold_disk_pct=None,
+        metric_threshold_network_pct=None,
+    )
+    timeline = build_chat_incident_timeline(entries, max_visible_items_per_timestamp=1)
+    public_timeline = timeline.model_dump(mode="json")
+    original_titles = (
+        [f"{short_host} host.cpu.usage_pct: avg=91.00"]
+        if with_period_metrics
+        else [f"host.cpu.usage_pct: {host}=91.00", f"host.mem.usage_pct: {host}=91.00"]
+    )
+    for item, original_title in zip(
+        public_timeline["columns"][0]["items"], original_titles, strict=True
+    ):
+        assert set(item) == {"timestamp_utc", "kind", "title", "trigger_id"}
+        assert item["title"] == original_title
+
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=True
+    )
+    messages = [ChatMessage(role="user", content=f"{host} / {short_host}")]
+    payload, trimmed, _, reverse_map = prepare_chat_payload(
+        context,
+        messages,
+        metrics,
+        None,
+        timeline,
+        None,
+        settings=settings,
+    )
+    (token,) = (token for token, original in reverse_map.items() if original == host)
+    expected_titles = [
+        title.replace(host if metrics is None else short_host, token)
+        for title in original_titles
+    ]
+    column = payload["incident_timeline"]["columns"][0]
+    assert [item["title"] for item in column["items"]] == expected_titles
+    assert [item["title"] for item in column["visible_items"]] == expected_titles[:1]
+    if with_period_metrics:
+        assert payload["period_metrics"]["cpu"][0]["entity_name"] == token
+    assert trimmed[0].content == f"{token} / {token}"
+
+    block, preview_messages, _ = build_chat_preview(
+        context=context,
+        messages=messages,
+        period_metrics=metrics,
+        incident_timeline=timeline,
+        settings=settings,
+    )
+    assert short_host not in block
+    assert all(title in block for title in expected_titles)
+    assert preview_messages == trimmed
+
+    settings = settings.model_copy(update={"llm_anonymization_enabled": False})
+    payload, trimmed, _, reverse_map = prepare_chat_payload(
+        context,
+        messages,
+        metrics,
+        None,
+        timeline,
+        None,
+        settings=settings,
+    )
+    assert payload["incident_timeline"] == public_timeline
+    assert timeline.model_dump(mode="json") == public_timeline
+    assert trimmed == messages
+    assert reverse_map == {}
+
+
+@pytest.mark.parametrize("event_host", ["esxi01", "esxi01.prod.example"])
+def test_timeline_fqdn_does_not_claim_an_ambiguous_short_host(event_host: str) -> None:
+    short_host = "esxi01"
+    other_host = "esxi01.other.example"
+    t0 = _minimal_ctx().from_utc
+    context = _minimal_ctx(
+        top_notable_event_groups=[
+            DigestNotableEventGroup(
+                event_type="vim.event.Event",
+                occurrence_count=1,
+                notable_score=50,
+                occurred_at_first=t0,
+                occurred_at_last=t0,
+                entity_name=event_host,
+                message=f"event on {short_host}",
+            ),
+        ],
+    )
+    timeline = build_chat_incident_timeline(
+        [
+            IncidentTimelineEntry.for_host_metric(
+                timestamp_utc=t0,
+                host=other_host,
+                host_label=short_host,
+                suffix=" host.cpu.usage_pct: avg=91.00",
+            ),
+        ],
+    )
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:", llm_anonymization_enabled=True)
+    messages = [ChatMessage(role="user", content=f"{short_host} / {other_host}")]
+    payload, trimmed, _, reverse_map = prepare_chat_payload(
+        context, messages, None, None, timeline, None, settings=settings
+    )
+
+    event = payload["digest_context"]["top_notable_event_groups"][0]
+    short_token, _ = trimmed[0].content.split(" / ")
+    title = payload["incident_timeline"]["columns"][0]["items"][0]["title"]
+    other_token = title.removesuffix(" host.cpu.usage_pct: avg=91.00")
+    assert short_token != other_token
+    assert reverse_map[event["entity_name"]] == event_host
+    assert reverse_map[short_token] == short_host
+    assert event["message"] == f"event on {short_token}"
+    assert trimmed[0].content == f"{short_token} / {other_token}"
+    assert deanonymize_text(trimmed[0].content, reverse_map) == messages[0].content
 
 
 # --- 添付ファイル ---

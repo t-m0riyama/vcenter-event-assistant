@@ -387,8 +387,6 @@ def prepare_chat_payload(
         payload["period_metrics"] = period_metrics.model_dump(mode="json")
     if event_time_buckets is not None:
         payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
-    if incident_timeline is not None:
-        payload["incident_timeline"] = incident_timeline.model_dump(mode="json")
 
     trimmed_msgs = messages[-MAX_CHAT_MESSAGES:]
     attachment_list = list(attachments or [])
@@ -400,11 +398,14 @@ def prepare_chat_payload(
             [m.content for m in trimmed_msgs],
             extra_vcenter_strings=extra_vcenter_strings,
             attachment_texts=attachment_bodies,
+            incident_timeline=incident_timeline,
         )
         payload = pl
         trimmed_msgs = [
             ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
         ]
+    elif incident_timeline is not None:
+        payload["incident_timeline"] = incident_timeline.model_dump(mode="json")
 
     attachment_block = render_attachment_text_block(attachment_list, attachment_bodies)
     return payload, trimmed_msgs, attachment_block, reverse_map
