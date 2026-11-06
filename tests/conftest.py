@@ -182,6 +182,12 @@ async def login_cookie(role: str, *, username: str | None = None) -> tuple[str, 
 
 
 @pytest.fixture
+def make_login_cookie():
+    """生の ASGI リクエスト向けに、ロールを指定してセッション Cookie を作る。"""
+    return login_cookie
+
+
+@pytest.fixture
 def open_client():
     """``async with open_client(role="viewer") as c:`` で任意ロールのクライアントを開く。
 

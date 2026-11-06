@@ -3,7 +3,6 @@
 import json
 
 import pytest
-from conftest import login_cookie
 from starlette.datastructures import Headers
 from starlette.types import Message
 
@@ -117,10 +116,10 @@ async def test_login_body_at_limit_reaches_parser(monkeypatch) -> None:
 
 @pytest.mark.parametrize("path", ["/api/chat", "/api/chat/preview"])
 @pytest.mark.parametrize(("role", "status"), [(None, 401), ("viewer", 403)])
-async def test_chat_denies_before_receiving_body(path, role, status) -> None:
+async def test_chat_denies_before_receiving_body(path, role, status, make_login_cookie) -> None:
     headers = []
     if role is not None:
-        name, token = await login_cookie(role)
+        name, token = await make_login_cookie(role)
         headers.append((b"cookie", f"{name}={token}".encode()))
     received, sent = await _post(path, [], headers=headers)
     assert received == 0
@@ -129,11 +128,11 @@ async def test_chat_denies_before_receiving_body(path, role, status) -> None:
 
 @pytest.mark.parametrize("auth_enabled", [False, True])
 async def test_chat_reads_body_for_operator_or_auth_disabled(
-    monkeypatch, auth_enabled
+    monkeypatch, auth_enabled, make_login_cookie
 ) -> None:
     headers = []
     if auth_enabled:
-        name, token = await login_cookie("operator")
+        name, token = await make_login_cookie("operator")
         headers.append((b"cookie", f"{name}={token}".encode()))
     else:
         monkeypatch.setenv("VEA_AUTH_ENABLED", "false")
@@ -163,7 +162,7 @@ async def test_rejection_that_does_not_read_body_keeps_its_status() -> None:
 @pytest.mark.parametrize("authenticated", [False, True])
 @pytest.mark.parametrize("root_path", ["", "/vea"])
 async def test_multipart_overflow_closes_partial_file(
-    monkeypatch, authenticated, root_path
+    monkeypatch, authenticated, root_path, make_login_cookie
 ) -> None:
     from starlette import formparsers
 
@@ -179,7 +178,7 @@ async def test_multipart_overflow_closes_partial_file(
     monkeypatch.setattr(request_body_limit, "UPLOAD_BODY_LIMIT", 256)
     headers = []
     if authenticated:
-        name, token = await login_cookie("admin")
+        name, token = await make_login_cookie("admin")
         headers.append((b"cookie", f"{name}={token}".encode()))
     received, sent = await _post(
         f"{root_path}/api/plugins/installed/upload",
