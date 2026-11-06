@@ -67,10 +67,11 @@ def build_timeline_metric_entries(
             if threshold is not None and point.avg < threshold:
                 continue
             out.append(
-                IncidentTimelineEntry(
+                IncidentTimelineEntry.for_host_metric(
                     timestamp_utc=point.bucket_start_utc,
-                    kind="metric",
-                    title=f"{host_short} {series.metric_key}: avg={point.avg:.2f}",
+                    host=series.entity_name,
+                    host_label=host_short,
+                    suffix=f" {series.metric_key}: avg={point.avg:.2f}",
                 )
             )
     return out

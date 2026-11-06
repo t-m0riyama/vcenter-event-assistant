@@ -6,9 +6,12 @@ import copy
 import re
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from vcenter_event_assistant.services.vcenter_labels import first_hostname_label_if_fqdn
+
+if TYPE_CHECKING:
+    from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 
 # entity_name / user 系で先に登録した原文を message 内で置換する際に使う
 _COLLECT_KEYS: tuple[tuple[str, str], ...] = (
@@ -118,20 +121,21 @@ def _apply_entity_fqdn_short_aliases(
     a: LlmAnonymizer, pairs: list[tuple[str, str]]
 ) -> None:
     """
-    ``entity_name`` が FQDN のとき、第1ラベル（短縮ホスト名）を FQDN と同一トークンに紐づける。
+    FQDN の候補が一つなら短縮名をその別名にし、候補が複数なら専用トークンを発行する。
 
-    ``pairs`` に対する ``token_for`` 完了後に呼ぶ。別トークンを発行しない。
+    ``pairs`` に対する ``token_for`` 完了後に呼ぶ。登録済みの短縮名はそのトークンを保持する。
     """
-    seen_entity: set[str] = set()
-    for cat, val in pairs:
-        if cat != "entity":
-            continue
-        if val in seen_entity:
-            continue
-        seen_entity.add(val)
-        short = first_hostname_label_if_fqdn(val)
-        if short and short != val:
-            a.share_token_with("entity", short, val)
+    entity_names = dict.fromkeys(value for category, value in pairs if category == "entity")
+    candidates_by_short: dict[str, list[str]] = defaultdict(list)
+    for name in entity_names:
+        short = first_hostname_label_if_fqdn(name)
+        if short and short not in entity_names:
+            candidates_by_short[short].append(name)
+    for short, candidates in candidates_by_short.items():
+        if len(candidates) == 1:
+            a.share_token_with("entity", short, candidates[0])
+        else:
+            a.token_for("entity", short)
 
 
 def _collect_entity_user_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
@@ -149,28 +153,42 @@ def _collect_entity_user_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
             _collect_entity_user_pairs(x, acc)
 
 
-def _replace_ipv4_in_string(s: str, a: LlmAnonymizer) -> str:
-    """同一 IP は同一トークン。"""
-
-    def _sub(m: re.Match[str]) -> str:
-        return a.token_for("ip", m.group(0))
-
-    return _IPV4_RE.sub(_sub, s)
-
-
 def anonymize_plain_text(text: str, a: LlmAnonymizer) -> str:
-    """
-    自由文に対し IPv4 を ip トークン化し、続いて既に発行済みの原文（全カテゴリ）を長い順に置換する。
-    """
+    """IPv4 と登録済みの原文を置換する。生成済みトークンは再走査しない。"""
     if not text:
         return text
-    s = _replace_ipv4_in_string(text, a)
-    for original, tok in a.replacements_longest_first():
+    # 原文の文字位置を確保し、IPv4、長い原文の順に重複しない置換範囲を集める。
+    claimed = bytearray(len(text))
+    replacements: list[tuple[int, int, str]] = []
+    for match in _IPV4_RE.finditer(text):
+        start, end = match.span()
+        claimed[start:end] = b"\x01" * (end - start)
+        replacements.append((start, end, a.token_for("ip", match.group(0))))
+
+    for original, token in a.replacements_longest_first():
         if len(original) < 2:
             continue
-        if original in s:
-            s = s.replace(original, tok)
-    return s
+        search_from = 0
+        while (start := text.find(original, search_from)) != -1:
+            end = start + len(original)
+            overlap = claimed.find(b"\x01", start, end)
+            if overlap != -1:
+                # 同じ長さの候補は、重複位置から続く確保済み範囲の途中でも一致できない。
+                search_from = claimed.find(b"\x00", overlap)
+                if search_from == -1:
+                    break
+                continue
+            claimed[start:end] = b"\x01" * len(original)
+            replacements.append((start, end, token))
+            search_from = end
+
+    parts: list[str] = []
+    previous_end = 0
+    for start, end, token in sorted(replacements):
+        parts.extend((text[previous_end:start], token))
+        previous_end = end
+    parts.append(text[previous_end:])
+    return "".join(parts)
 
 
 def _anonymize_node(obj: Any, a: LlmAnonymizer) -> Any:
@@ -243,6 +261,7 @@ def anonymize_chat_for_llm(
     *,
     extra_vcenter_strings: Sequence[str] | None = None,
     attachment_texts: Sequence[str] | None = None,
+    incident_timeline: IncidentTimelinePayload | None = None,
 ) -> tuple[dict[str, Any], list[str], list[str], dict[str, str]]:
     """
     チャット用: マージ済みペイロード・会話本文・添付本文を同一 ``LlmAnonymizer`` で匿名化する。
@@ -250,18 +269,35 @@ def anonymize_chat_for_llm(
     ``extra_vcenter_strings`` により登録済み vCenter 名を会話本文からもトークン化する。
     ``attachment_texts`` は添付ファイルの本文。会話と同じトークン体系に載せるため、
     別インスタンスを作らずここでまとめて処理する（画像は匿名化できない）。
+    ``incident_timeline`` のメトリクスタイトルは、送信用の JSON でホスト名の部分だけを置換する。
 
     Returns:
         (payload, message_contents, attachment_texts, reverse_map)
     """
     pairs: list[tuple[str, str]] = []
     _collect_entity_user_pairs(payload, pairs)
+    timeline_json = None
+    metric_titles: list[tuple[dict[str, Any], str, slice]] = []
+    if incident_timeline is not None:
+        timeline_json = incident_timeline.model_dump(mode="json")
+        for column, column_json in zip(incident_timeline.columns, timeline_json["columns"], strict=True):
+            for key, items in (("items", column.items), ("visible_items", column.visible_items)):
+                for item, item_json in zip(items, column_json[key], strict=True):
+                    if item.metric_host is not None:
+                        host, span = item.metric_host
+                        pairs.append(("entity", host))
+                        metric_titles.append((item_json, host, span))
     _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
     a = LlmAnonymizer()
     for cat, val in pairs:
         a.token_for(cat, val)
     _apply_entity_fqdn_short_aliases(a, pairs)
     out_payload = _anonymize_node(payload, a)
+    if timeline_json is not None:
+        for item_json, host, span in metric_titles:
+            title = item_json["title"]
+            item_json["title"] = title[:span.start] + a.token_for("entity", host) + title[span.stop:]
+        out_payload["incident_timeline"] = timeline_json
     out_contents = [anonymize_plain_text(c, a) for c in message_contents]
     out_attachments = [anonymize_plain_text(t, a) for t in (attachment_texts or [])]
     return out_payload, out_contents, out_attachments, a.reverse_map

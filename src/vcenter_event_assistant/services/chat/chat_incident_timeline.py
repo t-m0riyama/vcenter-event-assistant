@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 IncidentTimelineKind = Literal["alert", "event", "metric"]
 
@@ -27,12 +27,7 @@ def _as_utc(dt: datetime) -> datetime:
 def _normalize_entry_timestamp(entry: IncidentTimelineEntry) -> IncidentTimelineEntry:
     """entry.timestamp_utc を UTC 正規化したコピーを返す。"""
     normalized_ts = _as_utc(entry.timestamp_utc)
-    return IncidentTimelineEntry(
-        timestamp_utc=normalized_ts,
-        kind=entry.kind,
-        title=entry.title,
-        trigger_id=entry.trigger_id,
-    )
+    return entry.model_copy(update={"timestamp_utc": normalized_ts})
 
 
 class IncidentTimelineEntry(BaseModel):
@@ -42,6 +37,21 @@ class IncidentTimelineEntry(BaseModel):
     kind: IncidentTimelineKind
     title: str = Field(min_length=1)
     trigger_id: str | None = None
+    _metric_host: tuple[str, slice] | None = PrivateAttr(default=None)
+
+    @classmethod
+    def for_host_metric(
+        cls, *, timestamp_utc: datetime, host: str, host_label: str, prefix: str = "", suffix: str
+    ) -> IncidentTimelineEntry:
+        entry = cls(timestamp_utc=timestamp_utc, kind="metric", title=f"{prefix}{host_label}{suffix}")
+        if host:
+            entry._metric_host = (host, slice(len(prefix), len(prefix) + len(host_label)))
+        return entry
+
+    @property
+    def metric_host(self) -> tuple[str, slice] | None:
+        """メトリクスのホスト名の原値と、タイトル内の表示位置。"""
+        return self._metric_host
 
 
 class IncidentTimelineColumn(BaseModel):

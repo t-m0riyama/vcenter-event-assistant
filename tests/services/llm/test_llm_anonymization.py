@@ -94,6 +94,41 @@ def test_anonymize_plain_text_uses_shared_anonymizer() -> None:
     assert deanonymize_text(s, a.reverse_map) == "HOST-A and HOST-A"
 
 
+def test_anonymize_plain_text_does_not_replace_generated_tokens() -> None:
+    a = LlmAnonymizer()
+    host = "esxi-prod.example"
+    host_token = a.token_for("entity", host)
+    other_token = a.token_for("entity", "LM.lab.example")
+    a.share_token_with("entity", "LM", "LM.lab.example")
+    ip = "192.0.2.1"
+    ip_token = a.token_for("ip", ip)
+
+    text = anonymize_plain_text(f"{host} and LM at {ip}", a)
+
+    assert text == f"{host_token} and {other_token} at {ip_token}"
+    assert deanonymize_text(text, a.reverse_map) == f"{host} and LM.lab.example at {ip}"
+
+
+def test_anonymize_plain_text_prioritizes_longer_overlapping_name() -> None:
+    a = LlmAnonymizer()
+    host = "esxi01.prod.example"
+    host_token = a.token_for("entity", host)
+    other_token = a.token_for("entity", "backup-esxi01.lab.example")
+    a.share_token_with("entity", "backup-esxi01", "backup-esxi01.lab.example")
+
+    text = anonymize_plain_text(f"backup-{host} and backup-esxi01", a)
+
+    assert text == f"backup-{host_token} and {other_token}"
+
+
+def test_anonymize_plain_text_finds_match_after_rejected_overlap() -> None:
+    a = LlmAnonymizer()
+    first = a.token_for("entity", "xyzab")
+    second = a.token_for("entity", "aba")
+
+    assert anonymize_plain_text("xyzababa", a) == first + second
+
+
 def test_anonymize_json_like_replaces_vcenter_label() -> None:
     raw = {
         "high_cpu_hosts": [

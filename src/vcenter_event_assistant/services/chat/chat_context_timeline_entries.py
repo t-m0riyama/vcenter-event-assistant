@@ -190,18 +190,22 @@ def build_chat_incident_timeline_entries(
     else:
         for row in context.high_cpu_hosts:
             timeline_entries.append(
-                IncidentTimelineEntry(
+                IncidentTimelineEntry.for_host_metric(
                     timestamp_utc=row.sampled_at,
-                    kind="metric",
-                    title=f"host.cpu.usage_pct: {row.entity_name}={row.value:.2f}",
+                    host=row.entity_name,
+                    host_label=row.entity_name,
+                    prefix="host.cpu.usage_pct: ",
+                    suffix=f"={row.value:.2f}",
                 )
             )
         for row in context.high_mem_hosts:
             timeline_entries.append(
-                IncidentTimelineEntry(
+                IncidentTimelineEntry.for_host_metric(
                     timestamp_utc=row.sampled_at,
-                    kind="metric",
-                    title=f"host.mem.usage_pct: {row.entity_name}={row.value:.2f}",
+                    host=row.entity_name,
+                    host_label=row.entity_name,
+                    prefix="host.mem.usage_pct: ",
+                    suffix=f"={row.value:.2f}",
                 )
             )
     return timeline_entries
