@@ -14,6 +14,7 @@ import json
 from collections.abc import Iterable
 from urllib.parse import urlsplit
 
+from starlette._utils import get_route_path
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -28,7 +29,7 @@ class CsrfMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["method"] in UNSAFE_METHODS:
-            path: str = scope["path"]
+            path = get_route_path(scope)
             if path == "/api" or path.startswith("/api/"):
                 reason = self._violation(scope)
                 if reason is not None:

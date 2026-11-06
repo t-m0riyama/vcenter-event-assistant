@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import timedelta
 
 import pytest
 from argon2 import PasswordHasher
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, update
+from starlette.responses import Response
+from starlette.types import Receive, Scope, Send
 
+from vcenter_event_assistant.auth.csrf import CsrfMiddleware
 from vcenter_event_assistant.auth.passwords import verify_password
 from vcenter_event_assistant.auth.service import GENERIC_LOGIN_ERROR, session_policy
 from vcenter_event_assistant.auth.sessions import create_session
@@ -27,6 +31,11 @@ PASSWORD = "correct horse battery"
 XHR = {"X-Requested-With": "XMLHttpRequest"}
 
 
+async def _unread_body() -> AsyncIterator[bytes]:
+    pytest.fail("CSRF rejection must not read the request body")
+    yield b"{}"
+
+
 async def _make_user(username: str = "alice", role: str = "operator") -> None:
     async with session_scope() as db:
         await create_local_user(
@@ -34,9 +43,13 @@ async def _make_user(username: str = "alice", role: str = "operator") -> None:
         )
 
 
-def _raw_client(**kwargs) -> AsyncClient:
+def _raw_client(*, root_path: str = "", **kwargs) -> AsyncClient:
     """ヘッダも Cookie も持たない素のクライアント。"""
-    return AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test", **kwargs)
+    return AsyncClient(
+        transport=ASGITransport(app=create_app(), root_path=root_path),
+        base_url="http://test",
+        **kwargs,
+    )
 
 
 async def _login(ac: AsyncClient, username: str = "alice", password: str = PASSWORD):
@@ -231,6 +244,63 @@ class TestCsrf:
             "/api/config", headers={"X-Requested-With": "", "Origin": "https://evil.example"}
         )
         assert resp.status_code == 200
+
+    @pytest.mark.parametrize(
+        ("root_path", "prefix"), [("", ""), ("/vea", "/vea"), ("/vea", "")]
+    )
+    async def test_login_without_header_is_rejected_before_body(
+        self, root_path: str, prefix: str
+    ) -> None:
+        async with _raw_client(root_path=root_path) as ac:
+            resp = await ac.post(
+                f"{prefix}/api/auth/login",
+                headers={"Content-Type": "application/json"},
+                content=_unread_body(),
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "csrf_missing_header"
+
+    async def test_subpath_mutation_rejects_foreign_origin_before_body(
+        self, make_login_cookie
+    ) -> None:
+        name, token = await make_login_cookie("operator")
+        async with _raw_client(root_path="/vea", cookies={name: token}) as ac:
+            resp = await ac.patch(
+                "/vea/api/events/999999",
+                headers={**XHR, "Origin": "https://evil.example", "Content-Type": "application/json"},
+                content=_unread_body(),
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "csrf_origin_mismatch"
+
+    @pytest.mark.parametrize("origin", ["http://test", "http://localhost:5173"])
+    async def test_subpath_allows_trusted_mutation_and_safe_method(
+        self, origin: str, make_login_cookie
+    ) -> None:
+        name, token = await make_login_cookie("operator")
+        async with _raw_client(root_path="/vea", cookies={name: token}) as ac:
+            mutation = await ac.patch(
+                "/vea/api/events/999999",
+                json={"user_comment": None},
+                headers={**XHR, "Origin": origin},
+            )
+            config = await ac.get("/vea/api/config", headers={"Origin": "https://evil.example"})
+        assert mutation.status_code == 404
+        assert mutation.json() == {"detail": "event not found"}
+        assert config.status_code == 200
+
+    @pytest.mark.parametrize(
+        ("root_path", "path"),
+        [("/vea", "/vea/apiary"), ("/api", "/api/public"), ("/vea", "/veax/api/mutate")],
+    )
+    async def test_subpath_does_not_check_non_api_prefix(self, root_path: str, path: str) -> None:
+        async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
+            await Response(status_code=204)(scope, receive, send)
+
+        transport = ASGITransport(app=CsrfMiddleware(downstream), root_path=root_path)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(path)
+        assert response.status_code == 204
 
 
 async def test_production_cookie_is_host_prefixed_and_secure(monkeypatch: pytest.MonkeyPatch) -> None:
