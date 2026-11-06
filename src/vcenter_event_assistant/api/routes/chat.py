@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vcenter_event_assistant.api.auth_deps import RequireOperator
+from vcenter_event_assistant.api.auth_deps import (
+    RequireOperator,
+    check_principal_role,
+    resolve_request_principal,
+)
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
     ChatAttachment,
@@ -15,6 +22,8 @@ from vcenter_event_assistant.api.schemas import (
     ChatRequest,
     ChatResponse,
 )
+from vcenter_event_assistant.auth.roles import Role
+from vcenter_event_assistant.db.session import get_session_factory
 from vcenter_event_assistant.services.chat.chat_context_payloads import (
     build_chat_context_payloads,
 )
@@ -32,7 +41,25 @@ from vcenter_event_assistant.services.vcenter_labels import (
 )
 from vcenter_event_assistant.settings import Settings
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+
+class _ChatRoute(APIRoute):
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def handle(request: Request) -> Response:
+            settings = get_app_settings()
+            if settings.auth_enabled:
+                # FastAPI は依存関係より先に JSON を読む。ここでは先に権限だけ確認する。
+                # 受信中に権限が変わり得るため、解析後の RequireOperator でも再確認する。
+                async with get_session_factory(settings=settings)() as db:
+                    principal = await resolve_request_principal(request, db, settings, touch=False)
+                    check_principal_role(principal, Role.OPERATOR)
+            return await handler(request)
+
+        return handle
+
+
+router = APIRouter(prefix="/chat", tags=["chat"], route_class=_ChatRoute)
 
 
 def _accepted_attachments(
