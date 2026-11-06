@@ -81,11 +81,17 @@ async def get_current_principal(
     db: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
 ) -> Principal:
+    background = request.headers.get(BACKGROUND_REQUEST_HEADER) == "1"
+    return await resolve_request_principal(request, db, settings, touch=not background)
+
+
+async def resolve_request_principal(
+    request: Request, db: AsyncSession, settings: Settings, *, touch: bool
+) -> Principal:
     if not settings.auth_enabled:
         return DISABLED_PRINCIPAL
     token = request.cookies.get(session_cookie_name(settings))
-    background = request.headers.get(BACKGROUND_REQUEST_HEADER) == "1"
-    resolved = await resolve_session(db, token, session_policy(settings), touch=not background)
+    resolved = await resolve_session(db, token, session_policy(settings), touch=touch)
     if resolved is None:
         # 期限切れ・世代不一致で削除した行を確定させる（例外で get_session がロールバックするため）
         await db.commit()
@@ -115,16 +121,20 @@ async def get_current_principal(
 
 def require_role(role: Role) -> Callable[..., Awaitable[Principal]]:
     async def dependency(principal: Principal = Depends(get_current_principal)) -> Principal:
-        if not role_at_least(principal.role, role):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="この操作を行う権限がありません。",
-            )
+        check_principal_role(principal, role)
         return principal
 
     setattr(dependency, MIN_ROLE_ATTR, role)
     dependency.__name__ = f"require_{role.value}"
     return dependency
+
+
+def check_principal_role(principal: Principal, role: Role) -> None:
+    if not role_at_least(principal.role, role):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作を行う権限がありません。",
+        )
 
 
 require_viewer = require_role(Role.VIEWER)

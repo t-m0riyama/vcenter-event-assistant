@@ -15,11 +15,16 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from vcenter_event_assistant.rate_limit import check_rate_limit
 
 from vcenter_event_assistant.api.auth_deps import get_current_principal
+from vcenter_event_assistant.api.request_body_limit import (
+    RequestBodyLimitMiddleware,
+    body_limit_http_exception_handler,
+)
 from vcenter_event_assistant.api.routes.auth import router as auth_router
 from vcenter_event_assistant.api.routes.auth_directories import router as auth_directories_router
 from vcenter_event_assistant.api.routes.auth_users import router as auth_users_router
@@ -166,6 +171,11 @@ def create_app() -> FastAPI:
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
+    )
+    app.add_exception_handler(StarletteHTTPException, body_limit_http_exception_handler)
+    # add_middleware は後から登録したものが外側になる。
+    app.add_middleware(
+        RequestBodyLimitMiddleware, chat_attachment_max_files=settings.chat_attachment_max_files
     )
 
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
