@@ -65,7 +65,7 @@ from vcenter_event_assistant.services.digest.legacy_settings_deprecation import 
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 from vcenter_event_assistant.process_hardening import harden_process, warn_if_parent_keeps_secrets
-from vcenter_event_assistant.security_startup import validate_startup_settings
+from vcenter_event_assistant.security_startup import validate_startup_settings, warn_invalid_vcenter_transports
 from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
     set_collector_registry,
@@ -140,6 +140,7 @@ async def lifespan(app: FastAPI):
     from vcenter_event_assistant.services.plugin_installs import cleanup_stale_upload_dirs
     cleanup_stale_upload_dirs()
     await init_db(settings=settings)
+    await warn_invalid_vcenter_transports(settings)
     await ensure_bootstrap_admin(settings)
     await ensure_secret_storage(settings=settings)
     registry = await build_initial_collector_registry(settings)

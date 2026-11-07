@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 from httpx import AsyncClient
+from vcenter_event_assistant_plugin_api import CollectionBatch
 from vcenter_event_assistant_plugin_api.testing import StubCollector, stub_manifest
 
+from vcenter_event_assistant.collectors.connection import VCENTER_HTTPS_REQUIRED
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.config import CollectorConfig
@@ -24,6 +26,7 @@ from vcenter_event_assistant.services.ingest_runner import (
     run_ingest_all,
 )
 from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings_binding import bind_settings
 
 
 def registry_with_collectors(count: int) -> CollectorRegistry:
@@ -42,6 +45,39 @@ def registry_with_collectors(count: int) -> CollectorRegistry:
             "enabled" if enabled else "disabled",
         )
     return CollectorRegistry(registrations)
+
+
+async def test_production_http_failure_does_not_stop_https_collection(monkeypatch) -> None:
+    settings = Settings(app_env="production", mock_mode=False)
+    bind_settings(settings)
+    registry = registry_with_collectors(1)
+    plugin_id = "test.collector0"
+    registration = registry.get(plugin_id)
+    assert registration is not None
+    connected = []
+
+    async def collect(context):
+        async with context.open_vcenter_connection():
+            connected.append(context.target.name)
+        return CollectionBatch()
+
+    monkeypatch.setattr(registration.plugin, "collect", collect)
+    monkeypatch.setattr(ingest_runner, "get_collector_registry", lambda: registry)
+    smart_connect = MagicMock()
+    monkeypatch.setattr("vcenter_event_assistant.collectors.connection.SmartConnect", smart_connect)
+    monkeypatch.setattr("vcenter_event_assistant.plugins.runtime.disconnect", MagicMock())
+    async with session_scope(settings=settings) as session:
+        session.add_all([
+            VCenter(name="legacy", host="legacy.example.com", protocol="http", port=80, username="u", password="p"),
+            VCenter(name="secure", host="secure.example.com", protocol="https", port=443, username="u", password="p"),
+        ])
+
+    results = await ingest_runner.run_registered_collector(settings, plugin_id)
+    assert sorted(result.status for result in results) == ["failed", "ok"]
+    assert next(result.error for result in results if result.status == "failed") == VCENTER_HTTPS_REQUIRED
+    assert connected == ["secure"]
+    smart_connect.assert_called_once()
+    assert smart_connect.call_args.kwargs["protocol"] == "https"
 
 
 @pytest.mark.parametrize("count", [0, 1, 3])

@@ -64,7 +64,8 @@ class ConnectionParams:
         return cls(
             host=str(raw["host"]),
             protocol=str(raw["protocol"]),
-            port=int(raw["port"]),
+            # 接続を開くときに元の値を検証できるよう、整数に変換しない。
+            port=raw["port"],
             username=str(raw["username"]),
             password=str(raw["password"]),
             verify_ssl=bool(raw["verify_ssl"]),

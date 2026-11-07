@@ -2,16 +2,92 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.collectors.connection import VCENTER_HTTPS_REQUIRED
+from vcenter_event_assistant.db.models import EventRecord, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
+
+
+async def test_production_warns_about_invalid_vcenter_transports_and_allows_migration(
+    client: AsyncClient, open_client, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from vcenter_event_assistant.main import create_app, lifespan
+
+    def body(name: str, *, enabled: bool) -> dict:
+        return {
+            "name": name, "host": "vc.example.com", "protocol": "http", "port": 80,
+            "username": "vcenter-user", "password": "do-not-log-vcenter-password",
+            "is_enabled": enabled,
+        }
+
+    created = await client.post("/api/vcenters", json=body("legacy", enabled=True))
+    assert created.status_code == 201, created.text
+    identifier = created.json()["id"]
+    disabled = await client.post("/api/vcenters", json=body("legacy-disabled", enabled=False))
+    assert disabled.status_code == 201, disabled.text
+    https_ids = {port: uuid.uuid4() for port in (-443, 443.5, 443)}
+    async with session_scope() as session:
+        session.add_all([
+            VCenter(id=identifier, **dict(body(f"https-{port}", enabled=True), protocol="https", port=port))
+            for port, identifier in https_ids.items()
+        ])
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("VEA_SECRET_KEY", "test-production-key")
+    monkeypatch.setenv("VEA_ALLOW_PLAINTEXT_PASSWORDS", "false")
+    monkeypatch.setenv("VCENTER_ALLOWED_HOST_SUFFIXES", "example.com")
+    monkeypatch.setenv("VEA_PLUGIN_MANAGEMENT_ENABLED", "true")
+    monkeypatch.setenv("SCHEDULER_ENABLED", "false")
+    get_settings.cache_clear()
+    app = create_app()
+    startup_logger = logging.getLogger("vcenter_event_assistant.security_startup")
+    monkeypatch.setattr(startup_logger, "handlers", [*startup_logger.handlers, caplog.handler])
+    smart_connect = MagicMock()
+    smart_connect.return_value.RetrieveContent.return_value.about = MagicMock(
+        fullName="VMware vCenter Server", version="8.0", apiVersion="8.0", instanceUuid="vc-uuid",
+    )
+    monkeypatch.setattr("vcenter_event_assistant.collectors.connection.SmartConnect", smart_connect)
+    monkeypatch.setattr("vcenter_event_assistant.api.routes.vcenters.disconnect", MagicMock())
+
+    async with open_client("admin", app=app, username="prod-admin") as prod:
+        async with lifespan(app):
+            assert f"vcenter_id={identifier} enabled=True" in caplog.text
+            assert f"vcenter_id={disabled.json()['id']} enabled=False" in caplog.text
+            for port in (-443, 443.5):
+                assert f"vCenter requires a valid port in production: vcenter_id={https_ids[port]} enabled=True" in caplog.text
+            assert str(https_ids[443]) not in caplog.text
+            assert "do-not-log-vcenter-password" not in caplog.text
+            with monkeypatch.context() as patch:
+                dns = MagicMock(side_effect=AssertionError("must reject HTTP before DNS"))
+                patch.setattr("vcenter_event_assistant.services.vcenter_host_validation.socket.getaddrinfo", dns)
+                test_response = await prod.get(f"/api/vcenters/{identifier}/test")
+                hosts_response = await prod.get(f"/api/plugins/vcenters/{identifier}/hosts")
+                assert test_response.status_code == 400, test_response.text
+                assert hosts_response.status_code == 422, hosts_response.text
+                assert test_response.json()["detail"] == hosts_response.json()["detail"] == VCENTER_HTTPS_REQUIRED
+                dns.assert_not_called()
+                smart_connect.assert_not_called()
+            assert (await prod.post("/api/vcenters", json=body("new-http", enabled=True))).status_code == 400
+            assert (await prod.patch(f"/api/vcenters/{identifier}", json={"protocol": "http"})).status_code == 400
+            repaired = await prod.patch(f"/api/vcenters/{https_ids[443.5]}", json={"port": 443})
+            assert repaired.status_code == 200 and repaired.json()["port"] == 443, repaired.text
+            assert (await prod.get("/api/vcenters")).status_code == 200
+            migrated = await prod.patch(
+                f"/api/vcenters/{identifier}", json={"protocol": "https", "port": 443, "verify_ssl": True}
+            )
+            assert migrated.status_code == 200, migrated.text
+            tested = await prod.get(f"/api/vcenters/{identifier}/test")
+            assert tested.status_code == 200 and tested.json()["ok"], tested.text
+            assert smart_connect.call_args.kwargs["protocol"] == "https"
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,21 @@ from urllib.parse import urlparse
 from pyVim.connect import Disconnect, SmartConnect
 
 from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
+from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
+
+
+VCENTER_HTTPS_REQUIRED = "APP_ENV=production では vCenter protocol は https のみ許可されます"
+
+
+class VCenterProtocolPolicyError(ValueError):
+    def __init__(self) -> None:
+        super().__init__(VCENTER_HTTPS_REQUIRED)
+
+
+def validate_vcenter_protocol(protocol: str, settings: Settings) -> None:
+    if settings.is_production and protocol != "https":
+        raise VCenterProtocolPolicyError()
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +81,11 @@ def connect_vcenter(
     """vCenter セッションを確立する。呼び出し元で ``Disconnect(si)`` すること。"""
     if protocol not in {"https", "http"}:
         raise ValueError("protocol must be 'https' or 'http'")
+    # pyVmomi は負のポートを平文 HTTP の指定として扱う。
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("vCenter port must be an integer between 1 and 65535")
     settings = require_settings()
+    validate_vcenter_protocol(protocol, settings)
     validate_vcenter_host(
         host,
         allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,

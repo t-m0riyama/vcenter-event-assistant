@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import textwrap
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from vcenter_event_assistant_plugin_api import CollectionContext
@@ -24,6 +26,7 @@ from vcenter_event_assistant.plugins.remote import (
     plugin_search_paths,
 )
 from vcenter_event_assistant.plugins.wire import ConnectionParams
+from vcenter_event_assistant.collectors.connection import VCENTER_HTTPS_REQUIRED
 from vcenter_event_assistant.settings import get_settings
 
 COLLECT_TIMEOUT = 30.0
@@ -399,7 +402,6 @@ async def test_log_responses_above_old_line_limit_and_over_new_limit(
 
 
 async def test_optional_setup_contract_executes_in_worker(plugin_dir):
-    from pathlib import Path
     from vcenter_event_assistant_plugin_api.testing import make_context
 
     path = next(Path(plugin_dir).glob("*/*/example_collector.py"))
@@ -425,5 +427,87 @@ def build_collector():
             make_context(), _params(), "test", timeout=30
         )
         assert result["checks"][0]["ok"] and result["samples"] == [{"sensor": "board"}]
+    finally:
+        await plugin.stop()
+
+
+async def test_production_worker_blocks_http_in_collect_and_setup(plugin_dir, monkeypatch):
+    from vcenter_event_assistant.db.models import VCenter
+    from vcenter_event_assistant.db.session import session_scope
+    from vcenter_event_assistant.plugins import remote
+    from vcenter_event_assistant.plugins.config import CollectorConfig
+    from vcenter_event_assistant.plugins.registry import CollectorRegistration
+    from vcenter_event_assistant.services.plugin_configuration import run_setup
+
+    parent = get_settings().model_copy(update={
+        "app_env": "production",
+        "plugin_worker_env_passthrough": "APP_ENV,app_env",
+    })
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("app_env", "development")
+    monkeypatch.setattr(remote, "get_settings", lambda: parent)
+    path = next(Path(plugin_dir).glob("*/*/example_collector.py"))
+    path.write_text(path.read_text() + """
+from dataclasses import replace
+from vcenter_event_assistant.collectors import connection
+from vcenter_event_assistant_plugin_api import SetupAction, SetupCheck, SetupResult
+_original_factory = build_collector
+def _stop_at_host_validation(*args, **kwargs):
+    raise AssertionError("reached host validation")
+connection.validate_vcenter_host = _stop_at_host_validation
+async def _setup(self, context, action):
+    async with context.open_vcenter_connection():
+        return SetupResult((SetupCheck("setting", "設定", True),))
+def build_collector():
+    plugin = _original_factory()
+    original_collect = type(plugin).collect
+    async def collect(self, context):
+        if not context.config.get("skip_vcenter"):
+            async with context.open_vcenter_connection():
+                return await original_collect(self, context)
+        assert format(context.target.port, "d") == context.config["expected_target_port"]
+        return await original_collect(self, context)
+    plugin.manifest = replace(plugin.manifest, configuration_schema={"type": "object", "properties": {}}, setup_actions=(SetupAction("test", "接続テスト"),))
+    type(plugin).setup = _setup
+    type(plugin).collect = collect
+    return plugin
+""")
+    plugins, failures = build_remote_plugins(plugin_dir, include_environment=False)
+    assert not failures
+    plugin = plugins[0]
+    params = replace(_params(), protocol="http", port=80, host="invalid host")
+    try:
+        with pytest.raises(CollectorWorkerError, match="VCenterProtocolPolicyError") as collect_error:
+            await plugin.collect_with_connection(_context(mock_mode=False), params, timeout=COLLECT_TIMEOUT)
+        assert collect_error.value.detail == VCENTER_HTTPS_REQUIRED
+        with pytest.raises(CollectorWorkerError, match="VCenterProtocolPolicyError") as setup_error:
+            await plugin.setup_with_connection(_context(mock_mode=False), params, "test", timeout=COLLECT_TIMEOUT)
+        assert setup_error.value.detail == VCENTER_HTTPS_REQUIRED
+        malformed = replace(params, protocol="https", port=65535.9)
+        context = _context(mock_mode=False)
+        malformed_context = replace(
+            context, target=replace(context.target, protocol=malformed.protocol, port=malformed.port)
+        )
+        with pytest.raises(CollectorWorkerError, match="^ValueError$"):
+            await plugin.collect_with_connection(malformed_context, malformed, timeout=COLLECT_TIMEOUT)
+        with pytest.raises(CollectorWorkerError, match="^AssertionError$"):
+            await plugin.collect_with_connection(_context(mock_mode=False), _params(), timeout=COLLECT_TIMEOUT)
+        non_vcenter = replace(
+            malformed_context, config={"skip_vcenter": True, "expected_target_port": "65535"}
+        )
+        batch = await plugin.collect_with_connection(non_vcenter, malformed, timeout=COLLECT_TIMEOUT)
+        assert batch.metrics
+        async with session_scope(settings=parent) as db:
+            db.add(VCenter(
+                name="legacy", host=params.host, protocol="http", port=80,
+                username="u", password="p",
+            ))
+        registration = CollectorRegistration(
+            plugin.manifest.id, plugin, "test", CollectorConfig(True, COLLECT_TIMEOUT), "enabled",
+        )
+        result = await run_setup(parent, registration, {}, "test")
+        assert len(result["checks"]) == 1
+        assert result["checks"][0]["ok"] is False
+        assert result["checks"][0]["message"] == VCENTER_HTTPS_REQUIRED
     finally:
         await plugin.stop()

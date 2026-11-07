@@ -112,8 +112,9 @@ def worker_env(settings: Settings) -> dict[str, str]:
         env["VEA_COLLECTOR_WORKER_LOG_LEVEL"] = settings.collector_worker_log_level
     env["VCENTER_ALLOWED_HOST_SUFFIXES"] = settings.vcenter_allowed_host_suffixes
     for name in _passthrough_names(settings):
-        if name in os.environ:
+        if name.casefold() != "app_env" and name in os.environ:
             env[name] = os.environ[name]
+    env["APP_ENV"] = settings.app_env
     return env
 
 
