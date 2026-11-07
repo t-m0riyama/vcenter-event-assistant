@@ -97,8 +97,12 @@ async def admin_change_guard(db: AsyncSession) -> AsyncIterator[None]:
             .order_by(User.id)
             .with_for_update()
         )
-        yield
-        await db.commit()
+        try:
+            yield
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
 
 
 async def count_local_admins(db: AsyncSession, *, exclude_user_id: uuid.UUID | None = None) -> int:

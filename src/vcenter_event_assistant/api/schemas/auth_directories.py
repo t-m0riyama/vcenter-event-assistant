@@ -86,7 +86,10 @@ class DirectoryCredentials(BaseModel):
 
 
 class DirectoryChanges(BaseModel):
-    """設定の変更。省略した項目は変えない。``bind_password`` を省略すると今の値を保つ（消すには ``clear_bind_password``）。"""
+    """設定の変更。接続先・TLS・bind DN を変える場合は保存済みの bind パスワードを再入力する。
+
+    それ以外では ``bind_password`` の省略で現在の値を保つ。消すには ``clear_bind_password`` を指定する。
+    """
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     is_enabled: bool | None = None

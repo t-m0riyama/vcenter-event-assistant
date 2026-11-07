@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -12,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
+from sqlalchemy.pool import StaticPool
 
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.directory import backend as directory_backend
@@ -33,6 +35,7 @@ from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
     USERNAME_MAX_LENGTH,
     UserError,
+    _admin_change_lock,
     directory_subject_key,
     get_local_user,
     normalize_username,
@@ -173,10 +176,23 @@ class _DirectoryRecheckFailed(Exception):
 
 
 async def _authenticate_directory(
-    db: AsyncSession, settings: Settings, realm: str, username: str, password: str
+    db: AsyncSession,
+    settings: Settings,
+    realm: str,
+    username: str,
+    password: str,
+    transaction: AsyncExitStack,
 ) -> LoginOutcome:
-    config = await _load_directory(db, realm)
+    shared_lock = _admin_change_lock() if isinstance(db.get_bind().engine.pool, StaticPool) else None
+    if shared_lock is None:
+        config = await _load_directory(db, realm)
+    else:
+        # 共有接続では設定保存の途中に LDAP の接続先・対応表を読み取らない。
+        async with shared_lock:
+            config = await _load_directory(db, realm)
     if config is None:
+        if shared_lock is not None:
+            await transaction.enter_async_context(shared_lock)
         return LoginOutcome(None, "unknown_realm")
     spec = spec_from_model(config)
     config_version = config.updated_at
@@ -192,6 +208,10 @@ async def _authenticate_directory(
     except Exception:
         logger.exception("Unexpected error while authenticating against directory %r", config.name)
         return LoginOutcome(None, "directory_error")
+    finally:
+        # LDAP 待ちの間はロックを放し、版の照合からセッションの確定まで再取得する。
+        if shared_lock is not None:
+            await transaction.enter_async_context(shared_lock)
     # 認証している間に無効化・変更（対応表の置き換えなど）されていたら、ログインさせない。
     # 変更時にセッションを失効させた後で、古い設定で決めたロールのセッションを作らないため。
     # 行をロックしておき、この後の変更はこのログインの確定を待ってから失効させるようにする。
@@ -336,6 +356,7 @@ async def authenticate(
     username: str,
     password: str,
     client_ip: str | None,
+    transaction: AsyncExitStack,
 ) -> LoginOutcome:
     """認証して ``LoginOutcome`` を返す。成否はすべて監査ログに残す。"""
     if not password or len(password) > PASSWORD_MAX_LENGTH * 4:
@@ -344,7 +365,7 @@ async def authenticate(
     elif realm == LOCAL_REALM and settings.local_login_enabled:
         outcome = await _authenticate_local(db, settings, username, password)
     elif realm.startswith(DIRECTORY_REALM_PREFIX):
-        outcome = await _authenticate_directory(db, settings, realm, username, password)
+        outcome = await _authenticate_directory(db, settings, realm, username, password, transaction)
     else:
         await verify_password(None, password)
         outcome = LoginOutcome(None, "unknown_realm")

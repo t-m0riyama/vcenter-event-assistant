@@ -5,8 +5,10 @@ SQLite / PostgreSQL 向けの engine 生成、``session_scope``、起動時 Alem
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import event
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -48,11 +50,27 @@ def get_engine(*, settings: Settings | None = None):
         s = settings or require_settings()
         url = s.database_url
         if url.startswith("sqlite"):
+            sqlite_url = make_url(url)
+            # URL.query ではなく、方言が組み立てた SQLite ネイティブの接続文字列を判定する。
+            (filename,), driver_options = sqlite_url.get_dialect()().create_connect_args(sqlite_url)
+            local_uri = False
+            if driver_options.get("uri") and filename.startswith("file:"):
+                uri = urlsplit(filename)
+                uri_path = unquote(uri.path).partition("\0")[0]
+                options: dict[str, str] = {}
+                for option in uri.query.split("&"):
+                    key, _, value = option.partition("=")
+                    options[unquote(key).partition("\0")[0]] = unquote(value).partition("\0")[0]
+                local_uri = (
+                    uri_path in ("", ":memory:")
+                    or options.get("mode") == "memory"
+                    or options.get("vfs") == "memdb"
+                )
             _engine = create_async_engine(
                 url,
                 echo=False,
                 connect_args={"check_same_thread": False, "timeout": 30.0},
-                poolclass=StaticPool,
+                poolclass=StaticPool if local_uri else None,
             )
             event.listen(_engine.sync_engine, "connect", _sqlite_enable_foreign_keys)
         else:

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import ssl
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from ldap3 import MOCK_SYNC, Connection, Server
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.auth.directory import backend, connection
 from vcenter_event_assistant.auth.directory.connection import BindRejected, ConnectOptions
@@ -23,8 +26,8 @@ from vcenter_event_assistant.auth.directory.errors import (
 from vcenter_event_assistant.auth.directory.role_mapping import normalize_dn, resolve_role
 from vcenter_event_assistant.auth.directory.spec import DirectorySpec
 from vcenter_event_assistant.auth.roles import Role
-from vcenter_event_assistant.db.models import AuthSession, User
-from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.db.models import AuthSession, DirectoryConfig, User
+from vcenter_event_assistant.db.session import get_engine, reset_db, session_scope
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.rate_limit import _rate_limiter
 from vcenter_event_assistant.settings import Settings, get_settings
@@ -1581,6 +1584,8 @@ async def _stored_directory(directory_id: str) -> dict[str, Any]:
             "username_attribute": config.username_attribute,
             "user_search_filter": config.user_search_filter,
             "updated_at": config.updated_at,
+            "server_uris": config.server_uris,
+            "bind_password": config.bind_password,
         }
 
 
@@ -1623,6 +1628,295 @@ async def test_unsaved_changes_can_be_tested_on_an_existing_directory(client, di
 
         assert (await alice.get("/api/auth/me")).status_code == 200
     assert await _stored_directory(directory_id) == before
+
+
+@pytest.mark.parametrize("field", ["server_uris", "transport_security", "tls_verify", "ca_cert_pem", "bind_dn"])
+async def test_connection_changes_require_bind_password_before_ldap(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    monkeypatch.setenv("VEA_DIRECTORY_ALLOW_INSECURE_TLS", "true")
+    get_settings.cache_clear()
+    overrides: dict[str, Any] = {}
+    if field == "transport_security":
+        overrides = {"transport_security": "starttls", "server_uris": ["ldap://ldap.example.com"]}
+    changes = {
+        "server_uris": ["ldaps://new.example.com"],
+        "transport_security": "none",
+        "tls_verify": False,
+        "bind_dn": f"cn=other,{BASE}",
+    }
+    if field == "ca_cert_pem":
+        ca = ssl.create_default_context().get_ca_certs(binary_form=True)[0]
+        changes[field] = ssl.DER_cert_to_PEM_cert(ca)
+    created = await client.post("/api/auth/directories", json=_directory_body(**overrides))
+    assert created.status_code == 201, created.text
+    directory_id = created.json()["id"]
+    url = f"/api/auth/directories/{directory_id}"
+    before = await _stored_directory(directory_id)
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        directory.binds.clear()
+        for password_change in ({}, {"bind_password": None}, {"bind_password": ""}):
+            draft = {field: changes[field], **password_change}
+            for response in (
+                await alice.post(f"{url}/test", json={"changes": draft}),
+                await alice.patch(url, json={**draft, "verification": ALICE_CREDENTIALS}),
+            ):
+                assert response.status_code == 422, response.text
+                assert "サービスアカウントのパスワードを再入力" in response.json()["detail"]
+        assert directory.binds == []
+        assert (await alice.get("/api/auth/me")).status_code == 200
+    assert await _stored_directory(directory_id) == before
+
+
+async def test_new_bind_password_is_used_for_test_and_admin_verification(
+    client, directory: FakeDirectory
+) -> None:
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    changes = {"server_uris": ["ldaps://new.example.com"], "bind_password": "replacement"}
+    async with _DirectoryAdmin(f"dir:{directory_id}") as alice:
+        directory.entries[SVC_DN]["userPassword"] = "replacement"
+        response = await alice.post(f"{url}/test", json={"changes": changes})
+        assert response.status_code == 200 and response.json()["ok"], response.text
+        directory.binds.clear()
+        response = await alice.patch(url, json={**changes, "verification": ALICE_CREDENTIALS})
+        assert response.status_code == 200, response.text
+        assert directory.binds == [SVC_DN, ALICE_DN]
+    assert (await _stored_directory(directory_id))["bind_password"] == "replacement"
+
+
+async def test_connection_change_can_clear_password_for_anonymous_search(client, directory: FakeDirectory) -> None:
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    changes = {"server_uris": ["ldaps://new.example.com"], "bind_password": "ignored", "clear_bind_password": True}
+    response = await client.patch(url, json=changes)
+    assert response.status_code == 422, response.text
+    response = await client.patch(url, json={**changes, "bind_dn": None})
+    assert response.status_code == 200, response.text
+    assert response.json()["has_bind_password"] is False
+    assert (await _stored_directory(directory_id))["bind_password"] is None
+
+
+async def test_normalized_unchanged_connection_retains_password(client, directory: FakeDirectory) -> None:
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    changes = {"server_uris": ["  ldaps://ldap.example.com  "], "bind_dn": f" {SVC_DN} "}
+    response = await client.post(f"{url}/test", json={"changes": changes})
+    assert response.status_code == 200 and response.json()["ok"], response.text
+    assert (await client.patch(url, json=changes)).status_code == 200
+    assert (await _stored_directory(directory_id))["bind_password"] == "svc-secret"
+
+
+@pytest.mark.parametrize("rotate_first", [True, False])
+async def test_connection_and_password_updates_cannot_combine(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch, rotate_first: bool
+) -> None:
+    from vcenter_event_assistant.api.routes import auth_directories
+
+    directory_id = await _create_directory(client)
+    original = auth_directories.admin_change_guard
+
+    @asynccontextmanager
+    async def concurrent_update_first(db: Any):
+        async with session_scope() as other_db:
+            config = await other_db.get(DirectoryConfig, uuid.UUID(directory_id))
+            assert config is not None
+            if rotate_first:
+                config.bind_password = "rotated"
+            else:
+                config.server_uris = ["ldaps://other.example.com"]
+        async with original(db):
+            yield
+
+    monkeypatch.setattr(auth_directories, "admin_change_guard", concurrent_update_first)
+    change = (
+        {"server_uris": ["ldaps://new.example.com"], "bind_password": "svc-secret"}
+        if rotate_first
+        else {"bind_password": "rotated"}
+    )
+    response = await client.patch(f"/api/auth/directories/{directory_id}", json=change)
+    assert response.status_code == 409, response.text
+    stored = await _stored_directory(directory_id)
+    assert stored["server_uris"] == [f"ldaps://{'ldap' if rotate_first else 'other'}.example.com"]
+    assert stored["bind_password"] == ("rotated" if rotate_first else "svc-secret")
+
+
+async def test_file_sqlite_reader_rollback_does_not_undo_directory_write(tmp_path) -> None:
+    await reset_db()
+    settings = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'directory.db'}")
+    engine = get_engine(settings=settings)
+    async with engine.begin() as conn:
+        await conn.run_sync(DirectoryConfig.__table__.create)
+    async with AsyncSession(engine, expire_on_commit=False) as writer:
+        config = DirectoryConfig(
+            name="LDAP",
+            kind="ldap",
+            server_uris=["ldaps://old.example.com"],
+            user_search_base=BASE,
+        )
+        writer.add(config)
+        await writer.commit()
+        config.server_uris = ["ldaps://new.example.com"]
+        await writer.flush()
+        async with AsyncSession(engine) as reader:
+            snapshot = await reader.get(DirectoryConfig, config.id)
+            assert snapshot is not None
+            assert snapshot.server_uris == ["ldaps://old.example.com"]
+            await reader.rollback()
+        await writer.commit()
+    async with AsyncSession(engine) as reader:
+        stored = await reader.get(DirectoryConfig, config.id)
+        assert stored is not None
+        assert stored.server_uris == ["ldaps://new.example.com"]
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "file:", "file::memory:", "file:%3Amemory%3A", "file::memory:#fragment",
+        "file::memory:%00suffix", "file://localhost", "file://", "file:vea-review?mode=mem%256Fry",
+        "file:vea-review?%256Dode=memory", "file:vea-review?%256dode=mem%256Fry",
+        "file:vea-review?cache=private%26mode%3Dmemory", "file:vea-review?vfs=memdb",
+    ],
+)
+async def test_sqlite_local_uri_shares_database_between_connections(filename: str) -> None:
+    await reset_db()
+    separator = "&" if "?" in filename else "?"
+    settings = Settings(database_url=f"sqlite+aiosqlite:///{filename}{separator}uri=true")
+    engine = get_engine(settings=settings)
+    async with engine.begin() as first:
+        await first.execute(text("CREATE TABLE memory_probe (id INTEGER)"))
+        async with engine.connect() as second:
+            assert await second.scalar(text("SELECT COUNT(*) FROM memory_probe")) == 0
+
+
+@pytest.mark.parametrize("operation", ["rename", "save", "test"])
+async def test_directory_edit_does_not_undo_concurrent_logout(
+    client, open_client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    from vcenter_event_assistant.api.routes import auth
+
+    directory_id = await _create_directory(client)
+    original = auth.revoke_session
+
+    async def edit_before_logout_commits(db: AsyncSession, token: str | None) -> None:
+        await original(db, token)
+        url = f"/api/auth/directories/{directory_id}"
+        if operation == "rename":
+            response = await client.patch(url, json={"name": "Renamed"})
+            assert response.status_code == 200, response.text
+        else:
+            changes = {"server_uris": ["ldaps://new.example.com"]}
+            if operation == "save":
+                response = await client.patch(url, json=changes)
+            else:
+                response = await client.post(f"{url}/test", json={"changes": changes})
+            assert response.status_code == 422, response.text
+            assert "サービスアカウントのパスワードを再入力" in response.json()["detail"]
+
+    monkeypatch.setattr(auth, "revoke_session", edit_before_logout_commits)
+    async with open_client("viewer") as viewer:
+        cookies = dict(viewer.cookies)
+        assert (await viewer.post("/api/auth/logout")).status_code == 204
+        # ログアウト応答で Cookie が消えても、同じトークンを再送して失効を確かめる。
+        viewer.cookies.update(cookies)
+        assert (await viewer.get("/api/auth/me")).status_code == 401
+
+
+async def test_directory_conflict_does_not_undo_concurrent_logout(
+    client, open_client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vcenter_event_assistant.api.routes import auth, auth_directories
+
+    directory_id = await _create_directory(client)
+    url = f"/api/auth/directories/{directory_id}"
+    guard = auth_directories.admin_change_guard
+    revoke = auth.revoke_session
+    revoked, finish_logout = asyncio.Event(), asyncio.Event()
+    stale_ready, resume_stale = asyncio.Event(), asyncio.Event()
+
+    async def pause_logout(db: AsyncSession, token: str | None) -> None:
+        await revoke(db, token)
+        revoked.set()
+        await finish_logout.wait()
+
+    monkeypatch.setattr(auth, "revoke_session", pause_logout)
+    async with open_client("viewer") as viewer:
+        @asynccontextmanager
+        async def pause_first_save(db: AsyncSession):
+            if not stale_ready.is_set():
+                stale_ready.set()
+                await resume_stale.wait()
+            async with guard(db):
+                yield
+
+        monkeypatch.setattr(auth_directories, "admin_change_guard", pause_first_save)
+        cookies = dict(viewer.cookies)
+        stale = asyncio.create_task(client.patch(url, json={"name": "Stale edit"}))
+        logout = None
+        try:
+            await asyncio.wait_for(stale_ready.wait(), timeout=5)
+            winner = await client.patch(url, json={"name": "Winning edit"})
+            assert winner.status_code == 200, winner.text
+            logout = asyncio.create_task(viewer.post("/api/auth/logout"))
+            await asyncio.wait_for(revoked.wait(), timeout=5)
+            resume_stale.set()
+            response = await asyncio.wait_for(stale, timeout=5)
+        finally:
+            resume_stale.set()
+            finish_logout.set()
+            await asyncio.wait_for(stale, timeout=5)
+            if logout is not None:
+                assert (await asyncio.wait_for(logout, timeout=5)).status_code == 204
+        assert response.status_code == 409, response.text
+        assert (await client.get(url.rsplit("/", 1)[0])).json()[0]["name"] == "Winning edit"
+        viewer.cookies.update(cookies)
+        assert (await viewer.get("/api/auth/me")).status_code == 401
+
+
+async def test_login_with_old_ldap_target_cannot_use_version_of_pending_edit(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vcenter_event_assistant.api.routes import auth_directories
+    from vcenter_event_assistant.auth import service
+
+    directory_id = await _create_directory(client)
+    load = auth_directories._load
+    authenticate = service.run_directory_call
+    reached_ldap, finish_ldap = asyncio.Event(), asyncio.Event()
+    ldap_finished = asyncio.Event()
+    load_count = 0
+
+    async def pause_ldap(func, spec, *args, **kwargs):
+        assert spec.server_uris == ("ldaps://ldap.example.com",)
+        reached_ldap.set()
+        await finish_ldap.wait()
+        result = await authenticate(func, spec, *args, **kwargs)
+        ldap_finished.set()
+        return result
+
+    async def finish_login_at_claim(db, target):
+        nonlocal load_count
+        load_count += 1
+        if load_count == 2:
+            finish_ldap.set()
+            await asyncio.wait_for(ldap_finished.wait(), timeout=5)
+        return await load(db, target)
+
+    monkeypatch.setattr(service, "run_directory_call", pause_ldap)
+    monkeypatch.setattr(auth_directories, "_load", finish_login_at_claim)
+    login = asyncio.create_task(_dir_login(f"dir:{directory_id}", "alice", "alice-secret"))
+    try:
+        await asyncio.wait_for(reached_ldap.wait(), timeout=5)
+        response = await client.patch(
+            f"/api/auth/directories/{directory_id}",
+            json={"server_uris": ["ldaps://new.example.com"], "bind_password": "svc-secret"},
+        )
+        assert response.status_code == 200, response.text
+    finally:
+        finish_ldap.set()
+        login_response, me = await asyncio.wait_for(login, timeout=5)
+    assert login_response.status_code == 401 and me is None
 
 
 async def test_directory_admin_must_verify_changes_to_their_own_directory(client, directory: FakeDirectory) -> None:
@@ -1818,3 +2112,78 @@ async def test_service_account_password_changes_must_be_verified(client, directo
         assert (await alice.get("/api/auth/me")).status_code == 200
     resp, _ = await _dir_login(f"dir:{directory_id}", "alice", "alice-secret")
     assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("reject_edit", [False, True])
+async def test_login_started_during_directory_save_uses_only_committed_target(
+    client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch, reject_edit: bool
+) -> None:
+    from vcenter_event_assistant.api.routes import auth_directories
+    from vcenter_event_assistant.auth import service
+
+    directory_id = await _create_directory(client)
+    realm = f"dir:{directory_id}"
+    original_response, _ = await _dir_login(realm, "alice", "alice-secret")
+    assert original_response.status_code == 200
+    flush = auth_directories._flush_checking_name
+    login_started = asyncio.Event()
+    snapshot_started = asyncio.Event()
+    authenticate = service._authenticate_directory
+    load_directory = service._load_directory
+    targets = []
+    login = None
+
+    async def authenticate_target(func, spec, *args, **kwargs):
+        targets.extend(spec.server_uris)
+        if spec.server_uris != ("ldaps://new.example.com",):
+            raise DirectoryAuthFailed("ログインできません。")
+        return backend.DirectoryIdentity(
+            subject="id:attacker",
+            username="attacker",
+            display_name=None,
+            email=None,
+            dn="uid=attacker,dc=example",
+            role=Role.ADMIN,
+        )
+
+    async def start_login_after_config_flush(db):
+        nonlocal login
+        await flush(db)
+        if login is None:
+            login = asyncio.create_task(_dir_login(realm, "attacker", "attacker-secret"))
+            await asyncio.wait_for(login_started.wait(), timeout=5)
+            assert not snapshot_started.is_set()
+
+    async def signal_login_started(*args, **kwargs):
+        login_started.set()
+        return await authenticate(*args, **kwargs)
+
+    async def signal_snapshot_started(*args, **kwargs):
+        snapshot_started.set()
+        return await load_directory(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_authenticate_directory", signal_login_started)
+    monkeypatch.setattr(service, "_load_directory", signal_snapshot_started)
+    monkeypatch.setattr(service, "run_directory_call", authenticate_target)
+    monkeypatch.setattr(auth_directories, "_flush_checking_name", start_login_after_config_flush)
+    changes = {"server_uris": ["ldaps://new.example.com"], "bind_password": "svc-secret"}
+    if reject_edit:
+        changes["unique_id_attribute"] = "nsUniqueId"
+    try:
+        response = await client.patch(
+            f"/api/auth/directories/{directory_id}",
+            json=changes,
+        )
+        assert response.status_code == (422 if reject_edit else 200), response.text
+    finally:
+        if login is not None:
+            login_response, me = await asyncio.wait_for(login, timeout=5)
+    assert login is not None
+    expected = "ldaps://ldap.example.com" if reject_edit else "ldaps://new.example.com"
+    assert (await _stored_directory(directory_id))["server_uris"] == [expected]
+    assert targets == [expected]
+    assert login_response.status_code == (401 if reject_edit else 200)
+    if reject_edit:
+        assert me is None
+    else:
+        assert me is not None and me.json()["role"] == "admin"
