@@ -54,6 +54,16 @@ class Principal:
         return self.realm == AUTH_DISABLED_SOURCE
 
 
+def principal_owner_key(principal: Principal) -> str:
+    """利用者ごとに数える上限（同時実行数など）で使う識別子。
+
+    ユーザー ID があればそれを使い、なければ認証元と名前を組み合わせる（認証無効時は全員が同じ値）。
+    """
+    if principal.user_id is not None:
+        return f"user:{principal.user_id}"
+    return f"{principal.realm}:{principal.username}"
+
+
 # 認証無効時（従来動作）の暗黙の admin。
 DISABLED_PRINCIPAL = Principal(username="anonymous", role=Role.ADMIN, realm=AUTH_DISABLED_SOURCE)
 

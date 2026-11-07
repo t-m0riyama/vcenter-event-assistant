@@ -12,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import (
     AUTH_DISABLED_SOURCE,
+    Principal,
     RequireOperator,
     check_principal_role,
+    get_current_principal,
+    principal_owner_key,
     refuse_if_principal_switched,
     resolve_request_principal,
 )
@@ -109,6 +112,7 @@ async def post_chat(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
+    principal: Principal = Depends(get_current_principal),
 ) -> ChatResponse:
     if not is_chat_llm_configured(settings):
         raise HTTPException(
@@ -120,7 +124,9 @@ async def post_chat(
         )
 
     attachments = _accepted_attachments(body, settings)
-    payloads = await build_chat_context_payloads(session, body)
+    payloads = await build_chat_context_payloads(
+        session, body, owner_key=principal_owner_key(principal)
+    )
 
     llm_cfg = build_llm_runnable_config(
         settings,
@@ -169,12 +175,15 @@ async def post_chat_preview(
     body: ChatRequest,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
+    principal: Principal = Depends(get_current_principal),
 ) -> ChatPreviewResponse:
     if not settings.effective_chat_preview_enabled:
         raise HTTPException(status_code=404, detail="Chat preview API is disabled")
 
     attachments = _accepted_attachments(body, settings)
-    payloads = await build_chat_context_payloads(session, body)
+    payloads = await build_chat_context_payloads(
+        session, body, owner_key=principal_owner_key(principal)
+    )
 
     vc_anon = await load_all_vcenter_anonymization_strings(session)
     preview_settings = settings

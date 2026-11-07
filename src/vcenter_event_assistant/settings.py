@@ -166,6 +166,33 @@ class AppLogSettingsMixin(BaseModel):
             "vCenter の接続テスト）の 1 分あたりの上限（クライアントの IP ごと、``RATE_LIMIT_PROBE_PER_MINUTE``）。"
         ),
     )
+    context_aggregation_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=1000,
+        description=(
+            "チャット・プレビュー・インシデントタイムラインの集計（期間内のイベントとメトリクスの集計）を"
+            "同時に実行できる数（プロセス全体、``CONTEXT_AGGREGATION_CONCURRENCY``）。超えた要求は待たずに 503。"
+        ),
+    )
+    context_aggregation_concurrency_per_user: int = Field(
+        default=1,
+        ge=1,
+        le=1000,
+        description=(
+            "上の集計を同じ利用者が同時に実行できる数（``CONTEXT_AGGREGATION_CONCURRENCY_PER_USER``）。"
+            "認証を無効にしているときは全員が 1 人の利用者として数えられる。"
+        ),
+    )
+    context_aggregation_max_rows: int = Field(
+        default=100_000,
+        ge=1,
+        le=10_000_000,
+        description=(
+            "イベントの時間バケット集計で、集計後の行数（バケット数 × イベント種別数）の上限"
+            "（``CONTEXT_AGGREGATION_MAX_ROWS``）。超えた要求は 422。"
+        ),
+    )
     uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
     uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import inspect
 
 from fastapi import HTTPException
@@ -27,6 +28,13 @@ from vcenter_event_assistant.services.chat.chat_period_metrics import (
     compute_chat_bucket_seconds,
 )
 from vcenter_event_assistant.services.digest.digest_context import DigestContext, build_digest_context
+from vcenter_event_assistant.services.chat.aggregation_limiter import (
+    AggregationBusy,
+    AggregationLimitExceeded,
+    aggregation_slot,
+)
+from vcenter_event_assistant.services.sql_time import truncate_to_second
+from vcenter_event_assistant.settings_binding import require_settings
 
 
 @dataclass(frozen=True)
@@ -39,27 +47,80 @@ class ChatContextPayloads:
     incident_timeline: IncidentTimelinePayload
 
 
+# 同時実行数の上限に達したときに、再試行までの目安として返す秒数。
+_BUSY_RETRY_AFTER_SECONDS = 5
+
+
 async def build_chat_context_payloads(
     session: AsyncSession,
     body: ChatRequest,
+    *,
+    owner_key: str,
 ) -> ChatContextPayloads:
-    """チャット/プレビュー/タイムライン API 向けの共有ペイロードを生成する。"""
-    return await _build_context_payloads_common(session, body)
+    """チャット/プレビュー/タイムライン API 向けの共有ペイロードを生成する。
+
+    ``owner_key`` は同時実行数を利用者ごとに数えるための識別子（``aggregation_owner_key``）。
+    """
+    return await _build_context_payloads_common(session, body, owner_key=owner_key)
 
 
 async def _build_context_payloads_common(
     session: AsyncSession,
     body: ChatRequest | IncidentTimelineBuildRequest,
+    *,
+    owner_key: str,
 ) -> ChatContextPayloads:
-    """メッセージ有無に依存せず共有コンテキストを構築する。"""
-    ft = to_utc(body.from_time)
-    tt = to_utc(body.to_time)
+    """メッセージ有無に依存せず共有コンテキストを構築する。
+
+    期間内のイベントとメトリクスを集計する重い処理なので、同時実行数（利用者ごと・全体）に上限を設け、
+    空きがなければ待たずに 503 を返す。イベントの集計行が多すぎるときは 422（Issue #301）。
+    """
+    # DB 側の時間バケットは秒単位なので、期間は入口で 1 回だけ秒に揃え、以降の集計すべてで同じ値を使う。
+    # 400 の判定より前に揃えるのは、同じ秒の中の from/to を 400 で返すため（各集計の ValueError で 500 にしない）。
+    ft = truncate_to_second(to_utc(body.from_time))
+    tt = truncate_to_second(to_utc(body.to_time))
     if ft >= tt:
         raise HTTPException(
             status_code=400,
             detail="from は to より前である必要があります",
         )
 
+    # サービス層なので bind 済みの Settings を直接読む（ルートの Depends(get_app_settings) の差し替えは効かない）。
+    settings = require_settings()
+    try:
+        with aggregation_slot(
+            owner_key,
+            global_limit=settings.context_aggregation_concurrency,
+            per_owner_limit=settings.context_aggregation_concurrency_per_user,
+        ):
+            return await _build_context_payloads_in_slot(
+                session,
+                body,
+                ft,
+                tt,
+                max_rows=settings.context_aggregation_max_rows,
+            )
+    except AggregationBusy:
+        raise HTTPException(
+            status_code=503,
+            detail="集計の処理が混み合っています。しばらく待ってから再度お試しください。",
+            headers={"Retry-After": str(_BUSY_RETRY_AFTER_SECONDS)},
+        ) from None
+    except AggregationLimitExceeded:
+        raise HTTPException(
+            status_code=422,
+            detail="イベントの種類が多すぎて集計できません。vCenter を指定して絞り込んでください。",
+        ) from None
+
+
+async def _build_context_payloads_in_slot(
+    session: AsyncSession,
+    body: ChatRequest | IncidentTimelineBuildRequest,
+    ft: datetime,
+    tt: datetime,
+    *,
+    max_rows: int,
+) -> ChatContextPayloads:
     ctx = await build_digest_context(
         session,
         ft,
@@ -96,6 +157,7 @@ async def _build_context_payloads_common(
         event_bucket_kwargs = {
             "vcenter_id": body.vcenter_id,
             "bucket_sec": bucket_sec,
+            "max_rows": max_rows,
         }
         if "alert_top_n" in inspect.signature(build_chat_event_time_buckets).parameters:
             event_bucket_kwargs["alert_top_n"] = body.alert_top_n
@@ -148,7 +210,9 @@ async def _build_context_payloads_common(
 async def build_incident_timeline_payload(
     session: AsyncSession,
     body: IncidentTimelineBuildRequest,
+    *,
+    owner_key: str,
 ) -> IncidentTimelinePayload:
     """タイムライン専用 API 用に incident_timeline を抽出して返す。"""
-    payloads = await _build_context_payloads_common(session, body)
+    payloads = await _build_context_payloads_common(session, body, owner_key=owner_key)
     return payloads.incident_timeline

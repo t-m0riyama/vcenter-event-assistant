@@ -7,11 +7,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, func, cast, Integer, literal
+from sqlalchemy import select, func, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.services.sql_time import epoch_seconds_expr
 
 
 def event_rate_bucket_count(
@@ -31,9 +32,7 @@ def event_rate_bucket_count(
 
 def _epoch_seconds_expr(dialect_name: str):
     """``occurred_at`` から UTC エポック秒（整数）を dialect 非依存に算出する。"""
-    if dialect_name == "postgresql":
-        return cast(func.floor(func.extract("epoch", EventRecord.occurred_at)), Integer)
-    return cast(func.strftime("%s", EventRecord.occurred_at), Integer)
+    return epoch_seconds_expr(EventRecord.occurred_at, dialect_name)
 
 async def get_event_rate_series(
     session: AsyncSession,
