@@ -124,6 +124,9 @@ describe('AuthGate', () => {
     )
     expect(await screen.findByText('A の履歴')).toBeInTheDocument()
     expect(screen.getByLabelText('チャット下書き')).toHaveValue('A の下書き')
+    // ``latest`` は useEffect で更新するので、DOM に復元が出た時点ではまだ前の描画のフック（下書きが空）の
+    // ことがある。そのまま previewPrompt() を呼ぶと下書きが空で何も送らず、負荷の高い CI でだけ落ちていた。
+    await waitFor(() => expect(latest?.chat.draft).toBe('A の下書き'))
     const old = latest!
     let pendingPreview: Promise<void>
     await act(async () => {
