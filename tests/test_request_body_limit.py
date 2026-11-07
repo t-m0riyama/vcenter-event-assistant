@@ -137,6 +137,7 @@ async def test_chat_reads_body_for_operator_or_auth_disabled(
     else:
         monkeypatch.setenv("VEA_AUTH_ENABLED", "false")
         get_settings.cache_clear()
+        headers.append((b"x-vea-expected-principal", b"auth-disabled"))
     received, sent = await _post("/api/chat", [b"{}"], headers=headers)
     assert received == 1
     assert sent[0]["status"] == 422
@@ -151,6 +152,28 @@ async def test_chat_subpath_uses_chat_body_limit() -> None:
     )
     assert received == 0
     assert sent[0]["status"] == 401
+
+
+@pytest.mark.parametrize("path", ["/api/chat", "/api/chat/preview"])
+@pytest.mark.parametrize("auth_enabled", [False, True])
+async def test_chat_rejects_auth_mode_switch_before_receiving_body(
+    monkeypatch, auth_enabled, path, make_login_cookie
+) -> None:
+    if auth_enabled:
+        name, token = await make_login_cookie("operator")
+        headers = [(b"cookie", f"{name}={token}".encode()), (b"x-vea-expected-principal", b"auth-disabled")]
+    else:
+        monkeypatch.setenv("VEA_AUTH_ENABLED", "false")
+        get_settings.cache_clear()
+        headers = [(b"x-vea-expected-principal", b"user:session")]
+    received, sent = await _post(path, [], headers=headers)
+    assert received == 0
+    assert sent[0]["status"] == 409
+    response_headers = Headers(raw=sent[0]["headers"])
+    if auth_enabled:
+        assert response_headers["x-vea-principal"] != "auth-disabled"
+    else:
+        assert response_headers["x-vea-principal"] == "auth-disabled"
 
 
 async def test_rejection_that_does_not_read_body_keeps_its_status() -> None:

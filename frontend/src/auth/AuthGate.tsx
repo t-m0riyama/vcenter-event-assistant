@@ -9,6 +9,12 @@ import {
 import type { Me, Realm, Role } from '../api/schemas'
 import { fetchMe, fetchRealms, logout as logoutRequest } from './authApi'
 import { AuthContext, type AuthContextValue } from './authContext'
+import {
+  activateChatScope,
+  AUTH_DISABLED_CHAT_OWNER,
+  releaseChatScope,
+  type ChatStorageScope,
+} from '../preferences/chatPanelStorage'
 import { LoginScreen } from './LoginScreen'
 import { roleAtLeast } from './roles'
 import { setActivityReporter } from '../userActivity'
@@ -19,7 +25,7 @@ import './auth.css'
  * 同じ名前で削除・再作成されたユーザーも別人として扱うため、利用者 ID を含める。
  */
 function identityKey(me: Me): string {
-  return `${me.realm}\u0000${me.username}\u0000${me.principal_id ?? ''}`
+  return `${me.auth_enabled}\u0000${me.realm}\u0000${me.username}\u0000${me.principal_id ?? ''}`
 }
 
 function sameMe(a: Me, b: Me): boolean {
@@ -33,7 +39,7 @@ function sameMe(a: Me, b: Me): boolean {
   )
 }
 
-type State =
+type NextState =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly message: string }
   | {
@@ -45,6 +51,9 @@ type State =
     }
   | { readonly status: 'authenticated'; readonly me: Me }
 
+type State = Exclude<NextState, { status: 'authenticated' }> |
+  (Extract<NextState, { status: 'authenticated' }> & { readonly chatStorageScope: ChatStorageScope | null })
+
 /**
  * ログインしていなければログイン画面だけを出し、ログイン後に子要素（アプリ本体）を描画する。
  *
@@ -53,28 +62,41 @@ type State =
  */
 export function AuthGate({ children }: { readonly children: ReactNode }) {
   const [state, setRawState] = useState<State>({ status: 'loading' })
+  const authenticatedRef = useRef(false)
+  const checkingRef = useRef(false)
+  const generationRef = useRef(0)
+  const meRef = useRef<Me | null>(null)
+  const chatScopeRef = useRef<ChatStorageScope | null>(null)
+  const operationRef = useRef(0)
   // 表示中の利用者（API 層が要求に付けてサーバが照合する）は、状態を切り替えるのと同時に更新する。
   // 利用者が替わるとアプリを作り直し、子の初回の取得は親の useEffect より先に走るため、effect での
   // 更新では前の利用者のまま送られて 409 で断られてしまう
-  const setState = useCallback((next: State) => {
-    setExpectedPrincipal(next.status === 'authenticated' ? (next.me.principal_id ?? null) : null)
+  const setState = useCallback((next: NextState) => {
+    authenticatedRef.current = next.status === 'authenticated'
+    meRef.current = next.status === 'authenticated' ? next.me : null
+    generationRef.current += 1
+    if (next.status === 'authenticated') {
+      const owner = next.me.auth_enabled
+        ? (next.me.principal_id ? `session:${next.me.principal_id}` : null)
+        : AUTH_DISABLED_CHAT_OWNER
+      const chatStorageScope = activateChatScope(owner)
+      chatScopeRef.current = chatStorageScope
+      setExpectedPrincipal(next.me.principal_id ?? null)
+      setRawState({ ...next, chatStorageScope })
+      return
+    }
+    setExpectedPrincipal(null)
     setRawState(next)
   }, [])
-  const authenticatedRef = useRef(false)
-  const checkingRef = useRef(false)
-  // 認証状態が変わるたびに進む世代。非同期の確認結果が古い状態に対するものかを見分ける
-  const generationRef = useRef(0)
-  const meRef = useRef<Me | null>(null)
-  useEffect(() => {
-    authenticatedRef.current = state.status === 'authenticated'
-    meRef.current = state.status === 'authenticated' ? state.me : null
-    generationRef.current += 1
-  }, [state])
-  useEffect(() => () => setExpectedPrincipal(null), [])
+  useEffect(() => () => {
+    operationRef.current += 1
+    authenticatedRef.current = false
+    releaseChatScope(chatScopeRef.current)
+    setExpectedPrincipal(null)
+  }, [])
 
   // 状態を変える非同期処理（読み込み・ログイン画面の準備）の通し番号。結果を反映する時点で最新でなければ捨てる。
   // StrictMode の二重実行や、取得中にログインが済んだ場合に、古い結果で画面を戻さないため
-  const operationRef = useRef(0)
   const beginOperation = useCallback(() => {
     operationRef.current += 1
     return operationRef.current
@@ -86,6 +108,7 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
       // 下で loading にすると消えるので、先に控える（セッション切れや自分のディレクトリの保存の後、
       // 同じ認証先を選び直さなくて済むように）
       const lastRealm = meRef.current?.realm ?? null
+      activateChatScope(null)
       // 認証先の取得を待つ間もアプリ本体（前の利用者のデータ）を表示し続けないよう、先に外す
       setState({ status: 'loading' })
       try {
@@ -218,7 +241,9 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) return undefined
     const mismatched = () => {
-      const known = meRef.current?.principal_id
+      const known = meRef.current?.auth_enabled === false
+        ? AUTH_DISABLED_CHAT_OWNER
+        : meRef.current?.principal_id
       const latest = latestPrincipalRef.current
       return Boolean(authenticatedRef.current && known && latest && latest !== known)
     }
@@ -269,12 +294,13 @@ export function AuthGate({ children }: { readonly children: ReactNode }) {
   }, [showLogin])
 
   const me = state.status === 'authenticated' ? state.me : null
+  const chatStorageScope = state.status === 'authenticated' ? state.chatStorageScope : null
   const value = useMemo<AuthContextValue | null>(
     () =>
       me
-        ? { me, hasRole: (role: Role) => roleAtLeast(me.role, role), logout, refresh: checkSession }
+        ? { me, chatStorageScope, hasRole: (role: Role) => roleAtLeast(me.role, role), logout, refresh: checkSession }
         : null,
-    [checkSession, me, logout],
+    [checkSession, me, logout, chatStorageScope],
   )
 
   if (state.status === 'loading') {

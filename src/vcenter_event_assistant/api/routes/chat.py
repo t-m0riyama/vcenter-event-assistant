@@ -11,8 +11,10 @@ from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import (
+    AUTH_DISABLED_SOURCE,
     RequireOperator,
     check_principal_role,
+    refuse_if_principal_switched,
     resolve_request_principal,
 )
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
@@ -23,6 +25,7 @@ from vcenter_event_assistant.api.schemas import (
     ChatResponse,
 )
 from vcenter_event_assistant.auth.roles import Role
+from vcenter_event_assistant.auth.principal_header import PRINCIPAL_HEADER
 from vcenter_event_assistant.db.session import get_session_factory
 from vcenter_event_assistant.services.chat.chat_context_payloads import (
     build_chat_context_payloads,
@@ -54,6 +57,15 @@ class _ChatRoute(APIRoute):
                 async with get_session_factory(settings=settings)() as db:
                     principal = await resolve_request_principal(request, db, settings, touch=False)
                     check_principal_role(principal, Role.OPERATOR)
+            else:
+                # 認証付きで開いた古いタブから、認証無効に変わった配備へ送らせない。
+                marker = f"auth-{AUTH_DISABLED_SOURCE}"
+                try:
+                    refuse_if_principal_switched(request, marker)
+                except HTTPException as exc:
+                    # 認証無効時は PrincipalHeaderMiddleware がないため、拒否応答に直接付ける。
+                    exc.headers = {PRINCIPAL_HEADER.decode("ascii"): marker}
+                    raise
             return await handler(request)
 
         return handle

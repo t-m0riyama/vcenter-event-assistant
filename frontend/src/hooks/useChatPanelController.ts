@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { apiGet, apiPost } from '../api'
+import { useAuth } from '../auth/useAuth'
 import { buildIncidentTimelineBuildRequestPayload } from '../api/buildIncidentTimelineBuildRequestPayload'
 import {
   parseChatResponse,
@@ -22,6 +23,7 @@ import { useChatWebSearchPrefs } from '../preferences/useChatWebSearchPrefs'
 import {
   CHAT_LLM_CONTEXT_MAX_MESSAGES,
   clearChatPanelSnapshot,
+  isActiveChatScope,
   readChatPanelSnapshot,
   trimChatMessagesToMax,
   writeChatPanelSnapshot,
@@ -38,13 +40,14 @@ import {
   type ChatAttachmentPayload,
 } from '../panels/chat/attachments/chatAttachmentTypes'
 
-/** 下書きを localStorage に反映するまでの待機（入力のたびに書き込まない） */
+/** 下書きを sessionStorage に反映するまでの待機（入力のたびに書き込まない） */
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
 
 /**
- * チャットパネルの状態・localStorage 永続化・送信 / プレビュー API をまとめる。
+ * チャットパネルの状態・セッション内の保存・送信 / プレビュー API をまとめる。
  */
 export function useChatPanelController(onError: (e: string | null) => void) {
+  const { chatStorageScope = null } = useAuth()
   const { timeZone } = useTimeZone()
   const { chatMaxStoredMessages } = useChatMaxStoredMessages()
   const { prefs: webSearchPrefs } = useChatWebSearchPrefs()
@@ -131,14 +134,14 @@ export function useChatPanelController(onError: (e: string | null) => void) {
 
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setDebouncedDraft(draft)
+      if (isActiveChatScope(chatStorageScope)) setDebouncedDraft(draft)
     }, CHAT_DRAFT_PERSIST_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
-  }, [draft])
+  }, [draft, chatStorageScope])
 
   useEffect(() => {
     const max = readStoredChatMaxStoredMessages()
-    const snap = readChatPanelSnapshot(max)
+    const snap = readChatPanelSnapshot(chatStorageScope, max)
     if (snap) {
       restoreRange(snap.rangeParts, snap.rollingDurationMs ?? null)
       setVcenterId(snap.vcenterId)
@@ -151,7 +154,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       setIncludePeriodMetricsNetworkIo(snap.includePeriodMetricsNetworkIo)
     }
     setStorageHydrated(true)
-  }, [restoreRange])
+  }, [restoreRange, chatStorageScope])
 
   useEffect(() => {
     if (skipMaxTrimOnMountRef.current) {
@@ -169,7 +172,8 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       skipNextPersistRef.current = false
       return
     }
-    const ok = writeChatPanelSnapshot(
+    const result = writeChatPanelSnapshot(
+      chatStorageScope,
       {
         messages,
         rangeParts,
@@ -183,14 +187,15 @@ export function useChatPanelController(onError: (e: string | null) => void) {
       },
       chatMaxStoredMessages,
     )
-    if (ok) {
+    if (result === 'saved') {
       storageWriteErrorReportedRef.current = false
-    } else if (!storageWriteErrorReportedRef.current) {
+    } else if (result === 'failed' && !storageWriteErrorReportedRef.current) {
       storageWriteErrorReportedRef.current = true
       onError('ブラウザの保存領域が不足しているため、会話の保存に失敗しました。')
     }
   }, [
     storageHydrated,
+    chatStorageScope,
     messages,
     rangeParts,
     activeRollingDurationMs,
@@ -271,6 +276,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   )
 
   const send = useCallback(async () => {
+    if (!isActiveChatScope(chatStorageScope)) return
     const text = draft.trim()
     if (!text || sendInFlightRef.current) return
     if (hasBlockingChatAttachment(attachments)) {
@@ -311,7 +317,9 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     sendInFlightRef.current = true
     setLoading(true)
     try {
-      const raw = await apiPost<unknown>('/api/chat', built.body)
+      if (!isActiveChatScope(chatStorageScope)) return
+      const raw = await apiPost<unknown>('/api/chat', built.body, chatStorageScope.owner.replace(/^session:/, ''))
+      if (!isActiveChatScope(chatStorageScope)) return
       const out = parseChatResponse(raw)
       setLastLlmContext(out.llm_context ?? null)
       if (out.error) {
@@ -348,14 +356,18 @@ export function useChatPanelController(onError: (e: string | null) => void) {
         )
       }
     } catch (e) {
+      if (!isActiveChatScope(chatStorageScope)) return
       onError(toErrorMessage(e))
       setMessages((m) => m.filter((msg) => msg.client_request_id !== requestId))
       restoreAttachments(restorable)
     } finally {
-      sendInFlightRef.current = false
-      setLoading(false)
+      if (isActiveChatScope(chatStorageScope)) {
+        sendInFlightRef.current = false
+        setLoading(false)
+      }
     }
   }, [
+    chatStorageScope,
     draft,
     messages,
     onError,
@@ -368,6 +380,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   ])
 
   const previewPrompt = useCallback(async () => {
+    if (!isActiveChatScope(chatStorageScope)) return
     const text = draft.trim()
     if (!text) return
 
@@ -384,16 +397,19 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     onError(null)
     setPreviewing(true)
     try {
-      const raw = await apiPost<unknown>('/api/chat/preview', built.body)
+      if (!isActiveChatScope(chatStorageScope)) return
+      const raw = await apiPost<unknown>('/api/chat/preview', built.body, chatStorageScope.owner.replace(/^session:/, ''))
+      if (!isActiveChatScope(chatStorageScope)) return
       const out = parseChatPreviewResponse(raw)
       setPreviewData(out)
       setIsPreviewModalOpen(true)
     } catch (e) {
-      onError(toErrorMessage(e))
+      if (isActiveChatScope(chatStorageScope)) onError(toErrorMessage(e))
     } finally {
-      setPreviewing(false)
+      if (isActiveChatScope(chatStorageScope)) setPreviewing(false)
     }
   }, [
+    chatStorageScope,
     draft,
     messages,
     onError,
@@ -416,18 +432,20 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   )
 
   const handleClearConversation = useCallback(() => {
+    if (!isActiveChatScope(chatStorageScope)) return
     if (!window.confirm('会話をすべて削除しますか？')) return
     skipNextPersistRef.current = true
-    clearChatPanelSnapshot()
+    clearChatPanelSnapshot(chatStorageScope)
     setMessages([])
     setLastLlmContext(null)
-  }, [])
+  }, [chatStorageScope])
 
   const closePreviewModal = useCallback(() => {
     setIsPreviewModalOpen(false)
   }, [])
 
   return {
+    canSend: chatStorageScope !== null,
     timeZone,
     rangeParts,
     setRangeParts,

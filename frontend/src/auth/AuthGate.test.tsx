@@ -4,7 +4,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode, useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiGet, notifyUnauthorized } from '../api'
+import { apiGet, apiPost, notifyUnauthorized } from '../api'
+import { TimeZoneProvider } from '../datetime/TimeZoneProvider'
+import { useChatPanelController } from '../hooks/useChatPanelController'
+import { ChatMaxStoredMessagesProvider } from '../preferences/ChatMaxStoredMessagesProvider'
+import { ChatWebSearchPrefsProvider } from '../preferences/ChatWebSearchPrefsProvider'
+import { activateChatScope, CHAT_PANEL_STORAGE_KEY, writeChatPanelSnapshot } from '../preferences/chatPanelStorage'
 import { AuthGate } from './AuthGate'
 import { useAuth } from './useAuth'
 
@@ -61,7 +66,94 @@ describe('AuthGate', () => {
     vi.clearAllMocks()
   })
   afterEach(() => {
+    activateChatScope(null)
     vi.unstubAllGlobals()
+  })
+
+  it.each(['bob', 'alice'])('チャットの保存と処理を新しい %s のセッションから隔離する', async (nextUser) => {
+    const alice = { ...ADMIN_ME, principal_id: 'alice:first' }
+    const next = { ...ADMIN_ME, username: nextUser, principal_id: `${nextUser}:second` }
+    let me = alice
+    let latest: { chat: ReturnType<typeof useChatPanelController>; refresh: () => Promise<void> } | undefined
+    const onError = vi.fn()
+    const prior = activateChatScope('session:alice:first')
+    writeChatPanelSnapshot(prior, {
+      messages: [{ role: 'user', content: 'A の履歴' }],
+      draft: 'A の下書き',
+      rangeParts: { fromDate: '2026-01-01', fromTime: '00:00', toDate: '2026-01-02', toTime: '00:00' },
+      vcenterId: '',
+      includePeriodMetricsCpu: false,
+      includePeriodMetricsMemory: false,
+      includePeriodMetricsDiskIo: false,
+      includePeriodMetricsNetworkIo: false,
+    }, 200)
+    let finishPreview: ((response: Response) => void) | undefined
+    const fetchMock = stubFetch((url) => {
+      if (url === '/api/auth/me') return json(me)
+      if (url === '/api/vcenters') return json([])
+      if (url === '/api/config') return json({})
+      if (url === '/api/chat/preview') return new Promise((resolve) => { finishPreview = resolve })
+      if (url === '/api/chat') return json({ assistant_content: 'B の回答', created_at: '2026-01-02T00:00:00Z' })
+      return json({}, 404)
+    })
+
+    function ChatProbe() {
+      const { refresh } = useAuth()
+      const chat = useChatPanelController(onError)
+      useEffect(() => {
+        latest = { chat, refresh }
+      }, [chat, refresh])
+      return (
+        <>
+          <textarea aria-label="チャット下書き" value={chat.draft} onChange={(e) => chat.setDraft(e.target.value)} />
+          <div>{chat.messages.map((message) => message.content).join(',')}</div>
+          <button onClick={() => void chat.send()}>チャット送信</button>
+        </>
+      )
+    }
+    render(
+      <AuthGate>
+        <TimeZoneProvider>
+          <ChatMaxStoredMessagesProvider>
+            <ChatWebSearchPrefsProvider>
+              <ChatProbe />
+            </ChatWebSearchPrefsProvider>
+          </ChatMaxStoredMessagesProvider>
+        </TimeZoneProvider>
+      </AuthGate>,
+    )
+    expect(await screen.findByText('A の履歴')).toBeInTheDocument()
+    expect(screen.getByLabelText('チャット下書き')).toHaveValue('A の下書き')
+    const old = latest!
+    let pendingPreview: Promise<void>
+    await act(async () => {
+      pendingPreview = old.chat.previewPrompt()
+    })
+    expect(finishPreview).toBeDefined()
+    await act(async () => {
+      me = next
+      await old.refresh()
+      await old.chat.send()
+      await old.chat.previewPrompt()
+      finishPreview!(nextUser === 'bob'
+        ? json({ context_block: 'A のプレビュー', conversation: [] })
+        : json({ detail: '旧セッションのエラー' }, 500))
+      await pendingPreview
+    })
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/chat/preview'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/chat'))).toHaveLength(0)
+    expect(onError).not.toHaveBeenCalledWith(expect.any(String))
+    expect(screen.queryByText('A の履歴')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('チャット下書き')).toHaveValue('')
+    expect(latest?.chat.previewData).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('チャット下書き'), { target: { value: 'B の質問' } })
+    fireEvent.click(screen.getByRole('button', { name: 'チャット送信' }))
+    const [, init] = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/chat'))!
+    expect(new Headers(init?.headers).get('X-VEA-Expected-Principal')).toBe(next.principal_id)
+    expect(JSON.parse(String(init?.body)).messages.map((message: { content: string }) => message.content))
+      .toEqual(['B の質問'])
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).not.toContain('A の履歴')
   })
 
   it('ログイン済みならアプリを表示する', async () => {
@@ -73,6 +165,35 @@ describe('AuthGate', () => {
     )
     expect(await screen.findByText('ようこそ alice')).toBeInTheDocument()
     expect(screen.getByText('管理者権限あり')).toBeInTheDocument()
+  })
+
+  it('チャットの拒否応答で認証無効への変更を検知し、旧セッションの保存を消す', async () => {
+    let enabled = true
+    const fetchMock = stubFetch((url) => {
+      if (url === '/api/auth/me') {
+        return json(enabled
+          ? { ...ADMIN_ME, principal_id: 'alice:first' }
+          : { ...ADMIN_ME, auth_enabled: false, username: 'anonymous', realm: 'disabled' })
+      }
+      if (url === '/api/chat') {
+        enabled = false
+        return new Response('{}', { status: 409, headers: { 'X-VEA-Principal': 'auth-disabled' } })
+      }
+      return json({}, 404)
+    })
+    render(
+      <AuthGate>
+        <Probe />
+        <button onClick={() => void apiPost('/api/chat', {}).catch(() => {})}>チャットを試す</button>
+      </AuthGate>,
+    )
+    await screen.findByText('ようこそ alice')
+    await flushEffects()
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, 'old chat')
+    fireEvent.click(screen.getByRole('button', { name: 'チャットを試す' }))
+    expect(await screen.findByText('ようこそ anonymous')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/me')).toHaveLength(2)
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it('未ログインならログイン画面を出し、ログインに成功するとアプリを表示する', async () => {
@@ -634,7 +755,7 @@ describe('AuthGate', () => {
 
   it('ログアウトするとログイン画面に戻る', async () => {
     const fetchMock = stubFetch((url) => {
-      if (url === '/api/auth/me') return json(ADMIN_ME)
+      if (url === '/api/auth/me') return json({ ...ADMIN_ME, principal_id: 'alice:first' })
       if (url === '/api/auth/realms') return json(LOCAL_ONLY)
       if (url === '/api/auth/logout') return new Response(null, { status: 204 })
       return json({}, 404)
@@ -644,8 +765,11 @@ describe('AuthGate', () => {
         <Probe />
       </AuthGate>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: '出る' }))
+    const logout = await screen.findByRole('button', { name: '出る' })
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, 'stored while chat tab is closed')
+    fireEvent.click(logout)
     expect(await screen.findByLabelText('ユーザー名')).toBeInTheDocument()
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([u, i]) => String(u) === '/api/auth/logout' && (i as RequestInit).method === 'POST')).toBe(true),
     )
@@ -653,7 +777,7 @@ describe('AuthGate', () => {
 
   it('ログアウトに失敗したらログイン画面に戻さず、失敗を伝える', async () => {
     stubFetch((url) => {
-      if (url === '/api/auth/me') return json(ADMIN_ME)
+      if (url === '/api/auth/me') return json({ ...ADMIN_ME, principal_id: 'alice:first' })
       if (url === '/api/auth/realms') return json(LOCAL_ONLY)
       if (url === '/api/auth/logout') return new Response('down', { status: 503 })
       return json({}, 404)
@@ -663,10 +787,13 @@ describe('AuthGate', () => {
         <Probe />
       </AuthGate>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: '出る' }))
+    const logout = await screen.findByRole('button', { name: '出る' })
+    sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, 'stored while chat tab is closed')
+    fireEvent.click(logout)
     expect(await screen.findByText(/ログアウト失敗/)).toBeInTheDocument()
     expect(screen.getByText('ようこそ alice')).toBeInTheDocument()
     expect(screen.queryByLabelText('ユーザー名')).not.toBeInTheDocument()
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBe('stored while chat tab is closed')
   })
 
   it('ログアウト後は認証先の取得を待たずにアプリを外す', async () => {

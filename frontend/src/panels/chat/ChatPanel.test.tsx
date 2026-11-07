@@ -6,13 +6,21 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import '../../App.css'
+import type { Me } from '../../api/schemas'
+import { AUTH_DISABLED_ME, AuthContext } from '../../auth/authContext'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { CHAT_MAX_STORED_MESSAGES_STORAGE_KEY } from '../../preferences/chatMaxStoredMessagesStorage'
 import { ChatMaxStoredMessagesProvider } from '../../preferences/ChatMaxStoredMessagesProvider'
 import { ChatSamplePromptsProvider } from '../../preferences/ChatSamplePromptsProvider'
 import { ChatWebSearchPrefsProvider } from '../../preferences/ChatWebSearchPrefsProvider'
-import { CHAT_PANEL_STORAGE_KEY, writeChatPanelSnapshot } from '../../preferences/chatPanelStorage'
+import {
+  activateChatScope,
+  AUTH_DISABLED_CHAT_OWNER,
+  CHAT_PANEL_STORAGE_KEY,
+  type ChatStorageScope,
+  writeChatPanelSnapshot,
+} from '../../preferences/chatPanelStorage'
 import {
   CHAT_CUSTOM_SAMPLE_PROMPTS_STORAGE_KEY,
   CHAT_SAMPLE_PROMPTS_STORAGE_KEY,
@@ -51,13 +59,20 @@ function jsonResponse(data: unknown, status = 200) {
   })
 }
 
-function renderChat(onError: (e: string | null) => void = vi.fn()) {
+let chatStorageScope: ChatStorageScope | null
+
+function renderChat(onError: (e: string | null) => void = vi.fn(), me: Me = AUTH_DISABLED_ME) {
   return render(
     <TimeZoneProvider>
       <ChatMaxStoredMessagesProvider>
         <ChatWebSearchPrefsProvider>
           <ChatSamplePromptsProvider>
-            <ChatPanel onError={onError} />
+            <AuthContext.Provider value={{
+              me, chatStorageScope, hasRole: () => true,
+              logout: async () => {}, refresh: async () => {},
+            }}>
+              <ChatPanel onError={onError} />
+            </AuthContext.Provider>
           </ChatSamplePromptsProvider>
         </ChatWebSearchPrefsProvider>
       </ChatMaxStoredMessagesProvider>
@@ -142,12 +157,14 @@ describe(
   },
   () => {
   beforeEach(() => {
+    chatStorageScope = activateChatScope(AUTH_DISABLED_CHAT_OWNER)
     sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
     localStorage.removeItem(CHAT_WEB_SEARCH_PREFS_STORAGE_KEY)
   })
 
   afterEach(() => {
+    activateChatScope(null)
     vi.unstubAllGlobals()
     localStorage.removeItem(DISPLAY_TIME_ZONE_STORAGE_KEY)
     localStorage.removeItem(CHAT_SAMPLE_PROMPTS_STORAGE_KEY)
@@ -155,6 +172,21 @@ describe(
     sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
     localStorage.removeItem(CHAT_MAX_STORED_MESSAGES_STORAGE_KEY)
     localStorage.removeItem(CHAT_WEB_SEARCH_PREFS_STORAGE_KEY)
+  })
+
+  it('認証セッションを識別できない場合は送信とプレビューを無効にする', async () => {
+    chatStorageScope = activateChatScope(null)
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse([])))
+    vi.stubGlobal('fetch', fetchMock)
+    renderChat(vi.fn(), { ...AUTH_DISABLED_ME, auth_enabled: true, username: 'alice', realm: 'local' })
+    expect(screen.getByText(/セッションを識別できないため/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '送信' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'プレビュー' })).toBeDisabled()
+    const draft = screen.getByPlaceholderText('質問を入力…')
+    fireEvent.change(draft, { target: { value: '保存しない下書き' } })
+    fireEvent.keyDown(draft, { key: 'Enter' })
+    await waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2)) // 設定と vCenter の取得のみ。
+    expect(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)).toBeNull()
   })
 
   it(
@@ -166,6 +198,7 @@ describe(
         return Promise.resolve(jsonResponse([]))
       }
       if (url.endsWith('/api/chat') && init?.method === 'POST') {
+        expect(new Headers(init.headers).get('X-VEA-Expected-Principal')).toBe(AUTH_DISABLED_CHAT_OWNER)
         const body = JSON.parse(String(init.body))
         expect(body.messages?.length).toBeGreaterThanOrEqual(1)
         expect(body.messages?.[body.messages.length - 1]?.role).toBe('user')
@@ -1086,6 +1119,7 @@ describe(
 
     it('マウント時に保存済み会話を復元する', async () => {
       writeChatPanelSnapshot(
+        chatStorageScope,
         {
           messages: [
             { role: 'user', content: '保存済み質問' },
@@ -1126,6 +1160,7 @@ describe(
     it('会話をクリアでストレージキーが削除される', async () => {
       const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
       writeChatPanelSnapshot(
+        chatStorageScope,
         {
           messages: [{ role: 'user', content: 'x' }],
           rangeParts: {

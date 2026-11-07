@@ -42,10 +42,13 @@ export function setExpectedPrincipal(principalId: string | null): void {
  * 操作の報告を付けて送り、応答が示す利用者を通知する。表示中の利用者と違う利用者の応答は、要求した
  * 画面（前の利用者のもの）に渡さずにエラーにする。照合が済むまで別の利用者のデータを表示しないため。
  */
-async function send(path: string, init: RequestInit): Promise<Response> {
+async function send(path: string, init: RequestInit, principalId?: string): Promise<Response> {
   const r = await fetchWithActivity(path, {
     ...init,
-    headers: { ...(init.headers as Record<string, string>), ...expectedPrincipalHeaders() },
+    headers: {
+      ...(init.headers as Record<string, string>),
+      ...(principalId === undefined ? expectedPrincipalHeaders() : { 'X-VEA-Expected-Principal': principalId }),
+    },
   })
   if (principalMismatched(r)) throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
   return r
@@ -172,13 +175,13 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 /** JSON POST。204 の場合は body なしとして ``undefined`` を返す。 */
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, principalId?: string): Promise<T> {
   const r = await send(path, {
     ...fetchNoStore,
     method: 'POST',
     headers: mutationHeaders(),
     body: JSON.stringify(body),
-  })
+  }, principalId)
   if (!r.ok) throw await apiError(r)
   if (r.status === 204) return undefined as T
   return r.json() as Promise<T>

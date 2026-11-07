@@ -241,9 +241,13 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   })
 
   // チャット画面（ダミー履歴を sessionStorage に注入。キーは chatPanelStorage と同一）
-  await page.evaluate(() => {
-    const key = 'vea.chat_panel.v1'
+  const me = await (await page.request.get('/api/auth/me')).json()
+  if (me.auth_enabled && !me.principal_id) throw new Error('チャットのセッション ID がありません')
+  const chatOwner = me.auth_enabled ? `session:${me.principal_id}` : 'auth-disabled'
+  await page.evaluate((owner) => {
+    const key = 'vea.chat_panel.v2'
     const dummyData = {
+      owner,
       messages: [
         {
           role: 'user',
@@ -274,7 +278,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
       draft: '',
     }
     sessionStorage.setItem(key, JSON.stringify(dummyData))
-  })
+  }, chatOwner)
   await openMainTab(page, 'チャット')
   await expect(page.getByText('最近のイベントの傾向を教えてください。')).toBeVisible()
   await page.screenshot({
