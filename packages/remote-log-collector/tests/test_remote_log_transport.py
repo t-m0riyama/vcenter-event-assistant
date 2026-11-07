@@ -1,3 +1,5 @@
+import asyncio
+from io import BytesIO
 from types import SimpleNamespace
 import shlex
 import sys
@@ -7,7 +9,9 @@ import pytest
 
 from vea_remote_log_collector import transport
 from vea_remote_log_collector.config import Source, sources_from_config
-from vea_remote_log_collector.transport import LogFileChanged, RemoteFile, SSHReader, ShellAccessError, open_reader
+from vea_remote_log_collector.transport import (
+    LogFileChanged, RemoteFile, RemoteOutputLimitExceeded, SSHReader, ShellAccessError, open_reader,
+)
 
 
 def source(product="esxi"):
@@ -22,17 +26,174 @@ def _resolve_to(address):
     return resolve
 
 
+class Output(BytesIO):
+    async def read(self, size):
+        assert size > 0
+        return super().read(size)
+
+
+class Process:
+    def __init__(self, stdout, stderr, status):
+        self.stdout = Output(stdout)
+        self.stderr = Output(stderr)
+        self.exit_status = status
+        self.exit_signal = None
+
+    async def wait_closed(self):
+        pass
+
+
 class Connection:
-    def __init__(self, outputs=()):
+    def __init__(self, outputs=(), *, stderr=b""):
         self.outputs = iter(outputs)
         self.commands = []
+        self.stderr = stderr
+        self.aborted = False
 
-    async def run(self, command, **kwargs):
+    async def create_process(self, command, **kwargs):
         self.commands.append(command)
-        assert kwargs == {"encoding": None, "check": True, "timeout": 8}
+        assert kwargs == {"encoding": None, "window": transport._RECEIVE_WINDOW}
+        stdout, status = self.response(command)
+        return Process(stdout, self.stderr, status)
+
+    def response(self, command):
         if "printf VEA_REMOTE_LOG_SHELL_READY" in command:
-            return SimpleNamespace(stdout=b"VEA_REMOTE_LOG_SHELL_READY")
-        return SimpleNamespace(stdout=next(self.outputs, b""))
+            return b"VEA_REMOTE_LOG_SHELL_READY", 0
+        return next(self.outputs, b""), 0
+
+    def abort(self):
+        self.aborted = True
+
+
+@pytest.mark.parametrize(("stdout_size", "stderr_size", "overflows"), [
+    (0, 0, False),
+    (0, 16 * 1024, False),
+    (0, 16 * 1024 + 1, True),
+    (16 * 1024, 16 * 1024, False),
+    (16 * 1024 + 1, 0, True),
+])
+async def test_command_enforces_both_output_limits(stdout_size, stderr_size, overflows):
+    stdout = b"x" * stdout_size
+    conn = Connection([stdout], stderr=b"e" * stderr_size)
+    reader = SSHReader(conn, source())
+    if overflows:
+        with pytest.raises(RemoteOutputLimitExceeded):
+            await reader.command("read")
+    else:
+        assert await reader.command("read") == stdout
+    assert conn.aborted == overflows
+
+
+@pytest.mark.parametrize("stdout", [b"", b"x"])
+async def test_zero_byte_read_checks_for_unexpected_stdout(stdout):
+    reader = SSHReader(Connection([stdout]), source())
+    if stdout:
+        with pytest.raises(RemoteOutputLimitExceeded):
+            await reader.read("/var/run/log/vmkernel.log", 5, 0)
+    else:
+        assert await reader.read("/var/run/log/vmkernel.log", 5, 0) == b""
+
+
+@pytest.mark.parametrize(("extra_bytes", "renews"), [(0, False), (1, True)])
+async def test_range_deadline_uses_the_combined_receive_window(monkeypatch, extra_bytes, renews):
+    reader = SSHReader(Connection(), source())
+    length = transport._RECEIVE_WINDOW - transport._STDERR_LIMIT + extra_bytes
+
+    async def run(command, limit, *, extend_on_progress):
+        assert limit == length
+        assert extend_on_progress is renews
+        return b""
+
+    monkeypatch.setattr(reader, "_run", run)
+    await reader.read("/var/run/log/vmkernel.log", 0, length)
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_command_aborts_even_before_process_creation_finishes(monkeypatch, cancel):
+    started = asyncio.Event()
+
+    class StalledConnection(Connection):
+        async def create_process(self, command, **kwargs):
+            started.set()
+            await asyncio.Future()
+
+    conn = StalledConnection()
+    if not cancel:
+        monkeypatch.setattr(transport, "_COMMAND_TIMEOUT", 0)
+    task = asyncio.create_task(SSHReader(conn, source()).command("read"))
+    await started.wait()
+    if cancel:
+        task.cancel()
+    with pytest.raises(asyncio.CancelledError if cancel else TimeoutError):
+        await task
+    assert conn.aborted
+
+
+async def test_cancellation_joins_both_output_readers():
+    started = asyncio.Event()
+    readers = []
+
+    class PendingOutput:
+        async def read(self, size):
+            readers.append(asyncio.current_task())
+            if len(readers) == 2:
+                started.set()
+            await asyncio.Future()
+
+    class StalledConnection(Connection):
+        async def create_process(self, command, **kwargs):
+            return SimpleNamespace(stdout=PendingOutput(), stderr=PendingOutput())
+
+    conn = StalledConnection()
+    task = asyncio.create_task(SSHReader(conn, source()).command("read"))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert conn.aborted
+    assert all(reader.cancelled() for reader in readers)
+
+
+async def test_deadline_includes_channel_close_after_both_streams_finish(monkeypatch):
+    waiting_for_close = asyncio.Event()
+
+    class StalledProcess(Process):
+        async def wait_closed(self):
+            waiting_for_close.set()
+            await asyncio.Future()
+
+    class StalledConnection(Connection):
+        async def create_process(self, command, **kwargs):
+            return StalledProcess(b"", b"", 0)
+
+    conn = StalledConnection()
+    monkeypatch.setattr(transport, "_COMMAND_TIMEOUT", 0.1)
+    with pytest.raises(TimeoutError):
+        await SSHReader(conn, source()).command("read")
+    assert waiting_for_close.is_set()
+    assert conn.aborted
+
+
+@pytest.mark.parametrize(("active_stream", "max_duration"), [("stdout", 0.25), ("stderr", 3)])
+async def test_large_read_progress_cannot_keep_command_alive_indefinitely(monkeypatch, active_stream, max_duration):
+    class Trickle:
+        async def read(self, size):
+            await asyncio.sleep(0.01)
+            return b"x"
+
+    class StalledConnection(Connection):
+        async def create_process(self, command, **kwargs):
+            process = Process(b"", b"", 0)
+            setattr(process, active_stream, Trickle())
+            return process
+
+    conn = StalledConnection()
+    monkeypatch.setattr(transport, "_COMMAND_TIMEOUT", 0.1)
+    monkeypatch.setattr(transport, "_LARGE_READ_MAX_DURATION", max_duration)
+    async with asyncio.timeout(1):
+        with pytest.raises(TimeoutError):
+            await SSHReader(conn, source()).read("/var/run/log/vmkernel.log", 0, 4 * 1024 * 1024)
+    assert conn.aborted
 
 
 async def test_esxi_fixed_presets_and_rotation_names():
@@ -93,15 +254,13 @@ async def test_vcenter_appliance_shell_uses_read_command_without_changing_shell(
     assert "chsh" not in command
 
 
-async def test_vcenter_bash_login_uses_direct_bash_and_remembers_detection():
-    import asyncssh
-
+@pytest.mark.parametrize("first_status", [0, 127])
+async def test_vcenter_bash_login_uses_direct_bash_and_remembers_detection(first_status):
     class BashConnection(Connection):
-        async def run(self, command, **kwargs):
+        def response(self, command):
             if command.startswith("shell "):
-                self.commands.append(command)
-                raise asyncssh.ProcessError(None, command, None, 127, None, 127, b"", b"shell: not found")
-            return await super().run(command, **kwargs)
+                return b"shell did not run the probe", first_status
+            return super().response(command)
 
     conn = BashConnection([b"/usr/bin/stat\n", b"10\n"])
     reader = SSHReader(conn, source("vcenter"))
@@ -114,18 +273,35 @@ async def test_vcenter_bash_login_uses_direct_bash_and_remembers_detection():
 
 
 async def test_vcenter_disabled_bash_fails_before_log_command():
-    import asyncssh
-
     class DisabledConnection(Connection):
-        async def run(self, command, **kwargs):
-            self.commands.append(command)
-            raise asyncssh.ProcessError(None, command, None, 1, None, 1, b"", b"unavailable")
+        def response(self, command):
+            return b"", 1
 
     conn = DisabledConnection()
     with pytest.raises(ShellAccessError):
         await SSHReader(conn, source("vcenter")).command("command -v stat")
     assert len(conn.commands) == 2
     assert all("command -v stat" not in c for c in conn.commands)
+
+
+async def test_vcenter_overflow_in_probe_aborts_without_fallback():
+    conn = Connection(stderr=b"e" * (16 * 1024 + 1))
+    with pytest.raises(RemoteOutputLimitExceeded):
+        await SSHReader(conn, source("vcenter")).command("command -v stat")
+    assert conn.aborted
+    assert len(conn.commands) == 1
+
+
+async def test_vcenter_missing_exit_status_aborts_without_fallback():
+    class MissingStatusConnection(Connection):
+        def response(self, command):
+            return b"VEA_REMOTE_LOG_SHELL_READY", None
+
+    conn = MissingStatusConnection()
+    with pytest.raises(RuntimeError, match="exit status"):
+        await SSHReader(conn, source("vcenter")).command("command -v stat")
+    assert conn.aborted
+    assert len(conn.commands) == 1
 
 
 async def test_snapshot_change_is_rejected():
@@ -185,6 +361,7 @@ async def test_ssh_connection_uses_only_explicit_keys_and_strict_host_verificati
     assert options["agent_path"] is None
     assert options["password_auth"] is False
     assert options["kbdint_auth"] is False
+    assert options["compression_algs"] is None
     assert closed
 
 
