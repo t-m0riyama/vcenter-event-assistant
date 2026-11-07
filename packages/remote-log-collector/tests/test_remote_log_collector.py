@@ -8,7 +8,7 @@ import pytest
 
 from vea_remote_log_collector import BOOTSTRAP_BYTES, RemoteLogCollector, _size
 from vea_remote_log_collector.parser import records
-from vea_remote_log_collector.transport import RemoteFile
+from vea_remote_log_collector.transport import RemoteFile, RemoteOutputLimitExceeded
 
 NOW = datetime.now(timezone.utc)
 SOURCE = SimpleNamespace(id="esxi-1", host="esxi.local", product="esxi")
@@ -189,7 +189,8 @@ async def test_mock_mode_never_opens_ssh(monkeypatch):
     assert batch.logs[0].log_kind == "vmkernel"
 
 
-async def test_failure_cancels_sibling_connections_and_returns_no_batch(monkeypatch):
+@pytest.mark.parametrize("error", [ConnectionError, RemoteOutputLimitExceeded])
+async def test_failure_cancels_sibling_connections_and_returns_no_batch(monkeypatch, error):
     import vea_remote_log_collector as module
 
     target_id = uuid4()
@@ -204,12 +205,14 @@ async def test_failure_cancels_sibling_connections_and_returns_no_batch(monkeypa
     monkeypatch.setattr(module, "sources_from_config", lambda _: sources)
     closed = []
 
+    class FailingReader(Reader):
+        async def files(self, kind, previous=None):
+            raise error("failed SSH command")
+
     @asynccontextmanager
     async def open_fake(source):
         try:
-            if source.id == "bad":
-                raise ConnectionError("failed SSH")
-            yield Reader()
+            yield FailingReader() if source.id == "bad" else Reader()
         finally:
             closed.append(source.id)
 
@@ -220,7 +223,7 @@ async def test_failure_cancels_sibling_connections_and_returns_no_batch(monkeypa
         target=SimpleNamespace(id=target_id),
         previous_cursor=None,
     )
-    with pytest.raises(ConnectionError):
+    with pytest.raises(error):
         await RemoteLogCollector().collect(context)
     assert set(closed) == {"good", "bad"}
 

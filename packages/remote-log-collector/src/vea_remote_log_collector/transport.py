@@ -1,5 +1,6 @@
 """Fixed read-only commands for BusyBox ESXi and Photon vCenter shells."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import re
@@ -12,9 +13,21 @@ from .config import PRESETS
 
 logger = get_plugin_logger("vea.remote.logs")
 
+_COMMAND_TIMEOUT = 8
+_LARGE_READ_MAX_DURATION = 24
+_COMMAND_OUTPUT_LIMIT = 16 * 1024
+_STDERR_LIMIT = 16 * 1024
+_READ_CHUNK = 32 * 1024
+# Keep AsyncSSH's pre-exec packet queue small even with one-byte packets.
+_RECEIVE_WINDOW = 64 * 1024
+
 
 class ShellAccessError(RuntimeError):
     """Authenticated vCenter session cannot execute a temporary Bash command."""
+
+
+class RemoteOutputLimitExceeded(ValueError):
+    """An SSH command exceeded its stdout or stderr byte budget."""
 
 
 class LogFileChanged(ValueError):
@@ -46,12 +59,69 @@ def same_archived_file(state, file):
     )
 
 
+async def _read_output(stream, limit, *, retain, on_data=None):
+    output = bytearray()
+    remaining = limit
+    while True:
+        # Read one byte past the budget to distinguish EOF from overflow.
+        chunk = await stream.read(min(_READ_CHUNK, remaining + 1))
+        if not chunk:
+            return bytes(output)
+        remaining -= len(chunk)
+        if remaining < 0:
+            raise RemoteOutputLimitExceeded("remote command output exceeds limit")
+        if retain:
+            output.extend(chunk)
+        if on_data is not None:
+            on_data()
+
+
 class SSHReader:
     def __init__(self, connection, source):
         self.connection = connection
         self.source = source
         self._shell_prefix = None
         self._validated_gzip = set()
+
+    async def _run(self, command, limit, *, extend_on_progress=False):
+        import asyncssh
+
+        readers = []
+        try:
+            async with asyncio.timeout(_COMMAND_TIMEOUT) as deadline:
+                on_stdout = None
+                if extend_on_progress:
+                    loop = asyncio.get_running_loop()
+                    hard_deadline = loop.time() + _LARGE_READ_MAX_DURATION
+
+                    def on_stdout():
+                        if not deadline.expired():
+                            deadline.reschedule(min(loop.time() + _COMMAND_TIMEOUT, hard_deadline))
+
+                process = await self.connection.create_process(
+                    command, encoding=None, window=_RECEIVE_WINDOW,
+                )
+                readers.append(asyncio.create_task(
+                    _read_output(process.stdout, limit, retain=True, on_data=on_stdout)
+                ))
+                readers.append(asyncio.create_task(_read_output(process.stderr, _STDERR_LIMIT, retain=False)))
+                stdout, _ = await asyncio.gather(*readers)
+                await process.wait_closed()
+                status = process.exit_status
+                if status is None or process.exit_signal is not None:
+                    raise RuntimeError("remote command did not complete with an exit status")
+        except BaseException:
+            # Channel close alone can wait for the peer, even after an abort.
+            self.connection.abort()
+            for reader in readers:
+                reader.cancel()
+            if readers:
+                await asyncio.gather(*readers, return_exceptions=True)
+            raise
+
+        if status != 0:
+            raise asyncssh.ProcessError(None, command, None, status, None, status, b"", b"")
+        return stdout
 
     async def _vcenter_shell(self):
         import asyncssh
@@ -63,30 +133,25 @@ class SSHReader:
         probe = "printf VEA_REMOTE_LOG_SHELL_READY"
         for prefix in ("shell /bin/bash -c", "/bin/bash -c"):
             try:
-                result = await self.connection.run(
+                output = await self._run(
                     f"{prefix} {shlex.quote(probe)}",
-                    encoding=None, check=True, timeout=8,
+                    _COMMAND_OUTPUT_LIMIT,
                 )
             except asyncssh.ProcessError:
                 continue
-            if result.stdout.strip() == b"VEA_REMOTE_LOG_SHELL_READY":
+            if output.strip() == b"VEA_REMOTE_LOG_SHELL_READY":
                 self._shell_prefix = prefix
                 return prefix
         raise ShellAccessError("vCenter Bash access is unavailable")
 
-    async def command(self, script, limit=16384):
+    async def command(self, script, limit=_COMMAND_OUTPUT_LIMIT, *, extend_on_progress=False):
         if self.source.product == "vcenter":
             prefix = await self._vcenter_shell()
             script = "export PATH=/usr/sbin:/usr/bin:/sbin:/bin; " + script
             command = f"{prefix} {shlex.quote(script)}"
         else:
             command = script
-        result = await self.connection.run(
-            command, encoding=None, check=True, timeout=8
-        )
-        if len(result.stdout) > limit:
-            raise ValueError("remote command output exceeds limit")
-        return result.stdout
+        return await self._run(command, limit, extend_on_progress=extend_on_progress)
 
     async def read(self, path, offset, length):
         if offset < 0 or length < 0:
@@ -104,7 +169,10 @@ class SSHReader:
             if path not in self._validated_gzip:
                 await self.command(f"gzip -t {quoted}")
                 self._validated_gzip.add(path)
-        return await self.command(script, limit=length)
+        # Both streams consume the same SSH receive window.
+        return await self.command(
+            script, limit=length, extend_on_progress=length + _STDERR_LIMIT > _RECEIVE_WINDOW,
+        )
 
     async def verify(self, file):
         output = await self.command(f"stat -L -c '%d:%i %s %Y' {shlex.quote(file.path)}")
@@ -205,6 +273,7 @@ async def open_reader(source):
         config=None,
         password_auth=False,
         kbdint_auth=False,
+        compression_algs=None,
         connect_timeout=8,
         login_timeout=8,
     ) as connection:

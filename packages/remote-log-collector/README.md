@@ -2,7 +2,7 @@
 
 VEA-provided, bundled collector `vea.remote.logs` for vCenter Event Assistant.
 The collector runs in an independent worker and collects ESXi and vCenter logs.
-Requires plugin-api **1.5 or later**, Python 3.12+, and AsyncSSH 2.24+.
+Requires plugin-api **1.5 or later**, Python 3.12+, and AsyncSSH 2.24.1+.
 The application must include the remote-log storage migration and search API.
 
 Reads ESXi 8 `vmkernel`, `hostd`, `vpxa`, and vCenter 8 `vpxd` through SSH.
@@ -85,6 +85,14 @@ discovery. Only the four preset log kinds are supported.
 - At most 4 MiB of log data per vCenter per run, shared fairly across streams,
   with at most two concurrent SSH connections. Metadata and consistency probes
   add small transfers. At most 64 files per stream are inspected.
+- Each SSH command allows up to 16 KiB of stderr. Stdout is limited to the
+  requested byte count for range reads and 16 KiB for other commands, including
+  shell probes. The SSH receive window is 64 KiB. The 8-second command deadline
+  includes opening the channel and waiting for it to close. If a range read's
+  requested byte count plus the stderr allowance exceeds the receive window,
+  each stdout chunk renews the 8-second deadline, up to 24 seconds total per
+  command. The collector requires an exit status and disables SSH transport
+  compression. Reading gzip rotations still works.
 - Byte positions refer to uncompressed data. Prefix and checkpoint hashes track
   rename/compression and detect truncate. If an unfinished generation disappears,
   a `[collector]` warning record identifies possible missing logs.
