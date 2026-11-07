@@ -9,6 +9,7 @@ import type {
 } from './attachments/chatAttachmentTypes'
 
 type ChatInputBarProps = {
+  canSend: boolean
   loading: boolean
   previewing: boolean
   hasMessages: boolean
@@ -31,6 +32,7 @@ type ChatInputBarProps = {
 
 /** チャットメッセージ入力バー。 */
 export function ChatInputBar({
+  canSend,
   loading,
   previewing,
   hasMessages,
@@ -155,7 +157,7 @@ export function ChatInputBar({
         <button
           type="button"
           className="btn btn--gray chat-panel__icon-btn chat-panel__preview-btn"
-          disabled={loading || previewing}
+          disabled={!canSend || loading || previewing}
           aria-busy={previewing}
           aria-label={previewing ? 'プレビューを生成中' : 'プレビュー'}
           title={previewing ? 'プレビューを生成中' : 'プレビュー'}
@@ -166,7 +168,7 @@ export function ChatInputBar({
         <button
           type="button"
           className="btn btn--filled chat-panel__icon-btn chat-panel__send-btn"
-          disabled={loading || previewing}
+          disabled={!canSend || loading || previewing}
           aria-busy={loading}
           aria-label={loading ? '送信中' : '送信'}
           title={loading ? '送信中' : '送信'}

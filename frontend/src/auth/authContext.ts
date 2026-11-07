@@ -1,9 +1,11 @@
 import { createContext } from 'react'
 import type { Me, Role } from '../api/schemas'
+import type { ChatStorageScope } from '../preferences/chatPanelStorage'
 
 export type AuthContextValue = {
   /** ログイン中の利用者（認証が無効なサーバでは暗黙の admin）。 */
   readonly me: Me
+  readonly chatStorageScope?: ChatStorageScope | null
   /** ``role`` 以上のロールを持つか。画面の表示を切り替えるためだけに使い、最終判断はサーバが行う。 */
   readonly hasRole: (role: Role) => boolean
   /** サーバでセッションを失効させてからログイン画面へ戻す。失効できなければ例外を投げる。 */

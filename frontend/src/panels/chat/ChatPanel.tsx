@@ -76,7 +76,13 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         </p>
       )}
 
+      {!c.canSend && (
+        <p className="hint" role="status">
+          セッションを識別できないため、チャットの保存・送信・プレビューは利用できません。
+        </p>
+      )}
       <ChatInputBar
+        canSend={c.canSend}
         loading={c.loading}
         previewing={c.previewing}
         hasMessages={c.messages.length > 0}

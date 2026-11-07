@@ -3,7 +3,23 @@ import { z } from 'zod'
 import { chatMessageSchema, type ChatMessage } from '../api/schemas'
 
 /** チャットパネル状態を保存する sessionStorage キー（共有端末向けに localStorage より安全）。 */
-export const CHAT_PANEL_STORAGE_KEY = 'vea.chat_panel.v1'
+export const CHAT_PANEL_STORAGE_KEY = 'vea.chat_panel.v2'
+const LEGACY_STORAGE_KEY = 'vea.chat_panel.v1'
+export const AUTH_DISABLED_CHAT_OWNER = 'auth-disabled'
+
+/** 所有者が同じ値に戻っても、古い画面の参照は有効にならない。 */
+export type ChatStorageScope = Readonly<{ owner: string }>
+let activeScope: ChatStorageScope | null = null
+let canRestore = true
+
+export function isActiveChatScope(scope: ChatStorageScope | null): scope is ChatStorageScope {
+  return scope !== null && scope === activeScope
+}
+
+/** 画面が外れた後の処理を無効にし、同じセッションの再読み込み用データは残す。 */
+export function releaseChatScope(scope: ChatStorageScope | null): void {
+  if (isActiveChatScope(scope)) activeScope = null
+}
 
 export { DEFAULT_CHAT_MAX_STORED_MESSAGES } from './chatMaxStoredMessagesStorage'
 
@@ -34,6 +50,39 @@ const chatPanelSnapshotSchema = z.object({
 })
 
 export type ChatPanelSnapshot = z.infer<typeof chatPanelSnapshotSchema>
+const storedSnapshotSchema = chatPanelSnapshotSchema.extend({ owner: z.string() })
+
+function removeSnapshot(): void {
+  try {
+    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+    canRestore = true
+  } catch {
+    canRestore = false
+  }
+}
+
+export function activateChatScope(owner: string | null): ChatStorageScope | null {
+  if (owner !== null && activeScope?.owner === owner) return activeScope
+  const hadScope = activeScope !== null
+  activeScope = owner === null ? null : { owner }
+  try {
+    sessionStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {
+    // 旧形式は復元対象に含めない。
+  }
+  try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {
+    // 以前の localStorage 保存も、利用可能な場合にだけ削除する。
+  }
+  if (activeScope === null || hadScope) {
+    removeSnapshot()
+  } else {
+    // パネルが開かれていなくても、別セッションのデータは破棄する。
+    readChatPanelSnapshot(activeScope, 0)
+  }
+  return activeScope
+}
 
 /**
  * 会話メッセージを最大件数に収める。超過分は先頭から削除する（FIFO）。
@@ -63,57 +112,51 @@ function trimSnapshotMessages(snapshot: ChatPanelSnapshot, maxStoredMessages: nu
  *
  * @param maxStoredMessages 会話メッセージの最大件数（ユーザー設定 0〜1000。0 は常に空配列）。
  */
-export function readChatPanelSnapshot(maxStoredMessages: number): ChatPanelSnapshot | null {
-  if (typeof sessionStorage === 'undefined') {
-    return null
-  }
-  const raw = sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)
-  if (raw === null) {
-    return null
-  }
-  let parsed: unknown
+export function readChatPanelSnapshot(
+  scope: ChatStorageScope | null,
+  maxStoredMessages: number,
+): ChatPanelSnapshot | null {
+  if (!isActiveChatScope(scope) || !canRestore) return null
   try {
-    parsed = JSON.parse(raw) as unknown
+    const raw = sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY)
+    if (raw === null) return null
+    const out = storedSnapshotSchema.safeParse(JSON.parse(raw) as unknown)
+    if (out.success) {
+      const { owner, ...snapshot } = out.data
+      if (owner === scope.owner) return trimSnapshotMessages(snapshot, maxStoredMessages)
+    }
   } catch {
-    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
-    return null
+    // 取得・解析に失敗した状態は復元しない。
   }
-  const out = chatPanelSnapshotSchema.safeParse(parsed)
-  if (!out.success) {
-    sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
-    return null
-  }
-  return {
-    ...out.data,
-    messages: trimChatMessagesToMax(out.data.messages, maxStoredMessages),
-  }
+  removeSnapshot()
+  return null
 }
 
 /**
  * チャットパネル状態を保存する。`messages` は `maxStoredMessages` でトリムしてから検証・保存する。
  *
- * @returns 保存に成功したとき `true`。`localStorage` が無い・`setItem` が失敗したとき `false`。
+ * 無効なスコープからの保存はスキップする。
  */
-export function writeChatPanelSnapshot(snapshot: ChatPanelSnapshot, maxStoredMessages: number): boolean {
-  if (typeof sessionStorage === 'undefined') {
-    return false
-  }
+export function writeChatPanelSnapshot(
+  scope: ChatStorageScope | null,
+  snapshot: ChatPanelSnapshot,
+  maxStoredMessages: number,
+): 'saved' | 'skipped' | 'failed' {
+  if (!isActiveChatScope(scope)) return 'skipped'
   try {
     const trimmed = trimSnapshotMessages(snapshot, maxStoredMessages)
-    const v = chatPanelSnapshotSchema.parse(trimmed)
+    const v = storedSnapshotSchema.parse({ ...trimmed, owner: scope.owner })
     sessionStorage.setItem(CHAT_PANEL_STORAGE_KEY, JSON.stringify(v))
-    return true
+    canRestore = true
+    return 'saved'
   } catch {
-    return false
+    return 'failed'
   }
 }
 
 /**
  * 保存したチャットパネル状態を削除する。
  */
-export function clearChatPanelSnapshot(): void {
-  if (typeof sessionStorage === 'undefined') {
-    return
-  }
-  sessionStorage.removeItem(CHAT_PANEL_STORAGE_KEY)
+export function clearChatPanelSnapshot(scope: ChatStorageScope | null): void {
+  if (isActiveChatScope(scope)) removeSnapshot()
 }
