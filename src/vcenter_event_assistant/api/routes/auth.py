@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -101,6 +102,23 @@ async def login(
     settings: Settings = Depends(get_app_settings),
 ) -> Response:
     _require_auth_enabled(settings)
+    async with AsyncExitStack() as transaction:
+        try:
+            response = await _login_response(body, request, db, settings, transaction)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+        return response
+
+
+async def _login_response(
+    body: LoginRequest,
+    request: Request,
+    db: AsyncSession,
+    settings: Settings,
+    transaction: AsyncExitStack,
+) -> Response:
     client_ip = _client_ip(request)
     outcome = await authenticate(
         db,
@@ -109,9 +127,10 @@ async def login(
         username=body.username,
         password=body.password,
         client_ip=client_ip,
+        transaction=transaction,
     )
     if outcome.user is None:
-        # 例外にすると get_session がロールバックし、失敗回数の記録が消えるため Response で返す
+        # 例外にすると失敗回数の記録がロールバックされるため Response で返す
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": GENERIC_LOGIN_ERROR},

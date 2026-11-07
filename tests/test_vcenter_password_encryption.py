@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 from sqlalchemy import bindparam, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.types import Uuid as SAUuid
 
@@ -57,6 +58,31 @@ def _directory(name: str, bind_password: str | None) -> DirectoryConfig:
         bind_password=bind_password,
         user_search_base="ou=people,dc=example",
     )
+
+
+async def test_startup_encryption_does_not_restore_cleared_bind_password(
+    secret_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with session_scope() as session:
+        config = _directory("legacy", None)
+        session.add(config)
+        await session.flush()
+        directory_id = config.id
+    await _set_raw_value("directory_configs", "bind_password", directory_id, "legacy-secret")
+    execute = AsyncSession.execute
+
+    async def clear_before_migration_write(self, statement, params=None, **kwargs):
+        if str(statement).startswith("UPDATE directory_configs SET bind_password = :value"):
+            await execute(
+                self,
+                text("UPDATE directory_configs SET bind_password = NULL WHERE id = :id"),
+                {"id": params["id"]},
+            )
+        return await execute(self, statement, params, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", clear_before_migration_write)
+    await ensure_secret_storage()
+    assert await _raw_value("directory_configs", "bind_password", directory_id) is None
 
 
 @pytest.fixture

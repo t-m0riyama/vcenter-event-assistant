@@ -19,15 +19,19 @@ import logging
 import re
 import ssl
 import uuid
+from contextlib import nullcontext
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import delete, func, select
+from fastapi.responses import JSONResponse
+from sqlalchemy import delete, func, select, update
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.pool import StaticPool
 
 from vcenter_event_assistant.api.auth_deps import Principal, require_admin
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
@@ -57,6 +61,7 @@ from vcenter_event_assistant.auth.directory.testing import run_test
 from vcenter_event_assistant.auth.roles import Role
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
+    _admin_change_lock,
     admin_change_guard,
     count_admin_directories,
     count_local_admins,
@@ -85,6 +90,11 @@ _IDENTITY_FIELDS = tuple(
 # セッションは失効させないが、誤るとこの後のログインがすべて失敗する項目（保存の前の確認の対象には含める）
 _LOGIN_CRITICAL_NEUTRAL_FIELDS = ("bind_password", "timeout_seconds")
 _COLUMN_KEYS = tuple(attr.key for attr in sa_inspect(DirectoryConfig).column_attrs)
+_BIND_TARGET_FIELDS = ("server_uris", "transport_security", "tls_verify", "ca_cert_pem", "bind_dn")
+_BIND_PASSWORD_REENTRY = (
+    "接続先、TLS 設定、またはサービスアカウントの DN を変更する場合は、"
+    "サービスアカウントのパスワードを再入力してください。匿名検索に切り替える場合は保存済みのパスワードを消してください。"
+)
 
 # 409 の理由を画面が見分けるためのヘッダ（detail は文字列のまま返す）
 ERROR_CODE_HEADER = "X-VEA-Error-Code"
@@ -108,6 +118,15 @@ _OPTIONAL_TEXT_FIELDS = (
 
 def _invalid(message: str) -> HTTPException:
     return HTTPException(status_code=HTTP_422, detail=message)
+
+
+class _BindPasswordReentryRequired(HTTPException):
+    def __init__(self) -> None:
+        super().__init__(status_code=HTTP_422, detail=_BIND_PASSWORD_REENTRY)
+
+    def as_response(self) -> JSONResponse:
+        # 書き込み前の拒否で共有接続上の別リクエストを rollback しない。
+        return JSONResponse({"detail": self.detail}, status_code=self.status_code)
 
 
 def _not_found() -> HTTPException:
@@ -414,6 +433,12 @@ def _edited(
         ]
     _apply_changes(draft, changes, clear_bind_password=clear_bind_password)
     _validate(draft, settings)
+    if base.bind_password and any(
+        getattr(base, field) != getattr(draft, field) for field in _BIND_TARGET_FIELDS
+    ):
+        explicit_password = bool(changes.get("bind_password")) and not clear_bind_password
+        if not (explicit_password if draft.bind_dn else clear_bind_password):
+            raise _BindPasswordReentryRequired()
     return draft
 
 
@@ -600,7 +625,7 @@ async def update_directory(
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
-) -> DirectoryRead:
+) -> DirectoryRead | JSONResponse:
     """設定と対応表をまとめて保存する（セッションの失効も 1 回にする）。
 
     分けて保存すると、1 回目でこのディレクトリのセッションが失効し、唯一の admin が 2 回目を送れなくなる。
@@ -616,22 +641,45 @@ async def update_directory(
 
     # 確認（LDAP の呼び出し）はロックの外で行う。待っている間、admin の変更やこのディレクトリへのログインを
     # 止めないため。その代わり、ロックを取った後で設定が確認した時から変わっていないことを確かめる
-    config = await _load(db, directory_id)
-    version = config.updated_at
-    draft = edited(config)
-    await _refuse_losing_admin(db, settings, principal, config, draft)
+    # インメモリ SQLite では別セッションも同じ接続を使うため、他の保存中に rollback しない。
+    shares_connection = isinstance(db.get_bind().engine.pool, StaticPool)
+    read_guard = _admin_change_lock() if shares_connection else nullcontext()
+    async with read_guard:
+        config = await _load(db, directory_id)
+        version = config.updated_at
+        try:
+            draft = edited(config)
+        except _BindPasswordReentryRequired as exc:
+            return exc.as_response()
+        await _refuse_losing_admin(db, settings, principal, config, draft)
+        needs_verification = await _verification_needed(db, settings, principal, config, draft)
+        # 独立接続の読み取りトランザクションは CAS 前に閉じる。共有接続では、従来どおり
+        # LDAP 確認がある場合だけ閉じ、別セッションの書き込みを不用意に取り消さない。
+        if needs_verification or not shares_connection:
+            await db.rollback()
     verified: DirectoryIdentity | None = None
-    if await _verification_needed(db, settings, principal, config, draft):
-        await db.rollback()  # 確認の間、読み取りのトランザクションを開いたままにしない
+    if needs_verification:
         verified = await _verify_admin(draft, body.verification, settings)
 
     async with admin_change_guard(db):
-        config = await _load(db, directory_id)
-        if verified is not None and config.updated_at != version:
+        # 有効な管理者行がなくても、条件付き UPDATE で設定行をコミットまで保護する。
+        claimed = await db.scalar(
+            update(DirectoryConfig)
+            .where(DirectoryConfig.id == directory_id, DirectoryConfig.updated_at == version)
+            .values(updated_at=DirectoryConfig.updated_at)
+            .returning(DirectoryConfig.id)
+            .execution_options(synchronize_session=False)
+        )
+        if claimed is None:
+            detail = "ほかの操作で設定が変わりました。読み直してから、もう一度保存してください。"
+            if shares_connection:
+                # この PATCH の書き込みはない。例外で共有接続上の別リクエストを rollback しない。
+                return JSONResponse({"detail": detail}, status_code=status.HTTP_409_CONFLICT)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="ほかの操作で設定が変わりました。読み直してから、もう一度保存してください。",
+                detail=detail,
             )
+        config = await _load(db, directory_id)
         draft = edited(config)
         await _refuse_losing_admin(db, settings, principal, config, draft)
         if verified is None and await _verification_needed(db, settings, principal, config, draft):
@@ -650,6 +698,9 @@ async def update_directory(
             if duplicate:
                 raise _invalid(_DUPLICATE_NAME_MESSAGE)
         _apply_changes(config, changes, clear_bind_password=body.clear_bind_password)
+        # 共有接続で保存途中の設定を読んだログインは、確定後もロールバック後も版照合で拒否する。
+        provisional_version = max(utcnow(), as_utc(version) + timedelta(microseconds=1))
+        config.updated_at = provisional_version
         # 名前の変更を先に書き込む。この後のクエリ（autoflush）や失効のための書き込みで一意制約に反しても、
         # 500 ではなく 422 にするため
         await _flush_checking_name(db)
@@ -669,14 +720,14 @@ async def update_directory(
             config.mappings.clear()
             await db.flush()
             config.mappings = _mapping_rows(body.mappings)
+            await db.flush()
+        config.updated_at = max(utcnow(), provisional_version + timedelta(microseconds=1))
+        await db.flush()
         if disabling or identity_changed:
             # 無効にしたディレクトリのユーザーは、使用中のセッションも使えなくする。接続先や検索・グループの
             # 条件、対応表が変わったら、古い条件で認証・ロールを決めたセッションは使わせない（新しい条件では
             # ユーザーが見つからない・ロールが変わることがある）。次のログインで決め直す
-            await _touch(db, config)
             await _revoke_directory_sessions(db, config.id)
-        config.updated_at = utcnow()
-        await _flush_checking_name(db)
         user_count = (await _user_counts(db)).get(config.id, 0)
         result = _to_read(config, user_count)
     _audit_saved(
@@ -766,23 +817,26 @@ async def test_directory(
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
-) -> DirectoryTestResponse:
+) -> DirectoryTestResponse | JSONResponse:
     """保存済みの設定で接続を試す（無効のディレクトリでも試せる）。
 
-    ``changes`` / ``mappings`` を渡すと、保存せずに重ねて試す（bind パスワードを送らなければ保存済みのものを
-    使う）。DB には書かず、セッションも失効させない。
+    ``changes`` / ``mappings`` を渡すと、保存せずに重ねて試す。接続先・TLS・bind DN を変更する場合は
+    保存済みの bind パスワードを引き継がない。DB には書かず、セッションも失効させない。
     """
     config = await _load(db, directory_id)
     unsaved = body.changes is not None or body.mappings is not None
     if unsaved:
         changes = body.changes.model_dump(exclude_unset=True, exclude={"clear_bind_password"}) if body.changes else {}
-        config = _edited(
-            config,
-            changes,
-            clear_bind_password=bool(body.changes and body.changes.clear_bind_password),
-            mappings=body.mappings,
-            settings=settings,
-        )
+        try:
+            config = _edited(
+                config,
+                changes,
+                clear_bind_password=bool(body.changes and body.changes.clear_bind_password),
+                mappings=body.mappings,
+                settings=settings,
+            )
+        except _BindPasswordReentryRequired as exc:
+            return exc.as_response()
     return await _run_test(
         principal,
         config,

@@ -204,12 +204,18 @@ export function DirectoryForm({
             <input
               type="password"
               autoComplete="new-password"
-              placeholder={editing && original.has_bind_password ? '設定済み（変えるときだけ入力）' : ''}
+              placeholder={editing && original.has_bind_password ? '設定済み' : ''}
               value={value.bind_password}
               disabled={value.clear_bind_password}
               onChange={(e) => set('bind_password', e.target.value)}
             />
           </label>
+          {editing && original.has_bind_password && (
+            <p className="directories-panel__wide">
+              接続先、TLS 設定、サービスアカウントの DN を変更するときはパスワードを再入力してください。
+              匿名検索に切り替える場合は DN を空にし、保存済みのパスワードを消してください。
+            </p>
+          )}
           {editing && original.has_bind_password && (
             <label className="check">
               <input

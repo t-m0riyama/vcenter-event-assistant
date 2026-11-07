@@ -177,7 +177,7 @@
 
 **SQLite と PostgreSQL の選び方:**
 
-- **SQLite**（`sqlite+aiosqlite://...`）: 開発・試用・単一ノードの小規模向け。`StaticPool` により DB 接続は実質 1 本で、取り込み・評価・API が直列化されやすい。vCenter を多数登録する本番では **PostgreSQL を推奨**する。
+- **SQLite**（`sqlite+aiosqlite://...`）: 開発・試用・単一ノードの小規模向け。ファイル DB ではセッションごとに接続を借り、SQLite が書き込みを DB 単位で直列化する。インメモリ DB は1本の接続を共有する。vCenter を多数登録する本番では **PostgreSQL を推奨**する。
 - **PostgreSQL**: 本番・複数 vCenter・同時負荷向け。接続プールと書き込み性能に余裕がある。
 - 取り込みトランザクションが長大になると SQLite では API が待たされる。緩和策としてイベント挿入の途中 commit 分割は将来検討（現状は vCenter 単位で 1 トランザクション）。
 

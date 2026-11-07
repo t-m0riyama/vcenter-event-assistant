@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import text
+from sqlalchemy.exc import StatementError
 
 from vcenter_event_assistant.db.encrypted_string import (
     ENC_PREFIX,
@@ -70,10 +71,18 @@ async def ensure_secret_storage(settings: Settings | None = None) -> None:
             for row_id, stored in rows:
                 if stored is None or is_encrypted_storage_value(stored):
                     continue
-                await session.execute(
-                    text(f"UPDATE {table} SET {column} = :value WHERE id = :id"),
-                    {"value": encrypt_for_storage(stored, secret), "id": row_id},
-                )
-                migrated += 1
+                try:
+                    result = await session.execute(
+                        text(
+                            f"UPDATE {table} SET {column} = :value "
+                            f"WHERE id = :id AND {column} = :previous"
+                        ),
+                        {"value": encrypt_for_storage(stored, secret), "id": row_id, "previous": stored},
+                    )
+                except StatementError as exc:
+                    # 競合確認用の平文を、起動失敗時の SQL パラメータ表示に含めない。
+                    exc.hide_parameters = True
+                    raise
+                migrated += result.rowcount
             if migrated:
                 logger.info("Encrypted %d legacy plaintext %s(s) at startup.", migrated, label)
