@@ -6,6 +6,10 @@ import logging
 import re
 from pathlib import Path
 
+from sqlalchemy import Integer, cast, select
+
+from vcenter_event_assistant.db.models import VCenter
+from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -19,6 +23,27 @@ _POSTGRES_URL_RE = re.compile(
 
 class SecurityConfigurationError(RuntimeError):
     """本番向け必須設定が満たされていない。"""
+
+
+async def warn_invalid_vcenter_transports(settings: Settings) -> None:
+    """本番で接続を拒否する既存の設定を、認証情報を取得せずに案内する。"""
+    if not settings.is_production:
+        return
+    requires_https = VCenter.protocol != "https"
+    # SQLite では INTEGER 列にも小数を保存できる。
+    invalid_port = ~VCenter.port.between(1, 65535) | (VCenter.port != cast(VCenter.port, Integer))
+    async with session_scope(settings=settings) as session:
+        rows = await session.execute(
+            select(VCenter.id, VCenter.is_enabled, requires_https).where(requires_https | invalid_port)
+        )
+        for identifier, enabled, missing_https in rows:
+            logger.warning(
+                "vCenter requires %s in production: vcenter_id=%s enabled=%s. "
+                "Update the protocol and port, then test the connection.",
+                "HTTPS" if missing_https else "a valid port",
+                identifier,
+                enabled,
+            )
 
 
 def passwords_may_be_stored(settings: Settings) -> bool:

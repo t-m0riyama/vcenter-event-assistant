@@ -29,6 +29,7 @@ from typing import Any
 from vcenter_event_assistant_plugin_api.validation import (
     BatchValidationError as _BatchValidationError,
 )
+from vcenter_event_assistant.collectors.connection import VCENTER_HTTPS_REQUIRED, VCenterProtocolPolicyError
 from vcenter_event_assistant_plugin_api.validation import (
     ManifestValidationError as _ManifestValidationError,
 )
@@ -71,6 +72,8 @@ _SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
 
 def _safe_detail(exc: BaseException) -> str | None:
     """allow-list に載る型に限り、メッセージを親へ渡せる形で返す。"""
+    if type(exc) is VCenterProtocolPolicyError:
+        return VCENTER_HTTPS_REQUIRED
     if not isinstance(exc, _SAFE_DETAIL_TYPES):
         return None
     detail = str(exc).strip()

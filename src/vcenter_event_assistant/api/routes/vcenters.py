@@ -13,10 +13,12 @@ from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireOperator,
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import VCenterCreate, VCenterRead, VCenterUpdate
 from vcenter_event_assistant.collectors.connection import (
+    VCenterProtocolPolicyError,
     connect_vcenter,
     disconnect,
     format_connection_error_detail,
     read_connection_info,
+    validate_vcenter_protocol,
 )
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.security_startup import passwords_may_be_stored
@@ -28,11 +30,10 @@ router = APIRouter(prefix="/vcenters", tags=["vcenters"])
 
 
 def _ensure_secure_protocol(protocol: str, settings: Settings) -> None:
-    if settings.is_production and protocol != "https":
-        raise HTTPException(
-            status_code=400,
-            detail="APP_ENV=production では vCenter protocol は https のみ許可されます",
-        )
+    try:
+        validate_vcenter_protocol(protocol, settings)
+    except VCenterProtocolPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 def _ensure_password_storage_allowed(settings: Settings) -> None:
     if not passwords_may_be_stored(settings):
@@ -148,6 +149,7 @@ async def test_vcenter(
     if vc is None:
         raise HTTPException(status_code=404, detail="vCenter not found")
 
+    _ensure_secure_protocol(vc.protocol, settings)
     try:
         _validate_vcenter_host_for_settings(vc.host, settings)
     except ValueError as exc:

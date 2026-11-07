@@ -633,6 +633,7 @@ async def list_hosts(
     settings: Settings = Depends(get_app_settings),
 ):
     from vcenter_event_assistant.collectors.connection import (
+        VCenterProtocolPolicyError,
         connect_vcenter,
         disconnect,
     )
@@ -668,6 +669,8 @@ async def list_hosts(
 
     try:
         return await asyncio.to_thread(fetch)
+    except VCenterProtocolPolicyError as exc:
+        raise HTTPException(422, str(exc)) from exc
     except Exception:
         raise HTTPException(
             422,

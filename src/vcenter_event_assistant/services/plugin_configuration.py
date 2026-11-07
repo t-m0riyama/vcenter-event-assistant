@@ -11,10 +11,11 @@ from jsonschema import Draft202012Validator
 from sqlalchemy import select
 from vcenter_event_assistant_plugin_api import CollectionContext, VCenterTarget
 
+from vcenter_event_assistant.collectors.connection import VCENTER_HTTPS_REQUIRED
 from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.remote import RemoteCollectorPlugin
-from vcenter_event_assistant.plugins.runtime import _connection_params, _open_connection
+from vcenter_event_assistant.plugins.runtime import _connection_params, _open_connection, is_vcenter_protocol_policy_error
 from vcenter_event_assistant.services.ssh_management import materialize_ssh
 
 _TYPES = {"object", "array", "string", "number", "integer", "boolean"}
@@ -159,13 +160,17 @@ async def run_setup(settings, registration, config, action):
                 checks.extend(result.get("checks", []))
                 samples.extend(result.get("samples", [])[:20])
                 warnings.extend(result.get("warnings", []))
-            except Exception:
+            except Exception as exc:
                 checks.append(
                     {
                         "id": str(target.id),
                         "label": target.name,
                         "ok": False,
-                        "message": "接続テストを完了できません。SSH設定・権限・タイムアウトを確認してください。",
+                        "message": (
+                            VCENTER_HTTPS_REQUIRED
+                            if is_vcenter_protocol_policy_error(exc)
+                            else "接続テストを完了できません。SSH設定・権限・タイムアウトを確認してください。"
+                        ),
                     }
                 )
     result = {"checks": checks, "samples": samples[:20], "warnings": warnings}

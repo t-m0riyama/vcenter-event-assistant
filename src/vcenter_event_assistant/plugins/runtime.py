@@ -21,7 +21,12 @@ from vcenter_event_assistant_plugin_api.validation import (
     raise_for_issues,
 )
 
-from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
+from vcenter_event_assistant.collectors.connection import (
+    VCENTER_HTTPS_REQUIRED,
+    VCenterProtocolPolicyError,
+    connect_vcenter,
+    disconnect,
+)
 from vcenter_event_assistant.db.models import (
     CollectorRunState,
     EventRecord,
@@ -87,6 +92,14 @@ _SAFE_DETAIL_TYPES: tuple[type[BaseException], ...] = (
 )
 
 
+def is_vcenter_protocol_policy_error(exc: BaseException) -> bool:
+    return type(exc) is VCenterProtocolPolicyError or (
+        isinstance(exc, CollectorWorkerError)
+        and str(exc) == VCenterProtocolPolicyError.__name__
+        and exc.detail == VCENTER_HTTPS_REQUIRED
+    )
+
+
 def _safe_error(exc: BaseException) -> str:
     """`CollectorRunState.error_message` に載せる文字列を作る。
 
@@ -95,6 +108,8 @@ def _safe_error(exc: BaseException) -> str:
     プラグイン側の型名を、さらに安全だと分かっている型ではメッセージも通す。
     完全な情報はコレクタワーカーの stderr にある。
     """
+    if is_vcenter_protocol_policy_error(exc):
+        return VCENTER_HTTPS_REQUIRED
     if isinstance(exc, CollectorWorkerError):
         # str(exc) はワーカーが返したプラグイン側の例外型名。
         plugin_error = str(exc) or type(exc).__name__

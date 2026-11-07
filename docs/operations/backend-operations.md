@@ -306,6 +306,16 @@ TLS:
 - プロキシ設定を修正する
 - 一時的に `POST {BASE_URL}/api/ingest/run` を実行し、戻り値の件数とログを確認する
 
+#### 本番環境で既存の HTTP 登録を HTTPS に移行する
+
+`APP_ENV=production` では、保存済みの vCenter が HTTP の場合も、接続テストや収集などの vCenter API 接続を拒否する。アップグレード前に「設定 → vCenter」で HTTP の登録を確認し、次の手順で移行する。
+
+1. 対象の接続方式を HTTPS に変更し、実際の TLS ポート（通常は 443）を指定する。
+2. 「SSL 証明書を検証（HTTPS のみ）」を有効にする。独自 CA を使う場合は CA バンドルをアプリから読み取れる場所に置き、`VCENTER_CA_BUNDLE` にそのパスを指定する。
+3. 保存して接続テストを実行し、成功したら対象の収集結果を確認する。
+
+アップグレード後に HTTP の登録が残っていた場合は、起動ログの `vCenter requires HTTPS in production` に対象 ID と有効・無効の状態が出る。HTTPS の登録で保存済みポートが 1〜65535 の整数でない場合は、`vCenter requires a valid port in production` が出る。アプリは起動を続けるので、設定を修正できる。小数のポートが DB に保存されていて管理画面の一覧を取得できない場合は、管理者権限で `PATCH /api/vcenters/{id}` に正しい `port`（例 `{"port": 443}`）を送る。`{id}` には起動ログの対象 ID を使う。
+
 ### 3.4 DB障害（接続失敗/遅い/ディスク）
 
 症状:
