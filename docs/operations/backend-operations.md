@@ -415,6 +415,13 @@ TLS:
 - コレクタワーカーのログ: `VEA_COLLECTOR_WORKER_LOG_LEVEL`（未設定時は `LOG_LEVEL` を継承）
 - SSH の接続先: `VEA_SSH_ALLOWED_PORTS`（許可するポートのカンマ区切り。既定は空で制限しない）。接続先の名前は、ホスト鍵の取得と収集の直前に名前解決し、ループバック・リンクローカル（メタデータ）・マルチキャスト・予約済み・未指定のアドレスに解決されると接続しない（RFC1918 は許可）
 - 外へ接続して確かめる API の rate limit: `RATE_LIMIT_PROBE_PER_MINUTE`（既定 20 回/分、クライアントの IP ごと）。SSH のホスト鍵の取得・セットアップのアクション・ESXi の一覧・vCenter の接続テストが対象
+- チャット・プレビュー・インシデントタイムラインの集計の上限（期間内のイベントとメトリクスを DB で集計する重い処理）
+  - rate limit: `/api/incident-timeline` は `RATE_LIMIT_CHAT_PER_MINUTE` の 2 倍（既定 20 回/分、クライアントの IP ごと）。超えると 429
+  - 同時実行数: `CONTEXT_AGGREGATION_CONCURRENCY`（全体、既定 4）と `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER`（利用者ごと、既定 1）。空きがなければ待たずに 503（`Retry-After` 付き）を返す。画面には「時間をおいて再度お試しください」と出る
+  - イベントの集計行数: `CONTEXT_AGGREGATION_MAX_ROWS`（既定 100,000）。行数はおよそ「時間バケット数（最大 48 程度）× イベント種別数」で、超えると 422（vCenter を指定して絞り込むよう案内する）。メトリクスはカテゴリごとの上位 15 台を DB で選ぶので、この上限の対象ではない
+  - 利用者ごとの同時実行数は、チャット・プレビュー・インシデントタイムラインで共有する。同じ利用者が別のタブでタイムラインを生成している間にチャットを送ると、片方が 503 になる。困る場合は `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER` を 2 にする
+  - 要求を途中で取り消すと枠はすぐ返るが、SQLite では実行中のクエリが最後まで走る。取り消しを繰り返すと、一時的に上限より多くの集計が DB で走ることがある（PostgreSQL ではクエリも取り消される）
+  - 上限はどれもプロセスごとに数える。複数のワーカーで動かすと、全体の上限は「上限 × ワーカー数」になる。リバースプロキシの後ろでは rate limit のキー（クライアントの IP）が全員同じになり、1 つの枠を共有する。認証を無効にしている場合、同時実行数は全員が 1 人の利用者として数えられる
 - コレクタワーカーの環境変数: `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH`（プラグインが独自の環境変数を読むときだけ）、`VEA_PROCESS_NON_DUMPABLE`（既定 `true`、Linux のみ）。詳細は `docs/operations/collector-plugins.md` の「脅威モデル」
 
 ## 4.1 プラグイン管理を有効化する場合

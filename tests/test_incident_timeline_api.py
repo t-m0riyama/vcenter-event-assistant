@@ -443,6 +443,7 @@ async def test_post_incident_timeline_passes_original_request_model(
     async def _fake_build_incident_timeline_payload(
         session: object,
         body: IncidentTimelineBuildRequest,
+        **_kwargs: object,
     ) -> IncidentTimelinePayload:
         assert isinstance(body, IncidentTimelineBuildRequest)
         assert not hasattr(body, "messages")

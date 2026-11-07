@@ -18,6 +18,9 @@ HIGH_ATTENTION_TYPES: frozenset[str] = frozenset(
     }
 )
 
+# メッセージに含まれていれば加点する語（小文字）。``metric_ranking`` は DB 側の判定にも使う。
+ALERT_KEYWORDS: tuple[str, ...] = ("fail", "error", "lost", "timeout", "corrupt")
+
 SEVERITY_WEIGHT: dict[str, int] = {
     "error": 40,
     "warning": 20,
@@ -46,7 +49,12 @@ def score_event(
     severity: str | None,
     message: str,
 ) -> NotableResult:
-    """イベントフィールドから notable スコアとタグを算出する。"""
+    """イベントフィールドから notable スコアとタグを算出する。
+
+    ``message`` は ``ALERT_KEYWORDS`` を含むかの判定にしか使わない。``metric_ranking`` はこの性質に頼り、
+    本文を読み込まずに「種別・重大度・警告語の有無」の組み合わせごとに点数を求めている。
+    本文の他の特徴で点数を変えるときは、``query_top_event_type_buckets`` も合わせて直すこと。
+    """
     tags: list[str] = []
     score = 0
 
@@ -64,7 +72,7 @@ def score_event(
             break
 
     lowered = message.lower()
-    if any(x in lowered for x in ("fail", "error", "lost", "timeout", "corrupt")):
+    if any(x in lowered for x in ALERT_KEYWORDS):
         score += 10
         tags.append("keyword_alert")
 

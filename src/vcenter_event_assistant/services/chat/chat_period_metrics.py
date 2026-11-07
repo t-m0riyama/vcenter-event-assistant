@@ -8,10 +8,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Select, and_, select
+from sqlalchemy import and_, case, func, literal, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import MetricSample
+from vcenter_event_assistant.services.sql_time import bucket_index_expr, truncate_to_second
 
 METRIC_CPU = "host.cpu.usage_pct"
 METRIC_MEM = "host.mem.usage_pct"
@@ -119,16 +121,100 @@ def _keys_for_toggles(
     return tuple(keys)
 
 
-def _category_for_key(metric_key: str) -> Literal["cpu", "memory", "disk", "network"] | None:
-    if metric_key == METRIC_CPU:
-        return "cpu"
-    if metric_key == METRIC_MEM:
-        return "memory"
-    if metric_key in DISK_KEYS:
-        return "disk"
-    if metric_key in NET_KEYS:
-        return "network"
-    return None
+async def _aggregate_top_hosts(
+    session: AsyncSession,
+    clauses: list[ColumnElement[bool]],
+    *,
+    from_utc: datetime,
+    bucket_sec: int,
+    max_hosts_per_category: int,
+) -> tuple[dict[tuple[str, str, str, int], tuple[float, int]], dict[tuple[str, str], str]]:
+    """DB でバケット平均を集計し、カテゴリごとの上位ホストの分だけを返す（Issue #301）。
+
+    サンプルを 1 行ずつ読み込まない。上位の選定（期間内のバケット平均の最大値の降順、同点は moid 順）も
+    DB の window 関数で行うので、受け取る行数は「カテゴリ数 × 上位件数 × キー数 × バケット数」以下になる。
+
+    層ごとに副問い合わせにしているのは、PostgreSQL で SELECT と GROUP BY の式を一致させるため
+    （``sql_time`` のモジュールの説明を参照）。
+
+    Returns:
+        ``(category, moid, metric_key, bucket_idx) -> (avg, n)`` と、``(category, moid) -> 表示名``。
+    """
+    bind = session.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else "sqlite"
+    category = case(
+        (MetricSample.metric_key == METRIC_CPU, literal("cpu")),
+        (MetricSample.metric_key == METRIC_MEM, literal("memory")),
+        (MetricSample.metric_key.in_(DISK_KEYS), literal("disk")),
+        else_=literal("network"),
+    )
+    base = (
+        select(
+            category.label("cat"),
+            MetricSample.entity_moid.label("moid"),
+            MetricSample.metric_key.label("mk"),
+            bucket_index_expr(
+                MetricSample.sampled_at,
+                dialect_name,
+                from_epoch=int(from_utc.timestamp()),
+                bucket_sec=bucket_sec,
+            ).label("bidx"),
+            MetricSample.value.label("value"),
+            MetricSample.entity_name.label("name"),
+        )
+        .where(and_(*clauses))
+        .subquery("base")
+    )
+    agg = (
+        select(
+            base.c.cat,
+            base.c.moid,
+            base.c.mk,
+            base.c.bidx,
+            func.avg(base.c.value).label("avg"),
+            func.count().label("n"),
+            # 空や空白だけの名前は NULL にして、名前のある行を優先する（max は NULL を無視する）。
+            func.max(func.nullif(func.trim(base.c.name), "")).label("name"),
+        )
+        .group_by(base.c.cat, base.c.moid, base.c.mk, base.c.bidx)
+        .subquery("agg")
+    )
+    with_peak = select(
+        agg,
+        func.max(agg.c.avg).over(partition_by=(agg.c.cat, agg.c.moid)).label("peak"),
+    ).subquery("with_peak")
+    ranked = select(
+        with_peak,
+        func.dense_rank()
+        .over(
+            partition_by=with_peak.c.cat,
+            order_by=(with_peak.c.peak.desc(), with_peak.c.moid),
+        )
+        .label("host_rank"),
+    ).subquery("ranked")
+    stmt = select(
+        ranked.c.cat,
+        ranked.c.moid,
+        ranked.c.mk,
+        ranked.c.bidx,
+        ranked.c.avg,
+        ranked.c.n,
+        ranked.c.name,
+    ).where(ranked.c.host_rank <= max_hosts_per_category)
+    result = await session.execute(stmt)
+
+    acc: dict[tuple[str, str, str, int], tuple[float, int]] = {}
+    named: dict[tuple[str, str], str] = {}
+    for cat, moid, mk, bidx, avg, n, name in result.all():
+        key = (str(cat), str(moid))
+        acc[(key[0], key[1], str(mk), int(bidx))] = (float(avg), int(n))
+        # SQL の trim は空白文字しか削らないので、タブなどは Python でも落とす。
+        display = (name or "").strip()
+        if display and display > named.get(key, ""):
+            named[key] = display
+    # 名前のある行が 1 つもないホストだけ moid を表示名にする。
+    names = {key: named.get(key) or key[1] for key in {(c, m) for c, m, _mk, _b in acc}}
+    return acc, names
 
 
 async def build_chat_period_metrics(
@@ -152,8 +238,9 @@ async def build_chat_period_metrics(
     - ``from_utc >= to_utc`` は ``ValueError``。
     - ``bucket_sec`` を指定するとその幅でバケット化（イベントバケットと揃える用途）。
     """
-    from_utc = _as_utc(from_utc)
-    to_utc = _as_utc(to_utc)
+    # DB 側のバケット番号は秒単位なので、起点も秒に揃える（呼び出し元で揃えていれば何もしない）。
+    from_utc = truncate_to_second(from_utc)
+    to_utc = truncate_to_second(to_utc)
     if from_utc >= to_utc:
         raise ValueError("from_utc must be before to_utc")
     if not any(
@@ -183,52 +270,23 @@ async def build_chat_period_metrics(
     if vcenter_id is not None:
         clauses.append(MetricSample.vcenter_id == vcenter_id)
 
-    stmt: Select[tuple[MetricSample]] = select(MetricSample).where(and_(*clauses))
-    result = await session.execute(stmt)
-    rows = list(result.scalars().all())
-
-    # (category, entity_moid, metric_key, bucket_idx) -> sum, count
-    acc: dict[tuple[str, str, str, int], list[float]] = defaultdict(list)
-    entity_name_by_moid: dict[tuple[str, str], str] = {}
-
-    for r in rows:
-        cat = _category_for_key(r.metric_key)
-        if cat is None:
-            continue
-        sampled = _as_utc(r.sampled_at)
-        offset_sec = (sampled - from_utc).total_seconds()
-        if offset_sec < 0:
-            continue
-        bidx = int(offset_sec // bucket_sec_used)
-        key = (cat, r.entity_moid, r.metric_key, bidx)
-        acc[key].append(float(r.value))
-        entity_name_by_moid[(cat, r.entity_moid)] = (r.entity_name or "").strip() or r.entity_moid
-
-    # カテゴリ別に entity の代表スコア（期間内の最大バケット平均）で上位 max_hosts を選ぶ
-    peak_by_cat_entity: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for (cat, moid, mk, _bidx), vals in acc.items():
-        if not vals:
-            continue
-        avg = sum(vals) / len(vals)
-        if avg > peak_by_cat_entity[cat][moid]:
-            peak_by_cat_entity[cat][moid] = avg
-
-    allowed_moids: dict[str, set[str]] = {}
-    for cat, moids in peak_by_cat_entity.items():
-        sorted_moids = sorted(moids.keys(), key=lambda m: moids[m], reverse=True)
-        allowed_moids[cat] = set(sorted_moids[:max_hosts_per_category])
+    acc, entity_name_by_moid = await _aggregate_top_hosts(
+        session,
+        clauses,
+        from_utc=from_utc,
+        bucket_sec=bucket_sec_used,
+        max_hosts_per_category=max_hosts_per_category,
+    )
 
     def build_series_for_category(
         category: Literal["cpu", "memory", "disk", "network"],
     ) -> list[PeriodMetricHostSeries]:
-        allowed = allowed_moids.get(category, set())
-        # (moid, metric_key) -> list of (bidx, avg, n)
+        # (moid, metric_key) -> {bidx: (avg, n)}
         per_series: dict[tuple[str, str], dict[int, tuple[float, int]]] = defaultdict(dict)
-        for (cat, moid, mk, bidx), vals in acc.items():
-            if cat != category or moid not in allowed:
+        for (cat, moid, mk, bidx), (avg, n) in acc.items():
+            if cat != category:
                 continue
-            s, c = sum(vals), len(vals)
-            per_series[(moid, mk)][bidx] = (s / c, c)
+            per_series[(moid, mk)][bidx] = (avg, n)
 
         out: list[PeriodMetricHostSeries] = []
         for (moid, mk) in sorted(per_series.keys(), key=lambda x: (x[0], x[1])):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -41,6 +41,7 @@ from vcenter_event_assistant.db.models import User
 from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 from vcenter_event_assistant.db.startup_migration import run_startup_migration
 from vcenter_event_assistant.main import create_app
+from vcenter_event_assistant.services.chat.aggregation_limiter import reset_aggregation_limiter
 from vcenter_event_assistant.settings import Settings, get_settings
 from vcenter_event_assistant.settings_binding import bind_settings, clear_settings_binding
 
@@ -102,6 +103,14 @@ def _mock_vcenter_host_dns(monkeypatch: pytest.MonkeyPatch) -> None:
         "vcenter_event_assistant.services.vcenter_host_validation.socket.getaddrinfo",
         _fake_vcenter_getaddrinfo,
     )
+
+
+@pytest.fixture(autouse=True)
+def _reset_aggregation_limiter() -> Iterator[None]:
+    """集計の同時実行数の枠はプロセス全体で共有する。漏れると無関係なテストが 503 になるので毎回戻す。"""
+    reset_aggregation_limiter()
+    yield
+    reset_aggregation_limiter()
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

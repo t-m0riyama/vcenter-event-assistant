@@ -8,7 +8,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vcenter_event_assistant.api.auth_deps import RequireOperator, RequireViewer
+from vcenter_event_assistant.api.auth_deps import (
+    Principal,
+    RequireOperator,
+    RequireViewer,
+    get_current_principal,
+    principal_owner_key,
+)
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas.chat import (
     IncidentTimelineBuildRequest,
@@ -52,8 +58,11 @@ def _graph_context_for_response(snapshot: IncidentTimelineManualSnapshot) -> Inc
 async def post_incident_timeline(
     body: IncidentTimelineBuildRequest,
     session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(get_current_principal),
 ) -> IncidentTimelinePayload:
-    return await build_incident_timeline_payload(session, body)
+    return await build_incident_timeline_payload(
+        session, body, owner_key=principal_owner_key(principal)
+    )
 
 
 @router.post("/snapshots/manual", dependencies=[RequireOperator], response_model=IncidentTimelineManualSnapshotCreateResponse, status_code=201)

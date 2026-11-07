@@ -6,12 +6,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.db.models import EventRecord, MetricSample
-from vcenter_event_assistant.rules.notable import final_notable_score
+from vcenter_event_assistant.rules.notable import ALERT_KEYWORDS, final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 
 
@@ -114,24 +114,32 @@ async def query_top_event_type_buckets(
     delta_map = await load_event_score_delta_map(session)
     max_by_type: dict[str, int] = {t: 0 for t in top_types}
     if top_types:
-        ev_for_types = await session.execute(
+        # 点数は「種別・重大度・本文に警告語を含むか」だけで決まる（``rules.notable.score_event``）。
+        # その組み合わせごとに DB でまとめ、代表値に現行ルールを当てる。本文は読み込まない（Issue #301）。
+        lowered = func.lower(func.coalesce(EventRecord.message, ""))
+        has_keyword = or_(*(lowered.contains(k, autoescape=True) for k in ALERT_KEYWORDS))
+        base = (
             select(
-                EventRecord.event_type,
-                EventRecord.severity,
-                EventRecord.message,
-            ).where(
-                *event_clauses,
-                EventRecord.event_type.in_(top_types),
+                EventRecord.event_type.label("event_type"),
+                EventRecord.severity.label("severity"),
+                case((has_keyword, 1), else_=0).label("has_keyword"),
+            )
+            .where(*event_clauses, EventRecord.event_type.in_(top_types))
+            .subquery("score_inputs")
+        )
+        combos = await session.execute(
+            select(base.c.event_type, base.c.severity, base.c.has_keyword).group_by(
+                base.c.event_type, base.c.severity, base.c.has_keyword
             )
         )
-        for et, sev, msg in ev_for_types.all():
+        for et, sev, kw in combos.all():
             et_s = str(et)
-            d = delta_map.get(et_s, 0)
             sc = final_notable_score(
                 event_type=et_s,
                 severity=sev,
-                message=msg or "",
-                score_delta=d,
+                # 判定に使うのは警告語の有無だけなので、代表の本文で足りる。
+                message=ALERT_KEYWORDS[0] if kw else "",
+                score_delta=delta_map.get(et_s, 0),
             )
             if sc > max_by_type[et_s]:
                 max_by_type[et_s] = sc

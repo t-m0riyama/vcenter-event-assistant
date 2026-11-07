@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Select, and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import EventRecord
-
-
-def _as_utc(dt: datetime) -> datetime:
-    """DB から naive が返る場合は UTC とみなす。"""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+from vcenter_event_assistant.services.chat.aggregation_limiter import AggregationLimitExceeded
+from vcenter_event_assistant.services.sql_time import bucket_index_expr, truncate_to_second
 
 
 class EventTimeBucketRow(BaseModel):
@@ -56,12 +51,15 @@ async def build_chat_event_time_buckets(
     bucket_sec: int,
     max_types_per_bucket: int = 10,
     alert_top_n_per_bucket: int = 3,
+    max_rows: int | None = None,
 ) -> EventTimeBucketsPayload:
     """
     ``occurred_at`` を ``bucket_sec`` 幅のバケットに集計する。
 
     - 件数 0 のバケットは含めない（スパース）。
     - ``by_type`` は件数降順で上位 ``max_types_per_bucket`` 種別を残し、残りは ``_other`` にまとめる。
+    - 集計は DB の GROUP BY（バケット × 種別）で行い、イベントを 1 行ずつ読み込まない（Issue #301）。
+    - ``max_rows`` を指定すると、集計後の行数がそれを超えたとき ``AggregationLimitExceeded`` を投げる。
     """
     if bucket_sec < 1:
         raise ValueError("bucket_sec must be >= 1")
@@ -70,8 +68,9 @@ async def build_chat_event_time_buckets(
     if alert_top_n_per_bucket < 1:
         raise ValueError("alert_top_n_per_bucket must be >= 1")
 
-    from_utc = _as_utc(from_utc)
-    to_utc = _as_utc(to_utc)
+    # DB 側のバケット番号は秒単位なので、起点も秒に揃える（呼び出し元で揃えていれば何もしない）。
+    from_utc = truncate_to_second(from_utc)
+    to_utc = truncate_to_second(to_utc)
     if from_utc >= to_utc:
         raise ValueError("from_utc must be before to_utc")
 
@@ -82,26 +81,42 @@ async def build_chat_event_time_buckets(
     if vcenter_id is not None:
         clauses.append(EventRecord.vcenter_id == vcenter_id)
 
-    stmt: Select[tuple[EventRecord]] = select(EventRecord).where(and_(*clauses))
-    result = await session.execute(stmt)
-    rows = list(result.scalars().all())
-
-    counts_by_bidx: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    alert_stats_by_bidx: dict[int, dict[str, dict[str, int]]] = defaultdict(
-        lambda: defaultdict(lambda: {"count": 0, "max_notable_score": 0})
+    bind = session.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else "sqlite"
+    # SELECT と GROUP BY で式を一致させるため、バケット番号は副問い合わせの列にしてから集計する。
+    base = (
+        select(
+            bucket_index_expr(
+                EventRecord.occurred_at,
+                dialect_name,
+                from_epoch=int(from_utc.timestamp()),
+                bucket_sec=bucket_sec,
+            ).label("bidx"),
+            EventRecord.event_type.label("event_type"),
+            func.coalesce(EventRecord.notable_score, 0).label("score"),
+        )
+        .where(and_(*clauses))
+        .subquery("base")
     )
-    for r in rows:
-        occurred = _as_utc(r.occurred_at)
-        offset_sec = (occurred - from_utc).total_seconds()
-        if offset_sec < 0:
-            continue
-        bidx = int(offset_sec // bucket_sec)
-        counts_by_bidx[bidx][r.event_type] += 1
-        current = alert_stats_by_bidx[bidx][r.event_type]
-        current["count"] += 1
-        score = int(r.notable_score or 0)
-        if score > current["max_notable_score"]:
-            current["max_notable_score"] = score
+    stmt = select(
+        base.c.bidx,
+        base.c.event_type,
+        func.count().label("cnt"),
+        func.max(base.c.score).label("max_score"),
+    ).group_by(base.c.bidx, base.c.event_type)
+    if max_rows is not None:
+        stmt = stmt.limit(max_rows + 1)
+    rows = (await session.execute(stmt)).all()
+    if max_rows is not None and len(rows) > max_rows:
+        raise AggregationLimitExceeded("event_time_buckets", max_rows)
+
+    counts_by_bidx: dict[int, dict[str, int]] = defaultdict(dict)
+    alert_stats_by_bidx: dict[int, dict[str, dict[str, int]]] = defaultdict(dict)
+    for bidx, event_type, cnt, max_score in rows:
+        b = int(bidx)
+        et = str(event_type)
+        counts_by_bidx[b][et] = int(cnt)
+        alert_stats_by_bidx[b][et] = {"count": int(cnt), "max_notable_score": int(max_score or 0)}
 
     bucket_minutes = max(1, bucket_sec // 60)
     out_rows: list[EventTimeBucketRow] = []
