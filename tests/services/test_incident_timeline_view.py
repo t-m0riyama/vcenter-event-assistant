@@ -517,14 +517,9 @@ def test_metric_breach_level(peak: float, threshold: float, expected: str) -> No
 def test_metric_breach_title_and_detail() -> None:
     assert metric_breach_title("host.cpu.usage_pct", 80.0) == "CPU 使用率 が閾値（80%）を超過"
     assert metric_breach_title("host.mem.usage_pct", 85.5) == "メモリ使用率 が閾値（85.5%）を超過"
-    assert (
-        metric_breach_detail(92.346, _at(10), 3, continued=False)
-        == "ピーク 92.35%（2026-03-22 00:10:00 UTC）、サンプル 3 件"
-    )
-    # naive の時刻は UTC とみなす
-    assert metric_breach_detail(90.0, _at(0).replace(tzinfo=None), 1, continued=True) == (
-        "ピーク 90%（2026-03-22 00:00:00 UTC）、サンプル 1 件、期間の開始前から継続"
-    )
+    # 時刻は detail に書かない（画面が ref.peak_at_utc を設定のタイムゾーンで表示する）
+    assert metric_breach_detail(92.346, 3, continued=False) == "ピーク 92.35%、サンプル 3 件"
+    assert metric_breach_detail(90.0, 1, continued=True) == "ピーク 90%、サンプル 1 件、期間の開始前から継続"
 
 
 def test_count_spans_per_bucket_counts_every_touched_bucket_and_clips() -> None:

@@ -440,21 +440,18 @@ async def test_incident_timeline_metric_intervals_on_each_dialect(session: Async
         owner_key="dialect-test",
     )
     got = [
-        (i.vcenter_name, i.ref.entity_moid, i.ref.metric_key, i.timestamp_utc, i.end_utc, i.entity_name, i.level, i.detail)
+        (i.vcenter_name, i.ref.entity_moid, i.ref.metric_key, i.timestamp_utc, i.end_utc, i.entity_name, i.level,
+         i.ref.peak_value, i.ref.peak_at_utc, i.ref.sample_count, i.ref.continues_from_before, i.ref.threshold_pct)
         for i in out.items
     ]
     assert got == [
-        ("vc-one", "h1", METRIC_CPU, at(0, 900_000), at(5), "H1", "warning",
-         "ピーク 92%（2026-03-22 00:05:00 UTC）、サンプル 2 件、期間の開始前から継続"),
-        ("vc-two", "h1", METRIC_CPU, at(12), None, "H1-ON-V2", "warning",
-         "ピーク 90%（2026-03-22 00:12:00 UTC）、サンプル 1 件"),
-        ("vc-one", "h1", METRIC_CPU, at(15), at(30, 100_000), "H1-RENAMED", "warning",
-         "ピーク 81%（2026-03-22 00:30:00 UTC）、サンプル 2 件"),
-        ("vc-one", "h3", METRIC_MEM, at(25), None, "H3", "error",
-         "ピーク 97%（2026-03-22 00:25:00 UTC）、サンプル 1 件"),
-        ("vc-one", "h1", METRIC_CPU, at(46, 200_000), None, "H1", "warning",
-         "ピーク 83%（2026-03-22 00:46:00 UTC）、サンプル 1 件"),
+        ("vc-one", "h1", METRIC_CPU, at(0, 900_000), at(5), "H1", "warning", 92.0, at(5), 2, True, 80.0),
+        ("vc-two", "h1", METRIC_CPU, at(12), None, "H1-ON-V2", "warning", 90.0, at(12), 1, False, 80.0),
+        ("vc-one", "h1", METRIC_CPU, at(15), at(30, 100_000), "H1-RENAMED", "warning", 81.0, at(30, 100_000), 2, False, 80.0),
+        ("vc-one", "h3", METRIC_MEM, at(25), None, "H3", "error", 97.0, at(25), 1, False, 85.0),
+        ("vc-one", "h1", METRIC_CPU, at(46, 200_000), None, "H1", "warning", 83.0, at(46, 200_000), 1, False, 80.0),
     ]
+    assert out.items[0].detail == "ピーク 92%、サンプル 2 件、期間の開始前から継続"
     breach = [b.metric_breach for b in out.overview]
     assert breach[:7] == [1, 1, 1, 1, 1, 1, 0]
     assert sum(breach) == 6 + 1 + 16 + 1 + 1

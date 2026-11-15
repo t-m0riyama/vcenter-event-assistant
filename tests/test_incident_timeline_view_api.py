@@ -979,7 +979,7 @@ async def test_metric_consecutive_breach_becomes_one_interval(client: AsyncClien
     assert item["id"] == f"metric:{ids[1]}"
     assert _span(item) == (_at(5), _at(15))
     assert item["title"] == "CPU 使用率 が閾値（80%）を超過"
-    assert item["detail"] == "ピーク 92.5%（2026-03-22 00:10:00 UTC）、サンプル 3 件"
+    assert item["detail"] == "ピーク 92.5%、サンプル 3 件"
     assert item["level"] == "warning"
     assert item["entity_name"] == "esx01"
     assert item["entity_type"] == "HostSystem"
@@ -990,6 +990,12 @@ async def test_metric_consecutive_breach_becomes_one_interval(client: AsyncClien
     assert item["ref"]["metric_key"] == CPU
     assert item["ref"]["entity_moid"] == "host-1"
     assert item["ref"]["event_id"] is None and item["ref"]["log_id"] is None
+    # 構造化した値（画面がタイムゾーンの設定で時刻を表示するため）
+    assert item["ref"]["threshold_pct"] == 80
+    assert item["ref"]["peak_value"] == 92.5
+    assert _dt(item["ref"]["peak_at_utc"]) == _at(10)
+    assert item["ref"]["sample_count"] == 3
+    assert item["ref"]["continues_from_before"] is False
 
 
 @pytest.mark.asyncio
@@ -998,7 +1004,8 @@ async def test_metric_interval_is_split_by_a_sample_below_threshold(client: Asyn
     await _series(vid, "host-1", [(0, 85), (5, 79.9), (10, 85)])
     items = _metrics(await _post(client))
     assert [_span(i) for i in items] == [(_at(0), None), (_at(10), None)]
-    assert all(i["detail"] == f"ピーク 85%（2026-03-22 00:{m:02d}:00 UTC）、サンプル 1 件" for i, m in zip(items, (0, 10)))
+    assert all(i["detail"] == "ピーク 85%、サンプル 1 件" for i in items)
+    assert [_dt(i["ref"]["peak_at_utc"]) for i in items] == [_at(0), _at(10)]
 
 
 @pytest.mark.asyncio
@@ -1067,9 +1074,12 @@ async def test_metric_interval_continuing_from_before_the_period(client: AsyncCl
     items = {i["ref"]["entity_moid"]: i for i in _metrics(await _post(client))}
     assert items["host-1"]["id"] == f"metric:{ids[2]}"
     assert _span(items["host-1"]) == (_at(0), _at(5))
-    assert items["host-1"]["detail"] == (
-        "ピーク 88%（2026-03-22 00:05:00 UTC）、サンプル 2 件、期間の開始前から継続"
+    assert items["host-1"]["detail"] == "ピーク 88%、サンプル 2 件、期間の開始前から継続"
+    ref = items["host-1"]["ref"]
+    assert (ref["peak_value"], _dt(ref["peak_at_utc"]), ref["sample_count"], ref["continues_from_before"]) == (
+        88, _at(5), 2, True,
     )
+    assert items["host-2"]["ref"]["continues_from_before"] is False
     assert _span(items["host-2"]) == (_at(5), None)
     assert "期間の開始前" not in items["host-2"]["detail"]
     assert "期間の開始前" not in items["host-3"]["detail"]
@@ -1084,6 +1094,7 @@ async def test_metric_threshold_from_request_changes_result(client: AsyncClient)
     assert item["title"] == "CPU 使用率 が閾値（70%）を超過"
     (item,) = _metrics(await _post(client, metric_threshold_cpu_pct=82.5))
     assert item["title"] == "CPU 使用率 が閾値（82.5%）を超過"
+    assert item["ref"]["threshold_pct"] == 82.5
 
 
 @pytest.mark.asyncio
@@ -1290,6 +1301,9 @@ async def test_log_error_becomes_log_item(client: AsyncClient) -> None:
     assert item["count"] == 1
     assert item["score"] is None
     assert item["ref"]["log_id"] == log_id
+    # メトリクス用の構造化した値はログでは null
+    for key in ("threshold_pct", "peak_value", "peak_at_utc", "sample_count", "continues_from_before"):
+        assert item["ref"][key] is None
     assert sum(b["log_error"] for b in data["overview"]) == 1
 
 
@@ -1500,3 +1514,11 @@ async def test_log_source_only_issues_log_queries(client: AsyncClient, monkeypat
     assert data["highlights"]["new_event_types"] == []
     for b in data["overview"]:
         assert (b["event_total"], b["event_notable"], b["alert"], b["metric_breach"]) == (0, 0, 0, 0)
+
+
+def test_disk_and_network_thresholds_are_documented_as_unused() -> None:
+    """互換のために受け取るが使わない。スキーマの説明にその旨と理由を書く。"""
+    fields = IncidentTimelineViewRequest.model_fields
+    for name in ("metric_threshold_disk_pct", "metric_threshold_network_pct"):
+        description = fields[name].description or ""
+        assert "使わない" in description and "KB/s" in description

@@ -391,14 +391,12 @@ def metric_breach_title(metric_key: str, threshold: float) -> str:
     return f"{label} が閾値（{_format_pct(threshold)}%）を超過"
 
 
-def metric_breach_detail(
-    peak: float, peak_at: datetime, sample_count: int, *, continued: bool
-) -> str:
-    """ピーク値とその時刻（UTC）、区間内のサンプル数。期間の開始前から続く区間はその旨を足す。"""
-    parts = [
-        f"ピーク {_format_pct(peak)}%（{to_utc(peak_at):%Y-%m-%d %H:%M:%S} UTC）",
-        f"サンプル {sample_count} 件",
-    ]
+def metric_breach_detail(peak: float, sample_count: int, *, continued: bool) -> str:
+    """ピーク値と区間内のサンプル数。期間の開始前から続く区間はその旨を足す。
+
+    ピークの時刻は書かない。画面が ``ref.peak_at_utc`` を利用者のタイムゾーンの設定で表示する。
+    """
+    parts = [f"ピーク {_format_pct(peak)}%", f"サンプル {sample_count} 件"]
     if continued:
         parts.append(_METRIC_CONTINUED_NOTE)
     return "、".join(parts)
@@ -1202,6 +1200,8 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
         end = to_utc(row.end_at)
         threshold = thresholds[row.mk]
         peak = float(row.peak)
+        sample_count = int(row.n)
+        continued = not int(row.began_inside)
         entries.append(
             TimelineEntry(
                 kind="metric",
@@ -1210,16 +1210,22 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
                 end_utc=end if end != start else None,
                 level=metric_breach_level(peak, threshold),
                 title=metric_breach_title(row.mk, threshold),
-                detail=metric_breach_detail(
-                    peak, row.peak_at, int(row.n), continued=not int(row.began_inside)
-                ),
+                detail=metric_breach_detail(peak, sample_count, continued=continued),
                 entity_name=row.name or row.moid,
                 entity_type=row.etype,
                 vcenter_id=row.vc,
                 # 区間はそれ自体が「まとめた」行なので、隣とはまとめない。count は 1 のまま
                 # （イベントの「×N」と意味が違うため。サンプル数は detail に書く）。
                 merge_key=None,
-                ref={"metric_key": row.mk, "entity_moid": row.moid},
+                ref={
+                    "metric_key": row.mk,
+                    "entity_moid": row.moid,
+                    "threshold_pct": float(threshold),
+                    "peak_value": peak,
+                    "peak_at_utc": to_utc(row.peak_at),
+                    "sample_count": sample_count,
+                    "continues_from_before": continued,
+                },
             )
         )
     counts = count_spans_per_bucket(

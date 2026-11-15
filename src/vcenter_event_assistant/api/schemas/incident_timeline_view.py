@@ -38,8 +38,23 @@ class IncidentTimelineViewRequest(BaseModel):
     sources: list[TimelineSource] = Field(default_factory=_default_sources, min_length=1)
     metric_threshold_cpu_pct: float = Field(default=80.0, ge=0, le=100)
     metric_threshold_memory_pct: float = Field(default=85.0, ge=0, le=100)
-    metric_threshold_disk_pct: float = Field(default=75.0, ge=0, le=100)
-    metric_threshold_network_pct: float = Field(default=75.0, ge=0, le=100)
+    metric_threshold_disk_pct: float = Field(
+        default=75.0,
+        ge=0,
+        le=100,
+        description=(
+            "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_pct も vSphere の "
+            "disk.usage.average で単位は KBps）なので、% の閾値を当てられない。"
+        ),
+    )
+    metric_threshold_network_pct: float = Field(
+        default=75.0,
+        ge=0,
+        le=100,
+        description=(
+            "互換のために受け取るが使わない。ネットワーク系の指標は値が KB/s なので、% の閾値を当てられない。"
+        ),
+    )
     item_limit: int = Field(default=500, ge=1, le=1000)
 
     @field_validator("entity", mode="before")
@@ -82,6 +97,14 @@ class IncidentTimelineItemRef(BaseModel):
     metric_key: str | None = None
     entity_moid: str | None = None
     log_id: int | None = None
+    # 以下はメトリクスの超過区間（kind="metric"）の行でだけ入る。
+    threshold_pct: float | None = Field(default=None, description="当てた閾値（%）")
+    peak_value: float | None = Field(default=None, description="期間内の区間のピーク値（%）")
+    peak_at_utc: datetime | None = Field(default=None, description="ピークのサンプルの時刻（同じ値なら早いほう）")
+    sample_count: int | None = Field(default=None, description="期間内の区間のサンプル数")
+    continues_from_before: bool | None = Field(
+        default=None, description="期間の開始前から超過が続いているか"
+    )
 
 
 class IncidentTimelineViewItem(BaseModel):
