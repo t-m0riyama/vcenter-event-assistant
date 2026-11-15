@@ -170,11 +170,12 @@ async def _resolve_history_entities(
 ) -> dict[MetricProbe, ResolvedEntity]:
     """ページ内の metric_threshold 行の対象名を、タイムラインと同じ関数でまとめて引く（N+1 にしない）。
 
-    名前は行ごとに「その行の ``occurred_at`` の時点の名前」。ページの区切りに依存しないので、行の
-    「タイムラインで見る」リンク（``occurred_at`` の前後・``entity_name`` で絞る）で開いたタイムラインにも
-    同じ名前で出る。1 ページ（最大 200 件）は 1 本の問い合わせで引ける。
+    名前は行ごとに「その行のルールの指標の、``occurred_at`` の時点の名前」。ページの区切りや同じページに
+    居合わせるほかの行に依存しないので、行の「タイムラインで見る」リンク（``occurred_at`` の前後・
+    ``entity_name`` で絞る）で開いたタイムラインにも同じ名前で出る。1 ページ（最大 200 件）は 1 本の問い合わせで
+    引ける（ルールに ``metric_key`` が無い古い行が混じるときだけ 2 本）。
     """
-    probes, metric_keys = collect_metric_probes(
+    probes = collect_metric_probes(
         (
             item.rule.rule_type if item.rule else "",
             item.context_key,
@@ -184,7 +185,7 @@ async def _resolve_history_entities(
         for item in items
     )
     return await resolve_metric_entities_at(
-        session, probes, metric_keys, lookback=metric_name_lookback(perf_sample_interval_seconds)
+        session, probes, lookback=metric_name_lookback(perf_sample_interval_seconds)
     )
 
 
@@ -201,7 +202,7 @@ def _history_item_to_read(
     vcenter_id: uuid.UUID | None = None
     entity_name: str | None = None
     if rule_type == "metric_threshold":
-        probe = metric_probe(item.context_key, item.occurred_at)
+        probe = metric_probe(item.context_key, item.rule.config if item.rule else None, item.occurred_at)
         if probe is not None:
             vcenter_id = probe[0]
             hit = (entities or {}).get(probe)
