@@ -162,3 +162,34 @@ export function replaceTimelineHash(conditions: TimelineConditions): void {
   const { pathname, search } = window.location
   window.history.replaceState(null, '', `${pathname}${search}${next}`)
 }
+
+/** 他のタブから開くときの、起点の前後の既定の幅（ミリ秒）。 */
+export const TIMELINE_ENTRY_HALF_WIDTH_MS = 30 * 60_000
+
+export type TimelineEntryInput = {
+  /** 起点の時刻（ISO 文字列。`Z` が無ければ UTC として読む）。 */
+  readonly at: string | null | undefined
+  readonly vcenterId?: string | null
+  /** 対象名（部分一致で絞る）。 */
+  readonly entity?: string | null
+  readonly halfWidthMs?: number
+}
+
+/**
+ * 他のタブからタイムラインを開くハッシュ。起点の前後（既定 30 分）を期間にし、起点・vCenter・対象を渡す。
+ * 時刻が読めないときは null（呼び出し側はリンクを出さない）。`to` が未来でも構わない。
+ */
+export function timelineEntryHash(input: TimelineEntryInput): string | null {
+  const raw = input.at?.trim()
+  if (!raw) return null
+  const anchorMs = parseApiUtcInstantMs(raw)
+  if (!Number.isFinite(anchorMs)) return null
+  const half = input.halfWidthMs ?? TIMELINE_ENTRY_HALF_WIDTH_MS
+  return buildTimelineHash({
+    ...DEFAULT_TIMELINE_CONDITIONS,
+    range: { mode: 'fixed', from: new Date(anchorMs - half).toISOString(), to: new Date(anchorMs + half).toISOString() },
+    anchor: new Date(anchorMs).toISOString(),
+    vcenterId: input.vcenterId ?? '',
+    entity: input.entity?.trim() ?? '',
+  })
+}

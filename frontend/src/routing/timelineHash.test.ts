@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { correlationHash, readCorrelationRange } from './correlationRange'
 import {
   buildTimelineHash,
+  timelineEntryHash,
   DEFAULT_TIMELINE_CONDITIONS,
   parseTimelineHash,
   readTimelineHash,
@@ -90,5 +91,52 @@ describe('timelineHash', () => {
     expect(readCorrelationRange('events')).not.toBeNull()
     window.history.replaceState(null, '', buildTimelineHash(FIXED))
     expect(readCorrelationRange('events')).toBeNull()
+  })
+})
+
+describe('timelineEntryHash', () => {
+  const VC = '11111111-1111-4111-8111-111111111111'
+
+  it('起点の前後 30 分を既定の幅にして、anchor・vcenter_id・entity を持つ', () => {
+    const hash = timelineEntryHash({ at: '2026-03-22T01:00:00Z', vcenterId: VC, entity: 'esx 01' })
+    expect(hash).not.toBeNull()
+    const parsed = parseTimelineHash(hash!)!
+    expect(parsed.issue).toBeNull()
+    expect(parsed.conditions.range).toEqual({
+      mode: 'fixed',
+      from: '2026-03-22T00:30:00.000Z',
+      to: '2026-03-22T01:30:00.000Z',
+    })
+    expect(parsed.conditions.anchor).toBe('2026-03-22T01:00:00.000Z')
+    expect(parsed.conditions.vcenterId).toBe(VC)
+    expect(parsed.conditions.entity).toBe('esx 01')
+  })
+
+  it('幅を指定でき、vCenter と対象が無ければ項目を出さない', () => {
+    const hash = timelineEntryHash({ at: '2026-03-22T01:00:00Z', halfWidthMs: 600_000 })!
+    expect(hash).toContain('from=2026-03-22T00%3A50%3A00.000Z')
+    expect(hash).toContain('to=2026-03-22T01%3A10%3A00.000Z')
+    expect(hash).not.toContain('vcenter_id')
+    expect(hash).not.toContain('entity')
+    expect(timelineEntryHash({ at: '2026-03-22T01:00:00Z', vcenterId: '', entity: null })).not.toContain('entity')
+  })
+
+  it('Z の無い時刻は UTC として読む（ローカル時刻にしない）', () => {
+    const hash = timelineEntryHash({ at: '2026-03-22T01:00:00' })!
+    expect(parseTimelineHash(hash)!.conditions.anchor).toBe('2026-03-22T01:00:00.000Z')
+  })
+
+  it('読めない時刻・空は null', () => {
+    expect(timelineEntryHash({ at: 'not a date' })).toBeNull()
+    expect(timelineEntryHash({ at: '' })).toBeNull()
+    expect(timelineEntryHash({ at: null })).toBeNull()
+    expect(timelineEntryHash({ at: undefined })).toBeNull()
+  })
+
+  it('未来になる to もそのまま作る', () => {
+    const future = new Date(Date.now() + 10 * 60_000).toISOString()
+    const parsed = parseTimelineHash(timelineEntryHash({ at: future })!)!
+    expect(parsed.issue).toBeNull()
+    expect(parsed.conditions.range.mode).toBe('fixed')
   })
 })
