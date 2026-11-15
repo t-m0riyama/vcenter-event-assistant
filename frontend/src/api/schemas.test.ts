@@ -9,7 +9,7 @@ import {
   chatRequestSchema,
   incidentTimelineBuildRequestSchema,
   incidentTimelineManualSnapshotListItemSchema,
-  parseIncidentTimelineResponse,
+  incidentTimelineSchema,
 } from './schemas'
 
 describe('eventRowSchema', () => {
@@ -339,9 +339,9 @@ describe('chatRequestSchema', () => {
   })
 })
 
-describe('parseIncidentTimelineResponse', () => {
+describe('incidentTimelineSchema', () => {
   it('parses incident timeline response payload for /api/incident-timeline', () => {
-    const parsed = parseIncidentTimelineResponse({
+    const parsed = incidentTimelineSchema.parse({
       columns: [
         {
           timestamp_utc: '2026-05-07T00:00:00Z',
@@ -356,7 +356,7 @@ describe('parseIncidentTimelineResponse', () => {
   })
 
   it('timestamp_utc に +00:00 形式が含まれても解釈できる', () => {
-    const parsed = parseIncidentTimelineResponse({
+    const parsed = incidentTimelineSchema.parse({
       columns: [
         {
           timestamp_utc: '2026-05-07T00:00:00+00:00',
@@ -373,7 +373,7 @@ describe('parseIncidentTimelineResponse', () => {
   })
 
   it('旧レスポンスで visible_items と hidden_count がなくても補完する', () => {
-    const parsed = parseIncidentTimelineResponse({
+    const parsed = incidentTimelineSchema.parse({
       columns: [
         {
           timestamp_utc: '2026-05-07T00:00:00Z',
@@ -388,7 +388,7 @@ describe('parseIncidentTimelineResponse', () => {
   })
 
   it('bucket_start_utc と bucket_end_utc が null でも解釈できる', () => {
-    const parsed = parseIncidentTimelineResponse({
+    const parsed = incidentTimelineSchema.parse({
       columns: [
         {
           timestamp_utc: '2026-05-07T00:00:00Z',
@@ -404,7 +404,7 @@ describe('parseIncidentTimelineResponse', () => {
 
   it('timestamp_utc が不正な列を拒否する', () => {
     expect(() =>
-      parseIncidentTimelineResponse({
+      incidentTimelineSchema.parse({
         columns: [{ timestamp_utc: '2026-05-07 00:00:00', items: [] }],
       }),
     ).toThrow()
