@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -81,6 +82,12 @@ class AlertHistoryRead(BaseModel):
     state: str
     context_key: str
     notified_at: datetime
+    # その状態へ遷移した時刻。再送で進む notified_at と違い、後から変わらない。
+    occurred_at: datetime
+    # metric_threshold ルールで、context_key（{vcenter_id}:{entity_moid}）から取り出せたときだけ。
+    vcenter_id: uuid.UUID | None = None
+    # metric_threshold ルールの対象名。解決できないときは None。
+    entity_name: str | None = None
     channel: str
     success: bool | None
     error_message: str | None

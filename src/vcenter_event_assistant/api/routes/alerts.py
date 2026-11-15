@@ -1,4 +1,6 @@
 from __future__ import annotations
+import uuid
+from collections.abc import Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireOperator, RequireViewer
+from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.import_guards import reject_empty_destructive_import
 from vcenter_event_assistant.api.schemas import (
@@ -15,6 +18,13 @@ from vcenter_event_assistant.api.schemas import (
     AlertRulesImportResponse, AlertStateResolveRequest,
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
+from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
+    ResolvedEntity,
+    collect_metric_targets,
+    metric_name_lookback,
+    parse_metric_context_key,
+    resolve_metric_entities,
+)
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.settings import Settings
 
@@ -155,15 +165,51 @@ async def import_alert_rules(
     rules_count = len(list(count_res.scalars().all()))
     return AlertRulesImportResponse(rules_count=rules_count)
 
+async def _resolve_history_entities(
+    session: AsyncSession, items: list[AlertHistory], perf_sample_interval_seconds: int
+) -> dict[tuple[uuid.UUID, str], ResolvedEntity]:
+    """ページ内の metric_threshold 行の対象名を、タイムラインと同じ規則でまとめて引く（N+1 にしない）。
+
+    名前を引くサンプルの範囲は、ページ内の ``occurred_at`` の最小から名前を探す幅だけさかのぼった時刻
+    〜最大の時刻。行ごとに範囲を変えると行数ぶんの問い合わせが要るため、ページ全体で 1 本にする。
+    範囲の終わり（最大）に最も近いサンプルの名前を使うので、ページ内で改名があれば古い行にも新しい名前が付くが、
+    1 ページ（最大 200 件）の中での改名は稀で、リンクの絞り込み（部分一致）への影響は小さい。
+    範囲を全件に広げたり、期間より後の名前を引いたりしないので、障害当時の名前に近い。
+    """
+    times = [to_utc(item.occurred_at) for item in items]
+    if not times:
+        return {}
+    targets, metric_keys = collect_metric_targets(
+        (item.rule.rule_type if item.rule else "", item.context_key, item.rule.config if item.rule else None)
+        for item in items
+    )
+    return await resolve_metric_entities(
+        session,
+        targets,
+        metric_keys,
+        sampled_from=min(times) - metric_name_lookback(perf_sample_interval_seconds),
+        sampled_to=max(times),
+    )
+
+
 def _history_item_to_read(
     item: AlertHistory,
     firing_keys: set[tuple[int, str]],
+    entities: Mapping[tuple[uuid.UUID, str], ResolvedEntity] | None = None,
 ) -> AlertHistoryRead:
     rule_type = item.rule.rule_type if item.rule else ""
     can_resolve = (
         rule_type == "event_score"
         and (item.rule_id, item.context_key) in firing_keys
     )
+    vcenter_id: uuid.UUID | None = None
+    entity_name: str | None = None
+    if rule_type == "metric_threshold":
+        parsed = parse_metric_context_key(item.context_key)
+        if parsed is not None:
+            vcenter_id = parsed[0]
+            hit = (entities or {}).get(parsed)
+            entity_name = hit.name if hit is not None else None
     return AlertHistoryRead(
         id=item.id,
         rule_id=item.rule_id,
@@ -173,6 +219,9 @@ def _history_item_to_read(
         state=item.state,
         context_key=item.context_key,
         notified_at=item.notified_at,
+        occurred_at=item.occurred_at,
+        vcenter_id=vcenter_id,
+        entity_name=entity_name,
         channel=item.channel,
         success=item.success,
         error_message=item.error_message,
@@ -189,6 +238,7 @@ async def list_alert_history(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ):
     # 合計件数
     count_res = await session.execute(select(func.count(AlertHistory.id)))
@@ -218,8 +268,10 @@ async def list_alert_history(
         )
         firing_keys = {(row.rule_id, row.context_key) for row in firing_res.all()}
 
+    entities = await _resolve_history_entities(session, items, settings.perf_sample_interval_seconds)
+
     return AlertHistoryListResponse(
-        items=[_history_item_to_read(item, firing_keys) for item in items],
+        items=[_history_item_to_read(item, firing_keys, entities) for item in items],
         total=total,
     )
 
