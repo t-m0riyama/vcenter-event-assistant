@@ -121,7 +121,13 @@
 }
 
 .col-actions {
-  white-space: nowrap;
+  /* 解消・削除・タイムラインで見る が表の幅に収まらないときは折り返す（各部品は途中で切れない） */
+  white-space: normal;
+  min-width: 7rem;
+}
+
+.col-actions > * {
+  margin-block: 2px;
 }
 
 .alert-history-action + .alert-history-action {

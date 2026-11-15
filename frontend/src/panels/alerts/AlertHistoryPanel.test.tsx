@@ -169,3 +169,41 @@ describe('pagination', () => {
     confirm.mockRestore()
   })
 })
+
+describe('タイムラインで見る', () => {
+  const VC = '11111111-1111-4111-8111-111111111111'
+
+  it('metric の行は発生時刻の前後・vCenter・対象で、event_score の行は時刻だけのリンクになる', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 2, items: [
+      { ...base, id: 1, rule_name: 'CPU 高負荷', context_key: `${VC}:host-1`, delivery_status: 'succeeded', success: true,
+        attempt_count: 1, notified_at: '2026-10-03T03:00:00Z', occurred_at: '2026-10-03T01:00:00Z',
+        vcenter_id: VC, entity_name: 'esx01' },
+      { ...base, id: 2, rule_name: 'スコア', rule_type: 'event_score', context_key: 'VmPoweredOffEvent',
+        delivery_status: 'succeeded', success: true, attempt_count: 1,
+        occurred_at: '2026-10-03T02:00:00Z', vcenter_id: null, entity_name: null },
+    ] })
+    show()
+    const metric = await screen.findByRole('link', { name: /^CPU 高負荷（.*1:00:00.*）をタイムラインで見る$/ })
+    const mp = new URLSearchParams(metric.getAttribute('href')!.split('?')[1])
+    expect(mp.get('anchor')).toBe('2026-10-03T01:00:00.000Z')
+    expect(mp.get('from')).toBe('2026-10-03T00:30:00.000Z')
+    expect(mp.get('to')).toBe('2026-10-03T01:30:00.000Z')
+    expect(mp.get('vcenter_id')).toBe(VC)
+    expect(mp.get('entity')).toBe('esx01')
+    const es = screen.getAllByRole('link', { name: /スコア（.*）をタイムラインで見る/ })[0]
+    const ep = new URLSearchParams(es.getAttribute('href')!.split('?')[1])
+    expect(ep.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
+    expect(ep.has('vcenter_id')).toBe(false)
+    expect(ep.has('entity')).toBe(false)
+  })
+
+  it('occurred_at が無い（古いサーバ）ときは notified_at を起点にする', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [
+      { ...base, id: 1, delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    show()
+    const link = await screen.findByRole('link', { name: /をタイムラインで見る/ })
+    expect(new URLSearchParams(link.getAttribute('href')!.split('?')[1]).get('anchor')).toBe('2026-10-03T00:00:00.000Z')
+  })
+})
+

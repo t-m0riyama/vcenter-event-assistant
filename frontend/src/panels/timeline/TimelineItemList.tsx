@@ -6,7 +6,8 @@ import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { ScoreBadge } from '../../components/badges'
 import type { GuideLoader } from './eventTypeGuideLoader'
 import { TimelineEventGuide } from './TimelineEventGuide'
-import { alertStateLabel, excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
+import { alertStateLabel } from '../../alerts/alertStateLabel'
+import { excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
 import { correlationHashForItem, metricsFocusForItem } from './timelineModel'
 
 type Props = {

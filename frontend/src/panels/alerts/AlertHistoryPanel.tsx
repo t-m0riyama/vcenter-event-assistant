@@ -3,7 +3,9 @@ import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useAuth } from '../../auth/useAuth'
+import { alertStateLabel } from '../../alerts/alertStateLabel'
 import { Pagination } from '../../components/Pagination'
+import { TimelineLink } from '../../components/TimelineLink'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
 import './AlertHistoryPanel.css'
 
@@ -15,12 +17,6 @@ const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
   warning: '警告',
 }
 
-function alertStateLabel(state: string): string {
-  if (state === 'firing') return '発火中'
-  if (state === 'stale') return 'データ古い'
-  return '回復済み'
-}
-
 interface AlertHistory {
   id: number
   rule_id: number
@@ -30,6 +26,11 @@ interface AlertHistory {
   state: string
   context_key: string
   notified_at: string
+  /** 状態が変わった時刻。古いサーバの応答には無い。 */
+  occurred_at?: string | null
+  /** metric_threshold の行だけ。古いサーバの応答には無い。 */
+  vcenter_id?: string | null
+  entity_name?: string | null
   channel: string
   success: boolean | null
   error_message: string | null
@@ -234,6 +235,12 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                         解消
                       </button>
                     )}
+                    <TimelineLink
+                      at={h.occurred_at ?? h.notified_at}
+                      vcenterId={h.vcenter_id}
+                      entity={h.entity_name}
+                      ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
+                    />
                     {canDelete && (
                       <button
                         type="button"
