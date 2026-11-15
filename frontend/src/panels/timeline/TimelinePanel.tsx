@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import type { MetricsFocus } from '../../hooks/metricsReplay'
 import { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
 import { useTimelineViewController } from '../../hooks/useTimelineViewController'
 import { TimelineConditionBar } from './TimelineConditionBar'
@@ -21,10 +22,13 @@ import { nearestItemIdToAnchor, sortTimelineItems, validateResolvedRange } from 
 export function TimelinePanel({
   onError,
   onOpenSnapshotInMetrics,
+  onOpenInMetrics,
   active = true,
 }: {
   onError: (e: string | null) => void
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
+  /** 行から「グラフで開く」。期間・vCenter・起点の目印を渡す。 */
+  onOpenInMetrics?: (focus: MetricsFocus) => void
   /** このタブが表示中か。表示中のときだけ URL を書き、戻ったときに読み直す。 */
   active?: boolean
 }) {
@@ -156,6 +160,7 @@ export function TimelinePanel({
                 guideLoader={guideLoader}
                 onFilterEntity={c.filterByEntity}
                 onSetAnchor={c.setAnchor}
+                onOpenInMetrics={onOpenInMetrics}
               />
             )}
           </section>

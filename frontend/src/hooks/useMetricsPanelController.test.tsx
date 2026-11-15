@@ -85,4 +85,30 @@ describe('useMetricsPanelController', () => {
     expect(result.current.metricKey).toBe('host.memory_usage_pct')
     expect(onError).not.toHaveBeenCalledWith(expect.any(String))
   })
+
+  it('applies a snapshot-independent focus: vCenter, range and the marker, without forcing a metric', async () => {
+    const onError = vi.fn()
+    const focus = {
+      from: '2026-05-07T04:00:00Z', to: '2026-05-07T05:00:00Z', vcenterId, markerUtc: '2026-05-07T04:30:00',
+    }
+    const { result } = renderHook(
+      () => useMetricsPanelController(onError, 300, { focus, nonce: 1 }),
+      { wrapper },
+    )
+    await waitFor(() => expect(metricRequests().length).toBeGreaterThan(0))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.vcenterId).toBe(vcenterId)
+    expect(result.current.metricKey).not.toBe('')
+    expect(result.current.metricKeys).toContain(result.current.metricKey)
+    expect(result.current.chartEventType).toBe('')
+    // Z の無い時刻は UTC として読む
+    expect(result.current.snapshotChartGuidelineMs).toBe(Date.parse('2026-05-07T04:30:00Z'))
+    expect(result.current.rangeParts.fromTime).toBe('04:00')
+    const request = new URL(metricRequests().at(-1)!, 'http://test')
+    expect(request.searchParams.get('vcenter_id')).toBe(vcenterId)
+    expect(Date.parse(request.searchParams.get('from')!)).toBe(Date.parse('2026-05-07T04:00:00Z'))
+    // グラフの入力は分単位で、終わりはその分の 59 秒までを含む（スナップショットと同じ）
+    expect(Date.parse(request.searchParams.get('to')!)).toBe(Date.parse('2026-05-07T05:00:59Z'))
+    expect(onError).not.toHaveBeenCalledWith(expect.any(String))
+  })
 })

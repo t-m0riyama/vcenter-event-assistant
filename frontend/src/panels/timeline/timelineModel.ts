@@ -4,6 +4,7 @@ import type {
   TimelineOverviewBucket,
   TimelineViewItem,
 } from '../../api/schemas'
+import type { MetricsFocus } from '../../hooks/metricsReplay'
 import { correlationHash } from '../../routing/correlationRange'
 import type { TimelineConditions, TimelineRange } from '../../routing/timelineHash'
 
@@ -140,6 +141,27 @@ export function correlationHashForItem(tab: 'events' | 'logs', item: TimelineVie
     from: iso(t - CORRELATION_HALF_WIDTH_MS),
     to: iso(end + CORRELATION_HALF_WIDTH_MS),
   })
+}
+
+/** グラフで開くときに行の時刻の前後に取る幅（ミリ秒）。 */
+export const METRICS_FOCUS_HALF_WIDTH_MS = 30 * 60_000
+
+/**
+ * 行の時刻の前後 30 分と vCenter、起点の目印（行の最初の時刻）をグラフのタブへ渡す条件。
+ * vCenter が無い行・時刻が読めない行は null。まとめた行は `end_utc` の 30 分後まで。
+ */
+export function metricsFocusForItem(item: TimelineViewItem): MetricsFocus | null {
+  if (!item.vcenter_id) return null
+  const t = parseApiUtcInstantMs(item.timestamp_utc)
+  if (!Number.isFinite(t)) return null
+  const endRaw = item.end_utc ? parseApiUtcInstantMs(item.end_utc) : t
+  const end = Number.isFinite(endRaw) ? Math.max(endRaw, t) : t
+  return {
+    from: iso(t - METRICS_FOCUS_HALF_WIDTH_MS),
+    to: iso(end + METRICS_FOCUS_HALF_WIDTH_MS),
+    vcenterId: item.vcenter_id,
+    markerUtc: iso(t),
+  }
 }
 
 /** 棒のツールチップに出す範囲。最後の棒は期間の終わりで切れるので `min(開始 + バケット幅, to)`。 */

@@ -3,21 +3,24 @@ import { apiGet } from '../api'
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../datetime/useTimeZone'
 import { asArray } from '../utils/asArray'
-import {
-  useGraphRangeState,
-  type MetricsSnapshotReplayInput,
-} from './useGraphRangeState'
+import { useGraphRangeState } from './useGraphRangeState'
+import { resolveMetricsReplay, type MetricsReplayInput } from './metricsReplay'
 import { useMetricDataFetch } from './useMetricDataFetch'
 import { useMetricsChartSeries } from './useMetricsChartSeries'
 import { useMetricsExport } from './useMetricsExport'
 
-export type { GraphRangeFollowMode, MetricsSnapshotReplayInput } from './useGraphRangeState'
+export type {
+  GraphRangeFollowMode,
+  MetricsSnapshotReplayInput,
+  MetricsReplayInput,
+  MetricsFocus,
+} from './useGraphRangeState'
 
 /** メトリクスパネルの状態・取得・チャート表示を統合するコントローラ。 */
 export function useMetricsPanelController(
   onError: (e: string | null) => void,
   perfBucketSeconds: number,
-  snapshotReplay?: MetricsSnapshotReplayInput | null,
+  snapshotReplay?: MetricsReplayInput | null,
 ) {
   const { timeZone } = useTimeZone()
   const [vcenterId, setVcenterId] = useState('')
@@ -32,10 +35,11 @@ export function useMetricsPanelController(
   } | null>(null)
   const seriesFetchEffectGenerationRef = useRef(0)
   const [snapshotChartGuidelineMs, setSnapshotChartGuidelineMs] = useState<number | null>(null)
-  const snapshotItem = snapshotReplay?.item
-  const snapshotNonce = snapshotReplay?.nonce
+  const replay = resolveMetricsReplay(snapshotReplay)
+  const snapshotItem = replay?.source
+  const snapshotNonce = replay?.nonce
   const [appliedSnapshot, setAppliedSnapshot] = useState<{
-    item: MetricsSnapshotReplayInput['item'] | undefined
+    item: object | undefined
     nonce: number | undefined
   }>({ item: undefined, nonce: undefined })
 
@@ -80,17 +84,14 @@ export function useMetricsPanelController(
 
   if (appliedSnapshot.item !== snapshotItem || appliedSnapshot.nonce !== snapshotNonce) {
     setAppliedSnapshot({ item: snapshotItem, nonce: snapshotNonce })
-    if (!snapshotItem || snapshotNonce === undefined || snapshotNonce < 1) {
+    if (!replay) {
       setSnapshotChartGuidelineMs(null)
     } else {
-      const br = snapshotItem.build_request_payload
-      const gc = snapshotItem.graph_context
-      const vid = gc?.vcenter_id ?? br.vcenter_id
-      setVcenterId(vid && String(vid).length > 0 ? String(vid) : '')
-      setMetricKey(gc?.metric_key ?? '')
-      setChartEventType(gc?.chart_event_type ?? '')
-      const markerSrc = gc?.marker_timestamp_utc ?? snapshotItem.timestamp_utc
-      setSnapshotChartGuidelineMs(parseApiUtcInstantMs(String(markerSrc)))
+      setVcenterId(replay.vcenterId)
+      setMetricKey(replay.metricKey)
+      setChartEventType(replay.chartEventType)
+      const markerMs = replay.markerUtc ? parseApiUtcInstantMs(replay.markerUtc) : NaN
+      setSnapshotChartGuidelineMs(Number.isFinite(markerMs) ? markerMs : null)
       setChartResetKey((k) => k + 1)
     }
   } else if (!metricKey && metricKeys.length > 0) {

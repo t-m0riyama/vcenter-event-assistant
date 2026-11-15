@@ -98,7 +98,9 @@ function populated(overrides: Record<string, unknown> = {}) {
 
 const onError = vi.fn()
 
-function renderTimeline(extra: { onOpenSnapshotInMetrics?: (item: never) => void; active?: boolean } = {}) {
+function renderTimeline(
+  extra: { onOpenSnapshotInMetrics?: (item: never) => void; onOpenInMetrics?: (focus: never) => void; active?: boolean } = {},
+) {
   return render(
     <ThemeProvider>
       <TimeZoneProvider>
@@ -292,6 +294,49 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       // まとめた行（×3、最後は 00:14）は、最初の 5 分前から最後の 5 分後まで
       expect(params.get('to')).toBe('2026-03-22T00:19:00.000Z')
     }
+  })
+
+  it('「グラフで開く」は行の時刻の前後 30 分（まとめた行は end_utc の 30 分後まで）と vCenter と起点の目印を渡す', async () => {
+    const onOpen = vi.fn()
+    setup()
+    renderTimeline({ onOpenInMetrics: onOpen })
+    await answer(0)
+    await openFirstRow()
+    const region = screen.getByRole('region', { name: /VmPoweredOffEvent の詳細/ })
+    fireEvent.click(within(region).getByRole('button', { name: 'グラフで開く' }))
+    expect(onOpen).toHaveBeenLastCalledWith({
+      from: '2026-03-21T23:40:00.000Z',
+      to: '2026-03-22T00:44:00.000Z',
+      vcenterId: VC,
+      markerUtc: '2026-03-22T00:10:00.000Z',
+    })
+    // 単発の行
+    fireEvent.click(await rowButton(/UserLoginSessionEvent/))
+    const single = screen.getByRole('region', { name: /UserLoginSessionEvent の詳細/ })
+    fireEvent.click(within(single).getByRole('button', { name: 'グラフで開く' }))
+    expect(onOpen).toHaveBeenLastCalledWith({
+      from: '2026-03-22T00:20:00.000Z',
+      to: '2026-03-22T01:20:00.000Z',
+      vcenterId: VC,
+      markerUtc: '2026-03-22T00:50:00.000Z',
+    })
+  })
+
+  it('vCenter の無い行と、開く先が無いときには「グラフで開く」を出さない', async () => {
+    const onOpen = vi.fn()
+    setup()
+    const { unmount } = renderTimeline({ onOpenInMetrics: onOpen })
+    await answer(0)
+    fireEvent.click(await screen.findByRole('button', { name: /CPU 高負荷: 発火/ }))
+    const region = screen.getByRole('region', { name: /CPU 高負荷: 発火 の詳細/ })
+    expect(within(region).queryByRole('button', { name: 'グラフで開く' })).not.toBeInTheDocument()
+    unmount()
+    setup()
+    renderTimeline()
+    await answer(0)
+    await openFirstRow()
+    const first = screen.getByRole('region', { name: /VmPoweredOffEvent の詳細/ })
+    expect(within(first).queryByRole('button', { name: 'グラフで開く' })).not.toBeInTheDocument()
   })
 
   it('最初の兆候をクリックすると該当行が開いて強調される。影響の大きい対象のクリックで対象を絞る', async () => {
