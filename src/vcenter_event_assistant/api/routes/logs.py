@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.api.routes.events import _contains_case_insensitive
+from vcenter_event_assistant.services.sql_like import contains_case_insensitive as _contains_case_insensitive
 from vcenter_event_assistant.api.schemas.logs import LogListResponse, LogRead
 from vcenter_event_assistant.db.models import LogRecord
 from vcenter_event_assistant.db.session import get_session_factory
