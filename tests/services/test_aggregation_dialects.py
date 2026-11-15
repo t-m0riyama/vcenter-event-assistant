@@ -315,11 +315,14 @@ async def test_metric_entities_at_alert_times_on_each_dialect(
 ) -> None:
     """アラートの時刻ごとの対象名の解決（VALUES の CTE + 相関副問い合わせ）を両方の方言で確かめる。
 
-    - 組が 500 件を超えると 2 本に分かれる（問い合わせの本数は組 500 件ごとに 1 本）
+    組は (vcenter_id, moid, そのルールの metric_key, occurred_at)。
+
+    - 指標のある組が 500 件を超えると 2 本に分かれ、指標の無い組は別の 1 本になる
     - ``sampled_at == occurred_at`` のサンプルを使い、1 マイクロ秒後のサンプルは使わない
     - さかのぼる下限（``occurred_at - lookback``）は含む
     - 別の vCenter の同じ moid と混ざらない
-    - ``metric_keys`` を渡すとその指標だけを見て、None なら指標で絞らない
+    - 各組は自分の指標だけを見る。同じ呼び出しに同じ対象・同じ時刻の別の指標の組があっても影響しない
+    - 指標が None の組だけは指標で絞らず、全指標から最も新しいサンプルを使う
     """
     from vcenter_event_assistant.services.alerting.alert_entity_resolution import resolve_metric_entities_at
 
@@ -329,28 +332,30 @@ async def test_metric_entities_at_alert_times_on_each_dialect(
     await session.flush()
     lookback = timedelta(hours=6)
     base = FROM + timedelta(microseconds=123_456)
+    cpu, mem = METRIC_CPU, METRIC_MEM
 
-    def sample(vid: uuid.UUID, moid: str, at: datetime, name: str, key: str = METRIC_CPU) -> MetricSample:
+    def sample(vid: uuid.UUID, moid: str, at: datetime, name: str, key: str = cpu) -> MetricSample:
         return MetricSample(
             vcenter_id=vid, sampled_at=at, entity_type="VirtualMachine", entity_moid=moid,
             entity_name=name, metric_key=key, value=1.0,
         )
 
-    probes: set[tuple[uuid.UUID, str, datetime]] = set()
+    probes: set[tuple[uuid.UUID, str, str | None, datetime]] = set()
     rows: list[MetricSample] = []
     for i in range(501):
         at = base + timedelta(seconds=i)
         rows.append(sample(v1, f"vm-{i}", at, f"N{i}"))
         rows.append(sample(v1, f"vm-{i}", at + timedelta(microseconds=1), f"later-{i}"))
-        probes.add((v1, f"vm-{i}", at))
+        probes.add((v1, f"vm-{i}", cpu, at))
     rows.append(sample(v2, "vm-0", base, "ON-V2"))
-    probes.add((v2, "vm-0", base))
+    probes.add((v2, "vm-0", cpu, base))
+    # 同じ対象・同じ時刻で、CPU は改名前、メモリは改名後の名前が最新
     rows.append(sample(v1, "vm-mem", base - timedelta(minutes=10), "cpu-name"))
-    rows.append(sample(v1, "vm-mem", base - timedelta(minutes=1), "mem-name", METRIC_MEM))
-    probes.add((v1, "vm-mem", base))
+    rows.append(sample(v1, "vm-mem", base - timedelta(minutes=1), "mem-name", mem))
+    probes |= {(v1, "vm-mem", cpu, base), (v1, "vm-mem", mem, base), (v1, "vm-mem", None, base)}
     rows.append(sample(v1, "vm-edge-in", base - lookback, "edge-in"))
     rows.append(sample(v1, "vm-edge-out", base - lookback - timedelta(microseconds=1), "edge-out"))
-    probes |= {(v1, "vm-edge-in", base), (v1, "vm-edge-out", base)}
+    probes |= {(v1, "vm-edge-in", cpu, base), (v1, "vm-edge-out", cpu, base)}
     session.add_all(rows)
     await session.flush()
 
@@ -363,20 +368,24 @@ async def test_metric_entities_at_alert_times_on_each_dialect(
         return await original(self, statement, *args, **kwargs)
 
     monkeypatch.setattr(AsyncSession, "execute", spy)
-    got = await resolve_metric_entities_at(session, probes, {METRIC_CPU}, lookback=lookback)
+    got = await resolve_metric_entities_at(session, probes, lookback=lookback)
     monkeypatch.setattr(AsyncSession, "execute", original)
 
-    assert calls == 2  # 505 組 → 500 件ごとに 1 本
-    assert all(got[(v1, f"vm-{i}", base + timedelta(seconds=i))].name == f"N{i}" for i in range(501))
-    assert got[(v1, "vm-0", base)].entity_type == "VirtualMachine"
-    assert got[(v2, "vm-0", base)].name == "ON-V2"
-    assert got[(v1, "vm-mem", base)].name == "cpu-name"
-    assert got[(v1, "vm-edge-in", base)].name == "edge-in"
-    assert (v1, "vm-edge-out", base) not in got
-    assert len(got) == 504
+    assert calls == 3  # 指標のある 506 組 → 2 本、指標の無い 1 組 → 1 本
+    assert all(got[(v1, f"vm-{i}", cpu, base + timedelta(seconds=i))].name == f"N{i}" for i in range(501))
+    assert got[(v1, "vm-0", cpu, base)].entity_type == "VirtualMachine"
+    assert got[(v2, "vm-0", cpu, base)].name == "ON-V2"
+    assert got[(v1, "vm-mem", cpu, base)].name == "cpu-name"
+    assert got[(v1, "vm-mem", mem, base)].name == "mem-name"
+    assert got[(v1, "vm-mem", None, base)].name == "mem-name"
+    assert got[(v1, "vm-edge-in", cpu, base)].name == "edge-in"
+    assert (v1, "vm-edge-out", cpu, base) not in got
+    assert len(got) == 506
 
-    unfiltered = await resolve_metric_entities_at(session, {(v1, "vm-mem", base)}, None, lookback=lookback)
-    assert unfiltered[(v1, "vm-mem", base)].name == "mem-name"
+    # 単独で引いても、ほかの組と一緒に引いたときと同じ結果になる
+    for probe in ((v1, "vm-mem", cpu, base), (v1, "vm-mem", mem, base), (v1, "vm-0", cpu, base)):
+        alone = await resolve_metric_entities_at(session, {probe}, lookback=lookback)
+        assert alone == {probe: got[probe]}
 
 
 @pytest.mark.asyncio
@@ -506,3 +515,4 @@ async def test_incident_timeline_logs_on_each_dialect(session: AsyncSession) -> 
         owner_key="dialect-test",
     )
     assert [i.detail for i in filtered.items] == ["other host"]
+

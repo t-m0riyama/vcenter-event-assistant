@@ -48,16 +48,18 @@ async def _sample(vid: uuid.UUID, moid: str, name: str, at: datetime, *, metric_
         )
 
 
-async def _alert(vid: uuid.UUID, moid: str, at: datetime, *, name: str) -> int:
+async def _alert(
+    vid: uuid.UUID, moid: str, at: datetime, *, name: str, metric_key: str = CPU, state: str = "firing"
+) -> int:
     async with session_scope() as session:
         rule = AlertRule(
             name=name, rule_type="metric_threshold", alert_level="critical",
-            config={"metric_key": CPU, "threshold": 90},
+            config={"metric_key": metric_key, "threshold": 90},
         )
         session.add(rule)
         await session.flush()
         row = AlertHistory(
-            rule_id=rule.id, alert_level="critical", state="firing",
+            rule_id=rule.id, alert_level="critical", state=state,
             context_key=metric_context_key(vid, moid),
             occurred_at=at, notified_at=at, channel="none", success=None,
         )
@@ -294,3 +296,63 @@ async def test_row_written_by_the_evaluator_is_named_by_its_triggering_sample(cl
     assert _parse_api_utc(row["occurred_at"]) == trigger_at
     assert row["entity_name"] == "web-b"
     await _assert_each_row_is_found_by_its_link(client, [row])
+
+
+# --- 名前が同じ呼び出しに居合わせるほかのアラート（ほかのルールの指標）に依存しない -------
+
+MEM = "host.mem.usage_pct"
+
+
+@pytest.mark.asyncio
+async def test_link_finds_a_cpu_row_when_a_memory_rule_row_shares_the_page(client: AsyncClient) -> None:
+    """Codex の指摘（PR #315）の再現。CPU の stale の行とメモリのルールの行が同じページにある。
+
+    指標ごとに最新のサンプルの名前が違う（CPU は改名前の web-old、メモリは改名後の web-new）。名前を
+    呼び出しの全ルールの指標の和集合から引くと、通知履歴（{CPU, メモリ}）では web-new、リンクで開いた
+    タイムライン（前後 30 分にはメモリの行が無いので {CPU}）では web-old になり、押した行が除かれる。
+    """
+    vid = await _vcenter("vc-keys")
+    t = T0 + timedelta(days=2)
+    await _sample(vid, "vm-1", "web-old", t - timedelta(minutes=20), metric_key=CPU)
+    await _sample(vid, "vm-1", "web-new", t - timedelta(minutes=2), metric_key=MEM)
+    await _sample(vid, "vm-1", "web-mem", t - timedelta(days=1, minutes=1), metric_key=MEM)
+    cpu_id = await _alert(vid, "vm-1", t, name="cpu-stale", metric_key=CPU, state="stale")
+    mem_id = await _alert(vid, "vm-1", t - timedelta(days=1), name="mem-high", metric_key=MEM)
+
+    rows = await _history(client)
+    by_id = {r["id"]: r for r in rows}
+    assert by_id[cpu_id]["entity_name"] == "web-old"
+    assert by_id[mem_id]["entity_name"] == "web-mem"
+    await _assert_each_row_is_found_by_its_link(client, rows)
+
+
+@pytest.mark.asyncio
+async def test_names_do_not_depend_on_which_other_rules_share_the_call(client: AsyncClient) -> None:
+    """ページの区切りや表示期間で居合わせるアラート（指標）の組み合わせが変わっても、各アラートの名前は同じ。"""
+    vid = await _vcenter("vc-mixed")
+    t = T0 + timedelta(days=3)
+    # CPU とメモリで、サンプルの時刻と名前をずらす（指標をまたいで引くと名前が変わる）
+    await _sample(vid, "vm-1", "cpu-1", t - timedelta(minutes=30), metric_key=CPU)
+    await _sample(vid, "vm-1", "mem-1", t - timedelta(minutes=20), metric_key=MEM)
+    await _sample(vid, "vm-1", "cpu-2", t + timedelta(minutes=50), metric_key=CPU)
+    await _sample(vid, "vm-1", "mem-2", t + timedelta(minutes=55), metric_key=MEM)
+    expected: dict[int, str] = {}
+    for minute, key, name in ((0, CPU, "cpu-1"), (10, MEM, "mem-1"), (60, CPU, "cpu-2"), (70, MEM, "mem-2")):
+        hid = await _alert(vid, "vm-1", t + timedelta(minutes=minute), name=f"r-{minute}", metric_key=key)
+        expected[hid] = name
+
+    assert {r["id"]: r["entity_name"] for r in await _history(client)} == expected
+    for limit in (1, 2, 3):
+        for offset in range(len(expected)):
+            for r in await _history(client, limit=limit, offset=offset):
+                assert r["entity_name"] == expected[r["id"]], (limit, offset)
+
+    periods = [
+        (t - timedelta(minutes=5), t + timedelta(minutes=5)),
+        (t + timedelta(minutes=5), t + timedelta(minutes=65)),
+        (t - timedelta(hours=1), t + timedelta(hours=2)),
+    ]
+    for start, end in periods:
+        data = await _timeline(client, {"from": _iso_ms(start), "to": _iso_ms(end), "sources": ["alert"]})
+        for item in data["items"]:
+            assert item["entity_name"] == expected[item["ref"]["alert_history_id"]], (start, end)
