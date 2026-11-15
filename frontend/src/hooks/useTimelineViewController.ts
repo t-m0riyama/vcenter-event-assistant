@@ -7,6 +7,7 @@ import {
   TimelineRequestSupersededError,
 } from '../api/incidentTimelineView'
 import type { IncidentTimelineViewResponse, VCenter } from '../api/schemas'
+import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { resolveEventApiRange } from '../datetime/graphRange'
 import { useTimeZone } from '../datetime/useTimeZone'
 import {
@@ -318,7 +319,14 @@ export function useTimelineViewController(
 
   const setVcenterId = useCallback((vcenterId: string) => patch({ vcenterId }), [patch])
   const setMinScore = useCallback((minScore: number) => patch({ minScore }), [patch])
-  const setAnchor = useCallback((anchor: string | null) => patch({ anchor }), [patch])
+  const setAnchor = useCallback(
+    (anchor: string | null) => {
+      // 行の時刻は Z の無い表記のことがあるので、UTC の ISO 8601 にそろえて持つ
+      const ms = anchor === null ? NaN : parseApiUtcInstantMs(anchor)
+      patch({ anchor: Number.isFinite(ms) ? new Date(ms).toISOString() : null })
+    },
+    [patch],
+  )
 
   /** 種別の切り替え。最後の 1 つは外せない。 */
   const toggleSource = useCallback((kind: TimelineSourceKind) => {

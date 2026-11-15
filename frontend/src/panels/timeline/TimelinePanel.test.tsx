@@ -1,751 +1,525 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
+import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import { ThemeProvider } from '../../theme/ThemeProvider'
+import {
+  emptyViewResponse,
+  installTimelineFetchMock,
+  jsonResponse,
+  VIEW_RESPONSE_EXAMPLE,
+} from '../../test/timelineViewFixtures'
 import { TimelinePanel } from './TimelinePanel'
 
-const TIMELINE_PANEL_TEST_TIMEOUT_MS = 15_000
+const TEST_TIMEOUT_MS = 15_000
+const VC = '11111111-1111-4111-8111-111111111111'
 
-function jsonResponse(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
+function bucket(start: string, total = 0, notable = 0, alert = 0) {
+  return {
+    bucket_start_utc: start,
+    event_total: total,
+    event_notable: notable,
+    alert,
+    metric_breach: 0,
+    log_error: 0,
+  }
+}
+
+/** 3 本の棒と 3 行（2 行はイベント、1 行は VM 無しのアラート）を持つ応答。 */
+function populated(overrides: Record<string, unknown> = {}) {
+  const items = [
+    {
+      id: 'event:1',
+      kind: 'event',
+      timestamp_utc: '2026-03-22T00:10:00',
+      end_utc: '2026-03-22T00:14:00',
+      level: 'warning',
+      title: 'VmPoweredOffEvent',
+      detail: 'vm-a was powered off\nby operator',
+      entity_name: 'vm-a',
+      entity_type: 'VirtualMachine',
+      vcenter_id: VC,
+      vcenter_name: 'vc-main',
+      score: 55,
+      count: 3,
+      ref: { event_id: 1, event_type: 'VmPoweredOffEvent' },
+    },
+    {
+      id: 'alert:2',
+      kind: 'alert',
+      timestamp_utc: '2026-03-22T00:30:00Z',
+      level: 'critical',
+      title: 'CPU 高負荷: 発火',
+      detail: null,
+      entity_name: null,
+      vcenter_id: null,
+      count: 1,
+      ref: { alert_history_id: 2, alert_rule_name: 'CPU 高負荷', alert_state: 'firing' },
+    },
+    {
+      id: 'event:3',
+      kind: 'event',
+      timestamp_utc: '2026-03-22T00:50:00Z',
+      level: 'info',
+      title: 'UserLoginSessionEvent',
+      detail: 'login',
+      entity_name: 'esx01',
+      vcenter_id: VC,
+      vcenter_name: 'vc-main',
+      score: 5,
+      count: 1,
+      ref: { event_id: 3, event_type: 'UserLoginSessionEvent' },
+    },
+  ]
+  return emptyViewResponse({
+    from_utc: '2026-03-22T00:00:00Z',
+    to_utc: '2026-03-22T01:00:00Z',
+    bucket_seconds: 1200,
+    overview: [
+      bucket('2026-03-22T00:00:00Z', 4, 2),
+      bucket('2026-03-22T00:20:00Z', 1, 0, 1),
+      bucket('2026-03-22T00:40:00Z', 1, 0),
+    ],
+    items,
+    total_items: 3,
+    highlights: {
+      first_signal: items[0],
+      top_entities: [
+        { entity_name: 'vm-a', vcenter_id: VC, vcenter_name: 'vc-main', item_count: 3, first_seen_utc: '2026-03-22T00:10:00Z' },
+      ],
+      new_event_types: [
+        { event_type: 'VmPoweredOffEvent', count: 3, first_seen_utc: '2026-03-22T00:10:00Z', max_score: 55 },
+      ],
+    },
+    ...overrides,
   })
 }
 
-function renderTimeline(onError: (e: string | null) => void = vi.fn()) {
+const onError = vi.fn()
+
+function renderTimeline(extra: { onOpenSnapshotInMetrics?: (item: never) => void; active?: boolean } = {}) {
   return render(
-    <TimeZoneProvider>
-      <TimelinePanel onError={onError} />
-    </TimeZoneProvider>,
+    <ThemeProvider>
+      <TimeZoneProvider>
+        <TimelinePanel onError={onError} {...extra} />
+      </TimeZoneProvider>
+    </ThemeProvider>,
   )
 }
 
-describe(
-  'TimelinePanel',
-  { timeout: TIMELINE_PANEL_TEST_TIMEOUT_MS },
-  () => {
-    afterEach(() => {
-      localStorage.clear()
-      vi.unstubAllGlobals()
+describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
+  let harness: ReturnType<typeof installTimelineFetchMock>
+
+  const setup = (options: Parameters<typeof installTimelineFetchMock>[0] = {}) => {
+    harness = installTimelineFetchMock(options)
+    vi.stubGlobal('fetch', vi.fn(harness.fetchMock))
+  }
+  const answer = async (index: number, data: unknown = populated()) => {
+    await waitFor(() => expect(harness.calls.length).toBeGreaterThan(index))
+    await act(async () => {
+      harness.calls[index].resolve(jsonResponse(data))
     })
+  }
+  /** 時系列リストの行のボタン（ハイライトの同名ボタンと区別する）。 */
+  const rowButton = async (name: RegExp) =>
+    within(await screen.findByRole('list', { name: '出来事の時系列' })).getByRole('button', { name })
+  const openFirstRow = async () => {
+    const button = await rowButton(/VmPoweredOffEvent/)
+    fireEvent.click(button)
+    return button
+  }
 
-    it('生成前は空状態のヒントを表示し、タイムラインは描画しない', async () => {
-      const fetchMock = vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.includes('/api/incident-timeline/snapshots/manual?')) {
-          return Promise.resolve(jsonResponse({ items: [], total: 0, limit: 20, offset: 0 }))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    localStorage.clear()
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'UTC')
+    window.history.replaceState(null, '', '/#/timeline')
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
 
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
+  it('開くと「生成」を押さずに自動で読み込み、完了と件数をライブ領域で知らせる', async () => {
+    setup()
+    renderTimeline()
+    expect(screen.queryByRole('button', { name: /生成/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('読み込み中')
+    await answer(0)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 件の出来事を表示しています。'))
+    expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '直近 1 時間' })).toHaveAttribute('aria-pressed', 'true')
+    expect(window.location.hash).toBe('#/timeline?range=1h')
+  })
 
-      expect(
-        screen.getByText('「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。'),
-      ).toBeInTheDocument()
-      expect(screen.queryByText('インシデント統合タイムライン')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'タイムラインを生成' })).toBeEnabled()
+  it('行に時刻・種別・レベル（文字）・対象・タイトル・抜粋・まとめた件数を出す', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    const row = (await rowButton(/VmPoweredOffEvent/)).closest('li')!
+    expect(within(row).getByText('警告')).toBeInTheDocument()
+    expect(within(row).getByText('イベント')).toBeInTheDocument()
+    expect(within(row).getByText('vm-a')).toBeInTheDocument()
+    expect(within(row).getByText('vm-a was powered off by operator')).toBeInTheDocument()
+    expect(within(row).getByText(/×3（最後 .*12:14:00/)).toBeInTheDocument()
+    const alertRow = screen.getByRole('button', { name: /CPU 高負荷: 発火/ }).closest('li')!
+    expect(within(alertRow).getByText('クリティカル')).toBeInTheDocument()
+    expect(within(alertRow).getByText('アラート')).toBeInTheDocument()
+  })
+
+  it('時刻は設定したタイムゾーンで表示する（Z の無い時刻も UTC として解釈する）', async () => {
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+    setup()
+    renderTimeline()
+    await answer(0)
+    const row = (await rowButton(/VmPoweredOffEvent/)).closest('li')!
+    // 00:10 UTC = 09:10 JST
+    expect(within(row).getByText(/9:10:00/)).toBeInTheDocument()
+    expect(within(row).queryByText(/12:10:00/)).not.toBeInTheDocument()
+  })
+
+  it('並び順を切り替えられ、選択は localStorage（旧キー）に覚える', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    const titles = () => screen.getAllByRole('listitem').filter((li) => li.classList.contains('timeline-row')).map((li) => li.textContent ?? '')
+    expect(titles()[0]).toContain('UserLoginSessionEvent') // 既定は新しい順
+    fireEvent.change(screen.getByLabelText('並び順'), { target: { value: 'asc' } })
+    expect(titles()[0]).toContain('VmPoweredOffEvent')
+    expect(localStorage.getItem('vea.timeline.sort_order')).toBe('asc')
+  })
+
+  it('行を開くとメッセージ全文・vCenter・スコア・ガイドが出て、キーボードで開閉できる', async () => {
+    setup()
+    harness.extra.set('/api/events?', () =>
+      jsonResponse({
+        items: [
+          {
+            id: 1,
+            vcenter_id: VC,
+            occurred_at: '2026-03-22T00:10:00Z',
+            event_type: 'VmPoweredOffEvent',
+            message: 'x',
+            severity: 'info',
+            notable_score: 55,
+            type_guide: { general_meaning: '電源が切られた', typical_causes: '運用操作', remediation: '意図したものか確認', action_required: false },
+          },
+        ],
+        total: 1,
+      }),
+    )
+    renderTimeline()
+    await answer(0)
+    const button = await openFirstRow()
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const region = screen.getByRole('region', { name: /VmPoweredOffEvent の詳細/ })
+    expect(region).toHaveTextContent('vm-a was powered off')
+    expect(region).toHaveTextContent('by operator')
+    expect(region).toHaveTextContent('vc-main')
+    expect(region).toHaveTextContent('55')
+    await waitFor(() => expect(region).toHaveTextContent('電源が切られた'))
+    // ガイドは view ではなくイベント API（イベントタブと同じ type_guide）から取る
+    const guideCall = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).find((u) => u.startsWith('/api/events?'))!
+    const q = new URLSearchParams(guideCall.split('?')[1])
+    expect(q.get('event_type_contains')).toBe('VmPoweredOffEvent')
+    expect(q.get('vcenter_id')).toBe(VC)
+    // 行は <button> なので Tab / Enter / Space で開閉できる。もう一度押すと閉じる
+    expect(button.tagName).toBe('BUTTON')
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('アラートの行はルール名と状態（発火中）を出す', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    fireEvent.click(await screen.findByRole('button', { name: /CPU 高負荷: 発火/ }))
+    const region = screen.getByRole('region', { name: /CPU 高負荷: 発火 の詳細/ })
+    expect(region).toHaveTextContent('ルール名')
+    expect(region).toHaveTextContent('CPU 高負荷')
+    expect(region).toHaveTextContent('発火中')
+    // vCenter が無い行にはイベント・ログで開くリンクを出さない
+    expect(within(region).queryByRole('link', { name: 'イベントで開く' })).not.toBeInTheDocument()
+    expect(within(region).queryByRole('link', { name: 'ログで開く' })).not.toBeInTheDocument()
+  })
+
+  it('「この対象で絞る」は待たずに対象と vCenter を条件へ入れて読み直し、URL に出る', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    await openFirstRow()
+    fireEvent.click(screen.getByRole('button', { name: 'この対象で絞る' }))
+    await answer(1, populated({ items: [] }))
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC })
+    expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('vm-a')
+    expect(window.location.hash).toContain('entity=vm-a')
+    expect(window.location.hash).toContain(`vcenter_id=${VC}`)
+  })
+
+  it('「ここを起点にする」で起点が付き、前後のプリセットと「起点を解除」が出る。起点に最も近い行に目印が付く', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    expect(screen.queryByRole('button', { name: '起点を解除' })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: /CPU 高負荷: 発火/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'ここを起点にする' }))
+    await answer(1)
+    expect(harness.calls[1].body.anchor).toBe('2026-03-22T00:30:00.000Z')
+    expect(window.location.hash).toContain('anchor=2026-03-22T00%3A30%3A00.000Z')
+    expect(screen.getByText('◆ 起点に最も近い')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '起点の前後 1 時間' }))
+    await answer(2)
+    expect(harness.calls[2].body).toMatchObject({ from: '2026-03-21T23:30:00.000Z', to: '2026-03-22T01:30:00.000Z' })
+    fireEvent.click(screen.getByRole('button', { name: '起点を解除' }))
+    await answer(3)
+    expect(harness.calls[3].body.anchor).toBeUndefined()
+  })
+
+  it('「イベントで開く」「ログで開く」は行の時刻の前後 5 分と vCenter を渡すリンク', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    await openFirstRow()
+    for (const [name, tab] of [
+      ['イベントで開く', 'events'],
+      ['ログで開く', 'logs'],
+    ] as const) {
+      const href = screen.getByRole('link', { name }).getAttribute('href')!
+      expect(href.startsWith(`#/${tab}?`)).toBe(true)
+      const params = new URLSearchParams(href.split('?')[1])
+      expect(params.get('vcenter_id')).toBe(VC)
+      expect(params.get('from')).toBe('2026-03-22T00:05:00.000Z')
+      expect(params.get('to')).toBe('2026-03-22T00:15:00.000Z')
+    }
+  })
+
+  it('最初の兆候をクリックすると該当行が開いて強調される。影響の大きい対象のクリックで対象を絞る', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    const highlights = await screen.findByRole('region', { name: 'ハイライト' }).catch(() => screen.getByLabelText('ハイライト'))
+    fireEvent.click(within(highlights).getByRole('button', { name: /vm-a \/ VmPoweredOffEvent/ }))
+    const row = (await rowButton(/VmPoweredOffEvent/)).closest('li')!
+    expect(row).toHaveClass('timeline-row--revealed')
+    expect(within(highlights).getByText(/初めて出たイベント種別/)).toBeInTheDocument()
+    fireEvent.click(within(highlights).getByRole('button', { name: 'vm-a' }))
+    await answer(1)
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC })
+  })
+
+  it('一覧に含まれない最初の兆候はクリックできない旨を出し、データの無い項目は出さない', async () => {
+    setup()
+    renderTimeline()
+    await answer(
+      0,
+      populated({
+        highlights: {
+          first_signal: { ...VIEW_RESPONSE_EXAMPLE.items[1], id: 'alert:99', title: '切り捨てられた警告' },
+          top_entities: [],
+          new_event_types: [],
+        },
+      }),
+    )
+    expect(await screen.findByText('切り捨てられた警告')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /切り捨てられた警告/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/一覧に含まれていません/)).toBeInTheDocument()
+    expect(screen.queryByText('影響の大きい対象')).not.toBeInTheDocument()
+    expect(screen.queryByText('初めて出たイベント種別')).not.toBeInTheDocument()
+  })
+
+  it('俯瞰グラフ: キーボードで棒を選んで Enter で期間をその範囲に絞り、「絞り込み前の期間に戻す」で戻せる', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    const chart = await screen.findByRole('group', { name: /件数の俯瞰グラフ/ })
+    chart.focus()
+    fireEvent.keyDown(chart, { key: 'ArrowRight' }) // 先頭の棒
+    fireEvent.keyDown(chart, { key: 'ArrowRight' }) // 2 本目: 00:20〜00:40
+    expect(chart.querySelector('.timeline-overview__announce')).toHaveTextContent('2 件')
+    fireEvent.keyDown(chart, { key: 'Enter' })
+    await answer(1)
+    expect(harness.calls[1].body).toMatchObject({ from: '2026-03-22T00:20:00.000Z', to: '2026-03-22T00:40:00.000Z' })
+    expect(window.location.hash).toContain('from=2026-03-22T00%3A20%3A00.000Z')
+    fireEvent.click(screen.getByRole('button', { name: '絞り込み前の期間に戻す' }))
+    await answer(2)
+    expect(harness.calls[2].body.from).not.toBe('2026-03-22T00:20:00.000Z')
+    expect(window.location.hash).toBe('#/timeline?range=1h')
+    expect(screen.queryByRole('button', { name: '絞り込み前の期間に戻す' })).not.toBeInTheDocument()
+  })
+
+  it('俯瞰グラフ: Shift + 矢印で範囲を広げられる。最後の棒は期間の終わりで切る', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, populated({ to_utc: '2026-03-22T00:50:00Z' }))
+    const chart = await screen.findByRole('group', { name: /件数の俯瞰グラフ/ })
+    fireEvent.keyDown(chart, { key: 'Home' })
+    fireEvent.keyDown(chart, { key: 'ArrowRight', shiftKey: true })
+    fireEvent.keyDown(chart, { key: 'ArrowRight', shiftKey: true })
+    fireEvent.keyDown(chart, { key: 'Enter' })
+    await answer(1)
+    expect(harness.calls[1].body).toMatchObject({ from: '2026-03-22T00:00:00.000Z', to: '2026-03-22T00:50:00.000Z' })
+  })
+
+  it('起点があれば俯瞰グラフに縦線（ラベル「起点」）が出る', async () => {
+    window.history.replaceState(null, '', '/#/timeline?range=1h&anchor=2026-03-22T00:30:00.000Z')
+    setup()
+    renderTimeline()
+    await answer(0)
+    await screen.findByRole('group', { name: /件数の俯瞰グラフ/ })
+    expect(document.querySelector('.recharts-reference-line')).not.toBeNull()
+  })
+
+  it('truncated のときは「N 件中 M 件を表示しています。期間や対象を絞ってください」を上部に出す', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, populated({ truncated: true, total_items: 1500 }))
+    expect(await screen.findByRole('note')).toHaveTextContent('1500 件中 3 件を表示しています。期間や対象を絞ってください')
+  })
+
+  it('期間内に出来事が無いときは空の状態と「期間を広げる」を出し、押すと期間が広がる', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    expect(await screen.findByText('この期間に出来事はありません。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '期間を広げる' }))
+    await answer(1, emptyViewResponse())
+    const span = (i: number) => Date.parse(String(harness.calls[i].body.to)) - Date.parse(String(harness.calls[i].body.from))
+    expect(span(1)).toBe(span(0) * 2)
+  })
+
+  it('422 はサーバの detail をそのまま表示する', async () => {
+    setup()
+    renderTimeline()
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    await act(async () => {
+      harness.calls[0].resolve(jsonResponse({ detail: 'イベントの種類が多すぎて集計できません。' }, 422))
     })
+    expect(await screen.findByRole('alert')).toHaveTextContent('イベントの種類が多すぎて集計できません。')
+  })
 
-    it('期間はグラフと同じ折りたたみの「表示期間」で、要約が手入力とクイックで切り替わる', async () => {
-      const fetchMock = vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) return Promise.resolve(jsonResponse([]))
-        if (url.includes('/api/incident-timeline/snapshots/manual?')) {
-          return Promise.resolve(jsonResponse({ items: [], total: 0, limit: 20, offset: 0 }))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      const summary = screen.getByText('表示期間').closest('summary')!
-      expect(summary.closest('details')).not.toHaveAttribute('open')
-      expect(within(summary).getByText('直近24時間')).toBeInTheDocument()
-      fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-01-01' } })
-      fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2026-01-02' } })
-      expect(within(summary).getByText('2026-01-01 ～ 2026-01-02')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: '過去 7 日' }))
-      expect(within(summary).getByText('直近 7 日')).toBeInTheDocument()
+  it('混み合い（503 が続く）は「混み合っています」と分かる表示にする', async () => {
+    setup()
+    renderTimeline()
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    await act(async () => {
+      harness.calls[0].resolve(jsonResponse({}, 503, { 'Retry-After': '1' }))
     })
-
-    it('生成前でも監査ビューから保存済みスナップショットを選択してタイムラインへ切り替えできる', async () => {
-      const timelinePayloads: Record<string, unknown>[] = []
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.includes('/api/incident-timeline/snapshots/manual?')) {
-          return Promise.resolve(
-            jsonResponse({
-              items: [
-                {
-                  snapshot_id: '00000000-0000-0000-0000-000000000001',
-                  from: '2026-03-20T00:00:00Z',
-                  to: '2026-03-21T00:00:00Z',
-                  operator_note: '保存済みA',
-                  timestamp_utc: '2026-03-21T01:00:00Z',
-                  build_request_payload: {
-                    from: '2026-03-20T00:00:00Z',
-                    to: '2026-03-21T00:00:00Z',
-                    alert_top_n: 9,
-                  },
-                },
-              ],
-              total: 1,
-              limit: 20,
-              offset: 0,
-            }),
-          )
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          timelinePayloads.push(JSON.parse(String(init.body)) as Record<string, unknown>)
-          return Promise.resolve(
-            jsonResponse({
-              columns: [
-                {
-                  timestamp_utc: '2026-03-20T00:00:00Z',
-                  items: [
-                    {
-                      timestamp_utc: '2026-03-20T00:00:00Z',
-                      kind: 'alert',
-                      title: '保存済みAのタイムライン',
-                    },
-                  ],
-                  visible_items: [
-                    {
-                      timestamp_utc: '2026-03-20T00:00:00Z',
-                      kind: 'alert',
-                      title: '保存済みAのタイムライン',
-                    },
-                  ],
-                  hidden_count: 0,
-                },
-              ],
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: '保存済みA' })).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: '保存済みA' }))
-      await waitFor(() => {
-        expect(timelinePayloads.length).toBe(1)
-      })
-      expect(timelinePayloads[0]?.from).toBe('2026-03-20T00:00:00Z')
-      expect(timelinePayloads[0]?.to).toBe('2026-03-21T00:00:00Z')
-      expect(timelinePayloads[0]?.alert_top_n).toBe(9)
-      expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-      expect(screen.getByText('保存済みAのタイムライン')).toBeInTheDocument()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100)
     })
-
-    it('生成ボタンで POST /api/incident-timeline が期待した本文で呼ばれる', async () => {
-      const timelinePayloadRef: { current: Record<string, unknown> | null } = { current: null }
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(
-            jsonResponse([{ id: '550e8400-e29b-41d4-a716-446655440000', name: 'vc1' }]),
-          )
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          timelinePayloadRef.current = JSON.parse(String(init.body)) as Record<string, unknown>
-          return Promise.resolve(jsonResponse({ columns: [] }))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('checkbox', { name: /^CPU 使用率$/ }))
-      fireEvent.click(screen.getByRole('checkbox', { name: /^メモリ使用率$/ }))
-      fireEvent.change(screen.getByRole('spinbutton', { name: 'CPU 閾値（%）' }), {
-        target: { value: '90' },
-      })
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-
-      await waitFor(() => {
-        expect(timelinePayloadRef.current).not.toBeNull()
-      })
-      if (!timelinePayloadRef.current) {
-        throw new Error('タイムライン本文が取得できませんでした')
-      }
-      const body = timelinePayloadRef.current
-      expect(typeof body.from).toBe('string')
-      expect(typeof body.to).toBe('string')
-      expect(body.include_period_metrics_cpu).toBe(true)
-      expect(body.include_period_metrics_memory).toBe(true)
-      expect(body.include_period_metrics_disk_io).toBe(false)
-      expect(body.include_period_metrics_network_io).toBe(false)
-      expect(body.metric_threshold_cpu_pct).toBe(90)
-      expect(body.metric_threshold_memory_pct).toBe(85)
-      expect(body.metric_threshold_disk_pct).toBe(75)
-      expect(body.metric_threshold_network_pct).toBe(75)
-      expect(body.alert_top_n).toBe(7)
-      expect(body).not.toHaveProperty('sort_order')
-      expect(body).not.toHaveProperty('messages')
+    await waitFor(() => expect(harness.calls).toHaveLength(2))
+    await act(async () => {
+      harness.calls[1].resolve(jsonResponse({}, 503))
     })
+    expect(await screen.findByRole('alert')).toHaveTextContent('混み合っています')
+  })
 
-    it('alert_top_n を指定して生成すると本文に含める', async () => {
-      const timelinePayloadRef: { current: Record<string, unknown> | null } = { current: null }
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          timelinePayloadRef.current = JSON.parse(String(init.body)) as Record<string, unknown>
-          return Promise.resolve(jsonResponse({ columns: [] }))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
+  it('URL の条件（固定の期間・対象・vCenter）を復元して表示する', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      `/#/timeline?from=2026-03-20T00:00:00.000Z&to=2026-03-20T06:00:00.000Z&entity=esx01&vcenter_id=${VC}`,
+    )
+    setup({ vcenters: [{ id: VC, name: 'vc-main', host: 'h', port: 443, username: 'u', is_enabled: true, created_at: '2026-01-01T00:00:00Z' }] })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('esx01')
+    await waitFor(() => expect(screen.getByLabelText('vCenter')).toHaveValue(VC))
+    expect(harness.calls[0].body).toMatchObject({ from: '2026-03-20T00:00:00.000Z', to: '2026-03-20T06:00:00.000Z', entity: 'esx01' })
+    expect(screen.getByRole('button', { name: '直近 1 時間' })).toHaveAttribute('aria-pressed', 'false')
+  })
 
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
+  it('種別（イベント / アラート）を切り替えると sources が変わる。最小スコアは詳細設定に畳まれる', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByLabelText('イベント'))
+    await answer(1, emptyViewResponse())
+    expect(harness.calls[1].body.sources).toEqual(['alert'])
+    expect(screen.getByLabelText('アラート')).toBeDisabled() // 最後の 1 つは外せない
+    const details = screen.getByText('詳細設定').closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    const score = within(details).getByLabelText('最小スコア')
+    fireEvent.change(score, { target: { value: '40' } })
+    fireEvent.blur(score)
+    await answer(2, emptyViewResponse())
+    expect(harness.calls[2].body.min_score).toBe(40)
+  })
 
-      fireEvent.change(screen.getByRole('spinbutton', { name: 'アラート上位件数' }), {
-        target: { value: '12' },
-      })
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-
-      await waitFor(() => {
-        expect(timelinePayloadRef.current).not.toBeNull()
-      })
-      if (!timelinePayloadRef.current) {
-        throw new Error('タイムライン本文が取得できませんでした')
-      }
-      expect(timelinePayloadRef.current.alert_top_n).toBe(12)
-      expect(timelinePayloadRef.current).not.toHaveProperty('sort_order')
+  it('スナップショットは既定で閉じており、開くと一覧を読み、選ぶと期間と vCenter が条件へ入って読み直す', async () => {
+    const onOpen = vi.fn()
+    setup({
+      snapshots: [
+        {
+          snapshot_id: 's1',
+          from: '2026-03-10T00:00:00Z',
+          to: '2026-03-10T03:00:00Z',
+          operator_note: '一次調査メモ',
+          timestamp_utc: '2026-03-10T03:30:00Z',
+          build_request_payload: { from: '2026-03-10T00:00:00Z', to: '2026-03-10T03:00:00Z', vcenter_id: VC },
+          graph_context: { vcenter_id: VC },
+        },
+      ],
     })
-
-    it('ソート順トグルを localStorage に保存し再表示時に復元する', async () => {
-      localStorage.setItem('vea.timeline.sort_order', 'asc')
-
-      const fetchMock = vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      const { unmount } = renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-      expect(screen.getByRole('button', { name: '表示順: 昇順' })).toBeInTheDocument()
-
-      fireEvent.click(screen.getByRole('button', { name: '表示順: 昇順' }))
-      expect(localStorage.getItem('vea.timeline.sort_order')).toBe('desc')
-      expect(screen.getByRole('button', { name: '表示順: 降順' })).toBeInTheDocument()
-
-      unmount()
-      renderTimeline()
-      expect(screen.getByRole('button', { name: '表示順: 降順' })).toBeInTheDocument()
+    renderTimeline({ onOpenSnapshotInMetrics: onOpen })
+    await answer(0, emptyViewResponse())
+    const fetchCalls = () => (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]))
+    expect(fetchCalls().some((u) => u.includes('/snapshots/manual'))).toBe(false)
+    const toggle = screen.getByRole('button', { name: /スナップショット/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: '一次調査メモ' })).not.toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const item = await screen.findByRole('button', { name: '一次調査メモ' })
+    // 開いただけでは条件を上書きしない（先頭を自動で選ばない）
+    expect(harness.calls).toHaveLength(1)
+    fireEvent.click(item)
+    await answer(1, emptyViewResponse())
+    expect(harness.calls[1].body).toMatchObject({
+      from: '2026-03-10T00:00:00.000Z',
+      to: '2026-03-10T03:00:00.000Z',
+      vcenter_id: VC,
     })
+    expect(window.location.hash).toContain('from=2026-03-10T00%3A00%3A00.000Z')
+    fireEvent.click(screen.getByRole('button', { name: 'グラフで開く' }))
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ snapshot_id: 's1' }))
+  })
 
-    it('alert_top_n を localStorage から復元して送信本文に反映する', async () => {
-      localStorage.setItem('vea.timeline.alert_top_n', '12')
-      const timelinePayloadRef: { current: Record<string, unknown> | null } = { current: null }
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          timelinePayloadRef.current = JSON.parse(String(init.body)) as Record<string, unknown>
-          return Promise.resolve(jsonResponse({ columns: [] }))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-      expect(screen.getByRole('spinbutton', { name: 'アラート上位件数' })).toHaveValue(12)
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-      await waitFor(() => {
-        expect(timelinePayloadRef.current).not.toBeNull()
-      })
-      expect(timelinePayloadRef.current?.alert_top_n).toBe(12)
-    })
-
-    it('成功時にインシデント統合タイムラインを描画する', async () => {
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(
-            jsonResponse({
-              columns: [
-                {
-                  timestamp_utc: '2026-05-07T00:00:00Z',
-                  items: [
-                    { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: '重大アラート' },
-                  ],
-                  visible_items: [
-                    { timestamp_utc: '2026-05-07T00:00:00Z', kind: 'alert', title: '重大アラート' },
-                  ],
-                  hidden_count: 0,
-                },
-              ],
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-      })
-      expect(screen.getByText('重大アラート')).toHaveClass('incident-timeline__item--alert')
-    })
-
-    it('自動トリガー項目の timestamp_utc が +00:00 形式でも描画できる', async () => {
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(
-            jsonResponse({
-              columns: [
-                {
-                  timestamp_utc: '2026-05-07T00:00:00+00:00',
-                  items: [
-                    {
-                      timestamp_utc: '2026-05-07T00:00:00+00:00',
-                      kind: 'alert',
-                      title: '自動スナップショット候補: critical_burst',
-                      trigger_id: 'critical_burst',
-                    },
-                  ],
-                  visible_items: [
-                    {
-                      timestamp_utc: '2026-05-07T00:00:00+00:00',
-                      kind: 'alert',
-                      title: '自動スナップショット候補: critical_burst',
-                      trigger_id: 'critical_burst',
-                    },
-                  ],
-                  hidden_count: 0,
-                },
-              ],
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-      await waitFor(() => {
-        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-      })
-      expect(screen.getByText('自動スナップショット候補: critical_burst')).toBeInTheDocument()
-    })
-
-    it('生成中はボタンが無効になり aria-busy が true になる', async () => {
-      let releasePost: (() => void) | undefined
-      const postPromise = new Promise<Response>((resolve) => {
-        releasePost = () => {
-          resolve(jsonResponse({ columns: [] }))
-        }
-      })
-
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return postPromise
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-
-      const loadingBtn = await screen.findByRole('button', { name: 'タイムライン生成中' })
-      expect(loadingBtn).toBeDisabled()
-      expect(loadingBtn).toHaveAttribute('aria-busy', 'true')
-
-      releasePost?.()
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'タイムラインを生成' })).toBeInTheDocument()
-      })
-    })
-
-    it('API エラー時は onError コールバックを呼びタイムラインは描画しない', async () => {
-      const onError = vi.fn()
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(new Response('boom', { status: 500 }))
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline(onError)
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-
-      await waitFor(() => {
-        expect(onError).toHaveBeenCalled()
-      })
-      expect(onError.mock.calls.at(-1)?.[0]).toBe(
-        'リクエストに失敗しました。時間をおいて再度お試しください。',
+  it('スナップショットの保存は旧形式のまま（結果は送らない）で、運用メモが必須', async () => {
+    let saved: Record<string, unknown> | null = null
+    setup()
+    harness.extra.set('/api/incident-timeline/snapshots/manual', (_url, init) => {
+      saved = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse(
+        {
+          snapshot_id: '00000000-0000-0000-0000-000000000001',
+          operator_note: String(saved.operator_note),
+          timestamp_utc: '2026-03-22T01:23:45Z',
+          build_request_payload: { from: '2026-03-22T00:00:00Z', to: '2026-03-22T01:00:00Z' },
+        },
+        201,
       )
-      expect(screen.queryByText('インシデント統合タイムライン')).not.toBeInTheDocument()
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'タイムラインを生成' })).toBeEnabled()
-      })
-      expect(screen.queryByRole('button', { name: 'タイムライン生成中' })).not.toBeInTheDocument()
     })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    const save = await screen.findByRole('button', { name: 'スナップショットを保存' })
+    await waitFor(() => expect(save).toBeDisabled())
+    fireEvent.change(screen.getByLabelText('運用メモ（必須）'), { target: { value: '保存テスト' } })
+    await waitFor(() => expect(save).toBeEnabled())
+    fireEvent.click(save)
+    await waitFor(() => expect(saved).not.toBeNull())
+    expect(saved).toMatchObject({ operator_note: '保存テスト' })
+    expect(saved).toHaveProperty('build_request_payload')
+    expect(saved).not.toHaveProperty('items')
+    expect(saved).not.toHaveProperty('result_payload')
+  })
 
-    it('手動スナップショット保存は operator_note 必須で、入力後に保存 API を呼ぶ', async () => {
-      const snapshotPayloadRef: { current: Record<string, unknown> | null } = { current: null }
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(jsonResponse({ columns: [] }))
-        }
-        if (url.endsWith('/api/incident-timeline/snapshots/manual') && init?.method === 'POST') {
-          snapshotPayloadRef.current = JSON.parse(String(init.body)) as Record<string, unknown>
-          return Promise.resolve(
-            jsonResponse(
-              {
-                snapshot_id: '00000000-0000-0000-0000-000000000001',
-                operator_note: String(snapshotPayloadRef.current.operator_note ?? ''),
-                timestamp_utc: '2026-03-22T01:23:45Z',
-                build_request_payload: {
-                  from: '2026-03-22T00:00:00Z',
-                  to: '2026-03-23T00:00:00Z',
-                },
-              },
-              201,
-            ),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-      await waitFor(() => {
-        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-      })
-
-      const saveButton = screen.getByRole('button', { name: 'スナップショットを保存' })
-      const noteInput = screen.getByLabelText('運用メモ（必須）')
-      expect(saveButton).toBeDisabled()
-
-      fireEvent.change(noteInput, { target: { value: 'エスカレーション前の手動保存' } })
-      expect(saveButton).toBeEnabled()
-
-      fireEvent.click(saveButton)
-      await waitFor(() => {
-        expect(snapshotPayloadRef.current).not.toBeNull()
-      })
-      expect(snapshotPayloadRef.current?.operator_note).toBe('エスカレーション前の手動保存')
-    })
-
-    it('手動保存後に監査ビューを表示し、一覧 API の結果を描画する', async () => {
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(jsonResponse({ columns: [] }))
-        }
-        if (url.endsWith('/api/incident-timeline/snapshots/manual') && init?.method === 'POST') {
-          return Promise.resolve(
-            jsonResponse(
-              {
-                snapshot_id: '00000000-0000-0000-0000-000000000123',
-                operator_note: '監査表示テスト',
-                timestamp_utc: '2026-03-22T01:23:45Z',
-                build_request_payload: {
-                  from: '2026-03-22T00:00:00Z',
-                  to: '2026-03-23T00:00:00Z',
-                },
-              },
-              201,
-            ),
-          )
-        }
-        if (
-          url.includes('/api/incident-timeline/snapshots/manual?') &&
-          init?.method !== 'POST'
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              items: [
-                {
-                  snapshot_id: '00000000-0000-0000-0000-000000000123',
-                  from: '2026-03-22T00:00:00Z',
-                  to: '2026-03-23T00:00:00Z',
-                  operator_note: '監査表示テスト',
-                  timestamp_utc: '2026-03-22T01:23:45Z',
-                  build_request_payload: {
-                    from: '2026-03-22T00:00:00Z',
-                    to: '2026-03-23T00:00:00Z',
-                  },
-                },
-              ],
-              total: 1,
-              limit: 20,
-              offset: 0,
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-      await waitFor(() => {
-        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-      })
-
-      fireEvent.change(screen.getByLabelText('運用メモ（必須）'), {
-        target: { value: '監査表示テスト' },
-      })
-      fireEvent.click(screen.getByRole('button', { name: 'スナップショットを保存' }))
-
-      await waitFor(() => {
-        expect(
-          fetchMock.mock.calls.some(([input]) =>
-            String(input).includes('/api/incident-timeline/snapshots/manual?'),
-          ),
-        ).toBe(true)
-      })
-      expect(screen.getByText('手動スナップショット監査ビュー')).toBeInTheDocument()
-      const selectedSection = screen.getByLabelText('選択中スナップショット')
-      expect(within(selectedSection).getByText('監査表示テスト')).toBeInTheDocument()
-    })
-
-    it('監査ビューで複数スナップショットを切り替えて表示できる', async () => {
-      const timelinePayloads: Record<string, unknown>[] = []
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          timelinePayloads.push(JSON.parse(String(init.body)) as Record<string, unknown>)
-          return Promise.resolve(jsonResponse({ columns: [] }))
-        }
-        if (
-          url.includes('/api/incident-timeline/snapshots/manual?') &&
-          init?.method !== 'POST'
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              items: [
-                {
-                  snapshot_id: '00000000-0000-0000-0000-000000000001',
-                  from: '2026-03-20T00:00:00Z',
-                  to: '2026-03-21T00:00:00Z',
-                  operator_note: '一次調査メモ',
-                  timestamp_utc: '2026-03-22T01:23:45Z',
-                  build_request_payload: {
-                    from: '2026-03-20T00:00:00Z',
-                    to: '2026-03-21T00:00:00Z',
-                  },
-                },
-                {
-                  snapshot_id: '00000000-0000-0000-0000-000000000002',
-                  from: '2026-03-22T00:00:00Z',
-                  to: '2026-03-23T00:00:00Z',
-                  operator_note: '二次調査メモ',
-                  timestamp_utc: '2026-03-22T01:33:45Z',
-                  build_request_payload: {
-                    from: '2026-03-22T00:00:00Z',
-                    to: '2026-03-23T00:00:00Z',
-                    include_period_metrics_cpu: true,
-                  },
-                },
-              ],
-              total: 2,
-              limit: 20,
-              offset: 0,
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'タイムラインを生成' }))
-      await waitFor(() => {
-        expect(screen.getByText('手動スナップショット監査ビュー')).toBeInTheDocument()
-      })
-
-      expect(screen.getByText('選択中スナップショット')).toBeInTheDocument()
-      const selectedSection = screen.getByLabelText('選択中スナップショット')
-      expect(within(selectedSection).getByText('一次調査メモ')).toBeInTheDocument()
-
-      fireEvent.click(screen.getByRole('button', { name: '二次調査メモ' }))
-      expect(within(selectedSection).getByText('二次調査メモ')).toBeInTheDocument()
-      expect(selectedSection).toHaveTextContent('2026-03-22T01:33:45Z')
-      await waitFor(() => {
-        expect(timelinePayloads.length).toBeGreaterThan(1)
-      })
-      const lastPayload = timelinePayloads.at(-1)
-      expect(lastPayload?.from).toBe('2026-03-22T00:00:00Z')
-      expect(lastPayload?.to).toBe('2026-03-23T00:00:00Z')
-      expect(lastPayload?.include_period_metrics_cpu).toBe(true)
-    })
-
-    it('スナップショット選択時に bucket_start_utc/bucket_end_utc が null でもタイムラインを表示できる', async () => {
-      const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/api/vcenters')) {
-          return Promise.resolve(jsonResponse([]))
-        }
-        if (
-          url.includes('/api/incident-timeline/snapshots/manual?') &&
-          init?.method !== 'POST'
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              items: [
-                {
-                  snapshot_id: '00000000-0000-0000-0000-0000000000aa',
-                  from: '2026-03-24T00:00:00Z',
-                  to: '2026-03-25T00:00:00Z',
-                  operator_note: 'null bucket テスト',
-                  timestamp_utc: '2026-03-25T01:00:00Z',
-                  build_request_payload: {
-                    from: '2026-03-24T00:00:00Z',
-                    to: '2026-03-25T00:00:00Z',
-                  },
-                },
-              ],
-              total: 1,
-              limit: 20,
-              offset: 0,
-            }),
-          )
-        }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(
-            jsonResponse({
-              columns: [
-                {
-                  timestamp_utc: '2026-03-24T00:00:00Z',
-                  bucket_start_utc: null,
-                  bucket_end_utc: null,
-                  items: [
-                    {
-                      timestamp_utc: '2026-03-24T00:00:00Z',
-                      kind: 'event',
-                      title: 'null bucket でも表示',
-                    },
-                  ],
-                  visible_items: [
-                    {
-                      timestamp_utc: '2026-03-24T00:00:00Z',
-                      kind: 'event',
-                      title: 'null bucket でも表示',
-                    },
-                  ],
-                  hidden_count: 0,
-                },
-              ],
-            }),
-          )
-        }
-        return Promise.resolve(new Response('not found', { status: 404 }))
-      })
-      vi.stubGlobal('fetch', fetchMock)
-
-      renderTimeline()
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'null bucket テスト' })).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'null bucket テスト' }))
-      await waitFor(() => {
-        expect(screen.getByText('インシデント統合タイムライン')).toBeInTheDocument()
-      })
-      expect(screen.getByText('null bucket でも表示')).toBeInTheDocument()
-    })
-  },
-)
+  it('旧画面の「タイムラインを生成」ボタンは無い', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    expect(screen.queryByText('タイムラインを生成')).not.toBeInTheDocument()
+  })
+})

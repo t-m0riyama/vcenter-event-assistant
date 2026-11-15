@@ -287,7 +287,7 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   })
 
   await openMainTab(page, 'タイムライン')
-  await expect(page.getByRole('button', { name: 'タイムラインを生成' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'タイムラインの条件' })).toBeVisible()
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'timeline.png'),
     fullPage: false,

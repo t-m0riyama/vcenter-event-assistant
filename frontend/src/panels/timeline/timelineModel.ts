@@ -1,4 +1,4 @@
-import { parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
+import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
 import type {
   IncidentTimelineViewRequest,
   TimelineOverviewBucket,
@@ -135,4 +135,15 @@ export function correlationHashForItem(tab: 'events' | 'logs', item: TimelineVie
     from: iso(t - CORRELATION_HALF_WIDTH_MS),
     to: iso(t + CORRELATION_HALF_WIDTH_MS),
   })
+}
+
+/** 棒のツールチップに出す範囲。最後の棒は期間の終わりで切れるので `min(開始 + バケット幅, to)`。 */
+export function bucketRangeLabel(
+  bucketStartUtc: string,
+  bucketSeconds: number,
+  toUtc: string,
+  timeZone: string,
+): string {
+  const r = bucketRange(bucketStartUtc, bucketSeconds, toUtc)
+  return `${formatIsoInTimeZone(r.from, timeZone)} ～ ${formatIsoInTimeZone(r.to, timeZone)}`
 }
