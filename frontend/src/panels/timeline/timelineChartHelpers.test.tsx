@@ -36,6 +36,21 @@ describe('usePointerRangeSelection', () => {
   })
 })
 
+describe('usePointerRangeSelection（棒の並びが変わったとき）', () => {
+  it('押している間に棒の並びの鍵が変わったら、その操作は無かったことにする', () => {
+    const onSelect = vi.fn()
+    const { result, rerender } = renderHook(({ k }) => usePointerRangeSelection(onSelect, k), {
+      initialProps: { k: 'a' },
+    })
+    act(() => result.current.down(70))
+    expect(result.current.range).toEqual([70, 70])
+    rerender({ k: 'b' })
+    expect(result.current.range).toBeNull()
+    act(() => result.current.up())
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
 describe('calendarDay', () => {
   it('タイムゾーンの暦日を返す（UTC では 15 日でも、東京では 16 日になる）', () => {
     expect(calendarDay('2026-11-15T20:00:00Z', 'UTC')).toBe('2026-11-15')
