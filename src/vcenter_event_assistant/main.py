@@ -83,6 +83,7 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     "/api/chat/preview": ("chat_preview", 60),
     # Viewer でも呼べる重い集計（Issue #301）。上限はプレビューと同じ考え方でチャットの 2 倍。
     "/api/incident-timeline": ("incident_timeline", 60),
+    "/api/incident-timeline/view": ("incident_timeline", 60),
     "/api/ingest/run": ("ingest", 60),
     "/api/digests/run": ("digests", 60),
     "/api/plugins/collectors/reload": ("plugins", 60),
