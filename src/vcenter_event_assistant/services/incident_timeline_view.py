@@ -3,9 +3,9 @@
 構成:
 
 - 入口 ``build_incident_timeline_view``: 期間を秒に揃え、同時実行数の枠を取り、例外を HTTP に変換する。
-- 種別ごとの収集関数（``_collect_events`` / ``_collect_alerts``）: DB から読み、``TimelineEntry`` の列と
-  俯瞰グラフの件数を返す。種別を足すときは収集関数を書いて ``_COLLECTORS`` に登録する
-  （PR4 で ``metric`` → ``metric_breach``、``log`` → ``log_error`` を足す）。
+- 種別ごとの収集関数（``_collect_events`` / ``_collect_alerts`` / ``_collect_metrics`` / ``_collect_logs``）:
+  DB から読み、``TimelineEntry`` の列と俯瞰グラフの件数を返す。種別を足すときは収集関数を書いて
+  ``_COLLECTORS`` に登録する。``sources`` に無い種別の収集関数は呼ばない（問い合わせを発行しない）。
 - 純粋関数（DB を使わない）: バケット幅の選択、level の算出、並べ替え、連続のまとめ、打ち切り、ハイライト。
 
 チャットの LLM 用集計（``services/chat/``）とは独立しており、その挙動には影響しない。
@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import DateTime, Integer, String, and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -37,7 +37,7 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     TimelineLevel,
     TimelineSource,
 )
-from vcenter_event_assistant.db.models import AlertHistory, AlertRule, EventRecord, VCenter
+from vcenter_event_assistant.db.models import AlertHistory, AlertRule, EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     IN_CHUNK_SIZE,
     MetricProbe,
@@ -54,8 +54,13 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
     AggregationLimitExceeded,
     aggregation_slot,
 )
+from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive
-from vcenter_event_assistant.services.sql_time import bucket_index_expr, truncate_to_second
+from vcenter_event_assistant.services.sql_time import (
+    bucket_index_expr,
+    epoch_seconds_expr,
+    truncate_to_second,
+)
 from vcenter_event_assistant.settings_binding import require_settings
 
 # 同時実行数の上限に達したときに、再試行までの目安として返す秒数（chat_context_payloads と同じ値）。
@@ -77,6 +82,21 @@ _TOP_ENTITIES_LIMIT = 5
 _NEW_EVENT_TYPES_LIMIT = 10
 # アラート側で行数の上限を超えたことを示す AggregationLimitExceeded.what
 _ALERTS_LIMIT = "incident_timeline_view.alerts"
+_METRICS_LIMIT = "incident_timeline_view.metrics"
+
+# 超過区間を判定する指標と、その日本語名。
+#
+# 対象は単位が % の CPU・メモリだけ。chat_period_metrics の DISK_KEYS / NET_KEYS は % ではない:
+# - ``*_kbps`` は KB/s のスループット。
+# - ``host.disk.usage_pct`` は名前に反して vSphere のカウンタ ``disk.usage.average``（Aggregated disk I/O
+#   rate、単位 KBps）の値をそのまま保存している（collectors/host_perf_counters.py は単位を変換しない）。
+# % の閾値（既定 75）を KB/s に当てると、I/O のあるホストはほぼ常に「超過」になり意味がないので、
+# ``metric_threshold_disk_pct`` / ``metric_threshold_network_pct`` は受け取るが使わない。
+_METRIC_LABELS: dict[str, str] = {METRIC_CPU: "CPU 使用率", METRIC_MEM: "メモリ使用率"}
+# level の規則: ピークがこの値以上、または閾値をこのポイント数以上上回ったら error、それ以外は warning。
+_METRIC_ERROR_PEAK_PCT = 95.0
+_METRIC_ERROR_MARGIN_PCT = 15.0
+_METRIC_CONTINUED_NOTE = "期間の開始前から継続"
 
 OVERVIEW_FIELDS: tuple[str, ...] = ("event_total", "event_notable", "alert", "metric_breach", "log_error")
 
@@ -171,6 +191,10 @@ class _Scope:
     max_rows: int
     dialect_name: str
     metric_name_lookback: timedelta
+    # (metric_key, 閾値 %) の組。超過区間の判定に使う。
+    metric_thresholds: tuple[tuple[str, float], ...] = ()
+    # 隣のサンプルとの間隔がこの秒数以内なら同じ超過区間につなぐ（サンプルの欠けで区切らない）。
+    metric_max_gap_seconds: int = 900
 
 
 @dataclass
@@ -308,6 +332,55 @@ def alert_title(rule_name: str, state: str | None) -> str:
     if state == "stale":
         return f"{rule_name} のデータが古い"
     return f"{rule_name} が回復"
+
+
+def metric_breach_level(peak: float, threshold: float) -> TimelineLevel:
+    """超過区間の level。ピークが 95% 以上か、閾値を 15 ポイント以上上回ったら error、それ以外は warning。
+
+    critical は使わない（アラートや高スコアのイベントのように人が重大度を決めた信号ではないため）。
+    """
+    if peak >= _METRIC_ERROR_PEAK_PCT or peak - threshold >= _METRIC_ERROR_MARGIN_PCT:
+        return "error"
+    return "warning"
+
+
+def _format_pct(value: float) -> str:
+    """80.0 → "80"、82.5 → "82.5"、92.346 → "92.35"。"""
+    return f"{round(float(value), 2):g}"
+
+
+def metric_breach_title(metric_key: str, threshold: float) -> str:
+    label = _METRIC_LABELS.get(metric_key, metric_key)
+    return f"{label} が閾値（{_format_pct(threshold)}%）を超過"
+
+
+def metric_breach_detail(
+    peak: float, peak_at: datetime, sample_count: int, *, continued: bool
+) -> str:
+    """ピーク値とその時刻（UTC）、区間内のサンプル数。期間の開始前から続く区間はその旨を足す。"""
+    parts = [
+        f"ピーク {_format_pct(peak)}%（{to_utc(peak_at):%Y-%m-%d %H:%M:%S} UTC）",
+        f"サンプル {sample_count} 件",
+    ]
+    if continued:
+        parts.append(_METRIC_CONTINUED_NOTE)
+    return "、".join(parts)
+
+
+def count_spans_per_bucket(
+    spans: Iterable[tuple[datetime, datetime | None]],
+    from_utc: datetime,
+    bucket_sec: int,
+    bucket_count: int,
+) -> list[int]:
+    """区間 ``[start, end or start]`` がかかるすべてのバケットで 1 ずつ数える（範囲外は切り詰める）。"""
+    counts = [0] * bucket_count
+    for start, end in spans:
+        first = max(0, bucket_index(start, from_utc, bucket_sec))
+        last = min(bucket_count - 1, bucket_index(end or start, from_utc, bucket_sec))
+        for idx in range(first, last + 1):
+            counts[idx] += 1
+    return counts
 
 
 def entity_matches(entity_name: str | None, needle: str) -> bool:
@@ -534,10 +607,9 @@ async def build_incident_timeline_view(
     *,
     owner_key: str,
 ) -> IncidentTimelineViewResponse:
-    """期間内のイベントとアラートを、個々の出来事として時刻順に返す。
+    """期間内のイベント・アラート・メトリクスの超過区間・エラーログを、個々の出来事として時刻順に返す。
 
     ``owner_key`` は同時実行数の上限（``aggregation_slot``）を利用者ごとに数えるための識別子。
-    PR1 では ``event`` と ``alert`` だけを扱い、``metric`` と ``log`` は後の PR で足す。
     """
     # DB 側の時間バケットは秒単位なので、期間は入口で 1 回だけ秒に揃え、以降すべてで同じ値を使う。
     ft = truncate_to_second(to_utc(body.from_time))
@@ -563,6 +635,7 @@ async def build_incident_timeline_view(
                 tt,
                 max_rows=settings.context_aggregation_max_rows,
                 metric_name_lookback=metric_name_lookback(settings.perf_sample_interval_seconds),
+                metric_max_gap_seconds=settings.effective_metric_staleness_window_seconds,
             )
     except AggregationBusy:
         raise HTTPException(
@@ -579,6 +652,12 @@ def _limit_message(exc: AggregationLimitExceeded) -> str:
     if exc.what == _ALERTS_LIMIT:
         # 対象（entity）の絞り込みは対象を解決した後に Python 側でかけるので、行数は減らない。
         return "通知履歴が多すぎて集計できません。期間を短くしてください。"
+    if exc.what == _METRICS_LIMIT:
+        # 数えるのは超過区間の数。vCenter と対象の絞り込み、閾値はどれも SQL で効くので区間の数が減る。
+        return (
+            "メトリクスの超過区間が多すぎて集計できません。期間を短くする、閾値を上げる、"
+            "vCenter や対象で絞り込む、または種別からメトリクスを外すのいずれかをお試しください。"
+        )
     return (
         "対象の出来事が多すぎて集計できません。"
         "期間を短くするか、vCenter を指定して絞り込んでください。"
@@ -593,6 +672,7 @@ async def _build_in_slot(
     *,
     max_rows: int,
     metric_name_lookback: timedelta,
+    metric_max_gap_seconds: int,
 ) -> IncidentTimelineViewResponse:
     bucket_sec = choose_bucket_seconds(ft, tt)
     n_buckets = overview_bucket_count(ft, tt, bucket_sec)
@@ -608,6 +688,11 @@ async def _build_in_slot(
         max_rows=max_rows,
         dialect_name=bind.dialect.name if bind is not None else "sqlite",
         metric_name_lookback=metric_name_lookback,
+        metric_thresholds=(
+            (METRIC_CPU, body.metric_threshold_cpu_pct),
+            (METRIC_MEM, body.metric_threshold_memory_pct),
+        ),
+        metric_max_gap_seconds=metric_max_gap_seconds,
     )
 
     entries: list[TimelineEntry] = []
@@ -926,6 +1011,179 @@ def _alert_entry(row: Any, resolved: Mapping[MetricProbe, ResolvedEntity]) -> Ti
     )
 
 
+# --- 収集: メトリクスの超過区間 -------------------------------------------------------
+
+
+async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
+    """CPU・メモリの閾値超過を、生のサンプルの細かさで「開始〜終了・ピーク」の区間にまとめる。
+
+    区間の規則（同じ ``(vcenter_id, entity_moid, metric_key)`` の中で、サンプルの時刻順に見る）:
+
+    - 閾値以上のサンプルが続く範囲を 1 区間にする。閾値ちょうどは超過に含める。
+    - 閾値未満のサンプルが 1 つでもあれば、そこで区切る。
+    - 前のサンプルとの間隔が ``metric_max_gap_seconds``（アラート評価の鮮度の上限と同じ値。既定は
+      収集間隔 × 3 = 15 分）を超えたら区切る。それ以内の欠け（収集の失敗）では区切らない。
+
+    すべて DB の window 関数で行い（gaps-and-islands）、受け取るのは区間ごとに 1 行だけにする。
+    サンプルを 1 行ずつ読まないので、超過が長く続いても行数は増えない（Issue #301 と同じ考え方）。
+    上位 N 台に絞らない（``build_chat_period_metrics`` の上位 15 台の作りは使わない）ので、
+    超過したホストはすべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当てる。
+
+    期間の開始前から続く超過: サンプルは ``from - metric_max_gap_seconds`` から読み、期間内の最初のサンプルの
+    前のサンプル（期間の外）が閾値以上でつながっていれば「期間の開始前から継続」とする。開始・ピーク・件数は
+    期間内のサンプルだけで決める（一覧と俯瞰を期間に収めるため）。
+    """
+    thresholds = dict(scope.metric_thresholds)
+    if not thresholds:
+        return _Collected(overview={"metric_breach": [0] * scope.bucket_count})
+    keys = tuple(thresholds)
+    scan_from = scope.from_utc - timedelta(seconds=scope.metric_max_gap_seconds)
+    threshold_expr = case(
+        *[(MetricSample.metric_key == key, literal(float(value))) for key, value in thresholds.items()],
+    )
+    clauses: list[ColumnElement[bool]] = [
+        MetricSample.metric_key.in_(keys),
+        MetricSample.sampled_at >= scan_from,
+        MetricSample.sampled_at < scope.to_utc,
+    ]
+    if scope.vcenter_id is not None:
+        clauses.append(MetricSample.vcenter_id == scope.vcenter_id)
+    # 対象（entity）の絞り込みはここではかけない。サンプル単位で除くと、名前の違うサンプルが抜けて
+    # 区間の区切りが変わるので、区間にまとめた後の名前に当てる。
+
+    # 1. 指標ごとの閾値と超過の印（hit）
+    base = (
+        select(
+            MetricSample.id.label("id"),
+            MetricSample.vcenter_id.label("vc"),
+            MetricSample.entity_moid.label("moid"),
+            MetricSample.metric_key.label("mk"),
+            MetricSample.sampled_at.label("at"),
+            MetricSample.value.label("value"),
+            func.nullif(func.trim(MetricSample.entity_name), "").label("nm"),
+            MetricSample.entity_type.label("etype"),
+            case((MetricSample.value >= threshold_expr, 1), else_=0).label("hit"),
+        )
+        .where(*clauses)
+        .subquery("metric_base")
+    )
+    series = (base.c.vc, base.c.moid, base.c.mk)
+    # 2. 同じ系列の 1 つ前のサンプル（閾値未満も含む）
+    lagged = select(
+        base,
+        func.lag(base.c.hit).over(partition_by=series, order_by=base.c.at).label("prev_hit"),
+        func.lag(base.c.at).over(partition_by=series, order_by=base.c.at).label("prev_at"),
+    ).subquery("metric_lagged")
+    # 3. 閾値以上のサンプルだけを残し、区間の始まり（starts=1）に印を付ける。前が閾値以上で、
+    #    間隔が上限以内のときだけ前の区間の続き（starts=0）。前が無い（NULL）ときも始まり。
+    gap = epoch_seconds_expr(lagged.c.at, scope.dialect_name) - epoch_seconds_expr(
+        lagged.c.prev_at, scope.dialect_name
+    )
+    hits = (
+        select(
+            lagged.c.id, lagged.c.vc, lagged.c.moid, lagged.c.mk, lagged.c.at,
+            lagged.c.value, lagged.c.nm, lagged.c.etype,
+            case(
+                (and_(lagged.c.prev_hit == 1, gap <= scope.metric_max_gap_seconds), 0),
+                else_=1,
+            ).label("starts"),
+        )
+        .where(lagged.c.hit == 1)
+        .subquery("metric_hits")
+    )
+    hseries = (hits.c.vc, hits.c.moid, hits.c.mk)
+    # 4. 始まりの印の累積和が区間の番号になる
+    runs = select(
+        hits,
+        func.sum(hits.c.starts)
+        .over(partition_by=hseries, order_by=(hits.c.at, hits.c.id), rows=(None, 0))
+        .label("run"),
+    ).subquery("metric_runs")
+    # 5. 期間内のサンプルに絞ってから、区間ごとのピーク時刻・最初の id・最新の名前を求める
+    #    （WHERE は同じ SELECT の window 関数より先に効く）
+    rkey = (runs.c.vc, runs.c.moid, runs.c.mk, runs.c.run)
+    in_period = (
+        select(
+            runs.c.vc, runs.c.moid, runs.c.mk, runs.c.run, runs.c.at, runs.c.value, runs.c.starts,
+            func.first_value(runs.c.at, type_=DateTime(timezone=True))
+            .over(partition_by=rkey, order_by=(runs.c.value.desc(), runs.c.at))
+            .label("peak_at"),
+            func.first_value(runs.c.id, type_=Integer())
+            .over(partition_by=rkey, order_by=runs.c.at)
+            .label("first_id"),
+            # 名前は空でない最新のもの（無ければ NULL → Python で moid にする）
+            func.first_value(runs.c.nm, type_=String())
+            .over(partition_by=rkey, order_by=(runs.c.nm.is_(None), runs.c.at.desc()))
+            .label("name"),
+            func.first_value(runs.c.etype, type_=String())
+            .over(partition_by=rkey, order_by=runs.c.at.desc())
+            .label("etype"),
+        )
+        .where(runs.c.at >= scope.from_utc)
+        .subquery("metric_in_period")
+    )
+    # 6. 区間ごとに 1 行。starts の最大が 0（期間内の行がすべて続き）なら、期間の開始前から継続している
+    intervals = (
+        select(
+            in_period.c.vc, in_period.c.moid, in_period.c.mk,
+            func.min(in_period.c.at).label("start_at"),
+            func.max(in_period.c.at).label("end_at"),
+            func.max(in_period.c.value).label("peak"),
+            func.count().label("n"),
+            func.max(in_period.c.starts).label("began_inside"),
+            func.max(in_period.c.peak_at).label("peak_at"),
+            func.max(in_period.c.first_id).label("first_id"),
+            func.max(in_period.c.name).label("name"),
+            func.max(in_period.c.etype).label("etype"),
+        )
+        .group_by(in_period.c.vc, in_period.c.moid, in_period.c.mk, in_period.c.run)
+        .subquery("metric_intervals")
+    )
+    stmt = select(intervals)
+    if scope.entity:
+        stmt = stmt.where(contains_case_insensitive(intervals.c.name, scope.entity))
+    stmt = stmt.order_by(
+        intervals.c.start_at, intervals.c.vc, intervals.c.moid, intervals.c.mk
+    ).limit(scope.max_rows + 1)
+    rows = (await session.execute(stmt)).all()
+    if len(rows) > scope.max_rows:
+        raise AggregationLimitExceeded(_METRICS_LIMIT, scope.max_rows)
+
+    entries: list[TimelineEntry] = []
+    for row in rows:
+        start = to_utc(row.start_at)
+        end = to_utc(row.end_at)
+        threshold = thresholds[row.mk]
+        peak = float(row.peak)
+        entries.append(
+            TimelineEntry(
+                kind="metric",
+                source_id=int(row.first_id),
+                timestamp_utc=start,
+                end_utc=end if end != start else None,
+                level=metric_breach_level(peak, threshold),
+                title=metric_breach_title(row.mk, threshold),
+                detail=metric_breach_detail(
+                    peak, row.peak_at, int(row.n), continued=not int(row.began_inside)
+                ),
+                entity_name=row.name or row.moid,
+                entity_type=row.etype,
+                vcenter_id=row.vc,
+                # 区間はそれ自体が「まとめた」行なので、隣とはまとめない。count は 1 のまま
+                # （イベントの「×N」と意味が違うため。サンプル数は detail に書く）。
+                merge_key=None,
+                ref={"metric_key": row.mk, "entity_moid": row.moid},
+            )
+        )
+    counts = count_spans_per_bucket(
+        ((e.timestamp_utc, e.end_utc) for e in entries),
+        scope.from_utc,
+        scope.bucket_sec,
+        scope.bucket_count,
+    )
+    return _Collected(entries=entries, overview={"metric_breach": counts})
+
+
 # --- 共通 -------------------------------------------------------------------------------
 
 
@@ -948,10 +1206,12 @@ async def _attach_vcenter_names(
 
 _Collector = Callable[[AsyncSession, _Scope], Awaitable[_Collected]]
 
-# 種別ごとの収集関数。PR4 で "metric"（metric_breach）と "log"（log_error）を足す。
+# 種別ごとの収集関数（俯瞰のフィールド: event → event_total / event_notable、alert → alert、
+# metric → metric_breach、log → log_error）。
 _COLLECTORS: dict[TimelineSource, _Collector] = {
     "event": _collect_events,
     "alert": _collect_alerts,
+    "metric": _collect_metrics,
 }
 
 

@@ -272,7 +272,8 @@ async def test_alert_history_becomes_alert_item_with_resolved_metric_entity(clie
                 entity_moid="host-1",
                 entity_name="esx01",
                 metric_key="host.cpu.usage_pct",
-                value=95.0,
+                # 対象名の解決にだけ使う。閾値（80%）未満にして、超過区間の行を出さない
+                value=10.0,
             )
         )
         rule = AlertRule(name="cpu-high", rule_type="metric_threshold", alert_level="critical", config={})
@@ -577,17 +578,6 @@ async def test_overview_notable_matches_listed_events_before_merging(client: Asy
 
 
 @pytest.mark.asyncio
-async def test_metric_and_log_sources_return_nothing_yet(client: AsyncClient) -> None:
-    vid = await _vcenter()
-    await _events(vid, (1, "A", "h1", 30))
-    data = await _post(client, sources=["metric", "log"])
-    assert data["items"] == [] and data["total_items"] == 0
-    for b in data["overview"]:
-        assert (b["event_total"], b["event_notable"], b["alert"], b["metric_breach"], b["log_error"]) == (0, 0, 0, 0, 0)
-    assert data["highlights"]["new_event_types"] == []
-
-
-@pytest.mark.asyncio
 async def test_entity_filter_treats_like_wildcards_literally(client: AsyncClient) -> None:
     vid = await _vcenter()
     await _events(vid, (1, "A", "esx_01", 30), (2, "B", "esxA01", 30), (3, "C", "100%-vm", 30))
@@ -613,11 +603,12 @@ async def _alert_history(rule_type: str, context_key: str, minute: float, *, nam
 
 
 async def _metric_sample(vid: uuid.UUID, moid: str, name: str, minute: float) -> None:
+    """アラートの対象名の解決に使うサンプル。閾値未満にして、超過区間の行を出さない。"""
     async with session_scope() as session:
         session.add(
             MetricSample(
                 vcenter_id=vid, sampled_at=_at(minute), entity_type="HostSystem",
-                entity_moid=moid, entity_name=name, metric_key="host.cpu.usage_pct", value=90.0,
+                entity_moid=moid, entity_name=name, metric_key="host.cpu.usage_pct", value=10.0,
             )
         )
 
@@ -858,11 +849,11 @@ async def test_metric_entity_resolution_without_metric_key_filter(client: AsyncC
             [
                 MetricSample(
                     vcenter_id=vid, sampled_at=_at(5), entity_type="HostSystem", entity_moid="host-1",
-                    entity_name="esx-mem-only", metric_key="host.mem.usage_pct", value=90.0,
+                    entity_name="esx-mem-only", metric_key="host.mem.usage_pct", value=10.0,
                 ),
                 MetricSample(
                     vcenter_id=vid, sampled_at=_at(5), entity_type="HostSystem", entity_moid="host-2",
-                    entity_name="esx-cpu", metric_key="host.cpu.usage_pct", value=90.0,
+                    entity_name="esx-cpu", metric_key="host.cpu.usage_pct", value=10.0,
                 ),
             ]
         )
@@ -936,3 +927,304 @@ async def test_more_than_500_ids_and_types_are_split_into_chunks(client: AsyncCl
     assert all(i["detail"] == f"m{int(i['ref']['event_type'][1:])}" for i in data["items"])
     new = data["highlights"]["new_event_types"]
     assert len(new) == 10 and "T500" not in {n["event_type"] for n in new}
+
+
+# --- メトリクスの超過区間 ------------------------------------------------------------------
+#
+# 閾値の既定は CPU 80% / メモリ 85%。収集間隔の既定は 5 分で、隣のサンプルとの間隔が
+# effective_metric_staleness_window_seconds（既定は収集間隔 × 3 = 15 分）以内なら同じ区間につなぐ。
+
+CPU = "host.cpu.usage_pct"
+MEM = "host.mem.usage_pct"
+
+
+async def _series(
+    vid: uuid.UUID,
+    moid: str,
+    points: list[tuple[float, float]],
+    *,
+    key: str = CPU,
+    name: str = "esx01",
+    entity_type: str = "HostSystem",
+) -> list[int]:
+    """points は (分, 値) の列。挿入した MetricSample の id を返す。"""
+    async with session_scope() as session:
+        rows = [
+            MetricSample(
+                vcenter_id=vid, sampled_at=_at(minute), entity_type=entity_type,
+                entity_moid=moid, entity_name=name, metric_key=key, value=value,
+            )
+            for minute, value in points
+        ]
+        session.add_all(rows)
+        await session.flush()
+        return [r.id for r in rows]
+
+
+def _metrics(data: dict) -> list[dict]:
+    return [i for i in data["items"] if i["kind"] == "metric"]
+
+
+def _span(item: dict) -> tuple[datetime, datetime | None]:
+    end = item["end_utc"]
+    return _dt(item["timestamp_utc"]), (_dt(end) if end else None)
+
+
+@pytest.mark.asyncio
+async def test_metric_consecutive_breach_becomes_one_interval(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-metric")
+    ids = await _series(vid, "host-1", [(0, 50), (5, 85), (10, 92.5), (15, 88), (20, 60)])
+    data = await _post(client)
+    (item,) = _metrics(data)
+    assert item["id"] == f"metric:{ids[1]}"
+    assert _span(item) == (_at(5), _at(15))
+    assert item["title"] == "CPU 使用率 が閾値（80%）を超過"
+    assert item["detail"] == "ピーク 92.5%（2026-03-22 00:10:00 UTC）、サンプル 3 件"
+    assert item["level"] == "warning"
+    assert item["entity_name"] == "esx01"
+    assert item["entity_type"] == "HostSystem"
+    assert item["vcenter_id"] == str(vid)
+    assert item["vcenter_name"] == "vc-metric"
+    assert item["count"] == 1
+    assert item["score"] is None
+    assert item["ref"]["metric_key"] == CPU
+    assert item["ref"]["entity_moid"] == "host-1"
+    assert item["ref"]["event_id"] is None and item["ref"]["log_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_is_split_by_a_sample_below_threshold(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 85), (5, 79.9), (10, 85)])
+    items = _metrics(await _post(client))
+    assert [_span(i) for i in items] == [(_at(0), None), (_at(10), None)]
+    assert all(i["detail"] == f"ピーク 85%（2026-03-22 00:{m:02d}:00 UTC）、サンプル 1 件" for i, m in zip(items, (0, 10)))
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_survives_missing_samples_within_the_gap_limit(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    # 5 → 20 分は 15 分空く（上限ちょうど）のでつなぐ。20 → 36 分は 16 分空くので区切る
+    await _series(vid, "host-1", [(0, 85), (5, 86), (20, 87), (36, 88)])
+    items = _metrics(await _post(client))
+    assert [_span(i) for i in items] == [(_at(0), _at(20)), (_at(36), None)]
+    assert "サンプル 3 件" in items[0]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_metric_gap_limit_follows_the_staleness_window_setting(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 85), (20, 86)])
+    assert len(_metrics(await _post(client))) == 2
+    monkeypatch.setattr(require_settings(), "metric_staleness_window_seconds", 20 * 60)
+    assert [_span(i) for i in _metrics(await _post(client))] == [(_at(0), _at(20))]
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_is_inclusive(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 80.0), (5, 79.99)])
+    await _series(vid, "host-1", [(0, 85.0), (5, 84.99)], key=MEM)
+    items = _metrics(await _post(client))
+    assert sorted((i["ref"]["metric_key"], _span(i)) for i in items) == [
+        (CPU, (_at(0), None)),
+        (MEM, (_at(0), None)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_metric_intervals_are_split_by_metric_host_and_vcenter(client: AsyncClient) -> None:
+    v1 = await _vcenter("vc-x1")
+    v2 = await _vcenter("vc-x2")
+    # 同じ moid が別の vCenter にある。片方の vCenter の超過がもう片方につながらない
+    await _series(v1, "host-1", [(0, 90), (10, 90)], name="esx-a")
+    await _series(v2, "host-1", [(5, 90)], name="esx-b")
+    await _series(v1, "host-1", [(5, 90)], key=MEM, name="esx-a")
+    await _series(v1, "host-2", [(5, 90)], name="esx-c")
+    items = _metrics(await _post(client))
+    got = sorted((i["vcenter_name"], i["ref"]["entity_moid"], i["ref"]["metric_key"], _span(i)) for i in items)
+    assert got == [
+        ("vc-x1", "host-1", CPU, (_at(0), _at(10))),
+        ("vc-x1", "host-1", MEM, (_at(5), None)),
+        ("vc-x1", "host-2", CPU, (_at(5), None)),
+        ("vc-x2", "host-1", CPU, (_at(5), None)),
+    ]
+    mem = next(i for i in items if i["ref"]["metric_key"] == MEM)
+    assert mem["title"] == "メモリ使用率 が閾値（85%）を超過"
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_continuing_from_before_the_period(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    # host-1: 期間の前から続く。開始・ピーク・件数は期間内のサンプルだけで決める
+    ids = await _series(vid, "host-1", [(-10, 99), (-5, 90), (0, 85), (5, 88)])
+    # host-2: 期間の前に終わった超過（-5 分で閾値未満）は出さない
+    await _series(vid, "host-2", [(-10, 90), (-5, 50), (5, 90)], name="esx02")
+    # host-3: 期間の前の超過から 16 分空いている（つながらない）
+    await _series(vid, "host-3", [(-11, 90), (5, 90)], name="esx03")
+    items = {i["ref"]["entity_moid"]: i for i in _metrics(await _post(client))}
+    assert items["host-1"]["id"] == f"metric:{ids[2]}"
+    assert _span(items["host-1"]) == (_at(0), _at(5))
+    assert items["host-1"]["detail"] == (
+        "ピーク 88%（2026-03-22 00:05:00 UTC）、サンプル 2 件、期間の開始前から継続"
+    )
+    assert _span(items["host-2"]) == (_at(5), None)
+    assert "期間の開始前" not in items["host-2"]["detail"]
+    assert "期間の開始前" not in items["host-3"]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_from_request_changes_result(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 85)])
+    assert _metrics(await _post(client, metric_threshold_cpu_pct=90)) == []
+    (item,) = _metrics(await _post(client, metric_threshold_cpu_pct=70))
+    assert item["title"] == "CPU 使用率 が閾値（70%）を超過"
+    (item,) = _metrics(await _post(client, metric_threshold_cpu_pct=82.5))
+    assert item["title"] == "CPU 使用率 が閾値（82.5%）を超過"
+
+
+@pytest.mark.asyncio
+async def test_metric_lists_every_breaching_host_beyond_top_15(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    for n in range(20):
+        await _series(vid, f"host-{n}", [(1, 81 + n * 0.1)], name=f"esx{n:02d}")
+    items = _metrics(await _post(client))
+    assert sorted(i["entity_name"] for i in items) == [f"esx{n:02d}" for n in range(20)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("threshold", "peak", "expected"),
+    [
+        (80, 80, "warning"),
+        (80, 94.99, "warning"),
+        (80, 95, "error"),  # 95% 以上は error
+        (60, 74.99, "warning"),
+        (60, 75, "error"),  # 閾値 + 15 ポイント以上も error
+    ],
+)
+async def test_metric_level_from_peak_and_threshold(
+    client: AsyncClient, threshold: float, peak: float, expected: str
+) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, threshold), (5, peak)])
+    (item,) = _metrics(await _post(client, metric_threshold_cpu_pct=threshold))
+    assert item["level"] == expected
+
+
+@pytest.mark.asyncio
+async def test_metric_disk_and_network_counters_are_not_judged_by_percent_thresholds(client: AsyncClient) -> None:
+    """ディスク系・ネットワーク系の指標は KB/s なので、% の閾値は当てない。"""
+    vid = await _vcenter()
+    for key in (
+        "host.disk.usage_pct", "host.disk.read_kbps", "host.disk.write_kbps",
+        "host.net.bytes_rx_kbps", "host.net.bytes_tx_kbps", "host.net.usage_kbps",
+    ):
+        await _series(vid, "host-1", [(0, 5000.0)], key=key)
+    data = await _post(client, metric_threshold_disk_pct=0, metric_threshold_network_pct=0)
+    assert _metrics(data) == []
+    assert sum(b["metric_breach"] for b in data["overview"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_metric_overview_counts_every_bucket_an_interval_touches(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(5, 90), (10, 90), (15, 90)])
+    await _series(vid, "host-2", [(10.5, 90)], name="esx02")
+    data = await _post(client)  # 2 時間は 1 分幅
+    breach = [b["metric_breach"] for b in data["overview"]]
+    assert breach[4] == 0 and breach[16] == 0
+    assert breach[5:16] == [1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1]
+    assert sum(b["event_total"] + b["alert"] + b["log_error"] for b in data["overview"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_metric_overview_starts_at_bucket_zero_for_interval_continuing_from_before(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(-5, 90), (0, 90), (2, 90)])
+    breach = [b["metric_breach"] for b in (await _post(client))["overview"]]
+    assert breach[:4] == [1, 1, 1, 0]
+
+
+@pytest.mark.asyncio
+async def test_metric_entity_filter_uses_sample_name_and_vcenter_filter(client: AsyncClient) -> None:
+    v1 = await _vcenter("vc-f1")
+    v2 = await _vcenter("vc-f2")
+    await _series(v1, "host-1", [(0, 90)], name="esx-Alpha")
+    await _series(v1, "host-2", [(0, 90)], name="esx-beta")
+    await _series(v2, "host-1", [(0, 90)], name="esx-alpha-other")
+    assert sorted(i["entity_name"] for i in _metrics(await _post(client, entity="ALPHA"))) == [
+        "esx-Alpha", "esx-alpha-other",
+    ]
+    data = await _post(client, entity="alpha", vcenter_id=str(v1))
+    assert [i["entity_name"] for i in _metrics(data)] == ["esx-Alpha"]
+    assert sum(b["metric_breach"] for b in data["overview"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_uses_latest_non_blank_sample_name(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    async with session_scope() as session:
+        for minute, name in ((0, "old-name"), (5, "new-name"), (10, "  ")):
+            session.add(
+                MetricSample(
+                    vcenter_id=vid, sampled_at=_at(minute), entity_type="HostSystem",
+                    entity_moid="host-1", entity_name=name, metric_key=CPU, value=90,
+                )
+            )
+    await _series(vid, "host-9", [(0, 90)], name="")
+    items = {i["ref"]["entity_moid"]: i for i in _metrics(await _post(client))}
+    assert items["host-1"]["entity_name"] == "new-name"
+    assert _span(items["host-1"]) == (_at(0), _at(10))
+    # 名前が空のサンプルしか無いときは moid を名前にする
+    assert items["host-9"]["entity_name"] == "host-9"
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_is_first_signal_and_sorts_after_event_at_same_time(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(2, 90)])
+    await _events(vid, (2, "A", "h1", 30), (5, "Warn", "h2", 45))
+    data = await _post(client)
+    assert [i["kind"] for i in data["items"]] == ["event", "metric", "event"]
+    assert data["highlights"]["first_signal"]["kind"] == "metric"
+
+
+@pytest.mark.asyncio
+async def test_too_many_metric_intervals_is_422(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 90), (5, 10), (10, 90)])
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    r = await client.post(URL, json=_body(sources=["metric"]))
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "閾値を上げる" in detail and "メトリクスを外す" in detail
+    # 区間の数で数える（サンプル数ではない）
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
+    assert len(_metrics(await _post(client, sources=["metric"]))) == 2
+
+
+@pytest.mark.asyncio
+async def test_unrequested_sources_issue_no_queries(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 90)])
+    captured: list[str] = []
+    original = AsyncSession.execute
+
+    async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(str(statement))
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    await _post(client, sources=["event", "alert"])
+    assert captured and not any("metric_intervals" in s or "log_records" in s for s in captured)
+    captured.clear()
+    await _post(client, sources=["metric"])
+    assert any("metric_intervals" in s for s in captured)
+    assert not any("events" in s or "alert_history" in s or "log_records" in s for s in captured)
+

@@ -17,10 +17,14 @@ from vcenter_event_assistant.services.incident_timeline_view import (
     build_overview,
     choose_bucket_seconds,
     count_per_bucket,
+    count_spans_per_bucket,
     entity_matches,
     event_level,
     first_signal,
     merge_consecutive,
+    metric_breach_detail,
+    metric_breach_level,
+    metric_breach_title,
     overview_bucket_count,
     pick_new_event_types,
     select_within_limit,
@@ -487,3 +491,45 @@ def test_truncation_with_anchor_uses_distance_before_kind() -> None:
 def test_same_timestamp_orders_alert_event_metric_log() -> None:
     entries = sort_entries([_bare("log", 1, 1), _bare("metric", 2, 1), _ev(3, 1), _alert(4, 1)])
     assert [e.kind for e in entries] == ["alert", "event", "metric", "log"]
+
+
+# --- PR4: メトリクスの超過区間 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("peak", "threshold", "expected"),
+    [
+        (80, 80, "warning"),
+        (94.99, 80, "warning"),
+        (95, 80, "error"),
+        (100, 99, "error"),
+        (74.99, 60, "warning"),
+        (75, 60, "error"),
+        (20, 5, "error"),
+    ],
+)
+def test_metric_breach_level(peak: float, threshold: float, expected: str) -> None:
+    assert metric_breach_level(peak, threshold) == expected
+
+
+def test_metric_breach_title_and_detail() -> None:
+    assert metric_breach_title("host.cpu.usage_pct", 80.0) == "CPU 使用率 が閾値（80%）を超過"
+    assert metric_breach_title("host.mem.usage_pct", 85.5) == "メモリ使用率 が閾値（85.5%）を超過"
+    assert (
+        metric_breach_detail(92.346, _at(10), 3, continued=False)
+        == "ピーク 92.35%（2026-03-22 00:10:00 UTC）、サンプル 3 件"
+    )
+    # naive の時刻は UTC とみなす
+    assert metric_breach_detail(90.0, _at(0).replace(tzinfo=None), 1, continued=True) == (
+        "ピーク 90%（2026-03-22 00:00:00 UTC）、サンプル 1 件、期間の開始前から継続"
+    )
+
+
+def test_count_spans_per_bucket_counts_every_touched_bucket_and_clips() -> None:
+    spans = [
+        (_at(1), _at(3)),        # 1, 2, 3
+        (_at(2.5), None),        # 2 だけ
+        (_at(-5), _at(0.5)),     # 期間の前から: 0 だけ
+        (_at(8), _at(30)),       # 期間の後ろへはみ出す: 8, 9
+    ]
+    assert count_spans_per_bucket(spans, T0, 60, 10) == [1, 1, 2, 1, 0, 0, 0, 0, 1, 1]
