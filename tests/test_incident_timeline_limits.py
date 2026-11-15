@@ -208,3 +208,33 @@ async def test_incident_timeline_returns_429_over_the_limit(monkeypatch: pytest.
     assert 429 not in codes[:2]
     assert 500 not in codes
     assert codes[2] == 429
+
+
+def test_incident_timeline_view_uses_its_own_rate_limit_bucket() -> None:
+    assert _rate_limit_spec("POST", "/api/incident-timeline/view") == ("incident_timeline_view", 60)
+
+
+async def test_incident_timeline_view_does_not_consume_the_timeline_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """表示用 API を上限まで使っても、既存の /api/incident-timeline の枠は残る（上限の値は同じ）。"""
+    monkeypatch.delenv("VEA_PYTEST")
+    monkeypatch.setenv("RATE_LIMIT_CHAT_PER_MINUTE", "1")  # どちらもその 2 倍
+    get_settings.cache_clear()
+    _rate_limiter._hits.clear()
+    headers = {"X-Requested-With": "XMLHttpRequest"}
+    try:
+        async with AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test") as ac:
+            view_codes = [
+                (await ac.post("/api/incident-timeline/view", json=_body(), headers=headers)).status_code
+                for _ in range(3)
+            ]
+            timeline_code = (
+                await ac.post("/api/incident-timeline", json=_body(), headers=headers)
+            ).status_code
+    finally:
+        _rate_limiter._hits.clear()
+        get_settings.cache_clear()
+    assert 429 not in view_codes[:2] and 500 not in view_codes
+    assert view_codes[2] == 429
+    assert timeline_code not in (429, 500)
