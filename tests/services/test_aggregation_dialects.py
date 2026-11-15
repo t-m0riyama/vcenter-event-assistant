@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import asyncpg as pg_asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -237,23 +237,37 @@ async def test_event_rate_series_on_each_dialect(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_incident_timeline_view_on_each_dialect(session: AsyncSession) -> None:
-    """タイムライン表示の俯瞰（GROUP BY）、直前の期間の種別、アラートの対象解決（row_number）。"""
+    """タイムライン表示の俯瞰（GROUP BY）、直前の期間の種別、アラートの対象解決（MAX + JOIN）。"""
     await _seed(session)
     vid = (await session.execute(text("SELECT vcenter_id FROM events LIMIT 1"))).scalar_one()
     vid = vid if isinstance(vid, uuid.UUID) else uuid.UUID(str(vid))
+    other = next(v for v in (await session.execute(select(VCenter.id))).scalars() if v != vid)
+    # v2 の h1 にだけ別名のサンプルを足す。vCenter をまたいで取り違えると v1 の名前が変わる
+    session.add(
+        MetricSample(
+            vcenter_id=other,
+            sampled_at=FROM + timedelta(minutes=30),
+            entity_type="HostSystem",
+            entity_moid="h1",
+            entity_name="H1-ON-V2",
+            metric_key=METRIC_CPU,
+            value=1.0,
+        )
+    )
     rule = AlertRule(name="cpu", rule_type="metric_threshold", alert_level="critical", config={"metric_key": METRIC_CPU})
     session.add(rule)
     await session.flush()
-    session.add(
-        AlertHistory(
-            rule_id=rule.id,
-            alert_level="critical",
-            state="firing",
-            context_key=metric_context_key(vid, "h1"),
-            notified_at=FROM + timedelta(minutes=20),
-            channel="none",
+    for minute, vcenter in ((20, vid), (21, other)):
+        session.add(
+            AlertHistory(
+                rule_id=rule.id,
+                alert_level="critical",
+                state="firing",
+                context_key=metric_context_key(vcenter, "h1"),
+                notified_at=FROM + timedelta(minutes=minute),
+                channel="none",
+            )
         )
-    )
     session.add(
         EventRecord(
             vcenter_id=vid,
@@ -282,10 +296,10 @@ async def test_incident_timeline_view_on_each_dialect(session: AsyncSession) -> 
         FROM + timedelta(minutes=17): 1,
     }
     assert sum(b.event_notable for b in out.overview) == 4
-    assert sum(b.alert for b in out.overview) == 1
-    alert = next(i for i in out.items if i.kind == "alert")
-    # context_key の vCenter（v1）の h1 について、CPU の最新サンプルの名前で解決する
-    assert alert.entity_name == "H1"
-    assert alert.ref.metric_key == METRIC_CPU
+    assert sum(b.alert for b in out.overview) == 2
+    alerts = [i for i in out.items if i.kind == "alert"]
+    # context_key の vCenter ごとに、期間の終わりまでで最も新しい CPU のサンプルの名前で解決する
+    assert [(a.vcenter_id, a.entity_name) for a in alerts] == [(vid, "H1"), (other, "H1-ON-V2")]
+    assert alerts[0].ref.metric_key == METRIC_CPU
     # HostConnectionLostEvent は直前の期間にある（スコア 0）ので新しい種別ではない
     assert [n.event_type for n in out.highlights.new_event_types] == ["CustomEvent"]

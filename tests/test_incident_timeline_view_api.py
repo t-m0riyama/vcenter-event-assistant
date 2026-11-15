@@ -341,14 +341,12 @@ async def test_overview_fills_range_without_gaps(client: AsyncClient) -> None:
     vid = await _vcenter()
     await _events(vid, (1, "A", "h1", 30), (100, "B", "h1", 30))
     data = await _post(client)
-    step = data["bucket_seconds"]
-    assert step > 0
+    # 2 時間は 1 分幅で 120 本。件数 0 のバケットも含めて隙間なく並ぶ
+    assert data["bucket_seconds"] == 60
     starts = [_dt(b["bucket_start_utc"]) for b in data["overview"]]
-    assert starts[0] == T0
-    assert all((b - a).total_seconds() == step for a, b in zip(starts, starts[1:]))
-    assert starts[-1] < _at(120) <= starts[-1] + timedelta(seconds=step)
-    assert any(b["event_total"] == 0 for b in data["overview"]) or len(starts) <= 2
-    assert sum(b["event_total"] for b in data["overview"]) == 2
+    assert starts == [T0 + timedelta(minutes=i) for i in range(120)]
+    totals = [b["event_total"] for b in data["overview"]]
+    assert totals == [1 if i in (1, 100) else 0 for i in range(120)]
     assert _dt(data["from_utc"]) == T0
     assert _dt(data["to_utc"]) == _at(120)
 
@@ -779,3 +777,160 @@ async def test_top_entities_carry_vcenter(client: AsyncClient) -> None:
         ("esx01", str(v2), "vc-top-2", 2),
         ("esx01", str(v1), "vc-top-1", 1),
     ]
+
+
+# --- レビュー指摘: アラートの SQL・対象解決・message の読み方 ---------------------------
+
+
+async def _metric_alert(vid: uuid.UUID, moid: str, minute: float, *, name: str, config: dict | None = None) -> int:
+    async with session_scope() as session:
+        rule = AlertRule(name=name, rule_type="metric_threshold", alert_level="warning", config=config or {})
+        session.add(rule)
+        await session.flush()
+        hist = AlertHistory(
+            rule_id=rule.id, alert_level="warning", state="firing",
+            context_key=metric_context_key(vid, moid), notified_at=_at(minute), channel="none",
+        )
+        session.add(hist)
+        await session.flush()
+        return hist.id
+
+
+@pytest.mark.asyncio
+async def test_vcenter_filter_is_applied_in_sql_before_the_alert_row_limit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    v1 = await _vcenter("vc-e1")
+    v2 = await _vcenter("vc-e2")
+    keep = await _metric_alert(v1, "host-1", 1, name="m-e1")
+    await _metric_alert(v2, "host-2", 2, name="m-e2a")
+    await _metric_alert(v2, "host-3", 3, name="m-e2b")
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    data = await _post(client, vcenter_id=str(v1))
+    assert [i["id"] for i in data["items"]] == [f"alert:{keep}"]
+
+    r = await client.post(URL, json=_body())
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "期間を短く" in detail and "vCenter" not in detail
+
+
+@pytest.mark.asyncio
+async def test_legacy_metric_context_key_is_excluded_when_filtering_by_vcenter(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-legacy")
+    legacy = await _alert_history("metric_threshold", "host-1", 1, name="m-legacy")
+    assert (await _post(client, vcenter_id=str(vid)))["items"] == []
+    (item,) = (await _post(client))["items"]
+    assert item["id"] == f"alert:{legacy}"
+    assert item["entity_name"] is None and item["vcenter_id"] is None
+    assert item["ref"]["entity_moid"] == "host-1"
+
+
+@pytest.mark.asyncio
+async def test_metric_entity_name_is_the_one_nearest_the_period_end(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-g")
+    await _metric_sample(vid, "host-1", "before", 30)
+    await _metric_sample(vid, "host-1", "at-incident", 100)
+    await _metric_sample(vid, "host-1", "renamed-later", 130)  # 期間の終わり（120 分）より後
+    await _metric_alert(vid, "host-1", 50, name="m-g")
+    (item,) = (await _post(client))["items"]
+    assert item["entity_name"] == "at-incident"
+
+
+@pytest.mark.asyncio
+async def test_metric_entity_is_not_resolved_from_samples_far_before_the_period(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-g2")
+    await _metric_sample(vid, "host-1", "too-old", -7 * 60)
+    await _metric_alert(vid, "host-1", 50, name="m-g2")
+    (item,) = (await _post(client))["items"]
+    assert item["entity_name"] is None
+    assert item["ref"]["entity_moid"] == "host-1"
+
+
+@pytest.mark.asyncio
+async def test_metric_entity_resolution_without_metric_key_filter(client: AsyncClient) -> None:
+    """ルールのどれかに metric_key が無いときは指標で絞らない（metric_keys が None の経路）。"""
+    vid = await _vcenter("vc-none")
+    async with session_scope() as session:
+        session.add_all(
+            [
+                MetricSample(
+                    vcenter_id=vid, sampled_at=_at(5), entity_type="HostSystem", entity_moid="host-1",
+                    entity_name="esx-mem-only", metric_key="host.mem.usage_pct", value=90.0,
+                ),
+                MetricSample(
+                    vcenter_id=vid, sampled_at=_at(5), entity_type="HostSystem", entity_moid="host-2",
+                    entity_name="esx-cpu", metric_key="host.cpu.usage_pct", value=90.0,
+                ),
+            ]
+        )
+    await _metric_alert(vid, "host-1", 10, name="m-nokey")
+    await _metric_alert(vid, "host-2", 11, name="m-cpu", config={"metric_key": "host.cpu.usage_pct"})
+    data = await _post(client)
+    assert [i["entity_name"] for i in data["items"]] == ["esx-mem-only", "esx-cpu"]
+    assert [i["ref"]["metric_key"] for i in data["items"]] == [None, "host.cpu.usage_pct"]
+
+
+@pytest.mark.asyncio
+async def test_alert_on_deleted_vcenter_is_listed_without_names(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-deleted")
+    await _metric_sample(vid, "host-1", "esx-gone", 1)
+    hist_id = await _metric_alert(vid, "host-1", 2, name="m-deleted")
+    async with session_scope() as session:
+        await session.delete(await session.get(VCenter, vid))
+    (item,) = (await _post(client))["items"]
+    assert item["id"] == f"alert:{hist_id}"
+    assert item["vcenter_id"] == str(vid)
+    assert item["vcenter_name"] is None
+    assert item["entity_name"] is None
+    assert item["ref"]["entity_moid"] == "host-1"
+
+
+@pytest.mark.asyncio
+async def test_event_list_query_does_not_read_messages(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧の SELECT は message を読まず、残った項目と first_signal の分だけ後から引く。"""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    vid = await _vcenter("vc-msg")
+    (warn_id, _a1, _a2, _crit) = await _events(
+        vid,
+        (1, "Warn", "h1", 45, {"message": "first warning"}),
+        (60, "A", "h2", 30, {"message": "a-first"}),
+        (61, "A", "h2", 30, {"message": "a-second"}),
+        (90, "Crit", "h3", 90, {"message": "critical!"}),
+    )
+    captured: list[str] = []
+    original = AsyncSession.execute
+
+    async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(str(statement))
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    data = await _post(client, item_limit=2, anchor="2026-03-22T01:00:30Z")
+    monkeypatch.setattr(AsyncSession, "execute", original)
+
+    assert [(i["ref"]["event_type"], i["count"], i["detail"]) for i in data["items"]] == [
+        ("A", 2, "a-first"),
+        ("Crit", 1, "critical!"),
+    ]
+    signal = data["highlights"]["first_signal"]
+    assert signal["id"] == f"event:{warn_id}" and signal["detail"] == "first warning"
+    list_sql = [s for s in captured if "ORDER BY events.occurred_at, events.id" in s]
+    assert list_sql and all("events.message" not in s for s in list_sql)
+
+
+@pytest.mark.asyncio
+async def test_more_than_500_ids_and_types_are_split_into_chunks(client: AsyncClient) -> None:
+    """IN の分割（500 件ごと）: 直前の期間の種別と、message の後引きの両方。"""
+    vid = await _vcenter("vc-chunk")
+    specs = [(i * 0.1, f"T{i:03d}", f"h{i}", 30, {"message": f"m{i}"}) for i in range(501)]
+    specs.append((-30, "T500", "h500", 0))  # 直前の期間に出ていた種別（501 番目の候補）
+    await _events(vid, *specs)
+    data = await _post(client, item_limit=1000)
+    assert data["total_items"] == 501
+    assert all(i["detail"] == f"m{int(i['ref']['event_type'][1:])}" for i in data["items"])
+    new = data["highlights"]["new_event_types"]
+    assert len(new) == 10 and "T500" not in {n["event_type"] for n in new}

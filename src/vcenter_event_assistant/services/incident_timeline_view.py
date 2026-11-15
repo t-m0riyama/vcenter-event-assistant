@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from typing import Any, TypeVar
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -65,6 +65,10 @@ _MAX_OVERVIEW_BUCKETS = 120
 _MIN_MERGE_GAP_SECONDS = 300
 _TOP_ENTITIES_LIMIT = 5
 _NEW_EVENT_TYPES_LIMIT = 10
+# 期間の開始からさかのぼって、メトリクスの対象名を探す幅の最小値。metric_name_lookback を参照。
+_METRIC_NAME_LOOKBACK_MIN = timedelta(hours=6)
+# アラート側で行数の上限を超えたことを示す AggregationLimitExceeded.what
+_ALERTS_LIMIT = "incident_timeline_view.alerts"
 # IN に並べる値の数の上限（SQLite / asyncpg のバインド変数の上限に当たらないよう分割する）。
 _IN_CHUNK_SIZE = 500
 
@@ -160,6 +164,7 @@ class _Scope:
     bucket_count: int
     max_rows: int
     dialect_name: str
+    metric_name_lookback: timedelta
 
 
 @dataclass
@@ -202,6 +207,16 @@ def choose_bucket_seconds(
 def merge_max_gap(bucket_sec: int) -> timedelta:
     """連続をまとめる間隔の上限。俯瞰の棒 1 本の幅か 5 分の長いほう。"""
     return timedelta(seconds=max(bucket_sec, _MIN_MERGE_GAP_SECONDS))
+
+
+def metric_name_lookback(perf_sample_interval_seconds: int) -> timedelta:
+    """metric アラートの対象名を探すとき、期間の開始からさかのぼる幅。
+
+    収集間隔の 12 回分か 6 時間の長いほう。既定の 5 分間隔なら 72 回分あり、収集の一時的な停止
+    （vCenter の再起動や接続断で数十分〜数時間）をまたいでも名前を引ける。一方で全期間は読まないので、
+    走査する行数は対象ごとに保持期間ではなくこの幅で決まる。
+    """
+    return max(_METRIC_NAME_LOOKBACK_MIN, timedelta(seconds=12 * perf_sample_interval_seconds))
 
 
 def overview_bucket_count(from_utc: datetime, to_utc: datetime, bucket_sec: int) -> int:
@@ -550,6 +565,7 @@ async def build_incident_timeline_view(
                 ft,
                 tt,
                 max_rows=settings.context_aggregation_max_rows,
+                metric_name_lookback=metric_name_lookback(settings.perf_sample_interval_seconds),
             )
     except AggregationBusy:
         raise HTTPException(
@@ -557,14 +573,19 @@ async def build_incident_timeline_view(
             detail="集計の処理が混み合っています。しばらく待ってから再度お試しください。",
             headers={"Retry-After": str(_BUSY_RETRY_AFTER_SECONDS)},
         ) from None
-    except AggregationLimitExceeded:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "対象の出来事が多すぎて集計できません。"
-                "期間を短くするか、vCenter を指定して絞り込んでください。"
-            ),
-        ) from None
+    except AggregationLimitExceeded as exc:
+        raise HTTPException(status_code=422, detail=_limit_message(exc)) from None
+
+
+def _limit_message(exc: AggregationLimitExceeded) -> str:
+    """上限を超えた種別ごとに、実際に効く対処だけを案内する。"""
+    if exc.what == _ALERTS_LIMIT:
+        # 対象（entity）の絞り込みは対象を解決した後に Python 側でかけるので、行数は減らない。
+        return "通知履歴が多すぎて集計できません。期間を短くしてください。"
+    return (
+        "対象の出来事が多すぎて集計できません。"
+        "期間を短くするか、vCenter を指定して絞り込んでください。"
+    )
 
 
 async def _build_in_slot(
@@ -574,6 +595,7 @@ async def _build_in_slot(
     tt: datetime,
     *,
     max_rows: int,
+    metric_name_lookback: timedelta,
 ) -> IncidentTimelineViewResponse:
     bucket_sec = choose_bucket_seconds(ft, tt)
     n_buckets = overview_bucket_count(ft, tt, bucket_sec)
@@ -588,6 +610,7 @@ async def _build_in_slot(
         bucket_count=n_buckets,
         max_rows=max_rows,
         dialect_name=bind.dialect.name if bind is not None else "sqlite",
+        metric_name_lookback=metric_name_lookback,
     )
 
     entries: list[TimelineEntry] = []
@@ -611,6 +634,14 @@ async def _build_in_slot(
     anchor = to_utc(body.anchor_time) if body.anchor_time is not None else None
     kept, truncated = select_within_limit(merged, body.item_limit, anchor)
     signal = first_signal(merged)
+    # 一覧の SELECT では message を読まないので、返す項目の分だけ後から引く。
+    details = await _event_messages(
+        session,
+        [e.source_id for e in (*kept, *([signal] if signal is not None else [])) if e.kind == "event"],
+    )
+    kept = [_with_event_detail(e, details) for e in kept]
+    if signal is not None:
+        signal = _with_event_detail(signal, details)
 
     return IncidentTimelineViewResponse(
         from_utc=ft,
@@ -686,12 +717,12 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
 
     # まとめ・打ち切り・ハイライトを正しく出すため、条件に合う行はすべて読む。読み過ぎを防ぐ上限を
     # 超えたら、黙って切らずに 422 にする（total_items と truncated が嘘にならないように）。
+    # message（Text）は読まない。返す項目の分だけ _event_messages で後から引く。
     list_stmt = (
         select(
             EventRecord.id,
             EventRecord.occurred_at,
             EventRecord.event_type,
-            EventRecord.message,
             EventRecord.severity,
             EventRecord.entity_name,
             EventRecord.entity_type,
@@ -716,7 +747,6 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
                 timestamp_utc=to_utc(row.occurred_at),
                 level=level,
                 title=row.event_type,
-                detail=row.message or None,
                 entity_name=row.entity_name,
                 entity_type=row.entity_type,
                 vcenter_id=row.vcenter_id,
@@ -727,6 +757,26 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
             )
         )
     return _Collected(entries=entries, overview={"event_total": totals, "event_notable": notables})
+
+
+async def _event_messages(session: AsyncSession, event_ids: Iterable[int]) -> dict[int, str]:
+    """イベントの message を id でまとめて引く（IN は 500 件ごとに分割）。"""
+    out: dict[int, str] = {}
+    for chunk in _chunks(sorted(set(event_ids)), _IN_CHUNK_SIZE):
+        rows = (
+            await session.execute(
+                select(EventRecord.id, EventRecord.message).where(EventRecord.id.in_(chunk))
+            )
+        ).all()
+        out.update({int(eid): msg for eid, msg in rows})
+    return out
+
+
+def _with_event_detail(entry: TimelineEntry, messages: Mapping[int, str]) -> TimelineEntry:
+    """まとめた項目は最初のイベント（``source_id``）の message を使う。空なら None。"""
+    if entry.kind != "event":
+        return entry
+    return replace(entry, detail=messages.get(entry.source_id) or None)
 
 
 async def _event_types_seen_in_previous_period(
@@ -763,10 +813,11 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     """``AlertHistory`` を ``occurred_at``（状態の遷移時刻。再送で変わらない）で期間に絞り、対象を解決して項目にする。
 
     - ``metric_threshold``: ``context_key``（``{vcenter_id}:{entity_moid}``）から vCenter と moid を取り出し、
-      ``MetricSample`` の最新の名前・種類で対象を解決する。旧形式（moid だけ）の key は vCenter が分からず、
+      期間の終わりに最も近い ``MetricSample`` の名前・種類で対象を解決する。旧形式（moid だけ）の key は vCenter が分からず、
       moid は vCenter をまたいで重複し得るので、誤った対象に紐付けないよう名前は解決しない。
     - ``event_score``: ``context_key`` はイベント種別。対象と vCenter は持たない。
-    - vCenter の絞り込みでは、vCenter を特定できないアラートは全 vCenter にまたがる情報として残す。
+    - vCenter の絞り込みは行数の上限より前に SQL で行う。event_score は vCenter を持たないので
+      全 vCenter にまたがる情報として残し、旧形式の metric の key は取り違えを避けるため除く。
     - 対象の絞り込みでは、対象名が一致するアラートだけを残す。
     """
     stmt = (
@@ -789,9 +840,22 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
         .order_by(AlertHistory.occurred_at, AlertHistory.id)
         .limit(scope.max_rows + 1)
     )
+    if scope.vcenter_id is not None:
+        # 行数の上限より前に vCenter で絞る。metric は context_key が "{vcenter_id}:" で始まるものだけ
+        # （旧形式の moid だけの key は別の vCenter の同じ moid と取り違えるので除く）、event_score は
+        # vCenter を持たないので全 vCenter にまたがる情報として残す。
+        stmt = stmt.where(
+            or_(
+                and_(
+                    AlertRule.rule_type == "metric_threshold",
+                    AlertHistory.context_key.startswith(f"{scope.vcenter_id}:", autoescape=True),
+                ),
+                AlertRule.rule_type == "event_score",
+            )
+        )
     rows = (await session.execute(stmt)).all()
     if len(rows) > scope.max_rows:
-        raise AggregationLimitExceeded("incident_timeline_view.alerts", scope.max_rows)
+        raise AggregationLimitExceeded(_ALERTS_LIMIT, scope.max_rows)
 
     # metric_threshold の対象を 1 本の SQL でまとめて解決する（N+1 にしない）。
     targets: set[tuple[uuid.UUID, str]] = set()
@@ -810,13 +874,22 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
         else:
             metric_keys.add(metric_key)
     resolved = await _resolve_metric_entities(
-        session, targets, metric_keys if every_rule_has_metric_key else None
+        session,
+        targets,
+        metric_keys if every_rule_has_metric_key else None,
+        sampled_from=scope.from_utc - scope.metric_name_lookback,
+        sampled_to=scope.to_utc,
     )
 
     entries: list[TimelineEntry] = []
     for row in rows:
         entry = _alert_entry(row, resolved)
-        if scope.vcenter_id is not None and entry.vcenter_id is not None and entry.vcenter_id != scope.vcenter_id:
+        if (
+            scope.vcenter_id is not None
+            and row.rule_type == "metric_threshold"
+            and entry.vcenter_id != scope.vcenter_id
+        ):
+            # SQL でも絞っているが、旧形式の key（vCenter 不明）もここで確実に除く。
             continue
         if scope.entity and not entity_matches(entry.entity_name, scope.entity):
             continue
@@ -896,49 +969,73 @@ async def _resolve_metric_entities(
     session: AsyncSession,
     targets: set[tuple[uuid.UUID, str]],
     metric_keys: set[str] | None,
+    *,
+    sampled_from: datetime,
+    sampled_to: datetime,
 ) -> dict[tuple[uuid.UUID, str], _ResolvedEntity]:
-    """``(vcenter_id, entity_moid)`` ごとに、最新の ``MetricSample`` の名前と種類を返す。
+    """``(vcenter_id, entity_moid)`` ごとに、期間の終わりに最も近いサンプルの名前と種類を返す。
 
-    ``metric_keys`` を渡すと、その指標のサンプルだけを見る（複合インデックス
-    ``(vcenter_id, entity_moid, metric_key, sampled_at)`` を最後の列まで使える）。
-    ``vcenter_id`` と ``entity_moid`` はそれぞれ IN で広めに引き、組は Python 側で照合する。
-    名前が空文字のときは解決できなかったものとして扱う。
+    見るのは ``sampled_from <= sampled_at <= sampled_to`` のサンプルだけで、障害当時の名前を引く
+    （期間より後の改名を拾わず、全期間も読まない）。範囲にサンプルが無ければ解決しない。
+
+    ``(vcenter_id, entity_moid, metric_key)`` ごとの ``MAX(sampled_at)`` を GROUP BY で求めてから元の行と
+    JOIN する。複合インデックス ``(vcenter_id, entity_moid, metric_key, sampled_at)`` がそのまま効く形で、
+    JOIN の 4 列は一意制約 ``uq_metric_sample_point`` の列なので行は 1 つに決まる。指標をまたいだ最新は
+    Python 側で選ぶ。``metric_keys`` を渡すとその指標だけを見る。名前が空文字のときは解決しない。
     """
     if not targets:
         return {}
     vcenter_ids = sorted({vid for vid, _ in targets}, key=str)
-    out: dict[tuple[uuid.UUID, str], _ResolvedEntity] = {}
+    best: dict[tuple[uuid.UUID, str], tuple[datetime, int, str, str | None]] = {}
     for moids in _chunks(sorted({moid for _, moid in targets}), _IN_CHUNK_SIZE):
         clauses: list[ColumnElement[bool]] = [
             MetricSample.vcenter_id.in_(vcenter_ids),
             MetricSample.entity_moid.in_(moids),
+            MetricSample.sampled_at >= sampled_from,
+            MetricSample.sampled_at <= sampled_to,
         ]
         if metric_keys:
             clauses.append(MetricSample.metric_key.in_(sorted(metric_keys)))
-        ranked = (
+        latest = (
             select(
-                MetricSample.vcenter_id,
-                MetricSample.entity_moid,
-                MetricSample.entity_name,
-                MetricSample.entity_type,
-                func.row_number()
-                .over(
-                    partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
-                    order_by=(MetricSample.sampled_at.desc(), MetricSample.id.desc()),
-                )
-                .label("rn"),
+                MetricSample.vcenter_id.label("vcenter_id"),
+                MetricSample.entity_moid.label("entity_moid"),
+                MetricSample.metric_key.label("metric_key"),
+                func.max(MetricSample.sampled_at).label("max_sampled_at"),
             )
             .where(*clauses)
-            .subquery("ranked")
+            .group_by(MetricSample.vcenter_id, MetricSample.entity_moid, MetricSample.metric_key)
+            .subquery("latest")
         )
         stmt = select(
-            ranked.c.vcenter_id, ranked.c.entity_moid, ranked.c.entity_name, ranked.c.entity_type
-        ).where(ranked.c.rn == 1)
-        for vid, moid, name, etype in (await session.execute(stmt)).all():
+            MetricSample.vcenter_id,
+            MetricSample.entity_moid,
+            MetricSample.sampled_at,
+            MetricSample.id,
+            MetricSample.entity_name,
+            MetricSample.entity_type,
+        ).join(
+            latest,
+            and_(
+                MetricSample.vcenter_id == latest.c.vcenter_id,
+                MetricSample.entity_moid == latest.c.entity_moid,
+                MetricSample.metric_key == latest.c.metric_key,
+                MetricSample.sampled_at == latest.c.max_sampled_at,
+            ),
+        )
+        for vid, moid, sampled_at, sid, name, etype in (await session.execute(stmt)).all():
             key = (vid, moid)
-            if key in targets and name:
-                out[key] = _ResolvedEntity(name=name, entity_type=etype or None)
-    return out
+            if key not in targets:
+                continue
+            candidate = (to_utc(sampled_at), int(sid), name, etype)
+            current = best.get(key)
+            if current is None or candidate[:2] > current[:2]:
+                best[key] = candidate
+    return {
+        key: _ResolvedEntity(name=name, entity_type=etype or None)
+        for key, (_, _, name, etype) in best.items()
+        if name
+    }
 
 
 # --- 共通 -------------------------------------------------------------------------------
