@@ -87,12 +87,26 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
         </p>
       ) : null}
 
-      <ZonedRangeDetails
-        displayLabel={rangeLabel}
-        hint="開始と終了の両方を入力すると、その期間を固定して読み込みます。時刻は設定のタイムゾーンで入力します。"
-        value={c.rangeParts}
-        onChange={c.setRangeParts}
-      />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          c.applyRangeParts()
+        }}
+      >
+        <ZonedRangeDetails
+          displayLabel={rangeLabel}
+          hint="開始と終了を入力して「適用」（または Enter）を押すと、その期間を固定して読み込みます。時刻は設定のタイムゾーンで入力します。"
+          value={c.rangeParts}
+          onChange={c.setRangeParts}
+          footer={
+            <p>
+              <button type="submit" className="btn btn--gray">
+                適用
+              </button>
+            </p>
+          }
+        />
+      </form>
       {c.rangeInputError ? (
         <p className="timeline-bar__field-error" role="alert">
           {c.rangeInputError}
@@ -104,6 +118,10 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
           vCenter
           <select value={conditions.vcenterId} onChange={(e) => c.setVcenterId(e.target.value)}>
             <option value="">全て</option>
+            {/* 一覧に無い vCenter（削除済み・URL の誤りなど）を「全て」と見せない */}
+            {c.vcentersLoaded && conditions.vcenterId && !c.vcenters.some((v) => v.id === conditions.vcenterId) ? (
+              <option value={conditions.vcenterId}>不明な vCenter（{conditions.vcenterId.slice(0, 8)}…）</option>
+            ) : null}
             {c.vcenters.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}

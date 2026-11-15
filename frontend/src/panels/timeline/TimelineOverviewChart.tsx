@@ -12,7 +12,7 @@ import {
 } from 'recharts'
 
 import type { TimelineOverviewBucket } from '../../api/schemas'
-import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useChartThemeColors } from '../../theme/useChartThemeColors'
 import {
   bucketRangeLabel,
@@ -20,6 +20,7 @@ import {
   dragRange,
   type ResolvedRange,
 } from './timelineModel'
+import { formatTick, spansCalendarDays, usePointerRangeSelection } from './timelineChartHelpers'
 
 type Props = {
   buckets: readonly TimelineOverviewBucket[]
@@ -43,20 +44,6 @@ type Row = {
   log: number
 }
 
-function formatTick(iso: string, timeZone: string, withDate: boolean): string {
-  const d = new Date(parseApiUtcInstantMs(iso))
-  try {
-    return new Intl.DateTimeFormat('ja-JP', {
-      ...(withDate ? { month: 'numeric', day: 'numeric' } : {}),
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone,
-    }).format(d)
-  } catch {
-    return d.toISOString().slice(11, 16)
-  }
-}
-
 type SeriesDef = { key: keyof Omit<Row, 'start'>; label: string; color: string }
 
 /**
@@ -69,8 +56,6 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
   const [width, setWidth] = useState(0)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [selectionStart, setSelectionStart] = useState<number | null>(null)
-  const [dragFrom, setDragFrom] = useState<number | null>(null)
-  const [dragTo, setDragTo] = useState<number | null>(null)
 
   useEffect(() => {
     const el = wrapRef.current
@@ -108,10 +93,11 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
     return all.filter((s) => rows.some((r) => r[s.key] > 0))
   }, [colors, rows])
 
-  const withDate = useMemo(() => {
-    if (rows.length < 2) return false
-    return parseApiUtcInstantMs(toUtc) - parseApiUtcInstantMs(rows[0].start) > 24 * 3_600_000
-  }, [rows, toUtc])
+  // 表示する期間が日付をまたぐときは、目盛りに日付を出す（期間の長さではなく、またぐかどうかで決める）
+  const withDate = useMemo(
+    () => rows.length > 0 && spansCalendarDays(rows[0].start, toUtc, timeZone),
+    [rows, toUtc, timeZone],
+  )
 
   const anchorBucket = useMemo(
     () => bucketStartContaining(buckets, bucketSeconds, anchorUtc),
@@ -123,6 +109,10 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
       dragRange(rows[Math.min(a, b)].start, rows[Math.max(a, b)].start, bucketSeconds, toUtc),
     [rows, bucketSeconds, toUtc],
   )
+
+  const pointer = usePointerRangeSelection((a, b) => {
+    if (rows.length > 0) onSelectRange(rangeOf(a, b))
+  })
 
   const describe = (a: number, b: number): string => {
     const r = rangeOf(a, b)
@@ -158,14 +148,6 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
     setActiveIndex(next)
   }
 
-  const finishPointer = () => {
-    if (dragFrom !== null && dragTo !== null && rows.length > 0) {
-      onSelectRange(rangeOf(dragFrom, dragTo))
-    }
-    setDragFrom(null)
-    setDragTo(null)
-  }
-
   const indexOf = (state: unknown): number | null => {
     const idx = (state as { activeTooltipIndex?: number | string } | null)?.activeTooltipIndex
     const n = typeof idx === 'string' ? Number(idx) : idx
@@ -174,19 +156,24 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
 
   if (rows.length === 0) return null
 
-  const highlightFrom = dragFrom !== null && dragTo !== null ? Math.min(dragFrom, dragTo) : activeIndex === null ? null : Math.min(selectionStart ?? activeIndex, activeIndex)
-  const highlightTo = dragFrom !== null && dragTo !== null ? Math.max(dragFrom, dragTo) : activeIndex === null ? null : Math.max(selectionStart ?? activeIndex, activeIndex)
+  const dragging = pointer.range
+  const highlightFrom = dragging ? dragging[0] : activeIndex === null ? null : Math.min(selectionStart ?? activeIndex, activeIndex)
+  const highlightTo = dragging ? dragging[1] : activeIndex === null ? null : Math.max(selectionStart ?? activeIndex, activeIndex)
   const chartWidth = width > 0 ? width : FALLBACK_WIDTH
 
   return (
     <section className="timeline-overview" aria-label="件数の俯瞰">
       <h3 className="timeline-section-title">件数の俯瞰</h3>
+      <p id="timeline-overview-help" className="visually-hidden">
+        クリックでその時間帯、ドラッグで選んだ範囲に期間を絞ります。キーボードでは、左右の矢印で時間帯を選び、Shift を押しながら矢印で範囲を広げ、Enter で期間を絞ります。Escape で選択をやめます。
+      </p>
       <div
         ref={wrapRef}
         className="timeline-overview__chart"
         tabIndex={0}
-        role="group"
-        aria-label="件数の俯瞰グラフ。クリックでその時間帯、ドラッグで選んだ範囲に期間を絞ります。キーボードは左右の矢印で時間帯を選び、Enter で絞ります。"
+        role="application"
+        aria-label="件数の俯瞰グラフ"
+        aria-describedby="timeline-overview-help"
         onKeyDown={onKeyDown}
         onBlur={() => {
           setActiveIndex(null)
@@ -201,20 +188,14 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
           barCategoryGap={1}
           onMouseDown={(state) => {
             const i = indexOf(state)
-            if (i !== null) {
-              setDragFrom(i)
-              setDragTo(i)
-            }
+            if (i !== null) pointer.down(i)
           }}
           onMouseMove={(state) => {
             const i = indexOf(state)
-            if (dragFrom !== null && i !== null) setDragTo(i)
+            if (i !== null) pointer.move(i)
           }}
-          onMouseUp={finishPointer}
-          onMouseLeave={() => {
-            setDragFrom(null)
-            setDragTo(null)
-          }}
+          onMouseUp={pointer.up}
+          onMouseLeave={pointer.cancel}
         >
           <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis

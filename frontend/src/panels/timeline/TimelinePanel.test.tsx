@@ -192,23 +192,20 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('行を開くとメッセージ全文・vCenter・スコア・ガイドが出て、キーボードで開閉できる', async () => {
     setup()
-    harness.extra.set('/api/events?', () =>
-      jsonResponse({
-        items: [
-          {
-            id: 1,
-            vcenter_id: VC,
-            occurred_at: '2026-03-22T00:10:00Z',
-            event_type: 'VmPoweredOffEvent',
-            message: 'x',
-            severity: 'info',
-            notable_score: 55,
-            type_guide: { general_meaning: '電源が切られた', typical_causes: '運用操作', remediation: '意図したものか確認', action_required: false },
-          },
-        ],
-        total: 1,
-      }),
-    )
+    let guideRequests = 0
+    harness.extra.set('/api/event-type-guides', () => {
+      guideRequests += 1
+      return jsonResponse([
+        {
+          id: 1,
+          event_type: 'VmPoweredOffEvent',
+          general_meaning: '電源が切られた',
+          typical_causes: '運用操作',
+          remediation: '意図したものか確認',
+          action_required: false,
+        },
+      ])
+    })
     renderTimeline()
     await answer(0)
     const button = await openFirstRow()
@@ -219,11 +216,10 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(region).toHaveTextContent('vc-main')
     expect(region).toHaveTextContent('55')
     await waitFor(() => expect(region).toHaveTextContent('電源が切られた'))
-    // ガイドは view ではなくイベント API（イベントタブと同じ type_guide）から取る
-    const guideCall = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).find((u) => u.startsWith('/api/events?'))!
-    const q = new URLSearchParams(guideCall.split('?')[1])
-    expect(q.get('event_type_contains')).toBe('VmPoweredOffEvent')
-    expect(q.get('vcenter_id')).toBe(VC)
+    // ガイドは view ではなく、イベント種別ガイドの一覧（viewer で呼べる）から引く。別の行を開いても取り直さない
+    fireEvent.click(await rowButton(/UserLoginSessionEvent/))
+    await waitFor(() => expect(screen.getAllByText('この種別のガイドは登録されていません。')).toHaveLength(1))
+    expect(guideRequests).toBe(1)
     // 行は <button> なので Tab / Enter / Space で開閉できる。もう一度押すと閉じる
     expect(button.tagName).toBe('BUTTON')
     fireEvent.click(button)
@@ -264,12 +260,15 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(screen.queryByRole('button', { name: '起点を解除' })).not.toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /CPU 高負荷: 発火/ }))
     fireEvent.click(screen.getByRole('button', { name: 'ここを起点にする' }))
-    await answer(1)
+    expect(harness.calls.length).toBe(2)
+    // 結果が来るまでは、古い結果の上に新しい起点の目印を描かない
+    expect(screen.queryByText('◆ 起点に最も近い')).not.toBeInTheDocument()
+    await answer(1, populated({ anchor_utc: '2026-03-22T00:30:00Z' }))
     expect(harness.calls[1].body.anchor).toBe('2026-03-22T00:30:00.000Z')
     expect(window.location.hash).toContain('anchor=2026-03-22T00%3A30%3A00.000Z')
     expect(screen.getByText('◆ 起点に最も近い')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '起点の前後 1 時間' }))
-    await answer(2)
+    await answer(2, populated({ anchor_utc: '2026-03-22T00:30:00Z' }))
     expect(harness.calls[2].body).toMatchObject({ from: '2026-03-21T23:30:00.000Z', to: '2026-03-22T01:30:00.000Z' })
     fireEvent.click(screen.getByRole('button', { name: '起点を解除' }))
     await answer(3)
@@ -290,7 +289,8 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       const params = new URLSearchParams(href.split('?')[1])
       expect(params.get('vcenter_id')).toBe(VC)
       expect(params.get('from')).toBe('2026-03-22T00:05:00.000Z')
-      expect(params.get('to')).toBe('2026-03-22T00:15:00.000Z')
+      // まとめた行（×3、最後は 00:14）は、最初の 5 分前から最後の 5 分後まで
+      expect(params.get('to')).toBe('2026-03-22T00:19:00.000Z')
     }
   })
 
@@ -332,7 +332,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     setup()
     renderTimeline()
     await answer(0)
-    const chart = await screen.findByRole('group', { name: /件数の俯瞰グラフ/ })
+    const chart = await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
     chart.focus()
     fireEvent.keyDown(chart, { key: 'ArrowRight' }) // 先頭の棒
     fireEvent.keyDown(chart, { key: 'ArrowRight' }) // 2 本目: 00:20〜00:40
@@ -352,7 +352,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     setup()
     renderTimeline()
     await answer(0, populated({ to_utc: '2026-03-22T00:50:00Z' }))
-    const chart = await screen.findByRole('group', { name: /件数の俯瞰グラフ/ })
+    const chart = await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
     fireEvent.keyDown(chart, { key: 'Home' })
     fireEvent.keyDown(chart, { key: 'ArrowRight', shiftKey: true })
     fireEvent.keyDown(chart, { key: 'ArrowRight', shiftKey: true })
@@ -365,9 +365,15 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     window.history.replaceState(null, '', '/#/timeline?range=1h&anchor=2026-03-22T00:30:00.000Z')
     setup()
     renderTimeline()
-    await answer(0)
-    await screen.findByRole('group', { name: /件数の俯瞰グラフ/ })
-    expect(document.querySelector('.recharts-reference-line')).not.toBeNull()
+    await answer(0, populated({ anchor_utc: '2026-03-22T00:30:00Z' }))
+    await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+    const line = document.querySelector('.recharts-reference-line line')!
+    // 起点（00:30）は 2 本目の棒（00:20〜00:40）。3 本の棒が 3 等分する描画領域の真ん中あたりに引く
+    const x = Number(line.getAttribute('x1'))
+    const bars = [...document.querySelectorAll('.recharts-bar-rectangle')].map((el) => el.getBoundingClientRect())
+    expect(bars.length).toBeGreaterThan(0)
+    expect(x).toBeGreaterThan(32 + (640 - 32 - 8) / 3)
+    expect(x).toBeLessThan(32 + (2 * (640 - 32 - 8)) / 3)
   })
 
   it('truncated のときは「N 件中 M 件を表示しています。期間や対象を絞ってください」を上部に出す', async () => {
@@ -385,7 +391,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     fireEvent.click(screen.getByRole('button', { name: '期間を広げる' }))
     await answer(1, emptyViewResponse())
     const span = (i: number) => Date.parse(String(harness.calls[i].body.to)) - Date.parse(String(harness.calls[i].body.from))
-    expect(span(1)).toBe(span(0) * 2)
+    expect(span(1)).toBe(span(0) * 6) // 1 時間 → 6 時間のプリセット
   })
 
   it('422 はサーバの detail をそのまま表示する', async () => {
@@ -521,5 +527,86 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     renderTimeline()
     await answer(0, emptyViewResponse())
     expect(screen.queryByText('タイムラインを生成')).not.toBeInTheDocument()
+  })
+
+  it('読み込んだ期間（開始〜終了とタイムゾーン）を常に出す', async () => {
+    setup()
+    renderTimeline()
+    expect(screen.queryByText(/読み込んだ期間/)).not.toBeInTheDocument()
+    await answer(0)
+    const line = await screen.findByText(/読み込んだ期間/)
+    expect(line).toHaveTextContent('（UTC）')
+    expect(line.textContent).toMatch(/～/)
+  })
+
+  it('一覧に無い vCenter の ID は「全て」と見せず、不明な vCenter として選択肢に出す', async () => {
+    window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}`)
+    setup({ vcenters: [] })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    const select = screen.getByLabelText('vCenter') as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe(VC))
+    expect(within(select).getByRole('option', { name: /不明な vCenter/ })).toBeInTheDocument()
+  })
+
+  it('URL の vcenter_id が UUID でなければ読み込まず理由を出し、URL はそのまま', async () => {
+    window.history.replaceState(null, '', '/#/timeline?range=6h&vcenter_id=abc')
+    setup()
+    renderTimeline()
+    expect(await screen.findByRole('alert')).toHaveTextContent('UUID')
+    expect(harness.calls).toHaveLength(0)
+    expect(window.location.hash).toBe('#/timeline?range=6h&vcenter_id=abc')
+  })
+
+  it('逆順の期間の URL は理由を出し、「直近 1 時間」に黙って置き換えない', async () => {
+    const hash = '#/timeline?from=2026-03-22T02:00:00Z&to=2026-03-22T01:00:00Z'
+    window.history.replaceState(null, '', `/${hash}`)
+    setup()
+    renderTimeline()
+    expect(await screen.findByRole('alert')).toHaveTextContent('開始')
+    expect(harness.calls).toHaveLength(0)
+    expect(window.location.hash).toBe(hash)
+  })
+
+  it('期間の入力欄は「適用」で確定する（入力しただけでは読み込まない）', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-03-20' } })
+    fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '10:00' } })
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2026-03-20' } })
+    fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '11:00' } })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(harness.calls).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '適用' }))
+    await answer(1, emptyViewResponse())
+    expect(harness.calls[1].body).toMatchObject({ from: '2026-03-20T10:00:00.000Z', to: '2026-03-20T11:00:59.000Z' })
+    expect(window.location.hash).toContain('from=2026-03-20T10%3A00%3A00.000Z')
+  })
+
+  it('429 は「短時間に操作が多すぎます」と出し、自動では再試行しない', async () => {
+    setup()
+    renderTimeline()
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    await act(async () => {
+      harness.calls[0].resolve(jsonResponse({ detail: 'Too many requests' }, 429))
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent('短時間に操作が多すぎます')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+    })
+    expect(harness.calls).toHaveLength(1)
+  })
+
+  it('俯瞰グラフは application ロールで、操作方法の説明（aria-describedby）を持つ', async () => {
+    setup()
+    renderTimeline()
+    await answer(0)
+    const chart = await screen.findByRole('application', { name: '件数の俯瞰グラフ' })
+    const helpId = chart.getAttribute('aria-describedby')!
+    expect(document.getElementById(helpId)).toHaveTextContent('矢印')
+    expect(chart).toHaveAttribute('tabindex', '0')
   })
 })

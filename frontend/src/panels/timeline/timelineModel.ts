@@ -125,15 +125,20 @@ export function buildViewRequest(conditions: TimelineConditions, range: Resolved
   return body
 }
 
-/** 行の時刻の前後 5 分と vCenter をイベント・ログのタブへ渡すハッシュ。vCenter が無い行は null。 */
+/**
+ * 行の時刻の前後 5 分と vCenter をイベント・ログのタブへ渡すハッシュ。vCenter が無い行は null。
+ * まとめた行は、最初の時刻の 5 分前から最後の時刻（`end_utc`）の 5 分後までを渡す。
+ */
 export function correlationHashForItem(tab: 'events' | 'logs', item: TimelineViewItem): string | null {
   if (!item.vcenter_id) return null
   const t = parseApiUtcInstantMs(item.timestamp_utc)
   if (!Number.isFinite(t)) return null
+  const endRaw = item.end_utc ? parseApiUtcInstantMs(item.end_utc) : t
+  const end = Number.isFinite(endRaw) ? Math.max(endRaw, t) : t
   return correlationHash(tab, {
     vcenterId: item.vcenter_id,
     from: iso(t - CORRELATION_HALF_WIDTH_MS),
-    to: iso(t + CORRELATION_HALF_WIDTH_MS),
+    to: iso(end + CORRELATION_HALF_WIDTH_MS),
   })
 }
 

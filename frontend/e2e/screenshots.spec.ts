@@ -288,6 +288,10 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
 
   await openMainTab(page, 'タイムライン')
   await expect(page.getByRole('region', { name: 'タイムラインの条件' })).toBeVisible()
+  // 自動で読み込む。一覧か空の状態が出るまで待ってから撮る
+  await expect(
+    page.getByRole('list', { name: '出来事の時系列' }).or(page.getByText('この期間に出来事はありません。')),
+  ).toBeVisible()
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'timeline.png'),
     fullPage: false,

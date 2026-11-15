@@ -3,10 +3,11 @@ import './TimelinePanel.css'
 import { useCallback, useMemo, useState } from 'react'
 
 import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
 import { useTimelineViewController } from '../../hooks/useTimelineViewController'
 import { TimelineConditionBar } from './TimelineConditionBar'
-import type { GuideCache } from './TimelineEventGuide'
+import { createGuideLoader } from './eventTypeGuideLoader'
 import { TimelineHighlights } from './TimelineHighlights'
 import { TimelineItemList } from './TimelineItemList'
 import { TimelineOverviewChart } from './TimelineOverviewChart'
@@ -36,14 +37,16 @@ export function TimelinePanel({
   })
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [reveal, setReveal] = useState<{ id: string; nonce: number } | null>(null)
-  const [guideCache] = useState<GuideCache>(() => new Map())
+  const [guideLoader] = useState(createGuideLoader)
 
   const { data } = c
   const sortedItems = useMemo(() => (data ? sortTimelineItems(data.items, c.sortOrder) : []), [data, c.sortOrder])
   const listedIds = useMemo(() => new Set(data?.items.map((i) => i.id) ?? []), [data])
+  // 起点は結果を取ったときのもの。条件を変えた直後に、古い結果の上へ新しい起点を描かない
+  const dataAnchor = data?.anchor_utc ?? null
   const nearestAnchorId = useMemo(
-    () => (data ? nearestItemIdToAnchor(data.items, c.conditions.anchor) : null),
-    [data, c.conditions.anchor],
+    () => (data ? nearestItemIdToAnchor(data.items, dataAnchor) : null),
+    [data, dataAnchor],
   )
 
   const toggle = useCallback((id: string) => {
@@ -74,6 +77,12 @@ export function TimelinePanel({
       <p className="timeline-status" role="status" aria-live="polite">
         {statusText}
       </p>
+      {c.loadedRange ? (
+        <p className="timeline-loaded-range">
+          読み込んだ期間: {formatIsoInTimeZone(c.loadedRange.from, c.timeZone)} ～{' '}
+          {formatIsoInTimeZone(c.loadedRange.to, c.timeZone)}（{c.timeZone}）
+        </p>
+      ) : null}
 
       {c.error ? (
         <div className="error-banner timeline-error" role="alert">
@@ -99,7 +108,7 @@ export function TimelinePanel({
             buckets={data.overview}
             bucketSeconds={data.bucket_seconds}
             toUtc={data.to_utc}
-            anchorUtc={c.conditions.anchor}
+            anchorUtc={dataAnchor}
             timeZone={c.timeZone}
             onSelectRange={(range) => {
               if (validateResolvedRange(range) === null) c.zoomTo(range)
@@ -144,7 +153,7 @@ export function TimelinePanel({
                 expandedIds={expandedIds}
                 onToggle={toggle}
                 reveal={reveal}
-                guideCache={guideCache}
+                guideLoader={guideLoader}
                 onFilterEntity={c.filterByEntity}
                 onSetAnchor={c.setAnchor}
               />

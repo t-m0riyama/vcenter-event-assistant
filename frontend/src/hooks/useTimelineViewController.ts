@@ -156,7 +156,7 @@ export function useTimelineViewController(
       setConditions((c) => ({ ...c, entity: next }))
     }, TIMELINE_ENTITY_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [entityInput, conditions.entity])
+  }, [entityInput, conditions.entity, setConditions])
 
   // ---- 読み込み（1 本ずつ・最新の条件だけ） ------------------------------------
   const jobCounterRef = useRef(0)
@@ -302,12 +302,12 @@ export function useTimelineViewController(
   // ---- 条件の変更 -------------------------------------------------------------
   const patch = useCallback((next: Partial<TimelineConditions>) => {
     setConditions((c) => ({ ...c, ...next }))
-  }, [])
+  }, [setConditions])
 
   const setRange = useCallback((range: TimelineRange, keepHistory: boolean) => {
     if (!keepHistory) setRangeHistory([])
     setConditions((c) => ({ ...c, range }))
-  }, [])
+  }, [setConditions])
 
   const selectRollingPreset = useCallback(
     (durationMs: number) => {
@@ -331,7 +331,7 @@ export function useTimelineViewController(
     setRangeInputError(null)
     setRangeHistory((h) => [...h, conditionsRef.current.range])
     setConditions((c) => ({ ...c, range: { mode: 'fixed', from: range.from, to: range.to } }))
-  }, [])
+  }, [setConditions])
 
   const undoZoom = useCallback(() => {
     const previous = rangeHistory[rangeHistory.length - 1]
@@ -339,7 +339,7 @@ export function useTimelineViewController(
     setRangeInputError(null)
     setRangeHistory((h) => h.slice(0, -1))
     setConditions((c) => ({ ...c, range: previous }))
-  }, [rangeHistory])
+  }, [rangeHistory, setConditions])
 
   const widen = useCallback(() => {
     const range = conditionsRef.current.range
@@ -417,13 +417,13 @@ export function useTimelineViewController(
       const next = has ? c.sources.filter((k) => k !== kind) : [...c.sources, kind]
       return { ...c, sources: TIMELINE_SOURCE_KINDS.filter((k) => next.includes(k)) }
     })
-  }, [])
+  }, [setConditions])
 
   /** 対象で絞る（検索欄の待ち時間を待たずに反映する）。vCenter が分かるときはそれも絞る。 */
   const filterByEntity = useCallback((entityName: string, vcenterId?: string | null) => {
     setEntityInput(entityName)
     setConditions((c) => ({ ...c, entity: entityName, ...(vcenterId ? { vcenterId } : {}) }))
-  }, [])
+  }, [setConditions])
 
   const clearEntity = useCallback(() => {
     setEntityInput('')
@@ -446,7 +446,7 @@ export function useTimelineViewController(
         anchor: null,
       }))
     },
-    [],
+    [setConditions],
   )
 
   return {

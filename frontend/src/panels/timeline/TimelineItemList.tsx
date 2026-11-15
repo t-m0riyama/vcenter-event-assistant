@@ -3,7 +3,8 @@ import { useEffect, useRef } from 'react'
 import type { TimelineViewItem } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { ScoreBadge } from '../../components/badges'
-import { TimelineEventGuide, type GuideCache } from './TimelineEventGuide'
+import type { GuideLoader } from './eventTypeGuideLoader'
+import { TimelineEventGuide } from './TimelineEventGuide'
 import { alertStateLabel, excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
 import { correlationHashForItem } from './timelineModel'
 
@@ -15,7 +16,7 @@ type Props = {
   onToggle: (id: string) => void
   /** 最初の兆候などからの移動の要求。`nonce` が変わるたびにスクロールしてフォーカスする。 */
   reveal: { id: string; nonce: number } | null
-  guideCache: GuideCache
+  guideLoader: GuideLoader
   onFilterEntity: (entityName: string, vcenterId: string | null | undefined) => void
   onSetAnchor: (timestampUtc: string) => void
 }
@@ -31,7 +32,7 @@ function ItemRow({
   expanded,
   isRevealed,
   onToggle,
-  guideCache,
+  guideLoader,
   onFilterEntity,
   onSetAnchor,
 }: {
@@ -41,7 +42,7 @@ function ItemRow({
   expanded: boolean
   isRevealed: boolean
   onToggle: () => void
-  guideCache: GuideCache
+  guideLoader: GuideLoader
   onFilterEntity: Props['onFilterEntity']
   onSetAnchor: Props['onSetAnchor']
 }) {
@@ -122,7 +123,7 @@ function ItemRow({
               </>
             ) : null}
           </dl>
-          {item.kind === 'event' ? <TimelineEventGuide item={item} cache={guideCache} /> : null}
+          {item.kind === 'event' ? <TimelineEventGuide item={item} loader={guideLoader} /> : null}
           <div className="timeline-row__actions">
             {item.entity_name ? (
               <button type="button" className="btn btn--gray" onClick={() => onFilterEntity(item.entity_name!, item.vcenter_id)}>
@@ -157,7 +158,7 @@ export function TimelineItemList({
   expandedIds,
   onToggle,
   reveal,
-  guideCache,
+  guideLoader,
   onFilterEntity,
   onSetAnchor,
 }: Props) {
@@ -181,7 +182,7 @@ export function TimelineItemList({
           expanded={expandedIds.has(item.id)}
           isRevealed={reveal?.id === item.id}
           onToggle={() => onToggle(item.id)}
-          guideCache={guideCache}
+          guideLoader={guideLoader}
           onFilterEntity={onFilterEntity}
           onSetAnchor={onSetAnchor}
         />
