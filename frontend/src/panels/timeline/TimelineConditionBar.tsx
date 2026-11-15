@@ -2,8 +2,12 @@ import { useState } from 'react'
 
 import { ZonedRangeDetails } from '../../datetime/ZonedRangeDetails'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import { isValidMetricThresholdPercent } from '../../hooks/periodMetricThresholdDefaults'
 import type { useTimelineViewController } from '../../hooks/useTimelineViewController'
-import { TIMELINE_ROLLING_PRESETS, type TimelineSourceKind } from '../../routing/timelineHash'
+import {
+  TIMELINE_ROLLING_PRESETS,
+  TIMELINE_SOURCE_KINDS,
+} from '../../routing/timelineHash'
 import { KIND_LABELS } from './timelineLabels'
 import { anchorWindow } from './timelineModel'
 
@@ -15,7 +19,67 @@ const ANCHOR_WINDOWS = [
   { label: '起点の前後 6 時間', halfWidthMs: 6 * 3_600_000 },
 ] as const
 
-const SOURCE_OPTIONS: readonly TimelineSourceKind[] = ['event', 'alert']
+/**
+ * しきい値（%）の入力欄。入力中は文字列のまま持ち、Enter・フォーカスを外したときに確定する
+ * （途中の値で API を呼ばないため）。0〜100 の数値でなければ確定せず、理由を示す。
+ */
+function ThresholdField({
+  id,
+  label,
+  value,
+  onCommit,
+}: {
+  id: string
+  label: string
+  value: number
+  onCommit: (n: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const commit = () => {
+    if (draft === null) return
+    const n = draft.trim() === '' ? NaN : Number(draft)
+    if (!isValidMetricThresholdPercent(n)) {
+      setError(`${label.replace('（%）', '')}は 0〜100 の数値で入力してください。`)
+      return
+    }
+    setError(null)
+    setDraft(null)
+    if (n !== value) onCommit(n)
+  }
+
+  return (
+    <div className="timeline-bar__threshold">
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        max={100}
+        step="any"
+        className="toolbar__input--short"
+        value={draft ?? String(value)}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setError(null)
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+        }}
+      />
+      {error ? (
+        <p id={`${id}-error`} className="timeline-bar__field-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 /** 条件バー: 期間・起点・vCenter・対象・種別・更新。条件を変えると自動で読み込む。 */
 export function TimelineConditionBar({ c }: { c: Controller }) {
@@ -141,7 +205,7 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
         </label>
         <fieldset className="timeline-bar__sources">
           <legend>種別</legend>
-          {SOURCE_OPTIONS.map((kind) => (
+          {TIMELINE_SOURCE_KINDS.map((kind) => (
             <label key={kind} className="timeline-bar__check">
               <input
                 type="checkbox"
@@ -158,7 +222,9 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
       <details className="toolbar__filters-details">
         <summary className="toolbar__filters-summary">
           <span className="toolbar__filters-summary__title">詳細設定</span>
-          <span className="toolbar__filters-summary__preview">最小スコア {conditions.minScore}</span>
+          <span className="toolbar__filters-summary__preview">
+            最小スコア {conditions.minScore}・CPU {conditions.cpuThresholdPct}%・メモリ {conditions.memoryThresholdPct}%
+          </span>
         </summary>
         <p className="hint toolbar__filters-hint">
           イベントはスコアがこの値以上のものだけを一覧に出します（俯瞰グラフの「その他のイベント」には含まれます）。
@@ -180,6 +246,23 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
             }}
           />
         </label>
+        <p className="hint toolbar__filters-hint">
+          メトリクスは、CPU 使用率とメモリ使用率がこの値を超えた区間を出します。ディスクとネットワークは対象外です（値が KB/s で、％のしきい値を当てられないため）。
+        </p>
+        <div className="timeline-bar__thresholds">
+          <ThresholdField
+            id="timeline-threshold-cpu"
+            label="CPU 使用率のしきい値（%）"
+            value={conditions.cpuThresholdPct}
+            onCommit={c.setCpuThreshold}
+          />
+          <ThresholdField
+            id="timeline-threshold-memory"
+            label="メモリ使用率のしきい値（%）"
+            value={conditions.memoryThresholdPct}
+            onCommit={c.setMemoryThreshold}
+          />
+        </div>
       </details>
     </section>
   )

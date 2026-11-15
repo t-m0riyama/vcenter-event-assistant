@@ -13,7 +13,13 @@ import { TimelineHighlights } from './TimelineHighlights'
 import { TimelineItemList } from './TimelineItemList'
 import { TimelineOverviewChart } from './TimelineOverviewChart'
 import { TimelineSnapshotSection } from './TimelineSnapshotSection'
-import { nearestItemIdToAnchor, sortTimelineItems, validateResolvedRange } from './timelineModel'
+import {
+  isMetricOmitted,
+  nearestItemIdToAnchor,
+  omittedSourceMessages,
+  sortTimelineItems,
+  validateResolvedRange,
+} from './timelineModel'
 
 /**
  * タイムライン: 開くと自動で読み込み、期間・対象・種別の条件を URL に持つ。
@@ -52,6 +58,9 @@ export function TimelinePanel({
     () => (data ? nearestItemIdToAnchor(data.items, dataAnchor) : null),
     [data, dataAnchor],
   )
+
+  const omittedMessages = useMemo(() => omittedSourceMessages(data?.omitted_sources ?? []), [data])
+  const metricOmitted = useMemo(() => isMetricOmitted(data?.omitted_sources ?? []), [data])
 
   const toggle = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -114,6 +123,7 @@ export function TimelinePanel({
             toUtc={data.to_utc}
             anchorUtc={dataAnchor}
             timeZone={c.timeZone}
+            metricOmitted={metricOmitted}
             onSelectRange={(range) => {
               if (validateResolvedRange(range) === null) c.zoomTo(range)
             }}
@@ -137,14 +147,25 @@ export function TimelinePanel({
                 </select>
               </label>
             </div>
-            {data.truncated ? (
-              <p className="timeline-truncated" role="note">
-                {data.total_items} 件中 {data.items.length} 件を表示しています。期間や対象を絞ってください
-              </p>
+            {data.truncated || omittedMessages.length > 0 ? (
+              <div className="timeline-notices">
+                {data.truncated ? (
+                  <p className="timeline-truncated" role="note">
+                    {data.total_items} 件中 {data.items.length} 件を表示しています。期間や対象を絞ってください
+                  </p>
+                ) : null}
+                {omittedMessages.map((message) => (
+                  <p key={message} className="timeline-truncated" role="note">
+                    {message}
+                  </p>
+                ))}
+              </div>
             ) : null}
             {data.items.length === 0 ? (
               <div className="timeline-empty">
-                <p className="table-empty">この期間に出来事はありません。</p>
+                <p className="table-empty">
+                  {omittedMessages.length > 0 ? 'この期間に、一覧へ表示できる出来事はありません。' : 'この期間に出来事はありません。'}
+                </p>
                 <button type="button" className="btn btn--gray" onClick={c.widen}>
                   期間を広げる
                 </button>
