@@ -284,7 +284,7 @@ async def test_incident_timeline_view_on_each_dialect(session: AsyncSession) -> 
     assert sum(b.event_notable for b in out.overview) == 4
     assert sum(b.alert for b in out.overview) == 1
     alert = next(i for i in out.items if i.kind == "alert")
-    # h1 は vCenter ごとに別物。v1 の CPU の最新サンプルの名前で解決する
+    # context_key の vCenter（v1）の h1 について、CPU の最新サンプルの名前で解決する
     assert alert.entity_name == "H1"
     assert alert.ref.metric_key == METRIC_CPU
     # HostConnectionLostEvent は直前の期間にある（スコア 0）ので新しい種別ではない
