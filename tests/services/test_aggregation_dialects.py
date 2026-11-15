@@ -486,9 +486,11 @@ async def test_incident_timeline_logs_on_each_dialect(session: AsyncSession) -> 
         IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["log"], vcenter_id=v1),
         owner_key="dialect-test",
     )
-    assert [(i.title, i.count, i.timestamp_utc) for i in out.items] == [
-        ("esx01 vmkernel", 2, FROM + timedelta(minutes=14, seconds=59, microseconds=999_600)),
-        ("ESX02.example.com vmkernel", 1, FROM + timedelta(minutes=18)),
+    # "ERROR" は warning、" Critical " は error なので別の行になる
+    assert [(i.title, i.count, i.level, i.timestamp_utc) for i in out.items] == [
+        ("esx01 vmkernel", 1, "warning", FROM + timedelta(minutes=14, seconds=59, microseconds=999_600)),
+        ("esx01 vmkernel", 1, "error", FROM + timedelta(minutes=15)),
+        ("ESX02.example.com vmkernel", 1, "error", FROM + timedelta(minutes=18)),
     ]
     assert out.items[0].detail == "障" * 1000 + "…"
     counts = {b.bucket_start_utc: b.log_error for b in out.overview if b.log_error}

@@ -92,16 +92,29 @@ _ALERTS_LIMIT = "incident_timeline_view.alerts"
 _METRICS_LIMIT = "incident_timeline_view.metrics"
 _LOGS_LIMIT = "incident_timeline_view.logs"
 
-# error 以上とみなすログの重大度（小文字にし、前後の空白を除いて比べる）。
-# イベントの規則（_ERROR_SEVERITIES = error / critical / fatal）に、組み込みのログ収集のパーサ
+# error 以上とみなすログの重大度（小文字にし、前後の空白を除いて比べる）と、その level。
+#
+# 集合はイベントの規則（_ERROR_SEVERITIES = error / critical / fatal）に、組み込みのログ収集のパーサ
 # （vea_remote_log_collector.parser の LEVEL）が出す panic と、プラグインが入れ得る syslog の略称
 # （err / crit / alert / emerg）を足したもの。warning 以下と、重大度の無いログは対象外。
-_LOG_ERROR_SEVERITIES: tuple[str, ...] = (
-    "alert", "crit", "critical", "emerg", "err", "error", "fatal", "panic",
-)
-# ログの行はすべて error にする。イベントでも severity だけで決まる level は error が上限で、
-# critical はスコアの高いイベントと発火したアラートに残す（大量のログで押し出されないように）。
-_LOG_LEVEL: TimelineLevel = "error"
+#
+# level は 1 段下げて割り当てる（error / err → warning、それより重いもの → error。critical は使わない）。
+# - パーサは 1 行目に最初に現れた level の単語を重大度にするので、本文中の "error" でも付く。vCenter が
+#   構造化して持つイベントの severity より確からしさが低い。
+# - ログは件数が多い。打ち切りは level → 種別の順なので、通常の error ログを error にすると、warning の
+#   超過区間やイベントが一覧から押し出される（7 日・200 ホストの計測で超過区間が 0 件になった）。
+# - first_signal は warning 以上が対象なので、通常の error ログも兆候として選ばれる。
+_LOG_LEVEL_BY_SEVERITY: dict[str, TimelineLevel] = {
+    "error": "warning",
+    "err": "warning",
+    "critical": "error",
+    "crit": "error",
+    "fatal": "error",
+    "panic": "error",
+    "alert": "error",
+    "emerg": "error",
+}
+_LOG_ERROR_SEVERITIES: tuple[str, ...] = tuple(sorted(_LOG_LEVEL_BY_SEVERITY))
 # ログの行の entity_type。``LogRecord.host`` は収集の接続先（ESXi・vCenter のホスト名や IP）で、
 # vSphere の管理対象（HostSystem など）と一致するとは限らないので、列の名前をそのまま使う。
 _LOG_ENTITY_TYPE = "host"
@@ -405,6 +418,11 @@ def count_spans_per_bucket(
         for idx in range(first, last + 1):
             counts[idx] += 1
     return counts
+
+
+def log_level(severity: str | None) -> TimelineLevel | None:
+    """ログの重大度から level を決める。error 以上でなければ None（一覧に出さない）。"""
+    return _LOG_LEVEL_BY_SEVERITY.get((severity or "").strip().lower())
 
 
 def entity_matches(entity_name: str | None, needle: str) -> bool:
@@ -1235,6 +1253,7 @@ def _log_filters(scope: _Scope) -> list[ColumnElement[bool]]:
 async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
     """重大度が error 以上の ``LogRecord``。``log_error`` の俯瞰（DB 側の GROUP BY、まとめる前の件数）と個別の行。
 
+    level は ``log_level``（error / err は warning、それより重いものは error）。
     同じ ``(vCenter, host, log_kind, level)`` が隣り合うときは ``merge_consecutive`` で 1 行にまとめる
     （間隔の上限もイベントと同じ）。メッセージの内容はまとめの条件に入れない（入れるには一覧の SELECT で
     全行の message を読む必要があるため）。message は読まず、返す行の分だけ ``_log_messages`` で後から引く。
@@ -1270,6 +1289,7 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
             LogRecord.vcenter_id,
             LogRecord.host,
             LogRecord.log_kind,
+            LogRecord.severity,
         )
         .where(*filters)
         .order_by(LogRecord.effective_at, LogRecord.id)
@@ -1279,21 +1299,27 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
     if len(rows) > scope.max_rows:
         raise AggregationLimitExceeded(_LOGS_LIMIT, scope.max_rows)
 
-    entries = [
-        TimelineEntry(
-            kind="log",
-            source_id=int(row.id),
-            timestamp_utc=to_utc(row.effective_at),
-            level=_LOG_LEVEL,
-            title=f"{row.host} {row.log_kind}",
-            entity_name=row.host,
-            entity_type=_LOG_ENTITY_TYPE,
-            vcenter_id=row.vcenter_id,
-            merge_key=("log", row.vcenter_id, row.host, row.log_kind, _LOG_LEVEL),
-            ref={"log_id": int(row.id)},
+    entries: list[TimelineEntry] = []
+    for row in rows:
+        # SQL で error 以上に絞っているので None にはならない（Python 側の正規化が SQL と違う場合の保険）
+        level = log_level(row.severity)
+        if level is None:
+            continue
+        entries.append(
+            TimelineEntry(
+                kind="log",
+                source_id=int(row.id),
+                timestamp_utc=to_utc(row.effective_at),
+                level=level,
+                title=f"{row.host} {row.log_kind}",
+                entity_name=row.host,
+                entity_type=_LOG_ENTITY_TYPE,
+                vcenter_id=row.vcenter_id,
+                # level が違うもの（error と critical など）はまとめない（悪化した時点を別の行に残す）
+                merge_key=("log", row.vcenter_id, row.host, row.log_kind, level),
+                ref={"log_id": int(row.id)},
+            )
         )
-        for row in rows
-    ]
     return _Collected(entries=entries, overview={"log_error": counts})
 
 

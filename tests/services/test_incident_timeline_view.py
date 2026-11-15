@@ -21,6 +21,7 @@ from vcenter_event_assistant.services.incident_timeline_view import (
     entity_matches,
     event_level,
     first_signal,
+    log_level,
     merge_consecutive,
     metric_breach_detail,
     metric_breach_level,
@@ -562,3 +563,16 @@ def test_log_runs_merge_only_with_the_same_source_and_within_gap() -> None:
     assert [(m.item_id, m.count, m.end_utc) for m in merged] == [
         ("log:1", 2, _at(1)), ("log:3", 1, None), ("log:4", 1, None), ("log:5", 1, None),
     ]
+
+
+@pytest.mark.parametrize(
+    ("severity", "expected"),
+    [
+        ("error", "warning"), ("ERR", "warning"), (" Error ", "warning"),
+        ("critical", "error"), ("crit", "error"), ("FATAL", "error"), ("panic", "error"),
+        ("alert", "error"), ("emerg", "error"),
+        ("warning", None), ("info", None), ("", None), (None, None), ("errors", None),
+    ],
+)
+def test_log_level(severity: str | None, expected: str | None) -> None:
+    assert log_level(severity) == expected

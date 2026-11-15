@@ -1232,6 +1232,7 @@ async def test_unrequested_sources_issue_no_queries(client: AsyncClient, monkeyp
 # --- エラーログ ------------------------------------------------------------------------------
 #
 # 対象は重大度が error 以上（大文字小文字と前後の空白は無視）のログ。時刻は effective_at。
+# level は error / err が warning、critical / crit / fatal / panic / alert / emerg が error。
 
 _offsets = itertools.count(1)
 
@@ -1279,7 +1280,7 @@ async def test_log_error_becomes_log_item(client: AsyncClient) -> None:
     assert item["id"] == f"log:{log_id}"
     assert _dt(item["timestamp_utc"]) == _at(10)
     assert item["end_utc"] is None
-    assert item["level"] == "error"
+    assert item["level"] == "warning"
     assert item["title"] == "esx01.example.com vmkernel"
     assert item["detail"] == "vmkernel: lost access to volume"
     assert item["entity_name"] == "esx01.example.com"
@@ -1305,8 +1306,9 @@ async def test_log_only_error_or_above_regardless_of_case(client: AsyncClient) -
         (10, "errors-ish", "not exact", {"log_kind": "k10"}),
     )
     data = await _post(client)
-    assert [i["detail"] for i in _log_items(data)] == ["upper", "spaced", "fatal", "panic"]
-    assert all(i["level"] == "error" for i in _log_items(data))
+    assert [(i["detail"], i["level"]) for i in _log_items(data)] == [
+        ("upper", "warning"), ("spaced", "error"), ("fatal", "error"), ("panic", "error"),
+    ]
     assert sum(b["log_error"] for b in data["overview"]) == 4
 
 
@@ -1316,8 +1318,9 @@ async def test_log_consecutive_same_source_is_merged_with_count(client: AsyncCli
     ids = await _logs(
         vid,
         (1, "error", "first"),
-        (2, "error", "second"),
-        (3, "critical", "third"),
+        (2, "Error", "second"),
+        (3, "err", "third"),
+        (3.5, "critical", "worse"),  # level が違う（悪化した時点）ので別の行
         (4, "error", "other kind", {"log_kind": "hostd"}),
         (5, "error", "other host", {"host": "esx02.example.com"}),
         (6, "error", "again"),
@@ -1327,6 +1330,7 @@ async def test_log_consecutive_same_source_is_merged_with_count(client: AsyncCli
     got = [(i["title"], i["count"], i["detail"]) for i in _log_items(data)]
     assert got == [
         ("esx01.example.com vmkernel", 3, "first"),
+        ("esx01.example.com vmkernel", 1, "worse"),
         ("esx01.example.com hostd", 1, "other kind"),
         ("esx02.example.com vmkernel", 1, "other host"),
         ("esx01.example.com vmkernel", 1, "again"),
@@ -1336,7 +1340,7 @@ async def test_log_consecutive_same_source_is_merged_with_count(client: AsyncCli
     assert first["ref"]["log_id"] == ids[0]
     assert _dt(first["end_utc"]) == _at(3)
     # 俯瞰はまとめる前の件数
-    assert sum(b["log_error"] for b in data["overview"]) == 7
+    assert sum(b["log_error"] for b in data["overview"]) == 8
 
 
 @pytest.mark.asyncio
@@ -1415,8 +1419,8 @@ async def test_log_overview_counts_per_bucket(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_log_is_kept_after_alert_event_and_metric_when_truncating(client: AsyncClient) -> None:
     vid = await _vcenter()
-    # どれも level は error。ログが最も新しくても最後に回る
-    await _logs(vid, *[(50 + i, "error", f"log-{i}", {"log_kind": f"k{i}"}) for i in range(5)])
+    # critical のログは level error。同じ level のアラート・イベント・メトリクスより後に回る（最も新しくても）
+    await _logs(vid, *[(50 + i, "critical", f"log-{i}", {"log_kind": f"k{i}"}) for i in range(5)])
     await _series(vid, "host-1", [(10, 96)])
     await _events(vid, (20, "E", "h1", 65))
     async with session_scope() as session:
@@ -1437,6 +1441,16 @@ async def test_log_is_kept_after_alert_event_and_metric_when_truncating(client: 
     # anchor があるときは距離が優先
     data = await _post(client, item_limit=1, anchor="2026-03-22T00:52:00Z")
     assert [i["detail"] for i in data["items"]] == ["log-2"]
+
+
+@pytest.mark.asyncio
+async def test_plain_error_logs_do_not_push_out_warning_metric_intervals(client: AsyncClient) -> None:
+    """通常の error ログ（level warning）が大量にあっても、warning の超過区間は残る。"""
+    vid = await _vcenter()
+    await _logs(vid, *[(30 + i * 0.1, "error", f"log-{i}", {"log_kind": f"k{i}"}) for i in range(20)])
+    await _series(vid, "host-1", [(10, 85)])
+    data = await _post(client, item_limit=1)
+    assert [(i["kind"], i["level"]) for i in data["items"]] == [("metric", "warning")]
 
 
 @pytest.mark.asyncio
