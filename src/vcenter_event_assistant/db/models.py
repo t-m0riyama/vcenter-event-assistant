@@ -322,9 +322,11 @@ class AlertHistory(Base):
     alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)
     state: Mapped[str] = mapped_column(String(32), index=True)
     context_key: Mapped[str] = mapped_column(String(512), index=True)
+    # 期間での絞り込み（タイムライン）、降順の一覧、保持期間の削除がすべてこの列の範囲・順序で引く。
     notified_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
+        index=True,
     )
     channel: Mapped[str] = mapped_column(String(64))  # email / none
     success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

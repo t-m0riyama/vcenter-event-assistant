@@ -9,13 +9,14 @@ import pytest
 from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
+from vcenter_event_assistant.db.models import AlertHistory, AlertRule, EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 
 pytestmark = pytest.mark.real_db_init
 
 EVENTS_INDEX = "ix_events_vcenter_id_occurred_at"
 METRICS_INDEX = "ix_metric_samples_vcenter_entity_metric_sampled"
+ALERT_HISTORY_INDEX = "ix_alert_history_notified_at"
 
 
 async def _index_names(engine: AsyncEngine, table: str) -> set[str]:
@@ -139,3 +140,59 @@ async def test_metrics_list_query_uses_composite_index(seeded_engine: AsyncEngin
         },
     )
     assert METRICS_INDEX in plan
+
+
+@pytest.mark.asyncio
+async def test_alert_history_notified_at_index_matches_model() -> None:
+    """マイグレーションで作ったインデックスが、モデルの定義（名前・列）と一致する。"""
+    model_indexes = {
+        idx.name: [c.name for c in idx.columns] for idx in AlertHistory.__table__.indexes
+    }
+    assert model_indexes[ALERT_HISTORY_INDEX] == ["notified_at"]
+
+    await reset_db()
+    await init_db()
+    engine = get_engine()
+    async with engine.connect() as conn:
+        db_indexes = await conn.run_sync(
+            lambda c: {i["name"]: i["column_names"] for i in inspect(c).get_indexes("alert_history")}
+        )
+    assert db_indexes[ALERT_HISTORY_INDEX] == ["notified_at"]
+    await reset_db()
+
+
+@pytest.mark.asyncio
+async def test_alert_history_range_query_uses_notified_at_index() -> None:
+    """タイムライン表示と同じ形（期間で絞り notified_at, id の順）のクエリがインデックスを使う。"""
+    await reset_db()
+    await init_db()
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        rule = AlertRule(name="idx-alert", rule_type="event_score", alert_level="warning", config={})
+        session.add(rule)
+        await session.flush()
+        for i in range(200):
+            session.add(
+                AlertHistory(
+                    rule_id=rule.id,
+                    alert_level="warning",
+                    state="firing",
+                    context_key=f"E{i % 7}",
+                    notified_at=now - timedelta(minutes=i),
+                    channel="none",
+                )
+            )
+    plan = await _explain_plan(
+        get_engine(),
+        """
+        SELECT alert_history.id FROM alert_history
+        JOIN alert_rules ON alert_rules.id = alert_history.rule_id
+        WHERE alert_history.notified_at >= :from_time
+          AND alert_history.notified_at < :to_time
+        ORDER BY alert_history.notified_at, alert_history.id
+        LIMIT 1001
+        """,
+        {"from_time": now - timedelta(hours=1), "to_time": now},
+    )
+    assert ALERT_HISTORY_INDEX in plan
+    await reset_db()
