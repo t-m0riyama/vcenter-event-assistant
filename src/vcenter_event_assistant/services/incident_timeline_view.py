@@ -37,7 +37,14 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     TimelineLevel,
     TimelineSource,
 )
-from vcenter_event_assistant.db.models import AlertHistory, AlertRule, EventRecord, MetricSample, VCenter
+from vcenter_event_assistant.db.models import (
+    AlertHistory,
+    AlertRule,
+    EventRecord,
+    LogRecord,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     IN_CHUNK_SIZE,
     MetricProbe,
@@ -83,6 +90,23 @@ _NEW_EVENT_TYPES_LIMIT = 10
 # アラート側で行数の上限を超えたことを示す AggregationLimitExceeded.what
 _ALERTS_LIMIT = "incident_timeline_view.alerts"
 _METRICS_LIMIT = "incident_timeline_view.metrics"
+_LOGS_LIMIT = "incident_timeline_view.logs"
+
+# error 以上とみなすログの重大度（小文字にし、前後の空白を除いて比べる）。
+# イベントの規則（_ERROR_SEVERITIES = error / critical / fatal）に、組み込みのログ収集のパーサ
+# （vea_remote_log_collector.parser の LEVEL）が出す panic と、プラグインが入れ得る syslog の略称
+# （err / crit / alert / emerg）を足したもの。warning 以下と、重大度の無いログは対象外。
+_LOG_ERROR_SEVERITIES: tuple[str, ...] = (
+    "alert", "crit", "critical", "emerg", "err", "error", "fatal", "panic",
+)
+# ログの行はすべて error にする。イベントでも severity だけで決まる level は error が上限で、
+# critical はスコアの高いイベントと発火したアラートに残す（大量のログで押し出されないように）。
+_LOG_LEVEL: TimelineLevel = "error"
+# ログの行の entity_type。``LogRecord.host`` は収集の接続先（ESXi・vCenter のホスト名や IP）で、
+# vSphere の管理対象（HostSystem など）と一致するとは限らないので、列の名前をそのまま使う。
+_LOG_ENTITY_TYPE = "host"
+# detail に入れるメッセージの文字数の上限（超えたら切って "…" を付ける）。
+_LOG_DETAIL_MAX_CHARS = 1000
 
 # 超過区間を判定する指標と、その日本語名。
 #
@@ -652,6 +676,12 @@ def _limit_message(exc: AggregationLimitExceeded) -> str:
     if exc.what == _ALERTS_LIMIT:
         # 対象（entity）の絞り込みは対象を解決した後に Python 側でかけるので、行数は減らない。
         return "通知履歴が多すぎて集計できません。期間を短くしてください。"
+    if exc.what == _LOGS_LIMIT:
+        # vCenter と対象（ホスト名）の絞り込みは SQL で効くので、読む行数が減る。
+        return (
+            "エラーログが多すぎて集計できません。期間を短くする、vCenter や対象（ホスト名）で"
+            "絞り込む、または種別からログを外すのいずれかをお試しください。"
+        )
     if exc.what == _METRICS_LIMIT:
         # 数えるのは超過区間の数。vCenter と対象の絞り込み、閾値はどれも SQL で効くので区間の数が減る。
         return (
@@ -717,13 +747,12 @@ async def _build_in_slot(
     kept, truncated = select_within_limit(merged, body.item_limit, anchor)
     signal = first_signal(merged)
     # 一覧の SELECT では message を読まないので、返す項目の分だけ後から引く。
-    details = await _event_messages(
-        session,
-        [e.source_id for e in (*kept, *([signal] if signal is not None else [])) if e.kind == "event"],
-    )
-    kept = [_with_event_detail(e, details) for e in kept]
+    shown = (*kept, *([signal] if signal is not None else []))
+    event_details = await _event_messages(session, [e.source_id for e in shown if e.kind == "event"])
+    log_details = await _log_messages(session, [e.source_id for e in shown if e.kind == "log"])
+    kept = [_with_log_detail(_with_event_detail(e, event_details), log_details) for e in kept]
     if signal is not None:
-        signal = _with_event_detail(signal, details)
+        signal = _with_log_detail(_with_event_detail(signal, event_details), log_details)
 
     return IncidentTimelineViewResponse(
         from_utc=ft,
@@ -1184,6 +1213,116 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     return _Collected(entries=entries, overview={"metric_breach": counts})
 
 
+# --- 収集: エラーログ -------------------------------------------------------------------
+
+
+def _log_filters(scope: _Scope) -> list[ColumnElement[bool]]:
+    clauses: list[ColumnElement[bool]] = [
+        # occurred_at は無いことがあるので、取り込み時に決まる effective_at を使う。
+        # 期間はイベントと同じ半開区間 [from, to)（ログの検索 API は to を含むが、俯瞰のバケットに揃える）。
+        LogRecord.effective_at >= scope.from_utc,
+        LogRecord.effective_at < scope.to_utc,
+        func.lower(func.trim(LogRecord.severity)).in_(_LOG_ERROR_SEVERITIES),
+    ]
+    if scope.vcenter_id is not None:
+        clauses.append(LogRecord.vcenter_id == scope.vcenter_id)
+    if scope.entity:
+        # ログには entity_name が無いので、対象の絞り込みは host に当てる。
+        clauses.append(contains_case_insensitive(LogRecord.host, scope.entity))
+    return clauses
+
+
+async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
+    """重大度が error 以上の ``LogRecord``。``log_error`` の俯瞰（DB 側の GROUP BY、まとめる前の件数）と個別の行。
+
+    同じ ``(vCenter, host, log_kind, level)`` が隣り合うときは ``merge_consecutive`` で 1 行にまとめる
+    （間隔の上限もイベントと同じ）。メッセージの内容はまとめの条件に入れない（入れるには一覧の SELECT で
+    全行の message を読む必要があるため）。message は読まず、返す行の分だけ ``_log_messages`` で後から引く。
+
+    ホスト名は正規化しない（FQDN と短い名前を同じホストとみなさない）。``host`` は接続先の表記
+    （IP のこともある）で、イベントやメトリクスの対象名と突き合わせる確かな手がかりが無く、別のホストを
+    混ぜるほうが調査を誤らせるため。
+    """
+    filters = _log_filters(scope)
+    base = (
+        select(
+            bucket_index_expr(
+                LogRecord.effective_at,
+                scope.dialect_name,
+                from_epoch=int(scope.from_utc.timestamp()),
+                bucket_sec=scope.bucket_sec,
+            ).label("bidx"),
+        )
+        .where(*filters)
+        .subquery("log_base")
+    )
+    overview_stmt = select(base.c.bidx, func.count().label("n")).group_by(base.c.bidx)
+    counts = [0] * scope.bucket_count
+    for bidx, n in (await session.execute(overview_stmt)).all():
+        idx = int(bidx)
+        if 0 <= idx < scope.bucket_count:
+            counts[idx] = int(n or 0)
+
+    list_stmt = (
+        select(
+            LogRecord.id,
+            LogRecord.effective_at,
+            LogRecord.vcenter_id,
+            LogRecord.host,
+            LogRecord.log_kind,
+        )
+        .where(*filters)
+        .order_by(LogRecord.effective_at, LogRecord.id)
+        .limit(scope.max_rows + 1)
+    )
+    rows = (await session.execute(list_stmt)).all()
+    if len(rows) > scope.max_rows:
+        raise AggregationLimitExceeded(_LOGS_LIMIT, scope.max_rows)
+
+    entries = [
+        TimelineEntry(
+            kind="log",
+            source_id=int(row.id),
+            timestamp_utc=to_utc(row.effective_at),
+            level=_LOG_LEVEL,
+            title=f"{row.host} {row.log_kind}",
+            entity_name=row.host,
+            entity_type=_LOG_ENTITY_TYPE,
+            vcenter_id=row.vcenter_id,
+            merge_key=("log", row.vcenter_id, row.host, row.log_kind, _LOG_LEVEL),
+            ref={"log_id": int(row.id)},
+        )
+        for row in rows
+    ]
+    return _Collected(entries=entries, overview={"log_error": counts})
+
+
+async def _log_messages(session: AsyncSession, log_ids: Iterable[int]) -> dict[int, str]:
+    """ログの message の先頭（上限 + 1 文字）を id でまとめて引く（IN は 500 件ごとに分割）。"""
+    out: dict[int, str] = {}
+    head = func.substr(LogRecord.message, 1, _LOG_DETAIL_MAX_CHARS + 1)
+    for chunk in chunks(sorted(set(log_ids)), IN_CHUNK_SIZE):
+        rows = (
+            await session.execute(select(LogRecord.id, head).where(LogRecord.id.in_(chunk)))
+        ).all()
+        out.update({int(lid): msg for lid, msg in rows})
+    return out
+
+
+def truncate_detail(text: str | None, max_chars: int = _LOG_DETAIL_MAX_CHARS) -> str | None:
+    """空なら None。``max_chars`` を超えたら切って "…" を付ける。"""
+    if not text:
+        return None
+    return text if len(text) <= max_chars else text[:max_chars] + "…"
+
+
+def _with_log_detail(entry: TimelineEntry, messages: Mapping[int, str]) -> TimelineEntry:
+    """まとめた行は最初のログ（``source_id``）の message を使う。"""
+    if entry.kind != "log":
+        return entry
+    return replace(entry, detail=truncate_detail(messages.get(entry.source_id)))
+
+
 # --- 共通 -------------------------------------------------------------------------------
 
 
@@ -1212,6 +1351,7 @@ _COLLECTORS: dict[TimelineSource, _Collector] = {
     "event": _collect_events,
     "alert": _collect_alerts,
     "metric": _collect_metrics,
+    "log": _collect_logs,
 }
 
 

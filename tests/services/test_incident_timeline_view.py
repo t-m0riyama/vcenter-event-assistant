@@ -31,6 +31,7 @@ from vcenter_event_assistant.services.incident_timeline_view import (
     sort_entries,
     summarize_event_types,
     top_entities,
+    truncate_detail,
 )
 
 T0 = datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
@@ -533,3 +534,31 @@ def test_count_spans_per_bucket_counts_every_touched_bucket_and_clips() -> None:
         (_at(8), _at(30)),       # 期間の後ろへはみ出す: 8, 9
     ]
     assert count_spans_per_bucket(spans, T0, 60, 10) == [1, 1, 2, 1, 0, 0, 0, 0, 1, 1]
+
+
+# --- PR4: エラーログ ----------------------------------------------------------------------
+
+
+def test_truncate_detail() -> None:
+    assert truncate_detail(None) is None
+    assert truncate_detail("") is None
+    assert truncate_detail("abc", 3) == "abc"
+    assert truncate_detail("abcd", 3) == "abc…"
+    assert truncate_detail("x" * 1001) == "x" * 1000 + "…"
+
+
+def test_log_runs_merge_only_with_the_same_source_and_within_gap() -> None:
+    def log(source_id: int, minute: float, host: str = "esx01", kind: str = "vmkernel") -> TimelineEntry:
+        return TimelineEntry(
+            kind="log", source_id=source_id, timestamp_utc=_at(minute), level="error",
+            title=f"{host} {kind}", entity_name=host, vcenter_id=V1,
+            merge_key=("log", V1, host, kind, "error"), ref={"log_id": source_id},
+        )
+
+    merged = merge_consecutive(
+        sort_entries([log(1, 0), log(2, 1), log(3, 2, kind="hostd"), log(4, 3), log(5, 9)]),
+        max_gap=timedelta(minutes=5),
+    )
+    assert [(m.item_id, m.count, m.end_utc) for m in merged] == [
+        ("log:1", 2, _at(1)), ("log:3", 1, None), ("log:4", 1, None), ("log:5", 1, None),
+    ]

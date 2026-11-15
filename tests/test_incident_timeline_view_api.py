@@ -1228,3 +1228,261 @@ async def test_unrequested_sources_issue_no_queries(client: AsyncClient, monkeyp
     assert any("metric_intervals" in s for s in captured)
     assert not any("events" in s or "alert_history" in s or "log_records" in s for s in captured)
 
+
+# --- エラーログ ------------------------------------------------------------------------------
+#
+# 対象は重大度が error 以上（大文字小文字と前後の空白は無視）のログ。時刻は effective_at。
+
+_offsets = itertools.count(1)
+
+
+async def _logs(vid: uuid.UUID, *specs: tuple) -> list[int]:
+    """spec は (分, severity, message) か、それに dict（host / log_kind / occurred_at など）を足したもの。"""
+    from vcenter_event_assistant.db.models import LogRecord
+
+    async with session_scope() as session:
+        rows = []
+        for spec in specs:
+            minute, severity, message, *rest = spec
+            extra = dict(rest[0]) if rest else {}
+            row = LogRecord(
+                vcenter_id=vid,
+                collector_id="test.logs",
+                source_id=extra.pop("source_id", "src-1"),
+                host=extra.pop("host", "esx01.example.com"),
+                log_kind=extra.pop("log_kind", "vmkernel"),
+                file_generation="g1",
+                byte_offset=next(_offsets),
+                occurred_at=extra.pop("occurred_at", None),
+                collected_at=_at(minute),
+                effective_at=_at(minute),
+                severity=severity,
+                message=message,
+                **extra,
+            )
+            session.add(row)
+            rows.append(row)
+        await session.flush()
+        return [r.id for r in rows]
+
+
+def _log_items(data: dict) -> list[dict]:
+    return [i for i in data["items"] if i["kind"] == "log"]
+
+
+@pytest.mark.asyncio
+async def test_log_error_becomes_log_item(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-log")
+    (log_id,) = await _logs(vid, (10, "error", "vmkernel: lost access to volume", {"log_kind": "vmkernel"}))
+    data = await _post(client)
+    (item,) = _log_items(data)
+    assert item["id"] == f"log:{log_id}"
+    assert _dt(item["timestamp_utc"]) == _at(10)
+    assert item["end_utc"] is None
+    assert item["level"] == "error"
+    assert item["title"] == "esx01.example.com vmkernel"
+    assert item["detail"] == "vmkernel: lost access to volume"
+    assert item["entity_name"] == "esx01.example.com"
+    assert item["entity_type"] == "host"
+    assert item["vcenter_id"] == str(vid)
+    assert item["vcenter_name"] == "vc-log"
+    assert item["count"] == 1
+    assert item["score"] is None
+    assert item["ref"]["log_id"] == log_id
+    assert sum(b["log_error"] for b in data["overview"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_log_only_error_or_above_regardless_of_case(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _logs(
+        vid,
+        (1, "info", "i"), (2, "warning", "w"), (3, None, "none"), (4, "debug", "d"), (5, "", "empty"),
+        (6, "ERROR", "upper", {"log_kind": "k6"}),
+        (7, " Critical ", "spaced", {"log_kind": "k7"}),
+        (8, "fatal", "fatal", {"log_kind": "k8"}),
+        (9, "panic", "panic", {"log_kind": "k9"}),
+        (10, "errors-ish", "not exact", {"log_kind": "k10"}),
+    )
+    data = await _post(client)
+    assert [i["detail"] for i in _log_items(data)] == ["upper", "spaced", "fatal", "panic"]
+    assert all(i["level"] == "error" for i in _log_items(data))
+    assert sum(b["log_error"] for b in data["overview"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_log_consecutive_same_source_is_merged_with_count(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    ids = await _logs(
+        vid,
+        (1, "error", "first"),
+        (2, "error", "second"),
+        (3, "critical", "third"),
+        (4, "error", "other kind", {"log_kind": "hostd"}),
+        (5, "error", "other host", {"host": "esx02.example.com"}),
+        (6, "error", "again"),
+        (12, "error", "after a 6 minute gap"),  # 間隔の上限（5 分）を超える
+    )
+    data = await _post(client)
+    got = [(i["title"], i["count"], i["detail"]) for i in _log_items(data)]
+    assert got == [
+        ("esx01.example.com vmkernel", 3, "first"),
+        ("esx01.example.com hostd", 1, "other kind"),
+        ("esx02.example.com vmkernel", 1, "other host"),
+        ("esx01.example.com vmkernel", 1, "again"),
+        ("esx01.example.com vmkernel", 1, "after a 6 minute gap"),
+    ]
+    first = _log_items(data)[0]
+    assert first["ref"]["log_id"] == ids[0]
+    assert _dt(first["end_utc"]) == _at(3)
+    # 俯瞰はまとめる前の件数
+    assert sum(b["log_error"] for b in data["overview"]) == 7
+
+
+@pytest.mark.asyncio
+async def test_log_uses_effective_at_and_half_open_period(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _logs(
+        vid,
+        (0, "error", "at from", {"log_kind": "a"}),
+        (30, "error", "occurred_at differs", {"log_kind": "b", "occurred_at": _at(-30)}),
+        (120, "error", "at to", {"log_kind": "c"}),
+    )
+    items = _log_items(await _post(client))
+    assert [(i["detail"], _dt(i["timestamp_utc"])) for i in items] == [
+        ("at from", _at(0)),
+        ("occurred_at differs", _at(30)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_log_detail_is_read_only_for_kept_items_and_truncated(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    vid = await _vcenter()
+    long_message = "x" * 1500
+    await _logs(
+        vid,
+        (1, "error", "earliest", {"log_kind": "a"}),
+        (60, "error", long_message, {"log_kind": "b"}),
+        (61, "error", "merged-second", {"log_kind": "b"}),
+        (90, "error", "far", {"log_kind": "c"}),
+    )
+    captured: list[str] = []
+    original = AsyncSession.execute
+
+    async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(str(statement))
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    data = await _post(client, item_limit=1, anchor="2026-03-22T01:00:30Z")
+    monkeypatch.setattr(AsyncSession, "execute", original)
+
+    (item,) = _log_items(data)
+    assert item["count"] == 2
+    assert item["detail"] == "x" * 1000 + "…"
+    signal = data["highlights"]["first_signal"]
+    assert signal["kind"] == "log" and signal["detail"] == "earliest"
+    list_sql = [s for s in captured if "ORDER BY log_records.effective_at, log_records.id" in s]
+    assert list_sql and all("log_records.message" not in s for s in list_sql)
+
+
+@pytest.mark.asyncio
+async def test_log_entity_filter_uses_host_and_vcenter_filter(client: AsyncClient) -> None:
+    v1 = await _vcenter("vc-l1")
+    v2 = await _vcenter("vc-l2")
+    await _logs(v1, (1, "error", "a", {"host": "ESX-Alpha.example.com"}), (2, "error", "b", {"host": "esx-beta"}))
+    await _logs(v2, (3, "error", "c", {"host": "esx-alpha-2"}))
+    assert [i["detail"] for i in _log_items(await _post(client, entity="alpha"))] == ["a", "c"]
+    data = await _post(client, entity="alpha", vcenter_id=str(v2))
+    assert [i["detail"] for i in _log_items(data)] == ["c"]
+    assert sum(b["log_error"] for b in data["overview"]) == 1
+    # LIKE のワイルドカードは文字として扱う
+    assert _log_items(await _post(client, entity="esx_")) == []
+
+
+@pytest.mark.asyncio
+async def test_log_overview_counts_per_bucket(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _logs(vid, (1, "error", "a"), (1.5, "error", "b"), (3, "error", "c"), (3, "info", "skip"))
+    data = await _post(client)
+    assert [b["log_error"] for b in data["overview"]][:4] == [0, 2, 0, 1]
+
+
+@pytest.mark.asyncio
+async def test_log_is_kept_after_alert_event_and_metric_when_truncating(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    # どれも level は error。ログが最も新しくても最後に回る
+    await _logs(vid, *[(50 + i, "error", f"log-{i}", {"log_kind": f"k{i}"}) for i in range(5)])
+    await _series(vid, "host-1", [(10, 96)])
+    await _events(vid, (20, "E", "h1", 65))
+    async with session_scope() as session:
+        rule = AlertRule(name="r-err", rule_type="event_score", alert_level="error", config={})
+        session.add(rule)
+        await session.flush()
+        session.add(
+            AlertHistory(
+                rule_id=rule.id, alert_level="error", state="firing",
+                context_key="X", notified_at=_at(5), channel="none",
+            )
+        )
+    data = await _post(client, item_limit=3)
+    assert data["truncated"] is True and data["total_items"] == 8
+    assert [i["kind"] for i in data["items"]] == ["alert", "metric", "event"]
+    data = await _post(client, item_limit=4)
+    assert [i["kind"] for i in data["items"]] == ["alert", "metric", "event", "log"]
+    # anchor があるときは距離が優先
+    data = await _post(client, item_limit=1, anchor="2026-03-22T00:52:00Z")
+    assert [i["detail"] for i in data["items"]] == ["log-2"]
+
+
+@pytest.mark.asyncio
+async def test_log_with_error_is_first_signal(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    (log_id,) = await _logs(vid, (1, "error", "early failure"))
+    await _events(vid, (5, "Warn", "h2", 45))
+    signal = (await _post(client))["highlights"]["first_signal"]
+    assert signal["id"] == f"log:{log_id}"
+    assert signal["detail"] == "early failure"
+
+
+@pytest.mark.asyncio
+async def test_too_many_log_rows_is_422(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    vid = await _vcenter()
+    await _logs(vid, (1, "error", "a"), (2, "error", "b"), (3, "info", "not counted"))
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    r = await client.post(URL, json=_body(sources=["log"]))
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "ログ" in detail and "ホスト名" in detail and "ログを外す" in detail
+    # error 未満の行は数えない
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
+    assert len(_log_items(await _post(client, sources=["log"]))) == 1
+
+
+@pytest.mark.asyncio
+async def test_log_source_only_issues_log_queries(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    vid = await _vcenter()
+    await _logs(vid, (1, "error", "a"))
+    await _events(vid, (2, "A", "h1", 30))
+    await _series(vid, "host-1", [(3, 90)])
+    captured: list[str] = []
+    original = AsyncSession.execute
+
+    async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(str(statement))
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    data = await _post(client, sources=["log"])
+    monkeypatch.setattr(AsyncSession, "execute", original)
+    assert [i["kind"] for i in data["items"]] == ["log"]
+    assert captured and all("log_records" in s or "vcenters" in s for s in captured)
+    assert data["highlights"]["new_event_types"] == []
+    for b in data["overview"]:
+        assert (b["event_total"], b["event_notable"], b["alert"], b["metric_breach"]) == (0, 0, 0, 0)
