@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 from fastapi import HTTPException
 from sqlalchemy import and_, case, func, or_, select
@@ -40,13 +40,14 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
 from vcenter_event_assistant.db.models import AlertHistory, AlertRule, EventRecord, VCenter
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     IN_CHUNK_SIZE,
+    MetricProbe,
     ResolvedEntity,
     chunks,
-    collect_metric_targets,
+    collect_metric_probes,
     metric_key_of,
     metric_name_lookback,
-    parse_metric_context_key,
-    resolve_metric_entities,
+    metric_probe,
+    resolve_metric_entities_at,
 )
 from vcenter_event_assistant.services.chat.aggregation_limiter import (
     AggregationBusy,
@@ -802,12 +803,14 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     """``AlertHistory`` を ``occurred_at``（状態の遷移時刻。再送で変わらない）で期間に絞り、対象を解決して項目にする。
 
     - ``metric_threshold``: ``context_key``（``{vcenter_id}:{entity_moid}``）から vCenter と moid を取り出し、
-      期間の終わりに最も近い ``MetricSample`` の名前・種類で対象を解決する。旧形式（moid だけ）の key は vCenter が分からず、
-      moid は vCenter をまたいで重複し得るので、誤った対象に紐付けないよう名前は解決しない。
+      そのアラートの ``occurred_at`` の時点の ``MetricSample`` の名前・種類で対象を解決する
+      （``resolve_metric_entities_at``。表示期間に依存しないので、通知履歴と同じ名前になる）。
+      旧形式（moid だけ）の key は vCenter が分からず、moid は vCenter をまたいで重複し得るので、
+      誤った対象に紐付けないよう名前は解決しない。
     - ``event_score``: ``context_key`` はイベント種別。対象と vCenter は持たない。
     - vCenter の絞り込みは行数の上限より前に SQL で行う。event_score は vCenter を持たないので
       全 vCenter にまたがる情報として残し、旧形式の metric の key は取り違えを避けるため除く。
-    - 対象の絞り込みでは、対象名が一致するアラートだけを残す。
+    - 対象の絞り込みでは、アラートごとに「その時点の名前」が一致するものだけを残す。
     """
     stmt = (
         select(
@@ -846,16 +849,12 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     if len(rows) > scope.max_rows:
         raise AggregationLimitExceeded(_ALERTS_LIMIT, scope.max_rows)
 
-    # metric_threshold の対象を 1 本の SQL でまとめて解決する（N+1 にしない）。
-    targets, metric_keys = collect_metric_targets(
-        (row.rule_type, row.context_key, row.rule_config) for row in rows
+    # metric_threshold の対象を、アラートの時刻ごとにまとめて解決する（N+1 にしない）。
+    probes, metric_keys = collect_metric_probes(
+        (row.rule_type, row.context_key, row.rule_config, row.occurred_at) for row in rows
     )
-    resolved = await resolve_metric_entities(
-        session,
-        targets,
-        metric_keys,
-        sampled_from=scope.from_utc - scope.metric_name_lookback,
-        sampled_to=scope.to_utc,
+    resolved = await resolve_metric_entities_at(
+        session, probes, metric_keys, lookback=scope.metric_name_lookback
     )
 
     entries: list[TimelineEntry] = []
@@ -882,7 +881,7 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     return _Collected(entries=entries, overview={"alert": counts})
 
 
-def _alert_entry(row: Any, resolved: Mapping[tuple[uuid.UUID, str], ResolvedEntity]) -> TimelineEntry:
+def _alert_entry(row: Any, resolved: Mapping[MetricProbe, ResolvedEntity]) -> TimelineEntry:
     ref: dict[str, Any] = {
         "alert_history_id": int(row.id),
         "alert_rule_id": int(row.rule_id),
@@ -897,10 +896,10 @@ def _alert_entry(row: Any, resolved: Mapping[tuple[uuid.UUID, str], ResolvedEnti
         metric_key = metric_key_of(row.rule_config)
         if metric_key is not None:
             ref["metric_key"] = metric_key
-        parsed = parse_metric_context_key(row.context_key)
-        if parsed is not None:
-            vcenter_id, moid = parsed
-            hit = resolved.get(parsed)
+        probe = metric_probe(row.context_key, row.occurred_at)
+        if probe is not None:
+            vcenter_id, moid, _ = probe
+            hit = resolved.get(probe)
             if hit is not None:
                 entity_name, entity_type = hit.name, hit.entity_type
         else:
@@ -953,8 +952,6 @@ _COLLECTORS: dict[TimelineSource, _Collector] = {
     "event": _collect_events,
     "alert": _collect_alerts,
 }
-
-_T = TypeVar("_T")
 
 
 def _ceil_div(a: int, b: int) -> int:
