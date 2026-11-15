@@ -13,6 +13,7 @@ import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHig
 import { summarizeEventTextFilters } from '../../events/eventFilterSummary'
 import { ScoreBadge, SeverityBadge } from '../../components/badges'
 import { Pagination } from '../../components/Pagination'
+import { TimelineLink } from '../../components/TimelineLink'
 import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
@@ -214,7 +215,12 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
               <td>
                 <ScoreBadge score={e.notable_score} />
               </td>
-              <td className="msg">{e.message}<p><a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a></p></td>
+              <td className="msg">{e.message}<p><a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a>{' '}<TimelineLink
+                  at={e.occurred_at}
+                  vcenterId={e.vcenter_id}
+                  entity={e.entity_name}
+                  ariaLabel={`${e.entity_name || e.event_type}（${formatIsoInTimeZone(e.occurred_at, c.timeZone)}）をタイムラインで見る`}
+                /></p></td>
               <td className="event-comment-cell">
                 {c.editingCommentId === e.id ? (
                   <div className="event-comment-edit">
