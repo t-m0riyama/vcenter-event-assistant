@@ -36,16 +36,18 @@ export function formatTick(iso: string, timeZone: string, withDate: boolean): st
  * 棒の添字だけを扱う（recharts の座標から添字を出すのは呼び出し側）。
  * `range` は押している間の選択中の範囲（小さい添字, 大きい添字）で、押していなければ null。
  */
-export function usePointerRangeSelection(onSelect: (from: number, to: number) => void) {
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
+export function usePointerRangeSelection(onSelect: (from: number, to: number) => void, resetKey = '') {
+  // 押している間に棒の並びが変わったら（応答の差し替え）、その操作は無かったことにする
+  const [state, setState] = useState<{ key: string; from: number; to: number } | null>(null)
+  const drag = state && state.key === resetKey ? state : null
   return {
     range: drag ? ([Math.min(drag.from, drag.to), Math.max(drag.from, drag.to)] as const) : null,
-    down: (i: number) => setDrag({ from: i, to: i }),
-    move: (i: number) => setDrag((d) => (d ? { ...d, to: i } : d)),
+    down: (i: number) => setState({ key: resetKey, from: i, to: i }),
+    move: (i: number) => setState((d) => (d && d.key === resetKey ? { ...d, to: i } : d)),
     up: () => {
       if (drag) onSelect(drag.from, drag.to)
-      setDrag(null)
+      setState(null)
     },
-    cancel: () => setDrag(null),
+    cancel: () => setState(null),
   }
 }

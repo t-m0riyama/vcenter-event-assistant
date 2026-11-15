@@ -656,4 +656,34 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(document.getElementById(helpId)).toHaveTextContent('矢印')
     expect(chart).toHaveAttribute('tabindex', '0')
   })
+
+  it('バケットの数が減る応答に差し替わっても、キーボードの選択が残って描画が落ちない（End → Enter の後）', async () => {
+    setup()
+    renderTimeline()
+    const many = Array.from({ length: 72 }, (_, i) =>
+      bucket(new Date(Date.parse('2026-03-22T00:00:00Z') + i * 300_000).toISOString(), 1, 0),
+    )
+    await answer(0, populated({ bucket_seconds: 300, to_utc: '2026-03-22T06:00:00Z', overview: many }))
+    const chart = await screen.findByRole('application', { name: '件数の俯瞰グラフ' })
+    chart.focus()
+    fireEvent.keyDown(chart, { key: 'End' })
+    fireEvent.keyDown(chart, { key: 'Enter' }) // 最後の 5 分間に絞る
+    const fewer = Array.from({ length: 60 }, (_, i) =>
+      bucket(new Date(Date.parse('2026-03-22T05:55:00Z') + i * 5_000).toISOString(), 0, 0),
+    )
+    await answer(
+      1,
+      populated({ bucket_seconds: 5, from_utc: '2026-03-22T05:55:00Z', to_utc: '2026-03-22T06:00:00Z', overview: fewer }),
+    )
+    // 添字 71 は存在しない。例外にならず、選択は解除されている
+    const after = await screen.findByRole('application', { name: '件数の俯瞰グラフ' })
+    expect(after.querySelector('.timeline-overview__announce')).toHaveTextContent('')
+    expect(document.querySelector('.recharts-reference-area')).toBeNull()
+    // 続けて矢印キーで選び直せる（先頭の棒から）
+    fireEvent.keyDown(after, { key: 'ArrowRight' })
+    expect(after.querySelector('.timeline-overview__announce')).toHaveTextContent('Enter で期間をこの範囲に絞ります')
+    fireEvent.keyDown(after, { key: 'Enter' })
+    await answer(2)
+    expect(harness.calls[2].body).toMatchObject({ from: '2026-03-22T05:55:00.000Z', to: '2026-03-22T05:55:05.000Z' })
+  })
 })

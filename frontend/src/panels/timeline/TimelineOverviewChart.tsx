@@ -54,8 +54,6 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
   const colors = useChartThemeColors()
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
-  const [activeIndex, setActiveIndex] = useState<number | null>(null)
-  const [selectionStart, setSelectionStart] = useState<number | null>(null)
 
   useEffect(() => {
     const el = wrapRef.current
@@ -81,6 +79,19 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
     [buckets],
   )
 
+  // キーボードの選択は、バケットの並び（本数・開始・幅）の鍵つきで持つ。並びが変わったら
+  // （絞り込みで細かい幅の応答に差し替わるなど）、古い添字は使わず選択を解除したことにする
+  const bucketKey = `${rows.length}|${rows[0]?.start ?? ''}|${bucketSeconds}`
+  const [selection, setSelection] = useState<{ key: string; active: number | null; start: number | null }>({
+    key: bucketKey,
+    active: null,
+    start: null,
+  })
+  const inRange = (i: number | null) => (i !== null && i >= 0 && i < rows.length ? i : null)
+  const current = selection.key === bucketKey ? selection : { key: bucketKey, active: null, start: null }
+  const activeIndex = inRange(current.active)
+  const selectionStart = activeIndex === null ? null : inRange(current.start)
+
   // 最大値が 0 の種別は凡例に出さない（メトリクス・ログは API がまだ返さない）
   const series: SeriesDef[] = useMemo(() => {
     const all: SeriesDef[] = [
@@ -105,14 +116,18 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
   )
 
   const rangeOf = useCallback(
-    (a: number, b: number) =>
-      dragRange(rows[Math.min(a, b)].start, rows[Math.max(a, b)].start, bucketSeconds, toUtc),
+    (a: number, b: number) => {
+      const last = rows.length - 1
+      const lo = Math.min(Math.max(Math.min(a, b), 0), last)
+      const hi = Math.min(Math.max(Math.max(a, b), 0), last)
+      return dragRange(rows[lo].start, rows[hi].start, bucketSeconds, toUtc)
+    },
     [rows, bucketSeconds, toUtc],
   )
 
   const pointer = usePointerRangeSelection((a, b) => {
-    if (rows.length > 0) onSelectRange(rangeOf(a, b))
-  })
+    if (a < rows.length && b < rows.length) onSelectRange(rangeOf(a, b))
+  }, bucketKey)
 
   const describe = (a: number, b: number): string => {
     const r = rangeOf(a, b)
@@ -134,18 +149,19 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
     else if (e.key === 'Enter' && activeIndex !== null) {
       e.preventDefault()
       onSelectRange(rangeOf(selectionStart ?? activeIndex, activeIndex))
-      setSelectionStart(null)
+      setSelection({ key: bucketKey, active: activeIndex, start: null })
       return
     } else if (e.key === 'Escape') {
-      setActiveIndex(null)
-      setSelectionStart(null)
+      setSelection({ key: bucketKey, active: null, start: null })
       return
     }
     if (next === null) return
     e.preventDefault()
-    if (e.shiftKey) setSelectionStart((s) => s ?? activeIndex ?? next)
-    else setSelectionStart(null)
-    setActiveIndex(next)
+    setSelection({
+      key: bucketKey,
+      active: next,
+      start: e.shiftKey ? (selectionStart ?? activeIndex ?? next) : null,
+    })
   }
 
   const indexOf = (state: unknown): number | null => {
@@ -175,10 +191,7 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
         aria-label="件数の俯瞰グラフ"
         aria-describedby="timeline-overview-help"
         onKeyDown={onKeyDown}
-        onBlur={() => {
-          setActiveIndex(null)
-          setSelectionStart(null)
-        }}
+        onBlur={() => setSelection({ key: bucketKey, active: null, start: null })}
       >
         <BarChart
           width={chartWidth}
