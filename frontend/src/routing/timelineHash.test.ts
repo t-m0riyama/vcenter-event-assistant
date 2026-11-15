@@ -19,6 +19,8 @@ const FIXED: TimelineConditions = {
   entity: 'esx 01',
   minScore: 40,
   sources: ['alert'],
+  cpuThresholdPct: 90,
+  memoryThresholdPct: 72.5,
 }
 
 describe('timelineHash', () => {
@@ -91,6 +93,58 @@ describe('timelineHash', () => {
     expect(readCorrelationRange('events')).not.toBeNull()
     window.history.replaceState(null, '', buildTimelineHash(FIXED))
     expect(readCorrelationRange('events')).toBeNull()
+  })
+})
+
+describe('timelineHash の種別としきい値', () => {
+  const ALL = ['event', 'alert', 'metric', 'log']
+
+  it('既定は 4 種類すべてで、URL には出さない', () => {
+    expect(DEFAULT_TIMELINE_CONDITIONS.sources).toEqual(ALL)
+    expect(buildTimelineHash(DEFAULT_TIMELINE_CONDITIONS)).toBe('#/timeline?range=1h')
+    // 4 種類を明示した URL も既定として読める
+    expect(parseTimelineHash(`#/timeline?range=1h&sources=${ALL.join(',')}`)?.conditions.sources).toEqual(ALL)
+  })
+
+  it('メトリクスとログを含む種別の組を往復できる（順序は正規化される）', () => {
+    const conditions = { ...DEFAULT_TIMELINE_CONDITIONS, sources: ['metric', 'log'] as const }
+    const hash = buildTimelineHash(conditions)
+    expect(hash).toBe('#/timeline?range=1h&sources=metric%2Clog')
+    expect(parseTimelineHash(hash)?.conditions.sources).toEqual(['metric', 'log'])
+    expect(parseTimelineHash('#/timeline?range=1h&sources=log,event')?.conditions.sources).toEqual(['event', 'log'])
+    expect(parseTimelineHash('#/timeline?range=1h&sources=event,alert,metric')?.conditions.sources).toEqual([
+      'event',
+      'alert',
+      'metric',
+    ])
+  })
+
+  it('しきい値の既定（CPU 80・メモリ 85）は URL に出さず、既定でない値だけ出す', () => {
+    expect(DEFAULT_TIMELINE_CONDITIONS.cpuThresholdPct).toBe(80)
+    expect(DEFAULT_TIMELINE_CONDITIONS.memoryThresholdPct).toBe(85)
+    const cpu = buildTimelineHash({ ...DEFAULT_TIMELINE_CONDITIONS, cpuThresholdPct: 90 })
+    expect(cpu).toBe('#/timeline?range=1h&cpu_threshold=90')
+    expect(buildTimelineHash({ ...DEFAULT_TIMELINE_CONDITIONS, memoryThresholdPct: 70.5 })).toBe(
+      '#/timeline?range=1h&memory_threshold=70.5',
+    )
+    const parsed = parseTimelineHash('#/timeline?range=1h&cpu_threshold=90&memory_threshold=70.5')
+    expect(parsed?.conditions.cpuThresholdPct).toBe(90)
+    expect(parsed?.conditions.memoryThresholdPct).toBe(70.5)
+    expect(parsed?.issue).toBeNull()
+  })
+
+  it('0 や 100 は有効なしきい値として読める', () => {
+    const parsed = parseTimelineHash('#/timeline?range=1h&cpu_threshold=0&memory_threshold=100')
+    expect(parsed?.conditions.cpuThresholdPct).toBe(0)
+    expect(parsed?.conditions.memoryThresholdPct).toBe(100)
+    expect(parsed?.issue).toBeNull()
+  })
+
+  it.each(['abc', '101', '-1', '', 'Infinity'])('しきい値 %s は黙って既定にせず、理由（issue）を返す', (raw) => {
+    const parsed = parseTimelineHash(`#/timeline?range=1h&cpu_threshold=${raw}`)
+    expect(parsed?.issue).toContain('cpu_threshold')
+    expect(parsed?.conditions.cpuThresholdPct).toBe(80)
+    expect(parseTimelineHash(`#/timeline?range=1h&memory_threshold=${raw}`)?.issue).toContain('memory_threshold')
   })
 })
 

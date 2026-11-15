@@ -1,4 +1,9 @@
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
+import {
+  DEFAULT_METRIC_THRESHOLD_CPU_PCT,
+  DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
+  isValidMetricThresholdPercent,
+} from '../hooks/periodMetricThresholdDefaults'
 import { parseAppHash } from './appHashRouting'
 
 const HOUR_MS = 3_600_000
@@ -15,9 +20,9 @@ export type TimelineRange =
   | { readonly mode: 'rolling'; readonly durationMs: number }
   | { readonly mode: 'fixed'; readonly from: string; readonly to: string }
 
-/** 画面から選べる出来事の種別（メトリクスとログは API が返すようになったら足す）。 */
-export type TimelineSourceKind = 'event' | 'alert'
-export const TIMELINE_SOURCE_KINDS: readonly TimelineSourceKind[] = ['event', 'alert']
+/** 画面から選べる出来事の種別。 */
+export type TimelineSourceKind = 'event' | 'alert' | 'metric' | 'log'
+export const TIMELINE_SOURCE_KINDS: readonly TimelineSourceKind[] = ['event', 'alert', 'metric', 'log']
 
 /** タイムラインの条件。URL のハッシュと 1 対 1 に対応する。 */
 export type TimelineConditions = {
@@ -28,6 +33,10 @@ export type TimelineConditions = {
   readonly entity: string
   readonly minScore: number
   readonly sources: readonly TimelineSourceKind[]
+  /** CPU 使用率の超過区間のしきい値（%）。ディスクとネットワークは対象外（値が KB/s のため）。 */
+  readonly cpuThresholdPct: number
+  /** メモリ使用率の超過区間のしきい値（%）。 */
+  readonly memoryThresholdPct: number
 }
 
 export const DEFAULT_TIMELINE_MIN_SCORE = 1
@@ -39,6 +48,8 @@ export const DEFAULT_TIMELINE_CONDITIONS: TimelineConditions = {
   entity: '',
   minScore: DEFAULT_TIMELINE_MIN_SCORE,
   sources: TIMELINE_SOURCE_KINDS,
+  cpuThresholdPct: DEFAULT_METRIC_THRESHOLD_CPU_PCT,
+  memoryThresholdPct: DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -81,6 +92,16 @@ function readRange(params: URLSearchParams, issues: string[]): TimelineRange {
   return { mode: 'fixed', from, to }
 }
 
+/** URL の閾値（0〜100 の有限な数）。無ければ既定。読めない値は既定にして理由を積む。 */
+function readThreshold(params: URLSearchParams, name: string, fallback: number, issues: string[]): number {
+  const raw = params.get(name)
+  if (raw === null) return fallback
+  const n = raw.trim() === '' ? NaN : Number(raw)
+  if (isValidMetricThresholdPercent(n)) return n
+  issues.push(`URL の ${name} は 0〜100 の数値にしてください。`)
+  return fallback
+}
+
 /**
  * `#/timeline?...` を条件に戻す。タイムラインのハッシュでない・クエリが無いときは null。
  * 読めない値は黙って既定に置き換えず、`issue` で理由を返す（呼び出し側は読み込まず、URL も書き換えない）。
@@ -106,6 +127,9 @@ export function parseTimelineHash(hash: string): ParsedTimelineHash | null {
     safeVcenterId = ''
   }
 
+  const cpuThresholdPct = readThreshold(params, 'cpu_threshold', DEFAULT_METRIC_THRESHOLD_CPU_PCT, issues)
+  const memoryThresholdPct = readThreshold(params, 'memory_threshold', DEFAULT_METRIC_THRESHOLD_MEMORY_PCT, issues)
+
   const minScoreRaw = Number(params.get('min_score'))
   const sources = (params.get('sources') ?? '')
     .split(',')
@@ -121,6 +145,8 @@ export function parseTimelineHash(hash: string): ParsedTimelineHash | null {
           ? minScoreRaw
           : DEFAULT_TIMELINE_MIN_SCORE,
       sources: sources.length > 0 ? TIMELINE_SOURCE_KINDS.filter((k) => sources.includes(k)) : TIMELINE_SOURCE_KINDS,
+      cpuThresholdPct,
+      memoryThresholdPct,
     },
     issue: issues.length > 0 ? issues.join(' ') : null,
   }
@@ -150,6 +176,12 @@ export function buildTimelineHash(conditions: TimelineConditions): string {
   if (conditions.entity) params.set('entity', conditions.entity)
   if (conditions.minScore !== DEFAULT_TIMELINE_MIN_SCORE) params.set('min_score', String(conditions.minScore))
   if (conditions.sources.length !== TIMELINE_SOURCE_KINDS.length) params.set('sources', conditions.sources.join(','))
+  if (conditions.cpuThresholdPct !== DEFAULT_METRIC_THRESHOLD_CPU_PCT) {
+    params.set('cpu_threshold', String(conditions.cpuThresholdPct))
+  }
+  if (conditions.memoryThresholdPct !== DEFAULT_METRIC_THRESHOLD_MEMORY_PCT) {
+    params.set('memory_threshold', String(conditions.memoryThresholdPct))
+  }
   return `#/timeline?${params}`
 }
 
