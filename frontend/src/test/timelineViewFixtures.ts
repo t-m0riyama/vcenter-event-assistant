@@ -60,3 +60,55 @@ export const VIEW_RESPONSE_EXAMPLE = {
     ],
   },
 }
+
+export function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...headers },
+  })
+}
+
+/** 空の期間に対する応答。 */
+export function emptyViewResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    from_utc: '2026-03-22T00:00:00Z',
+    to_utc: '2026-03-22T01:00:00Z',
+    anchor_utc: null,
+    bucket_seconds: 60,
+    overview: [],
+    items: [],
+    truncated: false,
+    total_items: 0,
+    highlights: { first_signal: null, top_entities: [], new_event_types: [] },
+    ...overrides,
+  }
+}
+
+type ViewCall = { body: Record<string, unknown>; resolve: (res: Response) => void }
+
+/**
+ * `fetch` のモック。`/api/vcenters` と手動スナップショット一覧は空で返し、view への要求は
+ * `calls` に溜めて、テストが好きな順で `resolve` する。
+ */
+export function installTimelineFetchMock(options: { vcenters?: unknown[]; snapshots?: unknown[] } = {}) {
+  const calls: ViewCall[] = []
+  const extra = new Map<string, (url: string, init?: RequestInit) => Response>()
+  const mock = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input)
+    if (url.endsWith('/api/vcenters')) return Promise.resolve(jsonResponse(options.vcenters ?? []))
+    if (url.includes('/api/incident-timeline/snapshots/manual?')) {
+      const items = options.snapshots ?? []
+      return Promise.resolve(jsonResponse({ items, total: items.length, limit: 20, offset: 0 }))
+    }
+    if (url.endsWith('/api/incident-timeline/view')) {
+      return new Promise((resolve) => {
+        calls.push({ body: JSON.parse(String(init?.body)) as Record<string, unknown>, resolve })
+      })
+    }
+    for (const [prefix, handler] of extra) {
+      if (url.startsWith(prefix)) return Promise.resolve(handler(url, init))
+    }
+    return Promise.resolve(new Response('not found', { status: 404 }))
+  }
+  return { fetchMock: mock, calls, extra }
+}
