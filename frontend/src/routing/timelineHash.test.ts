@@ -133,6 +133,21 @@ describe('timelineEntryHash', () => {
     expect(timelineEntryHash({ at: undefined })).toBeNull()
   })
 
+  it.each(['a&b=c', 'host#1', 'a+b', '100%', 'ホスト 01 / テスト', 'x?y=1&z#2+%41'])(
+    '対象名「%s」を壊さずに URL へ入れ、読み戻せる',
+    (entity) => {
+      const hash = timelineEntryHash({ at: '2026-03-22T01:00:00Z', vcenterId: VC, entity })!
+      // ハッシュの区切りになる文字が生のまま混ざらない（# は先頭の 1 つだけ）
+      expect(hash.indexOf('#')).toBe(0)
+      expect(hash.lastIndexOf('#')).toBe(0)
+      const parsed = parseTimelineHash(hash)!
+      expect(parsed.issue).toBeNull()
+      expect(parsed.conditions.entity).toBe(entity.trim())
+      expect(parsed.conditions.vcenterId).toBe(VC)
+      expect(parsed.conditions.anchor).toBe('2026-03-22T01:00:00.000Z')
+    },
+  )
+
   it('未来になる to もそのまま作る', () => {
     const future = new Date(Date.now() + 10 * 60_000).toISOString()
     const parsed = parseTimelineHash(timelineEntryHash({ at: future })!)!

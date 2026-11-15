@@ -445,6 +445,11 @@ describe('useTimelineViewController', () => {
     await answer(1)
     expect(harness.calls[1].body.entity).toBe('vm-q')
     expect(result.current.conditions.entity).toBe('vm-q')
+    // 読み込みが重複していない（最初の 1 回と、入口リンクの条件での 1 回だけ）
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    expect(harness.calls).toHaveLength(2)
   })
 
   it('期間の入力欄は「適用」まで確定せず、編集していない側の秒を落とさない', async () => {
