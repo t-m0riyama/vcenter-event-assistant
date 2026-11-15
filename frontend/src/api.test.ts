@@ -300,4 +300,31 @@ describe('api', () => {
     )
     await expect(apiPost('/api/foo', {})).rejects.toThrow(/^パスワードは 12 文字以上にしてください。$/)
   })
+  it('422 の検証エラー（detail が配列）は msg を連結して表示する', async () => {
+    fetchMock().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          detail: [
+            { loc: ['body', 'from'], msg: 'Value error, time range must not exceed 90 days', type: 'value_error' },
+            { loc: ['body', 'entity'], msg: 'String should have at most 256 characters', type: 'string_too_long' },
+          ],
+        }),
+        { status: 422 },
+      ),
+    )
+    await expect(apiPost('/api/foo', {})).rejects.toThrow(
+      'Value error, time range must not exceed 90 days / String should have at most 256 characters',
+    )
+  })
+
+  it('503 の Retry-After を秒数で保持する（無い・不正なら null）', async () => {
+    fetchMock().mockResolvedValueOnce(new Response('busy', { status: 503, headers: { 'Retry-After': '5' } }))
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ status: 503, retryAfterSeconds: 5 })
+    fetchMock().mockResolvedValueOnce(new Response('busy', { status: 503 }))
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ retryAfterSeconds: null })
+    fetchMock().mockResolvedValueOnce(
+      new Response('busy', { status: 503, headers: { 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' } }),
+    )
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ retryAfterSeconds: null })
+  })
 })

@@ -121,8 +121,19 @@ const fetchNoStore: RequestInit = { cache: 'no-store' }
 function detailMessage(text: string): string | null {
   try {
     const body: unknown = JSON.parse(text)
-    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
-      return body.detail
+    if (body && typeof body === 'object' && 'detail' in body) {
+      if (typeof body.detail === 'string') return body.detail
+      // FastAPI の検証エラー（422）は ``detail`` が ``[{loc, msg, ...}]`` の配列で返る
+      if (Array.isArray(body.detail)) {
+        const messages = body.detail
+          .map((entry: unknown) =>
+            entry && typeof entry === 'object' && 'msg' in entry && typeof entry.msg === 'string'
+              ? entry.msg
+              : null,
+          )
+          .filter((m: string | null): m is string => m !== null)
+        if (messages.length > 0) return messages.join(' / ')
+      }
     }
   } catch {
     // JSON でなければ本文をそのまま使う
@@ -154,17 +165,31 @@ export class ApiError extends Error {
   readonly status: number
   /** サーバが理由を見分けられるよう付けた ``X-VEA-Error-Code``（なければ null）。 */
   readonly errorCode: string | null
+  /** ``Retry-After``（秒）。ヘッダが無い・秒数として読めないときは null。 */
+  readonly retryAfterSeconds: number | null
 
-  constructor(message: string, status: number, errorCode: string | null) {
+  constructor(
+    message: string,
+    status: number,
+    errorCode: string | null,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.errorCode = errorCode
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
 async function apiError(r: Response): Promise<ApiError> {
-  return new ApiError(await errorMessageFromResponse(r), r.status, r.headers.get('X-VEA-Error-Code'))
+  const retryAfter = Number(r.headers.get('Retry-After'))
+  return new ApiError(
+    await errorMessageFromResponse(r),
+    r.status,
+    r.headers.get('X-VEA-Error-Code'),
+    Number.isFinite(retryAfter) && retryAfter >= 0 && r.headers.get('Retry-After') !== null ? retryAfter : null,
+  )
 }
 
 /** JSON GET（``cache: 'no-store'``）。 */
