@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from fastapi import HTTPException
 from sqlalchemy import and_, case, func, or_, select
@@ -294,7 +294,7 @@ def alert_level(value: str | None, state: str | None) -> TimelineLevel:
     想定外の ``alert_level`` は warning として扱う。
     """
     v = (value or "").strip().lower()
-    base: TimelineLevel = v if v in _ALERT_LEVELS else "warning"  # type: ignore[assignment]
+    base: TimelineLevel = cast(TimelineLevel, v) if v in _ALERT_LEVELS else "warning"
     if state == "firing":
         return base
     if state == "stale":
