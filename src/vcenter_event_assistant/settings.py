@@ -189,8 +189,10 @@ class AppLogSettingsMixin(BaseModel):
         ge=1,
         le=10_000_000,
         description=(
-            "イベントの時間バケット集計で、集計後の行数（バケット数 × イベント種別数）の上限"
-            "（``CONTEXT_AGGREGATION_MAX_ROWS``）。超えた要求は 422。"
+            "集計の行数の上限（``CONTEXT_AGGREGATION_MAX_ROWS``）。チャット・プレビューのイベントの時間バケット"
+            "集計では集計後の行数（バケット数 × イベント種別数）に当て、超えた要求は 422。タイムライン画面の API では"
+            "種別ごとの行数に当て、イベント・通知履歴は超えると 422、エラーログ・メトリクスの超過区間は超えると"
+            "その種別の行だけを省く（応答の omitted_sources）。"
         ),
     )
     uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
