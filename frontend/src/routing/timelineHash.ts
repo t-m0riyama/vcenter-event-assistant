@@ -1,3 +1,4 @@
+import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { parseAppHash } from './appHashRouting'
 
 const HOUR_MS = 3_600_000
@@ -40,45 +41,93 @@ export const DEFAULT_TIMELINE_CONDITIONS: TimelineConditions = {
   sources: TIMELINE_SOURCE_KINDS,
 }
 
-function validIso(value: string | null): string | null {
-  if (!value) return null
-  const ms = Date.parse(value)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** `Z` の無い時刻もブラウザのローカル時刻ではなく UTC として読む。読めなければ null。 */
+function validIso(value: string): string | null {
+  const v = value.trim()
+  const ms = parseApiUtcInstantMs(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? `${v}:00` : v)
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null
 }
 
-function readRange(params: URLSearchParams): TimelineRange {
-  const preset = TIMELINE_ROLLING_PRESETS.find((p) => p.key === params.get('range'))
-  if (preset) return { mode: 'rolling', durationMs: preset.durationMs }
-  const from = validIso(params.get('from'))
-  const to = validIso(params.get('to'))
-  if (from && to && Date.parse(from) < Date.parse(to)) return { mode: 'fixed', from, to }
-  return DEFAULT_TIMELINE_CONDITIONS.range
+/** URL を読んだ結果。`issue` があるときは、条件のうち読めなかった部分を既定にしてある。 */
+export type ParsedTimelineHash = { readonly conditions: TimelineConditions; readonly issue: string | null }
+
+function readRange(params: URLSearchParams, issues: string[]): TimelineRange {
+  const rangeKey = params.get('range')
+  if (rangeKey !== null) {
+    const preset = TIMELINE_ROLLING_PRESETS.find((p) => p.key === rangeKey)
+    if (preset) return { mode: 'rolling', durationMs: preset.durationMs }
+    issues.push(`URL の range「${rangeKey}」は使えません（1h / 6h / 24h のいずれかです）。`)
+    return DEFAULT_TIMELINE_CONDITIONS.range
+  }
+  const rawFrom = params.get('from')
+  const rawTo = params.get('to')
+  if (rawFrom === null && rawTo === null) return DEFAULT_TIMELINE_CONDITIONS.range
+  if (rawFrom === null || rawTo === null) {
+    issues.push('URL の期間は from と to の両方が必要です。')
+    return DEFAULT_TIMELINE_CONDITIONS.range
+  }
+  const from = validIso(rawFrom)
+  const to = validIso(rawTo)
+  if (!from || !to) {
+    issues.push('URL の from / to の日時を解釈できません。')
+    return DEFAULT_TIMELINE_CONDITIONS.range
+  }
+  if (Date.parse(from) >= Date.parse(to)) {
+    issues.push('URL の期間が不正です。開始（from）は終了（to）より前の時刻にしてください。')
+    return DEFAULT_TIMELINE_CONDITIONS.range
+  }
+  return { mode: 'fixed', from, to }
 }
 
-/** `#/timeline?...` を条件に戻す。タイムラインのハッシュでない・クエリが無いときは null。 */
-export function parseTimelineHash(hash: string): TimelineConditions | null {
+/**
+ * `#/timeline?...` を条件に戻す。タイムラインのハッシュでない・クエリが無いときは null。
+ * 読めない値は黙って既定に置き換えず、`issue` で理由を返す（呼び出し側は読み込まず、URL も書き換えない）。
+ */
+export function parseTimelineHash(hash: string): ParsedTimelineHash | null {
   const [, query] = hash.split('?', 2)
   if (parseAppHash(hash).tab !== 'timeline' || !query) return null
   const params = new URLSearchParams(query)
+  const issues: string[] = []
+  const range = readRange(params, issues)
+
+  const rawAnchor = params.get('anchor')
+  let anchor: string | null = null
+  if (rawAnchor) {
+    anchor = validIso(rawAnchor)
+    if (!anchor) issues.push('URL の anchor の日時を解釈できません。')
+  }
+
+  const vcenterId = params.get('vcenter_id') ?? ''
+  let safeVcenterId = vcenterId
+  if (vcenterId && !UUID_RE.test(vcenterId)) {
+    issues.push('URL の vcenter_id が UUID の形ではありません。')
+    safeVcenterId = ''
+  }
+
   const minScoreRaw = Number(params.get('min_score'))
   const sources = (params.get('sources') ?? '')
     .split(',')
     .filter((s): s is TimelineSourceKind => (TIMELINE_SOURCE_KINDS as readonly string[]).includes(s))
   return {
-    range: readRange(params),
-    anchor: validIso(params.get('anchor')),
-    vcenterId: params.get('vcenter_id') ?? '',
-    entity: (params.get('entity') ?? '').trim(),
-    minScore:
-      params.get('min_score') !== null && Number.isInteger(minScoreRaw) && minScoreRaw >= 0 && minScoreRaw <= 100
-        ? minScoreRaw
-        : DEFAULT_TIMELINE_MIN_SCORE,
-    sources: sources.length > 0 ? TIMELINE_SOURCE_KINDS.filter((k) => sources.includes(k)) : TIMELINE_SOURCE_KINDS,
+    conditions: {
+      range,
+      anchor,
+      vcenterId: safeVcenterId,
+      entity: (params.get('entity') ?? '').trim(),
+      minScore:
+        params.get('min_score') !== null && Number.isInteger(minScoreRaw) && minScoreRaw >= 0 && minScoreRaw <= 100
+          ? minScoreRaw
+          : DEFAULT_TIMELINE_MIN_SCORE,
+      sources: sources.length > 0 ? TIMELINE_SOURCE_KINDS.filter((k) => sources.includes(k)) : TIMELINE_SOURCE_KINDS,
+    },
+    issue: issues.length > 0 ? issues.join(' ') : null,
   }
 }
 
 /** いまのブラウザ URL のハッシュを条件として読む（`parseTimelineHash(window.location.hash)`）。 */
-export function readTimelineHash(): TimelineConditions | null {
+export function readTimelineHash(): ParsedTimelineHash | null {
   return parseTimelineHash(window.location.hash)
 }
 

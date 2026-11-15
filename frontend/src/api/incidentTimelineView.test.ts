@@ -5,6 +5,7 @@ import { VIEW_RESPONSE_EXAMPLE } from '../test/timelineViewFixtures'
 import {
   postIncidentTimelineView,
   TimelineBusyError,
+  TimelineRateLimitedError,
   TimelineRequestSupersededError,
 } from './incidentTimelineView'
 
@@ -50,13 +51,21 @@ describe('postIncidentTimelineView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('429 も再試行し、再試行でも混み合っていれば TimelineBusyError にする', async () => {
-    fetchMock.mockImplementation(() => Promise.resolve(json({ detail: 'Too many requests' }, 429)))
+  it('503 が再試行でも続けば TimelineBusyError にする', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(json({ detail: 'busy' }, 503)))
     const p = postIncidentTimelineView(BODY)
     const assertion = expect(p).rejects.toBeInstanceOf(TimelineBusyError)
     await vi.advanceTimersByTimeAsync(4000)
     await assertion
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('429 は再試行せず、専用のエラー（レート制限）にする', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(json({ detail: 'Too many requests' }, 429)))
+    const err = await postIncidentTimelineView(BODY).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(TimelineRateLimitedError)
+    expect((err as Error).message).toContain('短時間に操作が多すぎます')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('Retry-After が長くても待つのは 10 秒まで', async () => {
@@ -68,16 +77,32 @@ describe('postIncidentTimelineView', () => {
     await expect(p).resolves.toBeDefined()
   })
 
-  it('待つ間に不要になったら再試行しない', async () => {
-    fetchMock.mockResolvedValue(json({}, 503, { 'Retry-After': '1' }))
-    let superseded = false
-    const p = postIncidentTimelineView(BODY, () => superseded)
+  it('待つ間に中断されたら、待ちきらずに取りやめて再試行しない', async () => {
+    fetchMock.mockResolvedValue(json({}, 503, { 'Retry-After': '10' }))
+    const abort = new AbortController()
+    const p = postIncidentTimelineView(BODY, abort.signal)
     const assertion = expect(p).rejects.toBeInstanceOf(TimelineRequestSupersededError)
     await vi.advanceTimersByTimeAsync(100)
-    superseded = true
-    await vi.advanceTimersByTimeAsync(1500)
+    abort.abort()
     await assertion
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('422 の検証エラー（detail が配列）は「項目: 理由」に整える', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(
+        {
+          detail: [
+            { loc: ['body', 'entity'], msg: 'String should have at most 256 characters', type: 'string_too_long' },
+            { loc: ['body'], msg: 'Value error, time range must not exceed 90 days', type: 'value_error' },
+          ],
+        },
+        422,
+      ),
+    )
+    await expect(postIncidentTimelineView(BODY)).rejects.toThrow(
+      'entity: String should have at most 256 characters / Value error, time range must not exceed 90 days',
+    )
   })
 
   it('422 は再試行せず、サーバの detail をそのまま載せる', async () => {

@@ -121,19 +121,8 @@ const fetchNoStore: RequestInit = { cache: 'no-store' }
 function detailMessage(text: string): string | null {
   try {
     const body: unknown = JSON.parse(text)
-    if (body && typeof body === 'object' && 'detail' in body) {
-      if (typeof body.detail === 'string') return body.detail
-      // FastAPI の検証エラー（422）は ``detail`` が ``[{loc, msg, ...}]`` の配列で返る
-      if (Array.isArray(body.detail)) {
-        const messages = body.detail
-          .map((entry: unknown) =>
-            entry && typeof entry === 'object' && 'msg' in entry && typeof entry.msg === 'string'
-              ? entry.msg
-              : null,
-          )
-          .filter((m: string | null): m is string => m !== null)
-        if (messages.length > 0) return messages.join(' / ')
-      }
+    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
+      return body.detail
     }
   } catch {
     // JSON でなければ本文をそのまま使う
