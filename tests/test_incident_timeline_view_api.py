@@ -719,3 +719,26 @@ async def test_first_signal_carries_vcenter_name_even_when_truncated_away(client
     signal = data["highlights"]["first_signal"]
     assert signal["id"] == f"event:{warn_id}"
     assert signal["vcenter_name"] == "vc-signal"
+
+
+@pytest.mark.asyncio
+async def test_alert_uses_occurred_at_not_the_redelivery_time(client: AsyncClient) -> None:
+    """再送で notified_at が期間の外へずれても、発生時刻（occurred_at）で期間に入り、その時刻に並ぶ。"""
+    async with session_scope() as session:
+        rule = AlertRule(name="r-retry", rule_type="event_score", alert_level="warning", config={})
+        session.add(rule)
+        await session.flush()
+        inside = AlertHistory(
+            rule_id=rule.id, alert_level="warning", state="firing", context_key="X",
+            occurred_at=_at(10), notified_at=_at(200), channel="email",
+        )
+        outside = AlertHistory(
+            rule_id=rule.id, alert_level="warning", state="firing", context_key="Y",
+            occurred_at=_at(-5), notified_at=_at(30), channel="email",
+        )
+        session.add_all([inside, outside])
+        await session.flush()
+        inside_id = inside.id
+    data = await _post(client)
+    assert [i["id"] for i in data["items"]] == [f"alert:{inside_id}"]
+    assert _dt(data["items"][0]["timestamp_utc"]) == _at(10)

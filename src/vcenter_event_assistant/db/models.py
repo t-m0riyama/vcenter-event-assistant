@@ -328,6 +328,16 @@ class AlertHistory(Base):
         default=lambda: datetime.now(timezone.utc),
         index=True,
     )
+    # その状態への遷移が起きた時刻（後から変わらない）。notified_at は配信を試すたびに更新されるため、
+    # 出来事の時刻にはこちらを使う。未指定なら notified_at（それも無ければ現在時刻）を入れる。
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+        default=lambda ctx: (
+            ctx.get_current_parameters().get("notified_at") or datetime.now(timezone.utc)
+        ),
+    )
     channel: Mapped[str] = mapped_column(String(64))  # email / none
     success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

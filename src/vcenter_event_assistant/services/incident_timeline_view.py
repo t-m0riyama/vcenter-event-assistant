@@ -702,7 +702,7 @@ class _ResolvedEntity:
 
 
 async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
-    """``AlertHistory`` を ``notified_at`` で期間に絞り、対象を解決して項目にする。
+    """``AlertHistory`` を ``occurred_at``（状態の遷移時刻。再送で変わらない）で期間に絞り、対象を解決して項目にする。
 
     - ``metric_threshold``: ``context_key``（``{vcenter_id}:{entity_moid}``）から vCenter と moid を取り出し、
       ``MetricSample`` の最新の名前・種類で対象を解決する。旧形式（moid だけ）の key は vCenter が分からず、
@@ -714,7 +714,7 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     stmt = (
         select(
             AlertHistory.id,
-            AlertHistory.notified_at,
+            AlertHistory.occurred_at,
             AlertHistory.alert_level,
             AlertHistory.state,
             AlertHistory.context_key,
@@ -725,10 +725,10 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
         )
         .join(AlertRule, AlertRule.id == AlertHistory.rule_id)
         .where(
-            AlertHistory.notified_at >= scope.from_utc,
-            AlertHistory.notified_at < scope.to_utc,
+            AlertHistory.occurred_at >= scope.from_utc,
+            AlertHistory.occurred_at < scope.to_utc,
         )
-        .order_by(AlertHistory.notified_at, AlertHistory.id)
+        .order_by(AlertHistory.occurred_at, AlertHistory.id)
         .limit(scope.max_rows + 1)
     )
     rows = (await session.execute(stmt)).all()
@@ -802,7 +802,7 @@ def _alert_entry(row: Any, resolved: Mapping[tuple[uuid.UUID, str], _ResolvedEnt
     return TimelineEntry(
         kind="alert",
         source_id=int(row.id),
-        timestamp_utc=to_utc(row.notified_at),
+        timestamp_utc=to_utc(row.occurred_at),
         level=alert_level(row.alert_level),
         title=alert_title(row.rule_name, row.state),
         detail=detail,

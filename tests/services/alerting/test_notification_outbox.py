@@ -189,6 +189,27 @@ async def test_retry_backoff_then_success_uses_same_history(settings, clock):
 
 
 @pytest.mark.asyncio
+async def test_retry_moves_notified_at_but_keeps_occurred_at(settings, clock):
+    """再送で ``notified_at`` は進むが、発生時刻（状態の遷移時刻）は変わらない。"""
+    await queue(settings)
+    async with session_scope() as session:
+        fired_at = (await session.scalars(select(AlertState.fired_at))).one()
+    histories, _ = await rows()
+    assert outbox.as_utc(histories[0].occurred_at) == outbox.as_utc(fired_at)
+    send = AsyncMock(side_effect=[TimeoutError("smtp timeout"), NotificationDeliveryOutcome("email", True)])
+    with (
+        patch.object(outbox, "persist_alert_rule_firing_snapshot", new=AsyncMock()),
+        patch.object(EmailChannel, "notify", new=send),
+    ):
+        await outbox.deliver_notifications(settings)
+        clock[0] += timedelta(seconds=60)
+        await outbox.deliver_notifications(settings)
+    histories, _ = await rows()
+    assert outbox.as_utc(histories[0].notified_at) == clock[0]
+    assert outbox.as_utc(histories[0].occurred_at) == outbox.as_utc(fired_at)
+
+
+@pytest.mark.asyncio
 async def test_deadline_expires_even_before_next_attempt(settings, clock):
     await queue(settings)
     clock[0] += timedelta(hours=24)
