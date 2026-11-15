@@ -35,6 +35,7 @@ export function useMetricsPanelController(
   } | null>(null)
   const seriesFetchEffectGenerationRef = useRef(0)
   const [snapshotChartGuidelineMs, setSnapshotChartGuidelineMs] = useState<number | null>(null)
+  const [chartGuidelineLabel, setChartGuidelineLabel] = useState('スナップショット')
   const replay = resolveMetricsReplay(snapshotReplay)
   const snapshotItem = replay?.source
   const snapshotNonce = replay?.nonce
@@ -92,6 +93,7 @@ export function useMetricsPanelController(
       setChartEventType(replay.chartEventType)
       const markerMs = replay.markerUtc ? parseApiUtcInstantMs(replay.markerUtc) : NaN
       setSnapshotChartGuidelineMs(Number.isFinite(markerMs) ? markerMs : null)
+      setChartGuidelineLabel(replay.markerLabel)
       setChartResetKey((k) => k + 1)
     }
   } else if (!metricKey && metricKeys.length > 0) {
@@ -214,6 +216,7 @@ export function useMetricsPanelController(
     graphRangeForOverlay,
     eventSeriesLoading,
     snapshotChartGuidelineMs,
+    chartGuidelineLabel,
     graphRangeDisplayLabel,
     ...chart,
     ...metricsExport,

@@ -431,6 +431,22 @@ describe('useTimelineViewController', () => {
     expect(harness.calls[1].body.entity).toBe('vm-q')
   })
 
+  it('タブの表示が先に切り替わっても（hashchange の取り込みより前でも）、入口リンクの条件を URL から消さない', async () => {
+    const { rerender, result } = renderHook(({ active }) => useTimelineViewController(onError, { active }), {
+      wrapper,
+      initialProps: { active: true },
+    })
+    await answer(0)
+    rerender({ active: false })
+    // hashchange を配る前に、アプリがタブを表示に切り替える順序
+    window.history.replaceState(null, '', '/#/timeline?range=1h&entity=vm-q')
+    rerender({ active: true })
+    expect(window.location.hash).toContain('entity=vm-q')
+    await answer(1)
+    expect(harness.calls[1].body.entity).toBe('vm-q')
+    expect(result.current.conditions.entity).toBe('vm-q')
+  })
+
   it('期間の入力欄は「適用」まで確定せず、編集していない側の秒を落とさない', async () => {
     window.history.replaceState(
       null,

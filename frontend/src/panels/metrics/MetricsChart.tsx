@@ -58,6 +58,8 @@ type MetricsChartProps = {
   showEventLine: boolean
   leftYAxisLabel: string | undefined
   snapshotChartGuidelineMs: number | null
+  /** 縦線の文言（スナップショット由来か、タイムラインの起点か）。 */
+  chartGuidelineLabel?: string
 }
 
 /** メトリクス Recharts グラフ本体。 */
@@ -84,6 +86,7 @@ export function MetricsChart({
   showEventLine,
   leftYAxisLabel,
   snapshotChartGuidelineMs,
+  chartGuidelineLabel = 'スナップショット',
 }: MetricsChartProps) {
   const metricDot = chartData.length === 1 ? LINE_CHART_SINGLE_DOT : false
   const [chartWrapWidthPx, setChartWrapWidthPx] = useState(0)
@@ -292,7 +295,7 @@ export function MetricsChart({
                 stroke="#c0392b"
                 strokeDasharray="4 3"
                 label={{
-                  value: 'スナップショット',
+                  value: chartGuidelineLabel,
                   position: 'top',
                   fill: chartColors.axisTick,
                   fontSize: 10,

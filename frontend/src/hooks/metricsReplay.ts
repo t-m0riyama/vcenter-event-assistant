@@ -31,6 +31,8 @@ export type ResolvedMetricsReplay = {
   metricKey: string
   chartEventType: string
   markerUtc: string
+  /** 縦線に添える文言。 */
+  markerLabel: string
 }
 
 /** スナップショットと focus を同じ形にそろえる。適用できない（nonce が 1 未満など）ときは null。 */
@@ -49,6 +51,7 @@ export function resolveMetricsReplay(input: MetricsReplayInput | null | undefine
       metricKey: gc?.metric_key ?? '',
       chartEventType: gc?.chart_event_type ?? '',
       markerUtc: String(gc?.marker_timestamp_utc ?? item.timestamp_utc),
+      markerLabel: 'スナップショット',
     }
   }
   const f = input.focus
@@ -61,5 +64,6 @@ export function resolveMetricsReplay(input: MetricsReplayInput | null | undefine
     metricKey: f.metricKey ?? '',
     chartEventType: f.chartEventType ?? '',
     markerUtc: f.markerUtc ?? '',
+    markerLabel: '起点',
   }
 }

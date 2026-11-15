@@ -212,11 +212,6 @@ export function useTimelineViewController(
   const urlIssueRef = useRef(urlIssue)
   urlIssueRef.current = urlIssue
 
-  useEffect(() => {
-    // URL が読めなかったあいだは書き換えない（共有リンクの条件を消さない）
-    if (active && !urlIssue && isTimelineHash()) replaceTimelineHash(conditions)
-  }, [active, conditions, urlIssue])
-
   /** URL の条件を取り込む。条件が変わったら true。 */
   const adoptFromLocation = useCallback((): boolean => {
     if (!isTimelineHash()) return false
@@ -250,9 +245,11 @@ export function useTimelineViewController(
 
   // 別のタブから戻ったとき（読み込みの effect より先に評価して、戻る前に予約済みだったかを見分ける）: URL（他タブからの入口リンク）を取り込む。条件が変わったなら、それで 1 回読み込む。
   // 変わっていないときは、直近 N 時間のときだけ読み直す（固定の期間の結果は古くならない）
+  const skipUrlWriteRef = useRef(false)
   const wasActiveRef = useRef(active)
   useEffect(() => {
     if (active && !wasActiveRef.current) {
+      skipUrlWriteRef.current = true
       const changed = adoptFromLocation()
       const alreadyScheduled =
         scheduledConditionsRef.current === JSON.stringify({ conditions: conditionsRef.current, urlIssue: urlIssueRef.current })
@@ -262,6 +259,17 @@ export function useTimelineViewController(
     }
     wasActiveRef.current = active
   }, [active, adoptFromLocation])
+
+  // 表示に切り替わった直後は、URL に別タブからの入口リンクの条件が来ているかもしれない。
+  // 持っている条件で上書きする前に取り込む（取り込みは上の effect で行い、そのコミットでは書き込まない）
+  useEffect(() => {
+    if (skipUrlWriteRef.current) {
+      skipUrlWriteRef.current = false
+      return
+    }
+    // URL が読めなかったあいだは書き換えない（共有リンクの条件を消さない）
+    if (active && !urlIssue && isTimelineHash()) replaceTimelineHash(conditions)
+  }, [active, conditions, urlIssue])
 
   const loadKey = useMemo(
     () => JSON.stringify({ conditions, urlIssue, reloadNonce }),

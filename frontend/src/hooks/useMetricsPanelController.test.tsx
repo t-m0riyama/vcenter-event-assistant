@@ -64,6 +64,7 @@ describe('useMetricsPanelController', () => {
     expect(result.current.metricKey).toBe('host.memory_usage_pct')
     expect(result.current.chartEventType).toBe('VmPoweredOnEvent')
     expect(result.current.snapshotChartGuidelineMs).toBe(Date.parse(item.timestamp_utc))
+    expect(result.current.chartGuidelineLabel).toBe('スナップショット')
     expect(result.current.rangeParts.fromTime).toBe('02:00')
     const request = new URL(metricRequests().at(-1)!, 'http://test')
     expect(request.searchParams.get('vcenter_id')).toBe(vcenterId)
@@ -103,6 +104,7 @@ describe('useMetricsPanelController', () => {
     expect(result.current.chartEventType).toBe('')
     // Z の無い時刻は UTC として読む
     expect(result.current.snapshotChartGuidelineMs).toBe(Date.parse('2026-05-07T04:30:00Z'))
+    expect(result.current.chartGuidelineLabel).toBe('起点')
     expect(result.current.rangeParts.fromTime).toBe('04:00')
     const request = new URL(metricRequests().at(-1)!, 'http://test')
     expect(request.searchParams.get('vcenter_id')).toBe(vcenterId)

@@ -72,6 +72,7 @@ export function MetricsPanel({
     exportDisabled,
     csvExportOptions,
     snapshotChartGuidelineMs,
+    chartGuidelineLabel,
   } = controller
 
   const {
@@ -185,6 +186,7 @@ export function MetricsPanel({
         showEventLine={showEventLine}
         leftYAxisLabel={leftYAxisLabel}
         snapshotChartGuidelineMs={snapshotChartGuidelineMs}
+        chartGuidelineLabel={chartGuidelineLabel}
       />
     </div>
   )
