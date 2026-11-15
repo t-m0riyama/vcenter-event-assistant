@@ -509,3 +509,213 @@ async def test_returns_503_when_concurrency_limit_is_reached(
     assert r.headers.get("retry-after")
     # 枠が空けば通る
     assert (await client.post(URL, json=_body())).status_code == 200
+
+
+# --- 期間・上限（サービス側の検証） -------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_from_and_to_in_the_same_second_is_400(client: AsyncClient) -> None:
+    r = await client.post(
+        URL, json=_body(**{"from": "2026-03-22T00:00:00.100Z", "to": "2026-03-22T00:00:00.900Z"})
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_too_many_event_rows_is_422(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    vid = await _vcenter()
+    await _events(vid, (1, "A", "h1", 30), (2, "B", "h2", 30), (3, "C", "h3", 30), (4, "Low", "h4", 0))
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
+    r = await client.post(URL, json=_body())
+    assert r.status_code == 422
+    assert "vCenter を指定" in r.json()["detail"]
+
+    # min_score 未満の行は読まないので、上限ちょうどなら通る（黙って切らない）
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 3)
+    data = await _post(client)
+    assert data["total_items"] == 3
+
+
+@pytest.mark.asyncio
+async def test_too_many_alert_rows_is_422(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with session_scope() as session:
+        rule = AlertRule(name="r-many", rule_type="event_score", alert_level="warning", config={})
+        session.add(rule)
+        await session.flush()
+        for minute in (1, 2):
+            session.add(
+                AlertHistory(
+                    rule_id=rule.id, alert_level="warning", state="firing",
+                    context_key="X", notified_at=_at(minute), channel="none",
+                )
+            )
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    assert (await client.post(URL, json=_body())).status_code == 422
+    assert (await client.post(URL, json=_body(sources=["event"]))).status_code == 200
+
+
+# --- 俯瞰と一覧の整合 ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_overview_notable_matches_listed_events_before_merging(client: AsyncClient) -> None:
+    v1 = await _vcenter("vc-a")
+    v2 = await _vcenter("vc-b")
+    await _events(
+        v1,
+        (1, "A", "esx-01", 30),
+        (2, "A", "esx-01", 30),
+        (3, "A", "esx-01", 5),
+        (4, "B", "vm-01", 50),
+    )
+    await _events(v2, (5, "A", "esx-01", 30))
+    data = await _post(client, min_score=10, vcenter_id=str(v1), entity="ESX")
+    listed = sum(i["count"] for i in data["items"] if i["kind"] == "event")
+    assert listed == 2
+    assert sum(b["event_notable"] for b in data["overview"]) == listed
+    assert sum(b["event_total"] for b in data["overview"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_metric_and_log_sources_return_nothing_yet(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _events(vid, (1, "A", "h1", 30))
+    data = await _post(client, sources=["metric", "log"])
+    assert data["items"] == [] and data["total_items"] == 0
+    for b in data["overview"]:
+        assert (b["event_total"], b["event_notable"], b["alert"], b["metric_breach"], b["log_error"]) == (0, 0, 0, 0, 0)
+    assert data["highlights"]["new_event_types"] == []
+
+
+@pytest.mark.asyncio
+async def test_entity_filter_treats_like_wildcards_literally(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _events(vid, (1, "A", "esx_01", 30), (2, "B", "esxA01", 30), (3, "C", "100%-vm", 30))
+    assert [i["entity_name"] for i in (await _post(client, entity="x_0"))["items"]] == ["esx_01"]
+    assert [i["entity_name"] for i in (await _post(client, entity="0%"))["items"]] == ["100%-vm"]
+
+
+# --- アラートの対象と絞り込み -------------------------------------------------------------
+
+
+async def _alert_history(rule_type: str, context_key: str, minute: float, *, name: str) -> int:
+    async with session_scope() as session:
+        rule = AlertRule(name=name, rule_type=rule_type, alert_level="warning", config={})
+        session.add(rule)
+        await session.flush()
+        hist = AlertHistory(
+            rule_id=rule.id, alert_level="warning", state="firing",
+            context_key=context_key, notified_at=_at(minute), channel="none",
+        )
+        session.add(hist)
+        await session.flush()
+        return hist.id
+
+
+async def _metric_sample(vid: uuid.UUID, moid: str, name: str, minute: float) -> None:
+    async with session_scope() as session:
+        session.add(
+            MetricSample(
+                vcenter_id=vid, sampled_at=_at(minute), entity_type="HostSystem",
+                entity_moid=moid, entity_name=name, metric_key="host.cpu.usage_pct", value=90.0,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_metric_alert_uses_latest_sample_and_same_moid_on_other_vcenter_is_not_mixed(
+    client: AsyncClient,
+) -> None:
+    v1 = await _vcenter("vc-m1")
+    v2 = await _vcenter("vc-m2")
+    await _metric_sample(v1, "host-1", "old-name", 1)
+    await _metric_sample(v1, "host-1", "esx-new", 2)
+    await _metric_sample(v2, "host-1", "other-vc-host", 3)
+    await _alert_history("metric_threshold", metric_context_key(v1, "host-1"), 4, name="m-latest")
+    (item,) = (await _post(client))["items"]
+    assert item["entity_name"] == "esx-new"
+    assert item["entity_type"] == "HostSystem"
+    assert item["vcenter_name"] == "vc-m1"
+
+
+@pytest.mark.asyncio
+async def test_unresolved_metric_alert_keeps_only_moid(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _alert_history("metric_threshold", metric_context_key(vid, "host-9"), 4, name="m-unresolved")
+    (item,) = (await _post(client))["items"]
+    assert item["entity_name"] is None
+    assert item["entity_type"] is None
+    assert item["ref"]["entity_moid"] == "host-9"
+    assert item["vcenter_id"] == str(vid)
+
+
+@pytest.mark.asyncio
+async def test_vcenter_filter_keeps_event_score_alerts_and_drops_other_vcenter_metric_alerts(
+    client: AsyncClient,
+) -> None:
+    v1 = await _vcenter("vc-f1")
+    v2 = await _vcenter("vc-f2")
+    await _metric_sample(v1, "host-1", "esx-1", 1)
+    await _metric_sample(v2, "host-2", "esx-2", 1)
+    keep_metric = await _alert_history("metric_threshold", metric_context_key(v1, "host-1"), 2, name="m-v1")
+    await _alert_history("metric_threshold", metric_context_key(v2, "host-2"), 3, name="m-v2")
+    keep_score = await _alert_history("event_score", "SomeEvent", 4, name="s-any")
+    data = await _post(client, vcenter_id=str(v1))
+    assert [i["id"] for i in data["items"]] == [f"alert:{keep_metric}", f"alert:{keep_score}"]
+    assert sum(b["alert"] for b in data["overview"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_entity_filter_keeps_only_alerts_with_matching_entity(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _metric_sample(vid, "host-1", "esx-Alpha", 1)
+    await _metric_sample(vid, "host-2", "esx-beta", 1)
+    keep = await _alert_history("metric_threshold", metric_context_key(vid, "host-1"), 2, name="m-alpha")
+    await _alert_history("metric_threshold", metric_context_key(vid, "host-2"), 3, name="m-beta")
+    await _alert_history("event_score", "SomeEvent", 4, name="s-none")
+    data = await _post(client, entity="alpha")
+    assert [i["id"] for i in data["items"]] == [f"alert:{keep}"]
+    assert sum(b["alert"] for b in data["overview"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_alert_title_names_rule_and_state(client: AsyncClient) -> None:
+    await _alert_history("event_score", "SomeEvent", 4, name="CPU 高負荷")
+    (item,) = (await _post(client))["items"]
+    assert item["title"] == "CPU 高負荷 が発火"
+
+
+@pytest.mark.asyncio
+async def test_alert_and_event_at_same_time_list_alert_first(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _events(vid, (2, "A", "h1", 30))
+    await _alert_history("event_score", "A", 2, name="r-same-time")
+    data = await _post(client)
+    assert [i["kind"] for i in data["items"]] == ["alert", "event"]
+
+
+# --- ハイライトと絞り込み -----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_new_event_types_apply_vcenter_filter_to_previous_period(client: AsyncClient) -> None:
+    v1 = await _vcenter("vc-p1")
+    v2 = await _vcenter("vc-p2")
+    await _events(v2, (-60, "SeenElsewhere", "h9", 30))
+    await _events(v1, (-30, "SeenLowScore", "h1", 0))
+    await _events(v1, (10, "SeenElsewhere", "h1", 30), (20, "SeenLowScore", "h1", 30))
+    new = (await _post(client, vcenter_id=str(v1)))["highlights"]["new_event_types"]
+    # 別の vCenter で出ていた種別は新しい扱い、スコア 0 でも直前に出ていた種別は除く
+    assert [n["event_type"] for n in new] == ["SeenElsewhere"]
+
+
+@pytest.mark.asyncio
+async def test_first_signal_carries_vcenter_name_even_when_truncated_away(client: AsyncClient) -> None:
+    vid = await _vcenter("vc-signal")
+    (warn_id, *_rest) = await _events(vid, (1, "Warn", "h1", 45), (50, "Crit", "h2", 90))
+    data = await _post(client, item_limit=1)
+    assert [i["ref"]["event_type"] for i in data["items"]] == ["Crit"]
+    signal = data["highlights"]["first_signal"]
+    assert signal["id"] == f"event:{warn_id}"
+    assert signal["vcenter_name"] == "vc-signal"
