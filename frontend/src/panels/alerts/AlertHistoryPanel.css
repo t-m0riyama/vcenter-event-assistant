@@ -139,3 +139,9 @@
   margin-top: 0.25rem;
   color: var(--color-text-secondary);
 }
+
+/* 操作の列では先頭の部品として置くので、左の余白は付けない（削除ボタンと左端をそろえる） */
+.col-actions > .timeline-link {
+  margin-inline-start: 0;
+  padding-inline-start: 0;
+}
