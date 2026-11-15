@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -87,6 +87,16 @@ class LogRecord(Base):
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     severity: Mapped[str | None] = mapped_column(String(64), nullable=True)
     message: Mapped[str] = mapped_column(Text)
+
+
+# タイムライン表示（incident_timeline_view._collect_logs）の、error 以上のログを期間で絞る問い合わせ用。
+# 重大度は大文字小文字・前後の空白を無視して比べるので、問い合わせと同じ式（lower(trim(severity))）で
+# 索引にする（SQLite は式が一致しないと使わない）。大半を占める info / warning の行を読まずに済む。
+Index(
+    "ix_log_records_severity_norm_effective",
+    func.lower(func.trim(LogRecord.severity)),
+    LogRecord.effective_at,
+)
 
 
 class EventScoreRule(Base):
