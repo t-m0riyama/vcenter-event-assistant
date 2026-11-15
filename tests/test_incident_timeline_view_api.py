@@ -1581,3 +1581,30 @@ async def test_events_and_alerts_over_the_limit_are_still_422(
     r = await client.post(URL, json=_body())
     assert r.status_code == 422
     assert "vCenter を指定" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_many_critical_logs_do_not_push_metric_intervals_out_of_a_24h_view(client: AsyncClient) -> None:
+    """計測の条件（critical のログが 1 日 871 件。level は error）でも、warning の超過区間は一覧に残る。
+
+    anchor が無いときのログは枠（item_limit 既定 500）の半分までなので、残りの枠にほかの種別が入る。
+    """
+    vid = await _vcenter()
+    await _logs(
+        vid,
+        *[(i * 1440 / 871, "critical", f"crit-{i}", {"host": f"esx{i:03d}.example.com"}) for i in range(871)],
+    )
+    for n in range(60):
+        await _series(vid, f"host-{n}", [(n * 20, 85)], name=f"esx-m{n:02d}")
+    data = await _post(client, **{"to": "2026-03-23T00:00:00Z"})
+    kinds = [i["kind"] for i in data["items"]]
+    assert data["truncated"] is True and data["total_items"] == 871 + 60
+    assert len(kinds) == 500
+    assert kinds.count("metric") == 60
+    assert kinds.count("log") == 440  # ほかの種別で埋まらない分はログで埋める
+    # 超過区間が多いときは、ログは半分まで
+    for n in range(60, 400):
+        await _series(vid, f"host-{n}", [(n * 3.5, 85)], name=f"esx-m{n:03d}")
+    data = await _post(client, **{"to": "2026-03-23T00:00:00Z"})
+    kinds = [i["kind"] for i in data["items"]]
+    assert kinds.count("log") == 250 and kinds.count("metric") == 250

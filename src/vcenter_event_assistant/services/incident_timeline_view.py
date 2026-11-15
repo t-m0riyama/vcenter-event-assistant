@@ -508,6 +508,12 @@ def select_within_limit(
       件数が多くなりがちなログは最も後にする（大量のログで重要な行が押し出されないように）。
 
     それでも同じなら入力の並び（時刻・種別・元 id）で決めるので、結果は常に決定的になる。
+
+    ``anchor`` なしのときは、ログが占められる数を ``limit`` の半分（切り捨て）までにする。ログは件数が
+    多く、level の重いログが大量にあると、ほかの種別が level の順だけで一覧から押し出されるため。
+    上の優先順に見ていき、ログが上限に達したら以降のログを飛ばす。ほかの種別だけでは枠が埋まらない
+    ときは、余った枠の分だけ上限を広げてログで埋める（ログしか無い期間で一覧が半分しか出ないことを避ける）。
+    ``anchor`` ありのときは距離だけで選ぶ（ログの上限は設けない）。
     """
     if len(entries) <= limit:
         return list(entries), False
@@ -523,7 +529,22 @@ def select_within_limit(
             return (-_LEVEL_RANK[e.level], _KIND_ORDER.get(e.kind, len(_KIND_ORDER)), *tail)
         return (_distance_seconds(e, anchor), -_LEVEL_RANK[e.level], *tail)
 
-    chosen = sorted(enumerate(entries), key=priority)[:limit]
+    ranked = sorted(enumerate(entries), key=priority)
+    if anchor is None:
+        others = sum(1 for e in entries if e.kind != "log")
+        log_cap = max(limit // 2, limit - others)
+        chosen: list[tuple[int, TimelineEntry]] = []
+        logs = 0
+        for pair in ranked:
+            if len(chosen) >= limit:
+                break
+            if pair[1].kind == "log":
+                if logs >= log_cap:
+                    continue
+                logs += 1
+            chosen.append(pair)
+    else:
+        chosen = ranked[:limit]
     chosen.sort(key=lambda pair: pair[0])
     return [e for _, e in chosen], True
 
