@@ -82,7 +82,7 @@ OVERVIEW_FIELDS: tuple[str, ...] = ("event_total", "event_notable", "alert", "me
 
 _LEVEL_RANK: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}
 _LEVEL_BY_RANK: dict[int, TimelineLevel] = {0: "info", 1: "warning", 2: "error", 3: "critical"}
-# 同じ時刻の項目の並び（小さいほど先）。PR4 で metric / log を足す。
+# 同じ時刻の項目の並びと、anchor なしの打ち切りで同じ level のときの優先（小さいほど先）。
 _KIND_ORDER: dict[str, int] = {"alert": 0, "event": 1, "metric": 2, "log": 3}
 
 _ERROR_SEVERITIES = frozenset({"error", "critical", "fatal"})
@@ -321,7 +321,7 @@ def entity_matches(entity_name: str | None, needle: str) -> bool:
 
 
 def entry_sort_key(entry: TimelineEntry) -> tuple[datetime, int, int]:
-    """時刻の昇順、同時刻は alert → event の順、その中は元レコードの id の昇順。"""
+    """時刻の昇順、同時刻は alert → event → metric → log の順、その中は元レコードの id の昇順。"""
     return (entry.timestamp_utc, _KIND_ORDER.get(entry.kind, len(_KIND_ORDER)), entry.source_id)
 
 
@@ -389,8 +389,9 @@ def select_within_limit(
 
     - ``anchor`` あり: ``anchor`` から区間 ``[timestamp_utc, end_utc or timestamp_utc]`` までの距離が
       小さい順（``anchor`` が区間の中なら 0）→ level が重い順 → score が高い順 → 新しい順
-    - ``anchor`` なし: level が重い順 → 同じ level ならアラートを先（人が設定した信号のため）
-      → score が高い順 → 新しい順
+    - ``anchor`` なし: level が重い順 → 同じ level なら種別の順（``_KIND_ORDER``: アラート → イベント →
+      メトリクス → ログ）→ score が高い順 → 新しい順。アラートは人が設定した信号なので最も先にし、
+      件数が多くなりがちなログは最も後にする（大量のログで重要な行が押し出されないように）。
 
     それでも同じなら入力の並び（時刻・種別・元 id）で決めるので、結果は常に決定的になる。
     """
@@ -405,7 +406,7 @@ def select_within_limit(
             idx,
         )
         if anchor is None:
-            return (-_LEVEL_RANK[e.level], 0 if e.kind == "alert" else 1, *tail)
+            return (-_LEVEL_RANK[e.level], _KIND_ORDER.get(e.kind, len(_KIND_ORDER)), *tail)
         return (_distance_seconds(e, anchor), -_LEVEL_RANK[e.level], *tail)
 
     chosen = sorted(enumerate(entries), key=priority)[:limit]

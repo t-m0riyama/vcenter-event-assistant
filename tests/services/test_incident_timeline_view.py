@@ -440,3 +440,50 @@ def test_truncation_without_anchor_keeps_alert_before_event_of_same_level() -> N
     warn_alert = _alert(4, 4, level="warning")
     kept, _ = select_within_limit(sort_entries([heavier, warn_alert]), 1, None)
     assert [k.item_id for k in kept] == ["event:3"]
+
+
+# --- PR4: 種別の優先（メトリクス・ログ） --------------------------------------------------
+
+
+def _bare(kind: str, source_id: int, minute: float, level: str = "error") -> TimelineEntry:
+    return TimelineEntry(
+        kind=kind,  # type: ignore[arg-type]
+        source_id=source_id,
+        timestamp_utc=_at(minute),
+        level=level,  # type: ignore[arg-type]
+        title=f"{kind}-{source_id}",
+    )
+
+
+def test_truncation_without_anchor_orders_kinds_alert_event_metric_log() -> None:
+    """同じ level なら、アラート → イベント → メトリクス → ログの順に残す（時刻やスコアより先）。"""
+    # ログを最も新しくしても、メトリクスより後に回る（新しい順の規則より種別が先）
+    log = _bare("log", 1, 8)
+    metric = _bare("metric", 2, 2)
+    event = replace(_ev(3, 3, "A", score=0, level="error"))
+    alert = _alert(4, 0, level="error")
+    entries = sort_entries([log, metric, event, alert])
+    for limit, expected in (
+        (1, ["alert:4"]),
+        (2, ["alert:4", "event:3"]),
+        (3, ["alert:4", "metric:2", "event:3"]),
+    ):
+        kept, _ = select_within_limit(entries, limit, None)
+        assert sorted(k.item_id for k in kept) == sorted(expected)
+    # level が重いログは、軽いアラートより先
+    heavy_log = _bare("log", 9, 9, level="critical")
+    kept, _ = select_within_limit(sort_entries([alert, heavy_log]), 1, None)
+    assert [k.item_id for k in kept] == ["log:9"]
+
+
+def test_truncation_with_anchor_uses_distance_before_kind() -> None:
+    """anchor があるときは種別より距離。区間の中に anchor があるメトリクスは距離 0。"""
+    alert = _alert(1, 0, level="error")
+    metric = replace(_bare("metric", 2, 5), end_utc=_at(15))
+    kept, _ = select_within_limit(sort_entries([alert, metric]), 1, _at(10))
+    assert [k.item_id for k in kept] == ["metric:2"]
+
+
+def test_same_timestamp_orders_alert_event_metric_log() -> None:
+    entries = sort_entries([_bare("log", 1, 1), _bare("metric", 2, 1), _ev(3, 1), _alert(4, 1)])
+    assert [e.kind for e in entries] == ["alert", "event", "metric", "log"]
