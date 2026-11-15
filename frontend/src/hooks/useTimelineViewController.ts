@@ -408,6 +408,8 @@ export function useTimelineViewController(
 
   const setVcenterId = useCallback((vcenterId: string) => patch({ vcenterId }), [patch])
   const setMinScore = useCallback((minScore: number) => patch({ minScore }), [patch])
+  const setCpuThreshold = useCallback((cpuThresholdPct: number) => patch({ cpuThresholdPct }), [patch])
+  const setMemoryThreshold = useCallback((memoryThresholdPct: number) => patch({ memoryThresholdPct }), [patch])
   const setAnchor = useCallback(
     (anchor: string | null) => {
       // 行の時刻は Z の無い表記のことがあるので、UTC の ISO 8601 にそろえて持つ
@@ -477,6 +479,8 @@ export function useTimelineViewController(
     widen,
     setVcenterId,
     setMinScore,
+    setCpuThreshold,
+    setMemoryThreshold,
     setAnchor,
     toggleSource,
     filterByEntity,

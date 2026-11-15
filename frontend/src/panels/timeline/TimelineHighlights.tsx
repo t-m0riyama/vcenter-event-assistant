@@ -12,6 +12,8 @@ type Props = {
 }
 
 function firstSignalLabel(item: TimelineViewItem): string {
+  // ログの行はタイトルが「ホスト名 ログの種類」で、対象名が重なる。重ねて出さない
+  if (item.entity_name && item.title.includes(item.entity_name)) return item.title
   return [item.entity_name, item.title].filter(Boolean).join(' / ')
 }
 

@@ -61,6 +61,57 @@ export const VIEW_RESPONSE_EXAMPLE = {
   },
 }
 
+/** メトリクスの超過区間の行（契約の追加後の形: ref に構造化した値が入る）。 */
+export const METRIC_ITEM_EXAMPLE = {
+  id: 'metric:123456',
+  kind: 'metric',
+  timestamp_utc: '2026-03-22T00:05:00Z',
+  end_utc: '2026-03-22T00:15:00Z',
+  level: 'warning',
+  title: 'CPU 使用率 が閾値（80%）を超過',
+  detail: 'ピーク 92.5%、サンプル 3 件',
+  entity_name: 'esx01',
+  entity_type: 'HostSystem',
+  vcenter_id: '11111111-1111-4111-8111-111111111111',
+  vcenter_name: 'vc-1',
+  score: null,
+  count: 1,
+  ref: {
+    metric_key: 'host.cpu.usage_pct',
+    entity_moid: 'host-1',
+    threshold_pct: 80,
+    peak_value: 92.5,
+    peak_at_utc: '2026-03-22T00:10:00Z',
+    sample_count: 3,
+    continues_from_before: false,
+  },
+}
+
+/** 構造化した値（ref の追加項目）が無い、古いサーバ・追加前のバックエンドの行。 */
+export const METRIC_ITEM_LEGACY_EXAMPLE = {
+  ...METRIC_ITEM_EXAMPLE,
+  id: 'metric:123457',
+  ref: { metric_key: 'host.cpu.usage_pct', entity_moid: 'host-1' },
+}
+
+/** エラーログの行。同じ出どころの連続が 1 行にまとまり、count に件数が入る。 */
+export const LOG_ITEM_EXAMPLE = {
+  id: 'log:789',
+  kind: 'log',
+  timestamp_utc: '2026-03-22T01:00:00Z',
+  end_utc: '2026-03-22T01:01:00Z',
+  level: 'warning',
+  title: 'esx01.example.com vmkernel',
+  detail: 'vmhba0: timeout\n  retrying command',
+  entity_name: 'esx01.example.com',
+  entity_type: 'host',
+  vcenter_id: '11111111-1111-4111-8111-111111111111',
+  vcenter_name: 'vc-1',
+  score: null,
+  count: 2,
+  ref: { log_id: 789 },
+}
+
 export function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,

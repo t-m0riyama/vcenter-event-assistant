@@ -1,6 +1,7 @@
 import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
 import type {
   IncidentTimelineViewRequest,
+  TimelineOmittedSource,
   TimelineOverviewBucket,
   TimelineViewItem,
 } from '../../api/schemas'
@@ -119,6 +120,8 @@ export function buildViewRequest(conditions: TimelineConditions, range: Resolved
     to: range.to,
     min_score: conditions.minScore,
     sources: [...conditions.sources],
+    metric_threshold_cpu_pct: conditions.cpuThresholdPct,
+    metric_threshold_memory_pct: conditions.memoryThresholdPct,
   }
   if (conditions.anchor) body.anchor = conditions.anchor
   if (conditions.vcenterId) body.vcenter_id = conditions.vcenterId
@@ -147,12 +150,12 @@ export function correlationHashForItem(tab: 'events' | 'logs', item: TimelineVie
 export const METRICS_FOCUS_HALF_WIDTH_MS = 30 * 60_000
 
 /**
- * 行の時刻の前後 30 分と vCenter、目印（行の最初の時刻）をグラフのタブへ渡す条件。metric のアラートは指標、
- * イベントは種別も渡す。
- * vCenter が無い行・時刻が読めない行は null。まとめた行は `end_utc` の 30 分後まで。
+ * 行の時刻の前後 30 分と vCenter、目印（行の最初の時刻）をグラフのタブへ渡す条件。metric のアラートと
+ * メトリクスの超過区間は指標、イベントは種別も渡す。超過区間の目印はピークの時刻（無ければ区間の開始）。
+ * vCenter が無い行・時刻が読めない行・指標を持たないログの行は null。まとめた行・区間は `end_utc` の 30 分後まで。
  */
 export function metricsFocusForItem(item: TimelineViewItem): MetricsFocus | null {
-  if (!item.vcenter_id) return null
+  if (!item.vcenter_id || item.kind === 'log') return null
   const t = parseApiUtcInstantMs(item.timestamp_utc)
   if (!Number.isFinite(t)) return null
   const endRaw = item.end_utc ? parseApiUtcInstantMs(item.end_utc) : t
@@ -164,7 +167,11 @@ export function metricsFocusForItem(item: TimelineViewItem): MetricsFocus | null
     markerUtc: iso(t),
   }
   // metric のアラートはその指標を、イベントはその種別の件数の重ね表示を渡す
-  if (item.kind === 'alert' && item.ref.metric_key) focus.metricKey = item.ref.metric_key
+  if ((item.kind === 'alert' || item.kind === 'metric') && item.ref.metric_key) focus.metricKey = item.ref.metric_key
+  if (item.kind === 'metric' && item.ref.peak_at_utc) {
+    const peak = parseApiUtcInstantMs(item.ref.peak_at_utc)
+    if (Number.isFinite(peak)) focus.markerUtc = iso(peak)
+  }
   if (item.kind === 'event' && item.ref.event_type) focus.chartEventType = item.ref.event_type
   return focus
 }
@@ -178,4 +185,52 @@ export function bucketRangeLabel(
 ): string {
   const r = bucketRange(bucketStartUtc, bucketSeconds, toUtc)
   return `${formatIsoInTimeZone(r.from, timeZone)} ～ ${formatIsoInTimeZone(r.to, timeZone)}`
+}
+
+/** 継続時間を「10 分」「1 時間 5 分」「1 日 3 時間」のように書く。負の値は 0 秒。 */
+export function formatDurationMs(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const days = Math.floor(total / 86_400)
+  const hours = Math.floor((total % 86_400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  const parts: string[] = []
+  if (days > 0) {
+    parts.push(`${days} 日`)
+    if (hours > 0) parts.push(`${hours} 時間`)
+  } else if (hours > 0) {
+    parts.push(`${hours} 時間`)
+    if (minutes > 0) parts.push(`${minutes} 分`)
+  } else if (minutes > 0) {
+    parts.push(`${minutes} 分`)
+  } else {
+    parts.push(`${seconds} 秒`)
+  }
+  return parts.join(' ')
+}
+
+/** メトリクスの超過区間の長さ（ミリ秒）。単発（`end_utc` が無い）は null。 */
+export function intervalDurationMs(item: Pick<TimelineViewItem, 'timestamp_utc' | 'end_utc'>): number | null {
+  if (!item.end_utc) return null
+  const start = parseApiUtcInstantMs(item.timestamp_utc)
+  const end = parseApiUtcInstantMs(item.end_utc)
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null
+}
+
+/** メトリクスを省いたか。省いたときの `metric_breach` は当てにならないので、俯瞰に系列を出さない。 */
+export function isMetricOmitted(omitted: readonly TimelineOmittedSource[]): boolean {
+  return omitted.some((o) => o.source === 'metric')
+}
+
+/** 件数が多すぎて一覧から省いた種別の知らせ（1 種別 1 文）。 */
+export function omittedSourceMessages(omitted: readonly TimelineOmittedSource[]): string[] {
+  return omitted.map((o) => {
+    if (o.source === 'log') {
+      return 'ログは件数が多すぎるため、一覧から省いています（件数は上のグラフに出ています）。期間を短くするか、対象を絞ってください。'
+    }
+    if (o.source === 'metric') {
+      return 'メトリクスの超過区間は件数が多すぎるため、一覧から省いています（グラフにも出ていません）。期間を短くするか、対象を絞ってください。'
+    }
+    return `${o.source} は件数が多すぎるため、一覧から省いています。期間を短くするか、対象を絞ってください。`
+  })
 }

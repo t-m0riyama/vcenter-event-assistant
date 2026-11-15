@@ -21,6 +21,13 @@ export const timelineItemRefSchema = z.object({
   metric_key: z.string().nullable().optional(),
   entity_moid: z.string().nullable().optional(),
   log_id: z.number().nullable().optional(),
+  // 以下はメトリクスの超過区間の行だけに入る構造化した値（古いサーバには無いので任意）
+  threshold_pct: z.number().nullable().optional(),
+  peak_value: z.number().nullable().optional(),
+  peak_at_utc: z.string().nullable().optional(),
+  sample_count: z.number().int().nullable().optional(),
+  /** 期間の開始前から超過が続いているか。 */
+  continues_from_before: z.boolean().nullable().optional(),
 })
 export type TimelineItemRef = z.infer<typeof timelineItemRefSchema>
 
@@ -77,6 +84,13 @@ export const timelineHighlightsSchema = z.object({
 })
 export type TimelineHighlights = z.infer<typeof timelineHighlightsSchema>
 
+/** 件数が多すぎて、一覧の行を省いた種別。`overview` の `log_error` は省いても入る。 */
+export const timelineOmittedSourceSchema = z.object({
+  source: z.string(),
+  reason: z.string(),
+})
+export type TimelineOmittedSource = z.infer<typeof timelineOmittedSourceSchema>
+
 export const incidentTimelineViewResponseSchema = z.object({
   from_utc: z.string(),
   to_utc: z.string(),
@@ -87,6 +101,7 @@ export const incidentTimelineViewResponseSchema = z.object({
   truncated: z.boolean(),
   total_items: z.number().int().min(0),
   highlights: timelineHighlightsSchema,
+  omitted_sources: z.array(timelineOmittedSourceSchema).default([]),
 })
 export type IncidentTimelineViewResponse = z.infer<typeof incidentTimelineViewResponseSchema>
 
@@ -99,5 +114,7 @@ export type IncidentTimelineViewRequest = {
   entity?: string
   min_score?: number
   sources?: TimelineSource[]
+  metric_threshold_cpu_pct?: number
+  metric_threshold_memory_pct?: number
   item_limit?: number
 }
