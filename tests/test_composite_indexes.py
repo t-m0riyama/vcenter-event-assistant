@@ -163,7 +163,7 @@ async def test_alert_history_notified_at_index_matches_model() -> None:
 
 @pytest.mark.asyncio
 async def test_alert_history_range_query_uses_notified_at_index() -> None:
-    """タイムライン表示と同じ形（期間で絞り notified_at, id の順）のクエリがインデックスを使う。"""
+    """notified_at の範囲で絞り notified_at, id の順に並べるクエリがインデックスを使う（保持期間の削除・一覧）。"""
     await reset_db()
     await init_db()
     now = datetime.now(timezone.utc)

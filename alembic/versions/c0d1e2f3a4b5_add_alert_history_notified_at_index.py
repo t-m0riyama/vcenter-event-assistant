@@ -4,8 +4,8 @@ Revision ID: c0d1e2f3a4b5
 Revises: b9c0d1e2f3a4
 Create Date: 2026-11-15
 
-タイムライン表示（期間での絞り込み）、通知履歴の一覧（降順）、保持期間の削除が
-notified_at の範囲・順序で引くのに、インデックスが無く全件を走査していた。
+通知履歴の一覧（降順）と保持期間の削除が notified_at の範囲・順序で引くのに、インデックスが無く
+全件を走査していた。タイムラインの絞り込みは後続の d1e2f3a4b5c6 で足す occurred_at を使う。
 """
 
 from __future__ import annotations

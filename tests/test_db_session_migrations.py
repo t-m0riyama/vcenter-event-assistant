@@ -184,7 +184,11 @@ async def test_alert_history_occurred_at_is_backfilled_from_notified_at(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``occurred_at`` 追加前の行は ``notified_at`` で埋まり、列は NOT NULL でインデックスが付く。"""
+    """``occurred_at`` 追加前の行は ``notified_at`` で埋まり、列は NOT NULL でインデックスが付く。
+
+    alert_notification_outbox は alert_history を ON DELETE CASCADE で参照するので、SQLite で表を
+    作り直すと配信待ちの通知が消える。upgrade・downgrade のどちらでも残ることを確かめる。
+    """
     from alembic import command
 
     from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
@@ -217,6 +221,15 @@ async def test_alert_history_occurred_at_is_backfilled_from_notified_at(
                 "(1, 1, 'warning', 'firing', 'X', '2026-03-22 01:02:03.000000', 'none', 'skipped')"
             )
         )
+        # 配信待ちの通知。alert_history を作り直すと ON DELETE CASCADE で消えるおそれがある
+        await conn.execute(
+            text(
+                "INSERT INTO alert_notification_outbox (history_id, subject, body, from_address, "
+                "to_address, message_id, notification, created_at, expires_at, next_attempt_at) VALUES "
+                "(1, 's', 'b', 'f@example.com', 't@example.com', '<m@x>', '{}', "
+                "'2026-03-22 01:02:03', '2026-03-23 01:02:03', '2026-03-22 01:02:03')"
+            )
+        )
     await init_db()
 
     async with engine.connect() as conn:
@@ -230,8 +243,24 @@ async def test_alert_history_occurred_at_is_backfilled_from_notified_at(
 
         cols, idx = await conn.run_sync(sync_inspect)
     assert str(occurred).startswith("2026-03-22 01:02:03")
+    async with engine.connect() as conn:
+        pending = (await conn.execute(text("SELECT count(*) FROM alert_notification_outbox"))).scalar_one()
+    assert pending == 1
     assert cols["occurred_at"]["nullable"] is False
     assert idx["ix_alert_history_occurred_at"] == ["occurred_at"]
     assert idx["ix_alert_history_notified_at"] == ["notified_at"]
     assert await get_applied_alembic_revision(engine) == get_alembic_head()
+
+    # downgrade でも表を作り直さない（配信待ちの通知が残り、列だけが消える）
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda c: _run_with_connection(c, cfg, lambda cc: command.downgrade(cc, "c0d1e2f3a4b5"))
+        )
+    async with engine.connect() as conn:
+        pending = (await conn.execute(text("SELECT count(*) FROM alert_notification_outbox"))).scalar_one()
+        cols_after = await conn.run_sync(
+            lambda c: {col["name"] for col in inspect(c).get_columns("alert_history")}
+        )
+    assert pending == 1
+    assert "occurred_at" not in cols_after
     await reset_db()
