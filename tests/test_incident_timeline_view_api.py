@@ -1205,20 +1205,6 @@ async def test_metric_interval_is_first_signal_and_sorts_after_event_at_same_tim
 
 
 @pytest.mark.asyncio
-async def test_too_many_metric_intervals_is_422(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    vid = await _vcenter()
-    await _series(vid, "host-1", [(0, 90), (5, 10), (10, 90)])
-    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
-    r = await client.post(URL, json=_body(sources=["metric"]))
-    assert r.status_code == 422
-    detail = r.json()["detail"]
-    assert "閾値を上げる" in detail and "メトリクスを外す" in detail
-    # 区間の数で数える（サンプル数ではない）
-    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
-    assert len(_metrics(await _post(client, sources=["metric"]))) == 2
-
-
-@pytest.mark.asyncio
 async def test_unrequested_sources_issue_no_queries(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1478,20 +1464,6 @@ async def test_log_with_error_is_first_signal(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_too_many_log_rows_is_422(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    vid = await _vcenter()
-    await _logs(vid, (1, "error", "a"), (2, "error", "b"), (3, "info", "not counted"))
-    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
-    r = await client.post(URL, json=_body(sources=["log"]))
-    assert r.status_code == 422
-    detail = r.json()["detail"]
-    assert "ログ" in detail and "ホスト名" in detail and "ログを外す" in detail
-    # error 未満の行は数えない
-    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
-    assert len(_log_items(await _post(client, sources=["log"]))) == 1
-
-
-@pytest.mark.asyncio
 async def test_log_source_only_issues_log_queries(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1522,3 +1494,90 @@ def test_disk_and_network_thresholds_are_documented_as_unused() -> None:
     for name in ("metric_threshold_disk_pct", "metric_threshold_network_pct"):
         description = fields[name].description or ""
         assert "使わない" in description and "KB/s" in description
+
+
+# --- 行数の上限: ログ・メトリクスは省いて返す ----------------------------------------------
+#
+# イベントとアラートは上限を超えると 422。ログとメトリクスの超過区間は、その種別の行だけを省き、
+# omitted_sources で伝える（ほかの種別は返す）。
+
+
+async def _one_firing_alert(minute: float = 3) -> int:
+    return await _alert_history("event_score", "SomeEvent", minute, name=f"r-omit-{minute}")
+
+
+@pytest.mark.asyncio
+async def test_too_many_log_rows_omits_only_logs(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    vid = await _vcenter()
+    await _logs(vid, (1, "error", "a"), (2, "critical", "b", {"log_kind": "k2"}), (3, "info", "not counted"))
+    await _events(vid, (4, "A", "h1", 50))
+    alert_id = await _one_firing_alert(5)
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    data = await _post(client)
+    assert data["omitted_sources"] == [{"source": "log", "reason": "too_many_rows"}]
+    assert [i["kind"] for i in data["items"]] == ["event", "alert"]
+    assert data["items"][1]["id"] == f"alert:{alert_id}"
+    # 俯瞰の件数（GROUP BY）はそのまま返す
+    assert sum(b["log_error"] for b in data["overview"]) == 2
+    # ハイライトは省いた種別を除いて求める（ログが最も早いが first_signal にならない）
+    assert data["highlights"]["first_signal"]["kind"] == "event"
+    assert all(t["entity_name"] != "esx01.example.com" for t in data["highlights"]["top_entities"])
+    assert data["total_items"] == 2
+    # error 未満の行は数えない（上限ちょうどなら省かない）
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
+    data = await _post(client)
+    assert data["omitted_sources"] == []
+    assert len(_log_items(data)) == 2
+
+
+@pytest.mark.asyncio
+async def test_too_many_metric_intervals_omits_only_metrics(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 90), (5, 10), (10, 90)])
+    await _events(vid, (4, "A", "h1", 50))
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    data = await _post(client)
+    assert data["omitted_sources"] == [{"source": "metric", "reason": "too_many_rows"}]
+    assert [i["kind"] for i in data["items"]] == ["event"]
+    # 区間を作れないので俯瞰も数えられない（0 ではなく「分からない」ことは omitted_sources で伝える）
+    assert sum(b["metric_breach"] for b in data["overview"]) == 0
+    # 区間の数で数える（サンプル数ではない）
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
+    data = await _post(client)
+    assert data["omitted_sources"] == [] and len(_metrics(data)) == 2
+
+
+@pytest.mark.asyncio
+async def test_both_logs_and_metrics_over_the_limit_are_omitted(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(0, 90), (5, 10), (10, 90)])
+    await _logs(vid, (1, "error", "a"), (2, "error", "b", {"log_kind": "k2"}))
+    await _one_firing_alert()
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    data = await _post(client)
+    assert data["omitted_sources"] == [
+        {"source": "metric", "reason": "too_many_rows"},
+        {"source": "log", "reason": "too_many_rows"},
+    ]
+    assert [i["kind"] for i in data["items"]] == ["alert"]
+    # sources に無い種別は omitted_sources に入らない
+    data = await _post(client, sources=["alert", "log"])
+    assert data["omitted_sources"] == [{"source": "log", "reason": "too_many_rows"}]
+    data = await _post(client, sources=["alert"])
+    assert data["omitted_sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_events_and_alerts_over_the_limit_are_still_422(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = await _vcenter()
+    await _events(vid, (1, "A", "h1", 30), (2, "B", "h2", 30))
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    r = await client.post(URL, json=_body())
+    assert r.status_code == 422
+    assert "vCenter を指定" in r.json()["detail"]

@@ -161,6 +161,15 @@ class IncidentTimelineHighlights(BaseModel):
     new_event_types: list[IncidentTimelineNewEventType] = Field(default_factory=list)
 
 
+class IncidentTimelineOmittedSource(BaseModel):
+    """一覧から省いた種別と、その理由。"""
+
+    source: Literal["metric", "log"]
+    reason: Literal["too_many_rows"] = Field(
+        description="too_many_rows: 行数が上限（CONTEXT_AGGREGATION_MAX_ROWS）を超えた"
+    )
+
+
 class IncidentTimelineViewResponse(BaseModel):
     from_utc: datetime
     to_utc: datetime
@@ -171,3 +180,11 @@ class IncidentTimelineViewResponse(BaseModel):
     truncated: bool
     total_items: int = Field(description="打ち切り前の件数")
     highlights: IncidentTimelineHighlights
+    omitted_sources: list[IncidentTimelineOmittedSource] = Field(
+        default_factory=list,
+        description=(
+            "行数が上限を超えたため、一覧（items）とハイライトから省いた種別（metric / log）。"
+            "log の俯瞰の件数（log_error）は返す。metric の俯瞰（metric_breach）は区間を作れないので 0 になり、"
+            "実際の件数は分からない。省いていなければ空の配列。"
+        ),
+    )

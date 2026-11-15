@@ -29,6 +29,7 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineHighlights,
     IncidentTimelineItemRef,
     IncidentTimelineNewEventType,
+    IncidentTimelineOmittedSource,
     IncidentTimelineOverviewBucket,
     IncidentTimelineTopEntity,
     IncidentTimelineViewItem,
@@ -89,8 +90,6 @@ _TOP_ENTITIES_LIMIT = 5
 _NEW_EVENT_TYPES_LIMIT = 10
 # アラート側で行数の上限を超えたことを示す AggregationLimitExceeded.what
 _ALERTS_LIMIT = "incident_timeline_view.alerts"
-_METRICS_LIMIT = "incident_timeline_view.metrics"
-_LOGS_LIMIT = "incident_timeline_view.logs"
 
 # error 以上とみなすログの重大度（小文字にし、前後の空白を除いて比べる）と、その level。
 #
@@ -239,6 +238,8 @@ class _Collected:
     entries: list[TimelineEntry] = field(default_factory=list)
     # OVERVIEW_FIELDS のいずれか -> バケットごとの件数（長さは bucket_count）
     overview: dict[str, list[int]] = field(default_factory=dict)
+    # 行数が上限を超えたため、この種別の行を省いたか（メトリクスとログだけ。イベントとアラートは 422）
+    omitted: bool = False
 
 
 # --- 純粋関数: バケット -----------------------------------------------------------------
@@ -692,18 +693,6 @@ def _limit_message(exc: AggregationLimitExceeded) -> str:
     if exc.what == _ALERTS_LIMIT:
         # 対象（entity）の絞り込みは対象を解決した後に Python 側でかけるので、行数は減らない。
         return "通知履歴が多すぎて集計できません。期間を短くしてください。"
-    if exc.what == _LOGS_LIMIT:
-        # vCenter と対象（ホスト名）の絞り込みは SQL で効くので、読む行数が減る。
-        return (
-            "エラーログが多すぎて集計できません。期間を短くする、vCenter や対象（ホスト名）で"
-            "絞り込む、または種別からログを外すのいずれかをお試しください。"
-        )
-    if exc.what == _METRICS_LIMIT:
-        # 数えるのは超過区間の数。vCenter と対象の絞り込み、閾値はどれも SQL で効くので区間の数が減る。
-        return (
-            "メトリクスの超過区間が多すぎて集計できません。期間を短くする、閾値を上げる、"
-            "vCenter や対象で絞り込む、または種別からメトリクスを外すのいずれかをお試しください。"
-        )
     return (
         "対象の出来事が多すぎて集計できません。"
         "期間を短くするか、vCenter を指定して絞り込んでください。"
@@ -743,6 +732,7 @@ async def _build_in_slot(
 
     entries: list[TimelineEntry] = []
     overview_counts: dict[str, list[int]] = {}
+    omitted: list[IncidentTimelineOmittedSource] = []
     requested = set(body.sources)
     for source, collector in _COLLECTORS.items():
         if source not in requested:
@@ -750,6 +740,8 @@ async def _build_in_slot(
         collected = await collector(session, scope)
         entries.extend(collected.entries)
         overview_counts.update(collected.overview)
+        if collected.omitted:
+            omitted.append(IncidentTimelineOmittedSource(source=source, reason="too_many_rows"))
 
     new_types: list[IncidentTimelineNewEventType] = []
     stats = summarize_event_types(entries)
@@ -784,6 +776,7 @@ async def _build_in_slot(
             top_entities=top_entities(merged),
             new_event_types=new_types,
         ),
+        omitted_sources=omitted,
     )
 
 
@@ -1072,7 +1065,8 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     すべて DB の window 関数で行い（gaps-and-islands）、受け取るのは区間ごとに 1 行だけにする。
     サンプルを 1 行ずつ読まないので、超過が長く続いても行数は増えない（Issue #301 と同じ考え方）。
     上位 N 台に絞らない（``build_chat_period_metrics`` の上位 15 台の作りは使わない）ので、
-    超過したホストはすべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当てる。
+    超過したホストはすべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当て、超えたら
+    422 にせず超過区間の行を省く（``omitted``）。
 
     期間の開始前から続く超過: サンプルは ``from - metric_max_gap_seconds`` から読み、期間内の最初のサンプルの
     前のサンプル（期間の外）が閾値以上でつながっていれば「期間の開始前から継続」とする。開始・ピーク・件数は
@@ -1192,7 +1186,9 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     ).limit(scope.max_rows + 1)
     rows = (await session.execute(stmt)).all()
     if len(rows) > scope.max_rows:
-        raise AggregationLimitExceeded(_METRICS_LIMIT, scope.max_rows)
+        # 422 にせず、超過区間の行だけを省く（イベントやアラートまで見えなくしない）。区間を作れないので
+        # 俯瞰も数えられない。画面は omitted_sources で 0 と「分からない」を区別する。
+        return _Collected(overview={"metric_breach": [0] * scope.bucket_count}, omitted=True)
 
     entries: list[TimelineEntry] = []
     for row in rows:
@@ -1263,6 +1259,8 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
     同じ ``(vCenter, host, log_kind, level)`` が隣り合うときは ``merge_consecutive`` で 1 行にまとめる
     （間隔の上限もイベントと同じ）。メッセージの内容はまとめの条件に入れない（入れるには一覧の SELECT で
     全行の message を読む必要があるため）。message は読まず、返す行の分だけ ``_log_messages`` で後から引く。
+    行数が上限（``context_aggregation_max_rows``）を超えたら、422 にせずログの行を省く（``omitted``）。
+    俯瞰の ``log_error`` は GROUP BY の件数なので、省いたときも返す。
 
     ホスト名は正規化しない（FQDN と短い名前を同じホストとみなさない）。``host`` は接続先の表記
     （IP のこともある）で、イベントやメトリクスの対象名と突き合わせる確かな手がかりが無く、別のホストを
@@ -1303,7 +1301,8 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
     )
     rows = (await session.execute(list_stmt)).all()
     if len(rows) > scope.max_rows:
-        raise AggregationLimitExceeded(_LOGS_LIMIT, scope.max_rows)
+        # 422 にせず、ログの行だけを省く（イベントやアラートまで見えなくしない）。俯瞰の件数は返す。
+        return _Collected(overview={"log_error": counts}, omitted=True)
 
     entries: list[TimelineEntry] = []
     for row in rows:
