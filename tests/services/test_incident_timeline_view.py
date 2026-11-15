@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -59,20 +60,30 @@ def _ev(
         entity_type=entity_type,
         vcenter_id=vcenter_id,
         score=score,
-        merge_key=("event", event_type, entity, vcenter_id),
+        merge_key=("event", event_type, entity, vcenter_id, level),
         ref={"event_id": source_id, "event_type": event_type},
     )
 
 
-def _alert(source_id: int, minute: float, *, level: str = "warning", entity: str | None = None) -> TimelineEntry:
+def _alert(
+    source_id: int,
+    minute: float,
+    *,
+    level: str = "warning",
+    entity: str | None = None,
+    state: str = "firing",
+    vcenter_id: uuid.UUID | None = None,
+) -> TimelineEntry:
     return TimelineEntry(
         kind="alert",
         source_id=source_id,
         timestamp_utc=_at(minute),
-        level=level,  # type: ignore[arg-type]
-        title=f"rule-{source_id} が発火",
+        level=alert_level(level, state),
+        title=alert_title(f"rule-{source_id}", state),
         entity_name=entity,
-        ref={"alert_history_id": source_id},
+        vcenter_id=vcenter_id,
+        is_signal=state == "firing",
+        ref={"alert_history_id": source_id, "alert_state": state},
     )
 
 
@@ -167,7 +178,22 @@ def test_event_level(score: int, severity: str | None, expected: str) -> None:
     [("critical", "critical"), ("error", "error"), ("warning", "warning"), ("info", "warning"), (None, "warning"), ("bogus", "warning")],
 )
 def test_alert_level(value: str | None, expected: str) -> None:
-    assert alert_level(value) == expected
+    assert alert_level(value, "firing") == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "state", "expected"),
+    [
+        ("critical", "resolved", "info"),
+        ("warning", "resolved", "info"),
+        ("critical", "stale", "warning"),
+        ("warning", "stale", "warning"),
+        ("critical", "something-else", "info"),
+    ],
+)
+def test_alert_level_is_capped_unless_firing(value: str, state: str, expected: str) -> None:
+    """履歴の alert_level は回復の通知でもルールの level なので、firing 以外は上限をかける。"""
+    assert alert_level(value, state) == expected
 
 
 def test_alert_title_uses_alert_history_panel_wording() -> None:
@@ -197,16 +223,16 @@ def test_same_timestamp_orders_alert_before_event_then_by_source_id() -> None:
 
 def test_three_or_more_consecutive_events_are_merged() -> None:
     entries = [
-        _ev(1, 1, score=30, level="info"),
-        _ev(2, 2, score=70, level="error"),
-        _ev(3, 3, score=50, level="warning"),
-        _ev(4, 4, score=10, level="info"),
+        _ev(1, 1, score=60, level="error"),
+        _ev(2, 2, score=75, level="error"),
+        _ev(3, 3, score=65, level="error"),
+        _ev(4, 4, score=70, level="error"),
     ]
     (merged,) = merge_consecutive(entries)
     assert merged.count == 4
     assert merged.timestamp_utc == _at(1)
     assert merged.end_utc == _at(4)
-    assert merged.score == 70
+    assert merged.score == 75
     assert merged.level == "error"
     assert merged.detail == "msg-1"
     assert merged.item_id == "event:1"
@@ -312,6 +338,7 @@ def test_top_entities_sum_merged_counts_and_break_ties_by_first_seen() -> None:
     )
     top = top_entities(merged)
     assert [(t.entity_name, t.item_count) for t in top] == [("h1", 3), ("h2", 3), ("h3", 2), ("h4", 1)]
+    assert top[0].vcenter_id == V1 and top[3].vcenter_id is None
     assert top[0].first_seen_utc == _at(1)
     assert top[2].entity_type == "HostSystem"
     assert len(top_entities(merged, limit=2)) == 2
@@ -332,3 +359,84 @@ def test_summarize_and_pick_new_event_types() -> None:
     # max_score 降順、同点は最初の時刻の昇順
     assert [(p.event_type, p.count, p.max_score) for p in picked] == [("New", 2, 70), ("Other", 1, 70)]
     assert len(pick_new_event_types(stats, set(), limit=1)) == 1
+
+
+
+# --- レビュー指摘への対応 ---------------------------------------------------------------
+
+
+def test_resolved_alert_is_not_first_signal_and_does_not_win_truncation() -> None:
+    resolved = _alert(1, 1, level="critical", state="resolved")
+    warn = _ev(5, 5, "W", score=45, level="warning")
+    err = _ev(6, 6, "E", score=70, level="error")
+    entries = sort_entries([resolved, warn, err])
+    assert resolved.level == "info"
+    sig = first_signal(entries)
+    assert sig is not None and sig.item_id == "event:5"
+    kept, _ = select_within_limit(entries, 1, None)
+    assert [k.item_id for k in kept] == ["event:6"]
+
+
+def test_stale_alert_is_capped_at_warning_and_is_not_a_signal() -> None:
+    stale = _alert(1, 1, level="critical", state="stale")
+    assert stale.level == "warning"
+    assert first_signal([stale]) is None
+
+
+def test_events_with_different_levels_are_not_merged() -> None:
+    merged = merge_consecutive(
+        sort_entries([_ev(1, 1, score=10, level="info"), _ev(2, 50, score=90, level="critical")])
+    )
+    assert [(m.item_id, m.level, m.count) for m in merged] == [("event:1", "info", 1), ("event:2", "critical", 1)]
+    sig = first_signal(merged)
+    assert sig is not None and sig.timestamp_utc == _at(50)
+
+
+def test_merge_stops_when_gap_exceeds_max_gap() -> None:
+    entries = [_ev(1, 0), _ev(2, 5), _ev(3, 10), _ev(4, 16)]
+    merged = merge_consecutive(entries, max_gap=timedelta(minutes=5))
+    # 0→5→10 は間隔ちょうど 5 分でまとまり、10→16 は 6 分空くので別の行
+    assert [(m.item_id, m.count, m.end_utc) for m in merged] == [
+        ("event:1", 3, _at(10)),
+        ("event:4", 1, None),
+    ]
+    # 指定しなければ間隔で切らない
+    assert len(merge_consecutive(entries)) == 1
+
+
+def test_anchor_inside_a_merged_run_has_zero_distance() -> None:
+    run = merge_consecutive([_ev(i, i) for i in range(60)])
+    assert len(run) == 1 and run[0].end_utc == _at(59)
+    others = [_ev(100 + i, 61 + i * 0.1, f"B{i}", f"x{i}") for i in range(3)]
+    entries = sort_entries([*run, *others])
+    kept, truncated = select_within_limit(entries, 1, _at(58))
+    assert truncated is True
+    assert [k.item_id for k in kept] == ["event:0"]
+
+
+def test_top_entities_count_same_name_on_each_vcenter_separately() -> None:
+    entries = sort_entries(
+        [
+            _ev(1, 1, "A", "esx01", vcenter_id=V1),
+            _ev(2, 2, "B", "esx01", vcenter_id=V2),
+            _ev(3, 3, "C", "esx01", vcenter_id=V2),
+        ]
+    )
+    entries = [replace(e, vcenter_name=f"vc-{e.vcenter_id.int}") for e in entries]  # type: ignore[union-attr]
+    top = top_entities(entries)
+    assert [(t.entity_name, t.vcenter_id, t.item_count, t.vcenter_name) for t in top] == [
+        ("esx01", V2, 2, "vc-2"),
+        ("esx01", V1, 1, "vc-1"),
+    ]
+
+
+def test_truncation_without_anchor_keeps_alert_before_event_of_same_level() -> None:
+    event = _ev(1, 1, "A", score=95, level="critical")
+    alert = _alert(2, 2, level="critical")
+    kept, _ = select_within_limit(sort_entries([event, alert]), 1, None)
+    assert [k.item_id for k in kept] == ["alert:2"]
+    # level が重いイベントはアラートより先
+    heavier = _ev(3, 3, "B", score=95, level="critical")
+    warn_alert = _alert(4, 4, level="warning")
+    kept, _ = select_within_limit(sort_entries([heavier, warn_alert]), 1, None)
+    assert [k.item_id for k in kept] == ["event:3"]

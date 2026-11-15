@@ -318,7 +318,7 @@ async def test_event_score_alert_context_key_is_event_type(client: AsyncClient) 
             AlertHistory(
                 rule_id=rule.id,
                 alert_level="error",
-                state="resolved",
+                state="firing",
                 context_key="VmPoweredOffEvent",
                 notified_at=_at(7),
                 channel="none",
@@ -327,9 +327,10 @@ async def test_event_score_alert_context_key_is_event_type(client: AsyncClient) 
     data = await _post(client)
     (item,) = data["items"]
     assert item["kind"] == "alert"
-    assert item["level"] == "error"  # ルールの現在値ではなく履歴の alert_level
+    # 発火の通知はルールの現在値ではなく履歴の alert_level を使う（回復は info。別のテストで確認）
+    assert item["level"] == "error"
     assert item["ref"]["event_type"] == "VmPoweredOffEvent"
-    assert item["ref"]["alert_state"] == "resolved"
+    assert item["ref"]["alert_state"] == "firing"
 
 
 # --- 俯瞰 --------------------------------------------------------------------------------
@@ -742,3 +743,39 @@ async def test_alert_uses_occurred_at_not_the_redelivery_time(client: AsyncClien
     data = await _post(client)
     assert [i["id"] for i in data["items"]] == [f"alert:{inside_id}"]
     assert _dt(data["items"][0]["timestamp_utc"]) == _at(10)
+
+
+@pytest.mark.asyncio
+async def test_resolved_alert_is_info_and_overview_counts_only_firing(client: AsyncClient) -> None:
+    async with session_scope() as session:
+        rule = AlertRule(name="CPU 高負荷", rule_type="event_score", alert_level="critical", config={})
+        session.add(rule)
+        await session.flush()
+        for minute, state in ((1, "firing"), (2, "resolved"), (3, "stale")):
+            session.add(
+                AlertHistory(
+                    rule_id=rule.id, alert_level="critical", state=state, context_key="X",
+                    notified_at=_at(minute), channel="none",
+                )
+            )
+    data = await _post(client)
+    assert [(i["title"], i["level"]) for i in data["items"]] == [
+        ("CPU 高負荷 が発火", "critical"),
+        ("CPU 高負荷 が回復", "info"),
+        ("CPU 高負荷 のデータが古い", "warning"),
+    ]
+    assert sum(b["alert"] for b in data["overview"]) == 1
+    assert data["highlights"]["first_signal"]["title"] == "CPU 高負荷 が発火"
+
+
+@pytest.mark.asyncio
+async def test_top_entities_carry_vcenter(client: AsyncClient) -> None:
+    v1 = await _vcenter("vc-top-1")
+    v2 = await _vcenter("vc-top-2")
+    await _events(v1, (1, "A", "esx01", 30))
+    await _events(v2, (2, "B", "esx01", 30), (3, "C", "esx01", 30))
+    top = (await _post(client))["highlights"]["top_entities"]
+    assert [(t["entity_name"], t["vcenter_id"], t["vcenter_name"], t["item_count"]) for t in top] == [
+        ("esx01", str(v2), "vc-top-2", 2),
+        ("esx01", str(v1), "vc-top-1", 1),
+    ]

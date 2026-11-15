@@ -115,8 +115,12 @@ class IncidentTimelineOverviewBucket(BaseModel):
 
 
 class IncidentTimelineTopEntity(BaseModel):
+    """出来事の多い対象。同じ名前でも vCenter が違えば別の対象として数える。"""
+
     entity_name: str
     entity_type: str | None = None
+    vcenter_id: uuid.UUID | None = None
+    vcenter_name: str | None = None
     item_count: int
     first_seen_utc: datetime
 

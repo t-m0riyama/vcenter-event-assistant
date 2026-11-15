@@ -61,6 +61,8 @@ _NICE_BUCKET_SECONDS: tuple[int, ...] = (
 )
 _MAX_OVERVIEW_BUCKETS = 120
 
+# 連続するイベントをまとめる間隔の下限（秒）。merge_max_gap を参照。
+_MIN_MERGE_GAP_SECONDS = 300
 _TOP_ENTITIES_LIMIT = 5
 _NEW_EVENT_TYPES_LIMIT = 10
 # IN に並べる値の数の上限（SQLite / asyncpg のバインド変数の上限に当たらないよう分割する）。
@@ -90,6 +92,8 @@ class TimelineEntry:
 
     - ``source_id``: 元レコードの id。同時刻の並びと ``id``（``{kind}:{source_id}``）に使う。
     - ``merge_key``: 隣り合う項目でこの値が等しいとき 1 件にまとめる。None はまとめない。
+    - ``is_signal``: ``first_signal`` の候補にするか（回復・stale のアラートは兆候ではない）。
+      俯瞰グラフの ``alert`` もこれが真のものだけを数える。
     - ``ref``: ``IncidentTimelineItemRef`` のフィールド名と値。
     """
 
@@ -107,6 +111,7 @@ class TimelineEntry:
     count: int = 1
     end_utc: datetime | None = None
     merge_key: tuple[Any, ...] | None = None
+    is_signal: bool = True
     ref: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -194,6 +199,11 @@ def choose_bucket_seconds(
     return _ceil_div(dur, max_buckets * day) * day
 
 
+def merge_max_gap(bucket_sec: int) -> timedelta:
+    """連続をまとめる間隔の上限。俯瞰の棒 1 本の幅か 5 分の長いほう。"""
+    return timedelta(seconds=max(bucket_sec, _MIN_MERGE_GAP_SECONDS))
+
+
 def overview_bucket_count(from_utc: datetime, to_utc: datetime, bucket_sec: int) -> int:
     """``from`` から ``to`` までを隙間なく埋めるバケット数。割り切れないときは最後のバケットが ``to`` をはみ出す。"""
     dur = int((to_utc - from_utc).total_seconds())
@@ -261,10 +271,20 @@ def event_level(score: int | None, severity: str | None) -> TimelineLevel:
     return _LEVEL_BY_RANK[rank]
 
 
-def alert_level(value: str | None) -> TimelineLevel:
-    """履歴の ``alert_level`` をそのまま使う。想定外の値は warning。"""
+def alert_level(value: str | None, state: str | None) -> TimelineLevel:
+    """通知履歴の level。
+
+    ``alert_level`` は回復の通知でもルールの level が入るので、発火（firing）のときだけそのまま使う。
+    stale は warning を上限にし、回復（画面の表記で「回復済み」になる firing・stale 以外の状態）は info にする。
+    想定外の ``alert_level`` は warning として扱う。
+    """
     v = (value or "").strip().lower()
-    return v if v in _ALERT_LEVELS else "warning"  # type: ignore[return-value]
+    base: TimelineLevel = v if v in _ALERT_LEVELS else "warning"  # type: ignore[assignment]
+    if state == "firing":
+        return base
+    if state == "stale":
+        return base if _LEVEL_RANK[base] <= _LEVEL_RANK["warning"] else "warning"
+    return "info"
 
 
 def alert_title(rule_name: str, state: str | None) -> str:
@@ -298,16 +318,32 @@ def sort_entries(entries: Iterable[TimelineEntry]) -> list[TimelineEntry]:
     return sorted(entries, key=entry_sort_key)
 
 
-def merge_consecutive(entries: Sequence[TimelineEntry]) -> list[TimelineEntry]:
+def merge_consecutive(
+    entries: Sequence[TimelineEntry],
+    *,
+    max_gap: timedelta | None = None,
+) -> list[TimelineEntry]:
     """時刻順に並んだ列で、``merge_key`` が等しい項目が隣り合うときだけ 1 件にまとめる。
 
+    ``max_gap`` を渡すと、前の項目（まとめた区間の最後）からの間隔がそれを超えたときはまとめない。
+    長い空白が 1 行に隠れないようにするため。
+
     まとめた項目は、時刻・id・参照・タイトル・詳細は最初のもの、``end_utc`` は最後の時刻、
-    ``count`` は件数の合計、``score`` は最大、``level`` は最も重いものになる。
+    ``count`` は件数の合計、``score`` は最大になる。``level`` が違う項目は ``merge_key`` が違うので
+    まとまらない（悪化した時点を別の行として残す）。
     """
     out: list[TimelineEntry] = []
     for entry in entries:
         prev = out[-1] if out else None
-        if prev is not None and prev.merge_key is not None and prev.merge_key == entry.merge_key:
+        if (
+            prev is not None
+            and prev.merge_key is not None
+            and prev.merge_key == entry.merge_key
+            and (
+                max_gap is None
+                or entry.timestamp_utc - (prev.end_utc or prev.timestamp_utc) <= max_gap
+            )
+        ):
             out[-1] = _merge_pair(prev, entry)
         else:
             out.append(entry)
@@ -340,11 +376,12 @@ def select_within_limit(
 
     ``entries`` は ``sort_entries`` の順（まとめた後）を前提にする。優先順位:
 
-    - ``anchor`` あり: ``|timestamp_utc - anchor|`` が小さい順
-    - ``anchor`` なし: level が重い順 → score が高い順 → 新しい順
+    - ``anchor`` あり: ``anchor`` から区間 ``[timestamp_utc, end_utc or timestamp_utc]`` までの距離が
+      小さい順（``anchor`` が区間の中なら 0）→ level が重い順 → score が高い順 → 新しい順
+    - ``anchor`` なし: level が重い順 → 同じ level ならアラートを先（人が設定した信号のため）
+      → score が高い順 → 新しい順
 
-    ``anchor`` ありで距離が同じときも、続けて level → score → 新しい順で比べる。それでも同じなら
-    入力の並び（時刻・種別・元 id）で決めるので、結果は常に決定的になる。
+    それでも同じなら入力の並び（時刻・種別・元 id）で決めるので、結果は常に決定的になる。
     """
     if len(entries) <= limit:
         return list(entries), False
@@ -352,27 +389,39 @@ def select_within_limit(
     def priority(indexed: tuple[int, TimelineEntry]) -> tuple[float, ...]:
         idx, e = indexed
         tail = (
-            -_LEVEL_RANK[e.level],
             -(e.score if e.score is not None else -1),
             -e.timestamp_utc.timestamp(),
             idx,
         )
         if anchor is None:
-            return tail
-        return (abs((e.timestamp_utc - anchor).total_seconds()), *tail)
+            return (-_LEVEL_RANK[e.level], 0 if e.kind == "alert" else 1, *tail)
+        return (_distance_seconds(e, anchor), -_LEVEL_RANK[e.level], *tail)
 
     chosen = sorted(enumerate(entries), key=priority)[:limit]
     chosen.sort(key=lambda pair: pair[0])
     return [e for _, e in chosen], True
 
 
+def _distance_seconds(entry: TimelineEntry, anchor: datetime) -> float:
+    start = entry.timestamp_utc
+    end = entry.end_utc or start
+    if anchor < start:
+        return (start - anchor).total_seconds()
+    if anchor > end:
+        return (anchor - end).total_seconds()
+    return 0.0
+
+
 # --- 純粋関数: ハイライト ---------------------------------------------------------------
 
 
 def first_signal(entries: Sequence[TimelineEntry]) -> TimelineEntry | None:
-    """level が warning 以上で最も早い項目（``entries`` は時刻順）。"""
+    """兆候になり得る項目（``is_signal``）のうち、level が warning 以上で最も早いもの（``entries`` は時刻順）。
+
+    回復・stale のアラートは兆候ではないので選ばない。
+    """
     for e in entries:
-        if _LEVEL_RANK[e.level] >= _LEVEL_RANK["warning"]:
+        if e.is_signal and _LEVEL_RANK[e.level] >= _LEVEL_RANK["warning"]:
             return e
     return None
 
@@ -382,34 +431,40 @@ def top_entities(
     *,
     limit: int = _TOP_ENTITIES_LIMIT,
 ) -> list[IncidentTimelineTopEntity]:
-    """``entity_name`` ごとに ``count``（まとめる前の件数）を合計し、多い順に上位を返す。
+    """``(vcenter_id, entity_name)`` ごとに ``count``（まとめる前の件数）を合計し、多い順に上位を返す。
 
-    同数なら最初に現れた時刻が早い順、それも同じなら名前の順。レスポンスに vCenter の欄が無いので、
-    vCenter が違っても同じ名前の対象は 1 つに数える（画面の「この対象で絞る」も名前で絞る）。
-    ``entity_type`` は最初に分かった値を使う。
+    同じ名前でも vCenter が違えば別の対象として数える。同数なら最初に現れた時刻が早い順、
+    それも同じなら名前・vCenter の順。``entity_type`` と ``vcenter_name`` は最初に分かった値を使う。
     """
-    acc: dict[str, list[Any]] = {}
+    acc: dict[tuple[uuid.UUID | None, str], list[Any]] = {}
     for e in entries:
         if not e.entity_name:
             continue
-        slot = acc.get(e.entity_name)
+        key = (e.vcenter_id, e.entity_name)
+        slot = acc.get(key)
         if slot is None:
-            acc[e.entity_name] = [e.count, e.timestamp_utc, e.entity_type]
+            acc[key] = [e.count, e.timestamp_utc, e.entity_type, e.vcenter_name]
             continue
         slot[0] += e.count
         if e.timestamp_utc < slot[1]:
             slot[1] = e.timestamp_utc
         if slot[2] is None and e.entity_type:
             slot[2] = e.entity_type
-    ranked = sorted(acc.items(), key=lambda kv: (-kv[1][0], kv[1][1], kv[0]))[:limit]
+        if slot[3] is None and e.vcenter_name:
+            slot[3] = e.vcenter_name
+    ranked = sorted(
+        acc.items(), key=lambda kv: (-kv[1][0], kv[1][1], kv[0][1], str(kv[0][0] or ""))
+    )[:limit]
     return [
         IncidentTimelineTopEntity(
             entity_name=name,
             entity_type=etype,
+            vcenter_id=vid,
+            vcenter_name=vname,
             item_count=count,
             first_seen_utc=first_seen,
         )
-        for name, (count, first_seen, etype) in ranked
+        for (vid, name), (count, first_seen, etype, vname) in ranked
     ]
 
 
@@ -552,7 +607,7 @@ async def _build_in_slot(
         new_types = pick_new_event_types(stats, seen)
 
     entries = await _attach_vcenter_names(session, entries)
-    merged = merge_consecutive(sort_entries(entries))
+    merged = merge_consecutive(sort_entries(entries), max_gap=merge_max_gap(bucket_sec))
     anchor = to_utc(body.anchor_time) if body.anchor_time is not None else None
     kept, truncated = select_within_limit(merged, body.item_limit, anchor)
     signal = first_signal(merged)
@@ -651,23 +706,26 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
     if len(rows) > scope.max_rows:
         raise AggregationLimitExceeded("incident_timeline_view.events", scope.max_rows)
 
-    entries = [
-        TimelineEntry(
-            kind="event",
-            source_id=int(row.id),
-            timestamp_utc=to_utc(row.occurred_at),
-            level=event_level(row.notable_score, row.severity),
-            title=row.event_type,
-            detail=row.message or None,
-            entity_name=row.entity_name,
-            entity_type=row.entity_type,
-            vcenter_id=row.vcenter_id,
-            score=int(row.notable_score),
-            merge_key=("event", row.event_type, row.entity_name, row.vcenter_id),
-            ref={"event_id": int(row.id), "event_type": row.event_type},
+    entries: list[TimelineEntry] = []
+    for row in rows:
+        level = event_level(row.notable_score, row.severity)
+        entries.append(
+            TimelineEntry(
+                kind="event",
+                source_id=int(row.id),
+                timestamp_utc=to_utc(row.occurred_at),
+                level=level,
+                title=row.event_type,
+                detail=row.message or None,
+                entity_name=row.entity_name,
+                entity_type=row.entity_type,
+                vcenter_id=row.vcenter_id,
+                score=int(row.notable_score),
+                # level が違うものはまとめない（悪化した時点を別の行として残す）
+                merge_key=("event", row.event_type, row.entity_name, row.vcenter_id, level),
+                ref={"event_id": int(row.id), "event_type": row.event_type},
+            )
         )
-        for row in rows
-    ]
     return _Collected(entries=entries, overview={"event_total": totals, "event_notable": notables})
 
 
@@ -764,8 +822,12 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
             continue
         entries.append(entry)
 
+    # 俯瞰は発火（兆候）の件数だけを数える。回復・stale は一覧にだけ出す。
     counts = count_per_bucket(
-        (e.timestamp_utc for e in entries), scope.from_utc, scope.bucket_sec, scope.bucket_count
+        (e.timestamp_utc for e in entries if e.is_signal),
+        scope.from_utc,
+        scope.bucket_sec,
+        scope.bucket_count,
     )
     return _Collected(entries=entries, overview={"alert": counts})
 
@@ -803,12 +865,13 @@ def _alert_entry(row: Any, resolved: Mapping[tuple[uuid.UUID, str], _ResolvedEnt
         kind="alert",
         source_id=int(row.id),
         timestamp_utc=to_utc(row.occurred_at),
-        level=alert_level(row.alert_level),
+        level=alert_level(row.alert_level, row.state),
         title=alert_title(row.rule_name, row.state),
         detail=detail,
         entity_name=entity_name,
         entity_type=entity_type,
         vcenter_id=vcenter_id,
+        is_signal=row.state == "firing",
         ref=ref,
     )
 
