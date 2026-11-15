@@ -143,6 +143,16 @@ describe('timelineModel', () => {
         item('m', '2026-03-22T00:10:00Z', { vcenter_id: 'vc-1', count: 3, end_utc: '2026-03-22T00:50:00' }),
       ),
     ).toMatchObject({ from: '2026-03-21T23:40:00.000Z', to: '2026-03-22T01:20:00.000Z', markerUtc: '2026-03-22T00:10:00.000Z' })
+    // metric のアラートは指標、イベントはイベント種別を渡す（それ以外の種別・値は渡さない）
+    expect(
+      metricsFocusForItem(item('a', '2026-03-22T00:10:00Z', { kind: 'alert', vcenter_id: 'vc-1', ref: { metric_key: 'host.mem.usage_pct' } })),
+    ).toMatchObject({ metricKey: 'host.mem.usage_pct' })
+    expect(
+      metricsFocusForItem(item('v', '2026-03-22T00:10:00Z', { kind: 'event', vcenter_id: 'vc-1', ref: { event_type: 'VmPoweredOffEvent' } })),
+    ).toMatchObject({ chartEventType: 'VmPoweredOffEvent' })
+    const plain = metricsFocusForItem(item('p', '2026-03-22T00:10:00Z', { vcenter_id: 'vc-1' }))!
+    expect(plain.metricKey).toBeUndefined()
+    expect(plain.chartEventType).toBeUndefined()
     expect(metricsFocusForItem(item('x', '2026-03-22T00:10:00Z'))).toBeNull()
     expect(metricsFocusForItem(item('y', 'broken', { vcenter_id: 'vc-1' }))).toBeNull()
   })

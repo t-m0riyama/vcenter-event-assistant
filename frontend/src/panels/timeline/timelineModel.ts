@@ -147,7 +147,8 @@ export function correlationHashForItem(tab: 'events' | 'logs', item: TimelineVie
 export const METRICS_FOCUS_HALF_WIDTH_MS = 30 * 60_000
 
 /**
- * 行の時刻の前後 30 分と vCenter、起点の目印（行の最初の時刻）をグラフのタブへ渡す条件。
+ * 行の時刻の前後 30 分と vCenter、目印（行の最初の時刻）をグラフのタブへ渡す条件。metric のアラートは指標、
+ * イベントは種別も渡す。
  * vCenter が無い行・時刻が読めない行は null。まとめた行は `end_utc` の 30 分後まで。
  */
 export function metricsFocusForItem(item: TimelineViewItem): MetricsFocus | null {
@@ -156,12 +157,16 @@ export function metricsFocusForItem(item: TimelineViewItem): MetricsFocus | null
   if (!Number.isFinite(t)) return null
   const endRaw = item.end_utc ? parseApiUtcInstantMs(item.end_utc) : t
   const end = Number.isFinite(endRaw) ? Math.max(endRaw, t) : t
-  return {
+  const focus: MetricsFocus = {
     from: iso(t - METRICS_FOCUS_HALF_WIDTH_MS),
     to: iso(end + METRICS_FOCUS_HALF_WIDTH_MS),
     vcenterId: item.vcenter_id,
     markerUtc: iso(t),
   }
+  // metric のアラートはその指標を、イベントはその種別の件数の重ね表示を渡す
+  if (item.kind === 'alert' && item.ref.metric_key) focus.metricKey = item.ref.metric_key
+  if (item.kind === 'event' && item.ref.event_type) focus.chartEventType = item.ref.event_type
+  return focus
 }
 
 /** 棒のツールチップに出す範囲。最後の棒は期間の終わりで切れるので `min(開始 + バケット幅, to)`。 */

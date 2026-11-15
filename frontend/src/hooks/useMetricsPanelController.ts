@@ -13,7 +13,6 @@ export type {
   GraphRangeFollowMode,
   MetricsSnapshotReplayInput,
   MetricsReplayInput,
-  MetricsFocus,
 } from './useGraphRangeState'
 
 /** メトリクスパネルの状態・取得・チャート表示を統合するコントローラ。 */
@@ -35,6 +34,8 @@ export function useMetricsPanelController(
   } | null>(null)
   const seriesFetchEffectGenerationRef = useRef(0)
   const [snapshotChartGuidelineMs, setSnapshotChartGuidelineMs] = useState<number | null>(null)
+  const [pendingMetricKey, setPendingMetricKey] = useState<{ key: string; nonce: number } | null>(null)
+  const consumedPendingNonceRef = useRef(0)
   const [chartGuidelineLabel, setChartGuidelineLabel] = useState('スナップショット')
   const replay = resolveMetricsReplay(snapshotReplay)
   const snapshotItem = replay?.source
@@ -89,7 +90,13 @@ export function useMetricsPanelController(
       setSnapshotChartGuidelineMs(null)
     } else {
       setVcenterId(replay.vcenterId)
-      setMetricKey(replay.metricKey)
+      if (replay.kind === 'snapshot') {
+        setMetricKey(replay.metricKey)
+        setPendingMetricKey(null)
+      } else {
+        // focus: 指定があれば、系列の一覧を読んでから選べるときだけ選ぶ。無ければ今の指標を保つ
+        setPendingMetricKey(replay.metricKey ? { key: replay.metricKey, nonce: replay.nonce } : null)
+      }
       setChartEventType(replay.chartEventType)
       const markerMs = replay.markerUtc ? parseApiUtcInstantMs(replay.markerUtc) : NaN
       setSnapshotChartGuidelineMs(Number.isFinite(markerMs) ? markerMs : null)
@@ -118,8 +125,11 @@ export function useMetricsPanelController(
     void (async () => {
       let key = metricKey
       if (lastSeriesFetchRef.current?.vcenterId !== vcenterId) {
-        key = await loadMetricKeys()
+        const want =
+          pendingMetricKey && pendingMetricKey.nonce > consumedPendingNonceRef.current ? pendingMetricKey : null
+        key = await loadMetricKeys(want?.key)
         if (generation !== seriesFetchEffectGenerationRef.current) return
+        if (want) consumedPendingNonceRef.current = want.nonce
         setMetricKey(key)
       }
       const rangeKey = `${rangeParts.fromDate}|${rangeParts.fromTime}|${rangeParts.toDate}|${rangeParts.toTime}`
@@ -137,7 +147,7 @@ export function useMetricsPanelController(
       if (generation !== seriesFetchEffectGenerationRef.current) return
       if (ok) lastSeriesFetchRef.current = sig
     })()
-  }, [vcenterId, metricKey, loadSeries, loadMetricKeys, rangeParts])
+  }, [vcenterId, metricKey, loadSeries, loadMetricKeys, rangeParts, pendingMetricKey])
 
   const chart = useMetricsChartSeries({
     timeZone,

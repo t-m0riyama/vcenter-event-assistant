@@ -309,6 +309,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       to: '2026-03-22T00:44:00.000Z',
       vcenterId: VC,
       markerUtc: '2026-03-22T00:10:00.000Z',
+      chartEventType: 'VmPoweredOffEvent',
     })
     // 単発の行
     fireEvent.click(await rowButton(/UserLoginSessionEvent/))
@@ -319,6 +320,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       to: '2026-03-22T01:20:00.000Z',
       vcenterId: VC,
       markerUtc: '2026-03-22T00:50:00.000Z',
+      chartEventType: 'UserLoginSessionEvent',
     })
   })
 

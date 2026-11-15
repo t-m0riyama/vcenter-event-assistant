@@ -8,8 +8,9 @@ export type MetricsFocus = {
   vcenterId: string | null
   /** グラフに縦線で示す起点の時刻。 */
   markerUtc: string | null
-  /** 指定すれば系列を選ぶ。無ければ先頭の系列を使う。 */
+  /** 指定すれば、その vCenter にあるときだけ系列を選ぶ（無ければ今の指標のまま）。指定が無ければ今の指標を変えない。 */
   metricKey?: string | null
+  /** 指定すればイベント件数の重ね表示に使う。指定が無ければ空にする。 */
   chartEventType?: string | null
 }
 
@@ -22,12 +23,15 @@ export type MetricsFocusReplayInput = { focus: MetricsFocus; nonce: number }
 export type MetricsReplayInput = MetricsSnapshotReplayInput | MetricsFocusReplayInput
 
 export type ResolvedMetricsReplay = {
+  /** スナップショットは保存された指標を必ず選ぶ。focus は「選べれば選ぶ」だけで、指定が無ければ今の指標を保つ。 */
+  kind: 'snapshot' | 'focus'
   /** 同じ条件かどうかの判定に使う元の参照（スナップショットまたは focus）。 */
   source: object
   nonce: number
   from: string
   to: string
   vcenterId: string
+  /** 空文字は指定なし。 */
   metricKey: string
   chartEventType: string
   markerUtc: string
@@ -43,6 +47,7 @@ export function resolveMetricsReplay(input: MetricsReplayInput | null | undefine
     const br = item.build_request_payload
     const gc = item.graph_context
     return {
+      kind: 'snapshot',
       source: item,
       nonce: input.nonce,
       from: gc?.captured_range?.from ?? br.from,
@@ -56,6 +61,7 @@ export function resolveMetricsReplay(input: MetricsReplayInput | null | undefine
   }
   const f = input.focus
   return {
+    kind: 'focus',
     source: f,
     nonce: input.nonce,
     from: f.from,
@@ -64,6 +70,6 @@ export function resolveMetricsReplay(input: MetricsReplayInput | null | undefine
     metricKey: f.metricKey ?? '',
     chartEventType: f.chartEventType ?? '',
     markerUtc: f.markerUtc ?? '',
-    markerLabel: '起点',
+    markerLabel: '選んだ行',
   }
 }

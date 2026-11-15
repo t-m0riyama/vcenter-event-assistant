@@ -16,7 +16,7 @@ import {
 /** グラフの表示期間がクイックプリセットに追従するか、手入力固定か。 */
 export type GraphRangeFollowMode = 'rolling' | 'manual'
 
-export type { MetricsSnapshotReplayInput, MetricsReplayInput, MetricsFocus } from './metricsReplay'
+export type { MetricsSnapshotReplayInput, MetricsReplayInput } from './metricsReplay'
 
 type UseGraphRangeStateOptions = {
   /** ローリング期間の TZ 追随で range が更新されたとき */
