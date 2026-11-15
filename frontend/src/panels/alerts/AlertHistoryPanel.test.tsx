@@ -207,3 +207,26 @@ describe('タイムラインで見る', () => {
   })
 })
 
+
+describe('対象の列', () => {
+  const VC = '11111111-1111-4111-8111-111111111111'
+
+  it('entity_name があれば名前を主に出し、context_key は補助として残す。無ければ context_key を出す', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 3, items: [
+      { ...base, id: 1, context_key: `${VC}:host-1`, entity_name: 'esx01', vcenter_id: VC,
+        delivery_status: 'succeeded', success: true, attempt_count: 1 },
+      { ...base, id: 2, rule_type: 'event_score', context_key: 'VmPoweredOffEvent', entity_name: null,
+        delivery_status: 'succeeded', success: true, attempt_count: 1 },
+      { ...base, id: 3, context_key: 'host-legacy', delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    show()
+    const rows = (await screen.findAllByRole('row')).slice(1)
+    const cell = (r: HTMLElement) => r.querySelector('.col-context') as HTMLElement
+    expect(within(cell(rows[0])).getByText('esx01')).toBeInTheDocument()
+    expect(within(cell(rows[0])).getByText(`${VC}:host-1`)).toHaveClass('context-key-note')
+    expect(cell(rows[1])).toHaveTextContent('VmPoweredOffEvent')
+    expect(cell(rows[1]).querySelector('.context-key-note')).toBeNull()
+    expect(cell(rows[2])).toHaveTextContent('host-legacy')
+    expect(cell(rows[2]).querySelector('.context-key-note')).toBeNull()
+  })
+})

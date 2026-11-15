@@ -203,7 +203,16 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                       {alertStateLabel(h.state)}
                     </span>
                   </td>
-                  <td className="col-context">{h.context_key}</td>
+                  <td className="col-context">
+                    {h.entity_name ? (
+                      <>
+                        <div className="entity-name">{h.entity_name}</div>
+                        <div className="context-key-note">{h.context_key}</div>
+                      </>
+                    ) : (
+                      <span className="context-key">{h.context_key}</span>
+                    )}
+                  </td>
                   <td className="col-status">
                     {h.delivery_status === 'pending' || h.delivery_status === 'retrying' ? (
                       <span className="skipped-tag" title={h.error_message || undefined}>

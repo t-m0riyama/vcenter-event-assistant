@@ -88,10 +88,22 @@
   color: var(--color-text-secondary);
 }
 
-.col-context {
+.col-context .context-key,
+.col-context .context-key-note {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-caption2);
   color: var(--color-text-secondary);
+}
+
+/* 対象名を主にし、context_key は小さい文字で下に添える */
+.col-context .entity-name {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-primary);
+}
+
+.col-context .context-key-note {
+  margin-top: var(--spacing-1);
+  word-break: break-all;
 }
 
 .level-badge {
