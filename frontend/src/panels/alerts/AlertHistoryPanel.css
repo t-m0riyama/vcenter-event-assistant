@@ -121,27 +121,19 @@
 }
 
 .col-actions {
-  /* 解消・削除・タイムラインで見る が表の幅に収まらないときは折り返す（各部品は途中で切れない） */
-  white-space: normal;
   min-width: 7rem;
 }
 
-.col-actions > * {
-  margin-block: 2px;
-}
-
-.alert-history-action + .alert-history-action {
-  margin-left: var(--spacing-2);
+/* 解消・タイムラインで見る・削除 を並べ、表の幅に収まらないときは折り返す */
+.alert-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
 }
 
 .delivery-attempts, .delivery-next-attempt {
   font-size: 0.8rem;
   margin-top: 0.25rem;
   color: var(--color-text-secondary);
-}
-
-/* 操作の列では先頭の部品として置くので、左の余白は付けない（削除ボタンと左端をそろえる） */
-.col-actions > .timeline-link {
-  margin-inline-start: 0;
-  padding-inline-start: 0;
 }

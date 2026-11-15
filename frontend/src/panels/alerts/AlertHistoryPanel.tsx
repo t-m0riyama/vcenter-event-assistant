@@ -175,7 +175,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
       {history.length === 0 ? (
         <p className="no-data">通知履歴はありません。</p>
       ) : (
-        <div className="table-container">
+        <div className="table-container table-scroll">
           <table className="alert-history-table">
             <thead>
               <tr>
@@ -226,30 +226,32 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                     )}
                   </td>
                   <td className="col-actions">
-                    {canResolve && h.can_resolve && (
-                      <button
-                        type="button"
-                        className="btn btn--gray alert-history-action"
-                        onClick={() => void handleResolve(h)}
-                      >
-                        解消
-                      </button>
-                    )}
-                    <TimelineLink
-                      at={h.occurred_at ?? h.notified_at}
-                      vcenterId={h.vcenter_id}
-                      entity={h.entity_name}
-                      ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
-                    />
-                    {canDelete && (
-                      <button
-                        type="button"
-                        className="btn btn--danger alert-history-action"
-                        onClick={() => void handleDelete(h)}
-                      >
-                        削除
-                      </button>
-                    )}
+                    <div className="alert-history-actions">
+                      {canResolve && h.can_resolve && (
+                        <button
+                          type="button"
+                          className="btn btn--gray alert-history-action"
+                          onClick={() => void handleResolve(h)}
+                        >
+                          解消
+                        </button>
+                      )}
+                      <TimelineLink
+                        at={h.occurred_at ?? h.notified_at}
+                        vcenterId={h.vcenter_id}
+                        entity={h.entity_name}
+                        ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}・${h.entity_name || h.context_key}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
+                      />
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="btn btn--danger alert-history-action"
+                          onClick={() => void handleDelete(h)}
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

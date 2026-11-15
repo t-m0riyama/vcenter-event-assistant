@@ -30,11 +30,10 @@ input[type='radio'] {
   accent-color: var(--color-primary);
 }
 
-/* 「タイムラインで見る」行内リンク（通知履歴・イベント一覧・概要で共通） */
+/* 「タイムラインで見る」行内リンク（通知履歴・イベント一覧・概要で共通）。並べる間隔は置く側の入れ物（gap）で決める */
 .timeline-link {
   display: inline-block;
-  margin-inline-start: 0.5rem;
-  padding: 0.1rem 0.25rem;
+  padding-block: var(--spacing-1);
   border-radius: var(--radius-sm);
   color: var(--color-primary);
   font-size: inherit;
@@ -43,7 +42,6 @@ input[type='radio'] {
 
 .timeline-link:hover {
   color: var(--color-primary-dark);
-  background: var(--color-primary-50);
 }
 
 .timeline-link:focus-visible {

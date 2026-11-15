@@ -183,14 +183,14 @@ describe('タイムラインで見る', () => {
         occurred_at: '2026-10-03T02:00:00Z', vcenter_id: null, entity_name: null },
     ] })
     show()
-    const metric = await screen.findByRole('link', { name: /^CPU 高負荷（.*1:00:00.*）をタイムラインで見る$/ })
+    const metric = await screen.findByRole('link', { name: /^CPU 高負荷・esx01（.*1:00:00.*）をタイムラインで見る$/ })
     const mp = new URLSearchParams(metric.getAttribute('href')!.split('?')[1])
     expect(mp.get('anchor')).toBe('2026-10-03T01:00:00.000Z')
     expect(mp.get('from')).toBe('2026-10-03T00:30:00.000Z')
     expect(mp.get('to')).toBe('2026-10-03T01:30:00.000Z')
     expect(mp.get('vcenter_id')).toBe(VC)
     expect(mp.get('entity')).toBe('esx01')
-    const es = screen.getAllByRole('link', { name: /スコア（.*）をタイムラインで見る/ })[0]
+    const es = screen.getAllByRole('link', { name: /スコア・VmPoweredOffEvent（.*）をタイムラインで見る/ })[0]
     const ep = new URLSearchParams(es.getAttribute('href')!.split('?')[1])
     expect(ep.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
     expect(ep.has('vcenter_id')).toBe(false)

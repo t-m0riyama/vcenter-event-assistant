@@ -126,6 +126,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {notableRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するイベントはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -186,6 +187,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
 
@@ -199,6 +201,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {topEventTypesRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するイベントはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -246,6 +249,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
 
@@ -259,6 +263,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {highCpuRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するホストはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -281,13 +286,14 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                     at={h.sampled_at}
                     vcenterId={h.vcenter_id}
                     entity={h.entity_name}
-                    ariaLabel={`${h.entity_name}（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
+                    ariaLabel={`${h.entity_name}・CPU（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
                   />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
 
@@ -303,6 +309,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {highMemRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するホストはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -325,13 +332,14 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                     at={h.sampled_at}
                     vcenterId={h.vcenter_id}
                     entity={h.entity_name}
-                    ariaLabel={`${h.entity_name}（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
+                    ariaLabel={`${h.entity_name}・メモリ（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
                   />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
     </div>

@@ -215,7 +215,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
               <td>
                 <ScoreBadge score={e.notable_score} />
               </td>
-              <td className="msg">{e.message}<p><a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a>{' '}<TimelineLink
+              <td className="msg">{e.message}<p className="event-correlation-links"><a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a><TimelineLink
                   at={e.occurred_at}
                   vcenterId={e.vcenter_id}
                   entity={e.entity_name}

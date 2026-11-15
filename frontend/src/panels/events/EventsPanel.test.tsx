@@ -10,6 +10,7 @@ vi.mock('../../preferences/useAutoRefreshPreferences', () => ({
 }))
 
 const VC = '11111111-1111-4111-8111-111111111111'
+const VC2 = '22222222-2222-4222-8222-222222222222'
 
 const base = {
   vcenter_id: VC, severity: 'warning', notable_score: 50, message: 'メッセージ',
@@ -36,7 +37,7 @@ beforeEach(() => {
       total: 2,
       items: [
         { ...base, id: 1, event_type: 'HostConnectionLostEvent', occurred_at: '2026-10-03T01:00:00Z', entity_name: 'esx01' },
-        { ...base, id: 2, event_type: 'VmPoweredOffEvent', occurred_at: '2026-10-03T02:00:00Z', entity_name: null },
+        { ...base, id: 2, vcenter_id: VC2, event_type: 'VmPoweredOffEvent', occurred_at: '2026-10-03T02:00:00Z', entity_name: null },
       ],
     }
   })
@@ -59,7 +60,8 @@ describe('タイムラインで見る', () => {
     const link = await screen.findByRole('link', { name: /^VmPoweredOffEvent（.*2:00:00.*）をタイムラインで見る$/ })
     const p = linkParams(link)
     expect(p.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
-    expect(p.get('vcenter_id')).toBe(VC)
+    expect(p.get('from')).toBe('2026-10-03T01:30:00.000Z')
+    expect(p.get('vcenter_id')).toBe(VC2)
     expect(p.has('entity')).toBe(false)
   })
 
