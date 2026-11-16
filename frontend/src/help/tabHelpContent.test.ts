@@ -69,4 +69,17 @@ describe('tabHelpContent', () => {
     expect(summary).toContain('ログ')
     expect(summary).toContain('省')
   })
+
+  it('timeline help covers the redesigned screen (selection rule, snapshots, chat handoff)', () => {
+    const { summary } = MAIN_TAB_HELP.timeline
+    for (const word of ['起点', 'ハイライト', '最初の兆候', '4 分の 1', 'スナップショット', '保持期間', 'この範囲をチャットで分析']) {
+      expect(summary, word).toContain(word)
+    }
+  })
+
+  it('summary, events and alerts help point to the timeline link', () => {
+    for (const id of ['summary', 'events', 'alerts'] as const) {
+      expect(MAIN_TAB_HELP[id].summary, id).toContain('タイムラインで見る')
+    }
+  })
 })
