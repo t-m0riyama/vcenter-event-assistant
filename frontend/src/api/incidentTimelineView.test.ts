@@ -55,6 +55,7 @@ describe('postIncidentTimelineView', () => {
       peak_at_utc: '2026-03-22T00:10:00Z',
       sample_count: 3,
       continues_from_before: false,
+      continues_after: false,
     })
     expect(out.omitted_sources).toEqual([{ source: 'log', reason: 'too_many_rows' }])
   })
@@ -64,6 +65,7 @@ describe('postIncidentTimelineView', () => {
     const out = await postIncidentTimelineView(BODY)
     expect(out.omitted_sources).toEqual([])
     expect(out.items[0].ref.peak_value).toBeUndefined()
+    expect(out.items[0].ref.continues_after).toBeUndefined()
     expect(out.items[0].ref.metric_key).toBe('host.cpu.usage_pct')
   })
 

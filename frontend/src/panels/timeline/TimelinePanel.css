@@ -156,6 +156,16 @@
   list-style: none;
 }
 
+.timeline-overview__band {
+  margin-top: var(--spacing-1);
+}
+
+.timeline-overview__band-label {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption1);
+}
+
 .timeline-overview__tooltip-note {
   max-width: 18rem;
   margin: var(--spacing-1) 0 0;
@@ -386,15 +396,6 @@
 
 .timeline-row__peak {
   color: var(--color-text-secondary);
-}
-
-.timeline-row__continues {
-  font-size: var(--font-size-caption1);
-  font-weight: var(--font-weight-semibold);
-  border: 1px dashed var(--color-warning-text);
-  border-radius: var(--radius-sm);
-  padding: 0 var(--spacing-1);
-  color: var(--color-warning-text);
 }
 
 .timeline-row__detail {

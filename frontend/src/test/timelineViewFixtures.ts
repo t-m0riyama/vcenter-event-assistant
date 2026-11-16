@@ -68,7 +68,7 @@ export const METRIC_ITEM_EXAMPLE = {
   timestamp_utc: '2026-03-22T00:05:00Z',
   end_utc: '2026-03-22T00:15:00Z',
   level: 'warning',
-  title: 'CPU 使用率 が閾値（80%）を超過',
+  title: 'CPU 使用率が閾値（80%）を超過',
   detail: 'ピーク 92.5%、サンプル 3 件',
   entity_name: 'esx01',
   entity_type: 'HostSystem',
@@ -84,6 +84,7 @@ export const METRIC_ITEM_EXAMPLE = {
     peak_at_utc: '2026-03-22T00:10:00Z',
     sample_count: 3,
     continues_from_before: false,
+    continues_after: false,
   },
 }
 

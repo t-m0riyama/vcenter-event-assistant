@@ -15,6 +15,7 @@ import { TimelineOverviewChart } from './TimelineOverviewChart'
 import { TimelineSnapshotSection } from './TimelineSnapshotSection'
 import {
   isMetricOmitted,
+  omittedKindLabels,
   nearestItemIdToAnchor,
   omittedSourceMessages,
   sortTimelineItems,
@@ -75,12 +76,14 @@ export function TimelinePanel({
     setReveal((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }))
   }, [])
 
+  // 種別を省いたときは、「N 件の出来事」が省いた種別を含まないことを添える（ライブ領域でも読み上げる）
+  const omittedNote = data && data.omitted_sources.length > 0 ? `（${omittedKindLabels(data.omitted_sources).join('・')}は省いています）` : ''
   const statusText = c.loading
     ? '読み込み中…'
     : data
       ? data.truncated
-        ? `${data.total_items} 件中 ${data.items.length} 件の出来事を表示しています。`
-        : `${data.total_items} 件の出来事を表示しています。`
+        ? `${data.total_items} 件中 ${data.items.length} 件の出来事を表示しています${omittedNote}。`
+        : `${data.total_items} 件の出来事を表示しています${omittedNote}。`
       : ''
 
   return (
@@ -163,12 +166,17 @@ export function TimelinePanel({
             ) : null}
             {data.items.length === 0 ? (
               <div className="timeline-empty">
-                <p className="table-empty">
-                  {omittedMessages.length > 0 ? 'この期間に、一覧へ表示できる出来事はありません。' : 'この期間に出来事はありません。'}
-                </p>
-                <button type="button" className="btn btn--gray" onClick={c.widen}>
-                  期間を広げる
-                </button>
+                {omittedMessages.length > 0 ? (
+                  // 期間を広げると省かれる件数がさらに増えるので、広げるボタンは出さない
+                  <p className="table-empty">この期間に、一覧へ表示できる出来事はありません。期間を短くするか、対象を絞ってください。</p>
+                ) : (
+                  <>
+                    <p className="table-empty">この期間に出来事はありません。</p>
+                    <button type="button" className="btn btn--gray" onClick={c.widen}>
+                      期間を広げる
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <TimelineItemList

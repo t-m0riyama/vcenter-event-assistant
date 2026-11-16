@@ -12,6 +12,8 @@ import {
   dragRange,
   formatDurationMs,
   isMetricOmitted,
+  metricIntervalText,
+  omittedKindLabels,
   nearestItemIdToAnchor,
   omittedSourceMessages,
   resolveTimelineRange,
@@ -243,5 +245,46 @@ describe('timelineModel', () => {
     expect(isMetricOmitted([])).toBe(false)
     expect(isMetricOmitted([{ source: 'log', reason: 'too_many_rows' }])).toBe(false)
     expect(isMetricOmitted([{ source: 'metric', reason: 'too_many_rows' }])).toBe(true)
+  })
+
+  describe('metricIntervalText: 期間の端で続く超過の文（4 通り × 終了あり・単発）', () => {
+    const fmt = (iso: string) => (iso.startsWith('2026-03-22T00:05') ? 'S' : 'E')
+    const base = { timestamp_utc: '2026-03-22T00:05:00Z', end_utc: '2026-03-22T00:15:00Z' }
+    const text = (extra: Partial<TimelineViewItem>, ref: TimelineViewItem['ref'] = {}) =>
+      metricIntervalText({ ...base, ...extra, ref }, fmt)
+
+    it('どちらも偽: 「S から E まで（継続 N 分）」、単発は「S（単発）」', () => {
+      expect(text({})).toBe('超過区間: S から E まで（継続 10 分）')
+      expect(text({ end_utc: null })).toBe('超過区間: S（単発）')
+      expect(text({}, { continues_from_before: false, continues_after: false })).toBe('超過区間: S から E まで（継続 10 分）')
+    })
+
+    it('continues_from_before だけ真: 開始を言い切らず、継続は「N 分以上」', () => {
+      expect(text({}, { continues_from_before: true })).toBe('超過区間: 期間の開始前から E まで（継続 10 分以上）')
+      expect(text({ end_utc: null }, { continues_from_before: true })).toBe('超過区間: 期間の開始前から S まで（継続）')
+    })
+
+    it('continues_after だけ真: 終わりを言い切らず「期間の終わりでも継続中」、継続は「N 分以上」。単発とは言わない', () => {
+      expect(text({}, { continues_after: true })).toBe('超過区間: S から（期間の終わり（E）でも継続中。継続 10 分以上）')
+      expect(text({ end_utc: null }, { continues_after: true })).toBe('超過区間: S から（期間の終わりでも継続中）')
+      expect(text({ end_utc: null }, { continues_after: true })).not.toContain('単発')
+    })
+
+    it('両方真: 期間の開始前から期間の終わりまで継続', () => {
+      const both = { continues_from_before: true, continues_after: true }
+      expect(text({}, both)).toBe('超過区間: 期間の開始前から（期間の終わり（E）でも継続中。継続 10 分以上）')
+      expect(text({ end_utc: null }, both)).toBe('超過区間: 期間の開始前から（期間の終わりでも継続中）')
+    })
+  })
+
+  it('省いた種別の名前（ログ・メトリクス）を並べる', () => {
+    expect(omittedKindLabels([])).toEqual([])
+    expect(
+      omittedKindLabels([
+        { source: 'metric', reason: 'too_many_rows' },
+        { source: 'log', reason: 'too_many_rows' },
+      ]),
+    ).toEqual(['メトリクス', 'ログ'])
+    expect(omittedKindLabels([{ source: 'other', reason: 'x' }])).toEqual(['other'])
   })
 })

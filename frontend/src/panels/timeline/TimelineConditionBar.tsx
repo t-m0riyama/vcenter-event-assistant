@@ -8,7 +8,7 @@ import {
   TIMELINE_ROLLING_PRESETS,
   TIMELINE_SOURCE_KINDS,
 } from '../../routing/timelineHash'
-import { KIND_LABELS } from './timelineLabels'
+import { formatPct, KIND_LABELS } from './timelineLabels'
 import { anchorWindow } from './timelineModel'
 
 type Controller = ReturnType<typeof useTimelineViewController>
@@ -223,7 +223,7 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
         <summary className="toolbar__filters-summary">
           <span className="toolbar__filters-summary__title">詳細設定</span>
           <span className="toolbar__filters-summary__preview">
-            最小スコア {conditions.minScore}・CPU {conditions.cpuThresholdPct}%・メモリ {conditions.memoryThresholdPct}%
+            最小スコア {conditions.minScore}・CPU {formatPct(conditions.cpuThresholdPct)}・メモリ {formatPct(conditions.memoryThresholdPct)}
           </span>
         </summary>
         <p className="hint toolbar__filters-hint">

@@ -7,8 +7,8 @@ import { ScoreBadge } from '../../components/badges'
 import type { GuideLoader } from './eventTypeGuideLoader'
 import { TimelineEventGuide } from './TimelineEventGuide'
 import { alertStateLabel } from '../../alerts/alertStateLabel'
-import { excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
-import { correlationHashForItem, formatDurationMs, intervalDurationMs, metricsFocusForItem } from './timelineModel'
+import { excerpt, formatPct, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS, titleBesideEntity } from './timelineLabels'
+import { correlationHashForItem, metricIntervalText, metricsFocusForItem } from './timelineModel'
 
 type Props = {
   items: readonly TimelineViewItem[]
@@ -32,11 +32,6 @@ function rowDomId(id: string): string {
 /** サーバが切るメッセージの上限（文字数）。 */
 const LOG_MESSAGE_LIMIT = 1000
 
-/** ピーク値などの数値。小数 1 桁までで、末尾の 0 は書かない（92.5 / 95）。 */
-function formatPct(value: number): string {
-  return `${Number(value.toFixed(1))}%`
-}
-
 /** `ref` の構造化した値があるか（古いサーバ・追加前のバックエンドの応答には無い）。 */
 function hasStructuredMetric(item: TimelineViewItem): boolean {
   return item.kind === 'metric' && item.ref.peak_value != null
@@ -52,17 +47,12 @@ function peakText(item: TimelineViewItem, timeZone: string): string {
 
 /**
  * 区間の長さを文章で書く（記号の「～」に頼らず、スクリーンリーダーで「いつからいつまで」と読める）。
- * `end_utc` が無ければ単発。
+ * 期間の端で続いている超過は、始まり・終わりを言い切らない（{@link metricIntervalText}）。
  */
 function IntervalText({ item, timeZone }: { item: TimelineViewItem; timeZone: string }) {
-  const start = formatIsoInTimeZone(item.timestamp_utc, timeZone)
-  const duration = intervalDurationMs(item)
-  if (!item.end_utc || duration === null) {
-    return <span className="timeline-row__interval">超過区間: {start}（単発）</span>
-  }
   return (
     <span className="timeline-row__interval">
-      超過区間: {start} から {formatIsoInTimeZone(item.end_utc, timeZone)} まで（継続 {formatDurationMs(duration)}）
+      {metricIntervalText(item, (iso) => formatIsoInTimeZone(iso, timeZone))}
     </span>
   )
 }
@@ -129,13 +119,10 @@ function ItemRow({
           {isNearest ? <span className="timeline-row__anchor-mark">◆ 起点に最も近い</span> : null}
         </span>
         {item.entity_name ? <span className="timeline-row__entity">{item.entity_name}</span> : null}
-        <span className="timeline-row__title">{item.title}</span>
+        <span className="timeline-row__title">{titleBesideEntity(item.title, item.entity_name)}</span>
         {item.kind === 'metric' ? (
           <>
             <IntervalText item={item} timeZone={timeZone} />
-            {item.ref.continues_from_before ? (
-              <span className="timeline-row__continues">期間の開始前から継続</span>
-            ) : null}
             {hasStructuredMetric(item) ? (
               <span className="timeline-row__peak">
                 {[
