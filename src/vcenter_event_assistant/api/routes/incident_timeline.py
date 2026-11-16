@@ -175,7 +175,7 @@ async def post_manual_snapshot(
             session, body.view_request, owner_key=principal_owner_key(principal)
         )
         view_request_payload = body.view_request.model_dump(mode="json", by_alias=True)
-        result_payload = _truncate_details_for_storage(result.model_dump(mode="json"))  # type: ignore[assignment]
+        result_payload = _truncate_details_for_storage(result.model_dump(mode="json"))
         if _json_utf8_size(result_payload) > MAX_SNAPSHOT_RESULT_BYTES:
             raise HTTPException(
                 status_code=413,
