@@ -85,6 +85,8 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     "/api/incident-timeline": ("incident_timeline", 60),
     # タイムライン画面は条件を変えるたびに読み込むので、既存の /api/incident-timeline とは別の枠で数える。
     "/api/incident-timeline/view": ("incident_timeline_view", 60),
+    # スナップショットの保存は view と同じ集計をサーバで走らせるので、同じ枠で数える。
+    "/api/incident-timeline/snapshots/manual": ("incident_timeline_view", 60),
     "/api/ingest/run": ("ingest", 60),
     "/api/digests/run": ("digests", 60),
     "/api/plugins/collectors/reload": ("plugins", 60),

@@ -85,6 +85,29 @@ class IncidentTimelineViewRequest(BaseModel):
         return self
 
 
+class IncidentTimelineSavedViewRequest(BaseModel):
+    """保存済みスナップショットの ``view_request`` を応答に載せるための読み取り用モデル。
+
+    保存時は ``IncidentTimelineViewRequest`` で厳しく検証するが、読むときは将来の項目の増減や
+    範囲の検査の変更で結果ごと読めなくならないよう、未知の項目を無視し、範囲などの検査をしない。
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    from_time: datetime = Field(alias="from")
+    to_time: datetime = Field(alias="to")
+    vcenter_id: uuid.UUID | None = None
+    entity: str | None = None
+    anchor_time: datetime | None = Field(default=None, alias="anchor")
+    min_score: int | None = None
+    sources: list[str] | None = None
+    metric_threshold_cpu_pct: float | None = None
+    metric_threshold_memory_pct: float | None = None
+    metric_threshold_disk_pct: float | None = None
+    metric_threshold_network_pct: float | None = None
+    item_limit: int | None = None
+
+
 class IncidentTimelineItemRef(BaseModel):
     """元レコードへの参照。種別に当てはまらない項目は None。"""
 

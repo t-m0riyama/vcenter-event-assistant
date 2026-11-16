@@ -6,6 +6,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineSavedViewRequest,
+    IncidentTimelineViewRequest,
+    IncidentTimelineViewResponse,
+)
 from vcenter_event_assistant.services.chat.chat_incident_timeline import (
     IncidentTimelinePayload,
 )
@@ -259,6 +264,13 @@ class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
     operator_note: str = Field(min_length=1, max_length=10_000)
     build_request_payload: IncidentTimelineBuildRequest | None = None
     graph_context: IncidentTimelineGraphContext | None = None
+    view_request: IncidentTimelineViewRequest | None = Field(
+        default=None,
+        description=(
+            "指定すると、サーバ側で POST /api/incident-timeline/view と同じ集計を実行し、"
+            "リクエストと結果を保存する（結果はクライアントから送れない）。このとき from / to は view_request の値で上書きする。"
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_time_range(self) -> IncidentTimelineManualSnapshotCreateRequest:
@@ -281,6 +293,7 @@ class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
     snapshot_kind: Literal["manual", "auto"] = "manual"
     trigger_id: str | None = None
     graph_context: IncidentTimelineGraphContext | None = None
+    created_at: datetime | None = Field(default=None, description="サーバが保存した日時（UTC）。timestamp_utc は利用者側の値")
 
 
 class IncidentTimelineManualSnapshotListItem(BaseModel):
@@ -298,6 +311,18 @@ class IncidentTimelineManualSnapshotListItem(BaseModel):
     trigger_id: str | None = None
     trigger_evidence: dict[str, object] | None = None
     graph_context: IncidentTimelineGraphContext | None = None
+    has_result: bool = Field(default=False, description="保存時点の view の結果を持つか（結果そのものは載せない）")
+    view_request: IncidentTimelineSavedViewRequest | None = None
+    created_at: datetime | None = Field(default=None, description="サーバが保存した日時（UTC）")
+
+
+class IncidentTimelineManualSnapshotDetail(IncidentTimelineManualSnapshotListItem):
+    """手動スナップショット 1 件の詳細。保存時点の結果を持つ。"""
+
+    result: IncidentTimelineViewResponse | None = Field(
+        default=None,
+        description="保存時点の view の結果。無い・保存時のスキーマと合わない場合は None（has_result も false）",
+    )
 
 
 class IncidentTimelineManualSnapshotListResponse(BaseModel):

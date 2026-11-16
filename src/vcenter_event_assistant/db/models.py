@@ -423,6 +423,10 @@ class IncidentTimelineManualSnapshot(Base):
     trigger_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     trigger_evidence: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     graph_context: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    # 保存時の POST /api/incident-timeline/view のリクエストと結果。NULL は条件だけの旧スナップショット。
+    # None を明示して代入すると JSON の null になるので、無いときは属性を設定しない。
+    view_request_payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

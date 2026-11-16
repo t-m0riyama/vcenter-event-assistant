@@ -558,7 +558,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ snapshot_id: 's1' }))
   })
 
-  it('スナップショットの保存は旧形式のまま（結果は送らない）で、運用メモが必須', async () => {
+  it('スナップショットの保存は、表示中の条件を view_request として送り（結果は送らず）、運用メモが必須', async () => {
     let saved: Record<string, unknown> | null = null
     setup()
     harness.extra.set('/api/incident-timeline/snapshots/manual', (_url, init) => {
@@ -575,6 +575,8 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     })
     renderTimeline()
     await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByLabelText('ログ'))
+    await answer(1, emptyViewResponse())
     fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
     const save = await screen.findByRole('button', { name: 'スナップショットを保存' })
     await waitFor(() => expect(save).toBeDisabled())
@@ -584,8 +586,404 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     await waitFor(() => expect(saved).not.toBeNull())
     expect(saved).toMatchObject({ operator_note: '保存テスト' })
     expect(saved).toHaveProperty('build_request_payload')
+    // 表示中の条件（種別から外したログも含む）をそのまま送る。結果は送らない
+    expect(saved!.view_request).toEqual(harness.calls[1].body)
+    expect((saved!.view_request as { sources: string[] }).sources).toEqual(['event', 'alert', 'metric'])
+    expect(saved!.from).toBe(harness.calls[1].body.from)
     expect(saved).not.toHaveProperty('items')
+    expect(saved).not.toHaveProperty('result')
     expect(saved).not.toHaveProperty('result_payload')
+  })
+
+  describe('結果つきのスナップショット', () => {
+    const SNAPSHOT_ID = '00000000-0000-4000-8000-0000000000aa'
+    const viewRequest = {
+      from: '2026-03-10T00:00:00Z',
+      to: '2026-03-10T03:00:00Z',
+      vcenter_id: VC,
+      entity: 'esx01',
+      anchor: null,
+      min_score: 40,
+      sources: ['event', 'alert'],
+      metric_threshold_cpu_pct: 90,
+      metric_threshold_memory_pct: 88,
+      metric_threshold_disk_pct: 75,
+      metric_threshold_network_pct: 75,
+      item_limit: 500,
+    }
+    const listItem = (overrides: Record<string, unknown> = {}) => ({
+      snapshot_id: SNAPSHOT_ID,
+      from: '2026-03-10T00:00:00Z',
+      to: '2026-03-10T03:00:00Z',
+      operator_note: '結果つきメモ',
+      timestamp_utc: '2026-03-10T03:30:00Z',
+      build_request_payload: { from: '2026-03-10T00:00:00Z', to: '2026-03-10T03:00:00Z', vcenter_id: VC },
+      has_result: true,
+      view_request: viewRequest,
+      ...overrides,
+    })
+    const detailOf = (overrides: Record<string, unknown> = {}) => ({
+      ...listItem(),
+      result: populated({ from_utc: '2026-03-10T00:00:00Z', to_utc: '2026-03-10T03:00:00Z' }),
+      ...overrides,
+    })
+    const openSnapshot = async (item: unknown, detail: unknown) => {
+      setup({ snapshots: [item] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () => jsonResponse(detail))
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+    }
+
+    it('開くと保存済みの結果を表示し、「保存時点の内容」と保存日時を注記し、現在のデータは取りに行かない', async () => {
+      await openSnapshot(listItem(), detailOf())
+      const note = await screen.findByRole('note', { name: '保存時点の内容' })
+      expect(note).toHaveTextContent('保存時点の内容')
+      expect(note).toHaveTextContent(/保存した日時: .*3\/10\/26.*3:30/)
+      expect(await screen.findByRole('status')).toHaveTextContent('3 件の出来事を表示しています。')
+      expect(await rowButton(/VmPoweredOffEvent/)).toBeInTheDocument()
+      // 条件には保存時の値が入る（URL にも反映）
+      expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('esx01')
+      expect(window.location.hash).toContain('from=2026-03-10T00%3A00%3A00.000Z')
+      // 再集計の要求は出ていない（最初の読み込みの 1 本だけ）
+      expect(harness.calls).toHaveLength(1)
+    })
+
+    it('「現在のデータで再集計」を押すと、その条件で通常の表示に戻って読み直す', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      fireEvent.click(screen.getByRole('button', { name: '現在のデータで再集計' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({
+        from: '2026-03-10T00:00:00.000Z',
+        to: '2026-03-10T03:00:00.000Z',
+        vcenter_id: VC,
+        entity: 'esx01',
+        min_score: 40,
+        sources: ['event', 'alert'],
+        metric_threshold_cpu_pct: 90,
+        metric_threshold_memory_pct: 88,
+      })
+      await waitFor(() => expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument())
+    })
+
+    it('条件を変えると、保存済みの内容が黙って入れ替わらず、通常の表示に戻って読み直す', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      fireEvent.click(screen.getByLabelText('アラート'))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body.sources).toEqual(['event'])
+      await waitFor(() => expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument())
+    })
+
+    it('保存済みの結果を表示している間は、新しいスナップショットを保存できない', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      fireEvent.change(screen.getByLabelText('運用メモ（必須）'), { target: { value: 'x' } })
+      expect(screen.getByRole('button', { name: 'スナップショットを保存' })).toBeDisabled()
+    })
+
+    it('has_result が false の旧データは、view_request が無ければ from/to/vcenter_id だけを条件に写して再集計する', async () => {
+      setup({ snapshots: [listItem({ has_result: false, view_request: null })] })
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({
+        from: '2026-03-10T00:00:00.000Z',
+        to: '2026-03-10T03:00:00.000Z',
+        vcenter_id: VC,
+      })
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+    })
+
+    it('詳細が結果なし（保存時のスキーマと合わない）で返ったら、view_request の条件で再集計に落ちる', async () => {
+      await openSnapshot(listItem(), detailOf({ has_result: false, result: null }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ entity: 'esx01', min_score: 40, sources: ['event', 'alert'] })
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+    })
+
+    it('詳細の取得中に条件を変えたら、後から届いた保存済みの結果で上書きしない', async () => {
+      let release: (r: Response) => void = () => {}
+      setup({ snapshots: [listItem()] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () =>
+        new Promise<Response>((res) => {
+          release = res
+        }) as unknown as Response,
+      )
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      fireEvent.click(screen.getByLabelText('アラート'))
+      await answer(1, emptyViewResponse())
+      await act(async () => {
+        release(jsonResponse(detailOf()))
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 30))
+      })
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+      expect((screen.getByLabelText('アラート') as HTMLInputElement).checked).toBe(false)
+      // 選択の表示も、取得に失敗・捨てられたときは元に戻る
+      expect(screen.getByRole('button', { name: '結果つきメモ' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('続けて別のスナップショットを選んだら、先の詳細は捨てる', async () => {
+      const second = listItem({ snapshot_id: '00000000-0000-4000-8000-0000000000bb', operator_note: '二つ目' })
+      let releaseFirst: (r: Response) => void = () => {}
+      setup({ snapshots: [listItem(), second] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () =>
+        new Promise<Response>((res) => {
+          releaseFirst = res
+        }) as unknown as Response,
+      )
+      harness.extra.set('/api/incident-timeline/snapshots/manual/00000000-0000-4000-8000-0000000000bb', () =>
+        jsonResponse({ ...detailOf(), snapshot_id: second.snapshot_id, operator_note: '二つ目' }),
+      )
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      fireEvent.click(await screen.findByRole('button', { name: '二つ目' }))
+      expect(await screen.findByRole('note', { name: '保存時点の内容' })).toHaveTextContent('二つ目')
+      await act(async () => {
+        releaseFirst(jsonResponse(detailOf()))
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 30))
+      })
+      expect(screen.getByRole('note', { name: '保存時点の内容' })).toHaveTextContent('二つ目')
+    })
+
+    it('先に選んだ詳細が、後に選んだ詳細より先に届いても、後に選んだほうだけを表示する', async () => {
+      const secondId = '00000000-0000-4000-8000-0000000000cc'
+      const second = listItem({ snapshot_id: secondId, operator_note: '二つ目' })
+      let releaseFirst: (r: Response) => void = () => {}
+      let releaseSecond: (r: Response) => void = () => {}
+      setup({ snapshots: [listItem(), second] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () =>
+        new Promise<Response>((res) => {
+          releaseFirst = res
+        }) as unknown as Response,
+      )
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${secondId}`, () =>
+        new Promise<Response>((res) => {
+          releaseSecond = res
+        }) as unknown as Response,
+      )
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      const first = await screen.findByRole('button', { name: '結果つきメモ' })
+      fireEvent.click(first)
+      fireEvent.click(await screen.findByRole('button', { name: '二つ目' }))
+      await act(async () => {
+        releaseFirst(jsonResponse(detailOf()))
+        await new Promise((r) => setTimeout(r, 30))
+      })
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+      await act(async () => {
+        releaseSecond(jsonResponse({ ...detailOf(), snapshot_id: secondId, operator_note: '二つ目' }))
+      })
+      expect(await screen.findByRole('note', { name: '保存時点の内容' })).toHaveTextContent('二つ目')
+    })
+
+    it('view_request が読めない結果つきスナップショットでも、保存済みの結果を表示でき、再集計は from/to/vcenter_id になる', async () => {
+      await openSnapshot(listItem({ view_request: null }), detailOf({ view_request: null }))
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      fireEvent.click(screen.getByRole('button', { name: '現在のデータで再集計' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ from: '2026-03-10T00:00:00.000Z', to: '2026-03-10T03:00:00.000Z', vcenter_id: VC })
+    })
+
+    it('保存済みの結果がフロントのスキーマで読めないときは、黙らず「いまの形式で読めない」と注記して再集計する', async () => {
+      const bad = detailOf({ result: { ...populated(), items: [{ ...populated().items[0], kind: 'k8s' }] } })
+      await openSnapshot(listItem(), bad)
+      await answer(1, emptyViewResponse())
+      expect(await screen.findByRole('note', { name: '読み込みの注記' })).toHaveTextContent(
+        '保存時点の結果はいまの形式で読めないため、現在のデータで再集計しました',
+      )
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+    })
+
+    it('バックエンドが結果を読めなかったとき（has_result が false）も同じ注記を出す', async () => {
+      await openSnapshot(listItem(), detailOf({ has_result: false, result: null }))
+      await answer(1, emptyViewResponse())
+      expect(await screen.findByRole('note', { name: '読み込みの注記' })).toHaveTextContent('いまの形式で読めない')
+    })
+
+    it('再集計のあいだ、スナップショットを開く前の結果を新しい条件の下に出さない', async () => {
+      setup({ snapshots: [listItem()] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () =>
+        jsonResponse(detailOf({ result: emptyViewResponse({ from_utc: '2026-03-10T00:00:00Z' }) })),
+      )
+      renderTimeline()
+      await answer(0, populated())
+      expect(await rowButton(/VmPoweredOffEvent/)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      fireEvent.click(screen.getByRole('button', { name: '現在のデータで再集計' }))
+      await waitFor(() => expect(harness.calls.length).toBe(2))
+      expect(screen.queryByRole('list', { name: '出来事の時系列' })).not.toBeInTheDocument()
+      expect(screen.queryByText(/読み込んだ期間/)).not.toBeInTheDocument()
+    })
+
+    it('直近 1 時間から別の期間のスナップショットを開くと、条件バーの期間と入力欄が保存した期間になり、そのまま「適用」しても保存した期間で再集計する', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-10')
+      expect(screen.getByLabelText('開始時刻')).toHaveValue('00:00')
+      expect(screen.getByLabelText('終了日')).toHaveValue('2026-03-10')
+      expect(screen.getByLabelText('終了時刻')).toHaveValue('03:00')
+      expect(screen.getByRole('button', { name: '直近 1 時間' })).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('esx01')
+      expect((screen.getByLabelText('アラート') as HTMLInputElement).checked).toBe(true)
+      expect((screen.getByLabelText('ログ') as HTMLInputElement).checked).toBe(false)
+      fireEvent.click(screen.getByRole('button', { name: '適用' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({
+        from: '2026-03-10T00:00:00.000Z',
+        to: '2026-03-10T03:00:00.000Z',
+        entity: 'esx01',
+        min_score: 40,
+        sources: ['event', 'alert'],
+      })
+    })
+
+    it('保存済みの結果の表示中は「更新」を押せない（再集計は専用のボタン）', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      const refresh = screen.getByRole('button', { name: '更新' })
+      expect(refresh).toBeDisabled()
+      expect(refresh).toHaveAttribute('title', expect.stringContaining('再集計'))
+    })
+
+    it('注記に、保持期間を過ぎた元データの行の出口が空になることと、絞り込みは現在のデータになることを書く', async () => {
+      await openSnapshot(listItem(), detailOf())
+      const note = await screen.findByRole('note', { name: '保存時点の内容' })
+      expect(note).toHaveTextContent('保持期間')
+      expect(note).toHaveTextContent('イベントで開く')
+      expect(note).toHaveTextContent('この対象で絞る')
+    })
+
+    it('保存済みの結果の表示中に URL（入口リンク）が変わったら、通常の表示に戻って読み直す', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      await act(async () => {
+        window.history.replaceState(null, '', '/#/timeline?range=6h&entity=other')
+        window.dispatchEvent(new HashChangeEvent('hashchange'))
+      })
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ entity: 'other' })
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+    })
+
+    it('保存した日時はサーバの created_at を使い、一覧にも出す', async () => {
+      await openSnapshot(
+        listItem({ created_at: '2026-03-11T05:06:07Z' }),
+        detailOf({ created_at: '2026-03-11T05:06:07Z' }),
+      )
+      expect(await screen.findByRole('note', { name: '保存時点の内容' })).toHaveTextContent(/3\/11\/26.*5:06/)
+      expect(screen.getByText(/3\/11\/26.*5:06/, { selector: '.timeline-snapshots__time' })).toBeInTheDocument()
+    })
+
+    it('詳細の取得に失敗したらエラーを出し、表示は変えない', async () => {
+      onError.mockClear()
+      setup({ snapshots: [listItem()] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () =>
+        jsonResponse({ detail: 'boom' }, 500),
+      )
+      renderTimeline()
+      await answer(0, populated())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.any(String)))
+      expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+      expect(harness.calls).toHaveLength(1)
+      expect(screen.getByRole('button', { name: '結果つきメモ' })).toHaveAttribute('aria-pressed', 'false')
+    })
+  })
+
+  it('URL が読めない条件に変わったら、保存ボタンは無効になる（直前の条件を保存し続けない）', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, populated())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    fireEvent.change(await screen.findByLabelText('運用メモ（必須）'), { target: { value: 'memo' } })
+    const save = screen.getByRole('button', { name: 'スナップショットを保存' })
+    await waitFor(() => expect(save).toBeEnabled())
+    await act(async () => {
+      window.history.replaceState(null, '', '/#/timeline?range=6h&vcenter_id=abc')
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    await screen.findByRole('alert')
+    expect(save).toBeDisabled()
+  })
+
+  it('保存が 413（結果が大きすぎる）のときは、期間を狭めるよう案内する専用の文言を出す', async () => {
+    onError.mockClear()
+    setup()
+    harness.extra.set('/api/incident-timeline/snapshots/manual', () => jsonResponse({ detail: '大きすぎ' }, 413))
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    fireEvent.change(await screen.findByLabelText('運用メモ（必須）'), { target: { value: 'memo' } })
+    const save = screen.getByRole('button', { name: 'スナップショットを保存' })
+    await waitFor(() => expect(save).toBeEnabled())
+    fireEvent.click(save)
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('期間を狭めるか')))
+  })
+
+  it('バックエンドが返す形（graph_context の metric_key などが null）の一覧でも、一覧が表示される', async () => {
+    setup({
+      snapshots: [
+        {
+          snapshot_id: '00000000-0000-4000-8000-0000000000dd',
+          from: '2026-03-22T00:00:00Z',
+          to: '2026-03-22T02:00:00Z',
+          operator_note: '実機の形',
+          timestamp_utc: '2026-03-22T03:00:00Z',
+          build_request_payload: { from: '2026-03-22T00:00:00Z', to: '2026-03-22T02:00:00Z', vcenter_id: null },
+          snapshot_kind: 'manual',
+          trigger_id: null,
+          trigger_evidence: null,
+          graph_context: {
+            metric_key: null,
+            chart_event_type: null,
+            marker_timestamp_utc: '2026-03-22T03:00:00Z',
+            vcenter_id: null,
+            captured_range: { from: '2026-03-22T00:00:00Z', to: '2026-03-22T02:00:00Z' },
+          },
+          has_result: false,
+          view_request: null,
+          created_at: '2026-03-22T03:00:01Z',
+        },
+      ],
+    })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    expect(await screen.findByRole('button', { name: '実機の形' })).toBeInTheDocument()
+    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+  })
+
+  it('一覧の応答が想定の形でないときは、zod の生の JSON ではなく短い文言を出し、「読み込み中…」のままにしない', async () => {
+    onError.mockClear()
+    setup({ snapshots: [{ snapshot_id: 'bad' }] })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    await waitFor(() => expect(onError).toHaveBeenCalled())
+    const message = String(onError.mock.calls[0][0])
+    expect(message).toContain('スナップショットの一覧を読み込めませんでした')
+    expect(message).not.toContain('"path"')
+    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+    expect(screen.getByText(/一覧を読み込めませんでした/)).toBeInTheDocument()
   })
 
   it('旧画面の「タイムラインを生成」ボタンは無い', async () => {
