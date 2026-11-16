@@ -234,3 +234,32 @@ export function omittedSourceMessages(omitted: readonly TimelineOmittedSource[])
     return `${o.source} は件数が多すぎるため、一覧から省いています。期間を短くするか、対象を絞ってください。`
   })
 }
+
+/** 省いた種別の画面上の名前（状態の欄に使う）。 */
+export function omittedKindLabels(omitted: readonly TimelineOmittedSource[]): string[] {
+  return omitted.map((o) => (o.source === 'log' ? 'ログ' : o.source === 'metric' ? 'メトリクス' : o.source))
+}
+
+/**
+ * メトリクスの超過区間の文。`format` は時刻の書き方（設定のタイムゾーン）。
+ * 期間の端で続いている超過は、始まり・終わりを言い切らず、継続時間は「N 分以上」にする
+ * （`continues_from_before`: 開始は期間の開始前、`continues_after`: 終わりは期間の終わりより後）。
+ */
+export function metricIntervalText(
+  item: Pick<TimelineViewItem, 'timestamp_utc' | 'end_utc' | 'ref'>,
+  format: (iso: string) => string,
+): string {
+  const before = item.ref.continues_from_before === true
+  const after = item.ref.continues_after === true
+  const duration = intervalDurationMs(item)
+  const start = format(item.timestamp_utc)
+  const end = item.end_utc && duration !== null ? format(item.end_utc) : null
+  const length = duration === null ? '' : formatDurationMs(duration)
+  const head = before ? '期間の開始前から' : null
+  if (after) {
+    const tail = end === null ? '期間の終わりでも継続中' : `期間の終わり（${end}）でも継続中。継続 ${length}以上`
+    return `超過区間: ${head ?? `${start} から`}（${tail}）`
+  }
+  if (end === null) return before ? `超過区間: ${head} ${start} まで（継続）` : `超過区間: ${start}（単発）`
+  return `超過区間: ${head ? `${head} ` : `${start} から `}${end} まで（継続 ${length}${before ? '以上' : ''}）`
+}

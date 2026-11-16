@@ -28,6 +28,8 @@ export const timelineItemRefSchema = z.object({
   sample_count: z.number().int().nullable().optional(),
   /** 期間の開始前から超過が続いているか。 */
   continues_from_before: z.boolean().nullable().optional(),
+  /** 期間内の最後のサンプルの時点で、まだ超過していたか。`continues_from_before` と対になる。 */
+  continues_after: z.boolean().nullable().optional(),
 })
 export type TimelineItemRef = z.infer<typeof timelineItemRefSchema>
 
