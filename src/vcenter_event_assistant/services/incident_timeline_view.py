@@ -515,10 +515,10 @@ def select_within_limit(
 
     それでも同じなら入力の並び（時刻・種別・元 id）で決めるので、結果は常に決定的になる。
 
-    ``anchor`` なしのときは、ログが占められる数を ``limit`` の半分（切り捨て）までにする。ログは件数が
-    多く、level の重いログが大量にあると、ほかの種別が level の順だけで一覧から押し出されるため。
-    上の優先順に見ていき、ログが上限に達したら以降のログを飛ばす。ほかの種別だけでは枠が埋まらない
-    ときは、余った枠の分だけ上限を広げてログで埋める（ログしか無い期間で一覧が半分しか出ないことを避ける）。
+    ``anchor`` なしのときは、ほかの種別（アラート・イベント・メトリクス）の行があるかぎり、枠の 4 分の 1
+    （切り捨て）は level に関係なくそれらに残す（ログが占めるのは最大で ``limit - limit // 4``）。重要度の順では
+    同じ level のほかの種別はもともとログより前に並ぶので、この上限が効くのは、level の重いログが大量にあって
+    軽いほかの種別を押し出すときだけ。ほかの種別が 4 分の 1 に満たなければ、残りはログで埋める。
     ``anchor`` ありのときは距離だけで選ぶ（ログの上限は設けない）。
     """
     if len(entries) <= limit:
@@ -538,7 +538,7 @@ def select_within_limit(
     ranked = sorted(enumerate(entries), key=priority)
     if anchor is None:
         others = sum(1 for e in entries if e.kind != "log")
-        log_cap = max(limit // 2, limit - others)
+        log_cap = limit - min(others, limit // 4)
         chosen: list[tuple[int, TimelineEntry]] = []
         logs = 0
         for pair in ranked:

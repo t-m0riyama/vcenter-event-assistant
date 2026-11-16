@@ -477,14 +477,10 @@ def test_truncation_without_anchor_orders_kinds_alert_event_metric_log() -> None
     ):
         kept, _ = select_within_limit(entries, limit, None)
         assert sorted(k.item_id for k in kept) == sorted(expected)
-    # level が重いログは、ログの上限（枠の半分）の中では軽いアラートより先
+    # level が重いログは、軽いアラートより先（枠が 3 以下ではほかの種別に残す枠は無い）
     heavy_log = _bare("log", 9, 9, level="critical")
-    light_alert = _alert(5, 5, level="warning")
-    kept, _ = select_within_limit(sort_entries([alert, light_alert, heavy_log]), 2, None)
-    assert sorted(k.item_id for k in kept) == ["alert:4", "log:9"]
-    # 枠が 1 ならログの上限は 0（ほかの種別で埋まる）
     kept, _ = select_within_limit(sort_entries([alert, heavy_log]), 1, None)
-    assert [k.item_id for k in kept] == ["alert:4"]
+    assert [k.item_id for k in kept] == ["log:9"]
 
 
 def test_truncation_with_anchor_uses_distance_before_kind() -> None:
@@ -578,48 +574,82 @@ def test_log_level(severity: str | None, expected: str | None) -> None:
     assert log_level(severity) == expected
 
 
-# --- 打ち切り: ログは枠の半分まで（anchor なし） -----------------------------------------
+# --- 打ち切り: ほかの種別に枠の 4 分の 1 を残す（anchor なし） ----------------------------
+#
+# 規則: anchor が無いときは重要度（level → 種別 → score → 新しさ）の順に選ぶ。ただし、ほかの種別
+# （アラート・イベント・メトリクス）の行があるかぎり、枠の 4 分の 1（切り捨て）は level に関係なく
+# それらに残す（ログが占めるのは最大で 4 分の 3）。
 
 
 def _many(kind: str, start_id: int, n: int, level: str, minute0: float = 0) -> list[TimelineEntry]:
-    return [_bare(kind, start_id + i, minute0 + i * 0.1, level=level) for i in range(n)]
+    return [_bare(kind, start_id + i, minute0 + i * 0.001, level=level) for i in range(n)]
 
 
-def test_truncation_caps_logs_at_half_when_logs_are_many() -> None:
-    """ログが多いとき、level が重くても枠の半分（切り捨て）までしか占めない。残りはほかの種別。"""
-    logs = _many("log", 1000, 20, "error")
-    metrics = _many("metric", 1, 20, "warning", minute0=10)
-    kept, truncated = select_within_limit(sort_entries([*logs, *metrics]), 7, None)
+def _kinds(kept: list[TimelineEntry]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for e in kept:
+        out[e.kind] = out.get(e.kind, 0) + 1
+    return out
+
+
+def test_truncation_heavy_logs_beat_lighter_events_but_leave_a_quarter() -> None:
+    """レビューの例: error のログ 600 件と info のイベント 1000 件、枠 500。
+    重いログは軽いイベントより先に残るが、ほかの種別のために 4 分の 1（125 件）は残す。"""
+    logs = _many("log", 10_000, 600, "error")
+    events = _many("event", 1, 1000, "info", minute0=100)
+    kept, truncated = select_within_limit(sort_entries([*logs, *events]), 500, None)
     assert truncated is True
-    assert [e.kind for e in kept].count("log") == 3  # 7 // 2
-    assert [e.kind for e in kept].count("metric") == 4
-    # ログの中では今までどおりの優先（同じ level・score なら新しい順）
-    assert {e.source_id for e in kept if e.kind == "log"} == {1017, 1018, 1019}
-    # ほかの種別の中も今までどおり（新しい順）
-    assert {e.source_id for e in kept if e.kind == "metric"} == {17, 18, 19, 20}
+    assert _kinds(kept) == {"log": 375, "event": 125}
+    # ログの中・イベントの中は今までどおりの優先（同じ level・score なら新しい順）
+    assert min(e.source_id for e in kept if e.kind == "log") == 10_000 + 600 - 375
+    assert min(e.source_id for e in kept if e.kind == "event") == 1 + 1000 - 125
 
 
-def test_truncation_keeps_few_logs_by_the_usual_priority() -> None:
-    """ログが半分より少ないときは、ログも今までどおりの優先で選ぶ（枠を取り置かない）。"""
-    logs = [_bare("log", 1000, 1, level="error"), _bare("log", 1001, 2, level="info")]
-    metrics = _many("metric", 1, 10, "warning", minute0=10)
-    kept, _ = select_within_limit(sort_entries([*logs, *metrics]), 6, None)
-    # error のログは残り、info のログは warning のメトリクスに負ける
-    assert sorted(e.item_id for e in kept if e.kind == "log") == ["log:1000"]
-    assert len([e for e in kept if e.kind == "metric"]) == 5
+def test_truncation_with_the_measured_mix_keeps_metric_intervals() -> None:
+    """前回の計測の条件: level error のログ 871 件と warning の超過区間 14,004 件、枠 500。"""
+    logs = _many("log", 100_000, 871, "error")
+    metrics = _many("metric", 1, 14_004, "warning", minute0=50)
+    kept, _ = select_within_limit(sort_entries([*logs, *metrics]), 500, None)
+    assert _kinds(kept) == {"log": 375, "metric": 125}
 
 
-def test_truncation_fills_spare_slots_with_logs_when_other_kinds_are_few() -> None:
-    """ほかの種別だけでは枠が埋まらないときは、余った枠をログで埋める。"""
+def test_truncation_lighter_logs_still_come_after_other_kinds() -> None:
+    """ログが軽いときは、重要度の順でほかの種別が先（4 分の 3 は上限で、取り置きではない）。"""
+    logs = _many("log", 1000, 100, "warning")
+    alerts = [_alert(i, i, level="error") for i in range(1, 8)]
+    kept, _ = select_within_limit(sort_entries([*logs, *alerts]), 10, None)
+    assert _kinds(kept) == {"alert": 7, "log": 3}
+
+
+def test_truncation_with_logs_only_fills_every_slot() -> None:
     logs = _many("log", 1000, 20, "warning")
-    alerts = [_alert(1, 1, level="warning")]
-    kept, truncated = select_within_limit(sort_entries([*logs, *alerts]), 10, None)
+    kept, truncated = select_within_limit(sort_entries(logs), 10, None)
     assert truncated is True and len(kept) == 10
-    assert [e.kind for e in kept].count("log") == 9
-    assert "alert:1" in {e.item_id for e in kept}
-    # ログしか無い期間でも、枠いっぱいまで返す
-    kept, _ = select_within_limit(sort_entries(logs), 10, None)
-    assert len(kept) == 10
+
+
+def test_truncation_fills_slots_left_by_few_other_kinds_with_logs() -> None:
+    """ほかの種別が 4 分の 1 に満たないときは、残りをログで埋める。"""
+    logs = _many("log", 1000, 600, "error")
+    events = _many("event", 1, 10, "info", minute0=100)
+    kept, _ = select_within_limit(sort_entries([*logs, *events]), 500, None)
+    assert _kinds(kept) == {"log": 490, "event": 10}
+
+
+@pytest.mark.parametrize(
+    ("limit", "expected"),
+    [
+        (1, {"log": 1}),               # 1 // 4 = 0: 重要度の順だけ
+        (2, {"log": 2}),
+        (3, {"log": 3}),
+        (4, {"log": 3, "event": 1}),   # 4 // 4 = 1 件をほかの種別に残す
+        (8, {"log": 6, "event": 2}),
+    ],
+)
+def test_truncation_quarter_for_other_kinds_at_small_limits(limit: int, expected: dict[str, int]) -> None:
+    logs = _many("log", 1000, 10, "error")
+    events = _many("event", 1, 10, "info", minute0=100)
+    kept, _ = select_within_limit(sort_entries([*logs, *events]), limit, None)
+    assert _kinds(kept) == expected
 
 
 def test_truncation_with_anchor_does_not_cap_logs() -> None:

@@ -1605,7 +1605,7 @@ async def test_events_and_alerts_over_the_limit_are_still_422(
 async def test_many_critical_logs_do_not_push_metric_intervals_out_of_a_24h_view(client: AsyncClient) -> None:
     """計測の条件（critical のログが 1 日 871 件。level は error）でも、warning の超過区間は一覧に残る。
 
-    anchor が無いときのログは枠（item_limit 既定 500）の半分までなので、残りの枠にほかの種別が入る。
+    anchor が無いときは、ほかの種別があるかぎり枠（item_limit 既定 500）の 4 分の 1 をそれらに残す。
     """
     vid = await _vcenter()
     await _logs(
@@ -1620,9 +1620,9 @@ async def test_many_critical_logs_do_not_push_metric_intervals_out_of_a_24h_view
     assert len(kinds) == 500
     assert kinds.count("metric") == 60
     assert kinds.count("log") == 440  # ほかの種別で埋まらない分はログで埋める
-    # 超過区間が多いときは、ログは半分まで
+    # 超過区間が多いときは、4 分の 1（125 件）を超過区間に残し、重いログが残りを占める
     for n in range(60, 400):
         await _series(vid, f"host-{n}", [(n * 3.5, 85)], name=f"esx-m{n:03d}")
     data = await _post(client, **{"to": "2026-03-23T00:00:00Z"})
     kinds = [i["kind"] for i in data["items"]]
-    assert kinds.count("log") == 250 and kinds.count("metric") == 250
+    assert kinds.count("log") == 375 and kinds.count("metric") == 125
