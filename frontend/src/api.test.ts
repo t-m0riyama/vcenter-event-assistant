@@ -300,4 +300,14 @@ describe('api', () => {
     )
     await expect(apiPost('/api/foo', {})).rejects.toThrow(/^パスワードは 12 文字以上にしてください。$/)
   })
+  it('503 の Retry-After を秒数で保持する（無い・不正なら null）', async () => {
+    fetchMock().mockResolvedValueOnce(new Response('busy', { status: 503, headers: { 'Retry-After': '5' } }))
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ status: 503, retryAfterSeconds: 5 })
+    fetchMock().mockResolvedValueOnce(new Response('busy', { status: 503 }))
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ retryAfterSeconds: null })
+    fetchMock().mockResolvedValueOnce(
+      new Response('busy', { status: 503, headers: { 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' } }),
+    )
+    await expect(apiPost('/api/foo', {})).rejects.toMatchObject({ retryAfterSeconds: null })
+  })
 })

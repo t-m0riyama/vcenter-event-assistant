@@ -1,5 +1,7 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
+import type { ChatHandoff, ChatHandoffInput } from './hooks/chatHandoff'
+import type { MetricsFocus } from './hooks/metricsReplay'
 import { useAppConfig } from './hooks/useAppConfig'
 import { useAttentionStatus } from './hooks/useAttentionStatus'
 import { useAppTabHashSync } from './hooks/useAppTabHashSync'
@@ -76,9 +78,14 @@ export default function App() {
   const [mountedSettingsSubTabs, setMountedSettingsSubTabs] = useState<Set<SettingsSubTabId>>(
     initialMountedSettingsSubTabs,
   )
-  const [metricsSnapshotReplay, setMetricsSnapshotReplay] =
-    useState<IncidentTimelineManualSnapshotListItem | null>(null)
+  /** グラフのタブへ渡す条件の元（スナップショットまたは期間・vCenter の指定）。 */
+  const [metricsReplaySource, setMetricsReplaySource] = useState<
+    { item: IncidentTimelineManualSnapshotListItem } | { focus: MetricsFocus } | null
+  >(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
+  /** チャットのタブへ渡す期間・vCenter。`nonce` が変わるたびにチャット側で差し替える。 */
+  const [chatHandoff, setChatHandoff] = useState<ChatHandoffInput | null>(null)
+  const [chatHandoffNonce, setChatHandoffNonce] = useState(0)
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setAppErr)
@@ -110,7 +117,7 @@ export default function App() {
 
   useEffect(() => {
     if (tab !== 'metrics') {
-      setMetricsSnapshotReplay(null)
+      setMetricsReplaySource(null)
     }
   }, [tab])
 
@@ -131,6 +138,31 @@ export default function App() {
     // hashchange 等で tab が変わったときもマウントを追従させる
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsSubTab, tab])
+
+  const openMetricsReplay = useCallback(
+    (source: NonNullable<typeof metricsReplaySource>) => {
+      setMetricsReplaySource(source)
+      setMetricsReplayNonce((n) => n + 1)
+      setMountedMainTabs((prev) => (prev.has('metrics') ? prev : new Set(prev).add('metrics')))
+      setTab('metrics')
+      setShowHelp(false)
+    },
+    [setTab],
+  )
+
+  const openChatWithRange = useCallback(
+    (focus: ChatHandoff) => {
+      const nonce = chatHandoffNonce + 1
+      setChatHandoffNonce(nonce)
+      setChatHandoff({ focus, nonce })
+      setMountedMainTabs((prev) => (prev.has('chat') ? prev : new Set(prev).add('chat')))
+      setTab('chat')
+      setShowHelp(false)
+    },
+    [chatHandoffNonce, setTab],
+  )
+  /** チャットが引き継ぎを適用したら消す（チャットが作り直されても、古い引き継ぎを当て直さない）。 */
+  const clearChatHandoff = useCallback(() => setChatHandoff(null), [])
 
   const selectMainTab = (next: MainTabId) => {
     ensureMainTabMounted(next)
@@ -174,9 +206,7 @@ export default function App() {
               onError={onError}
               perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
               snapshotReplay={
-                metricsSnapshotReplay
-                  ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
-                  : null
+                metricsReplaySource ? { ...metricsReplaySource, nonce: metricsReplayNonce } : null
               }
             />
           </Suspense>
@@ -198,27 +228,33 @@ export default function App() {
         id: 'chat',
         label: 'チャット',
         panelLabel: 'チャット',
-        render: (onError) => <ChatPanel onError={onError} />,
+        render: (onError) => <ChatPanel onError={onError} handoff={chatHandoff} onHandoffApplied={clearChatHandoff} />,
       },
       {
         id: 'timeline',
         label: 'タイムライン',
         panelLabel: 'タイムライン',
-        render: (onError) => (
+        render: (onError, active) => (
           <TimelinePanel
             onError={onError}
-            onOpenSnapshotInMetrics={(item) => {
-              setMetricsSnapshotReplay(item)
-              setMetricsReplayNonce((n) => n + 1)
-              ensureMainTabMounted('metrics')
-              setTab('metrics')
-              setShowHelp(false)
-            }}
+            active={active}
+            onOpenSnapshotInMetrics={(item) => openMetricsReplay({ item })}
+            onOpenInMetrics={(focus) => openMetricsReplay({ focus })}
+            onOpenInChat={canChat ? openChatWithRange : undefined}
           />
         ),
       },
     ],
-    [metricsReplayNonce, metricsSnapshotReplay, retention?.perf_sample_interval_seconds, setTab],
+    [
+      canChat,
+      chatHandoff,
+      clearChatHandoff,
+      metricsReplayNonce,
+      metricsReplaySource,
+      openChatWithRange,
+      openMetricsReplay,
+      retention?.perf_sample_interval_seconds,
+    ],
   )
   // チャットは operator 以上（LLM の呼び出しを伴うため）
   const visibleMainTabs = mainTabs.filter((t) => t.id !== 'chat' || canChat)

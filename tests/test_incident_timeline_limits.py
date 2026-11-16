@@ -214,6 +214,13 @@ def test_incident_timeline_view_uses_its_own_rate_limit_bucket() -> None:
     assert _rate_limit_spec("POST", "/api/incident-timeline/view") == ("incident_timeline_view", 60)
 
 
+def test_manual_snapshot_save_shares_the_view_rate_limit_bucket() -> None:
+    """保存は view と同じ集計を走らせるので、同じ枠で数える（読み取りの GET は対象外）。"""
+    assert _rate_limit_spec("POST", "/api/incident-timeline/snapshots/manual") == ("incident_timeline_view", 60)
+    assert _rate_limit_spec("GET", "/api/incident-timeline/snapshots/manual") is None
+    assert _rate_limit_spec("GET", "/api/incident-timeline/snapshots/manual/abc") is None
+
+
 async def test_incident_timeline_view_does_not_consume_the_timeline_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

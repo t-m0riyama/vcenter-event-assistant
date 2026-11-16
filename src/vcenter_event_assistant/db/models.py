@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -89,6 +89,25 @@ class LogRecord(Base):
     message: Mapped[str] = mapped_column(Text)
 
 
+# タイムライン表示（incident_timeline_view._collect_logs）の、error 以上のログを期間で絞る問い合わせ用。
+# 重大度は大文字小文字・前後の空白を無視して比べるので、問い合わせと同じ式（lower(trim(severity))）で
+# 索引にする（SQLite は式が一致しないと使わない）。大半を占める info / warning の行を読まずに済む。
+Index(
+    "ix_log_records_severity_norm_effective",
+    func.lower(func.trim(LogRecord.severity)),
+    LogRecord.effective_at,
+)
+# 同じ問い合わせで vCenter を指定したとき用。SQLite は指定ありだと ix_log_vcenter_effective_time
+# （vcenter_id, effective_at）を選び、期間内の全ログ（大半は info / warning）を読むので、vCenter を先頭にした
+# 同じ式の索引を足す。
+Index(
+    "ix_log_records_vcenter_severity_norm_effective",
+    LogRecord.vcenter_id,
+    func.lower(func.trim(LogRecord.severity)),
+    LogRecord.effective_at,
+)
+
+
 class EventScoreRule(Base):
     """Per-event-type additive adjustment to ``score_event`` base score (stored in ``events.notable_score``)."""
 
@@ -131,6 +150,21 @@ class MetricSample(Base):
             "metric_key",
             "sampled_at",
         ),
+        # タイムライン表示（incident_timeline_view._collect_metrics）が、期間内の閾値以上のサンプルを
+        # vCenter・指標ごとの範囲走査で探すため。value まで含めて、閾値未満の行では表を引かない。
+        # entity_moid・entity_name も含めて、閾値以上のサンプルの数え上げと、対象（名前か moid）に当たる系列の
+        # 探索を表を引かずに済ませる（含めないと、超過が多いとき対象で絞った数え上げだけで 5 秒かかった）。
+        # SQLite だけに作る。PostgreSQL は計測でこの索引を選ばず（期間が短いと sampled_at、長いと metric_key の
+        # 索引を使う）、書き込みの費用だけが増えるため。
+        Index(
+            "ix_metric_samples_vcenter_metric_sampled_value",
+            "vcenter_id",
+            "metric_key",
+            "sampled_at",
+            "value",
+            "entity_moid",
+            "entity_name",
+        ).ddl_if(dialect="sqlite"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -389,6 +423,10 @@ class IncidentTimelineManualSnapshot(Base):
     trigger_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     trigger_evidence: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     graph_context: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    # 保存時の POST /api/incident-timeline/view のリクエストと結果。NULL は条件だけの旧スナップショット。
+    # None を明示して代入すると JSON の null になるので、無いときは属性を設定しない。
+    view_request_payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

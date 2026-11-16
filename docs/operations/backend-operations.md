@@ -173,7 +173,18 @@
 
 整合確認:
 
-- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+
+**スナップショットの保存結果の保持期間:**
+
+タイムラインのスナップショットは、保存時に集計した結果（イベント・ログの本文を含む）を持つ。結果の保持は次の 2 つで決まる。
+
+- `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90）: スナップショットの行ごと削除する。
+- `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`（既定 `0`）: `created_at` からこの日数を過ぎたスナップショットの**保存結果だけ**を消す。`0` は結果だけを先に消さない（行と同じ期間残る）。
+
+結果だけを消したとき、行・保存した条件・運用メモは残る。画面は「結果なし」として、保存した条件で現在のデータから再集計する（元のイベント・ログ・メトリクスが保持期間を過ぎていれば、再集計の結果は空になる）。パージの周期は `PURGE_INTERVAL_HOURS` で、他の保持設定と同じジョブで実行する。行の保持期間より長い値を設定しても害はない（行が先に消える）。
+
+イベント・ログの本文を、元データの保持期間より長く残したくないときは、イベント・ログの保持期間に合わせた値（例: `7`）にする。
 
 **SQLite と PostgreSQL の選び方:**
 
@@ -406,7 +417,9 @@ TLS:
 - API 待受: `UVICORN_HOST`, `UVICORN_PORT`（ポート未設定時は `8000`）
 - スケジューラ有効化: `SCHEDULER_ENABLED`
 - APScheduler の `misfire_grace_time`: interval ジョブは各間隔の半分、cron ダイジェストは 3600 秒（`jobs/scheduler.py`）。イベントループ停止後の取りこぼし軽減用
-- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）
+- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`（スナップショットの保存結果だけを消す。`0` は消さない。詳細は「スナップショットの保存結果の保持期間」）
+  - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。先に結果だけを消したいときは、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` を設定する。保存する結果は 1 件あたり最大 8 MB で、超えると保存せず 413 を返す。
+  - SQLite は、削除した行の領域をファイルサイズへ戻さない（空いた領域は次の書き込みで再利用される）。ファイルを縮めるには `VACUUM` が要る。
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
@@ -419,6 +432,19 @@ TLS:
   - rate limit: `/api/incident-timeline` は `RATE_LIMIT_CHAT_PER_MINUTE` の 2 倍（既定 20 回/分、クライアントの IP ごと）。超えると 429
   - 同時実行数: `CONTEXT_AGGREGATION_CONCURRENCY`（全体、既定 4）と `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER`（利用者ごと、既定 1）。空きがなければ待たずに 503（`Retry-After` 付き）を返す。画面には「時間をおいて再度お試しください」と出る
   - イベントの集計行数: `CONTEXT_AGGREGATION_MAX_ROWS`（既定 100,000）。行数はおよそ「時間バケット数（最大 48 程度）× イベント種別数」で、超えると 422（vCenter を指定して絞り込むよう案内する）。メトリクスはカテゴリごとの上位 15 台を DB で選ぶので、この上限の対象ではない
+  - タイムライン画面の API（`POST /api/incident-timeline/view`）は、同じ `CONTEXT_AGGREGATION_MAX_ROWS` を種別ごとの行数に当てる。対象は、`min_score` 以上のイベント、通知履歴、メトリクスの超過区間（区間の数。サンプル数ではない）、重大度が error 以上のログ。イベントか通知履歴が超えると、要求全体が 422 になる。エラーログかメトリクスの超過区間が超えたときは、422 にせず、その種別の行だけを一覧とハイライトから省き、応答の `omitted_sources` で伝える（ログの俯瞰の件数 `log_error` は返す。メトリクスの俯瞰 `metric_breach` は数えられないので 0 になる）。メトリクスの超過区間は CPU・メモリだけで、ディスク・ネットワークの指標は KB/s なので % の閾値を当てない。error 以上のログを期間で絞るために、式の索引 `ix_log_records_severity_norm_effective`（`lower(trim(severity))`, `effective_at`）と、vCenter を指定したとき用の `ix_log_records_vcenter_severity_norm_effective`（`vcenter_id`, `lower(trim(severity))`, `effective_at`）を使う
+  - タイムライン画面のメトリクスの超過区間は、区間を作る前に、期間内の閾値以上のサンプルの数（CPU とメモリの合計。vCenter・対象で絞った後の数）を `TIMELINE_METRIC_BREACH_SAMPLE_LIMIT`（既定 40,000）+ 1 件で打ち切って数える。上限を超えたら区間を作らず、メトリクスだけを省いて返す（応答の `omitted_sources` は `{source: "metric", reason: "too_many_rows"}`。画面は「しきい値を上げるか、期間を短くするか、対象を絞ってください」と知らせる）。区間を作る時間は閾値以上のサンプルの数に比例するので、この上限が所要時間の上限になる。既定値は、SQLite で 7 日・200 ホストのとき、上限ぎりぎりでも 5 秒程度に収まる値。上げると省かれにくくなる代わりに、上限に近い要求ほど遅くなる（SQLite では 1 万件あたり 0.4 秒ほど延びる。7 日・200 ホストで 4.7 万件 2.5〜4.2 秒、13.8 万件 6.4〜7.6 秒）。PostgreSQL では上げても速い
+  - 所要時間の目安（実測。200 ホスト、5 分間隔、指標 6 種、7 日で約 243 万行。メトリクスの処理 1 回の時間で、数え上げと区間の問い合わせの合計。幅は vCenter の指定の有無・対象の絞り込みと、ディスクのキャッシュの状態による）。SQLite は、vCenter・指標・時刻・値・moid・名前の索引 `ix_metric_samples_vcenter_metric_sampled_value` を使う（SQLite だけに作る）
+
+    | 期間・データ | SQLite | PostgreSQL 16 |
+    |---|---|---|
+    | 1 時間 | 0.1 秒以下 | 0.1 秒以下 |
+    | 24 時間 | 0.2〜1 秒 | 0.1〜0.3 秒 |
+    | 7 日、各ホストが 1 日 1 時間だけ超過（閾値以上のサンプル 1.7 万件） | 1.2〜2.2 秒 | 0.5〜0.8 秒 |
+    | 7 日、上限ぎりぎり（約 3.9 万件。超過が続く形と、1 サンプルおきに超過して区間が 2.4 万に分かれる形） | 1.6〜3.7 秒 | 0.6〜1.4 秒 |
+    | 7 日、上限を超える（全ホストのメモリが 7 日間ずっと超過、約 42 万件）→ メトリクスを省く | 0.1 秒（対象で絞ると 0.6 秒） | 0.02〜0.4 秒（初回の対象の絞り込みで 1.3 秒） |
+
+    上限を設ける前は、最後の行のデータで区間を作るのに SQLite で 27〜35 秒、PostgreSQL で 3.4 秒かかった。ホストの数が多い、または超過が多い環境では PostgreSQL が向く（同じ上限ぎりぎりのデータで、SQLite の 1.6〜3.7 秒に対して 0.6〜1.4 秒）。PostgreSQL で 7 日の要求のとき、超過が少ないと数え上げが表を順に読む（約 243 万行で 0.2〜0.5 秒。表の大きさに比例する）。SQLite の値は、統計（`ANALYZE`）の有無で大きく変わらない（アプリは `ANALYZE` を実行しない）。メモリの使用率が常に閾値を超える環境では、画面の条件のメモリの閾値（`metric_threshold_memory_pct`、既定 85%）を実情に合わせて上げると、省かれずに開ける。PostgreSQL では、区間の問い合わせの前にトランザクションの中だけ JIT を切る（行数の見積もりが大きく外れ、JIT のコンパイルが実行より長くかかるため）
   - 利用者ごとの同時実行数は、チャット・プレビュー・インシデントタイムラインで共有する。同じ利用者が別のタブでタイムラインを生成している間にチャットを送ると、片方が 503 になる。困る場合は `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER` を 2 にする
   - 要求を途中で取り消すと枠はすぐ返るが、SQLite では実行中のクエリが最後まで走る。取り消しを繰り返すと、一時的に上限より多くの集計が DB で走ることがある（PostgreSQL ではクエリも取り消される）
   - 上限はどれもプロセスごとに数える。複数のワーカーで動かすと、全体の上限は「上限 × ワーカー数」になる。リバースプロキシの後ろでは rate limit のキー（クライアントの IP）が全員同じになり、1 つの枠を共有する。認証を無効にしている場合、同時実行数は全員が 1 人の利用者として数えられる
@@ -571,7 +597,18 @@ docker compose run --rm app vcenter-event-assistant-admin create-user admin --ro
   - `plugin installation job failed`
 - 変更対象のAPIを1つ以上実行し、期待どおりか確認
 
-### 5.4 ロールバック手順（最小）
+### 5.4 索引を足すマイグレーションの所要時間
+
+アプリの更新で索引を足すマイグレーションが入ると、起動時の自動マイグレーション（`VEA_DB_AUTO_MIGRATE`）が索引を作り終えるまで、アプリは起動しない。索引の作成中は、その表への書き込み（収集の取り込み）も止まる。表が大きい環境では、更新の時間帯を収集の少ない時間に寄せる。複数のプロセスが同時に起動したときは、マイグレーションの完了をロックで待つ（`VEA_DB_MIGRATION_LOCK_TIMEOUT_SECS`、既定 300 秒）。索引の作成がこれより長くかかる環境では、値を延ばすか、1 つのプロセスで先にマイグレーションを済ませる。
+
+実測の目安（開発機。ディスクや同時の負荷で変わる）:
+
+- `e2f3a4b5c6d7`（`log_records` の式の索引）: PostgreSQL 16 で 300 万行 3.3 秒、605 万行 5.0 秒
+- `f3a4b5c6d7e8`（タイムライン用の索引 2 つ）:
+  - `log_records` の vCenter 付きの式の索引: PostgreSQL 16 で 605 万行 5.9 秒、SQLite で 30 万行 2.9 秒
+  - `metric_samples` の vCenter・指標・時刻・値・moid・名前の索引（SQLite だけ）: SQLite で 243 万行 25〜34 秒
+
+### 5.5 ロールバック手順（最小）
 
 1. `.env` を変更前の値に戻す
 2. アプリケーションプロセスを再起動する

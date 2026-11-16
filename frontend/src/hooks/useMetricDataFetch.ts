@@ -62,11 +62,12 @@ export function useMetricDataFetch(options: UseMetricDataFetchOptions) {
       .catch((e) => onError(toErrorMessage(e)))
   }, [onError])
 
-  const loadMetricKeys = useCallback(async (): Promise<string> => {
+  const loadMetricKeys = useCallback(async (preferred?: string): Promise<string> => {
     try {
       const keys = await fetchMetricKeysForVcenter(vcenterId)
       const prev = metricKeyRef.current
-      const nextKey = pickMetricKeyAfterFetch(prev, keys)
+      // 希望の指標が選択肢にあるときだけ選ぶ。無ければ今の指標を保つ（黙って別の指標にしない）
+      const nextKey = preferred && keys.includes(preferred) ? preferred : pickMetricKeyAfterFetch(prev, keys)
       setMetricKeys(keys)
       return nextKey
     } catch (e) {

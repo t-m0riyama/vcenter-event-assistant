@@ -5,6 +5,10 @@ import {
   isoUtcDateTimeSchema,
   metricThresholdNullablePercentSchema,
 } from './base'
+import {
+  incidentTimelineViewRequestSchema,
+  incidentTimelineViewResponseSchema,
+} from './incidentTimelineView'
 
 export const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -154,28 +158,35 @@ export const incidentTimelineBuildRequestSchema = z
 
 export type IncidentTimelineBuildRequest = z.infer<typeof incidentTimelineBuildRequestSchema>
 
-/** スナップショットに保存するグラフ再生用メタ（すべて任意） */
+/**
+ * サーバは未指定の項目を null で返す（`str | None`）。null は未指定（undefined）と同じ扱いにそろえる。
+ * 使う側は `?? ''` などで読むので、型は optional のまま変わらない。
+ */
+function nullToUndefined<T extends z.ZodType>(schema: T) {
+  return schema
+    .nullish()
+    .transform((value): z.output<T> | undefined => (value === null ? undefined : value))
+}
+
+/** スナップショットに保存するグラフ再生用メタ（すべて任意。応答では未指定が null で返る） */
 export const incidentTimelineGraphContextSchema = z
   .object({
-    metric_key: z.string().max(512).optional(),
-    chart_event_type: z.string().max(512).optional(),
-    marker_timestamp_utc: isoUtcDateTimeSchema.optional(),
+    metric_key: nullToUndefined(z.string().max(512)),
+    chart_event_type: nullToUndefined(z.string().max(512)),
+    marker_timestamp_utc: nullToUndefined(isoUtcDateTimeSchema),
     vcenter_id: z.string().uuid().nullable().optional(),
-    captured_range: z
-      .object({
-        from: isoUtcDateTimeSchema,
-        to: isoUtcDateTimeSchema,
-      })
-      .strict()
-      .optional(),
+    captured_range: nullToUndefined(
+      z
+        .object({
+          from: isoUtcDateTimeSchema,
+          to: isoUtcDateTimeSchema,
+        })
+        .strict(),
+    ),
   })
   .strict()
 
 export type IncidentTimelineGraphContext = z.infer<typeof incidentTimelineGraphContextSchema>
-
-export function parseIncidentTimelineResponse(raw: unknown): IncidentTimeline {
-  return incidentTimelineSchema.parse(raw)
-}
 
 export const incidentTimelineManualSnapshotCreateRequestSchema = z
   .object({
@@ -185,6 +196,8 @@ export const incidentTimelineManualSnapshotCreateRequestSchema = z
     operator_note: z.string().min(1).max(10_000),
     build_request_payload: incidentTimelineBuildRequestSchema.optional(),
     graph_context: incidentTimelineGraphContextSchema.optional(),
+    /** 指定すると、サーバが保存時に集計して結果も保存する（結果はクライアントから送らない）。 */
+    view_request: incidentTimelineViewRequestSchema.optional(),
   })
   .strict()
 
@@ -200,6 +213,7 @@ export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
   graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
+  created_at: isoOffsetDateTimeSchema.nullable().optional(),
 })
 
 export type IncidentTimelineManualSnapshotCreateResponse = z.infer<
@@ -217,11 +231,24 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   trigger_id: z.string().optional().nullable(),
   trigger_evidence: z.record(z.string(), z.unknown()).optional().nullable(),
   graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
+  /** 保存時点の結果を持つか（一覧には結果そのものは載らない）。古いサーバには無い。 */
+  has_result: z.boolean().optional().default(false),
+  /** サーバが保存した日時。`timestamp_utc` は利用者側の値なので、「保存した日時」にはこちらを使う。 */
+  created_at: isoOffsetDateTimeSchema.nullable().optional(),
+  /** 保存した view のリクエスト。読めない形のときは null として扱う。 */
+  view_request: incidentTimelineViewRequestSchema.nullable().optional().catch(null),
 })
 
 export type IncidentTimelineManualSnapshotListItem = z.infer<
   typeof incidentTimelineManualSnapshotListItemSchema
 >
+
+/** 1 件の詳細。結果が無い・読めない形のときは null（`has_result` も false）。 */
+export const incidentTimelineManualSnapshotDetailSchema = incidentTimelineManualSnapshotListItemSchema.extend({
+  result: incidentTimelineViewResponseSchema.nullable().optional().catch(null),
+})
+
+export type IncidentTimelineManualSnapshotDetail = z.infer<typeof incidentTimelineManualSnapshotDetailSchema>
 
 export const incidentTimelineManualSnapshotListResponseSchema = z.object({
   items: z.array(incidentTimelineManualSnapshotListItemSchema),

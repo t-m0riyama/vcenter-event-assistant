@@ -17,16 +17,23 @@ from vcenter_event_assistant.services.incident_timeline_view import (
     build_overview,
     choose_bucket_seconds,
     count_per_bucket,
+    count_spans_per_bucket,
     entity_matches,
     event_level,
     first_signal,
+    log_level,
     merge_consecutive,
+    metric_breach_detail,
+    metric_breach_level,
+    metric_breach_title,
+    format_number,
     overview_bucket_count,
     pick_new_event_types,
     select_within_limit,
     sort_entries,
     summarize_event_types,
     top_entities,
+    truncate_detail,
 )
 
 T0 = datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
@@ -440,3 +447,256 @@ def test_truncation_without_anchor_keeps_alert_before_event_of_same_level() -> N
     warn_alert = _alert(4, 4, level="warning")
     kept, _ = select_within_limit(sort_entries([heavier, warn_alert]), 1, None)
     assert [k.item_id for k in kept] == ["event:3"]
+
+
+# --- PR4: 種別の優先（メトリクス・ログ） --------------------------------------------------
+
+
+def _bare(kind: str, source_id: int, minute: float, level: str = "error") -> TimelineEntry:
+    return TimelineEntry(
+        kind=kind,  # type: ignore[arg-type]
+        source_id=source_id,
+        timestamp_utc=_at(minute),
+        level=level,  # type: ignore[arg-type]
+        title=f"{kind}-{source_id}",
+    )
+
+
+def test_truncation_without_anchor_orders_kinds_alert_event_metric_log() -> None:
+    """同じ level なら、アラート → イベント → メトリクス → ログの順に残す（時刻やスコアより先）。"""
+    # ログを最も新しくしても、メトリクスより後に回る（新しい順の規則より種別が先）
+    log = _bare("log", 1, 8)
+    metric = _bare("metric", 2, 2)
+    event = replace(_ev(3, 3, "A", score=0, level="error"))
+    alert = _alert(4, 0, level="error")
+    entries = sort_entries([log, metric, event, alert])
+    for limit, expected in (
+        (1, ["alert:4"]),
+        (2, ["alert:4", "event:3"]),
+        (3, ["alert:4", "metric:2", "event:3"]),
+    ):
+        kept, _ = select_within_limit(entries, limit, None)
+        assert sorted(k.item_id for k in kept) == sorted(expected)
+    # level が重いログは、軽いアラートより先（枠が 3 以下ではほかの種別に残す枠は無い）
+    heavy_log = _bare("log", 9, 9, level="critical")
+    kept, _ = select_within_limit(sort_entries([alert, heavy_log]), 1, None)
+    assert [k.item_id for k in kept] == ["log:9"]
+
+
+def test_truncation_with_anchor_uses_distance_before_kind() -> None:
+    """anchor があるときは種別より距離。区間の中に anchor があるメトリクスは距離 0。"""
+    alert = _alert(1, 0, level="error")
+    metric = replace(_bare("metric", 2, 5), end_utc=_at(15))
+    kept, _ = select_within_limit(sort_entries([alert, metric]), 1, _at(10))
+    assert [k.item_id for k in kept] == ["metric:2"]
+
+
+def test_same_timestamp_orders_alert_event_metric_log() -> None:
+    entries = sort_entries([_bare("log", 1, 1), _bare("metric", 2, 1), _ev(3, 1), _alert(4, 1)])
+    assert [e.kind for e in entries] == ["alert", "event", "metric", "log"]
+
+
+# --- PR4: メトリクスの超過区間 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("peak", "threshold", "expected"),
+    [
+        (80, 80, "warning"),
+        (94.99, 80, "warning"),
+        (95, 80, "error"),
+        (100, 99, "error"),
+        (74.99, 60, "warning"),
+        (75, 60, "error"),
+        (20, 5, "error"),
+    ],
+)
+def test_metric_breach_level(peak: float, threshold: float, expected: str) -> None:
+    assert metric_breach_level(peak, threshold) == expected
+
+
+def test_metric_breach_title_and_detail() -> None:
+    assert metric_breach_title("host.cpu.usage_pct", 80.0) == "CPU 使用率が閾値（80%）を超過"
+    assert metric_breach_title("host.mem.usage_pct", 85.5) == "メモリ使用率が閾値（85.5%）を超過"
+    # 時刻は detail に書かない（画面が ref.peak_at_utc を設定のタイムゾーンで表示する）
+    assert metric_breach_detail(92.346, 3, continued=False) == "ピーク 92.35%、サンプル 3 件"
+    assert metric_breach_detail(90.0, 1, continued=True) == "ピーク 90%、サンプル 1 件、期間の開始前から継続"
+
+
+def test_count_spans_per_bucket_counts_every_touched_bucket_and_clips() -> None:
+    spans = [
+        (_at(1), _at(3)),        # 1, 2, 3
+        (_at(2.5), None),        # 2 だけ
+        (_at(-5), _at(0.5)),     # 期間の前から: 0 だけ
+        (_at(8), _at(30)),       # 期間の後ろへはみ出す: 8, 9
+    ]
+    assert count_spans_per_bucket(spans, T0, 60, 10) == [1, 1, 2, 1, 0, 0, 0, 0, 1, 1]
+
+
+# --- PR4: エラーログ ----------------------------------------------------------------------
+
+
+def test_truncate_detail() -> None:
+    assert truncate_detail(None) is None
+    assert truncate_detail("") is None
+    assert truncate_detail("abc", 3) == "abc"
+    assert truncate_detail("abcd", 3) == "abc…"
+    assert truncate_detail("x" * 1001) == "x" * 1000 + "…"
+
+
+def test_log_runs_merge_only_with_the_same_source_and_within_gap() -> None:
+    def log(source_id: int, minute: float, host: str = "esx01", kind: str = "vmkernel") -> TimelineEntry:
+        return TimelineEntry(
+            kind="log", source_id=source_id, timestamp_utc=_at(minute), level="error",
+            title=f"{host} {kind}", entity_name=host, vcenter_id=V1,
+            merge_key=("log", V1, host, kind, "error"), ref={"log_id": source_id},
+        )
+
+    merged = merge_consecutive(
+        sort_entries([log(1, 0), log(2, 1), log(3, 2, kind="hostd"), log(4, 3), log(5, 9)]),
+        max_gap=timedelta(minutes=5),
+    )
+    assert [(m.item_id, m.count, m.end_utc) for m in merged] == [
+        ("log:1", 2, _at(1)), ("log:3", 1, None), ("log:4", 1, None), ("log:5", 1, None),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("severity", "expected"),
+    [
+        ("error", "warning"), ("ERR", "warning"), (" Error ", "warning"),
+        ("critical", "error"), ("crit", "error"), ("FATAL", "error"), ("panic", "error"),
+        ("alert", "error"), ("emerg", "error"),
+        ("warning", None), ("info", None), ("", None), (None, None), ("errors", None),
+    ],
+)
+def test_log_level(severity: str | None, expected: str | None) -> None:
+    assert log_level(severity) == expected
+
+
+# --- 打ち切り: ほかの種別に枠の 4 分の 1 を残す（anchor なし） ----------------------------
+#
+# 規則: anchor が無いときは重要度（level → 種別 → score → 新しさ）の順に選ぶ。ただし、ほかの種別
+# （アラート・イベント・メトリクス）の行があるかぎり、枠の 4 分の 1（切り捨て）は level に関係なく
+# それらに残す（ログが占めるのは最大で 4 分の 3）。
+
+
+def _many(kind: str, start_id: int, n: int, level: str, minute0: float = 0) -> list[TimelineEntry]:
+    return [_bare(kind, start_id + i, minute0 + i * 0.001, level=level) for i in range(n)]
+
+
+def _kinds(kept: list[TimelineEntry]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for e in kept:
+        out[e.kind] = out.get(e.kind, 0) + 1
+    return out
+
+
+def test_truncation_heavy_logs_beat_lighter_events_but_leave_a_quarter() -> None:
+    """レビューの例: error のログ 600 件と info のイベント 1000 件、枠 500。
+    重いログは軽いイベントより先に残るが、ほかの種別のために 4 分の 1（125 件）は残す。"""
+    logs = _many("log", 10_000, 600, "error")
+    events = _many("event", 1, 1000, "info", minute0=100)
+    kept, truncated = select_within_limit(sort_entries([*logs, *events]), 500, None)
+    assert truncated is True
+    assert _kinds(kept) == {"log": 375, "event": 125}
+    # ログの中・イベントの中は今までどおりの優先（同じ level・score なら新しい順）
+    assert min(e.source_id for e in kept if e.kind == "log") == 10_000 + 600 - 375
+    assert min(e.source_id for e in kept if e.kind == "event") == 1 + 1000 - 125
+
+
+def test_truncation_with_the_measured_mix_keeps_metric_intervals() -> None:
+    """前回の計測の条件: level error のログ 871 件と warning の超過区間 14,004 件、枠 500。"""
+    logs = _many("log", 100_000, 871, "error")
+    metrics = _many("metric", 1, 14_004, "warning", minute0=50)
+    kept, _ = select_within_limit(sort_entries([*logs, *metrics]), 500, None)
+    assert _kinds(kept) == {"log": 375, "metric": 125}
+
+
+def test_truncation_lighter_logs_still_come_after_other_kinds() -> None:
+    """ログが軽いときは、重要度の順でほかの種別が先（4 分の 3 は上限で、取り置きではない）。"""
+    logs = _many("log", 1000, 100, "warning")
+    alerts = [_alert(i, i, level="error") for i in range(1, 8)]
+    kept, _ = select_within_limit(sort_entries([*logs, *alerts]), 10, None)
+    assert _kinds(kept) == {"alert": 7, "log": 3}
+
+
+def test_truncation_with_logs_only_fills_every_slot() -> None:
+    logs = _many("log", 1000, 20, "warning")
+    kept, truncated = select_within_limit(sort_entries(logs), 10, None)
+    assert truncated is True and len(kept) == 10
+
+
+def test_truncation_fills_slots_left_by_few_other_kinds_with_logs() -> None:
+    """ほかの種別が 4 分の 1 に満たないときは、残りをログで埋める。"""
+    logs = _many("log", 1000, 600, "error")
+    events = _many("event", 1, 10, "info", minute0=100)
+    kept, _ = select_within_limit(sort_entries([*logs, *events]), 500, None)
+    assert _kinds(kept) == {"log": 490, "event": 10}
+
+
+@pytest.mark.parametrize(
+    ("limit", "expected"),
+    [
+        (1, {"log": 1}),               # 1 // 4 = 0: 重要度の順だけ
+        (2, {"log": 2}),
+        (3, {"log": 3}),
+        (4, {"log": 3, "event": 1}),   # 4 // 4 = 1 件をほかの種別に残す
+        (8, {"log": 6, "event": 2}),
+    ],
+)
+def test_truncation_quarter_for_other_kinds_at_small_limits(limit: int, expected: dict[str, int]) -> None:
+    logs = _many("log", 1000, 10, "error")
+    events = _many("event", 1, 10, "info", minute0=100)
+    kept, _ = select_within_limit(sort_entries([*logs, *events]), limit, None)
+    assert _kinds(kept) == expected
+
+
+def test_truncation_with_anchor_does_not_cap_logs() -> None:
+    logs = _many("log", 1000, 10, "warning", minute0=30)
+    metrics = _many("metric", 1, 10, "warning", minute0=0)
+    kept, _ = select_within_limit(sort_entries([*logs, *metrics]), 6, _at(30.5))
+    assert all(e.kind == "log" for e in kept)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (80, "80"), (80.0, "80"), (82.5, "82.5"), (82.55, "82.55"), (82.50, "82.5"),
+        (0.5, "0.5"), (0, "0"), (99.999, "100"), (92.346, "92.35"), (0.001, "0"),
+        (1234567.0, "1234567"), (12.10, "12.1"),
+        # 2 進でちょうど表せる中間の値は、JavaScript の toFixed(2) と同じく大きいほうへ丸める
+        (0.125, "0.13"), (82.375, "82.38"), (82.555, "82.56"),
+    ],
+)
+def test_format_number_uses_up_to_two_decimals_without_trailing_zeros(value: float, expected: str) -> None:
+    """画面と揃える規則: 小数は 2 桁まで（丸める）、末尾の 0 と小数点は書かない。"""
+    assert format_number(value) == expected
+
+
+def test_metric_title_and_detail_use_the_shared_number_format() -> None:
+    assert metric_breach_title("host.cpu.usage_pct", 82.55) == "CPU 使用率が閾値（82.55%）を超過"
+    assert metric_breach_detail(82.549, 2, continued=False) == "ピーク 82.55%、サンプル 2 件"
+
+
+def test_top_entities_count_a_merged_log_row_as_one() -> None:
+    """ログはまとめた行を 1 件として数える（エラーを大量に出すホストが上位を占めないように）。
+    イベントは今までどおり、まとめる前の件数で数える。"""
+    def log(source_id: int, minute: float, host: str) -> TimelineEntry:
+        return TimelineEntry(
+            kind="log", source_id=source_id, timestamp_utc=_at(minute), level="warning",
+            title=f"{host} vmkernel", entity_name=host, entity_type="host", vcenter_id=V1,
+            merge_key=("log", V1, host, "vmkernel", "warning"), ref={"log_id": source_id},
+        )
+
+    merged = merge_consecutive(
+        sort_entries(
+            [
+                *[log(100 + i, i * 0.1, "noisy") for i in range(50)],  # まとめて 1 行（count=50）
+                _ev(1, 10, "A", "h1"), _ev(2, 11, "A", "h1"), _ev(3, 12, "A", "h1"),  # まとめて count=3
+            ]
+        )
+    )
+    assert [(m.kind, m.count) for m in merged] == [("log", 50), ("event", 3)]
+    top = top_entities(merged)
+    assert [(t.entity_name, t.item_count) for t in top] == [("h1", 3), ("noisy", 1)]

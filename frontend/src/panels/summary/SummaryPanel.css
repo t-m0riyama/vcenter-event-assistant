@@ -56,10 +56,16 @@
   margin-top: var(--spacing-6);
 }
 
-.summary-panel__notable-details > .table,
-.summary-panel__event-type-details > .table,
-.summary-panel__host-metric-details > .table {
+.summary-panel__notable-details > .table-scroll,
+.summary-panel__event-type-details > .table-scroll,
+.summary-panel__host-metric-details > .table-scroll {
   margin-top: var(--spacing-3);
   padding-top: var(--spacing-3);
   border-top: 1px solid var(--color-border);
+}
+
+/* 狭い幅では表を内側で横スクロールさせる（ページごと横にはみ出さない） */
+.summary-panel__notable-details .table-scroll > .table,
+.summary-panel__host-metric-details .table-scroll > .table {
+  min-width: 36rem;
 }

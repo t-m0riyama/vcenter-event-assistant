@@ -3,7 +3,9 @@ import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useAuth } from '../../auth/useAuth'
+import { alertStateLabel } from '../../alerts/alertStateLabel'
 import { Pagination } from '../../components/Pagination'
+import { TimelineLink } from '../../components/TimelineLink'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
 import './AlertHistoryPanel.css'
 
@@ -15,12 +17,6 @@ const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
   warning: '警告',
 }
 
-function alertStateLabel(state: string): string {
-  if (state === 'firing') return '発火中'
-  if (state === 'stale') return 'データ古い'
-  return '回復済み'
-}
-
 interface AlertHistory {
   id: number
   rule_id: number
@@ -30,6 +26,11 @@ interface AlertHistory {
   state: string
   context_key: string
   notified_at: string
+  /** 状態が変わった時刻。古いサーバの応答には無い。 */
+  occurred_at?: string | null
+  /** metric_threshold の行だけ。古いサーバの応答には無い。 */
+  vcenter_id?: string | null
+  entity_name?: string | null
   channel: string
   success: boolean | null
   error_message: string | null
@@ -174,7 +175,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
       {history.length === 0 ? (
         <p className="no-data">通知履歴はありません。</p>
       ) : (
-        <div className="table-container">
+        <div className="table-container table-scroll">
           <table className="alert-history-table">
             <thead>
               <tr>
@@ -202,7 +203,16 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                       {alertStateLabel(h.state)}
                     </span>
                   </td>
-                  <td className="col-context">{h.context_key}</td>
+                  <td className="col-context">
+                    {h.entity_name ? (
+                      <>
+                        <div className="entity-name">{h.entity_name}</div>
+                        <div className="context-key-note">{h.context_key}</div>
+                      </>
+                    ) : (
+                      <span className="context-key">{h.context_key}</span>
+                    )}
+                  </td>
                   <td className="col-status">
                     {h.delivery_status === 'pending' || h.delivery_status === 'retrying' ? (
                       <span className="skipped-tag" title={h.error_message || undefined}>
@@ -225,24 +235,32 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                     )}
                   </td>
                   <td className="col-actions">
-                    {canResolve && h.can_resolve && (
-                      <button
-                        type="button"
-                        className="btn btn--gray alert-history-action"
-                        onClick={() => void handleResolve(h)}
-                      >
-                        解消
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button
-                        type="button"
-                        className="btn btn--danger alert-history-action"
-                        onClick={() => void handleDelete(h)}
-                      >
-                        削除
-                      </button>
-                    )}
+                    <div className="alert-history-actions">
+                      {canResolve && h.can_resolve && (
+                        <button
+                          type="button"
+                          className="btn btn--gray alert-history-action"
+                          onClick={() => void handleResolve(h)}
+                        >
+                          解消
+                        </button>
+                      )}
+                      <TimelineLink
+                        at={h.occurred_at ?? h.notified_at}
+                        vcenterId={h.vcenter_id}
+                        entity={h.entity_name}
+                        ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}・${h.entity_name || h.context_key}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
+                      />
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="btn btn--danger alert-history-action"
+                          onClick={() => void handleDelete(h)}
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

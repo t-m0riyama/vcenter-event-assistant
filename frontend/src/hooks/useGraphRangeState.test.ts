@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { incidentTimelineManualSnapshotListItemSchema } from '../api/schemas'
+import type { MetricsReplayInput } from './metricsReplay'
 import { useGraphRangeState, type MetricsSnapshotReplayInput } from './useGraphRangeState'
 
 const item = incidentTimelineManualSnapshotListItemSchema.parse({
@@ -47,5 +48,22 @@ describe('useGraphRangeState', () => {
     rerender({ tz: 'Asia/Tokyo', replay: { item, nonce: 2 } })
     expect(result.current.rangeFromInput).toBe('2026-05-07T11:00')
     expect(result.current.graphRangeForOverlay).toEqual(expectedOverlay)
+  })
+
+  it('applies a snapshot-independent focus range once and again on a new nonce', () => {
+    const focus = { from: '2026-05-07T02:00:00Z', to: '2026-05-07T03:00:00Z', vcenterId: null, markerUtc: null }
+    const { result, rerender } = renderHook(
+      ({ replay }: { replay: MetricsReplayInput }) => useGraphRangeState('UTC', replay),
+      { initialProps: { replay: { focus, nonce: 1 } as MetricsReplayInput } },
+    )
+    expect(result.current.graphRangeFollowMode).toBe('manual')
+    expect(result.current.rangeFromInput).toBe('2026-05-07T02:00')
+    expect(result.current.rangeToInput).toBe('2026-05-07T03:00')
+    const manual = { fromDate: '2026-01-01', fromTime: '12:00', toDate: '2026-01-02', toTime: '13:00' }
+    act(() => result.current.onGraphRangeFieldsChange(manual))
+    rerender({ replay: { focus, nonce: 1 } })
+    expect(result.current.rangeParts).toEqual(manual)
+    rerender({ replay: { focus, nonce: 2 } })
+    expect(result.current.rangeFromInput).toBe('2026-05-07T02:00')
   })
 })

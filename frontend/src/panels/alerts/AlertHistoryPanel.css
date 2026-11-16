@@ -88,10 +88,22 @@
   color: var(--color-text-secondary);
 }
 
-.col-context {
+.col-context .context-key,
+.col-context .context-key-note {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-caption2);
   color: var(--color-text-secondary);
+}
+
+/* 対象名を主にし、context_key は小さい文字で下に添える */
+.col-context .entity-name {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-primary);
+}
+
+.col-context .context-key-note {
+  margin-top: var(--spacing-1);
+  word-break: break-all;
 }
 
 .level-badge {
@@ -121,11 +133,15 @@
 }
 
 .col-actions {
-  white-space: nowrap;
+  min-width: 7rem;
 }
 
-.alert-history-action + .alert-history-action {
-  margin-left: var(--spacing-2);
+/* 解消・タイムラインで見る・削除 を並べ、表の幅に収まらないときは折り返す */
+.alert-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
 }
 
 .delivery-attempts, .delivery-next-attempt {

@@ -9,6 +9,7 @@ import {
 } from '../../api/schemas'
 import { ScoreBadge } from '../../components/badges'
 import { Sparkline } from '../../components/Sparkline'
+import { TimelineLink } from '../../components/TimelineLink'
 import { EventTypeGuideBody } from '../../events/EventTypeGuideBody'
 import { shouldHighlightEventRowForAction } from '../../events/eventTypeGuideHighlight'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
@@ -125,6 +126,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {notableRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するイベントはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -134,6 +136,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
               <th>スコア</th>
               <th>メッセージ</th>
               <th>運用メモ</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -172,10 +175,19 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                 <td className="event-comment-cell event-comment-cell--readonly">
                   {e.user_comment ?? '—'}
                 </td>
+                <td>
+                  <TimelineLink
+                    at={e.occurred_at}
+                    vcenterId={e.vcenter_id}
+                    entity={e.entity_name}
+                    ariaLabel={`${e.entity_name || e.event_type}（${formatIsoInTimeZone(e.occurred_at, timeZone)}）をタイムラインで見る`}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
 
@@ -189,6 +201,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {topEventTypesRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するイベントはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -236,6 +249,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
 
@@ -249,6 +263,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {highCpuRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するホストはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -256,6 +271,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
               <th>ホスト</th>
               <th>CPU %</th>
               <th>時刻</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -265,10 +281,19 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                 <td>{h.entity_name}</td>
                 <td>{h.value.toFixed(1)}</td>
                 <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+                <td>
+                  <TimelineLink
+                    at={h.sampled_at}
+                    vcenterId={h.vcenter_id}
+                    entity={h.entity_name}
+                    ariaLabel={`${h.entity_name}・CPU（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
 
@@ -284,6 +309,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
         {highMemRows.length === 0 ? (
           <p className="table-empty">直近24時間に該当するホストはありません</p>
         ) : (
+        <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -291,6 +317,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
               <th>ホスト</th>
               <th>メモリ %</th>
               <th>時刻</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -300,10 +327,19 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                 <td>{h.entity_name}</td>
                 <td>{h.value.toFixed(1)}</td>
                 <td>{formatIsoInTimeZone(h.sampled_at, timeZone)}</td>
+                <td>
+                  <TimelineLink
+                    at={h.sampled_at}
+                    vcenterId={h.vcenter_id}
+                    entity={h.entity_name}
+                    ariaLabel={`${h.entity_name}・メモリ（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         )}
       </details>
     </div>

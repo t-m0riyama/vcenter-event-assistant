@@ -16,6 +16,7 @@
 | [summary.md](userguide/summary.md) | 概要タブ |
 | [events.md](userguide/events.md) | イベントタブ |
 | [graph.md](userguide/graph.md) | グラフタブ |
+| [timeline.md](userguide/timeline.md) | タイムラインタブ |
 | [digests.md](userguide/digests.md) | ダイジェスト |
 | [chat.md](userguide/chat.md) | チャット |
 | [alerts.md](userguide/alerts.md) | アラート |

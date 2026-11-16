@@ -129,3 +129,11 @@ tr.event-row--action-required {
   background: color-mix(in srgb, var(--color-error) 10%, var(--color-background-elevated));
   box-shadow: inset 3px 0 0 var(--color-error-border);
 }
+
+/* 「前後5分のログ」と「タイムラインで見る」を並べ、狭いときは折り返す */
+.event-correlation-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1) var(--spacing-3);
+}

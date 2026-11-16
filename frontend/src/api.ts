@@ -154,17 +154,31 @@ export class ApiError extends Error {
   readonly status: number
   /** サーバが理由を見分けられるよう付けた ``X-VEA-Error-Code``（なければ null）。 */
   readonly errorCode: string | null
+  /** ``Retry-After``（秒）。ヘッダが無い・秒数として読めないときは null。 */
+  readonly retryAfterSeconds: number | null
 
-  constructor(message: string, status: number, errorCode: string | null) {
+  constructor(
+    message: string,
+    status: number,
+    errorCode: string | null,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.errorCode = errorCode
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
 async function apiError(r: Response): Promise<ApiError> {
-  return new ApiError(await errorMessageFromResponse(r), r.status, r.headers.get('X-VEA-Error-Code'))
+  const retryAfter = Number(r.headers.get('Retry-After'))
+  return new ApiError(
+    await errorMessageFromResponse(r),
+    r.status,
+    r.headers.get('X-VEA-Error-Code'),
+    Number.isFinite(retryAfter) && retryAfter >= 0 && r.headers.get('Retry-After') !== null ? retryAfter : null,
+  )
 }
 
 /** JSON GET（``cache: 'no-store'``）。 */

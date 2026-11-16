@@ -97,6 +97,15 @@ class DatabaseSettingsMixin(BaseModel):
             "0 disables purge."
         ),
     )
+    incident_timeline_snapshot_result_retention_days: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Clear only the saved view result (result_payload) of incident timeline snapshots older than "
+            "this many days (created_at); the row, conditions and note are kept. "
+            "0 keeps results as long as the snapshot itself."
+        ),
+    )
 
 
 class AppLogSettingsMixin(BaseModel):
@@ -189,8 +198,21 @@ class AppLogSettingsMixin(BaseModel):
         ge=1,
         le=10_000_000,
         description=(
-            "イベントの時間バケット集計で、集計後の行数（バケット数 × イベント種別数）の上限"
-            "（``CONTEXT_AGGREGATION_MAX_ROWS``）。超えた要求は 422。"
+            "集計の行数の上限（``CONTEXT_AGGREGATION_MAX_ROWS``）。チャット・プレビューのイベントの時間バケット"
+            "集計では集計後の行数（バケット数 × イベント種別数）に当て、超えた要求は 422。タイムライン画面の API では"
+            "種別ごとの行数に当て、イベント・通知履歴は超えると 422、エラーログ・メトリクスの超過区間は超えると"
+            "その種別の行だけを省く（応答の omitted_sources）。"
+        ),
+    )
+    timeline_metric_breach_sample_limit: int = Field(
+        default=40_000,
+        ge=1,
+        le=10_000_000,
+        description=(
+            "タイムライン画面の API で、メトリクスの超過区間を作る前に数える、期間内の閾値以上のサンプル数の上限"
+            "（``TIMELINE_METRIC_BREACH_SAMPLE_LIMIT``）。CPU とメモリを合わせて数え、vCenter・対象で絞った後の数で"
+            "判定する。超えると区間の問い合わせを実行せず、メトリクスを省く（応答の omitted_sources）。区間の"
+            "問い合わせの時間はこの数に比例するので、上げると省かれにくくなる代わりに、応答が遅くなり得る。"
         ),
     )
     uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")

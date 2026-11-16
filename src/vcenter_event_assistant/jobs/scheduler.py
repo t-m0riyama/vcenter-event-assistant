@@ -36,6 +36,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_digest_records,
     purge_old_events,
     purge_old_logs,
+    purge_old_incident_timeline_snapshot_results,
     purge_old_incident_timeline_snapshots,
     purge_old_metrics,
 )
@@ -131,6 +132,11 @@ async def purge_retention(settings: Settings) -> None:
             )
             if n_sn:
                 logger.info("purged old incident timeline snapshots count=%s", n_sn)
+            n_sr = await purge_old_incident_timeline_snapshot_results(
+                session, settings=settings
+            )
+            if n_sr:
+                logger.info("cleared old incident timeline snapshot results count=%s", n_sr)
             n_ss = await purge_expired_sessions(session, session_policy(settings))
             if n_ss:
                 logger.info("purged expired login sessions count=%s", n_ss)
