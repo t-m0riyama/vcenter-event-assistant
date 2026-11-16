@@ -531,3 +531,34 @@
   font-size: var(--font-size-footnote);
   overflow-wrap: anywhere;
 }
+
+/* 保存済みスナップショットの結果を表示しているときの注記。現在のデータではないことを目立たせる */
+.timeline-saved-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-3);
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-3);
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  border: 1px solid var(--color-warning-text);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+}
+
+.timeline-saved-banner p {
+  margin: 0;
+}
+
+.timeline-saved-banner__memo {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.timeline-snapshots__badge {
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--color-warning-text);
+  border-radius: var(--radius-control);
+  color: var(--color-warning-text);
+  font-size: var(--font-size-footnote);
+}

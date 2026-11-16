@@ -1,13 +1,23 @@
 import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
 import type {
   IncidentTimelineViewRequest,
+  SavedIncidentTimelineViewRequest,
   TimelineOmittedSource,
   TimelineOverviewBucket,
   TimelineViewItem,
 } from '../../api/schemas'
 import type { MetricsFocus } from '../../hooks/metricsReplay'
 import { correlationHash } from '../../routing/correlationRange'
-import type { TimelineConditions, TimelineRange } from '../../routing/timelineHash'
+import {
+  DEFAULT_METRIC_THRESHOLD_CPU_PCT,
+  DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
+} from '../../hooks/periodMetricThresholdDefaults'
+import {
+  DEFAULT_TIMELINE_MIN_SCORE,
+  TIMELINE_SOURCE_KINDS,
+  type TimelineConditions,
+  type TimelineRange,
+} from '../../routing/timelineHash'
 
 /** UTC の期間（ISO 8601）。 */
 export type ResolvedRange = { readonly from: string; readonly to: string }
@@ -111,6 +121,29 @@ export type TimelineSortOrder = 'asc' | 'desc'
 /** API は古い順で返す。新しい順のときだけ反転する。 */
 export function sortTimelineItems(items: readonly TimelineViewItem[], order: TimelineSortOrder): TimelineViewItem[] {
   return order === 'asc' ? [...items] : [...items].reverse()
+}
+
+/**
+ * スナップショットに保存した view のリクエストを、画面の条件へ写す。期間は固定の期間にする。
+ * ディスク・ネットワークの閾値と `item_limit` は画面の条件に無いので使わない。
+ */
+export function conditionsFromViewRequest(request: SavedIncidentTimelineViewRequest): TimelineConditions {
+  const anchorMs = request.anchor ? parseApiUtcInstantMs(request.anchor) : NaN
+  const sources = TIMELINE_SOURCE_KINDS.filter((kind) => request.sources?.includes(kind))
+  return {
+    range: {
+      mode: 'fixed',
+      from: iso(parseApiUtcInstantMs(request.from)),
+      to: iso(parseApiUtcInstantMs(request.to)),
+    },
+    anchor: Number.isFinite(anchorMs) ? iso(anchorMs) : null,
+    vcenterId: request.vcenter_id ?? '',
+    entity: request.entity ?? '',
+    minScore: request.min_score ?? DEFAULT_TIMELINE_MIN_SCORE,
+    sources: sources.length > 0 ? sources : TIMELINE_SOURCE_KINDS,
+    cpuThresholdPct: request.metric_threshold_cpu_pct ?? DEFAULT_METRIC_THRESHOLD_CPU_PCT,
+    memoryThresholdPct: request.metric_threshold_memory_pct ?? DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
+  }
 }
 
 /** `POST /api/incident-timeline/view` の本文を組み立てる。 */

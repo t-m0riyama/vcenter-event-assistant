@@ -5,6 +5,10 @@ import {
   isoUtcDateTimeSchema,
   metricThresholdNullablePercentSchema,
 } from './base'
+import {
+  incidentTimelineViewRequestSchema,
+  incidentTimelineViewResponseSchema,
+} from './incidentTimelineView'
 
 export const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -181,6 +185,8 @@ export const incidentTimelineManualSnapshotCreateRequestSchema = z
     operator_note: z.string().min(1).max(10_000),
     build_request_payload: incidentTimelineBuildRequestSchema.optional(),
     graph_context: incidentTimelineGraphContextSchema.optional(),
+    /** 指定すると、サーバが保存時に集計して結果も保存する（結果はクライアントから送らない）。 */
+    view_request: incidentTimelineViewRequestSchema.optional(),
   })
   .strict()
 
@@ -213,11 +219,22 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   trigger_id: z.string().optional().nullable(),
   trigger_evidence: z.record(z.string(), z.unknown()).optional().nullable(),
   graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
+  /** 保存時点の結果を持つか（一覧には結果そのものは載らない）。古いサーバには無い。 */
+  has_result: z.boolean().optional().default(false),
+  /** 保存した view のリクエスト。読めない形のときは null として扱う。 */
+  view_request: incidentTimelineViewRequestSchema.nullable().optional().catch(null),
 })
 
 export type IncidentTimelineManualSnapshotListItem = z.infer<
   typeof incidentTimelineManualSnapshotListItemSchema
 >
+
+/** 1 件の詳細。結果が無い・読めない形のときは null（`has_result` も false）。 */
+export const incidentTimelineManualSnapshotDetailSchema = incidentTimelineManualSnapshotListItemSchema.extend({
+  result: incidentTimelineViewResponseSchema.nullable().optional().catch(null),
+})
+
+export type IncidentTimelineManualSnapshotDetail = z.infer<typeof incidentTimelineManualSnapshotDetailSchema>
 
 export const incidentTimelineManualSnapshotListResponseSchema = z.object({
   items: z.array(incidentTimelineManualSnapshotListItemSchema),

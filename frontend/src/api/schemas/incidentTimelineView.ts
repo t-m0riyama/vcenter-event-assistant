@@ -120,3 +120,23 @@ export type IncidentTimelineViewRequest = {
   metric_threshold_memory_pct?: number
   item_limit?: number
 }
+
+/**
+ * スナップショットに保存された view のリクエスト（サーバが返す形）。サーバは未指定の項目を既定値で埋め、
+ * `null` を返すことがあるので、`null` を許す。古い保存の形でも読めるよう、項目は緩く検証する。
+ */
+export const incidentTimelineViewRequestSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  anchor: z.string().nullable().optional(),
+  vcenter_id: z.string().nullable().optional(),
+  entity: z.string().nullable().optional(),
+  min_score: z.number().optional(),
+  sources: z.array(timelineSourceSchema).optional(),
+  metric_threshold_cpu_pct: z.number().optional(),
+  metric_threshold_memory_pct: z.number().optional(),
+  metric_threshold_disk_pct: z.number().optional(),
+  metric_threshold_network_pct: z.number().optional(),
+  item_limit: z.number().optional(),
+})
+export type SavedIncidentTimelineViewRequest = z.infer<typeof incidentTimelineViewRequestSchema>

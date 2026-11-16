@@ -7,12 +7,14 @@ type Props = {
   snapshots: ReturnType<typeof useTimelineSnapshots>
   /** 表示中の結果があり、保存できる状態か。 */
   canSaveNow: boolean
+  /** 保存済みの結果を表示中か（このあいだは新しく保存できない）。 */
+  showingSaved?: boolean
   timeZone: string
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
 }
 
 /** 画面下部の折りたたみ（既定は閉じる）。手動スナップショットの保存・一覧・グラフで開く。 */
-export function TimelineSnapshotSection({ snapshots: s, canSaveNow, timeZone, onOpenSnapshotInMetrics }: Props) {
+export function TimelineSnapshotSection({ snapshots: s, canSaveNow, showingSaved = false, timeZone, onOpenSnapshotInMetrics }: Props) {
   // 手動スナップショットの保存は operator 以上（閲覧は viewer でもできる）
   const canSave = useAuth().hasRole('operator')
   return (
@@ -49,7 +51,11 @@ export function TimelineSnapshotSection({ snapshots: s, canSaveNow, timeZone, on
               >
                 スナップショットを保存
               </button>
-              <p className="hint">表示中の期間と vCenter の条件を保存します（結果そのものは保存しません）。</p>
+              <p className="hint">
+                {showingSaved
+                  ? '保存済みの結果を表示中は保存できません。「現在のデータで再集計」を押すと保存できます。'
+                  : '表示中の条件と、保存時点の結果（サーバが集計し直したもの）を保存します。'}
+              </p>
             </div>
           ) : null}
           {s.items.length === 0 ? (
@@ -62,10 +68,11 @@ export function TimelineSnapshotSection({ snapshots: s, canSaveNow, timeZone, on
                     type="button"
                     className="btn btn--gray"
                     aria-pressed={s.selectedId === item.snapshot_id}
-                    onClick={() => s.select(item)}
+                    onClick={() => void s.select(item)}
                   >
                     {item.operator_note}
                   </button>{' '}
+                  {item.has_result ? <span className="timeline-snapshots__badge">結果あり</span> : null}{' '}
                   {onOpenSnapshotInMetrics ? (
                     <button type="button" className="btn btn--gray" onClick={() => onOpenSnapshotInMetrics(item)}>
                       グラフで開く

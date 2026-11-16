@@ -7,7 +7,12 @@ import {
   TimelineRateLimitedError,
   TimelineRequestSupersededError,
 } from '../api/incidentTimelineView'
-import type { IncidentTimelineViewResponse, VCenter } from '../api/schemas'
+import type {
+  IncidentTimelineViewRequest,
+  IncidentTimelineViewResponse,
+  SavedIncidentTimelineViewRequest,
+  VCenter,
+} from '../api/schemas'
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { resolveEventApiRange } from '../datetime/graphRange'
 import { useTimeZone } from '../datetime/useTimeZone'
@@ -18,6 +23,7 @@ import {
 } from '../datetime/zonedRangeParts'
 import {
   buildViewRequest,
+  conditionsFromViewRequest,
   resolveTimelineRange,
   validateResolvedRange,
   widenRange,
@@ -55,6 +61,16 @@ type Job = {
   readonly body: ReturnType<typeof buildViewRequest> | null
   /** 再試行の待ちを中断するための印。次の要求を予約すると中断する。 */
   readonly abort: AbortController
+}
+
+/** 保存済みスナップショットの結果を表示しているときの内容。条件を変えるか再集計すると外れる。 */
+export type SavedViewState = {
+  readonly snapshotId: string
+  readonly note: string
+  /** 保存した日時（UTC の ISO 8601）。 */
+  readonly savedAt: string
+  readonly result: IncidentTimelineViewResponse
+  readonly range: ResolvedRange
 }
 
 function readSortOrder(): TimelineSortOrder {
@@ -104,6 +120,12 @@ export function useTimelineViewController(
   const [data, setData] = useState<IncidentTimelineViewResponse | null>(null)
   /** `data` を取得したときの期間（保存・スナップショットに使う。応答の時刻表記には頼らない）。 */
   const [loadedRange, setLoadedRange] = useState<ResolvedRange | null>(null)
+  /** `data` を取得したときに送った本文。スナップショットの保存で、表示中の条件をそのまま送るのに使う。 */
+  const [loadedRequest, setLoadedRequest] = useState<IncidentTimelineViewRequest | null>(null)
+  /** 保存済みスナップショットの結果を表示中なら、その内容。あいだは自動の読み込みを止める。 */
+  const [savedView, setSavedView] = useState<SavedViewState | null>(null)
+  const savedViewActiveRef = useRef(false)
+  savedViewActiveRef.current = savedView !== null
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<TimelineLoadError | null>(null)
   const [sortOrder, setSortOrderState] = useState<TimelineSortOrder>(readSortOrder)
@@ -115,6 +137,8 @@ export function useTimelineViewController(
   /** 利用者が条件を変えたとき。URL の読めなかった部分は、この変更で置き換わる。 */
   const setConditions = useCallback((next: (c: TimelineConditions) => TimelineConditions) => {
     setUrlIssue(null)
+    // 保存済みの結果の表示中に条件を変えたら、通常の表示（現在のデータ）に戻る
+    setSavedView(null)
     setConditionsRaw(next)
   }, [])
 
@@ -189,6 +213,7 @@ export function useTimelineViewController(
           if (isCurrent()) {
             setData(res)
             setLoadedRange({ from: job.body.from, to: job.body.to })
+            setLoadedRequest(job.body)
             setError(null)
           }
         } catch (e) {
@@ -196,6 +221,7 @@ export function useTimelineViewController(
           if (isCurrent()) {
             setData(null)
             setLoadedRange(null)
+            setLoadedRequest(null)
             setError(toLoadError(e))
           }
         }
@@ -229,6 +255,7 @@ export function useTimelineViewController(
     ) {
       return false
     }
+    setSavedView(null)
     setConditionsRaw(incoming.conditions)
     setUrlIssue(incoming.issue)
     setEntityInput(incoming.conditions.entity)
@@ -280,6 +307,8 @@ export function useTimelineViewController(
 
   useEffect(() => {
     if (!active) return
+    // 保存済みの結果を表示しているあいだは読み込まない（再集計か条件の変更で外れたときに読む）
+    if (savedViewActiveRef.current) return
     // StrictMode の二重実行や、同じ条件での再実行で同じ要求を重ねない（更新ボタンは reloadNonce で変わる）
     if (lastKeyRef.current === loadKey) return
     lastKeyRef.current = loadKey
@@ -307,7 +336,7 @@ export function useTimelineViewController(
     setError(null)
     setLoading(true)
     void pump()
-  }, [active, loadKey, pump, urlIssue])
+  }, [active, loadKey, pump, urlIssue, savedView])
 
   // ---- 条件の変更 -------------------------------------------------------------
   const patch = useCallback((next: Partial<TimelineConditions>) => {
@@ -461,7 +490,54 @@ export function useTimelineViewController(
     [setConditions],
   )
 
+  /**
+   * 保存済みスナップショットの結果をそのまま表示する。条件は保存時の `view_request` に合わせる
+   * （URL にも反映）。進行中の読み込みは捨て、現在のデータは取りに行かない。
+   */
+  const showSavedResult = useCallback(
+    (saved: Omit<SavedViewState, 'range'>, request: SavedIncidentTimelineViewRequest) => {
+      const conditions = conditionsFromViewRequest(request)
+      desiredRef.current?.abort.abort()
+      desiredRef.current = null
+      lastKeyRef.current = null
+      setEntityInput(conditions.entity)
+      setRangeHistory([])
+      setRangeInputError(null)
+      setUrlIssue(null)
+      setConditionsRaw(conditions)
+      if (conditions.range.mode !== 'fixed') return
+      setSavedView({ ...saved, range: { from: conditions.range.from, to: conditions.range.to } })
+      setLoading(false)
+    },
+    [],
+  )
+
+  /** 保存時の `view_request` の条件へ戻して、現在のデータで集計し直す（保存済みの結果の表示ではないとき）。 */
+  const applyViewRequest = useCallback(
+    (request: SavedIncidentTimelineViewRequest) => {
+      const conditions = conditionsFromViewRequest(request)
+      setEntityInput(conditions.entity)
+      setRangeHistory([])
+      setRangeInputError(null)
+      setConditions(() => conditions)
+    },
+    [setConditions],
+  )
+
+  /** 保存済みの結果の表示をやめ、同じ条件で現在のデータを読み直す。 */
+  const reaggregate = useCallback(() => {
+    lastKeyRef.current = null
+    setSavedView(null)
+    setReloadNonce((n) => n + 1)
+  }, [])
+
+  const showingSaved = savedView !== null
+
   return {
+    savedView,
+    showSavedResult,
+    applyViewRequest,
+    reaggregate,
     timeZone,
     conditions,
     entityInput,
@@ -489,10 +565,12 @@ export function useTimelineViewController(
     clearEntity,
     refresh,
     applySnapshotConditions,
-    data,
-    loadedRange,
-    loading,
-    error,
+    data: savedView ? savedView.result : data,
+    loadedRange: savedView ? savedView.range : loadedRange,
+    // 保存済みの結果の表示中は、保存できない（現在のデータの条件ではないため）
+    loadedRequest: savedView ? null : loadedRequest,
+    loading: showingSaved ? false : loading,
+    error: showingSaved ? null : error,
     sortOrder,
     setSortOrder,
     vcenters,
