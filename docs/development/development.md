@@ -400,7 +400,7 @@ Windows のコマンドプロンプトでは環境変数の付け方が異なる
 | `digests.png` | ダイジェスト |
 | `alerts-history.png` | 通知履歴 |
 | `chat.png` | チャット |
-| `timeline.png` | タイムライン（生成前） |
+| `timeline.png` | タイムライン |
 | `settings-general.png` | 設定 → 一般 |
 | `settings-vcenters.png` | 設定 → vCenter |
 | `settings-score-rules.png` | 設定 → スコアルール |

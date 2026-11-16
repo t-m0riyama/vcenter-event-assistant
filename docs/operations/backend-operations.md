@@ -407,6 +407,8 @@ TLS:
 - スケジューラ有効化: `SCHEDULER_ENABLED`
 - APScheduler の `misfire_grace_time`: interval ジョブは各間隔の半分、cron ダイジェストは 3600 秒（`jobs/scheduler.py`）。イベントループ停止後の取りこぼし軽減用
 - 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）
+  - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。保存する結果は 1 件あたり最大 8 MB で、超えると保存せず 413 を返す。
+  - SQLite は、削除した行の領域をファイルサイズへ戻さない（空いた領域は次の書き込みで再利用される）。ファイルを縮めるには `VACUUM` が要る。
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
