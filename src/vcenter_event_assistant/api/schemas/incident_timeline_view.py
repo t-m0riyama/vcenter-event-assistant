@@ -105,6 +105,13 @@ class IncidentTimelineItemRef(BaseModel):
     continues_from_before: bool | None = Field(
         default=None, description="期間の開始前から超過が続いているか"
     )
+    continues_after: bool | None = Field(
+        default=None,
+        description=(
+            "期間の終わりでも超過が続いているか。系列の期間内の最後のサンプルが閾値以上で、期間の終わり"
+            "（to が未来なら現在時刻）から区間をつなぐ間隔の上限以内にあるとき真。期間の後ろのサンプルは読まない"
+        ),
+    )
 
 
 class IncidentTimelineViewItem(BaseModel):

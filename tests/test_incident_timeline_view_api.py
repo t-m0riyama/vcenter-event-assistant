@@ -1626,3 +1626,86 @@ async def test_many_critical_logs_do_not_push_metric_intervals_out_of_a_24h_view
     data = await _post(client, **{"to": "2026-03-23T00:00:00Z"})
     kinds = [i["kind"] for i in data["items"]]
     assert kinds.count("log") == 375 and kinds.count("metric") == 125
+
+
+# --- 期間の終わりで続いている超過（continues_after）と、moid で表示した行の絞り込み -----------
+#
+# continues_after: その系列の期間内の最後のサンプルが閾値以上で、それが期間の終わり（to。to が未来なら
+# 現在時刻）から間隔の上限（既定 15 分）以内にあるとき真。期間の後ろのサンプルは読まない。
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_continuing_at_the_end_of_the_period(client: AsyncClient) -> None:
+    """レビューの例: 01:55 に 90%、to（02:00）ちょうどに 95%（期間外）。最後に見えたサンプルが超過中。"""
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(115, 90), (120, 95)])
+    (item,) = _metrics(await _post(client))
+    assert _span(item) == (_at(115), None)
+    assert item["ref"]["continues_after"] is True
+    assert item["ref"]["continues_from_before"] is False
+    assert item["detail"] == "ピーク 90%、サンプル 1 件、期間の終わりでも継続"
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_ending_before_the_end_is_not_continuing(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    # host-1: 期間の終わりの手前で閾値未満に下がった
+    await _series(vid, "host-1", [(100, 90), (105, 91), (110, 50)])
+    # host-2: 超過のまま、期間の終わりの 16 分前でサンプルが途絶えた（間隔の上限 15 分を超える）
+    await _series(vid, "host-2", [(100, 90), (104, 92)], name="esx02")
+    # host-3: 期間の終わりのちょうど 15 分前が最後（上限ちょうどは続いているとみなす）
+    await _series(vid, "host-3", [(100, 90), (105, 92)], name="esx03")
+    # host-4: 後の区間（110 分〜）は続いているが、前の区間（100 分）は終わっている
+    await _series(vid, "host-4", [(100, 90), (105, 50), (110, 90), (115, 90)], name="esx04")
+    items = _metrics(await _post(client))
+    got = {(i["ref"]["entity_moid"], _dt(i["timestamp_utc"])): i["ref"]["continues_after"] for i in items}
+    assert got == {
+        ("host-1", _at(100)): False,
+        ("host-2", _at(100)): False,
+        ("host-3", _at(100)): True,
+        ("host-4", _at(100)): False,
+        ("host-4", _at(110)): True,
+    }
+    assert all("期間の終わり" not in i["detail"] for i in items if not i["ref"]["continues_after"])
+
+
+@pytest.mark.asyncio
+async def test_metric_interval_continuing_before_and_after_the_period(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _series(vid, "host-1", [(-5, 90), *[(m, 90 + m / 100) for m in range(0, 120, 5)]])
+    (item,) = _metrics(await _post(client))
+    assert (item["ref"]["continues_from_before"], item["ref"]["continues_after"]) == (True, True)
+    assert item["detail"] == "ピーク 91.15%、サンプル 24 件、期間の開始前から継続、期間の終わりでも継続"
+
+
+@pytest.mark.asyncio
+async def test_metric_continues_after_uses_now_when_the_period_ends_in_the_future(client: AsyncClient) -> None:
+    """to が未来なら、まだ来ていないサンプルの分は途絶えとみなさない（現在時刻から測る）。"""
+    vid = await _vcenter()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    async with session_scope() as session:
+        session.add(
+            MetricSample(
+                vcenter_id=vid, sampled_at=now - timedelta(minutes=2), entity_type="HostSystem",
+                entity_moid="host-1", entity_name="esx01", metric_key=CPU, value=90,
+            )
+        )
+    body = {"from": (now - timedelta(hours=1)).isoformat(), "to": (now + timedelta(hours=1)).isoformat()}
+    r = await client.post(URL, json=body)
+    assert r.status_code == 200, r.text
+    (item,) = _metrics(r.json())
+    assert item["ref"]["continues_after"] is True
+
+
+@pytest.mark.asyncio
+async def test_metric_row_shown_by_moid_is_kept_when_filtering_by_its_entity_name(client: AsyncClient) -> None:
+    """行の entity_name をそのまま entity に渡すと、その行が返る（名前のある系列も、無い系列も）。"""
+    vid = await _vcenter()
+    await _series(vid, "host-77", [(0, 90)], name="")
+    await _series(vid, "host-78", [(0, 90)], name="   ")
+    await _series(vid, "host-1", [(0, 90)], name="esx-named")
+    items = _metrics(await _post(client))
+    assert sorted(i["entity_name"] for i in items) == ["esx-named", "host-77", "host-78"]
+    for item in items:
+        filtered = _metrics(await _post(client, entity=item["entity_name"]))
+        assert [i["id"] for i in filtered] == [item["id"]]

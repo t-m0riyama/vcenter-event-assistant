@@ -16,12 +16,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 from fastapi import HTTPException
-from sqlalchemy import DateTime, Integer, String, and_, case, func, literal, or_, select
+from sqlalchemy import DateTime, Integer, String, and_, case, func, literal, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
@@ -133,6 +134,7 @@ _METRIC_LABELS: dict[str, str] = {METRIC_CPU: "CPU 使用率", METRIC_MEM: "メ�
 _METRIC_ERROR_PEAK_PCT = 95.0
 _METRIC_ERROR_MARGIN_PCT = 15.0
 _METRIC_CONTINUED_NOTE = "期間の開始前から継続"
+_METRIC_CONTINUES_AFTER_NOTE = "期間の終わりでも継続"
 
 OVERVIEW_FIELDS: tuple[str, ...] = ("event_total", "event_notable", "alert", "metric_breach", "log_error")
 
@@ -398,7 +400,9 @@ def metric_breach_title(metric_key: str, threshold: float) -> str:
     return f"{label}が閾値（{format_number(threshold)}%）を超過"
 
 
-def metric_breach_detail(peak: float, sample_count: int, *, continued: bool) -> str:
+def metric_breach_detail(
+    peak: float, sample_count: int, *, continued: bool, continues_after: bool = False
+) -> str:
     """ピーク値と区間内のサンプル数。期間の開始前から続く区間はその旨を足す。
 
     ピークの時刻は書かない。画面が ``ref.peak_at_utc`` を利用者のタイムゾーンの設定で表示する。
@@ -406,6 +410,8 @@ def metric_breach_detail(peak: float, sample_count: int, *, continued: bool) -> 
     parts = [f"ピーク {format_number(peak)}%", f"サンプル {sample_count} 件"]
     if continued:
         parts.append(_METRIC_CONTINUED_NOTE)
+    if continues_after:
+        parts.append(_METRIC_CONTINUES_AFTER_NOTE)
     return "、".join(parts)
 
 
@@ -1093,36 +1099,84 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     - 前のサンプルとの間隔が ``metric_max_gap_seconds``（アラート評価の鮮度の上限と同じ値。既定は
       収集間隔 × 3 = 15 分）を超えたら区切る。それ以内の欠け（収集の失敗）では区切らない。
 
-    すべて DB の window 関数で行い（gaps-and-islands）、受け取るのは区間ごとに 1 行だけにする。
-    サンプルを 1 行ずつ読まないので、超過が長く続いても行数は増えない（Issue #301 と同じ考え方）。
-    上位 N 台に絞らない（``build_chat_period_metrics`` の上位 15 台の作りは使わない）ので、
-    超過したホストはすべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当て、超えたら
-    422 にせず超過区間の行を省く（``omitted``）。
+    読む量を抑えるため、期間内の**閾値以上のサンプルだけ**を読み、区切りの判定に要る「直前のサンプル」
+    （閾値未満も含む、期間の前でもよい）は、既存の索引 ``(vcenter_id, entity_moid, metric_key, sampled_at)``
+    を使う相関副問い合わせで 1 件ずつ引く。直前のサンプルが閾値以上で、間隔が上限以内なら前の区間の続き。
+    区間への番号付けとピーク・名前の算出は、閾値以上のサンプルだけに window 関数をかけて DB で行い、
+    受け取るのは区間ごとに 1 行だけにする（超過が長く続いても行数は増えない。Issue #301 と同じ考え方）。
+    以前は期間内の全サンプルに window 関数をかけており、7 日・200 ホストで SQLite は 10 秒を超えた。
 
-    期間の開始前から続く超過: サンプルは ``from - metric_max_gap_seconds`` から読み、期間内の最初のサンプルの
-    前のサンプル（期間の外）が閾値以上でつながっていれば「期間の開始前から継続」とする。開始・ピーク・件数は
-    期間内のサンプルだけで決める（一覧と俯瞰を期間に収めるため）。
+    上位 N 台に絞らない（``build_chat_period_metrics`` の上位 15 台の作りは使わない）ので、超過したホストは
+    すべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当て、超えたら 422 にせず
+    超過区間の行を省く（``omitted``）。
+
+    期間の端:
+
+    - 開始前から続く超過: 期間内の最初のサンプルの直前のサンプル（期間の外）が閾値以上でつながっていれば
+      ``continues_from_before``。開始・ピーク・件数は期間内のサンプルだけで決める。
+    - 終わりでも続く超過（``continues_after``）: 区間の最後のサンプルが、その系列の期間内の最後のサンプルで
+      （その後に閾値未満のサンプルも、つながらないサンプルも無い）、かつ期間の終わりから間隔の上限以内に
+      あるとき。期間の終わりは ``to`` だが、``to`` が未来なら現在時刻にする（まだ来ていないサンプルを
+      途絶えとみなさない）。上限より前で途絶えた系列は、その後も超過していたとは言えないので偽にする。
+      上限ちょうどは真（その時点で次のサンプルが来れば、区間をつなぐ規則でも同じ区間になるため）。
+      期間の後ろのサンプルは読まない（「最後に見えたサンプルの時点で、まだ超過していた」という意味）。
     """
     thresholds = dict(scope.metric_thresholds)
     if not thresholds:
         return _Collected(overview={"metric_breach": [0] * scope.bucket_count})
     keys = tuple(thresholds)
-    scan_from = scope.from_utc - timedelta(seconds=scope.metric_max_gap_seconds)
-    threshold_expr = case(
-        *[(MetricSample.metric_key == key, literal(float(value))) for key, value in thresholds.items()],
-    )
+    max_gap = scope.metric_max_gap_seconds
+
+    def threshold_of(metric_key_column: Any) -> Any:
+        return case(
+            *[(metric_key_column == key, literal(float(value))) for key, value in thresholds.items()],
+        )
+
     clauses: list[ColumnElement[bool]] = [
         MetricSample.metric_key.in_(keys),
-        MetricSample.sampled_at >= scan_from,
+        MetricSample.sampled_at >= scope.from_utc,
         MetricSample.sampled_at < scope.to_utc,
+        MetricSample.value >= threshold_of(MetricSample.metric_key),
     ]
     if scope.vcenter_id is not None:
         clauses.append(MetricSample.vcenter_id == scope.vcenter_id)
+    else:
+        # vCenter を指定しないときも、登録済みの vCenter の id を並べて渡す。索引
+        # ix_metric_samples_vcenter_metric_sampled_value（vcenter_id, metric_key, sampled_at, value）を
+        # vCenter ごとの範囲走査で使えるようにするため（SQLite は統計が無いと、ほかの索引を選んで期間内の
+        # 全指標のサンプルを読む）。削除済みの vCenter のサンプルは外部キーの CASCADE で残らない。
+        vcenter_ids = (await session.execute(select(VCenter.id))).scalars().all()
+        if not vcenter_ids:
+            return _Collected(overview={"metric_breach": [0] * scope.bucket_count})
+        clauses.append(MetricSample.vcenter_id.in_(vcenter_ids))
     # 対象（entity）の絞り込みはここではかけない。サンプル単位で除くと、名前の違うサンプルが抜けて
     # 区間の区切りが変わるので、区間にまとめた後の名前に当てる。
 
-    # 1. 指標ごとの閾値と超過の印（hit）
-    base = (
+    # 1. 期間内の閾値以上のサンプルと、その直前のサンプル（同じ系列。期間の前でもよい）。直前のサンプルが
+    #    閾値以上ならそのエポック秒、閾値未満なら NULL を、索引の seek 1 回（ORDER BY ... LIMIT 1）で引く。
+    #    id で結合して値を引く形にすると、PostgreSQL は表全体を読むハッシュ結合を選ぶ。
+    prev = aliased(MetricSample, name="metric_prev")
+    prev_hit_epoch = (
+        select(
+            case(
+                (
+                    prev.value >= threshold_of(prev.metric_key),
+                    epoch_seconds_expr(prev.sampled_at, scope.dialect_name),
+                ),
+                else_=None,
+            )
+        )
+        .where(
+            prev.vcenter_id == MetricSample.vcenter_id,
+            prev.entity_moid == MetricSample.entity_moid,
+            prev.metric_key == MetricSample.metric_key,
+            prev.sampled_at < MetricSample.sampled_at,
+        )
+        .order_by(prev.sampled_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    hits0 = (
         select(
             MetricSample.id.label("id"),
             MetricSample.vcenter_id.label("vc"),
@@ -1132,95 +1186,103 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
             MetricSample.value.label("value"),
             func.nullif(func.trim(MetricSample.entity_name), "").label("nm"),
             MetricSample.entity_type.label("etype"),
-            case((MetricSample.value >= threshold_expr, 1), else_=0).label("hit"),
+            prev_hit_epoch.label("prev_hit_epoch"),
         )
         .where(*clauses)
-        .subquery("metric_base")
+        .subquery("metric_hits0")
     )
-    series = (base.c.vc, base.c.moid, base.c.mk)
-    # 2. 同じ系列の 1 つ前のサンプル（閾値未満も含む）
-    lagged = select(
-        base,
-        func.lag(base.c.hit).over(partition_by=series, order_by=base.c.at).label("prev_hit"),
-        func.lag(base.c.at).over(partition_by=series, order_by=base.c.at).label("prev_at"),
-    ).subquery("metric_lagged")
-    # 3. 閾値以上のサンプルだけを残し、区間の始まり（starts=1）に印を付ける。前が閾値以上で、
-    #    間隔が上限以内のときだけ前の区間の続き（starts=0）。前が無い（NULL）ときも始まり。
-    gap = epoch_seconds_expr(lagged.c.at, scope.dialect_name) - epoch_seconds_expr(
-        lagged.c.prev_at, scope.dialect_name
-    )
+    # 2. 区間の始まり（starts=1）の印。直前のサンプルが閾値以上で、間隔が上限以内のときだけ前の区間の続き。
+    #    直前のサンプルが無いとき・閾値未満のとき（NULL）も始まり。
+    gap = epoch_seconds_expr(hits0.c.at, scope.dialect_name) - hits0.c.prev_hit_epoch
     hits = (
         select(
-            lagged.c.id, lagged.c.vc, lagged.c.moid, lagged.c.mk, lagged.c.at,
-            lagged.c.value, lagged.c.nm, lagged.c.etype,
-            case(
-                (and_(lagged.c.prev_hit == 1, gap <= scope.metric_max_gap_seconds), 0),
-                else_=1,
-            ).label("starts"),
+            hits0.c.id, hits0.c.vc, hits0.c.moid, hits0.c.mk, hits0.c.at,
+            hits0.c.value, hits0.c.nm, hits0.c.etype,
+            case((gap <= max_gap, 0), else_=1).label("starts"),
         )
-        .where(lagged.c.hit == 1)
+        # OFFSET 0 は最適化の壁。PostgreSQL がこの副問い合わせを外側に展開すると、starts を使う箇所ごとに
+        # 直前のサンプルの相関副問い合わせを実行し直す（2 回になる）ので、ここで 1 回だけ求めさせる。
+        .offset(0)
         .subquery("metric_hits")
     )
-    hseries = (hits.c.vc, hits.c.moid, hits.c.mk)
-    # 4. 始まりの印の累積和が区間の番号になる
+    # 列の順は意味を変えない。索引 (vcenter_id, entity_moid, metric_key, sampled_at) の並びと一致させると、
+    # SQLite が並べ替えを省くためにその索引で期間外も含む全サンプルを読む計画を選ぶので、わざと順を変える。
+    hseries = (hits.c.mk, hits.c.moid, hits.c.vc)
+    # 3. 始まりの印の累積和が区間の番号になる
     runs = select(
         hits,
         func.sum(hits.c.starts)
         .over(partition_by=hseries, order_by=(hits.c.at, hits.c.id), rows=(None, 0))
         .label("run"),
     ).subquery("metric_runs")
-    # 5. 期間内のサンプルに絞ってから、区間ごとのピーク時刻・最初の id・最新の名前を求める
-    #    （WHERE は同じ SELECT の window 関数より先に効く）
-    rkey = (runs.c.vc, runs.c.moid, runs.c.mk, runs.c.run)
-    in_period = (
-        select(
-            runs.c.vc, runs.c.moid, runs.c.mk, runs.c.run, runs.c.at, runs.c.value, runs.c.starts,
-            func.first_value(runs.c.at, type_=DateTime(timezone=True))
-            .over(partition_by=rkey, order_by=(runs.c.value.desc(), runs.c.at))
-            .label("peak_at"),
-            func.first_value(runs.c.id, type_=Integer())
-            .over(partition_by=rkey, order_by=runs.c.at)
-            .label("first_id"),
-            # 名前は空でない最新のもの（無ければ NULL → Python で moid にする）
-            func.first_value(runs.c.nm, type_=String())
-            .over(partition_by=rkey, order_by=(runs.c.nm.is_(None), runs.c.at.desc()))
-            .label("name"),
-            func.first_value(runs.c.etype, type_=String())
-            .over(partition_by=rkey, order_by=runs.c.at.desc())
-            .label("etype"),
-        )
-        .where(runs.c.at >= scope.from_utc)
-        .subquery("metric_in_period")
-    )
-    # 6. 区間ごとに 1 行。starts の最大が 0（期間内の行がすべて続き）なら、期間の開始前から継続している
+    # 4. 区間ごとのピーク時刻・最初の id・最新の名前
+    rkey = (runs.c.mk, runs.c.moid, runs.c.vc, runs.c.run)
+    run_stats = select(
+        runs.c.vc, runs.c.moid, runs.c.mk, runs.c.run, runs.c.at, runs.c.value, runs.c.starts,
+        func.first_value(runs.c.at, type_=DateTime(timezone=True))
+        .over(partition_by=rkey, order_by=(runs.c.value.desc(), runs.c.at))
+        .label("peak_at"),
+        func.first_value(runs.c.id, type_=Integer())
+        .over(partition_by=rkey, order_by=runs.c.at)
+        .label("first_id"),
+        # 名前は空でない最新のもの（無ければ NULL → 表示も絞り込みも moid）
+        func.first_value(runs.c.nm, type_=String())
+        .over(partition_by=rkey, order_by=(runs.c.nm.is_(None), runs.c.at.desc()))
+        .label("name"),
+        runs.c.etype,
+    ).subquery("metric_run_stats")
+    # 5. 区間ごとに 1 行。starts の最大が 0（期間内の行がすべて続き）なら、期間の開始前から継続している
     intervals = (
         select(
-            in_period.c.vc, in_period.c.moid, in_period.c.mk,
-            func.min(in_period.c.at).label("start_at"),
-            func.max(in_period.c.at).label("end_at"),
-            func.max(in_period.c.value).label("peak"),
+            run_stats.c.vc, run_stats.c.moid, run_stats.c.mk,
+            func.min(run_stats.c.at).label("start_at"),
+            func.max(run_stats.c.at).label("end_at"),
+            func.max(run_stats.c.value).label("peak"),
             func.count().label("n"),
-            func.max(in_period.c.starts).label("began_inside"),
-            func.max(in_period.c.peak_at).label("peak_at"),
-            func.max(in_period.c.first_id).label("first_id"),
-            func.max(in_period.c.name).label("name"),
-            func.max(in_period.c.etype).label("etype"),
+            func.max(run_stats.c.starts).label("began_inside"),
+            func.max(run_stats.c.peak_at).label("peak_at"),
+            func.max(run_stats.c.first_id).label("first_id"),
+            func.max(run_stats.c.name).label("name"),
+            func.max(run_stats.c.etype).label("etype"),
         )
-        .group_by(in_period.c.vc, in_period.c.moid, in_period.c.mk, in_period.c.run)
+        .group_by(run_stats.c.vc, run_stats.c.moid, run_stats.c.mk, run_stats.c.run)
         .subquery("metric_intervals")
     )
-    stmt = select(intervals)
+    # 6. 区間の最後のサンプルより後に、期間内のサンプルがあるか（あれば期間の終わりまでに区間は終わっている）
+    later = aliased(MetricSample, name="metric_later")
+    has_later = (
+        select(later.id)
+        .where(
+            later.vcenter_id == intervals.c.vc,
+            later.entity_moid == intervals.c.moid,
+            later.metric_key == intervals.c.mk,
+            later.sampled_at > intervals.c.end_at,
+            later.sampled_at < scope.to_utc,
+        )
+        .exists()
+    )
+    stmt = select(intervals, has_later.label("has_later"))
     if scope.entity:
-        stmt = stmt.where(contains_case_insensitive(intervals.c.name, scope.entity))
+        # 表示と同じ規則（名前が空なら moid）に当てる。moid で表示した行も「この対象で絞る」で消えない。
+        stmt = stmt.where(
+            contains_case_insensitive(func.coalesce(intervals.c.name, intervals.c.moid), scope.entity)
+        )
     stmt = stmt.order_by(
         intervals.c.start_at, intervals.c.vc, intervals.c.moid, intervals.c.mk
     ).limit(scope.max_rows + 1)
+    if scope.dialect_name == "postgresql":
+        # PostgreSQL は閾値以上の行数を大きく見積もる（value >= CASE ... の選択率が分からない）ため、
+        # 期間が長いと JIT のコンパイルが走り、実行より長くかかる（7 日・200 ホストで 1.3 秒のうち 0.8 秒）。
+        # このトランザクションの残りだけ JIT を切る（タイムラインの問い合わせはどれも JIT が要らない）。
+        await session.execute(text("SET LOCAL jit = off"))
     rows = (await session.execute(stmt)).all()
     if len(rows) > scope.max_rows:
         # 422 にせず、超過区間の行だけを省く（イベントやアラートまで見えなくしない）。区間を作れないので
         # 俯瞰も数えられない。画面は omitted_sources で 0 と「分からない」を区別する。
         return _Collected(overview={"metric_breach": [0] * scope.bucket_count}, omitted=True)
 
+    # 期間の終わり。to が未来なら現在時刻（まだ来ていないサンプルを途絶えとみなさない）。
+    observed_until = min(scope.to_utc, datetime.now(timezone.utc))
     entries: list[TimelineEntry] = []
     for row in rows:
         start = to_utc(row.start_at)
@@ -1229,6 +1291,7 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
         peak = float(row.peak)
         sample_count = int(row.n)
         continued = not int(row.began_inside)
+        continues_after = not row.has_later and (observed_until - end).total_seconds() <= max_gap
         entries.append(
             TimelineEntry(
                 kind="metric",
@@ -1237,7 +1300,9 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
                 end_utc=end if end != start else None,
                 level=metric_breach_level(peak, threshold),
                 title=metric_breach_title(row.mk, threshold),
-                detail=metric_breach_detail(peak, sample_count, continued=continued),
+                detail=metric_breach_detail(
+                    peak, sample_count, continued=continued, continues_after=continues_after
+                ),
                 entity_name=row.name or row.moid,
                 entity_type=row.etype,
                 vcenter_id=row.vc,
@@ -1252,6 +1317,7 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
                     "peak_at_utc": to_utc(row.peak_at),
                     "sample_count": sample_count,
                     "continues_from_before": continued,
+                    "continues_after": continues_after,
                 },
             )
         )

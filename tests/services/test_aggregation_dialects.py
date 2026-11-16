@@ -219,7 +219,7 @@ async def test_group_by_has_no_bind_parameters_on_postgres(
         "GROUP BY score_inputs.event_type, score_inputs.severity, score_inputs.has_keyword",
         "GROUP BY base.bidx\n",
         "GROUP BY log_base.bidx",
-        "GROUP BY metric_in_period.vc, metric_in_period.moid, metric_in_period.mk, metric_in_period.run",
+        "GROUP BY metric_run_stats.vc, metric_run_stats.moid, metric_run_stats.mk, metric_run_stats.run",
     ):
         assert expected in compiled, expected
     for m in re.finditer(r"GROUP BY ([^\n]+)", compiled):
@@ -430,6 +430,14 @@ async def test_incident_timeline_metric_intervals_on_each_dialect(session: Async
             sample(v1, "h3", TO, 99.0, key=METRIC_MEM),
             # ディスクの KB/s は対象外
             sample(v1, "h3", at(25), 5000.0, key="host.disk.usage_pct"),
+            # h6 (v2): 名前が空白だけ → 名前は moid。期間の終わりの 20 分前で途絶える → 終わりでは続いていない
+            sample(v2, "h6", at(100), 90.0, name="   "),
+            # h4 (v1): 期間の終わりの 1.5 分前まで超過 → 終わりでも継続
+            sample(v1, "h4", at(110), 90.0),
+            sample(v1, "h4", at(118, 500_000), 91.0),
+            # h5 (v1): 期間の終わりの手前で閾値未満に下がる → 終わりでは続いていない
+            sample(v1, "h5", at(112), 90.0),
+            sample(v1, "h5", at(117), 50.0),
         ]
     )
     await session.flush()
@@ -441,20 +449,33 @@ async def test_incident_timeline_metric_intervals_on_each_dialect(session: Async
     )
     got = [
         (i.vcenter_name, i.ref.entity_moid, i.ref.metric_key, i.timestamp_utc, i.end_utc, i.entity_name, i.level,
-         i.ref.peak_value, i.ref.peak_at_utc, i.ref.sample_count, i.ref.continues_from_before, i.ref.threshold_pct)
+         i.ref.peak_value, i.ref.peak_at_utc, i.ref.sample_count, i.ref.continues_from_before, i.ref.threshold_pct,
+         i.ref.continues_after)
         for i in out.items
     ]
     assert got == [
-        ("vc-one", "h1", METRIC_CPU, at(0, 900_000), at(5), "H1", "warning", 92.0, at(5), 2, True, 80.0),
-        ("vc-two", "h1", METRIC_CPU, at(12), None, "H1-ON-V2", "warning", 90.0, at(12), 1, False, 80.0),
-        ("vc-one", "h1", METRIC_CPU, at(15), at(30, 100_000), "H1-RENAMED", "warning", 81.0, at(30, 100_000), 2, False, 80.0),
-        ("vc-one", "h3", METRIC_MEM, at(25), None, "H3", "error", 97.0, at(25), 1, False, 85.0),
-        ("vc-one", "h1", METRIC_CPU, at(46, 200_000), None, "H1", "warning", 83.0, at(46, 200_000), 1, False, 80.0),
+        ("vc-one", "h1", METRIC_CPU, at(0, 900_000), at(5), "H1", "warning", 92.0, at(5), 2, True, 80.0, False),
+        ("vc-two", "h1", METRIC_CPU, at(12), None, "H1-ON-V2", "warning", 90.0, at(12), 1, False, 80.0, False),
+        ("vc-one", "h1", METRIC_CPU, at(15), at(30, 100_000), "H1-RENAMED", "warning", 81.0, at(30, 100_000), 2, False, 80.0, False),
+        ("vc-one", "h3", METRIC_MEM, at(25), None, "H3", "error", 97.0, at(25), 1, False, 85.0, False),
+        ("vc-one", "h1", METRIC_CPU, at(46, 200_000), None, "H1", "warning", 83.0, at(46, 200_000), 1, False, 80.0, False),
+        ("vc-two", "h6", METRIC_CPU, at(100), None, "h6", "warning", 90.0, at(100), 1, False, 80.0, False),
+        ("vc-one", "h4", METRIC_CPU, at(110), at(118, 500_000), "H4", "warning", 91.0, at(118, 500_000), 2, False, 80.0, True),
+        ("vc-one", "h5", METRIC_CPU, at(112), None, "H5", "warning", 90.0, at(112), 1, False, 80.0, False),
     ]
     assert out.items[0].detail == "ピーク 92%、サンプル 2 件、期間の開始前から継続"
+    assert out.items[6].detail == "ピーク 91%、サンプル 2 件、期間の終わりでも継続"
     breach = [b.metric_breach for b in out.overview]
     assert breach[:7] == [1, 1, 1, 1, 1, 1, 0]
-    assert sum(breach) == 6 + 1 + 16 + 1 + 1
+    assert sum(breach) == 6 + 1 + 16 + 1 + 1 + 1 + 9 + 1
+
+    # 名前が空の系列は moid で表示し、その moid で絞っても消えない（coalesce(名前, moid) に当てる）
+    by_moid = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["metric"], entity="h6"),
+        owner_key="dialect-test",
+    )
+    assert [(i.ref.entity_moid, i.entity_name) for i in by_moid.items] == [("h6", "h6")]
 
 
 @pytest.mark.asyncio
@@ -512,4 +533,5 @@ async def test_incident_timeline_logs_on_each_dialect(session: AsyncSession) -> 
         owner_key="dialect-test",
     )
     assert [i.detail for i in filtered.items] == ["other host"]
+
 
