@@ -978,7 +978,7 @@ async def test_metric_consecutive_breach_becomes_one_interval(client: AsyncClien
     (item,) = _metrics(data)
     assert item["id"] == f"metric:{ids[1]}"
     assert _span(item) == (_at(5), _at(15))
-    assert item["title"] == "CPU 使用率 が閾値（80%）を超過"
+    assert item["title"] == "CPU 使用率が閾値（80%）を超過"
     assert item["detail"] == "ピーク 92.5%、サンプル 3 件"
     assert item["level"] == "warning"
     assert item["entity_name"] == "esx01"
@@ -1059,7 +1059,7 @@ async def test_metric_intervals_are_split_by_metric_host_and_vcenter(client: Asy
         ("vc-x2", "host-1", CPU, (_at(5), None)),
     ]
     mem = next(i for i in items if i["ref"]["metric_key"] == MEM)
-    assert mem["title"] == "メモリ使用率 が閾値（85%）を超過"
+    assert mem["title"] == "メモリ使用率が閾値（85%）を超過"
 
 
 @pytest.mark.asyncio
@@ -1091,9 +1091,9 @@ async def test_metric_threshold_from_request_changes_result(client: AsyncClient)
     await _series(vid, "host-1", [(0, 85)])
     assert _metrics(await _post(client, metric_threshold_cpu_pct=90)) == []
     (item,) = _metrics(await _post(client, metric_threshold_cpu_pct=70))
-    assert item["title"] == "CPU 使用率 が閾値（70%）を超過"
+    assert item["title"] == "CPU 使用率が閾値（70%）を超過"
     (item,) = _metrics(await _post(client, metric_threshold_cpu_pct=82.5))
-    assert item["title"] == "CPU 使用率 が閾値（82.5%）を超過"
+    assert item["title"] == "CPU 使用率が閾値（82.5%）を超過"
     assert item["ref"]["threshold_pct"] == 82.5
 
 

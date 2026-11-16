@@ -382,14 +382,20 @@ def metric_breach_level(peak: float, threshold: float) -> TimelineLevel:
     return "warning"
 
 
-def _format_pct(value: float) -> str:
-    """80.0 → "80"、82.5 → "82.5"、92.346 → "92.35"。"""
-    return f"{round(float(value), 2):g}"
+def format_number(value: float) -> str:
+    """``title`` / ``detail`` の数値の書き方。画面の表示と揃える規則で、小数は 2 桁まで（丸める）、
+    末尾の 0 と小数点は書かない（80 → "80"、82.5 → "82.5"、82.55 → "82.55"、92.346 → "92.35"）。
+
+    丸めは ``f"{v:.2f}"``（2 進の値をそのまま丸める。JavaScript の ``toFixed(2)`` と同じ結果になる）。
+    桁が大きくても指数表記にしない。
+    """
+    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
 
 
 def metric_breach_title(metric_key: str, threshold: float) -> str:
     label = _METRIC_LABELS.get(metric_key, metric_key)
-    return f"{label} が閾値（{_format_pct(threshold)}%）を超過"
+    return f"{label}が閾値（{format_number(threshold)}%）を超過"
 
 
 def metric_breach_detail(peak: float, sample_count: int, *, continued: bool) -> str:
@@ -397,7 +403,7 @@ def metric_breach_detail(peak: float, sample_count: int, *, continued: bool) -> 
 
     ピークの時刻は書かない。画面が ``ref.peak_at_utc`` を利用者のタイムゾーンの設定で表示する。
     """
-    parts = [f"ピーク {_format_pct(peak)}%", f"サンプル {sample_count} 件"]
+    parts = [f"ピーク {format_number(peak)}%", f"サンプル {sample_count} 件"]
     if continued:
         parts.append(_METRIC_CONTINUED_NOTE)
     return "、".join(parts)

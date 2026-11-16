@@ -26,6 +26,7 @@ from vcenter_event_assistant.services.incident_timeline_view import (
     metric_breach_detail,
     metric_breach_level,
     metric_breach_title,
+    format_number,
     overview_bucket_count,
     pick_new_event_types,
     select_within_limit,
@@ -519,8 +520,8 @@ def test_metric_breach_level(peak: float, threshold: float, expected: str) -> No
 
 
 def test_metric_breach_title_and_detail() -> None:
-    assert metric_breach_title("host.cpu.usage_pct", 80.0) == "CPU 使用率 が閾値（80%）を超過"
-    assert metric_breach_title("host.mem.usage_pct", 85.5) == "メモリ使用率 が閾値（85.5%）を超過"
+    assert metric_breach_title("host.cpu.usage_pct", 80.0) == "CPU 使用率が閾値（80%）を超過"
+    assert metric_breach_title("host.mem.usage_pct", 85.5) == "メモリ使用率が閾値（85.5%）を超過"
     # 時刻は detail に書かない（画面が ref.peak_at_utc を設定のタイムゾーンで表示する）
     assert metric_breach_detail(92.346, 3, continued=False) == "ピーク 92.35%、サンプル 3 件"
     assert metric_breach_detail(90.0, 1, continued=True) == "ピーク 90%、サンプル 1 件、期間の開始前から継続"
@@ -626,3 +627,21 @@ def test_truncation_with_anchor_does_not_cap_logs() -> None:
     metrics = _many("metric", 1, 10, "warning", minute0=0)
     kept, _ = select_within_limit(sort_entries([*logs, *metrics]), 6, _at(30.5))
     assert all(e.kind == "log" for e in kept)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (80, "80"), (80.0, "80"), (82.5, "82.5"), (82.55, "82.55"), (82.50, "82.5"),
+        (0.5, "0.5"), (0, "0"), (99.999, "100"), (92.346, "92.35"), (0.001, "0"),
+        (1234567.0, "1234567"), (12.10, "12.1"),
+    ],
+)
+def test_format_number_uses_up_to_two_decimals_without_trailing_zeros(value: float, expected: str) -> None:
+    """画面と揃える規則: 小数は 2 桁まで（丸める）、末尾の 0 と小数点は書かない。"""
+    assert format_number(value) == expected
+
+
+def test_metric_title_and_detail_use_the_shared_number_format() -> None:
+    assert metric_breach_title("host.cpu.usage_pct", 82.55) == "CPU 使用率が閾値（82.55%）を超過"
+    assert metric_breach_detail(82.549, 2, continued=False) == "ピーク 82.55%、サンプル 2 件"
