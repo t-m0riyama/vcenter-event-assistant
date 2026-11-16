@@ -295,13 +295,19 @@ describe(
       nonce,
     })
     const chatPosts: Record<string, unknown>[] = []
+    const previewPosts: Record<string, unknown>[] = []
     const stubFetch = () => {
       chatPosts.length = 0
+      previewPosts.length = 0
       vi.stubGlobal(
         'fetch',
         vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
           const url = String(input)
           if (url.endsWith('/api/vcenters')) return Promise.resolve(jsonResponse([{ id: VC, name: 'vc-main' }]))
+          if (url.endsWith('/api/chat/preview') && init?.method === 'POST') {
+            previewPosts.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+            return Promise.resolve(new Response('{}', { status: 500 }))
+          }
           if (url.endsWith('/api/chat') && init?.method === 'POST') {
             chatPosts.push(JSON.parse(String(init.body)) as Record<string, unknown>)
             return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
@@ -401,6 +407,49 @@ describe(
       fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '02:10' } })
       await send()
       expect(chatPosts[0]).toMatchObject({ from: '2026-03-22T02:10:00.000Z', to: TO })
+    })
+
+    it('夏時間の戻りをまたぎ、壁時計では終了が開始より前に見える期間も、送信とプレビューで引き継いだ値のまま使う', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const range = { from: '2026-11-01T05:50:00.000Z', to: '2026-11-01T06:10:00.000Z' }
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff(range))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻')).toHaveValue('01:50'))
+      expect(screen.getByLabelText('終了時刻')).toHaveValue('01:10')
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
+      await waitFor(() => expect(previewPosts).toHaveLength(1))
+      expect(previewPosts[0]).toMatchObject(range)
+      await send()
+      expect(chatPosts[0]).toMatchObject(range)
+      expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('開始は終了より前'))
+    })
+
+    it('片側だけ編集したとき、編集した側の順序の逆転は従来どおり止める', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff({ from: '2026-11-01T05:50:00.000Z', to: '2026-11-01T06:10:00.000Z' }))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻')).toHaveValue('01:50'))
+      fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '00:30' } })
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith('開始は終了より前の時刻にしてください。'))
+      expect(chatPosts).toHaveLength(0)
+    })
+
+    it('片側だけ編集したとき、編集した側の存在しない時刻は従来どおり止める', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff({ from: '2026-03-08T12:00:00.000Z', to: '2026-03-08T15:00:00.000Z' }))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-08'))
+      fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '02:30' } })
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('存在しません')))
+      expect(chatPosts).toHaveLength(0)
     })
 
     it('編集の結果が 90 日を超えるときは、送信せず日本語のエラーを出す', async () => {
