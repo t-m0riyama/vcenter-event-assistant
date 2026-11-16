@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import ROUND_HALF_UP, Decimal
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -388,10 +389,12 @@ def format_number(value: float) -> str:
     """``title`` / ``detail`` の数値の書き方。画面の表示と揃える規則で、小数は 2 桁まで（丸める）、
     末尾の 0 と小数点は書かない（80 → "80"、82.5 → "82.5"、82.55 → "82.55"、92.346 → "92.35"）。
 
-    丸めは ``f"{v:.2f}"``（2 進の値をそのまま丸める。JavaScript の ``toFixed(2)`` と同じ結果になる）。
+    丸めは JavaScript の ``Number.prototype.toFixed(2)`` と同じにする: 2 進の値そのもので丸め、ちょうど
+    中間（0.125 など）なら大きいほうへ（``f"{v:.2f}"`` は偶数側に丸めるので 0.125 が "0.12" になり、ずれる）。
     桁が大きくても指数表記にしない。
     """
-    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
+    rounded = Decimal(float(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    text = f"{rounded:f}".rstrip("0").rstrip(".")
     return "0" if text in ("-0", "") else text
 
 

@@ -665,6 +665,8 @@ def test_truncation_with_anchor_does_not_cap_logs() -> None:
         (80, "80"), (80.0, "80"), (82.5, "82.5"), (82.55, "82.55"), (82.50, "82.5"),
         (0.5, "0.5"), (0, "0"), (99.999, "100"), (92.346, "92.35"), (0.001, "0"),
         (1234567.0, "1234567"), (12.10, "12.1"),
+        # 2 進でちょうど表せる中間の値は、JavaScript の toFixed(2) と同じく大きいほうへ丸める
+        (0.125, "0.13"), (82.375, "82.38"), (82.555, "82.56"),
     ],
 )
 def test_format_number_uses_up_to_two_decimals_without_trailing_zeros(value: float, expected: str) -> None:
