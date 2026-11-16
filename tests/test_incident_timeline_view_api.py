@@ -1567,6 +1567,100 @@ async def test_too_many_metric_intervals_omits_only_metrics(
     assert data["omitted_sources"] == [] and len(_metrics(data)) == 2
 
 
+# --- 閾値以上のサンプルの数の上限: 区間を作る前に数え、超えたらメトリクスを省く ------------------
+#
+# 区間の問い合わせの時間は閾値以上のサンプルの数に比例するので、先に上限 + 1 件で打ち切って数え、
+# 超えたら区間の問い合わせを実行しない（timeline_metric_breach_sample_limit）。CPU とメモリを合わせて数える。
+
+
+def _capture_sql(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    captured: list[str] = []
+    original = AsyncSession.execute
+
+    async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(str(statement))
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    return captured
+
+
+def _ran_interval_query(sql: list[str]) -> bool:
+    return any("metric_intervals" in s for s in sql)
+
+
+@pytest.mark.asyncio
+async def test_too_many_breaching_samples_omit_metrics_without_building_intervals(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = await _vcenter()
+    # 期間内の閾値以上は CPU 2 件 + メモリ 1 件 = 3 件。閾値未満と期間の前のサンプルは数えない
+    await _series(vid, "host-1", [(-5, 95), (0, 90), (5, 10), (10, 90)])
+    await _series(vid, "host-1", [(3, 97), (8, 50)], key=MEM)
+    await _events(vid, (4, "A", "h1", 50))
+    alert_id = await _one_firing_alert(6)
+    await _logs(vid, (7, "error", "a"))
+
+    monkeypatch.setattr(require_settings(), "timeline_metric_breach_sample_limit", 2)
+    sql = _capture_sql(monkeypatch)
+    data = await _post(client)
+    assert data["omitted_sources"] == [{"source": "metric", "reason": "too_many_rows"}]
+    assert not _ran_interval_query(sql)
+    # ほかの種別はそのまま
+    assert [i["kind"] for i in data["items"]] == ["event", "alert", "log"]
+    assert data["items"][1]["id"] == f"alert:{alert_id}"
+    # 俯瞰の metric_breach は、区間の数で省いたときと同じく 0（分からないことは omitted_sources で伝える）
+    assert sum(b["metric_breach"] for b in data["overview"]) == 0
+
+    # 上限ちょうどなら省かない
+    monkeypatch.setattr(require_settings(), "timeline_metric_breach_sample_limit", 3)
+    sql.clear()
+    data = await _post(client)
+    assert data["omitted_sources"] == []
+    assert _ran_interval_query(sql)
+    assert len(_metrics(data)) == 3
+
+
+@pytest.mark.asyncio
+async def test_breaching_sample_limit_counts_after_the_vcenter_and_entity_filters(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    v1 = await _vcenter("vc-a")
+    v2 = await _vcenter("vc-b")
+    await _series(v1, "host-1", [(0, 90), (5, 90), (10, 90)], name="esx01")
+    await _series(v1, "host-2", [(0, 90), (5, 90)], name="esx02")
+    # 名前が空の系列は moid で絞る
+    await _series(v1, "host-3", [(0, 90)], name="  ")
+    await _series(v2, "host-9", [(0, 90), (5, 90), (10, 90)], name="esx09")
+    # 系列の途中で名前が変わっても、名前が当たるサンプルのある系列はまるごと数える（区間の区切りを変えない）
+    await _series(v2, "host-7", [(0, 90), (5, 90)], name="old-name")
+    await _series(v2, "host-7", [(10, 90)], name="esx07")
+    monkeypatch.setattr(require_settings(), "timeline_metric_breach_sample_limit", 3)
+
+    assert (await _post(client))["omitted_sources"] == [{"source": "metric", "reason": "too_many_rows"}]
+    # vCenter の指定: vc-a は 6 件で超える、vc-b は 6 件で超える
+    assert (await _post(client, vcenter_id=str(v1)))["omitted_sources"] != []
+    # 対象の絞り込みは絞った後の数で判定する
+    data = await _post(client, entity="esx01")
+    assert data["omitted_sources"] == []
+    assert [(i["entity_name"], i["count"]) for i in _metrics(data)] == [("esx01", 1)]
+    data = await _post(client, entity="host-3")
+    assert data["omitted_sources"] == [] and [i["entity_name"] for i in _metrics(data)] == ["host-3"]
+    data = await _post(client, entity="esx07")
+    assert data["omitted_sources"] == []
+    (item,) = _metrics(data)
+    assert item["entity_name"] == "esx07" and item["ref"]["sample_count"] == 3
+    # esx0 は esx01・esx02・esx09・esx07 の 3 + 2 + 3 + 3 = 11 件で超える。vc-a に絞ると 5 件で超える
+    assert (await _post(client, entity="esx0"))["omitted_sources"] != []
+    assert (await _post(client, entity="esx0", vcenter_id=str(v1)))["omitted_sources"] != []
+    monkeypatch.setattr(require_settings(), "timeline_metric_breach_sample_limit", 5)
+    data = await _post(client, entity="esx0", vcenter_id=str(v1))
+    assert data["omitted_sources"] == []
+    assert sorted(i["entity_name"] for i in _metrics(data)) == ["esx01", "esx02"]
+
+
 @pytest.mark.asyncio
 async def test_both_logs_and_metrics_over_the_limit_are_omitted(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
