@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, apiGet } from '../api'
+import { validateApiRange } from '../datetime/apiRangeLimit'
 import {
   postIncidentTimelineView,
   TimelineBusyError,
@@ -25,7 +26,6 @@ import {
   buildViewRequest,
   conditionsFromViewRequest,
   resolveTimelineRange,
-  validateResolvedRange,
   widenRange,
   type ResolvedRange,
   type TimelineSortOrder,
@@ -330,7 +330,7 @@ export function useTimelineViewController(
     const abort = new AbortController()
     const range = resolveTimelineRange(conditionsRef.current.range, Date.now())
     setResolvedRange(range)
-    const invalid = urlIssue ?? validateResolvedRange(range)
+    const invalid = urlIssue ?? validateApiRange(range)
     if (invalid) {
       desiredRef.current = { id: ++jobCounterRef.current, body: null, abort }
       setData(null)
@@ -445,7 +445,7 @@ export function useTimelineViewController(
       from: same(rangeParts, derivedParts, 'from') ? resolvedRange.from : resolved.from,
       to: same(rangeParts, derivedParts, 'to') ? resolvedRange.to : resolved.to,
     }
-    const reason = validateResolvedRange(next)
+    const reason = validateApiRange(next)
     setRangeInputError(reason)
     if (!reason) setFixedRange(next)
   }, [rangeParts, derivedParts, resolvedRange, timeZone, setFixedRange])

@@ -3,9 +3,11 @@ import './TimelinePanel.css'
 import { useCallback, useMemo, useState } from 'react'
 
 import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
+import { validateApiRange } from '../../datetime/apiRangeLimit'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import type { ChatHandoff } from '../../hooks/chatHandoff'
 import type { MetricsFocus } from '../../hooks/metricsReplay'
+import { DEFAULT_TIMELINE_CONDITIONS, type TimelineConditions } from '../../routing/timelineHash'
 import { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
 import { useTimelineViewController } from '../../hooks/useTimelineViewController'
 import { TimelineConditionBar } from './TimelineConditionBar'
@@ -20,7 +22,6 @@ import {
   nearestItemIdToAnchor,
   omittedSourceMessages,
   sortTimelineItems,
-  validateResolvedRange,
 } from './timelineModel'
 
 /**
@@ -124,7 +125,14 @@ export function TimelinePanel({
         </div>
       ) : null}
       {onOpenInChat && c.loadedRange ? (
-        <ChatHandoffButton range={c.loadedRange} vcenterId={c.conditions.vcenterId} onOpen={onOpenInChat} />
+        <ChatHandoffButton
+          range={c.loadedRange}
+          // 期間と同じく、表示中の結果の要求から取る（保存済みの結果の表示中は、保存した要求の条件）
+          vcenterId={c.loadedRequest ? (c.loadedRequest.vcenter_id ?? '') : c.conditions.vcenterId}
+          narrowedBy={narrowedConditions({ ...c.conditions, entity: c.entityInput })}
+          fromSavedSnapshot={c.savedView !== null}
+          onOpen={onOpenInChat}
+        />
       ) : null}
       {c.loadedRange ? (
         <p className="timeline-loaded-range">
@@ -161,7 +169,7 @@ export function TimelinePanel({
             timeZone={c.timeZone}
             metricOmitted={metricOmitted}
             onSelectRange={(range) => {
-              if (validateResolvedRange(range) === null) c.zoomTo(range)
+              if (validateApiRange(range) === null) c.zoomTo(range)
             }}
           />
           <TimelineHighlights
@@ -240,6 +248,18 @@ export function TimelinePanel({
   )
 }
 
+/** 既定から変えていて、チャットには引き継がれない条件の名前。 */
+function narrowedConditions(c: TimelineConditions): string[] {
+  const d = DEFAULT_TIMELINE_CONDITIONS
+  const out: string[] = []
+  if (c.entity.trim() !== '') out.push('対象')
+  if (c.anchor !== null) out.push('起点')
+  if (c.sources.length !== d.sources.length || !d.sources.every((k) => c.sources.includes(k))) out.push('種別')
+  if (c.minScore !== d.minScore) out.push('最小スコア')
+  if (c.cpuThresholdPct !== d.cpuThresholdPct || c.memoryThresholdPct !== d.memoryThresholdPct) out.push('しきい値')
+  return out
+}
+
 const CHAT_HANDOFF_TITLE =
   '表示中の期間（保存済みの結果なら保存した期間）と vCenter をチャットに渡します。対象・種別・起点などの絞り込みは渡らず、メッセージも自動では送りません。'
 
@@ -247,13 +267,17 @@ const CHAT_HANDOFF_TITLE =
 function ChatHandoffButton({
   range,
   vcenterId,
+  narrowedBy,
+  fromSavedSnapshot,
   onOpen,
 }: {
   range: { from: string; to: string }
   vcenterId: string
+  narrowedBy: string[]
+  fromSavedSnapshot: boolean
   onOpen: (handoff: ChatHandoff) => void
 }) {
-  const invalid = validateResolvedRange(range)
+  const invalid = validateApiRange(range)
   return (
     <p>
       <button
@@ -261,7 +285,7 @@ function ChatHandoffButton({
         className="btn btn--gray"
         disabled={invalid !== null}
         title={invalid ? `チャットに渡せません。${invalid}` : CHAT_HANDOFF_TITLE}
-        onClick={() => onOpen({ from: range.from, to: range.to, vcenterId: vcenterId || null })}
+        onClick={() => onOpen({ from: range.from, to: range.to, vcenterId: vcenterId || null, narrowedBy, fromSavedSnapshot })}
       >
         この範囲をチャットで分析
       </button>

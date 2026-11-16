@@ -539,9 +539,24 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     fireEvent.click(button)
     expect(onOpen).toHaveBeenCalledTimes(1)
     const focus = onOpen.mock.calls[0][0] as Record<string, unknown>
-    expect(Object.keys(focus).sort()).toEqual(['from', 'to', 'vcenterId'])
+    expect(Object.keys(focus).sort()).toEqual(['from', 'fromSavedSnapshot', 'narrowedBy', 'to', 'vcenterId'])
     expect(focus.vcenterId).toBeNull()
+    // 絞っていた対象は渡さず、絞っていたことだけ知らせる
+    expect(focus.narrowedBy).toEqual(['対象'])
+    expect(focus.fromSavedSnapshot).toBe(false)
     expect(Date.parse(String(focus.to))).toBeGreaterThan(Date.parse(String(focus.from)))
+  })
+
+  it('チャットへ渡す vCenter は、表示中の結果の要求のもの（条件を変えた直後の読み込み前の値ではない）', async () => {
+    const onOpen = vi.fn()
+    setup({ vcenters: [{ id: VC, name: 'vc-main' }] })
+    renderTimeline({ onOpenInChat: onOpen })
+    await answer(0, populated())
+    await screen.findByRole('list', { name: '出来事の時系列' })
+    fireEvent.change(screen.getByLabelText('vCenter'), { target: { value: VC } })
+    await waitFor(() => expect(harness.calls.length).toBeGreaterThan(1))
+    fireEvent.click(screen.getByRole('button', { name: 'この範囲をチャットで分析' }))
+    expect(onOpen.mock.calls[0][0]).toMatchObject({ vcenterId: null })
   })
 
   it('スナップショットは既定で閉じており、開くと一覧を読み、選ぶと期間と vCenter が条件へ入って読み直す', async () => {
@@ -723,6 +738,9 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
         from: '2026-03-10T00:00:00.000Z',
         to: '2026-03-10T03:00:00.000Z',
         vcenterId: VC,
+        // 保存した要求で絞っていた対象・種別・最小スコア・しきい値は、渡さずに知らせる
+        narrowedBy: ['対象', '種別', '最小スコア', 'しきい値'],
+        fromSavedSnapshot: true,
       })
     })
 

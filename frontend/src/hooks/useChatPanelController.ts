@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { apiGet, apiPost } from '../api'
+import { validateApiRange } from '../datetime/apiRangeLimit'
 import { useAuth } from '../auth/useAuth'
 import { buildIncidentTimelineBuildRequestPayload } from '../api/buildIncidentTimelineBuildRequestPayload'
 import {
@@ -16,8 +17,15 @@ import {
   zonedRangePartsFromUtcIsoEndpoints,
   zonedRangePartsToCombinedInputs,
 } from '../datetime/zonedRangeParts'
-import { validateResolvedRange } from '../panels/timeline/timelineModel'
 import type { ChatHandoffInput } from './chatHandoff'
+import type { ChatExactRange } from '../preferences/chatPanelStorage'
+
+/** 引き継ぎの注記に出す内容。 */
+export type ChatHandoffNote = {
+  narrowedBy: string[]
+  fromSavedSnapshot: boolean
+  hadConversation: boolean
+}
 import { useTimeZone } from '../datetime/useTimeZone'
 import { useRollingZonedRangeParts } from './useRollingZonedRangeParts'
 import { readStoredChatMaxStoredMessages } from '../preferences/chatMaxStoredMessagesStorage'
@@ -52,6 +60,7 @@ const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
 export function useChatPanelController(
   onError: (e: string | null) => void,
   handoff: ChatHandoffInput | null = null,
+  onHandoffApplied?: () => void,
 ) {
   const { chatStorageScope = null } = useAuth()
   const { timeZone } = useTimeZone()
@@ -86,8 +95,10 @@ export function useChatPanelController(
   )
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [storageHydrated, setStorageHydrated] = useState(false)
-  /** タイムラインから期間を引き継いだとき、既存の会話が前の期間のものであることの注記。 */
-  const [handoffNote, setHandoffNote] = useState(false)
+  /** タイムラインから期間を引き継いだことの注記。閉じる・会話のクリア・次の引き継ぎまで残す。 */
+  const [handoffNote, setHandoffNote] = useState<ChatHandoffNote | null>(null)
+  /** 引き継いだ期間の正確な端点。部品を編集するまで、送信でそのまま使う（分単位の部品に丸めない）。 */
+  const [exactRange, setExactRange] = useState<ChatExactRange | null>(null)
   const appliedHandoffRef = useRef(0)
   const messagesRef = useRef<ChatMessage[]>([])
   const [debouncedDraft, setDebouncedDraft] = useState('')
@@ -154,6 +165,7 @@ export function useChatPanelController(
     const snap = readChatPanelSnapshot(chatStorageScope, max)
     if (snap) {
       restoreRange(snap.rangeParts, snap.rollingDurationMs ?? null)
+      setExactRange(snap.exactRange ?? null)
       setVcenterId(snap.vcenterId)
       setMessages(snap.messages)
       setDraft(snap.draft)
@@ -174,16 +186,20 @@ export function useChatPanelController(
     if (!storageHydrated || !handoff || handoff.nonce < 1) return
     if (appliedHandoffRef.current === handoff.nonce) return
     appliedHandoffRef.current = handoff.nonce
-    const { from, to, vcenterId: nextVcenterId } = handoff.focus
-    const invalid = validateResolvedRange({ from, to })
+    const { from, to, vcenterId: nextVcenterId, narrowedBy, fromSavedSnapshot } = handoff.focus
+    const invalid = validateApiRange({ from, to })
     if (invalid) {
       onError(`タイムラインの期間をチャットに引き継げませんでした。${invalid}`)
+      onHandoffApplied?.()
       return
     }
-    restoreRange(zonedRangePartsFromUtcIsoEndpoints(from, to, timeZone), null)
+    const parts = zonedRangePartsFromUtcIsoEndpoints(from, to, timeZone)
+    restoreRange(parts, null)
+    setExactRange({ from, to, timeZone, parts })
     setVcenterId(nextVcenterId ?? '')
-    setHandoffNote(messagesRef.current.length > 0)
-  }, [handoff, onError, restoreRange, storageHydrated, timeZone])
+    setHandoffNote({ narrowedBy, fromSavedSnapshot, hadConversation: messagesRef.current.length > 0 })
+    onHandoffApplied?.()
+  }, [handoff, onError, onHandoffApplied, restoreRange, storageHydrated, timeZone])
 
   useEffect(() => {
     if (skipMaxTrimOnMountRef.current) {
@@ -207,6 +223,7 @@ export function useChatPanelController(
         messages,
         rangeParts,
         rollingDurationMs: activeRollingDurationMs,
+        exactRange,
         vcenterId,
         includePeriodMetricsCpu,
         includePeriodMetricsMemory,
@@ -228,6 +245,7 @@ export function useChatPanelController(
     messages,
     rangeParts,
     activeRollingDurationMs,
+    exactRange,
     vcenterId,
     includePeriodMetricsCpu,
     includePeriodMetricsMemory,
@@ -248,11 +266,25 @@ export function useChatPanelController(
       if (!resolved.from || !resolved.to) {
         return { ok: false as const, message: '期間の開始と終了を指定してください。' }
       }
+      // 引き継いだ期間は、部品（分単位）を編集していない側の端点を、そのままの値で使う
+      const exact = exactRange !== null && exactRange.timeZone === timeZone ? exactRange : null
+      const from =
+        exact && rangeParts.fromDate === exact.parts.fromDate && rangeParts.fromTime === exact.parts.fromTime
+          ? exact.from
+          : resolved.from
+      const to =
+        exact && rangeParts.toDate === exact.parts.toDate && rangeParts.toTime === exact.parts.toTime
+          ? exact.to
+          : resolved.to
+      const invalid = validateApiRange({ from, to })
+      if (invalid) {
+        return { ok: false as const, message: invalid }
+      }
       return {
         ok: true as const,
         body: {
           ...buildIncidentTimelineBuildRequestPayload({
-            resolvedRange: { from: resolved.from, to: resolved.to },
+            resolvedRange: { from, to },
             options: {
               vcenterId,
               includePeriodMetricsCpu,
@@ -287,6 +319,7 @@ export function useChatPanelController(
     },
     [
       rangeParts,
+      exactRange,
       timeZone,
       vcenterId,
       includePeriodMetricsCpu,
@@ -338,7 +371,6 @@ export function useChatPanelController(
     }
 
     onError(null)
-    setHandoffNote(false)
     setMessages(nextMessages)
     setDraft('')
     setDebouncedDraft('')
@@ -467,7 +499,7 @@ export function useChatPanelController(
     skipNextPersistRef.current = true
     clearChatPanelSnapshot(chatStorageScope)
     setMessages([])
-    setHandoffNote(false)
+    setHandoffNote(null)
     setLastLlmContext(null)
   }, [chatStorageScope])
 
@@ -478,6 +510,7 @@ export function useChatPanelController(
   return {
     canSend: chatStorageScope !== null,
     handoffNote,
+    dismissHandoffNote: () => setHandoffNote(null),
     timeZone,
     rangeParts,
     setRangeParts,

@@ -17,13 +17,16 @@ import { useChatPanelController } from '../../hooks/useChatPanelController'
 export function ChatPanel({
   onError,
   handoff = null,
+  onHandoffApplied,
 }: {
   onError: (e: string | null) => void
   /** タイムラインから引き継いだ期間・vCenter。`nonce` が変わるたびに、期間と vCenter だけを差し替える。 */
   handoff?: ChatHandoffInput | null
+  /** 引き継ぎを適用したら呼ぶ（呼び出し側が引き継ぎを消し、作り直しのときに当て直さない）。 */
+  onHandoffApplied?: () => void
 }) {
   const { visibleChatSamplePrompts } = useChatSamplePrompts()
-  const c = useChatPanelController(onError, handoff)
+  const c = useChatPanelController(onError, handoff, onHandoffApplied)
 
   return (
     <div className="panel chat-panel">
@@ -64,9 +67,24 @@ export function ChatPanel({
       />
 
       {c.handoffNote && (
-        <p className="hint" role="note" aria-label="タイムラインからの引き継ぎ">
-          タイムラインの期間と vCenter を引き継ぎました。以前の会話は前の期間のものです。必要なら「会話をクリア」で消せます。
-        </p>
+        <div className="hint chat-panel__handoff-note" role="note" aria-label="タイムラインからの引き継ぎ">
+          <p>タイムラインの期間と vCenter を引き継ぎました。</p>
+          <p>
+            絞り込み（対象・種別・起点・最小スコア・しきい値）は引き継がれません。
+            {c.handoffNote.narrowedBy.length > 0
+              ? `タイムラインで絞っていた${c.handoffNote.narrowedBy.join('・')}は、チャットの集計に反映されていません。`
+              : null}
+          </p>
+          {c.handoffNote.fromSavedSnapshot && (
+            <p>
+              保存済みのスナップショットを表示中でしたが、チャットは現在のデータで集計します。元のデータが保持期間を過ぎていると、内容が少ないか空になります。
+            </p>
+          )}
+          {c.handoffNote.hadConversation && <p>以前の会話は前の期間のものです。</p>}
+          <button type="button" className="btn btn--gray" onClick={c.dismissHandoffNote}>
+            閉じる
+          </button>
+        </div>
       )}
 
       <ChatMessagesList

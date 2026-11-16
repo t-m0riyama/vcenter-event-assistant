@@ -85,6 +85,7 @@ export default function App() {
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
   /** チャットのタブへ渡す期間・vCenter。`nonce` が変わるたびにチャット側で差し替える。 */
   const [chatHandoff, setChatHandoff] = useState<ChatHandoffInput | null>(null)
+  const [chatHandoffNonce, setChatHandoffNonce] = useState(0)
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setAppErr)
@@ -151,13 +152,17 @@ export default function App() {
 
   const openChatWithRange = useCallback(
     (focus: ChatHandoff) => {
-      setChatHandoff((prev) => ({ focus, nonce: (prev?.nonce ?? 0) + 1 }))
+      const nonce = chatHandoffNonce + 1
+      setChatHandoffNonce(nonce)
+      setChatHandoff({ focus, nonce })
       setMountedMainTabs((prev) => (prev.has('chat') ? prev : new Set(prev).add('chat')))
       setTab('chat')
       setShowHelp(false)
     },
-    [setTab],
+    [chatHandoffNonce, setTab],
   )
+  /** チャットが引き継ぎを適用したら消す（チャットが作り直されても、古い引き継ぎを当て直さない）。 */
+  const clearChatHandoff = useCallback(() => setChatHandoff(null), [])
 
   const selectMainTab = (next: MainTabId) => {
     ensureMainTabMounted(next)
@@ -223,7 +228,7 @@ export default function App() {
         id: 'chat',
         label: 'チャット',
         panelLabel: 'チャット',
-        render: (onError) => <ChatPanel onError={onError} handoff={chatHandoff} />,
+        render: (onError) => <ChatPanel onError={onError} handoff={chatHandoff} onHandoffApplied={clearChatHandoff} />,
       },
       {
         id: 'timeline',
@@ -243,6 +248,7 @@ export default function App() {
     [
       canChat,
       chatHandoff,
+      clearChatHandoff,
       metricsReplayNonce,
       metricsReplaySource,
       openChatWithRange,
