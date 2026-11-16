@@ -1536,6 +1536,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       const note = await screen.findByRole('note')
       expect(note).toHaveTextContent('メトリクスの超過区間は件数が多すぎるため')
       expect(note).toHaveTextContent('グラフにも出ていません')
+      expect(note).toHaveTextContent('しきい値を上げるか、期間を短くするか、対象を絞ってください')
     })
 
     it('両方省いたときは 1 種別 1 文で並べ、truncated の知らせとも並べて読める', async () => {

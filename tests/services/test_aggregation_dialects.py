@@ -664,3 +664,59 @@ async def test_incident_timeline_all_sources_on_each_dialect(
     assert [i.kind for i in out.items] == ["event", "alert"]
     assert [(o.source, o.reason) for o in out.omitted_sources] == [("metric", "too_many_rows"), ("log", "too_many_rows")]
     assert sum(b.log_error for b in out.overview) == 2
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_breaching_sample_limit_on_each_dialect(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """閾値以上のサンプルの数の上限（数え上げ・対象で絞る系列の IN）を両方の方言で通す。"""
+    from vcenter_event_assistant.settings_binding import require_settings
+
+    vid = uuid.uuid4()
+    session.add(VCenter(id=vid, name="vc-limit", host="h", port=443, username="u", password="p"))
+    await session.flush()
+
+    def at(minute: float) -> datetime:
+        return FROM + timedelta(minutes=minute)
+
+    for moid, name, minutes in (("h1", "esx01", (0, 5, 10)), ("h2", "esx02", (0, 5)), ("h3", "  ", (0,))):
+        for minute in minutes:
+            session.add(
+                MetricSample(
+                    vcenter_id=vid, sampled_at=at(minute), entity_type="HostSystem", entity_moid=moid,
+                    entity_name=name, metric_key=METRIC_CPU, value=90.0,
+                )
+            )
+    # 閾値未満は数えない
+    session.add(
+        MetricSample(
+            vcenter_id=vid, sampled_at=at(20), entity_type="HostSystem", entity_moid="h1",
+            entity_name="esx01", metric_key=METRIC_MEM, value=50.0,
+        )
+    )
+    session.add(
+        EventRecord(
+            vcenter_id=vid, occurred_at=at(1), event_type="E", message="m", entity_name="esx01",
+            vmware_key=next(_keys), notable_score=50,
+        )
+    )
+    await session.flush()
+
+    async def view(limit: int, **kw: object) -> tuple[list[str], list[tuple[str, str]]]:
+        monkeypatch.setattr(require_settings(), "timeline_metric_breach_sample_limit", limit)
+        out = await build_incident_timeline_view(
+            session,
+            IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["event", "metric"], **kw),
+            owner_key="dialect-test",
+        )
+        return [i.entity_name or "" for i in out.items], [(o.source, o.reason) for o in out.omitted_sources]
+
+    # 合計 6 件: 5 件なら省く（イベントは返す）、6 件なら区間を返す
+    assert await view(5) == (["esx01"], [("metric", "too_many_rows")])
+    assert await view(6) == (["esx01", "esx02", "h3", "esx01"], [])
+    assert await view(5, vcenter_id=vid) == (["esx01"], [("metric", "too_many_rows")])
+    # 対象で絞った後の数で判定する（名前が空の系列は moid で当てる）
+    assert await view(3, entity="esx01") == (["esx01", "esx01"], [])
+    assert await view(2, entity="esx01") == (["esx01"], [("metric", "too_many_rows")])
+    assert await view(1, entity="h3", vcenter_id=vid) == (["h3"], [])

@@ -231,6 +231,8 @@ describe('timelineModel', () => {
     const [metric] = omittedSourceMessages([{ source: 'metric', reason: 'too_many_rows' }])
     expect(metric).toContain('メトリクスの超過区間')
     expect(metric).toContain('グラフにも出ていません')
+    // メトリクスは、超過しているサンプルが多いと省くので、しきい値を上げる対処も案内する
+    expect(metric).toContain('しきい値を上げるか、期間を短くするか、対象を絞ってください')
     expect(
       omittedSourceMessages([
         { source: 'metric', reason: 'too_many_rows' },

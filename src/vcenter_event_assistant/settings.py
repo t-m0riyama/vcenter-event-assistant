@@ -204,6 +204,17 @@ class AppLogSettingsMixin(BaseModel):
             "その種別の行だけを省く（応答の omitted_sources）。"
         ),
     )
+    timeline_metric_breach_sample_limit: int = Field(
+        default=40_000,
+        ge=1,
+        le=10_000_000,
+        description=(
+            "タイムライン画面の API で、メトリクスの超過区間を作る前に数える、期間内の閾値以上のサンプル数の上限"
+            "（``TIMELINE_METRIC_BREACH_SAMPLE_LIMIT``）。CPU とメモリを合わせて数え、vCenter・対象で絞った後の数で"
+            "判定する。超えると区間の問い合わせを実行せず、メトリクスを省く（応答の omitted_sources）。区間の"
+            "問い合わせの時間はこの数に比例するので、上げると省かれにくくなる代わりに、応答が遅くなり得る。"
+        ),
+    )
     uvicorn_host: str = Field(default="0.0.0.0", description="Uvicorn bind host (UVICORN_HOST)")
     uvicorn_port: int = Field(default=8000, ge=1, le=65535, description="Uvicorn bind port (UVICORN_PORT)")
     vea_secret_key: str | None = Field(
