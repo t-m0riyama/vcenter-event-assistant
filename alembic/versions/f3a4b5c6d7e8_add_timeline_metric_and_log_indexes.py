@@ -6,9 +6,11 @@ Create Date: 2026-11-17
 
 タイムライン表示（POST /api/incident-timeline/view）用の索引を 2 つ足す。表は作り直さない（CREATE INDEX だけ）。
 
-- ``ix_metric_samples_vcenter_metric_sampled_value``（vcenter_id, metric_key, sampled_at, value）、SQLite だけ:
-  期間内の閾値以上のサンプルを、vCenter・指標ごとの範囲走査で探す。value まで含めて、閾値未満の行では
-  表を引かない。これが無いと SQLite は期間内の全指標のサンプルを読み、7 日・200 ホストで 10 秒を超える。
+- ``ix_metric_samples_vcenter_metric_sampled_value``（vcenter_id, metric_key, sampled_at, value, entity_moid,
+  entity_name）、SQLite だけ: 期間内の閾値以上のサンプルを、vCenter・指標ごとの範囲走査で探す。value まで
+  含めて、閾値未満の行では表を引かない。これが無いと SQLite は期間内の全指標のサンプルを読み、7 日・200 ホストで
+  10 秒を超える。entity_moid・entity_name は、区間を作る前の閾値以上のサンプルの数え上げと、対象に当たる系列の
+  探索を、表を引かずに済ませるため。
   PostgreSQL は計測でこの索引を選ばなかった（sampled_at か metric_key の索引を使う）ので作らない。
 - ``ix_log_records_vcenter_severity_norm_effective``（vcenter_id, lower(trim(severity)), effective_at）:
   vCenter を指定したエラーログの一覧と俯瞰。SQLite は指定ありだと (vcenter_id, effective_at) の索引を選び、
@@ -40,7 +42,7 @@ def upgrade() -> None:
         op.create_index(
             _METRIC_INDEX,
             "metric_samples",
-            ["vcenter_id", "metric_key", "sampled_at", "value"],
+            ["vcenter_id", "metric_key", "sampled_at", "value", "entity_moid", "entity_name"],
             if_not_exists=True,
         )
     op.create_index(

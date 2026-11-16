@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 from fastapi import HTTPException
-from sqlalchemy import DateTime, Integer, String, and_, case, func, literal, or_, select, text
+from sqlalchemy import DateTime, Integer, String, and_, case, func, literal, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -234,6 +234,8 @@ class _Scope:
     metric_thresholds: tuple[tuple[str, float], ...] = ()
     # 隣のサンプルとの間隔がこの秒数以内なら同じ超過区間につなぐ（サンプルの欠けで区切らない）。
     metric_max_gap_seconds: int = 900
+    # 区間を作る前に数える、期間内の閾値以上のサンプル数の上限。超えたらメトリクスを省く。None は数えない。
+    metric_breach_sample_limit: int | None = None
 
 
 @dataclass
@@ -717,6 +719,7 @@ async def build_incident_timeline_view(
                 max_rows=settings.context_aggregation_max_rows,
                 metric_name_lookback=metric_name_lookback(settings.perf_sample_interval_seconds),
                 metric_max_gap_seconds=settings.effective_metric_staleness_window_seconds,
+                metric_breach_sample_limit=settings.timeline_metric_breach_sample_limit,
             )
     except AggregationBusy:
         raise HTTPException(
@@ -748,6 +751,7 @@ async def _build_in_slot(
     max_rows: int,
     metric_name_lookback: timedelta,
     metric_max_gap_seconds: int,
+    metric_breach_sample_limit: int | None = None,
 ) -> IncidentTimelineViewResponse:
     bucket_sec = choose_bucket_seconds(ft, tt)
     n_buckets = overview_bucket_count(ft, tt, bucket_sec)
@@ -768,6 +772,7 @@ async def _build_in_slot(
             (METRIC_MEM, body.metric_threshold_memory_pct),
         ),
         metric_max_gap_seconds=metric_max_gap_seconds,
+        metric_breach_sample_limit=metric_breach_sample_limit,
     )
 
     entries: list[TimelineEntry] = []
@@ -1115,6 +1120,11 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     すべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当て、超えたら 422 にせず
     超過区間の行を省く（``omitted``）。
 
+    時間の上限: 区間の問い合わせの前に、それが読む閾値以上のサンプル（期間内、CPU とメモリの合計、vCenter・
+    対象で絞った後）を ``metric_breach_sample_limit`` + 1 件で打ち切って数え、上限を超えたら区間の問い合わせを
+    実行せずに省く（``omitted``。理由は区間の数のときと同じ ``too_many_rows``）。打ち切るので、数え上げ自体も
+    上限に比例する時間で終わる。
+
     期間の端:
 
     - 開始前から続く超過: 期間内の最初のサンプルの直前のサンプル（期間の外）が閾値以上でつながっていれば
@@ -1154,8 +1164,40 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
         if not vcenter_ids:
             return _Collected(overview={"metric_breach": [0] * scope.bucket_count})
         clauses.append(MetricSample.vcenter_id.in_(vcenter_ids))
-    # 対象（entity）の絞り込みはここではかけない。サンプル単位で除くと、名前の違うサンプルが抜けて
-    # 区間の区切りが変わるので、区間にまとめた後の名前に当てる。
+    # 対象（entity）の絞り込みは、サンプル単位ではかけない。名前の違うサンプルが抜けて区間の区切りが変わる
+    # ため。代わりに、名前（空なら moid）が対象に当たる閾値以上のサンプルを 1 件でも持つ系列に絞り、系列の中の
+    # サンプルはすべて残す。区間の名前（区間の中の空でない最新の名前、無ければ moid）は、その区間のどれかの
+    # サンプルの名前か moid なので、対象に当たる区間はかならずこの系列に入る（区間の名前での絞り込みは最後に
+    # かける）。数え上げも区間の問い合わせも、絞った後のサンプルだけを読む。
+    if scope.entity:
+        matching_series = (
+            select(MetricSample.vcenter_id, MetricSample.entity_moid, MetricSample.metric_key)
+            .where(
+                *clauses,
+                contains_case_insensitive(
+                    func.coalesce(func.nullif(func.trim(MetricSample.entity_name), ""), MetricSample.entity_moid),
+                    scope.entity,
+                ),
+            )
+            .distinct()
+        )
+        # entity_moid || '' は値を変えない。列のままだと SQLite が系列の索引 (vcenter_id, entity_moid, ...) で
+        # 系列ごとに期間内の全サンプルを表から読む計画を選ぶので、値まで含む索引で閾値以上の行だけを読ませる。
+        clauses.append(
+            tuple_(MetricSample.vcenter_id, MetricSample.entity_moid.concat(""), MetricSample.metric_key).in_(
+                matching_series
+            )
+        )
+
+    limit = scope.metric_breach_sample_limit
+    if limit is not None:
+        # 上限 + 1 件で打ち切って数える（全件は数えない）
+        capped = select(literal(1)).select_from(MetricSample).where(*clauses).limit(limit + 1)
+        breaching = (
+            await session.execute(select(func.count()).select_from(capped.subquery("metric_breach_count")))
+        ).scalar_one()
+        if breaching > limit:
+            return _Collected(overview={"metric_breach": [0] * scope.bucket_count}, omitted=True)
 
     # 列の順は意味を変えない。索引 (vcenter_id, entity_moid, metric_key, sampled_at) の並びと一致させると、
     # SQLite が並べ替えを省くためにその索引で期間外も含む全サンプルを読む計画を選ぶので、わざと順を変える。
