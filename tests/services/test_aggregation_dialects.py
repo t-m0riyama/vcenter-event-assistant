@@ -14,19 +14,29 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import asyncpg as pg_asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from vcenter_event_assistant.db.base import Base
-from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, MetricSample, VCenter
+from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
+from vcenter_event_assistant.db.models import (
+    AlertHistory,
+    AlertRule,
+    EventRecord,
+    EventScoreRule,
+    MetricSample,
+    VCenter,
+)
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.chat.chat_event_time_buckets import build_chat_event_time_buckets
+from vcenter_event_assistant.services.alerting.alert_eval_common import metric_context_key
 from vcenter_event_assistant.services.chat.chat_period_metrics import (
     METRIC_CPU,
     METRIC_MEM,
     build_chat_period_metrics,
 )
+from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
 from vcenter_event_assistant.services.metric_ranking import query_top_event_type_buckets
 
 FROM = datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
@@ -193,6 +203,9 @@ async def test_group_by_has_no_bind_parameters_on_postgres(
     )
     await build_chat_event_time_buckets(session, FROM, TO, vcenter_id=None, bucket_sec=BUCKET, max_rows=10)
     await query_top_event_type_buckets(session, [EventRecord.occurred_at >= FROM])
+    await build_incident_timeline_view(
+        session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO), owner_key="dialect-test"
+    )
 
     compiled = "\n".join(
         str(stmt.compile(dialect=pg_asyncpg.dialect()))  # type: ignore[attr-defined]
@@ -203,6 +216,7 @@ async def test_group_by_has_no_bind_parameters_on_postgres(
         "GROUP BY base.cat, base.moid, base.mk, base.bidx",
         "GROUP BY base.bidx, base.event_type",
         "GROUP BY score_inputs.event_type, score_inputs.severity, score_inputs.has_keyword",
+        "GROUP BY base.bidx\n",
     ):
         assert expected in compiled, expected
     for m in re.finditer(r"GROUP BY ([^\n]+)", compiled):
@@ -219,3 +233,73 @@ async def test_event_rate_series_on_each_dialect(session: AsyncSession) -> None:
     counts = {b["bucket_start"]: b["count"] for b in series}
     assert counts[FROM + timedelta(minutes=15)] == 2
     assert sum(counts.values()) == 2
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_view_on_each_dialect(session: AsyncSession) -> None:
+    """タイムライン表示の俯瞰（GROUP BY）、直前の期間の種別、アラートの対象解決（MAX + JOIN）。"""
+    await _seed(session)
+    vid = (await session.execute(text("SELECT vcenter_id FROM events LIMIT 1"))).scalar_one()
+    vid = vid if isinstance(vid, uuid.UUID) else uuid.UUID(str(vid))
+    other = next(v for v in (await session.execute(select(VCenter.id))).scalars() if v != vid)
+    # v2 の h1 にだけ別名のサンプルを足す。vCenter をまたいで取り違えると v1 の名前が変わる
+    session.add(
+        MetricSample(
+            vcenter_id=other,
+            sampled_at=FROM + timedelta(minutes=30),
+            entity_type="HostSystem",
+            entity_moid="h1",
+            entity_name="H1-ON-V2",
+            metric_key=METRIC_CPU,
+            value=1.0,
+        )
+    )
+    rule = AlertRule(name="cpu", rule_type="metric_threshold", alert_level="critical", config={"metric_key": METRIC_CPU})
+    session.add(rule)
+    await session.flush()
+    for minute, vcenter in ((20, vid), (21, other)):
+        session.add(
+            AlertHistory(
+                rule_id=rule.id,
+                alert_level="critical",
+                state="firing",
+                context_key=metric_context_key(vcenter, "h1"),
+                notified_at=FROM + timedelta(minutes=minute),
+                channel="none",
+            )
+        )
+    session.add(
+        EventRecord(
+            vcenter_id=vid,
+            occurred_at=FROM - timedelta(minutes=30),
+            event_type="HostConnectionLostEvent",
+            message="",
+            vmware_key=next(_keys),
+            notable_score=0,
+        )
+    )
+    await session.flush()
+
+    out = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, min_score=0),
+        owner_key="dialect-test",
+    )
+    assert out.bucket_seconds == 60
+    assert len(out.overview) == 120
+    # 期間内のイベントは 4 件（TO ちょうどは含まない）。14:59.9996 は秒に切り捨てて 14 分のバケット
+    totals = {b.bucket_start_utc: b.event_total for b in out.overview if b.event_total}
+    assert totals == {
+        FROM + timedelta(minutes=14): 1,
+        FROM + timedelta(minutes=15): 1,
+        FROM + timedelta(minutes=16): 1,
+        FROM + timedelta(minutes=17): 1,
+    }
+    assert sum(b.event_notable for b in out.overview) == 4
+    assert sum(b.alert for b in out.overview) == 2
+    alerts = [i for i in out.items if i.kind == "alert"]
+    # context_key の vCenter ごとに、期間の終わりまでで最も新しい CPU のサンプルの名前で解決する
+    assert [(a.vcenter_id, a.entity_name) for a in alerts] == [(vid, "H1"), (other, "H1-ON-V2")]
+    assert alerts[0].ref.metric_key == METRIC_CPU
+    # HostConnectionLostEvent は直前の期間にある（スコア 0）ので新しい種別ではない
+    assert [n.event_type for n in out.highlights.new_event_types] == ["CustomEvent"]

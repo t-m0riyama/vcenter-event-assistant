@@ -143,6 +143,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                 alert_level="warning",
                 state="firing",
                 context_key=_EVENT_TYPES[0],
+                occurred_at=now,
                 notified_at=now,
                 channel="email",
                 success=True,

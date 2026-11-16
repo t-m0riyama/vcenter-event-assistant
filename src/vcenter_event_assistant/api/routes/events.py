@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, literal, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -27,6 +27,7 @@ from vcenter_event_assistant.services.event_repository import (
     get_event_rate_series,
 )
 from vcenter_event_assistant.services.event_type_guide_attach import attach_type_guides_to_event_reads
+from vcenter_event_assistant.services.sql_like import contains_case_insensitive as _contains_case_insensitive
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -37,16 +38,6 @@ def _strip_query(s: str | None) -> str | None:
         return None
     t = s.strip()
     return t if t else None
-
-
-def _escape_like_metachars(s: str) -> str:
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _contains_case_insensitive(column: ColumnElement[str | None], needle: str) -> ColumnElement[bool]:
-    """Substring match, case-insensitive; works on SQLite and PostgreSQL via ``ilike`` + escape."""
-    hay = func.coalesce(column, literal(""))
-    return hay.ilike(f"%{_escape_like_metachars(needle)}%", escape="\\")
 
 
 @router.get("/event-types", dependencies=[RequireViewer], response_model=EventTypesResponse)

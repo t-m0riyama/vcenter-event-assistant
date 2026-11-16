@@ -177,3 +177,90 @@ async def test_init_db_aborts_on_ambiguous_legacy_schema(
 
     with pytest.raises(LegacySchemaStampError):
         await init_db()
+
+
+@pytest.mark.asyncio
+async def test_alert_history_occurred_at_is_backfilled_from_notified_at(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``occurred_at`` 追加前の行は ``notified_at`` で埋まり、列は NOT NULL でインデックスが付く。
+
+    alert_notification_outbox は alert_history を ON DELETE CASCADE で参照するので、SQLite で表を
+    作り直すと配信待ちの通知が消える。upgrade・downgrade のどちらでも残ることを確かめる。
+    """
+    from alembic import command
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.db.session import get_engine
+
+    db_path = tmp_path / "occurred.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await reset_db()
+    await init_db()
+    engine = get_engine()
+    cfg = alembic_config()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda c: _run_with_connection(c, cfg, lambda cc: command.downgrade(cc, "c0d1e2f3a4b5"))
+        )
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO alert_rules (id, name, rule_type, is_enabled, alert_level, config, created_at) "
+                "VALUES (1, 'r', 'event_score', 1, 'warning', '{}', '2026-03-22 00:00:00')"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO alert_history (id, rule_id, alert_level, state, context_key, notified_at, "
+                "channel, delivery_status) VALUES "
+                "(1, 1, 'warning', 'firing', 'X', '2026-03-22 01:02:03.000000', 'none', 'skipped')"
+            )
+        )
+        # 配信待ちの通知。alert_history を作り直すと ON DELETE CASCADE で消えるおそれがある
+        await conn.execute(
+            text(
+                "INSERT INTO alert_notification_outbox (history_id, subject, body, from_address, "
+                "to_address, message_id, notification, created_at, expires_at, next_attempt_at) VALUES "
+                "(1, 's', 'b', 'f@example.com', 't@example.com', '<m@x>', '{}', "
+                "'2026-03-22 01:02:03', '2026-03-23 01:02:03', '2026-03-22 01:02:03')"
+            )
+        )
+    await init_db()
+
+    async with engine.connect() as conn:
+        occurred = (await conn.execute(text("SELECT occurred_at FROM alert_history WHERE id = 1"))).scalar_one()
+
+        def sync_inspect(sync_conn):
+            insp = inspect(sync_conn)
+            cols = {c["name"]: c for c in insp.get_columns("alert_history")}
+            idx = {i["name"]: i["column_names"] for i in insp.get_indexes("alert_history")}
+            return cols, idx
+
+        cols, idx = await conn.run_sync(sync_inspect)
+    assert str(occurred).startswith("2026-03-22 01:02:03")
+    async with engine.connect() as conn:
+        pending = (await conn.execute(text("SELECT count(*) FROM alert_notification_outbox"))).scalar_one()
+    assert pending == 1
+    assert cols["occurred_at"]["nullable"] is False
+    assert idx["ix_alert_history_occurred_at"] == ["occurred_at"]
+    assert idx["ix_alert_history_notified_at"] == ["notified_at"]
+    assert await get_applied_alembic_revision(engine) == get_alembic_head()
+
+    # downgrade でも表を作り直さない（配信待ちの通知が残り、列だけが消える）
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda c: _run_with_connection(c, cfg, lambda cc: command.downgrade(cc, "c0d1e2f3a4b5"))
+        )
+    async with engine.connect() as conn:
+        pending = (await conn.execute(text("SELECT count(*) FROM alert_notification_outbox"))).scalar_one()
+        cols_after = await conn.run_sync(
+            lambda c: {col["name"] for col in inspect(c).get_columns("alert_history")}
+        )
+    assert pending == 1
+    assert "occurred_at" not in cols_after
+    await reset_db()

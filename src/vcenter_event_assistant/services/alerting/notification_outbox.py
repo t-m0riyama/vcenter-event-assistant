@@ -95,6 +95,19 @@ async def save_snapshot(
         )
 
 
+def transition_time(pending: PendingAlertNotification, now: datetime) -> datetime:
+    """その状態への遷移が起きた時刻。
+
+    発火は ``fired_at``、回復は ``resolved_at``（どちらも評価時に状態へ記録した時刻）。
+    stale など遷移の時刻を持たない状態や、値が欠けているときは行を作る時刻にする。
+    """
+    if pending.state == "firing" and pending.fired_at is not None:
+        return as_utc(pending.fired_at)
+    if pending.state == "resolved" and pending.resolved_at is not None:
+        return as_utc(pending.resolved_at)
+    return now
+
+
 async def enqueue_notification(
     session: AsyncSession, settings: Settings, pending: PendingAlertNotification
 ) -> None:
@@ -105,6 +118,7 @@ async def enqueue_notification(
         alert_level=pending.alert_level,
         state=pending.state,
         context_key=pending.context_key,
+        occurred_at=transition_time(pending, now),
         notified_at=now,
         channel="mock" if settings.mock_mode else "email",
         success=None,

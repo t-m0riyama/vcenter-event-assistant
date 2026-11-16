@@ -83,6 +83,8 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     "/api/chat/preview": ("chat_preview", 60),
     # Viewer でも呼べる重い集計（Issue #301）。上限はプレビューと同じ考え方でチャットの 2 倍。
     "/api/incident-timeline": ("incident_timeline", 60),
+    # タイムライン画面は条件を変えるたびに読み込むので、既存の /api/incident-timeline とは別の枠で数える。
+    "/api/incident-timeline/view": ("incident_timeline_view", 60),
     "/api/ingest/run": ("ingest", 60),
     "/api/digests/run": ("digests", 60),
     "/api/plugins/collectors/reload": ("plugins", 60),
@@ -235,6 +237,7 @@ def create_app() -> FastAPI:
                     "chat": settings.rate_limit_chat_per_minute,
                     "chat_preview": settings.rate_limit_chat_per_minute * 2,
                     "incident_timeline": settings.rate_limit_chat_per_minute * 2,
+                    "incident_timeline_view": settings.rate_limit_chat_per_minute * 2,
                     "ingest": settings.rate_limit_ingest_per_minute,
                     "digests": settings.rate_limit_digests_per_minute,
                     "plugins": settings.rate_limit_plugins_per_minute,
