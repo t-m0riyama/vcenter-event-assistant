@@ -97,6 +97,15 @@ class DatabaseSettingsMixin(BaseModel):
             "0 disables purge."
         ),
     )
+    incident_timeline_snapshot_result_retention_days: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Clear only the saved view result (result_payload) of incident timeline snapshots older than "
+            "this many days (created_at); the row, conditions and note are kept. "
+            "0 keeps results as long as the snapshot itself."
+        ),
+    )
 
 
 class AppLogSettingsMixin(BaseModel):

@@ -173,7 +173,18 @@
 
 整合確認:
 
-- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+
+**スナップショットの保存結果の保持期間:**
+
+タイムラインのスナップショットは、保存時に集計した結果（イベント・ログの本文を含む）を持つ。結果の保持は次の 2 つで決まる。
+
+- `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90）: スナップショットの行ごと削除する。
+- `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`（既定 `0`）: `created_at` からこの日数を過ぎたスナップショットの**保存結果だけ**を消す。`0` は結果だけを先に消さない（行と同じ期間残る）。
+
+結果だけを消したとき、行・保存した条件・運用メモは残る。画面は「結果なし」として、保存した条件で現在のデータから再集計する（元のイベント・ログ・メトリクスが保持期間を過ぎていれば、再集計の結果は空になる）。パージの周期は `PURGE_INTERVAL_HOURS` で、他の保持設定と同じジョブで実行する。行の保持期間より長い値を設定しても害はない（行が先に消える）。
+
+イベント・ログの本文を、元データの保持期間より長く残したくないときは、イベント・ログの保持期間に合わせた値（例: `7`）にする。
 
 **SQLite と PostgreSQL の選び方:**
 
@@ -406,8 +417,8 @@ TLS:
 - API 待受: `UVICORN_HOST`, `UVICORN_PORT`（ポート未設定時は `8000`）
 - スケジューラ有効化: `SCHEDULER_ENABLED`
 - APScheduler の `misfire_grace_time`: interval ジョブは各間隔の半分、cron ダイジェストは 3600 秒（`jobs/scheduler.py`）。イベントループ停止後の取りこぼし軽減用
-- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）
-  - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。保存する結果は 1 件あたり最大 8 MB で、超えると保存せず 413 を返す。
+- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`（スナップショットの保存結果だけを消す。`0` は消さない。詳細は「スナップショットの保存結果の保持期間」）
+  - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。先に結果だけを消したいときは、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` を設定する。保存する結果は 1 件あたり最大 8 MB で、超えると保存せず 413 を返す。
   - SQLite は、削除した行の領域をファイルサイズへ戻さない（空いた領域は次の書き込みで再利用される）。ファイルを縮めるには `VACUUM` が要る。
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from vcenter_event_assistant.db.models import (
     AlertHistory,
@@ -22,6 +22,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_alert_history,
     purge_old_digest_records,
     purge_old_events,
+    purge_old_incident_timeline_snapshot_results,
     purge_old_incident_timeline_snapshots,
 )
 from vcenter_event_assistant.settings import get_settings
@@ -279,3 +280,132 @@ async def test_get_app_config_reports_chat_web_search_availability(
     r = await client.get("/api/config")
     assert r.status_code == 200
     assert r.json()["chat_web_search_available"] is True
+
+
+_RESULT = {
+    "from_utc": "2026-03-22T00:00:00Z",
+    "to_utc": "2026-03-22T01:00:00Z",
+    "bucket_seconds": 60,
+    "overview": [],
+    "items": [],
+    "truncated": False,
+    "total_items": 0,
+    "highlights": {"first_signal": None, "top_entities": [], "new_event_types": []},
+}
+_VIEW_REQUEST = {"from": "2026-03-22T00:00:00Z", "to": "2026-03-22T01:00:00Z"}
+
+
+async def _add_snapshot_with_result(note: str, age: timedelta) -> None:
+    created = datetime.now(timezone.utc) - age
+    async with session_scope() as session:
+        session.add(
+            IncidentTimelineManualSnapshot(
+                from_time=created,
+                to_time=created,
+                timestamp_utc=created,
+                operator_note=note,
+                created_at=created,
+                build_request_payload=_VIEW_REQUEST,
+                view_request_payload=_VIEW_REQUEST,
+                result_payload=_RESULT,
+            )
+        )
+
+
+async def _snapshot_state() -> dict[str, tuple[bool, bool]]:
+    """メモ -> (result_payload が SQL の NULL か, view_request_payload が残っているか)。"""
+    async with session_scope() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT operator_note, result_payload IS NULL, view_request_payload IS NOT NULL "
+                    "FROM incident_timeline_manual_snapshots"
+                )
+            )
+        ).all()
+    return {note: (bool(is_null), bool(has_req)) for note, is_null, has_req in rows}
+
+
+@pytest.mark.asyncio
+async def test_result_retention_default_keeps_results() -> None:
+    assert get_settings().incident_timeline_snapshot_result_retention_days == 0
+    await _add_snapshot_with_result("ancient", timedelta(days=300))
+    async with session_scope() as session:
+        n = await purge_old_incident_timeline_snapshot_results(session, settings=get_settings())
+    assert n == 0
+    assert await _snapshot_state() == {"ancient": (False, True)}
+
+
+@pytest.mark.asyncio
+async def test_result_retention_nulls_only_results_older_than_n_days() -> None:
+    os.environ["INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS"] = "7"
+    get_settings.cache_clear()
+    try:
+        await _add_snapshot_with_result("old", timedelta(days=7, minutes=1))
+        await _add_snapshot_with_result("just-inside", timedelta(days=7) - timedelta(minutes=1))
+        await _add_snapshot_with_result("recent", timedelta(days=1))
+        async with session_scope() as session:
+            n = await purge_old_incident_timeline_snapshot_results(session, settings=get_settings())
+        assert n == 1
+        # 行・条件は残り、結果だけが SQL の NULL（JSON の null ではない）になる
+        assert await _snapshot_state() == {
+            "old": (True, True),
+            "just-inside": (False, True),
+            "recent": (False, True),
+        }
+        # すでに NULL の行は触らない（2 回目は 0 件）
+        async with session_scope() as session:
+            assert await purge_old_incident_timeline_snapshot_results(session, settings=get_settings()) == 0
+    finally:
+        os.environ.pop("INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS", None)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_result_retention_longer_than_snapshot_retention_is_harmless() -> None:
+    os.environ["INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS"] = "7"
+    os.environ["INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS"] = "30"
+    get_settings.cache_clear()
+    try:
+        await _add_snapshot_with_result("old", timedelta(days=10))
+        async with session_scope() as session:
+            settings = get_settings()
+            assert await purge_old_incident_timeline_snapshot_results(session, settings=settings) == 0
+            assert await purge_old_incident_timeline_snapshots(session, settings=settings) == 1
+    finally:
+        os.environ.pop("INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS", None)
+        os.environ.pop("INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS", None)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_without_result_shows_no_result_in_api(client) -> None:
+    os.environ["INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS"] = "7"
+    get_settings.cache_clear()
+    try:
+        await _add_snapshot_with_result("old", timedelta(days=8))
+        async with session_scope() as session:
+            await purge_old_incident_timeline_snapshot_results(session, settings=get_settings())
+        listed = (await client.get("/api/incident-timeline/snapshots/manual")).json()["items"]
+        assert listed[0]["has_result"] is False
+        assert listed[0]["view_request"] is not None
+        detail = (await client.get(f"/api/incident-timeline/snapshots/manual/{listed[0]['snapshot_id']}")).json()
+        assert detail["result"] is None
+        assert detail["has_result"] is False
+    finally:
+        os.environ.pop("INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS", None)
+        get_settings.cache_clear()
+
+
+def test_result_retention_setting_range_and_env_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS", "14")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().incident_timeline_snapshot_result_retention_days == 14
+        monkeypatch.setenv("INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS", "-1")
+        get_settings.cache_clear()
+        with pytest.raises(Exception):  # noqa: B017 - pydantic の ValidationError
+            get_settings()
+    finally:
+        monkeypatch.delenv("INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS", raising=False)
+        get_settings.cache_clear()
