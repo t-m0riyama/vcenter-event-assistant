@@ -264,3 +264,62 @@ async def test_alert_history_occurred_at_is_backfilled_from_notified_at(
     assert pending == 1
     assert "occurred_at" not in cols_after
     await reset_db()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_result_columns_are_added_without_rebuilding_the_table(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``view_request_payload`` / ``result_payload`` は NULL 可の列として足され、既存の行はそのまま残る。"""
+    from alembic import command
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.db.session import get_engine
+
+    db_path = tmp_path / "snapshot_result.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await reset_db()
+    await init_db()
+    engine = get_engine()
+    cfg = alembic_config()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda c: _run_with_connection(c, cfg, lambda cc: command.downgrade(cc, "f3a4b5c6d7e8"))
+        )
+    async with engine.connect() as conn:
+        cols_before = await conn.run_sync(
+            lambda c: {col["name"] for col in inspect(c).get_columns("incident_timeline_manual_snapshots")}
+        )
+    assert "result_payload" not in cols_before
+    assert "view_request_payload" not in cols_before
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO incident_timeline_manual_snapshots "
+                "(id, from_time, to_time, timestamp_utc, operator_note, build_request_payload, "
+                "snapshot_kind, created_at) VALUES "
+                "('00000000000000000000000000000001', '2026-03-22 00:00:00', '2026-03-22 01:00:00', "
+                "'2026-03-22 02:00:00', 'old', '{}', 'manual', '2026-03-22 02:00:00')"
+            )
+        )
+    await init_db()
+
+    async with engine.connect() as conn:
+        cols = await conn.run_sync(
+            lambda c: {col["name"]: col for col in inspect(c).get_columns("incident_timeline_manual_snapshots")}
+        )
+        row = (
+            await conn.execute(
+                text("SELECT operator_note, result_payload, view_request_payload FROM incident_timeline_manual_snapshots")
+            )
+        ).one()
+    assert cols["result_payload"]["nullable"] is True
+    assert cols["view_request_payload"]["nullable"] is True
+    assert tuple(row) == ("old", None, None)
+    assert await get_applied_alembic_revision(engine) == get_alembic_head()
+    await reset_db()
