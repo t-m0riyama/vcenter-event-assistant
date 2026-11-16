@@ -1,3 +1,4 @@
+import { API_RANGE_MAX_SPAN_MS } from '../../datetime/apiRangeLimit'
 import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
 import type {
   IncidentTimelineViewRequest,
@@ -22,7 +23,6 @@ import {
 /** UTC の期間（ISO 8601）。 */
 export type ResolvedRange = { readonly from: string; readonly to: string }
 
-const MAX_SPAN_MS = 90 * 86_400_000
 /** イベント・ログで開くときに行の時刻の前後に取る幅（ミリ秒）。 */
 export const CORRELATION_HALF_WIDTH_MS = 300_000
 
@@ -34,16 +34,6 @@ function iso(ms: number): string {
 export function resolveTimelineRange(range: TimelineRange, nowMs: number): ResolvedRange {
   if (range.mode === 'fixed') return { from: range.from, to: range.to }
   return { from: iso(nowMs - range.durationMs), to: iso(nowMs) }
-}
-
-/** API が受け付けない期間（逆順・同じ秒・90 日超）の理由。問題なければ null。 */
-export function validateResolvedRange(range: ResolvedRange): string | null {
-  const from = parseApiUtcInstantMs(range.from)
-  const to = parseApiUtcInstantMs(range.to)
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return '期間の開始と終了を指定してください。'
-  if (Math.floor(from / 1000) >= Math.floor(to / 1000)) return '開始は終了より前の時刻にしてください。'
-  if (to - from > MAX_SPAN_MS) return '期間は 90 日以内にしてください。'
-  return null
 }
 
 /** 棒 1 本ぶんの範囲。最後の棒は期間の終わりで切れるので、終わりは `min(開始 + バケット幅, to)`。 */
@@ -81,7 +71,7 @@ export function widenRange(current: ResolvedRange, range: TimelineRange): Resolv
   const from = parseApiUtcInstantMs(current.from)
   const to = parseApiUtcInstantMs(current.to)
   const span = to - from
-  const target = Math.min(span * 2, MAX_SPAN_MS)
+  const target = Math.min(span * 2, API_RANGE_MAX_SPAN_MS)
   if (range.mode === 'rolling') return { from: iso(to - target), to: iso(to) }
   const pad = (target - span) / 2
   return { from: iso(from - pad), to: iso(to + pad) }

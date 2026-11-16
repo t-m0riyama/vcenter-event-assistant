@@ -33,6 +33,7 @@ import {
   CHAT_ASSISTANT_MESSAGE_LIST_TOP_MARGIN_PX,
   computeScrollTopToShowChildAtListTop,
 } from './chatMessagesListScroll'
+import type { ChatHandoffInput } from '../../hooks/chatHandoff'
 import { ChatPanel } from './ChatPanel'
 
 // 画像の縮小は canvas 依存で happy-dom では動かないため、変換だけ差し替える
@@ -61,8 +62,13 @@ function jsonResponse(data: unknown, status = 200) {
 
 let chatStorageScope: ChatStorageScope | null
 
-function renderChat(onError: (e: string | null) => void = vi.fn(), me: Me = AUTH_DISABLED_ME) {
-  return render(
+function chatTree(
+  onError: (e: string | null) => void = vi.fn(),
+  me: Me = AUTH_DISABLED_ME,
+  handoff: ChatHandoffInput | null = null,
+  onHandoffApplied?: () => void,
+) {
+  return (
     <TimeZoneProvider>
       <ChatMaxStoredMessagesProvider>
         <ChatWebSearchPrefsProvider>
@@ -71,13 +77,26 @@ function renderChat(onError: (e: string | null) => void = vi.fn(), me: Me = AUTH
               me, chatStorageScope, hasRole: () => true,
               logout: async () => {}, refresh: async () => {},
             }}>
-              <ChatPanel onError={onError} />
+              <ChatPanel onError={onError} handoff={handoff} onHandoffApplied={onHandoffApplied} />
             </AuthContext.Provider>
           </ChatSamplePromptsProvider>
         </ChatWebSearchPrefsProvider>
       </ChatMaxStoredMessagesProvider>
-    </TimeZoneProvider>,
+    </TimeZoneProvider>
   )
+}
+
+function renderChat(
+  onError: (e: string | null) => void = vi.fn(),
+  me: Me = AUTH_DISABLED_ME,
+  handoff: ChatHandoffInput | null = null,
+) {
+  const result = render(chatTree(onError, me, handoff))
+  return {
+    ...result,
+    /** 同じ木に、引き継ぎの条件だけ差し替えて描き直す。 */
+    rerenderWithHandoff: (next: ChatHandoffInput | null) => result.rerender(chatTree(onError, me, next)),
+  }
 }
 
 function messagesListElement(): HTMLElement {
@@ -266,6 +285,299 @@ describe(
     },
     15_000,
   )
+
+  describe('タイムラインからの引き継ぎ', () => {
+    const VC = '11111111-1111-4111-8111-111111111111'
+    const FROM = '2026-03-22T02:00:30.123Z'
+    const TO = '2026-03-22T03:00:30.123Z'
+    const handoff = (over: Partial<ChatHandoffInput['focus']> = {}, nonce = 1): ChatHandoffInput => ({
+      focus: { from: FROM, to: TO, vcenterId: VC, narrowedBy: [], fromSavedSnapshot: false, ...over },
+      nonce,
+    })
+    const chatPosts: Record<string, unknown>[] = []
+    const previewPosts: Record<string, unknown>[] = []
+    const stubFetch = () => {
+      chatPosts.length = 0
+      previewPosts.length = 0
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/api/vcenters')) return Promise.resolve(jsonResponse([{ id: VC, name: 'vc-main' }]))
+          if (url.endsWith('/api/chat/preview') && init?.method === 'POST') {
+            previewPosts.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+            return Promise.resolve(new Response('{}', { status: 500 }))
+          }
+          if (url.endsWith('/api/chat') && init?.method === 'POST') {
+            chatPosts.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+            return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
+          }
+          return Promise.resolve(new Response('not found', { status: 404 }))
+        }),
+      )
+    }
+    const send = async (count = 1) => {
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(chatPosts).toHaveLength(count))
+    }
+    const NOTE = { name: 'タイムラインからの引き継ぎ' }
+    const savedConversation = (rangeParts?: Partial<Record<string, string>>) =>
+      writeChatPanelSnapshot(
+        chatStorageScope,
+        {
+          messages: [{ role: 'user', content: '前の質問' }, { role: 'assistant', content: '前の回答' }],
+          rangeParts: { fromDate: '2026-01-01', fromTime: '00:00', toDate: '2026-01-02', toTime: '00:00', ...rangeParts },
+          rollingDurationMs: null,
+          vcenterId: '',
+          includePeriodMetricsCpu: true,
+          includePeriodMetricsMemory: false,
+          includePeriodMetricsDiskIo: false,
+          includePeriodMetricsNetworkIo: false,
+          draft: '書きかけの質問',
+        },
+        50,
+      )
+    beforeEach(() => localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'UTC'))
+
+    it('期間と vCenter が入り、メッセージは自動で送らない。送る期間は秒・ミリ秒まで引き継いだ値と完全に一致する', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      expect(screen.getByLabelText('開始時刻')).toHaveValue('02:00')
+      expect(screen.getByLabelText('終了時刻')).toHaveValue('03:00')
+      await waitFor(() => expect(screen.getByRole('combobox', { name: /vCenter/ })).toHaveValue(VC))
+      expect(chatPosts).toHaveLength(0)
+      await send()
+      expect(chatPosts[0]).toMatchObject({ vcenter_id: VC, from: FROM, to: TO })
+    })
+
+    it('90 日ちょうどの期間は、そのまま送れる（分の 59 秒へ延びて 90 日を超えない）', async () => {
+      stubFetch()
+      const onError = vi.fn()
+      const from = '2026-01-01T02:00:00.000Z'
+      const to = '2026-04-01T02:00:00.000Z'
+      renderChat(onError, AUTH_DISABLED_ME, handoff({ from, to }))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-01-01'))
+      await send()
+      expect(chatPosts[0]).toMatchObject({ from, to })
+      expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('90 日'))
+    })
+
+    it('1 分の期間は 1 分のまま送る（119 秒に広げない）', async () => {
+      stubFetch()
+      const from = '2026-03-22T02:05:00.000Z'
+      const to = '2026-03-22T02:06:00.000Z'
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff({ from, to }))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      await send()
+      expect(chatPosts[0]).toMatchObject({ from, to })
+    })
+
+    it('夏時間が戻る日（America/New_York）でも、期間がずれない', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const first = { from: '2026-11-01T05:30:00.000Z', to: '2026-11-01T06:30:00.000Z' }
+      const view = renderChat(vi.fn(), AUTH_DISABLED_ME, handoff(first))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-11-01'))
+      await send()
+      expect(chatPosts[0]).toMatchObject(first)
+      const second = { from: '2026-11-01T06:10:00.000Z', to: '2026-11-01T06:40:00.000Z' }
+      view.rerenderWithHandoff(handoff(second, 2))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻')).toHaveValue('01:10'))
+      await send(2)
+      expect(chatPosts[1]).toMatchObject(second)
+    })
+
+    it('表示のタイムゾーン（Asia/Tokyo）で入力欄に入り、秒を含み日付をまたぐ期間もそのまま送る', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+      stubFetch()
+      const range = { from: '2026-03-21T14:59:30.250Z', to: '2026-03-21T15:00:30.750Z' }
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff(range))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻')).toHaveValue('23:59'))
+      expect(screen.getByLabelText('終了時刻')).toHaveValue('00:00')
+      await send()
+      expect(chatPosts[0]).toMatchObject(range)
+    })
+
+    it('開始の部品を編集したら、その側だけ部品から組み直し、終了は引き継いだ値のまま', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '02:10' } })
+      await send()
+      expect(chatPosts[0]).toMatchObject({ from: '2026-03-22T02:10:00.000Z', to: TO })
+    })
+
+    it('夏時間の戻りをまたぎ、壁時計では終了が開始より前に見える期間も、送信とプレビューで引き継いだ値のまま使う', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const range = { from: '2026-11-01T05:50:00.000Z', to: '2026-11-01T06:10:00.000Z' }
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff(range))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻')).toHaveValue('01:50'))
+      expect(screen.getByLabelText('終了時刻')).toHaveValue('01:10')
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: 'プレビュー' }))
+      await waitFor(() => expect(previewPosts).toHaveLength(1))
+      expect(previewPosts[0]).toMatchObject(range)
+      await send()
+      expect(chatPosts[0]).toMatchObject(range)
+      expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('開始は終了より前'))
+    })
+
+    it('片側だけ編集したとき、編集した側の順序の逆転は従来どおり止める', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff({ from: '2026-11-01T05:50:00.000Z', to: '2026-11-01T06:10:00.000Z' }))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻')).toHaveValue('01:50'))
+      fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '00:30' } })
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith('開始は終了より前の時刻にしてください。'))
+      expect(chatPosts).toHaveLength(0)
+    })
+
+    it('片側だけ編集したとき、編集した側の存在しない時刻は従来どおり止める', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      stubFetch()
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff({ from: '2026-03-08T12:00:00.000Z', to: '2026-03-08T15:00:00.000Z' }))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-08'))
+      fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '02:30' } })
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('存在しません')))
+      expect(chatPosts).toHaveLength(0)
+    })
+
+    it('編集の結果が 90 日を超えるときは、送信せず日本語のエラーを出す', async () => {
+      stubFetch()
+      const onError = vi.fn()
+      renderChat(onError, AUTH_DISABLED_ME, handoff({ from: '2026-01-01T02:00:00.000Z', to: '2026-04-01T02:00:00.000Z' }))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-01-01'))
+      fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '02:01' } })
+      fireEvent.change(screen.getByPlaceholderText('質問を入力…'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith('期間は 90 日以内にしてください。'))
+      expect(chatPosts).toHaveLength(0)
+    })
+
+    it('引き継いだ期間は sessionStorage に残り、開き直しても黙って変わらない', async () => {
+      stubFetch()
+      const view = renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      await waitFor(() =>
+        expect(JSON.parse(sessionStorage.getItem(CHAT_PANEL_STORAGE_KEY) ?? '{}').exactRange).toMatchObject({
+          from: FROM,
+          to: TO,
+        }),
+      )
+      view.unmount()
+      renderChat()
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      await send()
+      expect(chatPosts[0]).toMatchObject({ from: FROM, to: TO })
+    })
+
+    it('「直近 N」の追随を止める（引き継いだ期間のまま、時間が経っても直近に動かない）', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      const summary = screen.getByText('表示期間').closest('summary')!
+      expect(within(summary).queryByText(/直近/)).not.toBeInTheDocument()
+      expect(within(summary).getByText(/^2026-03-22 ～ 2026-03-22$/)).toBeInTheDocument()
+    })
+
+    it('引き継いだら、会話の有無に関わらず注記を出し、絞り込みは引き継がれないことを書く', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      const note = await screen.findByRole('note', NOTE)
+      expect(note).toHaveTextContent('タイムラインの期間と vCenter を引き継ぎました。')
+      expect(note).toHaveTextContent('絞り込み（対象・種別・起点・最小スコア・しきい値）は引き継がれません。')
+      expect(note).not.toHaveTextContent('反映されていません')
+      expect(note).not.toHaveTextContent('以前の会話')
+      expect(note).not.toHaveTextContent('スナップショット')
+    })
+
+    it('タイムラインで絞っていたものは、反映されていないことを書く', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff({ narrowedBy: ['対象', '起点'] }))
+      expect(await screen.findByRole('note', NOTE)).toHaveTextContent(
+        'タイムラインで絞っていた対象・起点は、チャットの集計に反映されていません。',
+      )
+    })
+
+    it('保存済みのスナップショットから渡したときは、現在のデータで集計することを書く', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff({ fromSavedSnapshot: true }))
+      expect(await screen.findByRole('note', NOTE)).toHaveTextContent(
+        'チャットは現在のデータで集計します。元のデータが保持期間を過ぎていると、内容が少ないか空になります。',
+      )
+    })
+
+    it('下書き・会話・ほかの条件は壊さず、会話があれば前の期間のものと書き、送信しても注記は残る', async () => {
+      stubFetch()
+      savedConversation()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-22'))
+      expect(screen.getByPlaceholderText('質問を入力…')).toHaveValue('書きかけの質問')
+      expect(screen.getByText('前の質問')).toBeInTheDocument()
+      expect(screen.getByText('前の回答')).toBeInTheDocument()
+      expect(screen.getByRole('checkbox', { name: /^CPU 使用率$/ })).toBeChecked()
+      const note = screen.getByRole('note', NOTE)
+      expect(note).toHaveTextContent('以前の会話は前の期間のものです。')
+      fireEvent.click(screen.getByRole('button', { name: '送信' }))
+      await waitFor(() => expect(chatPosts).toHaveLength(1))
+      expect(screen.getByRole('note', NOTE)).toBeInTheDocument()
+    })
+
+    it('「閉じる」で注記が消える', async () => {
+      stubFetch()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      fireEvent.click(within(await screen.findByRole('note', NOTE)).getByRole('button', { name: '閉じる' }))
+      expect(screen.queryByRole('note', NOTE)).not.toBeInTheDocument()
+    })
+
+    it('「会話をクリア」で注記が消える', async () => {
+      stubFetch()
+      vi.stubGlobal('confirm', vi.fn(() => true))
+      savedConversation()
+      renderChat(vi.fn(), AUTH_DISABLED_ME, handoff())
+      await screen.findByRole('note', NOTE)
+      fireEvent.click(screen.getByRole('button', { name: '会話をクリア' }))
+      await waitFor(() => expect(screen.queryByRole('note', NOTE)).not.toBeInTheDocument())
+    })
+
+    it('次の引き継ぎで注記が入れ替わる。同じ引き継ぎは再適用せず、適用したことを知らせる', async () => {
+      stubFetch()
+      const onApplied = vi.fn()
+      const first = handoff({ narrowedBy: ['対象'] })
+      const tree = (h: ChatHandoffInput | null) => chatTree(vi.fn(), AUTH_DISABLED_ME, h, onApplied)
+      const view = render(tree(first))
+      await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1))
+      fireEvent.change(screen.getByLabelText('開始日'), { target: { value: '2026-04-01' } })
+      view.rerender(tree(first))
+      expect(screen.getByLabelText('開始日')).toHaveValue('2026-04-01')
+      expect(onApplied).toHaveBeenCalledTimes(1)
+      view.rerender(tree(handoff({ vcenterId: null, from: '2026-05-01T00:00:00.000Z', to: '2026-05-01T02:00:00.000Z' }, 2)))
+      await waitFor(() => expect(screen.getByLabelText('開始日')).toHaveValue('2026-05-01'))
+      expect(screen.getByRole('combobox', { name: /vCenter/ })).toHaveValue('')
+      expect(screen.getByRole('note', NOTE)).not.toHaveTextContent('反映されていません')
+    })
+
+    it('90 日を超える期間は適用せず、理由を示す', async () => {
+      stubFetch()
+      const onError = vi.fn()
+      const onApplied = vi.fn()
+      render(chatTree(onError, AUTH_DISABLED_ME, handoff({ from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' }), onApplied))
+      await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('90 日')))
+      expect(onApplied).toHaveBeenCalled()
+      expect(screen.getByLabelText('開始日')).not.toHaveValue('2026-01-01')
+      expect(screen.queryByRole('note', NOTE)).not.toBeInTheDocument()
+    })
+  })
 
   it('「表示期間」の要約は、開き直しても「直近 N」か手入力かを保つ', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse([]))))

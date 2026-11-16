@@ -1,3 +1,4 @@
+import { validateApiRange } from '../../datetime/apiRangeLimit'
 import { describe, expect, it } from 'vitest'
 
 import type { TimelineViewItem } from '../../api/schemas'
@@ -18,7 +19,6 @@ import {
   omittedSourceMessages,
   resolveTimelineRange,
   sortTimelineItems,
-  validateResolvedRange,
   widenRange,
 } from './timelineModel'
 
@@ -37,10 +37,10 @@ describe('timelineModel', () => {
   })
 
   it('期間の検証: 逆順・同じ秒・90 日超を断る', () => {
-    expect(validateResolvedRange({ from: '2026-03-22T00:00:00Z', to: '2026-03-22T00:00:00.900Z' })).toMatch('前')
-    expect(validateResolvedRange({ from: '2026-03-22T01:00:00Z', to: '2026-03-22T00:00:00Z' })).toMatch('前')
-    expect(validateResolvedRange({ from: '2026-01-01T00:00:00Z', to: '2026-04-02T00:00:00Z' })).toMatch('90')
-    expect(validateResolvedRange({ from: '2026-03-22T00:00:00Z', to: '2026-03-22T00:00:01Z' })).toBeNull()
+    expect(validateApiRange({ from: '2026-03-22T00:00:00Z', to: '2026-03-22T00:00:00.900Z' })).toMatch('前')
+    expect(validateApiRange({ from: '2026-03-22T01:00:00Z', to: '2026-03-22T00:00:00Z' })).toMatch('前')
+    expect(validateApiRange({ from: '2026-01-01T00:00:00Z', to: '2026-04-02T00:00:00Z' })).toMatch('90')
+    expect(validateApiRange({ from: '2026-03-22T00:00:00Z', to: '2026-03-22T00:00:01Z' })).toBeNull()
   })
 
   it('棒の範囲は開始 + バケット幅。最後の棒は期間の終わりで切る', () => {
@@ -74,7 +74,7 @@ describe('timelineModel', () => {
       to: '2026-03-22T01:30:00.000Z',
     })
     const huge = widenRange({ from: '2026-01-01T00:00:00.000Z', to: '2026-03-30T00:00:00.000Z' }, { mode: 'fixed', from: '', to: '' })
-    expect(validateResolvedRange(huge)).toBeNull()
+    expect(validateApiRange(huge)).toBeNull()
   })
 
   it('起点に最も近い行（区間は区間までの距離）。起点が無ければ null', () => {

@@ -171,7 +171,8 @@ uv run vcenter-event-assistant
 
 - [ログインとロール](../userguide/authentication.md) — 初期 admin、ロールごとの権限、ユーザー管理 CLI
 - [モックモードの使い方](../userguide/mock-mode.md) — 外部サービスなしのデモ・開発起動
-- [アラート機能の使い方](../userguide/alerts.md) — ルール設定、メール通知、通知履歴、タイムライン上の表示
+- [アラート機能の使い方](../userguide/alerts.md) — ルール設定、メール通知、通知履歴
+- [タイムラインタブの使い方](../userguide/timeline.md) — 障害の初動で、出来事を時系列に見る
 - [グラフタブの使い方](../userguide/graph.md) — メトリクス時系列、イベント件数オーバーレイ、エクスポート
 
 ## セキュリティ

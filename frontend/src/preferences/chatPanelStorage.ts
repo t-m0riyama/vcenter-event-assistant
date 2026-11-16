@@ -36,11 +36,23 @@ const zonedRangePartsSchema = z.object({
   toTime: z.string(),
 })
 
+/** タイムラインから引き継いだ期間の正確な端点。部品（分単位）を編集するまで、送信にそのまま使う。 */
+const exactRangeSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  timeZone: z.string(),
+  /** 引き継いだ時点の部品。これと違えば、利用者が編集したとみなす。 */
+  parts: zonedRangePartsSchema,
+})
+export type ChatExactRange = z.infer<typeof exactRangeSchema>
+
 const chatPanelSnapshotSchema = z.object({
   messages: z.array(chatMessageSchema),
   rangeParts: zonedRangePartsSchema,
   /** 「直近 N」で選んだときの N（ミリ秒）。手入力なら null。前の版の保存データにはない（手入力として戻す）。 */
   rollingDurationMs: z.number().positive().nullable().optional(),
+  /** タイムラインから引き継いだ期間の正確な端点。無ければ（または部品を編集したら）部品から組み直す。 */
+  exactRange: exactRangeSchema.nullable().optional(),
   vcenterId: z.string(),
   includePeriodMetricsCpu: z.boolean(),
   includePeriodMetricsMemory: z.boolean(),

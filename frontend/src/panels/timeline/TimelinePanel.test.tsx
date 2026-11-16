@@ -102,7 +102,7 @@ function populated(overrides: Record<string, unknown> = {}) {
 const onError = vi.fn()
 
 function renderTimeline(
-  extra: { onOpenSnapshotInMetrics?: (item: never) => void; onOpenInMetrics?: (focus: never) => void; active?: boolean } = {},
+  extra: { onOpenSnapshotInMetrics?: (item: never) => void; onOpenInMetrics?: (focus: never) => void; onOpenInChat?: (focus: never) => void; active?: boolean } = {},
 ) {
   return render(
     <ThemeProvider>
@@ -519,6 +519,46 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(harness.calls[4].body.min_score).toBe(40)
   })
 
+  it('「この範囲をチャットで分析」は開く先があるときだけ出し、押すと読み込んだ期間と vCenter だけを渡す', async () => {
+    setup()
+    const { unmount } = renderTimeline()
+    await answer(0, populated())
+    await screen.findByRole('list', { name: '出来事の時系列' })
+    expect(screen.queryByRole('button', { name: 'この範囲をチャットで分析' })).not.toBeInTheDocument()
+    unmount()
+
+    const onOpen = vi.fn()
+    setup()
+    renderTimeline({ onOpenInChat: onOpen })
+    await answer(0, populated())
+    fireEvent.change(await screen.findByLabelText('対象（ホスト・VM 名）'), { target: { value: 'vm-a' } })
+    const button = screen.getByRole('button', { name: 'この範囲をチャットで分析' })
+    // 対象の絞り込みは渡らないことを、操作の説明に書く
+    expect(button).toHaveAttribute('title', expect.stringContaining('対象'))
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    const focus = onOpen.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(focus).sort()).toEqual(['from', 'fromSavedSnapshot', 'narrowedBy', 'to', 'vcenterId'])
+    expect(focus.vcenterId).toBeNull()
+    // 絞っていた対象は渡さず、絞っていたことだけ知らせる
+    expect(focus.narrowedBy).toEqual(['対象'])
+    expect(focus.fromSavedSnapshot).toBe(false)
+    expect(Date.parse(String(focus.to))).toBeGreaterThan(Date.parse(String(focus.from)))
+  })
+
+  it('チャットへ渡す vCenter は、表示中の結果の要求のもの（条件を変えた直後の読み込み前の値ではない）', async () => {
+    const onOpen = vi.fn()
+    setup({ vcenters: [{ id: VC, name: 'vc-main' }] })
+    renderTimeline({ onOpenInChat: onOpen })
+    await answer(0, populated())
+    await screen.findByRole('list', { name: '出来事の時系列' })
+    fireEvent.change(screen.getByLabelText('vCenter'), { target: { value: VC } })
+    await waitFor(() => expect(harness.calls.length).toBeGreaterThan(1))
+    fireEvent.click(screen.getByRole('button', { name: 'この範囲をチャットで分析' }))
+    expect(onOpen.mock.calls[0][0]).toMatchObject({ vcenterId: null })
+  })
+
   it('スナップショットは既定で閉じており、開くと一覧を読み、選ぶと期間と vCenter が条件へ入って読み直す', async () => {
     const onOpen = vi.fn()
     setup({
@@ -682,6 +722,45 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       await screen.findByRole('note', { name: '保存時点の内容' })
       fireEvent.change(screen.getByLabelText('運用メモ（必須）'), { target: { value: 'x' } })
       expect(screen.getByRole('button', { name: 'スナップショットを保存' })).toBeDisabled()
+    })
+
+    it('保存済みの結果の表示中は、保存した期間と vCenter をチャットへ渡す（現在の期間ではない）', async () => {
+      const onOpen = vi.fn()
+      setup({ snapshots: [listItem()] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () => jsonResponse(detailOf()))
+      renderTimeline({ onOpenInChat: onOpen })
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      fireEvent.click(screen.getByRole('button', { name: 'この範囲をチャットで分析' }))
+      expect(onOpen).toHaveBeenCalledWith({
+        from: '2026-03-10T00:00:00.000Z',
+        to: '2026-03-10T03:00:00.000Z',
+        vcenterId: VC,
+        // 保存した要求で絞っていた対象・種別・最小スコア・しきい値は、渡さずに知らせる
+        narrowedBy: ['対象', '種別', '最小スコア', 'しきい値'],
+        fromSavedSnapshot: true,
+      })
+    })
+
+    it('チャットが受け付けない長さ（90 日超）の期間は、押せず理由を示す', async () => {
+      const onOpen = vi.fn()
+      const long = { from: '2026-01-01T00:00:00Z', to: '2026-06-01T00:00:00Z' }
+      setup({ snapshots: [listItem({ ...long, view_request: { ...viewRequest, ...long } })] })
+      harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () =>
+        jsonResponse(detailOf({ ...long, view_request: { ...viewRequest, ...long } })),
+      )
+      renderTimeline({ onOpenInChat: onOpen })
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      const button = screen.getByRole('button', { name: 'この範囲をチャットで分析' })
+      expect(button).toBeDisabled()
+      expect(button).toHaveAttribute('title', expect.stringContaining('90 日'))
+      fireEvent.click(button)
+      expect(onOpen).not.toHaveBeenCalled()
     })
 
     it('has_result が false の旧データは、view_request が無ければ from/to/vcenter_id だけを条件に写して再集計する', async () => {
