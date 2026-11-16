@@ -83,6 +83,18 @@ async def _post(client: AsyncClient, **overrides: object) -> dict:
     return r.json()
 
 
+def _message_fetch_ids(statements: list, table: str) -> set[int]:
+    """横取りした問い合わせのうち ``{table}.message`` を読むものについて、IN に渡した id をすべて集める。"""
+    ids: set[int] = set()
+    for stmt in statements:
+        if f"{table}.message" not in str(stmt):
+            continue
+        for value in stmt.compile().params.values():
+            if isinstance(value, (list, tuple)):
+                ids.update(int(v) for v in value)
+    return ids
+
+
 # --- スキーマ検証（サービス未実装でも通る） ---------------------------------------------
 
 
@@ -887,18 +899,18 @@ async def test_event_list_query_does_not_read_messages(
     from sqlalchemy.ext.asyncio import AsyncSession
 
     vid = await _vcenter("vc-msg")
-    (warn_id, _a1, _a2, _crit) = await _events(
+    (warn_id, a1, _a2, crit) = await _events(
         vid,
         (1, "Warn", "h1", 45, {"message": "first warning"}),
         (60, "A", "h2", 30, {"message": "a-first"}),
         (61, "A", "h2", 30, {"message": "a-second"}),
         (90, "Crit", "h3", 90, {"message": "critical!"}),
     )
-    captured: list[str] = []
+    captured: list = []
     original = AsyncSession.execute
 
     async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
-        captured.append(str(statement))
+        captured.append(statement)
         return await original(self, statement, *args, **kwargs)
 
     monkeypatch.setattr(AsyncSession, "execute", spy)
@@ -911,8 +923,11 @@ async def test_event_list_query_does_not_read_messages(
     ]
     signal = data["highlights"]["first_signal"]
     assert signal["id"] == f"event:{warn_id}" and signal["detail"] == "first warning"
-    list_sql = [s for s in captured if "ORDER BY events.occurred_at, events.id" in s]
+    sql = [str(s) for s in captured]
+    list_sql = [s for s in sql if "ORDER BY events.occurred_at, events.id" in s]
     assert list_sql and all("events.message" not in s for s in list_sql)
+    # message を引くのは、残った行（まとめた行は最初のイベント）と first_signal の id だけ
+    assert _message_fetch_ids(captured, "events") == {a1, crit, warn_id}
 
 
 @pytest.mark.asyncio
@@ -1367,18 +1382,18 @@ async def test_log_detail_is_read_only_for_kept_items_and_truncated(
 
     vid = await _vcenter()
     long_message = "x" * 1500
-    await _logs(
+    earliest, merged_first, _merged_second, _far = await _logs(
         vid,
         (1, "error", "earliest", {"log_kind": "a"}),
         (60, "error", long_message, {"log_kind": "b"}),
         (61, "error", "merged-second", {"log_kind": "b"}),
         (90, "error", "far", {"log_kind": "c"}),
     )
-    captured: list[str] = []
+    captured: list = []
     original = AsyncSession.execute
 
     async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
-        captured.append(str(statement))
+        captured.append(statement)
         return await original(self, statement, *args, **kwargs)
 
     monkeypatch.setattr(AsyncSession, "execute", spy)
@@ -1390,8 +1405,11 @@ async def test_log_detail_is_read_only_for_kept_items_and_truncated(
     assert item["detail"] == "x" * 1000 + "…"
     signal = data["highlights"]["first_signal"]
     assert signal["kind"] == "log" and signal["detail"] == "earliest"
-    list_sql = [s for s in captured if "ORDER BY log_records.effective_at, log_records.id" in s]
+    sql = [str(s) for s in captured]
+    list_sql = [s for s in sql if "ORDER BY log_records.effective_at, log_records.id" in s]
     assert list_sql and all("log_records.message" not in s for s in list_sql)
+    # message を引くのは、残った行（まとめた行は最初のログ）と first_signal の id だけ
+    assert _message_fetch_ids(captured, "log_records") == {merged_first, earliest}
 
 
 @pytest.mark.asyncio
