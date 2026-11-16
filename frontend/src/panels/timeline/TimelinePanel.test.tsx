@@ -894,6 +894,28 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       expect(screen.queryByText(/読み込んだ期間/)).not.toBeInTheDocument()
     })
 
+    it('直近 1 時間から別の期間のスナップショットを開くと、条件バーの期間と入力欄が保存した期間になり、そのまま「適用」しても保存した期間で再集計する', async () => {
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      expect(screen.getByLabelText('開始日')).toHaveValue('2026-03-10')
+      expect(screen.getByLabelText('開始時刻')).toHaveValue('00:00')
+      expect(screen.getByLabelText('終了日')).toHaveValue('2026-03-10')
+      expect(screen.getByLabelText('終了時刻')).toHaveValue('03:00')
+      expect(screen.getByRole('button', { name: '直近 1 時間' })).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('esx01')
+      expect((screen.getByLabelText('アラート') as HTMLInputElement).checked).toBe(true)
+      expect((screen.getByLabelText('ログ') as HTMLInputElement).checked).toBe(false)
+      fireEvent.click(screen.getByRole('button', { name: '適用' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({
+        from: '2026-03-10T00:00:00.000Z',
+        to: '2026-03-10T03:00:00.000Z',
+        entity: 'esx01',
+        min_score: 40,
+        sources: ['event', 'alert'],
+      })
+    })
+
     it('保存済みの結果の表示中は「更新」を押せない（再集計は専用のボタン）', async () => {
       await openSnapshot(listItem(), detailOf())
       await screen.findByRole('note', { name: '保存時点の内容' })

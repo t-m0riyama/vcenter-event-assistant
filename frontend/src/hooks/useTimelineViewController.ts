@@ -529,7 +529,12 @@ export function useTimelineViewController(
       setUrlIssue(null)
       setConditionsRaw(conditions)
       if (conditions.range.mode !== 'fixed') return
-      setSavedView({ ...saved, range: { from: conditions.range.from, to: conditions.range.to } })
+      const range = { from: conditions.range.from, to: conditions.range.to }
+      // 読み込みの effect は保存済みの表示中は動かないので、条件バーの期間（表示・入力欄・「適用」の基準）は
+      // ここで保存した期間に合わせる。入力途中の値も捨てる
+      setResolvedRange(range)
+      setRangeDraft(null)
+      setSavedView({ ...saved, range })
       setLoading(false)
     },
     [],
