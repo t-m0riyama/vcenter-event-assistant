@@ -49,7 +49,7 @@ export function parseZonedLocalDateTimeInput(s: string): {
 }
 
 /**
- * Intl の `formatToParts` から壁時計を取得する（`hour: 24` は正規化しない）。
+ * Intl の `formatToParts` から壁時計を取得する。`hour12` は渡さない（`hourCycle: 'h23'` と併用すると h24 になり 0 時台が 24:xx と表される）。
  */
 function getWallClockInZoneRaw(utcMs: number, timeZone: string): ZonedWallParts {
   const fmt = new Intl.DateTimeFormat('en-US', {
@@ -60,7 +60,6 @@ function getWallClockInZoneRaw(utcMs: number, timeZone: string): ZonedWallParts 
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
   })
   const parts = fmt.formatToParts(new Date(utcMs))
   const map: Record<string, string> = {}
@@ -77,51 +76,13 @@ function getWallClockInZoneRaw(utcMs: number, timeZone: string): ZonedWallParts 
 }
 
 /**
- * `hour === 24` が「その暦日の終了（＝翌暦日の 0 時）」か、
- * 「当日 0 時」の別表記かを、1 分前の暦日と比較して判定する。
- */
-function isHour24EndOfCalendarDay(
-  utcMs: number,
-  timeZone: string,
-  wall: ZonedWallParts,
-): boolean {
-  const prev = getWallClockInZoneRaw(utcMs - 60000, timeZone)
-  return (
-    prev.year === wall.year &&
-    prev.month === wall.month &&
-    prev.day === wall.day
-  )
-}
-
-/**
  * Calendar parts for an instant, in the given IANA time zone (wall clock).
  */
 export function getWallClockInZone(utcMs: number, timeZone: string): ZonedWallParts {
   const raw = getWallClockInZoneRaw(utcMs, timeZone)
-  const { minute } = raw
-  let { year, month, day, hour } = raw
-
-  /**
-   * `hour === 24` は (1) その日の終了＝翌暦日 0:00、(2) 当日 0:00 の別表記 の両方がありうる。
-   * (1) のみ暦日を +1 する。(2) は直前の分が前日のため `isHour24EndOfCalendarDay` が false になる。
-   */
-  if (hour === 24) {
-    hour = 0
-    if (!isHour24EndOfCalendarDay(utcMs, timeZone, raw)) {
-      return { year, month, day, hour, minute }
-    }
-    const next = new Date(Date.UTC(year, month - 1, day + 1))
-    year = next.getUTCFullYear()
-    month = next.getUTCMonth() + 1
-    day = next.getUTCDate()
-  }
-  return {
-    year,
-    month,
-    day,
-    hour,
-    minute,
-  }
+  // 万一 h24 を返す環境でも、24 は「同じ日の 0 時」であり日付は変えない。
+  const hour = raw.hour === 24 ? 0 : raw.hour
+  return { year: raw.year, month: raw.month, day: raw.day, hour, minute: raw.minute }
 }
 
 /**
