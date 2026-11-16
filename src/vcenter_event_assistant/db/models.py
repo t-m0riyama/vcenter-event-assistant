@@ -152,6 +152,8 @@ class MetricSample(Base):
         ),
         # タイムライン表示（incident_timeline_view._collect_metrics）が、期間内の閾値以上のサンプルを
         # vCenter・指標ごとの範囲走査で探すため。value まで含めて、閾値未満の行では表を引かない。
+        # entity_moid・entity_name も含めて、閾値以上のサンプルの数え上げと、対象（名前か moid）に当たる系列の
+        # 探索を表を引かずに済ませる（含めないと、超過が多いとき対象で絞った数え上げだけで 5 秒かかった）。
         # SQLite だけに作る。PostgreSQL は計測でこの索引を選ばず（期間が短いと sampled_at、長いと metric_key の
         # 索引を使う）、書き込みの費用だけが増えるため。
         Index(
@@ -160,6 +162,8 @@ class MetricSample(Base):
             "metric_key",
             "sampled_at",
             "value",
+            "entity_moid",
+            "entity_name",
         ).ddl_if(dialect="sqlite"),
     )
 
