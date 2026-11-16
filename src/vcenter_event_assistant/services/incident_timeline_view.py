@@ -584,7 +584,10 @@ def top_entities(
     *,
     limit: int = _TOP_ENTITIES_LIMIT,
 ) -> list[IncidentTimelineTopEntity]:
-    """``(vcenter_id, entity_name)`` ごとに ``count``（まとめる前の件数）を合計し、多い順に上位を返す。
+    """``(vcenter_id, entity_name)`` ごとに件数を合計し、多い順に上位を返す。
+
+    イベントなどは ``count``（まとめる前の件数）で数える。ログはまとめた行を 1 件として数える
+    （同じ内容のエラーを短時間に大量に出すホストが、まとめる前の行数で「影響の大きい対象」を占めないように）。
 
     同じ名前でも vCenter が違えば別の対象として数える。同数なら最初に現れた時刻が早い順、
     それも同じなら名前・vCenter の順。``entity_type`` と ``vcenter_name`` は最初に分かった値を使う。
@@ -593,12 +596,13 @@ def top_entities(
     for e in entries:
         if not e.entity_name:
             continue
+        weight = 1 if e.kind == "log" else e.count
         key = (e.vcenter_id, e.entity_name)
         slot = acc.get(key)
         if slot is None:
-            acc[key] = [e.count, e.timestamp_utc, e.entity_type, e.vcenter_name]
+            acc[key] = [weight, e.timestamp_utc, e.entity_type, e.vcenter_name]
             continue
-        slot[0] += e.count
+        slot[0] += weight
         if e.timestamp_utc < slot[1]:
             slot[1] = e.timestamp_utc
         if slot[2] is None and e.entity_type:

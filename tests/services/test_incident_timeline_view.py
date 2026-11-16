@@ -645,3 +645,26 @@ def test_format_number_uses_up_to_two_decimals_without_trailing_zeros(value: flo
 def test_metric_title_and_detail_use_the_shared_number_format() -> None:
     assert metric_breach_title("host.cpu.usage_pct", 82.55) == "CPU 使用率が閾値（82.55%）を超過"
     assert metric_breach_detail(82.549, 2, continued=False) == "ピーク 82.55%、サンプル 2 件"
+
+
+def test_top_entities_count_a_merged_log_row_as_one() -> None:
+    """ログはまとめた行を 1 件として数える（エラーを大量に出すホストが上位を占めないように）。
+    イベントは今までどおり、まとめる前の件数で数える。"""
+    def log(source_id: int, minute: float, host: str) -> TimelineEntry:
+        return TimelineEntry(
+            kind="log", source_id=source_id, timestamp_utc=_at(minute), level="warning",
+            title=f"{host} vmkernel", entity_name=host, entity_type="host", vcenter_id=V1,
+            merge_key=("log", V1, host, "vmkernel", "warning"), ref={"log_id": source_id},
+        )
+
+    merged = merge_consecutive(
+        sort_entries(
+            [
+                *[log(100 + i, i * 0.1, "noisy") for i in range(50)],  # まとめて 1 行（count=50）
+                _ev(1, 10, "A", "h1"), _ev(2, 11, "A", "h1"), _ev(3, 12, "A", "h1"),  # まとめて count=3
+            ]
+        )
+    )
+    assert [(m.kind, m.count) for m in merged] == [("log", 50), ("event", 3)]
+    top = top_entities(merged)
+    assert [(t.entity_name, t.item_count) for t in top] == [("h1", 3), ("noisy", 1)]
