@@ -525,6 +525,48 @@ describe('useTimelineViewController', () => {
     expect(harness.calls[1].body.to).toBe('2026-03-22T02:00:59.000Z') // 編集した側は分の末尾まで
   })
 
+  describe('夏時間の戻りをまたぐ期間（America/New_York、05:50Z〜06:10Z は入力欄では 01:50〜01:10）', () => {
+    const open = async () => {
+      window.history.replaceState(null, '', '/#/timeline?from=2026-11-01T05:50:00.000Z&to=2026-11-01T06:10:00.000Z')
+      localStorage.setItem('vea.displayTimeZone', 'America/New_York')
+      const hook = renderHook(() => useTimelineViewController(onError), { wrapper })
+      await answer(0)
+      return hook
+    }
+
+    it('開始だけを編集して適用すると、終了は今の値（06:10Z）のまま、開始は編集した値になる', async () => {
+      const { result } = await open()
+      expect(result.current.rangeParts).toMatchObject({ fromTime: '01:50', toTime: '01:10' })
+      act(() => result.current.setRangeParts({ ...result.current.rangeParts, fromTime: '01:45' }))
+      act(() => result.current.applyRangeParts())
+      expect(result.current.rangeInputError).toBeNull()
+      await answer(1)
+      expect(harness.calls[1].body.from).toBe('2026-11-01T05:45:00.000Z') // 1 回目の出現
+      expect(harness.calls[1].body.to).toBe('2026-11-01T06:10:00.000Z')
+    })
+
+    it('何も編集せずに適用しても、エラーにならず期間は変わらない', async () => {
+      const { result } = await open()
+      act(() => result.current.applyRangeParts())
+      expect(result.current.rangeInputError).toBeNull()
+      expect(result.current.resolvedRange).toEqual({ from: '2026-11-01T05:50:00.000Z', to: '2026-11-01T06:10:00.000Z' })
+    })
+
+    it('編集した側の不正（順序の逆転・存在しない時刻・90 日超）は従来どおりエラーにする', async () => {
+      const { result } = await open()
+      act(() => result.current.setRangeParts({ ...result.current.rangeParts, toTime: '00:30' }))
+      act(() => result.current.applyRangeParts())
+      expect(result.current.rangeInputError).toContain('前')
+      act(() => result.current.setRangeParts({ ...result.current.rangeParts, toDate: '2026-03-08', toTime: '02:30' }))
+      act(() => result.current.applyRangeParts())
+      expect(result.current.rangeInputError).toContain('存在しません')
+      act(() => result.current.setRangeParts({ ...result.current.rangeParts, fromDate: '2026-06-01', fromTime: '12:00', toDate: '2026-11-01', toTime: '12:00' }))
+      act(() => result.current.applyRangeParts())
+      expect(result.current.rangeInputError).toContain('90')
+      expect(harness.calls).toHaveLength(1)
+    })
+  })
+
   it('期間の入力が片方だけのときは適用せず理由を出し、絞り込みを戻すと消える', async () => {
     const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
     await answer(0)

@@ -15,11 +15,10 @@ import type {
   VCenter,
 } from '../api/schemas'
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
-import { resolveEventApiRange } from '../datetime/graphRange'
+import { resolveEditedRange } from '../datetime/resolveEditedRange'
 import { useTimeZone } from '../datetime/useTimeZone'
 import {
   zonedRangePartsFromUtcIsoEndpoints,
-  zonedRangePartsToCombinedInputs,
   type ZonedRangeParts,
 } from '../datetime/zonedRangeParts'
 import {
@@ -427,27 +426,15 @@ export function useTimelineViewController(
    * （入力欄は分までしか持たないので、通すと秒が落ちる）。
    */
   const applyRangeParts = useCallback(() => {
-    const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(rangeParts)
-    const resolved = resolveEventApiRange(rangeFromInput, rangeToInput, timeZone)
-    if (!resolved.ok) {
-      setRangeInputError(resolved.message)
-      return
-    }
-    if (!resolved.from || !resolved.to) {
-      setRangeInputError('期間の開始と終了の両方を入力してください。')
-      return
-    }
-    const same = (a: ZonedRangeParts, b: ZonedRangeParts, side: 'from' | 'to') =>
-      side === 'from'
-        ? a.fromDate === b.fromDate && a.fromTime === b.fromTime
-        : a.toDate === b.toDate && a.toTime === b.toTime
-    const next = {
-      from: same(rangeParts, derivedParts, 'from') ? resolvedRange.from : resolved.from,
-      to: same(rangeParts, derivedParts, 'to') ? resolvedRange.to : resolved.to,
-    }
-    const reason = validateApiRange(next)
-    setRangeInputError(reason)
-    if (!reason) setFixedRange(next)
+    // 編集していない側は今の期間の端点をそのまま使い、組み直しと拒否は編集した側だけにかける
+    const next = resolveEditedRange(
+      rangeParts,
+      { parts: derivedParts, from: resolvedRange.from, to: resolvedRange.to },
+      timeZone,
+      '期間の開始と終了の両方を入力してください。',
+    )
+    setRangeInputError(next.ok ? null : next.message)
+    if (next.ok) setFixedRange({ from: next.from, to: next.to })
   }, [rangeParts, derivedParts, resolvedRange, timeZone, setFixedRange])
 
   const setVcenterId = useCallback((vcenterId: string) => patch({ vcenterId }), [patch])

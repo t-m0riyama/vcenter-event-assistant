@@ -12,10 +12,9 @@ import {
   type ChatPreviewResponse,
   type VCenter,
 } from '../api/schemas'
-import { resolveEventApiRange } from '../datetime/graphRange'
+import { resolveEditedRange } from '../datetime/resolveEditedRange'
 import {
   zonedRangePartsFromUtcIsoEndpoints,
-  zonedRangePartsToCombinedInputs,
 } from '../datetime/zonedRangeParts'
 import type { ChatHandoffInput } from './chatHandoff'
 import type { ChatExactRange } from '../preferences/chatPanelStorage'
@@ -258,32 +257,13 @@ export function useChatPanelController(
 
   const buildChatRequestBody = useCallback(
     (nextMessages: ChatMessage[], nextAttachments: ChatAttachmentPayload[] = []) => {
-      const { rangeFromInput, rangeToInput } = zonedRangePartsToCombinedInputs(rangeParts)
-      // 引き継いだ期間は、部品（分単位）を編集していない側の端点を、そのままの値で使う。
-      // 壁時計からの組み直し（と、その検査）は、編集した側だけにかける（夏時間の戻りでは、
-      // 壁時計の上で終了が開始より前に見える正しい期間がある）。順序と 90 日は、送る UTC の範囲で検査する。
+      // 引き継いだ期間は、部品（分単位）を編集していない側の端点を、そのままの値で使う
       const exact = exactRange !== null && exactRange.timeZone === timeZone ? exactRange : null
-      const fromExact =
-        exact !== null && rangeParts.fromDate === exact.parts.fromDate && rangeParts.fromTime === exact.parts.fromTime
-      const toExact =
-        exact !== null && rangeParts.toDate === exact.parts.toDate && rangeParts.toTime === exact.parts.toTime
-      const resolved = resolveEventApiRange(
-        fromExact ? '' : rangeFromInput,
-        toExact ? '' : rangeToInput,
-        timeZone,
-      )
-      if (!resolved.ok) {
-        return { ok: false as const, message: resolved.message }
+      const range = resolveEditedRange(rangeParts, exact, timeZone, '期間の開始と終了を指定してください。')
+      if (!range.ok) {
+        return { ok: false as const, message: range.message }
       }
-      const from = fromExact ? exact?.from : resolved.from
-      const to = toExact ? exact?.to : resolved.to
-      if (!from || !to) {
-        return { ok: false as const, message: '期間の開始と終了を指定してください。' }
-      }
-      const invalid = validateApiRange({ from, to })
-      if (invalid) {
-        return { ok: false as const, message: invalid }
-      }
+      const { from, to } = range
       return {
         ok: true as const,
         body: {
