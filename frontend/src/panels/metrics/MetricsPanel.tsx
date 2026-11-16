@@ -10,7 +10,7 @@ import { toErrorMessage } from '../../utils/errors'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import {
   useMetricsPanelController,
-  type MetricsSnapshotReplayInput,
+  type MetricsReplayInput,
 } from '../../hooks/useMetricsPanelController'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { MetricsChart } from './MetricsChart'
@@ -25,7 +25,7 @@ export function MetricsPanel({
 }: {
   onError: (e: string | null) => void
   perfBucketSeconds: number
-  snapshotReplay?: MetricsSnapshotReplayInput | null
+  snapshotReplay?: MetricsReplayInput | null
 }) {
   const controller = useMetricsPanelController(onError, perfBucketSeconds, snapshotReplay ?? null)
   const {
@@ -72,6 +72,7 @@ export function MetricsPanel({
     exportDisabled,
     csvExportOptions,
     snapshotChartGuidelineMs,
+    chartGuidelineLabel,
   } = controller
 
   const {
@@ -185,6 +186,7 @@ export function MetricsPanel({
         showEventLine={showEventLine}
         leftYAxisLabel={leftYAxisLabel}
         snapshotChartGuidelineMs={snapshotChartGuidelineMs}
+        chartGuidelineLabel={chartGuidelineLabel}
       />
     </div>
   )

@@ -169,3 +169,64 @@ describe('pagination', () => {
     confirm.mockRestore()
   })
 })
+
+describe('タイムラインで見る', () => {
+  const VC = '11111111-1111-4111-8111-111111111111'
+
+  it('metric の行は発生時刻の前後・vCenter・対象で、event_score の行は時刻だけのリンクになる', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 2, items: [
+      { ...base, id: 1, rule_name: 'CPU 高負荷', context_key: `${VC}:host-1`, delivery_status: 'succeeded', success: true,
+        attempt_count: 1, notified_at: '2026-10-03T03:00:00Z', occurred_at: '2026-10-03T01:00:00Z',
+        vcenter_id: VC, entity_name: 'esx01' },
+      { ...base, id: 2, rule_name: 'スコア', rule_type: 'event_score', context_key: 'VmPoweredOffEvent',
+        delivery_status: 'succeeded', success: true, attempt_count: 1,
+        occurred_at: '2026-10-03T02:00:00Z', vcenter_id: null, entity_name: null },
+    ] })
+    show()
+    const metric = await screen.findByRole('link', { name: /^CPU 高負荷・esx01（.*1:00:00.*）をタイムラインで見る$/ })
+    const mp = new URLSearchParams(metric.getAttribute('href')!.split('?')[1])
+    expect(mp.get('anchor')).toBe('2026-10-03T01:00:00.000Z')
+    expect(mp.get('from')).toBe('2026-10-03T00:30:00.000Z')
+    expect(mp.get('to')).toBe('2026-10-03T01:30:00.000Z')
+    expect(mp.get('vcenter_id')).toBe(VC)
+    expect(mp.get('entity')).toBe('esx01')
+    const es = screen.getAllByRole('link', { name: /スコア・VmPoweredOffEvent（.*）をタイムラインで見る/ })[0]
+    const ep = new URLSearchParams(es.getAttribute('href')!.split('?')[1])
+    expect(ep.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
+    expect(ep.has('vcenter_id')).toBe(false)
+    expect(ep.has('entity')).toBe(false)
+  })
+
+  it('occurred_at が無い（古いサーバ）ときは notified_at を起点にする', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [
+      { ...base, id: 1, delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    show()
+    const link = await screen.findByRole('link', { name: /をタイムラインで見る/ })
+    expect(new URLSearchParams(link.getAttribute('href')!.split('?')[1]).get('anchor')).toBe('2026-10-03T00:00:00.000Z')
+  })
+})
+
+
+describe('対象の列', () => {
+  const VC = '11111111-1111-4111-8111-111111111111'
+
+  it('entity_name があれば名前を主に出し、context_key は補助として残す。無ければ context_key を出す', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 3, items: [
+      { ...base, id: 1, context_key: `${VC}:host-1`, entity_name: 'esx01', vcenter_id: VC,
+        delivery_status: 'succeeded', success: true, attempt_count: 1 },
+      { ...base, id: 2, rule_type: 'event_score', context_key: 'VmPoweredOffEvent', entity_name: null,
+        delivery_status: 'succeeded', success: true, attempt_count: 1 },
+      { ...base, id: 3, context_key: 'host-legacy', delivery_status: 'succeeded', success: true, attempt_count: 1 },
+    ] })
+    show()
+    const rows = (await screen.findAllByRole('row')).slice(1)
+    const cell = (r: HTMLElement) => r.querySelector('.col-context') as HTMLElement
+    expect(within(cell(rows[0])).getByText('esx01')).toBeInTheDocument()
+    expect(within(cell(rows[0])).getByText(`${VC}:host-1`)).toHaveClass('context-key-note')
+    expect(cell(rows[1])).toHaveTextContent('VmPoweredOffEvent')
+    expect(cell(rows[1]).querySelector('.context-key-note')).toBeNull()
+    expect(cell(rows[2])).toHaveTextContent('host-legacy')
+    expect(cell(rows[2]).querySelector('.context-key-note')).toBeNull()
+  })
+})

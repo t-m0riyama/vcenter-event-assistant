@@ -1,12 +1,14 @@
 import { useEffect, useRef } from 'react'
 
+import type { MetricsFocus } from '../../hooks/metricsReplay'
 import type { TimelineViewItem } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { ScoreBadge } from '../../components/badges'
 import type { GuideLoader } from './eventTypeGuideLoader'
 import { TimelineEventGuide } from './TimelineEventGuide'
-import { alertStateLabel, excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
-import { correlationHashForItem } from './timelineModel'
+import { alertStateLabel } from '../../alerts/alertStateLabel'
+import { excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
+import { correlationHashForItem, metricsFocusForItem } from './timelineModel'
 
 type Props = {
   items: readonly TimelineViewItem[]
@@ -19,6 +21,8 @@ type Props = {
   guideLoader: GuideLoader
   onFilterEntity: (entityName: string, vcenterId: string | null | undefined) => void
   onSetAnchor: (timestampUtc: string) => void
+  /** 渡すと、vCenter のある行に「グラフで開く」を出す。 */
+  onOpenInMetrics?: (focus: MetricsFocus) => void
 }
 
 function rowDomId(id: string): string {
@@ -35,6 +39,7 @@ function ItemRow({
   guideLoader,
   onFilterEntity,
   onSetAnchor,
+  onOpenInMetrics,
 }: {
   item: TimelineViewItem
   timeZone: string
@@ -45,7 +50,9 @@ function ItemRow({
   guideLoader: GuideLoader
   onFilterEntity: Props['onFilterEntity']
   onSetAnchor: Props['onSetAnchor']
+  onOpenInMetrics: Props['onOpenInMetrics']
 }) {
+  const metricsFocus = onOpenInMetrics ? metricsFocusForItem(item) : null
   const domId = rowDomId(item.id)
   const eventsHref = correlationHashForItem('events', item)
   const logsHref = correlationHashForItem('logs', item)
@@ -143,6 +150,11 @@ function ItemRow({
                 ログで開く
               </a>
             ) : null}
+            {metricsFocus ? (
+              <button type="button" className="btn btn--gray" onClick={() => onOpenInMetrics?.(metricsFocus)}>
+                グラフで開く
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -161,6 +173,7 @@ export function TimelineItemList({
   guideLoader,
   onFilterEntity,
   onSetAnchor,
+  onOpenInMetrics,
 }: Props) {
   const lastNonce = useRef(0)
   useEffect(() => {
@@ -185,6 +198,7 @@ export function TimelineItemList({
           guideLoader={guideLoader}
           onFilterEntity={onFilterEntity}
           onSetAnchor={onSetAnchor}
+          onOpenInMetrics={onOpenInMetrics}
         />
       ))}
     </ol>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { IncidentTimelineManualSnapshotListItem } from '../api/schemas'
+import { resolveMetricsReplay, type MetricsReplayInput } from './metricsReplay'
 import {
   resolveMetricsGraphRange,
   summarizeGraphRangePreview,
@@ -16,11 +16,7 @@ import {
 /** グラフの表示期間がクイックプリセットに追従するか、手入力固定か。 */
 export type GraphRangeFollowMode = 'rolling' | 'manual'
 
-/** メトリクスタブでスナップショット由来の期間・系列を一度だけ適用する。 */
-export type MetricsSnapshotReplayInput = {
-  item: IncidentTimelineManualSnapshotListItem
-  nonce: number
-}
+export type { MetricsSnapshotReplayInput, MetricsReplayInput } from './metricsReplay'
 
 type UseGraphRangeStateOptions = {
   /** ローリング期間の TZ 追随で range が更新されたとき */
@@ -30,7 +26,7 @@ type UseGraphRangeStateOptions = {
 /** メトリクスグラフの表示期間・ローリング追従状態を管理する。 */
 export function useGraphRangeState(
   timeZone: string,
-  snapshotReplay?: MetricsSnapshotReplayInput | null,
+  snapshotReplay?: MetricsReplayInput | null,
   options?: UseGraphRangeStateOptions,
 ) {
   const [graphRangeFollowMode, setGraphRangeFollowMode] =
@@ -46,10 +42,11 @@ export function useGraphRangeState(
   )
   const prevTimeZoneRef = useRef<string | null>(null)
   const [previousTimeZone, setPreviousTimeZone] = useState(timeZone)
-  const snapshotItem = snapshotReplay?.item
-  const snapshotNonce = snapshotReplay?.nonce
+  const replay = resolveMetricsReplay(snapshotReplay)
+  const snapshotItem = replay?.source
+  const snapshotNonce = replay?.nonce
   const [appliedSnapshot, setAppliedSnapshot] = useState<{
-    item: MetricsSnapshotReplayInput['item'] | undefined
+    item: object | undefined
     nonce: number | undefined
     timeZone: string
   }>({ item: undefined, nonce: undefined, timeZone })
@@ -73,13 +70,9 @@ export function useGraphRangeState(
     appliedSnapshot.timeZone !== timeZone
   ) {
     setAppliedSnapshot({ item: snapshotItem, nonce: snapshotNonce, timeZone })
-    if (snapshotItem && snapshotNonce !== undefined && snapshotNonce > 0) {
-      const br = snapshotItem.build_request_payload
-      const gc = snapshotItem.graph_context
+    if (replay) {
       setGraphRangeFollowMode('manual')
-      const fromIso = gc?.captured_range?.from ?? br.from
-      const toIso = gc?.captured_range?.to ?? br.to
-      setRangeParts(zonedRangePartsFromUtcIsoEndpoints(fromIso, toIso, timeZone))
+      setRangeParts(zonedRangePartsFromUtcIsoEndpoints(replay.from, replay.to, timeZone))
     }
   }
 

@@ -8,6 +8,7 @@ import {
   bucketStartContaining,
   buildViewRequest,
   correlationHashForItem,
+  metricsFocusForItem,
   dragRange,
   nearestItemIdToAnchor,
   resolveTimelineRange,
@@ -127,5 +128,32 @@ describe('timelineModel', () => {
     expect(params.get('from')).toBe('2026-03-22T00:05:00.000Z')
     expect(params.get('to')).toBe('2026-03-22T00:15:00.000Z')
     expect(correlationHashForItem('logs', item('x', '2026-03-22T00:10:00Z'))).toBeNull()
+  })
+
+  it('グラフで開く条件は行の時刻の前後 30 分と vCenter と起点の目印。vCenter が無い行・読めない時刻は null', () => {
+    expect(metricsFocusForItem(item('e', '2026-03-22T00:10:00', { vcenter_id: 'vc-1' }))).toEqual({
+      from: '2026-03-21T23:40:00.000Z',
+      to: '2026-03-22T00:40:00.000Z',
+      vcenterId: 'vc-1',
+      markerUtc: '2026-03-22T00:10:00.000Z',
+    })
+    // まとめた行は最初の時刻の 30 分前から end_utc の 30 分後まで。目印は最初の時刻
+    expect(
+      metricsFocusForItem(
+        item('m', '2026-03-22T00:10:00Z', { vcenter_id: 'vc-1', count: 3, end_utc: '2026-03-22T00:50:00' }),
+      ),
+    ).toMatchObject({ from: '2026-03-21T23:40:00.000Z', to: '2026-03-22T01:20:00.000Z', markerUtc: '2026-03-22T00:10:00.000Z' })
+    // metric のアラートは指標、イベントはイベント種別を渡す（それ以外の種別・値は渡さない）
+    expect(
+      metricsFocusForItem(item('a', '2026-03-22T00:10:00Z', { kind: 'alert', vcenter_id: 'vc-1', ref: { metric_key: 'host.mem.usage_pct' } })),
+    ).toMatchObject({ metricKey: 'host.mem.usage_pct' })
+    expect(
+      metricsFocusForItem(item('v', '2026-03-22T00:10:00Z', { kind: 'event', vcenter_id: 'vc-1', ref: { event_type: 'VmPoweredOffEvent' } })),
+    ).toMatchObject({ chartEventType: 'VmPoweredOffEvent' })
+    const plain = metricsFocusForItem(item('p', '2026-03-22T00:10:00Z', { vcenter_id: 'vc-1' }))!
+    expect(plain.metricKey).toBeUndefined()
+    expect(plain.chartEventType).toBeUndefined()
+    expect(metricsFocusForItem(item('x', '2026-03-22T00:10:00Z'))).toBeNull()
+    expect(metricsFocusForItem(item('y', 'broken', { vcenter_id: 'vc-1' }))).toBeNull()
   })
 })

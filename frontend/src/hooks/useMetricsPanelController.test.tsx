@@ -64,6 +64,7 @@ describe('useMetricsPanelController', () => {
     expect(result.current.metricKey).toBe('host.memory_usage_pct')
     expect(result.current.chartEventType).toBe('VmPoweredOnEvent')
     expect(result.current.snapshotChartGuidelineMs).toBe(Date.parse(item.timestamp_utc))
+    expect(result.current.chartGuidelineLabel).toBe('スナップショット')
     expect(result.current.rangeParts.fromTime).toBe('02:00')
     const request = new URL(metricRequests().at(-1)!, 'http://test')
     expect(request.searchParams.get('vcenter_id')).toBe(vcenterId)
@@ -84,5 +85,66 @@ describe('useMetricsPanelController', () => {
     expect(result.current.snapshotChartGuidelineMs).toBeNull()
     expect(result.current.metricKey).toBe('host.memory_usage_pct')
     expect(onError).not.toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it('applies a snapshot-independent focus: vCenter, range and the marker, without forcing a metric', async () => {
+    const onError = vi.fn()
+    const focus = {
+      from: '2026-05-07T04:00:00Z', to: '2026-05-07T05:00:00Z', vcenterId, markerUtc: '2026-05-07T04:30:00',
+    }
+    const { result } = renderHook(
+      () => useMetricsPanelController(onError, 300, { focus, nonce: 1 }),
+      { wrapper },
+    )
+    await waitFor(() => expect(metricRequests().length).toBeGreaterThan(0))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.vcenterId).toBe(vcenterId)
+    expect(result.current.metricKey).not.toBe('')
+    expect(result.current.metricKeys).toContain(result.current.metricKey)
+    expect(result.current.chartEventType).toBe('')
+    // Z の無い時刻は UTC として読む
+    expect(result.current.snapshotChartGuidelineMs).toBe(Date.parse('2026-05-07T04:30:00Z'))
+    expect(result.current.chartGuidelineLabel).toBe('選んだ行')
+    expect(result.current.rangeParts.fromTime).toBe('04:00')
+    const request = new URL(metricRequests().at(-1)!, 'http://test')
+    expect(request.searchParams.get('vcenter_id')).toBe(vcenterId)
+    expect(Date.parse(request.searchParams.get('from')!)).toBe(Date.parse('2026-05-07T04:00:00Z'))
+    // グラフの入力は分単位で、終わりはその分の 59 秒までを含む（スナップショットと同じ）
+    expect(Date.parse(request.searchParams.get('to')!)).toBe(Date.parse('2026-05-07T05:00:59Z'))
+    expect(onError).not.toHaveBeenCalledWith(expect.any(String))
+  })
+
+  describe('focus without a snapshot: metric selection', () => {
+    const focusBase = { from: '2026-05-07T04:00:00Z', to: '2026-05-07T05:00:00Z', vcenterId, markerUtc: '2026-05-07T04:30:00Z' }
+    type Replay = Parameters<typeof useMetricsPanelController>[2]
+
+    it('selects the focus metric and event type when the vCenter has that metric', async () => {
+      const focus = { ...focusBase, metricKey: 'host.memory_usage_pct', chartEventType: 'VmPoweredOffEvent' }
+      const { result } = renderHook(() => useMetricsPanelController(vi.fn(), 300, { focus, nonce: 1 }), { wrapper })
+      await waitFor(() => expect(result.current.metricKey).toBe('host.memory_usage_pct'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(result.current.metricKey).toBe('host.memory_usage_pct')
+      expect(result.current.chartEventType).toBe('VmPoweredOffEvent')
+      const request = new URL(metricRequests().at(-1)!, 'http://test')
+      expect(request.searchParams.get('metric_key')).toBe('host.memory_usage_pct')
+    })
+
+    it('keeps the current metric when the focus has no metric, and when the metric is not available', async () => {
+      const { result, rerender } = renderHook(
+        ({ replay }: { replay: Replay }) => useMetricsPanelController(vi.fn(), 300, replay),
+        { wrapper, initialProps: { replay: null as Replay } },
+      )
+      await waitFor(() => expect(result.current.metricKeys.length).toBeGreaterThan(0))
+      act(() => result.current.setMetricKey('host.memory_usage_pct'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      rerender({ replay: { focus: focusBase, nonce: 1 } })
+      await waitFor(() => expect(result.current.vcenterId).toBe(vcenterId))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(result.current.metricKey).toBe('host.memory_usage_pct')
+      rerender({ replay: { focus: { ...focusBase, metricKey: 'no.such.metric_key' }, nonce: 2 } })
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(result.current.metricKey).toBe('host.memory_usage_pct')
+      expect(result.current.metricKeys).not.toContain('no.such.metric_key')
+    })
   })
 })

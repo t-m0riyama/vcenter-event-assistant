@@ -1,4 +1,6 @@
 from __future__ import annotations
+import uuid
+from collections.abc import Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,6 +17,14 @@ from vcenter_event_assistant.api.schemas import (
     AlertRulesImportResponse, AlertStateResolveRequest,
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
+from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
+    MetricProbe,
+    ResolvedEntity,
+    collect_metric_probes,
+    metric_name_lookback,
+    metric_probe,
+    resolve_metric_entities_at,
+)
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.settings import Settings
 
@@ -155,15 +165,48 @@ async def import_alert_rules(
     rules_count = len(list(count_res.scalars().all()))
     return AlertRulesImportResponse(rules_count=rules_count)
 
+async def _resolve_history_entities(
+    session: AsyncSession, items: list[AlertHistory], perf_sample_interval_seconds: int
+) -> dict[MetricProbe, ResolvedEntity]:
+    """ページ内の metric_threshold 行の対象名を、タイムラインと同じ関数でまとめて引く（N+1 にしない）。
+
+    名前は行ごとに「その行のルールの指標の、``occurred_at`` の時点の名前」。ページの区切りや同じページに
+    居合わせるほかの行に依存しないので、行の「タイムラインで見る」リンク（``occurred_at`` の前後・
+    ``entity_name`` で絞る）で開いたタイムラインにも同じ名前で出る。1 ページ（最大 200 件）は 1 本の問い合わせで
+    引ける（ルールに ``metric_key`` が無い古い行が混じるときだけ 2 本）。
+    """
+    probes = collect_metric_probes(
+        (
+            item.rule.rule_type if item.rule else "",
+            item.context_key,
+            item.rule.config if item.rule else None,
+            item.occurred_at,
+        )
+        for item in items
+    )
+    return await resolve_metric_entities_at(
+        session, probes, lookback=metric_name_lookback(perf_sample_interval_seconds)
+    )
+
+
 def _history_item_to_read(
     item: AlertHistory,
     firing_keys: set[tuple[int, str]],
+    entities: Mapping[MetricProbe, ResolvedEntity] | None = None,
 ) -> AlertHistoryRead:
     rule_type = item.rule.rule_type if item.rule else ""
     can_resolve = (
         rule_type == "event_score"
         and (item.rule_id, item.context_key) in firing_keys
     )
+    vcenter_id: uuid.UUID | None = None
+    entity_name: str | None = None
+    if rule_type == "metric_threshold":
+        probe = metric_probe(item.context_key, item.rule.config if item.rule else None, item.occurred_at)
+        if probe is not None:
+            vcenter_id = probe[0]
+            hit = (entities or {}).get(probe)
+            entity_name = hit.name if hit is not None else None
     return AlertHistoryRead(
         id=item.id,
         rule_id=item.rule_id,
@@ -173,6 +216,9 @@ def _history_item_to_read(
         state=item.state,
         context_key=item.context_key,
         notified_at=item.notified_at,
+        occurred_at=item.occurred_at,
+        vcenter_id=vcenter_id,
+        entity_name=entity_name,
         channel=item.channel,
         success=item.success,
         error_message=item.error_message,
@@ -189,6 +235,7 @@ async def list_alert_history(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
 ):
     # 合計件数
     count_res = await session.execute(select(func.count(AlertHistory.id)))
@@ -218,8 +265,10 @@ async def list_alert_history(
         )
         firing_keys = {(row.rule_id, row.context_key) for row in firing_res.all()}
 
+    entities = await _resolve_history_entities(session, items, settings.perf_sample_interval_seconds)
+
     return AlertHistoryListResponse(
-        items=[_history_item_to_read(item, firing_keys) for item in items],
+        items=[_history_item_to_read(item, firing_keys, entities) for item in items],
         total=total,
     )
 

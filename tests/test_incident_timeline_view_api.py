@@ -827,20 +827,22 @@ async def test_legacy_metric_context_key_is_excluded_when_filtering_by_vcenter(c
 
 
 @pytest.mark.asyncio
-async def test_metric_entity_name_is_the_one_nearest_the_period_end(client: AsyncClient) -> None:
+async def test_metric_entity_name_is_the_one_at_the_alert_time(client: AsyncClient) -> None:
+    """名前はアラートの occurred_at の時点のもの。期間内でも後の改名は拾わない（期間の終わりには寄せない）。"""
     vid = await _vcenter("vc-g")
-    await _metric_sample(vid, "host-1", "before", 30)
-    await _metric_sample(vid, "host-1", "at-incident", 100)
-    await _metric_sample(vid, "host-1", "renamed-later", 130)  # 期間の終わり（120 分）より後
+    await _metric_sample(vid, "host-1", "at-incident", 30)
+    await _metric_sample(vid, "host-1", "renamed-in-period", 100)
+    await _metric_sample(vid, "host-1", "renamed-after-period", 130)  # 期間の終わり（120 分）より後
     await _metric_alert(vid, "host-1", 50, name="m-g")
     (item,) = (await _post(client))["items"]
     assert item["entity_name"] == "at-incident"
 
 
 @pytest.mark.asyncio
-async def test_metric_entity_is_not_resolved_from_samples_far_before_the_period(client: AsyncClient) -> None:
+async def test_metric_entity_is_not_resolved_from_samples_far_before_the_alert(client: AsyncClient) -> None:
+    """さかのぼる幅（既定 6 時間）はアラートの時刻から測る。期間の開始から測ると -360 分まで届いてしまう。"""
     vid = await _vcenter("vc-g2")
-    await _metric_sample(vid, "host-1", "too-old", -7 * 60)
+    await _metric_sample(vid, "host-1", "too-old", 50 - 6 * 60 - 1)
     await _metric_alert(vid, "host-1", 50, name="m-g2")
     (item,) = (await _post(client))["items"]
     assert item["entity_name"] is None

@@ -29,3 +29,22 @@ input[type='checkbox'],
 input[type='radio'] {
   accent-color: var(--color-primary);
 }
+
+/* 「タイムラインで見る」行内リンク（通知履歴・イベント一覧・概要で共通）。並べる間隔は置く側の入れ物（gap）で決める */
+.timeline-link {
+  display: inline-block;
+  padding-block: var(--spacing-1);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+.timeline-link:hover {
+  color: var(--color-primary-dark);
+}
+
+.timeline-link:focus-visible {
+  outline: 2px solid var(--color-primary-focus-ring);
+  outline-offset: 1px;
+}

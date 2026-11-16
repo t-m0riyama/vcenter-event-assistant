@@ -22,14 +22,6 @@ export const KIND_LABELS: Record<TimelineSource, string> = {
   log: 'ログ',
 }
 
-/** アラートの状態の表記（通知履歴タブと同じ言い回し）。 */
-export function alertStateLabel(state: string | null | undefined): string {
-  if (!state) return '—'
-  if (state === 'firing') return '発火中'
-  if (state === 'stale') return 'データ古い'
-  return '回復済み'
-}
-
 /** 一覧の行に出すメッセージの抜粋。長いときは省略記号を付ける。 */
 export function excerpt(text: string | null | undefined, max = 90): string {
   const flat = (text ?? '').replace(/\s+/g, ' ').trim()

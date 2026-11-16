@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
+import type { MetricsFocus } from './hooks/metricsReplay'
 import { useAppConfig } from './hooks/useAppConfig'
 import { useAttentionStatus } from './hooks/useAttentionStatus'
 import { useAppTabHashSync } from './hooks/useAppTabHashSync'
@@ -76,8 +77,10 @@ export default function App() {
   const [mountedSettingsSubTabs, setMountedSettingsSubTabs] = useState<Set<SettingsSubTabId>>(
     initialMountedSettingsSubTabs,
   )
-  const [metricsSnapshotReplay, setMetricsSnapshotReplay] =
-    useState<IncidentTimelineManualSnapshotListItem | null>(null)
+  /** グラフのタブへ渡す条件の元（スナップショットまたは期間・vCenter の指定）。 */
+  const [metricsReplaySource, setMetricsReplaySource] = useState<
+    { item: IncidentTimelineManualSnapshotListItem } | { focus: MetricsFocus } | null
+  >(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
@@ -110,7 +113,7 @@ export default function App() {
 
   useEffect(() => {
     if (tab !== 'metrics') {
-      setMetricsSnapshotReplay(null)
+      setMetricsReplaySource(null)
     }
   }, [tab])
 
@@ -131,6 +134,17 @@ export default function App() {
     // hashchange 等で tab が変わったときもマウントを追従させる
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsSubTab, tab])
+
+  const openMetricsReplay = useCallback(
+    (source: NonNullable<typeof metricsReplaySource>) => {
+      setMetricsReplaySource(source)
+      setMetricsReplayNonce((n) => n + 1)
+      setMountedMainTabs((prev) => (prev.has('metrics') ? prev : new Set(prev).add('metrics')))
+      setTab('metrics')
+      setShowHelp(false)
+    },
+    [setTab],
+  )
 
   const selectMainTab = (next: MainTabId) => {
     ensureMainTabMounted(next)
@@ -174,9 +188,7 @@ export default function App() {
               onError={onError}
               perfBucketSeconds={retention?.perf_sample_interval_seconds ?? 300}
               snapshotReplay={
-                metricsSnapshotReplay
-                  ? { item: metricsSnapshotReplay, nonce: metricsReplayNonce }
-                  : null
+                metricsReplaySource ? { ...metricsReplaySource, nonce: metricsReplayNonce } : null
               }
             />
           </Suspense>
@@ -208,18 +220,13 @@ export default function App() {
           <TimelinePanel
             onError={onError}
             active={active}
-            onOpenSnapshotInMetrics={(item) => {
-              setMetricsSnapshotReplay(item)
-              setMetricsReplayNonce((n) => n + 1)
-              ensureMainTabMounted('metrics')
-              setTab('metrics')
-              setShowHelp(false)
-            }}
+            onOpenSnapshotInMetrics={(item) => openMetricsReplay({ item })}
+            onOpenInMetrics={(focus) => openMetricsReplay({ focus })}
           />
         ),
       },
     ],
-    [metricsReplayNonce, metricsSnapshotReplay, retention?.perf_sample_interval_seconds, setTab],
+    [metricsReplayNonce, metricsReplaySource, openMetricsReplay, retention?.perf_sample_interval_seconds],
   )
   // チャットは operator 以上（LLM の呼び出しを伴うため）
   const visibleMainTabs = mainTabs.filter((t) => t.id !== 'chat' || canChat)

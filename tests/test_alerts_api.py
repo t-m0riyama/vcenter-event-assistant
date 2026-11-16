@@ -1,11 +1,12 @@
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState
+from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 
@@ -522,3 +523,107 @@ async def test_delete_alert_history_row(client: AsyncClient):
 async def test_delete_alert_history_not_found(client: AsyncClient):
     resp = await client.delete("/api/alerts/history/999999")
     assert resp.status_code == 404
+
+
+_T0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+
+
+async def _history_vcenter(name: str) -> uuid.UUID:
+    vid = uuid.uuid4()
+    async with session_scope() as session:
+        session.add(VCenter(id=vid, name=name, host="h", port=443, username="u", password="p"))
+    return vid
+
+
+async def _history_sample(vid: uuid.UUID, moid: str, name: str, at: datetime) -> None:
+    async with session_scope() as session:
+        session.add(
+            MetricSample(
+                vcenter_id=vid, sampled_at=at, entity_type="HostSystem", entity_moid=moid,
+                entity_name=name, metric_key="host.cpu.usage_pct", value=90.0,
+            )
+        )
+
+
+async def _history_row(
+    rule_type: str, context_key: str, *, occurred_at: datetime, notified_at: datetime | None = None, name: str
+) -> int:
+    async with session_scope() as session:
+        rule = AlertRule(
+            name=name, rule_type=rule_type, alert_level="critical",
+            config={"metric_key": "host.cpu.usage_pct"} if rule_type == "metric_threshold" else {"threshold": 1},
+        )
+        session.add(rule)
+        await session.flush()
+        row = AlertHistory(
+            rule_id=rule.id, alert_level="critical", state="firing", context_key=context_key,
+            occurred_at=occurred_at, notified_at=notified_at or occurred_at, channel="none", success=None,
+        )
+        session.add(row)
+        await session.flush()
+        return row.id
+
+
+async def _history_by_id(client: AsyncClient) -> dict[int, dict]:
+    resp = await client.get("/api/alerts/history", params={"limit": 200})
+    assert resp.status_code == 200
+    return {i["id"]: i for i in resp.json()["items"]}
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_resolves_vcenter_and_entity_for_metric_rows(client: AsyncClient):
+    vid = await _history_vcenter("vc-hist-1")
+    await _history_sample(vid, "host-1", "esx01", _T0)
+    row_id = await _history_row("metric_threshold", f"{vid}:host-1", occurred_at=_T0 + timedelta(minutes=1), name="hist-cpu")
+    item = (await _history_by_id(client))[row_id]
+    assert item["vcenter_id"] == str(vid)
+    assert item["entity_name"] == "esx01"
+    assert datetime.fromisoformat(item["occurred_at"].replace("Z", "+00:00")).replace(tzinfo=timezone.utc) == _T0 + timedelta(minutes=1)
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_event_score_and_legacy_key_have_no_vcenter_or_entity(client: AsyncClient):
+    vid = await _history_vcenter("vc-hist-2")
+    await _history_sample(vid, "host-legacy", "esx-legacy", _T0)
+    es = await _history_row("event_score", "VmPoweredOffEvent", occurred_at=_T0, name="hist-es")
+    legacy = await _history_row("metric_threshold", "host-legacy", occurred_at=_T0, name="hist-legacy")
+    items = await _history_by_id(client)
+    for row_id in (es, legacy):
+        assert items[row_id]["vcenter_id"] is None
+        assert items[row_id]["entity_name"] is None
+        assert items[row_id]["occurred_at"]
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_same_moid_on_another_vcenter_is_not_mixed(client: AsyncClient):
+    v1 = await _history_vcenter("vc-hist-3a")
+    v2 = await _history_vcenter("vc-hist-3b")
+    await _history_sample(v1, "host-1", "esx-on-vc1", _T0)
+    await _history_sample(v2, "host-1", "esx-on-vc2", _T0 + timedelta(minutes=2))
+    r1 = await _history_row("metric_threshold", f"{v1}:host-1", occurred_at=_T0 + timedelta(minutes=3), name="hist-mix-1")
+    r2 = await _history_row("metric_threshold", f"{v2}:host-1", occurred_at=_T0 + timedelta(minutes=3), name="hist-mix-2")
+    items = await _history_by_id(client)
+    assert (items[r1]["vcenter_id"], items[r1]["entity_name"]) == (str(v1), "esx-on-vc1")
+    assert (items[r2]["vcenter_id"], items[r2]["entity_name"]) == (str(v2), "esx-on-vc2")
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_unresolvable_entity_keeps_vcenter_and_null_name(client: AsyncClient):
+    vid = await _history_vcenter("vc-hist-4")
+    row_id = await _history_row("metric_threshold", f"{vid}:host-none", occurred_at=_T0, name="hist-noname")
+    item = (await _history_by_id(client))[row_id]
+    assert item["vcenter_id"] == str(vid)
+    assert item["entity_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_alerts_history_occurred_at_stays_when_notified_at_advances(client: AsyncClient):
+    row_id = await _history_row("event_score", "ctx-resend", occurred_at=_T0, name="hist-resend")
+    before = (await _history_by_id(client))[row_id]
+    async with session_scope() as session:
+        row = await session.get(AlertHistory, row_id)
+        assert row is not None
+        row.notified_at = _T0 + timedelta(hours=2)
+    after = (await _history_by_id(client))[row_id]
+    assert after["occurred_at"] == before["occurred_at"]
+    assert after["notified_at"] != before["notified_at"]
