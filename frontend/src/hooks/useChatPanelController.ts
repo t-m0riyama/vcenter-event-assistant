@@ -13,8 +13,11 @@ import {
 } from '../api/schemas'
 import { resolveEventApiRange } from '../datetime/graphRange'
 import {
+  zonedRangePartsFromUtcIsoEndpoints,
   zonedRangePartsToCombinedInputs,
 } from '../datetime/zonedRangeParts'
+import { validateResolvedRange } from '../panels/timeline/timelineModel'
+import type { ChatHandoffInput } from './chatHandoff'
 import { useTimeZone } from '../datetime/useTimeZone'
 import { useRollingZonedRangeParts } from './useRollingZonedRangeParts'
 import { readStoredChatMaxStoredMessages } from '../preferences/chatMaxStoredMessagesStorage'
@@ -46,7 +49,10 @@ const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 400
 /**
  * チャットパネルの状態・セッション内の保存・送信 / プレビュー API をまとめる。
  */
-export function useChatPanelController(onError: (e: string | null) => void) {
+export function useChatPanelController(
+  onError: (e: string | null) => void,
+  handoff: ChatHandoffInput | null = null,
+) {
   const { chatStorageScope = null } = useAuth()
   const { timeZone } = useTimeZone()
   const { chatMaxStoredMessages } = useChatMaxStoredMessages()
@@ -80,6 +86,10 @@ export function useChatPanelController(onError: (e: string | null) => void) {
   )
   const [lastLlmContext, setLastLlmContext] = useState<ChatLlmContextMeta | null>(null)
   const [storageHydrated, setStorageHydrated] = useState(false)
+  /** タイムラインから期間を引き継いだとき、既存の会話が前の期間のものであることの注記。 */
+  const [handoffNote, setHandoffNote] = useState(false)
+  const appliedHandoffRef = useRef(0)
+  const messagesRef = useRef<ChatMessage[]>([])
   const [debouncedDraft, setDebouncedDraft] = useState('')
   const skipNextPersistRef = useRef(false)
   const storageWriteErrorReportedRef = useRef(false)
@@ -155,6 +165,25 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     }
     setStorageHydrated(true)
   }, [restoreRange, chatStorageScope])
+
+  messagesRef.current = messages
+
+  // タイムラインからの引き継ぎ: 期間と vCenter だけを差し替える（下書き・会話・添付・ほかの条件は触らない）。
+  // 保存済みの状態の読み込みより後に当てるため、読み込み完了を待つ。送信はしない。
+  useEffect(() => {
+    if (!storageHydrated || !handoff || handoff.nonce < 1) return
+    if (appliedHandoffRef.current === handoff.nonce) return
+    appliedHandoffRef.current = handoff.nonce
+    const { from, to, vcenterId: nextVcenterId } = handoff.focus
+    const invalid = validateResolvedRange({ from, to })
+    if (invalid) {
+      onError(`タイムラインの期間をチャットに引き継げませんでした。${invalid}`)
+      return
+    }
+    restoreRange(zonedRangePartsFromUtcIsoEndpoints(from, to, timeZone), null)
+    setVcenterId(nextVcenterId ?? '')
+    setHandoffNote(messagesRef.current.length > 0)
+  }, [handoff, onError, restoreRange, storageHydrated, timeZone])
 
   useEffect(() => {
     if (skipMaxTrimOnMountRef.current) {
@@ -309,6 +338,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     }
 
     onError(null)
+    setHandoffNote(false)
     setMessages(nextMessages)
     setDraft('')
     setDebouncedDraft('')
@@ -437,6 +467,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
     skipNextPersistRef.current = true
     clearChatPanelSnapshot(chatStorageScope)
     setMessages([])
+    setHandoffNote(false)
     setLastLlmContext(null)
   }, [chatStorageScope])
 
@@ -446,6 +477,7 @@ export function useChatPanelController(onError: (e: string | null) => void) {
 
   return {
     canSend: chatStorageScope !== null,
+    handoffNote,
     timeZone,
     rangeParts,
     setRangeParts,

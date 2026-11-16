@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import type { ChatHandoff } from '../../hooks/chatHandoff'
 import type { MetricsFocus } from '../../hooks/metricsReplay'
 import { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
 import { useTimelineViewController } from '../../hooks/useTimelineViewController'
@@ -30,12 +31,15 @@ export function TimelinePanel({
   onError,
   onOpenSnapshotInMetrics,
   onOpenInMetrics,
+  onOpenInChat,
   active = true,
 }: {
   onError: (e: string | null) => void
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
   /** 行から「グラフで開く」。期間・vCenter・起点の目印を渡す。 */
   onOpenInMetrics?: (focus: MetricsFocus) => void
+  /** 「この範囲をチャットで分析」。渡すと操作を出す（チャットを使える権限があるときだけ渡す）。期間と vCenter だけを渡す。 */
+  onOpenInChat?: (handoff: ChatHandoff) => void
   /** このタブが表示中か。表示中のときだけ URL を書き、戻ったときに読み直す。 */
   active?: boolean
 }) {
@@ -118,6 +122,9 @@ export function TimelinePanel({
             現在のデータで再集計
           </button>
         </div>
+      ) : null}
+      {onOpenInChat && c.loadedRange ? (
+        <ChatHandoffButton range={c.loadedRange} vcenterId={c.conditions.vcenterId} onOpen={onOpenInChat} />
       ) : null}
       {c.loadedRange ? (
         <p className="timeline-loaded-range">
@@ -230,5 +237,34 @@ export function TimelinePanel({
         onOpenSnapshotInMetrics={onOpenSnapshotInMetrics}
       />
     </div>
+  )
+}
+
+const CHAT_HANDOFF_TITLE =
+  '表示中の期間（保存済みの結果なら保存した期間）と vCenter をチャットに渡します。対象・種別・起点などの絞り込みは渡らず、メッセージも自動では送りません。'
+
+/** チャットのタブに期間と vCenter を渡す。チャットが受け付けない期間（90 日超など）は押せない。 */
+function ChatHandoffButton({
+  range,
+  vcenterId,
+  onOpen,
+}: {
+  range: { from: string; to: string }
+  vcenterId: string
+  onOpen: (handoff: ChatHandoff) => void
+}) {
+  const invalid = validateResolvedRange(range)
+  return (
+    <p>
+      <button
+        type="button"
+        className="btn btn--gray"
+        disabled={invalid !== null}
+        title={invalid ? `チャットに渡せません。${invalid}` : CHAT_HANDOFF_TITLE}
+        onClick={() => onOpen({ from: range.from, to: range.to, vcenterId: vcenterId || null })}
+      >
+        この範囲をチャットで分析
+      </button>
+    </p>
   )
 }

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
+import type { ChatHandoff, ChatHandoffInput } from './hooks/chatHandoff'
 import type { MetricsFocus } from './hooks/metricsReplay'
 import { useAppConfig } from './hooks/useAppConfig'
 import { useAttentionStatus } from './hooks/useAttentionStatus'
@@ -82,6 +83,8 @@ export default function App() {
     { item: IncidentTimelineManualSnapshotListItem } | { focus: MetricsFocus } | null
   >(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
+  /** チャットのタブへ渡す期間・vCenter。`nonce` が変わるたびにチャット側で差し替える。 */
+  const [chatHandoff, setChatHandoff] = useState<ChatHandoffInput | null>(null)
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const { retention } = useAppConfig(setAppErr)
@@ -141,6 +144,16 @@ export default function App() {
       setMetricsReplayNonce((n) => n + 1)
       setMountedMainTabs((prev) => (prev.has('metrics') ? prev : new Set(prev).add('metrics')))
       setTab('metrics')
+      setShowHelp(false)
+    },
+    [setTab],
+  )
+
+  const openChatWithRange = useCallback(
+    (focus: ChatHandoff) => {
+      setChatHandoff((prev) => ({ focus, nonce: (prev?.nonce ?? 0) + 1 }))
+      setMountedMainTabs((prev) => (prev.has('chat') ? prev : new Set(prev).add('chat')))
+      setTab('chat')
       setShowHelp(false)
     },
     [setTab],
@@ -210,7 +223,7 @@ export default function App() {
         id: 'chat',
         label: 'チャット',
         panelLabel: 'チャット',
-        render: (onError) => <ChatPanel onError={onError} />,
+        render: (onError) => <ChatPanel onError={onError} handoff={chatHandoff} />,
       },
       {
         id: 'timeline',
@@ -222,11 +235,20 @@ export default function App() {
             active={active}
             onOpenSnapshotInMetrics={(item) => openMetricsReplay({ item })}
             onOpenInMetrics={(focus) => openMetricsReplay({ focus })}
+            onOpenInChat={canChat ? openChatWithRange : undefined}
           />
         ),
       },
     ],
-    [metricsReplayNonce, metricsReplaySource, openMetricsReplay, retention?.perf_sample_interval_seconds],
+    [
+      canChat,
+      chatHandoff,
+      metricsReplayNonce,
+      metricsReplaySource,
+      openChatWithRange,
+      openMetricsReplay,
+      retention?.perf_sample_interval_seconds,
+    ],
   )
   // チャットは operator 以上（LLM の呼び出しを伴うため）
   const visibleMainTabs = mainTabs.filter((t) => t.id !== 'chat' || canChat)

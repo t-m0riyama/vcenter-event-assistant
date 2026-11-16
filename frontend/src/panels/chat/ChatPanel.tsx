@@ -5,6 +5,7 @@ import { ChatContextBar } from './ChatContextBar'
 import { ChatInputBar } from './ChatInputBar'
 import { ChatMessagesList } from './ChatMessagesList'
 import { ChatPromptPreviewModal } from './ChatPromptPreviewModal'
+import type { ChatHandoffInput } from '../../hooks/chatHandoff'
 import { useChatPanelController } from '../../hooks/useChatPanelController'
 
 /**
@@ -13,9 +14,16 @@ import { useChatPanelController } from '../../hooks/useChatPanelController'
  * 送信中はリスト末尾にプレースホルダ行を出し、`aria-busy` で状態を示す。
  * サンプル質問はチップをクリックすると textarea 末尾へ即時追記する（送信はしない。`ChatSamplePromptsProvider` 必須）。
  */
-export function ChatPanel({ onError }: { onError: (e: string | null) => void }) {
+export function ChatPanel({
+  onError,
+  handoff = null,
+}: {
+  onError: (e: string | null) => void
+  /** タイムラインから引き継いだ期間・vCenter。`nonce` が変わるたびに、期間と vCenter だけを差し替える。 */
+  handoff?: ChatHandoffInput | null
+}) {
   const { visibleChatSamplePrompts } = useChatSamplePrompts()
-  const c = useChatPanelController(onError)
+  const c = useChatPanelController(onError, handoff)
 
   return (
     <div className="panel chat-panel">
@@ -54,6 +62,12 @@ export function ChatPanel({ onError }: { onError: (e: string | null) => void }) 
         setMetricThresholdNetworkPct={c.setMetricThresholdNetworkPct}
         onMetricThresholdInputChange={c.handleMetricThresholdInputChange}
       />
+
+      {c.handoffNote && (
+        <p className="hint" role="note" aria-label="タイムラインからの引き継ぎ">
+          タイムラインの期間と vCenter を引き継ぎました。以前の会話は前の期間のものです。必要なら「会話をクリア」で消せます。
+        </p>
+      )}
 
       <ChatMessagesList
         messages={c.messages}
