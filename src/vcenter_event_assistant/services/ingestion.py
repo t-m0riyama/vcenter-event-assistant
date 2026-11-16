@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, null, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.collectors.events import fetch_events_blocking
@@ -229,6 +229,29 @@ async def purge_old_incident_timeline_snapshots(session: AsyncSession, *, settin
         delete(IncidentTimelineManualSnapshot).where(
             IncidentTimelineManualSnapshot.created_at < cutoff,
         )
+    )
+    return res.rowcount or 0
+
+
+async def purge_old_incident_timeline_snapshot_results(session: AsyncSession, *, settings: Settings) -> int:
+    """保持期間を超えたスナップショットの保存結果（``result_payload``）だけを SQL の NULL にする。
+
+    行・``view_request_payload``・運用メモは残す。消したあとは ``has_result`` が false になり、
+    画面は保存した条件で再集計する。1 回の UPDATE で済ませ、結果の本体は読まない。
+    ``None`` を値にすると JSON の null が入るので、``null()`` で SQL の NULL にする。
+    """
+    days = settings.incident_timeline_snapshot_result_retention_days
+    if days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    res = await session.execute(
+        update(IncidentTimelineManualSnapshot)
+        .where(
+            IncidentTimelineManualSnapshot.created_at < cutoff,
+            IncidentTimelineManualSnapshot.result_payload.is_not(None),
+        )
+        .values(result_payload=null())
+        .execution_options(synchronize_session=False)
     )
     return res.rowcount or 0
 
