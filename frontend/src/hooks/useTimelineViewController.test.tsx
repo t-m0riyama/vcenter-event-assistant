@@ -63,7 +63,9 @@ describe('useTimelineViewController', () => {
     expect(harness.calls[0].body).toMatchObject({
       from: '2026-03-22T00:00:00.000Z',
       to: '2026-03-22T01:00:00.000Z',
-      sources: ['event', 'alert'],
+      sources: ['event', 'alert', 'metric', 'log'],
+      metric_threshold_cpu_pct: 80,
+      metric_threshold_memory_pct: 85,
     })
     expect(result.current.loading).toBe(true)
     await answer(0, VIEW_RESPONSE_EXAMPLE)
@@ -239,8 +241,9 @@ describe('useTimelineViewController', () => {
       )
     })
     await waitFor(() => expect(result.current.error).not.toBeNull())
+    // 422 は読み直しても同じ結果なので、読み直しを出さない種類（invalid）にする
     expect(result.current.error).toEqual({
-      kind: 'error',
+      kind: 'invalid',
       message: 'イベントの種類が多すぎて集計できません。vCenter を指定して絞り込んでください。',
     })
   })
@@ -328,10 +331,60 @@ describe('useTimelineViewController', () => {
 
   it('最後の 1 つの種別は外せない', async () => {
     const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
-    act(() => result.current.toggleSource('alert'))
+    for (const kind of ['alert', 'metric', 'log'] as const) act(() => result.current.toggleSource(kind))
     expect(result.current.conditions.sources).toEqual(['event'])
     act(() => result.current.toggleSource('event'))
     expect(result.current.conditions.sources).toEqual(['event'])
+  })
+
+  it('種別の切り替えは要求の本文と URL に反映され、既定（4 種類）に戻すと URL から消える', async () => {
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await answer(0, VIEW_RESPONSE_EXAMPLE)
+    act(() => {
+      result.current.toggleSource('event')
+      result.current.toggleSource('alert')
+    })
+    await waitFor(() => expect(window.location.hash).toBe('#/timeline?range=1h&sources=metric%2Clog'))
+    await waitFor(() => expect(harness.calls).toHaveLength(2))
+    expect(harness.calls[1].body.sources).toEqual(['metric', 'log'])
+    await answer(1, VIEW_RESPONSE_EXAMPLE)
+    act(() => {
+      result.current.toggleSource('alert')
+      result.current.toggleSource('event')
+    })
+    await waitFor(() => expect(window.location.hash).toBe('#/timeline?range=1h'))
+  })
+
+  it('メトリクスのしきい値は要求の本文と URL に反映され、既定に戻すと URL から消える', async () => {
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await answer(0, VIEW_RESPONSE_EXAMPLE)
+    act(() => {
+      result.current.setCpuThreshold(90)
+      result.current.setMemoryThreshold(70.5)
+    })
+    await waitFor(() =>
+      expect(window.location.hash).toBe('#/timeline?range=1h&cpu_threshold=90&memory_threshold=70.5'),
+    )
+    await waitFor(() => expect(harness.calls).toHaveLength(2))
+    expect(harness.calls[1].body).toMatchObject({ metric_threshold_cpu_pct: 90, metric_threshold_memory_pct: 70.5 })
+    await answer(1, VIEW_RESPONSE_EXAMPLE)
+    act(() => {
+      result.current.setCpuThreshold(80)
+      result.current.setMemoryThreshold(85)
+    })
+    await waitFor(() => expect(window.location.hash).toBe('#/timeline?range=1h'))
+  })
+
+  it('URL の種別としきい値を復元して、その条件で読み込む', async () => {
+    window.history.replaceState(null, '', '/#/timeline?range=1h&sources=metric,log&cpu_threshold=95')
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    expect(harness.calls[0].body).toMatchObject({
+      sources: ['metric', 'log'],
+      metric_threshold_cpu_pct: 95,
+      metric_threshold_memory_pct: 85,
+    })
+    expect(result.current.conditions.cpuThresholdPct).toBe(95)
   })
 
   it.each([

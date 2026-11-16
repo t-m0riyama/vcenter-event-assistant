@@ -1,6 +1,6 @@
 import type { TimelineHighlights as Highlights, TimelineViewItem } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
-import { KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
+import { KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS, titleStartsWithEntity } from './timelineLabels'
 
 type Props = {
   highlights: Highlights
@@ -12,6 +12,8 @@ type Props = {
 }
 
 function firstSignalLabel(item: TimelineViewItem): string {
+  // ログの行はタイトルが「ホスト名 ログの種類」で、対象名が重なる。重ねて出さない
+  if (titleStartsWithEntity(item.title, item.entity_name)) return item.title
   return [item.entity_name, item.title].filter(Boolean).join(' / ')
 }
 

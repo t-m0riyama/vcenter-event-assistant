@@ -25,6 +25,7 @@ from vcenter_event_assistant.db.models import (
     AlertRule,
     EventRecord,
     EventScoreRule,
+    LogRecord,
     MetricSample,
     VCenter,
 )
@@ -217,6 +218,8 @@ async def test_group_by_has_no_bind_parameters_on_postgres(
         "GROUP BY base.bidx, base.event_type",
         "GROUP BY score_inputs.event_type, score_inputs.severity, score_inputs.has_keyword",
         "GROUP BY base.bidx\n",
+        "GROUP BY log_base.bidx",
+        "GROUP BY metric_run_stats.vc, metric_run_stats.moid, metric_run_stats.mk, metric_run_stats.run",
     ):
         assert expected in compiled, expected
     for m in re.finditer(r"GROUP BY ([^\n]+)", compiled):
@@ -383,3 +386,337 @@ async def test_metric_entities_at_alert_times_on_each_dialect(
     for probe in ((v1, "vm-mem", cpu, base), (v1, "vm-mem", mem, base), (v1, "vm-0", cpu, base)):
         alone = await resolve_metric_entities_at(session, {probe}, lookback=lookback)
         assert alone == {probe: got[probe]}
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_metric_intervals_on_each_dialect(session: AsyncSession) -> None:
+    """超過区間の window 関数（LAG・累積和・FIRST_VALUE）と GROUP BY が両方の方言で同じ結果になる。
+
+    - 閾値ちょうどは超過、閾値未満のサンプルで区切る
+    - 間隔は秒に切り捨てて比べ、上限（既定 15 分）ちょうどはつなぐ
+    - 期間の開始前から続く区間は、期間内のサンプルだけで開始・ピーク・件数を決める
+    - 別の vCenter の同じ moid と混ざらない。名前は空でない最新のもの
+    """
+    v1, v2 = uuid.uuid4(), uuid.uuid4()
+    for vid, name in ((v1, "vc-one"), (v2, "vc-two")):
+        session.add(VCenter(id=vid, name=name, host="h", port=443, username="u", password="p"))
+    await session.flush()
+
+    def at(minute: float, micro: int = 0) -> datetime:
+        return FROM + timedelta(minutes=minute, microseconds=micro)
+
+    def sample(vid: uuid.UUID, moid: str, when: datetime, value: float, *, key: str = METRIC_CPU, name: str = "") -> MetricSample:
+        return MetricSample(
+            vcenter_id=vid, sampled_at=when, entity_type="HostSystem", entity_moid=moid,
+            entity_name=name or moid.upper(), metric_key=key, value=value,
+        )
+
+    session.add_all(
+        [
+            # h1 (v1): 期間の前から継続 → 10 分で閾値未満 → 15 分から再び超過（15 分ちょうどの欠けはつなぐ）
+            sample(v1, "h1", at(-5), 99.0),
+            sample(v1, "h1", at(0, 900_000), 85.0),
+            sample(v1, "h1", at(5), 92.0, name="  "),
+            sample(v1, "h1", at(10), 79.99),
+            sample(v1, "h1", at(15), 80.0, name="H1-RENAMED"),
+            sample(v1, "h1", at(30, 100_000), 81.0, name="  "),
+            # 16 分空く → 別の区間
+            sample(v1, "h1", at(46, 200_000), 83.0),
+            # h1 (v2): 同じ moid。v1 の区間につながらない
+            sample(v2, "h1", at(12), 90.0, name="H1-ON-V2"),
+            # h3 (v1): メモリ。閾値 85 未満は出ない、TO ちょうどは期間外
+            sample(v1, "h3", at(20), 84.0, key=METRIC_MEM),
+            sample(v1, "h3", at(25), 97.0, key=METRIC_MEM),
+            sample(v1, "h3", TO, 99.0, key=METRIC_MEM),
+            # ディスクの KB/s は対象外
+            sample(v1, "h3", at(25), 5000.0, key="host.disk.usage_pct"),
+            # h6 (v2): 名前が空白だけ → 名前は moid。期間の終わりの 20 分前で途絶える → 終わりでは続いていない
+            sample(v2, "h6", at(100), 90.0, name="   "),
+            # h4 (v1): 期間の終わりの 1.5 分前まで超過 → 終わりでも継続
+            sample(v1, "h4", at(110), 90.0),
+            sample(v1, "h4", at(118, 500_000), 91.0),
+            # h5 (v1): 期間の終わりの手前で閾値未満に下がる → 終わりでは続いていない
+            sample(v1, "h5", at(112), 90.0),
+            sample(v1, "h5", at(117), 50.0),
+        ]
+    )
+    await session.flush()
+
+    out = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["metric"]),
+        owner_key="dialect-test",
+    )
+    got = [
+        (i.vcenter_name, i.ref.entity_moid, i.ref.metric_key, i.timestamp_utc, i.end_utc, i.entity_name, i.level,
+         i.ref.peak_value, i.ref.peak_at_utc, i.ref.sample_count, i.ref.continues_from_before, i.ref.threshold_pct,
+         i.ref.continues_after)
+        for i in out.items
+    ]
+    assert got == [
+        ("vc-one", "h1", METRIC_CPU, at(0, 900_000), at(5), "H1", "warning", 92.0, at(5), 2, True, 80.0, False),
+        ("vc-two", "h1", METRIC_CPU, at(12), None, "H1-ON-V2", "warning", 90.0, at(12), 1, False, 80.0, False),
+        ("vc-one", "h1", METRIC_CPU, at(15), at(30, 100_000), "H1-RENAMED", "warning", 81.0, at(30, 100_000), 2, False, 80.0, False),
+        ("vc-one", "h3", METRIC_MEM, at(25), None, "H3", "error", 97.0, at(25), 1, False, 85.0, False),
+        ("vc-one", "h1", METRIC_CPU, at(46, 200_000), None, "H1", "warning", 83.0, at(46, 200_000), 1, False, 80.0, False),
+        ("vc-two", "h6", METRIC_CPU, at(100), None, "h6", "warning", 90.0, at(100), 1, False, 80.0, False),
+        ("vc-one", "h4", METRIC_CPU, at(110), at(118, 500_000), "H4", "warning", 91.0, at(118, 500_000), 2, False, 80.0, True),
+        ("vc-one", "h5", METRIC_CPU, at(112), None, "H5", "warning", 90.0, at(112), 1, False, 80.0, False),
+    ]
+    assert out.items[0].detail == "ピーク 92%、サンプル 2 件、期間の開始前から継続"
+    assert out.items[6].detail == "ピーク 91%、サンプル 2 件、期間の終わりでも継続"
+    breach = [b.metric_breach for b in out.overview]
+    assert breach[:7] == [1, 1, 1, 1, 1, 1, 0]
+    assert sum(breach) == 6 + 1 + 16 + 1 + 1 + 1 + 9 + 1
+
+    # 名前が空の系列は moid で表示し、その moid で絞っても消えない（coalesce(名前, moid) に当てる）
+    by_moid = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["metric"], entity="h6"),
+        owner_key="dialect-test",
+    )
+    assert [(i.ref.entity_moid, i.entity_name) for i in by_moid.items] == [("h6", "h6")]
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_logs_on_each_dialect(session: AsyncSession) -> None:
+    """ログの重大度の正規化（lower / trim）、effective_at のバケット、message の先頭の切り出し（文字数）。"""
+    v1, v2 = uuid.uuid4(), uuid.uuid4()
+    for vid in (v1, v2):
+        session.add(VCenter(id=vid, name=f"vc-{vid.hex[:6]}", host="h", port=443, username="u", password="p"))
+    await session.flush()
+    offsets = itertools.count(1)
+
+    def log(vid: uuid.UUID, when: datetime, severity: str | None, message: str, *, host: str = "esx01", kind: str = "vmkernel") -> LogRecord:
+        return LogRecord(
+            vcenter_id=vid, collector_id="c", source_id="s", host=host, log_kind=kind,
+            file_generation="g", byte_offset=next(offsets), occurred_at=None,
+            collected_at=when, effective_at=when, severity=severity, message=message,
+        )
+
+    long_jp = "障" * 1200
+    session.add_all(
+        [
+            log(v1, FROM + timedelta(minutes=14, seconds=59, microseconds=999_600), "ERROR", long_jp),
+            log(v1, FROM + timedelta(minutes=15), " Critical ", "second"),
+            log(v1, FROM + timedelta(minutes=16), "warning", "skip"),
+            log(v1, FROM + timedelta(minutes=17), None, "skip"),
+            log(v1, FROM + timedelta(minutes=18), "panic", "other host", host="ESX02.example.com"),
+            log(v2, FROM + timedelta(minutes=19), "error", "other vcenter"),
+            log(v1, TO, "error", "at to"),
+        ]
+    )
+    await session.flush()
+
+    out = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["log"], vcenter_id=v1),
+        owner_key="dialect-test",
+    )
+    # "ERROR" は warning、" Critical " は error なので別の行になる
+    assert [(i.title, i.count, i.level, i.timestamp_utc) for i in out.items] == [
+        ("esx01 vmkernel", 1, "warning", FROM + timedelta(minutes=14, seconds=59, microseconds=999_600)),
+        ("esx01 vmkernel", 1, "error", FROM + timedelta(minutes=15)),
+        ("ESX02.example.com vmkernel", 1, "error", FROM + timedelta(minutes=18)),
+    ]
+    assert out.items[0].detail == "障" * 1000 + "…"
+    counts = {b.bucket_start_utc: b.log_error for b in out.overview if b.log_error}
+    assert counts == {
+        FROM + timedelta(minutes=14): 1,
+        FROM + timedelta(minutes=15): 1,
+        FROM + timedelta(minutes=18): 1,
+    }
+
+    filtered = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["log"], entity="esx02"),
+        owner_key="dialect-test",
+    )
+    assert [i.detail for i in filtered.items] == ["other host"]
+
+
+
+@pytest.mark.asyncio
+async def test_sqlite_timeline_queries_use_the_timeline_indexes(session: AsyncSession) -> None:
+    """SQLite の計画で、メトリクスとエラーログの問い合わせがタイムライン用の索引を使う（vCenter の指定の有無とも）。
+
+    SQLite は並べ替えを省ける索引を好むので、問い合わせの形（PARTITION BY の列の順、ログの一覧の ORDER BY を
+    付けないこと）を戻すと、期間内の全行を読む計画に戻る。その退行を見張る。
+    """
+    if session.get_bind().dialect.name != "sqlite":
+        pytest.skip("SQLite の計画の確認")
+    from vcenter_event_assistant.services import incident_timeline_view as itv
+
+    vid = uuid.uuid4()
+    session.add(VCenter(id=vid, name="vc-plan", host="h", port=443, username="u", password="p"))
+    await session.flush()
+    plans: list[str] = []
+    for vc in (None, vid):
+        scope = itv._Scope(
+            from_utc=FROM, to_utc=TO, vcenter_id=vc, entity=None, min_score=1, bucket_sec=60,
+            bucket_count=120, max_rows=10, dialect_name="sqlite", metric_name_lookback=timedelta(hours=6),
+            metric_thresholds=((METRIC_CPU, 80.0), (METRIC_MEM, 85.0)),
+        )
+        captured: list = []
+        original = AsyncSession.execute
+
+        async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+            captured.append(statement)
+            return await original(self, statement, *args, **kwargs)
+
+        AsyncSession.execute = spy  # type: ignore[method-assign]
+        try:
+            await itv._collect_metrics(session, scope)
+            await itv._collect_logs(session, scope)
+        finally:
+            AsyncSession.execute = original  # type: ignore[method-assign]
+        bind = session.get_bind()
+        for stmt in captured:
+            sql = str(stmt.compile(dialect=bind.dialect, compile_kwargs={"literal_binds": True}))
+            # SQLite の OFFSET に付く LIMIT -1 は literal_binds でもバインド変数のまま残る
+            sql = sql.replace("LIMIT ? OFFSET", "LIMIT -1 OFFSET")
+            if "metric_intervals" not in sql and "FROM log_records" not in sql:
+                continue
+            conn = await session.connection()
+            rows = (await conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql)).all()
+            plan = "\n".join(str(r[-1]) for r in rows)
+            plans.append(plan)
+            if "metric_intervals" in sql:
+                assert "SEARCH metric_samples USING INDEX ix_metric_samples_vcenter_metric_sampled_value" in plan, plan
+            else:
+                expected = (
+                    "ix_log_records_vcenter_severity_norm_effective" if vc else "ix_log_records_severity_norm_effective"
+                )
+                assert f"SEARCH log_records USING INDEX {expected}" in plan, plan
+    assert len(plans) == 6  # メトリクス 1 本 + ログ 2 本（俯瞰と一覧）× vCenter の指定なし・あり
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_all_sources_on_each_dialect(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API の経路と同じ入口（build_incident_timeline_view）で、4 種類すべて・vCenter の指定あり・行数の上限での
+    省略を両方の方言で通す（API のテストは conftest が SQLite に固定しているので、PostgreSQL はここで確かめる）。"""
+    from vcenter_event_assistant.settings_binding import require_settings
+
+    v1, v2 = uuid.uuid4(), uuid.uuid4()
+    for vid, name in ((v1, "vc-a"), (v2, "vc-b")):
+        session.add(VCenter(id=vid, name=name, host="h", port=443, username="u", password="p"))
+    await session.flush()
+    offsets = itertools.count(1)
+
+    def at(minute: float) -> datetime:
+        return FROM + timedelta(minutes=minute)
+
+    for vid in (v1, v2):
+        session.add(
+            EventRecord(
+                vcenter_id=vid, occurred_at=at(1), event_type="E", message="m", entity_name="esx01",
+                vmware_key=next(_keys), notable_score=50,
+            )
+        )
+        for moid, minute in (("host-1", 2), ("host-2", 3)):
+            session.add(
+                MetricSample(
+                    vcenter_id=vid, sampled_at=at(minute), entity_type="HostSystem", entity_moid=moid,
+                    entity_name="", metric_key=METRIC_CPU, value=90.0,
+                )
+            )
+        for kind, minute in (("vmkernel", 4), ("hostd", 5)):
+            session.add(
+                LogRecord(
+                    vcenter_id=vid, collector_id="c", source_id="s", host="esx01.example.com", log_kind=kind,
+                    file_generation="g", byte_offset=next(offsets), occurred_at=None, collected_at=at(minute),
+                    effective_at=at(minute), severity="ERROR", message=f"log {kind}",
+                )
+            )
+    rule = AlertRule(name="r", rule_type="event_score", alert_level="warning", config={})
+    session.add(rule)
+    await session.flush()
+    session.add(
+        AlertHistory(
+            rule_id=rule.id, alert_level="warning", state="firing", context_key="E",
+            notified_at=at(6), channel="none",
+        )
+    )
+    await session.flush()
+
+    out = await build_incident_timeline_view(
+        session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1), owner_key="dialect-test"
+    )
+    assert [(i.kind, i.vcenter_id) for i in out.items] == [
+        ("event", v1), ("metric", v1), ("metric", v1), ("log", v1), ("log", v1), ("alert", None),
+    ]
+    assert out.omitted_sources == []
+    # 名前が空の系列は moid で表示し、その moid で絞れる（vCenter の指定ありの経路）
+    by_moid = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1, entity="host-2", sources=["metric"]),
+        owner_key="dialect-test",
+    )
+    assert [(i.entity_name, i.vcenter_id) for i in by_moid.items] == [("host-2", v1)]
+
+    # 上限 1 行: イベント・アラートは 1 行ずつなので返り、メトリクス・ログ（2 行ずつ）は省く
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    out = await build_incident_timeline_view(
+        session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1), owner_key="dialect-test"
+    )
+    assert [i.kind for i in out.items] == ["event", "alert"]
+    assert [(o.source, o.reason) for o in out.omitted_sources] == [("metric", "too_many_rows"), ("log", "too_many_rows")]
+    assert sum(b.log_error for b in out.overview) == 2
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_breaching_sample_limit_on_each_dialect(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """閾値以上のサンプルの数の上限（数え上げ・対象で絞る系列の IN）を両方の方言で通す。"""
+    from vcenter_event_assistant.settings_binding import require_settings
+
+    vid = uuid.uuid4()
+    session.add(VCenter(id=vid, name="vc-limit", host="h", port=443, username="u", password="p"))
+    await session.flush()
+
+    def at(minute: float) -> datetime:
+        return FROM + timedelta(minutes=minute)
+
+    for moid, name, minutes in (("h1", "esx01", (0, 5, 10)), ("h2", "esx02", (0, 5)), ("h3", "  ", (0,))):
+        for minute in minutes:
+            session.add(
+                MetricSample(
+                    vcenter_id=vid, sampled_at=at(minute), entity_type="HostSystem", entity_moid=moid,
+                    entity_name=name, metric_key=METRIC_CPU, value=90.0,
+                )
+            )
+    # 閾値未満は数えない
+    session.add(
+        MetricSample(
+            vcenter_id=vid, sampled_at=at(20), entity_type="HostSystem", entity_moid="h1",
+            entity_name="esx01", metric_key=METRIC_MEM, value=50.0,
+        )
+    )
+    session.add(
+        EventRecord(
+            vcenter_id=vid, occurred_at=at(1), event_type="E", message="m", entity_name="esx01",
+            vmware_key=next(_keys), notable_score=50,
+        )
+    )
+    await session.flush()
+
+    async def view(limit: int, **kw: object) -> tuple[list[str], list[tuple[str, str]]]:
+        monkeypatch.setattr(require_settings(), "timeline_metric_breach_sample_limit", limit)
+        out = await build_incident_timeline_view(
+            session,
+            IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["event", "metric"], **kw),
+            owner_key="dialect-test",
+        )
+        return [i.entity_name or "" for i in out.items], [(o.source, o.reason) for o in out.omitted_sources]
+
+    # 合計 6 件: 5 件なら省く（イベントは返す）、6 件なら区間を返す
+    assert await view(5) == (["esx01"], [("metric", "too_many_rows")])
+    assert await view(6) == (["esx01", "esx02", "h3", "esx01"], [])
+    assert await view(5, vcenter_id=vid) == (["esx01"], [("metric", "too_many_rows")])
+    # 対象で絞った後の数で判定する（名前が空の系列は moid で当てる）
+    assert await view(3, entity="esx01") == (["esx01", "esx01"], [])
+    assert await view(2, entity="esx01") == (["esx01"], [("metric", "too_many_rows")])
+    assert await view(1, entity="h3", vcenter_id=vid) == (["h3"], [])

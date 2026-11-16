@@ -61,4 +61,12 @@ describe('tabHelpContent', () => {
       expect(entry.summary.length).toBeGreaterThan(0)
     }
   })
+
+  it('timeline help mentions metric breach intervals and error logs', () => {
+    const { summary } = MAIN_TAB_HELP.timeline
+    expect(summary).toContain('メトリクス')
+    expect(summary).toContain('しきい値')
+    expect(summary).toContain('ログ')
+    expect(summary).toContain('省')
+  })
 })

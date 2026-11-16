@@ -38,8 +38,23 @@ class IncidentTimelineViewRequest(BaseModel):
     sources: list[TimelineSource] = Field(default_factory=_default_sources, min_length=1)
     metric_threshold_cpu_pct: float = Field(default=80.0, ge=0, le=100)
     metric_threshold_memory_pct: float = Field(default=85.0, ge=0, le=100)
-    metric_threshold_disk_pct: float = Field(default=75.0, ge=0, le=100)
-    metric_threshold_network_pct: float = Field(default=75.0, ge=0, le=100)
+    metric_threshold_disk_pct: float = Field(
+        default=75.0,
+        ge=0,
+        le=100,
+        description=(
+            "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_pct も vSphere の "
+            "disk.usage.average で単位は KBps）なので、% の閾値を当てられない。"
+        ),
+    )
+    metric_threshold_network_pct: float = Field(
+        default=75.0,
+        ge=0,
+        le=100,
+        description=(
+            "互換のために受け取るが使わない。ネットワーク系の指標は値が KB/s なので、% の閾値を当てられない。"
+        ),
+    )
     item_limit: int = Field(default=500, ge=1, le=1000)
 
     @field_validator("entity", mode="before")
@@ -82,6 +97,21 @@ class IncidentTimelineItemRef(BaseModel):
     metric_key: str | None = None
     entity_moid: str | None = None
     log_id: int | None = None
+    # 以下はメトリクスの超過区間（kind="metric"）の行でだけ入る。
+    threshold_pct: float | None = Field(default=None, description="当てた閾値（%）")
+    peak_value: float | None = Field(default=None, description="期間内の区間のピーク値（%）")
+    peak_at_utc: datetime | None = Field(default=None, description="ピークのサンプルの時刻（同じ値なら早いほう）")
+    sample_count: int | None = Field(default=None, description="期間内の区間のサンプル数")
+    continues_from_before: bool | None = Field(
+        default=None, description="期間の開始前から超過が続いているか"
+    )
+    continues_after: bool | None = Field(
+        default=None,
+        description=(
+            "期間の終わりでも超過が続いているか。系列の期間内の最後のサンプルが閾値以上で、期間の終わり"
+            "（to が未来なら現在時刻）から区間をつなぐ間隔の上限以内にあるとき真。期間の後ろのサンプルは読まない"
+        ),
+    )
 
 
 class IncidentTimelineViewItem(BaseModel):
@@ -138,6 +168,15 @@ class IncidentTimelineHighlights(BaseModel):
     new_event_types: list[IncidentTimelineNewEventType] = Field(default_factory=list)
 
 
+class IncidentTimelineOmittedSource(BaseModel):
+    """一覧から省いた種別と、その理由。"""
+
+    source: Literal["metric", "log"]
+    reason: Literal["too_many_rows"] = Field(
+        description="too_many_rows: 行数が上限（CONTEXT_AGGREGATION_MAX_ROWS）を超えた"
+    )
+
+
 class IncidentTimelineViewResponse(BaseModel):
     from_utc: datetime
     to_utc: datetime
@@ -148,3 +187,11 @@ class IncidentTimelineViewResponse(BaseModel):
     truncated: bool
     total_items: int = Field(description="打ち切り前の件数")
     highlights: IncidentTimelineHighlights
+    omitted_sources: list[IncidentTimelineOmittedSource] = Field(
+        default_factory=list,
+        description=(
+            "行数が上限を超えたため、一覧（items）とハイライトから省いた種別（metric / log）。"
+            "log の俯瞰の件数（log_error）は返す。metric の俯瞰（metric_breach）は区間を作れないので 0 になり、"
+            "実際の件数は分からない。省いていなければ空の配列。"
+        ),
+    )

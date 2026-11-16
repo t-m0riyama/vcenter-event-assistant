@@ -10,7 +10,12 @@ import {
   correlationHashForItem,
   metricsFocusForItem,
   dragRange,
+  formatDurationMs,
+  isMetricOmitted,
+  metricIntervalText,
+  omittedKindLabels,
   nearestItemIdToAnchor,
+  omittedSourceMessages,
   resolveTimelineRange,
   sortTimelineItems,
   validateResolvedRange,
@@ -109,8 +114,13 @@ describe('timelineModel', () => {
     expect(buildViewRequest(DEFAULT_TIMELINE_CONDITIONS, range)).toEqual({
       ...range,
       min_score: 1,
-      sources: ['event', 'alert'],
+      sources: ['event', 'alert', 'metric', 'log'],
+      metric_threshold_cpu_pct: 80,
+      metric_threshold_memory_pct: 85,
     })
+    expect(
+      buildViewRequest({ ...DEFAULT_TIMELINE_CONDITIONS, cpuThresholdPct: 95, memoryThresholdPct: 60.5 }, range),
+    ).toMatchObject({ metric_threshold_cpu_pct: 95, metric_threshold_memory_pct: 60.5 })
     expect(
       buildViewRequest(
         { ...DEFAULT_TIMELINE_CONDITIONS, anchor: '2026-03-22T00:30:00.000Z', vcenterId: 'vc', entity: 'esx', sources: ['alert'] },
@@ -155,5 +165,128 @@ describe('timelineModel', () => {
     expect(plain.chartEventType).toBeUndefined()
     expect(metricsFocusForItem(item('x', '2026-03-22T00:10:00Z'))).toBeNull()
     expect(metricsFocusForItem(item('y', 'broken', { vcenter_id: 'vc-1' }))).toBeNull()
+  })
+
+  it('グラフで開く条件（メトリクスの行）: 開始の 30 分前から終了の 30 分後、指標は ref.metric_key、縦線はピークの時刻', () => {
+    const base = {
+      kind: 'metric' as const,
+      vcenter_id: 'vc-1',
+      end_utc: '2026-03-22T00:15:00Z',
+      ref: { metric_key: 'host.cpu.usage_pct', peak_at_utc: '2026-03-22T00:10:00Z' },
+    }
+    expect(metricsFocusForItem(item('m', '2026-03-22T00:05:00Z', base))).toEqual({
+      from: '2026-03-21T23:35:00.000Z',
+      to: '2026-03-22T00:45:00.000Z',
+      vcenterId: 'vc-1',
+      markerUtc: '2026-03-22T00:10:00.000Z',
+      metricKey: 'host.cpu.usage_pct',
+    })
+    // ピークの時刻が無ければ区間の開始。単発（end_utc なし）は開始の前後 30 分
+    expect(
+      metricsFocusForItem(item('m', '2026-03-22T00:05:00Z', { ...base, end_utc: null, ref: { metric_key: 'host.mem.usage_pct' } })),
+    ).toEqual({
+      from: '2026-03-21T23:35:00.000Z',
+      to: '2026-03-22T00:35:00.000Z',
+      vcenterId: 'vc-1',
+      markerUtc: '2026-03-22T00:05:00.000Z',
+      metricKey: 'host.mem.usage_pct',
+    })
+    // 読めないピークの時刻は使わない
+    expect(
+      metricsFocusForItem(item('m', '2026-03-22T00:05:00Z', { ...base, ref: { metric_key: 'k', peak_at_utc: 'broken' } }))?.markerUtc,
+    ).toBe('2026-03-22T00:05:00.000Z')
+  })
+
+  it('グラフで開く条件: ログの行は指標が無いので出さない（null）', () => {
+    expect(metricsFocusForItem(item('l', '2026-03-22T00:10:00Z', { kind: 'log', vcenter_id: 'vc-1' }))).toBeNull()
+  })
+
+  it('ログで開くリンクは、最初の時刻の 5 分前から最後の時刻の 5 分後まで', () => {
+    const link = correlationHashForItem(
+      'logs',
+      item('l', '2026-03-22T01:00:00Z', { kind: 'log', vcenter_id: 'vc-1', count: 2, end_utc: '2026-03-22T01:01:00Z' }),
+    )!
+    const params = new URLSearchParams(link.split('?')[1])
+    expect(params.get('from')).toBe('2026-03-22T00:55:00.000Z')
+    expect(params.get('to')).toBe('2026-03-22T01:06:00.000Z')
+  })
+
+  it('継続時間は秒・分・時間・日で人が読める形にする', () => {
+    expect(formatDurationMs(0)).toBe('0 秒')
+    expect(formatDurationMs(45_000)).toBe('45 秒')
+    expect(formatDurationMs(60_000)).toBe('1 分')
+    expect(formatDurationMs(10 * 60_000)).toBe('10 分')
+    expect(formatDurationMs(65 * 60_000)).toBe('1 時間 5 分')
+    expect(formatDurationMs(2 * 3_600_000)).toBe('2 時間')
+    expect(formatDurationMs(27 * 3_600_000)).toBe('1 日 3 時間')
+    expect(formatDurationMs(48 * 3_600_000)).toBe('2 日')
+    expect(formatDurationMs(-5)).toBe('0 秒')
+  })
+
+  it('省いた種別の知らせ: ログは「件数は上のグラフに出ている」、メトリクスは「グラフにも出ていない」', () => {
+    expect(omittedSourceMessages([])).toEqual([])
+    const [log] = omittedSourceMessages([{ source: 'log', reason: 'too_many_rows' }])
+    expect(log).toContain('ログは件数が多すぎるため、一覧から省いています')
+    expect(log).toContain('件数は上のグラフに出ています')
+    const [metric] = omittedSourceMessages([{ source: 'metric', reason: 'too_many_rows' }])
+    expect(metric).toContain('メトリクスの超過区間')
+    expect(metric).toContain('グラフにも出ていません')
+    // メトリクスは、超過しているサンプルが多いと省くので、しきい値を上げる対処も案内する
+    expect(metric).toContain('しきい値を上げるか、期間を短くするか、対象を絞ってください')
+    expect(
+      omittedSourceMessages([
+        { source: 'metric', reason: 'too_many_rows' },
+        { source: 'log', reason: 'too_many_rows' },
+      ]),
+    ).toHaveLength(2)
+    // 知らない種別・理由も黙って捨てず、種別名つきで知らせる
+    expect(omittedSourceMessages([{ source: 'other', reason: 'x' }])[0]).toContain('other')
+  })
+
+  it('メトリクスを省いたかは omitted_sources から判定する', () => {
+    expect(isMetricOmitted([])).toBe(false)
+    expect(isMetricOmitted([{ source: 'log', reason: 'too_many_rows' }])).toBe(false)
+    expect(isMetricOmitted([{ source: 'metric', reason: 'too_many_rows' }])).toBe(true)
+  })
+
+  describe('metricIntervalText: 期間の端で続く超過の文（4 通り × 終了あり・単発）', () => {
+    const fmt = (iso: string) => (iso.startsWith('2026-03-22T00:05') ? 'S' : 'E')
+    const base = { timestamp_utc: '2026-03-22T00:05:00Z', end_utc: '2026-03-22T00:15:00Z' }
+    const text = (extra: Partial<TimelineViewItem>, ref: TimelineViewItem['ref'] = {}) =>
+      metricIntervalText({ ...base, ...extra, ref }, fmt)
+
+    it('どちらも偽: 「S から E まで（継続 N 分）」、単発は「S（単発）」', () => {
+      expect(text({})).toBe('超過区間: S から E まで（継続 10 分）')
+      expect(text({ end_utc: null })).toBe('超過区間: S（単発）')
+      expect(text({}, { continues_from_before: false, continues_after: false })).toBe('超過区間: S から E まで（継続 10 分）')
+    })
+
+    it('continues_from_before だけ真: 開始を言い切らず、継続は「N 分以上」', () => {
+      expect(text({}, { continues_from_before: true })).toBe('超過区間: 期間の開始前から E まで（継続 10 分以上）')
+      expect(text({ end_utc: null }, { continues_from_before: true })).toBe('超過区間: 期間の開始前から S まで（継続）')
+    })
+
+    it('continues_after だけ真: 終わりを言い切らず「期間の終わりでも継続中」、継続は「N 分以上」。単発とは言わない', () => {
+      expect(text({}, { continues_after: true })).toBe('超過区間: S から（期間の終わり（E）でも継続中。継続 10 分以上）')
+      expect(text({ end_utc: null }, { continues_after: true })).toBe('超過区間: S から（期間の終わりでも継続中）')
+      expect(text({ end_utc: null }, { continues_after: true })).not.toContain('単発')
+    })
+
+    it('両方真: 期間の開始前から期間の終わりまで継続', () => {
+      const both = { continues_from_before: true, continues_after: true }
+      expect(text({}, both)).toBe('超過区間: 期間の開始前から（期間の終わり（E）でも継続中。継続 10 分以上）')
+      expect(text({ end_utc: null }, both)).toBe('超過区間: 期間の開始前から（期間の終わりでも継続中）')
+    })
+  })
+
+  it('省いた種別の名前（ログ・メトリクス）を並べる', () => {
+    expect(omittedKindLabels([])).toEqual([])
+    expect(
+      omittedKindLabels([
+        { source: 'metric', reason: 'too_many_rows' },
+        { source: 'log', reason: 'too_many_rows' },
+      ]),
+    ).toEqual(['メトリクス', 'ログ'])
+    expect(omittedKindLabels([{ source: 'other', reason: 'x' }])).toEqual(['other'])
   })
 })

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   Bar,
-  BarChart,
+  Cell,
   CartesianGrid,
+  ComposedChart,
   Legend,
+  Line,
   ReferenceArea,
   ReferenceLine,
   Tooltip,
@@ -28,6 +30,8 @@ type Props = {
   toUtc: string
   anchorUtc: string | null
   timeZone: string
+  /** メトリクスを一覧から省いたとき true。`metric_breach` は当てにならないので系列を出さない。 */
+  metricOmitted?: boolean
   onSelectRange: (range: ResolvedRange) => void
 }
 
@@ -41,16 +45,36 @@ type Row = {
   notable: number
   alert: number
   metric: number
+  /** 帯用: 超過区間のある時間帯は 1、無ければ 0（高さは固定で、濃さに区間の数を出す）。 */
+  band: number
   log: number
 }
 
-type SeriesDef = { key: keyof Omit<Row, 'start'>; label: string; color: string }
+type SeriesKey = Exclude<keyof Omit<Row, 'start'>, 'metric' | 'band'>
+type SeriesDef = { key: SeriesKey; label: string; color: string; unit: string }
+
+/** 右の軸に出すエラーログの系列名（積み上げの棒とは軸が違うことを凡例で伝える）。 */
+const LOG_LABEL = 'エラーログ（件・右の軸）'
+/** `metric_breach` は「その時間帯にかかっている超過区間の数」で、出来事の件数とは意味が違う。 */
+const METRIC_LABEL = 'メトリクス超過'
+const BAND_HEIGHT = 40
+/** 帯の濃さの下限（区間が 1 つでも、色が見える濃さ）。 */
+const BAND_MIN_OPACITY = 0.35
+const RIGHT_AXIS = 'right'
 
 /**
  * 件数の俯瞰。種別ごとの積み上げ棒。棒のクリックでその範囲、ドラッグで選んだ範囲に絞る。
  * キーボード: グラフにフォーカスして左右の矢印（Shift で範囲を広げる）、Enter で絞る。
  */
-export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc, timeZone, onSelectRange }: Props) {
+export function TimelineOverviewChart({
+  buckets,
+  bucketSeconds,
+  toUtc,
+  anchorUtc,
+  timeZone,
+  metricOmitted = false,
+  onSelectRange,
+}: Props) {
   const colors = useChartThemeColors()
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
@@ -73,10 +97,11 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
         other: Math.max(0, b.event_total - b.event_notable),
         notable: b.event_notable,
         alert: b.alert,
-        metric: b.metric_breach,
+        metric: metricOmitted ? 0 : b.metric_breach,
+        band: !metricOmitted && b.metric_breach > 0 ? 1 : 0,
         log: b.log_error,
       })),
-    [buckets],
+    [buckets, metricOmitted],
   )
 
   // キーボードの選択は、バケットの並び（本数・開始・幅）の鍵つきで持つ。並びが変わったら
@@ -92,17 +117,22 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
   const activeIndex = inRange(current.active)
   const selectionStart = activeIndex === null ? null : inRange(current.start)
 
-  // 最大値が 0 の種別は凡例に出さない（メトリクス・ログは API がまだ返さない）
+  // 最大値が 0 の種別は凡例に出さない。ログは件数が桁違いに多くなりうるので、積み上げの棒にはせず、
+  // 右の軸の折れ線にする（左の軸がログに引きずられて、ほかの種別の棒が潰れるのを避ける）
   const series: SeriesDef[] = useMemo(() => {
     const all: SeriesDef[] = [
-      { key: 'other', label: 'その他のイベント', color: colors.series[5] },
-      { key: 'notable', label: '要注意イベント', color: colors.series[2] },
-      { key: 'alert', label: 'アラート', color: colors.series[3] },
-      { key: 'metric', label: 'メトリクス超過', color: colors.series[4] },
-      { key: 'log', label: 'エラーログ', color: colors.series[1] },
+      { key: 'other', label: 'その他のイベント', color: colors.series[5], unit: '件' },
+      { key: 'notable', label: '要注意イベント', color: colors.series[2], unit: '件' },
+      { key: 'alert', label: 'アラート', color: colors.series[3], unit: '件' },
+      { key: 'log', label: LOG_LABEL, color: colors.series[1], unit: '件' },
     ]
     return all.filter((s) => rows.some((r) => r[s.key] > 0))
   }, [colors, rows])
+  const barSeries = series.filter((s) => s.key !== 'log')
+  const logSeries = series.find((s) => s.key === 'log') ?? null
+  // メトリクス超過は積み上げに入れず、グラフの下の帯に描く（出来事の件数と足さずに、時間帯を見比べられる）
+  const hasMetric = rows.some((r) => r.metric > 0)
+  const maxMetric = Math.max(1, ...rows.map((r) => r.metric))
 
   // 表示する期間が日付をまたぐときは、目盛りに日付を出す（期間の長さではなく、またぐかどうかで決める）
   const withDate = useMemo(
@@ -131,11 +161,14 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
 
   const describe = (a: number, b: number): string => {
     const r = rangeOf(a, b)
-    const count = rows.slice(Math.min(a, b), Math.max(a, b) + 1).reduce(
-      (sum, row) => sum + row.other + row.notable + row.alert + row.metric + row.log,
-      0,
-    )
-    return `${formatIsoInTimeZone(r.from, timeZone)} ～ ${formatIsoInTimeZone(r.to, timeZone)}、${count} 件。Enter で期間をこの範囲に絞ります。`
+    const picked = rows.slice(Math.min(a, b), Math.max(a, b) + 1)
+    const sum = (pick: (row: Row) => number) => picked.reduce((total, row) => total + pick(row), 0)
+    // メトリクス超過は区間の数で、出来事の件数とは足さない（区間は複数の時間帯にまたがって数えられる）
+    const parts = [`出来事 ${sum((row) => row.other + row.notable + row.alert + row.log)} 件`]
+    // 区間の数は時間帯ごとの数の合計ではないので、範囲の中で最も多い時間帯の値を読み上げる
+    if (hasMetric) parts.push(`メトリクス超過 ${Math.max(...picked.map((row) => row.metric))} 区間`)
+    if (logSeries) parts.push(`うちエラーログ ${sum((row) => row.log)} 件`)
+    return `${formatIsoInTimeZone(r.from, timeZone)} ～ ${formatIsoInTimeZone(r.to, timeZone)}、${parts.join('、')}。Enter で期間をこの範囲に絞ります。`
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -171,6 +204,18 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
   }
 
   if (rows.length === 0) return null
+  const pointerHandlers = {
+    onMouseDown: (state: unknown) => {
+      const i = indexOf(state)
+      if (i !== null) pointer.down(i)
+    },
+    onMouseMove: (state: unknown) => {
+      const i = indexOf(state)
+      if (i !== null) pointer.move(i)
+    },
+    onMouseUp: pointer.up,
+    onMouseLeave: pointer.cancel,
+  }
 
   const dragging = pointer.range
   const highlightFrom = dragging ? dragging[0] : activeIndex === null ? null : Math.min(selectionStart ?? activeIndex, activeIndex)
@@ -193,22 +238,13 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
         onKeyDown={onKeyDown}
         onBlur={() => setSelection({ key: bucketKey, active: null, start: null })}
       >
-        <BarChart
+        <ComposedChart
           width={chartWidth}
           height={CHART_HEIGHT}
           data={rows}
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           barCategoryGap={1}
-          onMouseDown={(state) => {
-            const i = indexOf(state)
-            if (i !== null) pointer.down(i)
-          }}
-          onMouseMove={(state) => {
-            const i = indexOf(state)
-            if (i !== null) pointer.move(i)
-          }}
-          onMouseUp={pointer.up}
-          onMouseLeave={pointer.cancel}
+          {...pointerHandlers}
         >
           <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
@@ -219,6 +255,16 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
             stroke={colors.grid}
           />
           <YAxis allowDecimals={false} width={32} tick={{ fill: colors.axisTick, fontSize: 11 }} stroke={colors.grid} />
+          {logSeries ? (
+            <YAxis
+              yAxisId={RIGHT_AXIS}
+              orientation="right"
+              allowDecimals={false}
+              width={40}
+              tick={{ fill: logSeries.color, fontSize: 11 }}
+              stroke={logSeries.color}
+            />
+          ) : null}
           <Tooltip
             cursor={{ fill: colors.grid, fillOpacity: 0.35 }}
             content={({ active, payload, label }) =>
@@ -228,7 +274,7 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
                   <ul>
                     {payload.map((p) => (
                       <li key={String(p.dataKey)}>
-                        {String(p.name)}: {String(p.value)}
+                        {String(p.name)}: {String(p.value)} {series.find((d) => d.key === p.dataKey)?.unit ?? '件'}
                       </li>
                     ))}
                   </ul>
@@ -237,9 +283,22 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
             }
           />
           <Legend />
-          {series.map((s) => (
+          {barSeries.map((s) => (
             <Bar key={s.key} dataKey={s.key} name={s.label} stackId="count" fill={s.color} isAnimationActive={false} />
           ))}
+          {logSeries ? (
+            <Line
+              yAxisId={RIGHT_AXIS}
+              type="monotone"
+              dataKey="log"
+              name={logSeries.label}
+              stroke={logSeries.color}
+              strokeWidth={2}
+              strokeDasharray="5 3"
+              dot={{ r: 2 }}
+              isAnimationActive={false}
+            />
+          ) : null}
           {anchorBucket ? <ReferenceLine x={anchorBucket} stroke={colors.primary} strokeWidth={2} label={{ value: '起点', fill: colors.primary, fontSize: 11, position: 'top' }} /> : null}
           {highlightFrom !== null && highlightTo !== null ? (
             <ReferenceArea
@@ -250,7 +309,58 @@ export function TimelineOverviewChart({ buckets, bucketSeconds, toUtc, anchorUtc
               ifOverflow="visible"
             />
           ) : null}
-        </BarChart>
+        </ComposedChart>
+        {hasMetric ? (
+          <div className="timeline-overview__band">
+            <p className="timeline-overview__band-label">
+              {METRIC_LABEL}（グラフの下の帯。色が濃いほど、その時間帯にかかっている超過区間の数が多い。出来事の件数とは別の数です）
+            </p>
+            <ComposedChart
+              width={chartWidth}
+              height={BAND_HEIGHT}
+              data={rows}
+              margin={{ top: 0, right: 8, left: 0, bottom: 0 }}
+              barCategoryGap={1}
+              {...pointerHandlers}
+            >
+              <XAxis dataKey="start" hide />
+              <YAxis width={32} domain={[0, 1]} tick={false} tickLine={false} axisLine={false} />
+              {logSeries ? <YAxis yAxisId={RIGHT_AXIS} orientation="right" width={40} tick={false} tickLine={false} axisLine={false} /> : null}
+              <Tooltip
+                cursor={{ fill: colors.grid, fillOpacity: 0.35 }}
+                content={({ active, payload, label }) => {
+                  const row = payload?.[0]?.payload as Row | undefined
+                  return active && row ? (
+                    <div className="timeline-overview__tooltip">
+                      <strong>{bucketRangeLabel(String(label), bucketSeconds, toUtc, timeZone)}</strong>
+                      <p className="timeline-overview__tooltip-note">
+                        {METRIC_LABEL}: {row.metric} 区間（この時間帯にかかっている超過区間の数。出来事の件数ではありません）
+                      </p>
+                    </div>
+                  ) : null
+                }}
+              />
+              <Bar dataKey="band" name={METRIC_LABEL} fill={colors.series[4]} isAnimationActive={false}>
+                {rows.map((r) => (
+                  <Cell
+                    key={r.start}
+                    fillOpacity={BAND_MIN_OPACITY + (1 - BAND_MIN_OPACITY) * Math.min(1, r.metric / maxMetric)}
+                  />
+                ))}
+              </Bar>
+              {anchorBucket ? <ReferenceLine x={anchorBucket} stroke={colors.primary} strokeWidth={2} /> : null}
+              {highlightFrom !== null && highlightTo !== null ? (
+                <ReferenceArea
+                  x1={rows[highlightFrom].start}
+                  x2={rows[highlightTo].start}
+                  fill={colors.primary}
+                  fillOpacity={0.18}
+                  ifOverflow="visible"
+                />
+              ) : null}
+            </ComposedChart>
+          </div>
+        ) : null}
         <div className="visually-hidden timeline-overview__announce" aria-live="polite">
           {activeIndex === null ? '' : describe(selectionStart ?? activeIndex, activeIndex)}
         </div>

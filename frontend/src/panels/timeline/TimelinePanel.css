@@ -85,6 +85,20 @@
   min-height: 44px;
 }
 
+.timeline-bar__thresholds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+}
+
+.timeline-bar__threshold {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-footnote);
+  min-width: 0;
+}
+
 .timeline-bar__field-error {
   margin: 0;
   color: var(--color-error);
@@ -142,6 +156,22 @@
   list-style: none;
 }
 
+.timeline-overview__band {
+  margin-top: var(--spacing-1);
+}
+
+.timeline-overview__band-label {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption1);
+}
+
+.timeline-overview__tooltip-note {
+  max-width: 18rem;
+  margin: var(--spacing-1) 0 0;
+  color: var(--color-text-secondary);
+}
+
 /* ---- ハイライト ---- */
 .timeline-highlights__grid {
   display: grid;
@@ -179,6 +209,7 @@
 
 .timeline-highlights__link {
   max-width: 100%;
+  overflow-wrap: anywhere;
   white-space: normal;
   text-align: left;
 }
@@ -217,6 +248,17 @@
   border: 1px solid var(--color-warning-text);
   border-radius: var(--radius-control);
   color: var(--color-text-primary);
+}
+
+.timeline-notices {
+  margin-bottom: var(--spacing-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.timeline-notices .timeline-truncated {
+  margin: 0;
 }
 
 .timeline-empty {
@@ -342,6 +384,20 @@
   font-size: var(--font-size-footnote);
 }
 
+/* メトリクスの超過区間: 区間・ピークは 1 行ずつ使い、狭い幅では折り返す（横にはみ出さない） */
+.timeline-row__interval,
+.timeline-row__peak {
+  flex-basis: 100%;
+  min-width: 0;
+  font-size: var(--font-size-footnote);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.timeline-row__peak {
+  color: var(--color-text-secondary);
+}
+
 .timeline-row__detail {
   padding: var(--spacing-2) var(--spacing-3) var(--spacing-3);
   border-top: 1px solid var(--color-border);
@@ -366,6 +422,19 @@
 
 .timeline-row__message {
   white-space: pre-wrap;
+}
+
+.timeline-row__log-message {
+  margin: 0 0 var(--spacing-1);
+  padding: var(--spacing-2);
+  max-height: 24rem;
+  overflow: auto;
+  background: var(--color-background-secondary);
+  border-radius: var(--radius-control);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-footnote);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .timeline-guide h5 {

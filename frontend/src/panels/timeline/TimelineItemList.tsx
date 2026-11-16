@@ -7,8 +7,8 @@ import { ScoreBadge } from '../../components/badges'
 import type { GuideLoader } from './eventTypeGuideLoader'
 import { TimelineEventGuide } from './TimelineEventGuide'
 import { alertStateLabel } from '../../alerts/alertStateLabel'
-import { excerpt, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS } from './timelineLabels'
-import { correlationHashForItem, metricsFocusForItem } from './timelineModel'
+import { excerpt, formatPct, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS, titleBesideEntity } from './timelineLabels'
+import { correlationHashForItem, metricIntervalText, metricsFocusForItem } from './timelineModel'
 
 type Props = {
   items: readonly TimelineViewItem[]
@@ -27,6 +27,34 @@ type Props = {
 
 function rowDomId(id: string): string {
   return `timeline-item-${id.replace(/[^A-Za-z0-9_-]/g, '_')}`
+}
+
+/** サーバが切るメッセージの上限（文字数）。 */
+const LOG_MESSAGE_LIMIT = 1000
+
+/** `ref` の構造化した値があるか（古いサーバ・追加前のバックエンドの応答には無い）。 */
+function hasStructuredMetric(item: TimelineViewItem): boolean {
+  return item.kind === 'metric' && item.ref.peak_value != null
+}
+
+/** 「ピーク 92.5%（時刻）」。時刻は設定のタイムゾーンで書く。 */
+function peakText(item: TimelineViewItem, timeZone: string): string {
+  const { peak_value, peak_at_utc } = item.ref
+  if (peak_value == null) return ''
+  const at = peak_at_utc ? `（${formatIsoInTimeZone(peak_at_utc, timeZone)}）` : ''
+  return `ピーク ${formatPct(peak_value)}${at}`
+}
+
+/**
+ * 区間の長さを文章で書く（記号の「～」に頼らず、スクリーンリーダーで「いつからいつまで」と読める）。
+ * 期間の端で続いている超過は、始まり・終わりを言い切らない（{@link metricIntervalText}）。
+ */
+function IntervalText({ item, timeZone }: { item: TimelineViewItem; timeZone: string }) {
+  return (
+    <span className="timeline-row__interval">
+      {metricIntervalText(item, (iso) => formatIsoInTimeZone(iso, timeZone))}
+    </span>
+  )
 }
 
 function ItemRow({
@@ -91,14 +119,48 @@ function ItemRow({
           {isNearest ? <span className="timeline-row__anchor-mark">◆ 起点に最も近い</span> : null}
         </span>
         {item.entity_name ? <span className="timeline-row__entity">{item.entity_name}</span> : null}
-        <span className="timeline-row__title">{item.title}</span>
-        {item.detail ? <span className="timeline-row__excerpt">{excerpt(item.detail)}</span> : null}
+        <span className="timeline-row__title">{titleBesideEntity(item.title, item.entity_name)}</span>
+        {item.kind === 'metric' ? (
+          <>
+            <IntervalText item={item} timeZone={timeZone} />
+            {hasStructuredMetric(item) ? (
+              <span className="timeline-row__peak">
+                {[
+                  peakText(item, timeZone),
+                  item.ref.threshold_pct != null ? `しきい値 ${formatPct(item.ref.threshold_pct)}` : '',
+                  item.ref.sample_count != null ? `サンプル ${item.ref.sample_count} 件` : '',
+                ]
+                  .filter(Boolean)
+                  .join('・')}
+              </span>
+            ) : item.detail ? (
+              <span className="timeline-row__excerpt">{excerpt(item.detail)}</span>
+            ) : null}
+          </>
+        ) : item.detail ? (
+          <span className="timeline-row__excerpt">{excerpt(item.detail)}</span>
+        ) : null}
       </button>
       {expanded ? (
         <div id={`${domId}-detail`} className="timeline-row__detail" role="region" aria-label={`${item.title} の詳細`}>
           <dl className="timeline-row__facts">
-            <dt>メッセージ</dt>
-            <dd className="timeline-row__message">{item.detail?.trim() ? item.detail : '—'}</dd>
+            {hasStructuredMetric(item) ? null : (
+              <>
+                <dt>メッセージ</dt>
+                {item.kind === 'log' && item.detail?.trim() ? (
+                  <dd className="timeline-row__message">
+                    <pre className="timeline-row__log-message">{item.detail}</pre>
+                    {item.detail.length >= LOG_MESSAGE_LIMIT && item.detail.endsWith('…') ? (
+                      <span className="hint">
+                        メッセージは {LOG_MESSAGE_LIMIT} 文字で切っています。全文はログのタブで確認してください。
+                      </span>
+                    ) : null}
+                  </dd>
+                ) : (
+                  <dd className="timeline-row__message">{item.detail?.trim() ? item.detail : '—'}</dd>
+                )}
+              </>
+            )}
             <dt>vCenter</dt>
             <dd>{item.vcenter_name ?? '—'}</dd>
             {item.entity_name ? (
@@ -110,8 +172,40 @@ function ItemRow({
                 </dd>
               </>
             ) : null}
-            <dt>スコア</dt>
-            <dd>{item.score != null ? <ScoreBadge score={item.score} /> : '—'}</dd>
+            {item.kind === 'metric' || item.kind === 'log' ? null : (
+              <>
+                <dt>スコア</dt>
+                <dd>{item.score != null ? <ScoreBadge score={item.score} /> : '—'}</dd>
+              </>
+            )}
+            {item.kind === 'metric' ? (
+              <>
+                <dt>指標</dt>
+                <dd>{item.ref.metric_key ?? '—'}</dd>
+                <dt>超過区間</dt>
+                <dd>
+                  <IntervalText item={item} timeZone={timeZone} />
+                </dd>
+                {item.ref.threshold_pct != null ? (
+                  <>
+                    <dt>しきい値</dt>
+                    <dd>{formatPct(item.ref.threshold_pct)}</dd>
+                  </>
+                ) : null}
+                {item.ref.peak_value != null ? (
+                  <>
+                    <dt>ピーク</dt>
+                    <dd>{peakText(item, timeZone).replace(/^ピーク /, '')}</dd>
+                  </>
+                ) : null}
+                {item.ref.sample_count != null ? (
+                  <>
+                    <dt>サンプル数</dt>
+                    <dd>{item.ref.sample_count} 件</dd>
+                  </>
+                ) : null}
+              </>
+            ) : null}
             {item.kind === 'alert' ? (
               <>
                 <dt>ルール名</dt>
@@ -145,7 +239,7 @@ function ItemRow({
                 イベントで開く
               </a>
             ) : null}
-            {logsHref ? (
+            {logsHref && item.kind !== 'metric' ? (
               <a className="btn btn--gray" href={logsHref}>
                 ログで開く
               </a>

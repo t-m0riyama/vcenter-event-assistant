@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api'
-import { VIEW_RESPONSE_EXAMPLE } from '../test/timelineViewFixtures'
+import { emptyViewResponse, LOG_ITEM_EXAMPLE, METRIC_ITEM_EXAMPLE, METRIC_ITEM_LEGACY_EXAMPLE, VIEW_RESPONSE_EXAMPLE } from '../test/timelineViewFixtures'
 import {
   postIncidentTimelineView,
   TimelineBusyError,
@@ -37,6 +37,47 @@ describe('postIncidentTimelineView', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/incident-timeline/view')
     expect(JSON.parse(String(init.body))).toEqual(BODY)
+  })
+
+  it('メトリクスの ref の構造化した値と omitted_sources を読む', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(
+        emptyViewResponse({
+          items: [METRIC_ITEM_EXAMPLE, LOG_ITEM_EXAMPLE],
+          omitted_sources: [{ source: 'log', reason: 'too_many_rows' }],
+        }),
+      ),
+    )
+    const out = await postIncidentTimelineView(BODY)
+    expect(out.items[0].ref).toMatchObject({
+      threshold_pct: 80,
+      peak_value: 92.5,
+      peak_at_utc: '2026-03-22T00:10:00Z',
+      sample_count: 3,
+      continues_from_before: false,
+      continues_after: false,
+    })
+    expect(out.omitted_sources).toEqual([{ source: 'log', reason: 'too_many_rows' }])
+  })
+
+  it('新しい項目が無い応答（古いサーバ）も受け付け、omitted_sources は空になる', async () => {
+    fetchMock.mockResolvedValueOnce(json(emptyViewResponse({ items: [METRIC_ITEM_LEGACY_EXAMPLE] })))
+    const out = await postIncidentTimelineView(BODY)
+    expect(out.omitted_sources).toEqual([])
+    expect(out.items[0].ref.peak_value).toBeUndefined()
+    expect(out.items[0].ref.continues_after).toBeUndefined()
+    expect(out.items[0].ref.metric_key).toBe('host.cpu.usage_pct')
+  })
+
+  it('構造化した値が null でも受け付ける', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(
+        emptyViewResponse({
+          items: [{ ...METRIC_ITEM_EXAMPLE, ref: { metric_key: 'host.cpu.usage_pct', peak_value: null, peak_at_utc: null } }],
+        }),
+      ),
+    )
+    await expect(postIncidentTimelineView(BODY)).resolves.toBeDefined()
   })
 
   it('503 は Retry-After 秒だけ待って 1 回だけ再試行する', async () => {

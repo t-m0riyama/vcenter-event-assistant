@@ -13,7 +13,14 @@ import { TimelineHighlights } from './TimelineHighlights'
 import { TimelineItemList } from './TimelineItemList'
 import { TimelineOverviewChart } from './TimelineOverviewChart'
 import { TimelineSnapshotSection } from './TimelineSnapshotSection'
-import { nearestItemIdToAnchor, sortTimelineItems, validateResolvedRange } from './timelineModel'
+import {
+  isMetricOmitted,
+  omittedKindLabels,
+  nearestItemIdToAnchor,
+  omittedSourceMessages,
+  sortTimelineItems,
+  validateResolvedRange,
+} from './timelineModel'
 
 /**
  * タイムライン: 開くと自動で読み込み、期間・対象・種別の条件を URL に持つ。
@@ -53,6 +60,9 @@ export function TimelinePanel({
     [data, dataAnchor],
   )
 
+  const omittedMessages = useMemo(() => omittedSourceMessages(data?.omitted_sources ?? []), [data])
+  const metricOmitted = useMemo(() => isMetricOmitted(data?.omitted_sources ?? []), [data])
+
   const toggle = useCallback((id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev)
@@ -66,12 +76,14 @@ export function TimelinePanel({
     setReveal((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }))
   }, [])
 
+  // 種別を省いたときは、「N 件の出来事」が省いた種別を含まないことを添える（ライブ領域でも読み上げる）
+  const omittedNote = data && data.omitted_sources.length > 0 ? `（${omittedKindLabels(data.omitted_sources).join('・')}は省いています）` : ''
   const statusText = c.loading
     ? '読み込み中…'
     : data
       ? data.truncated
-        ? `${data.total_items} 件中 ${data.items.length} 件の出来事を表示しています。`
-        : `${data.total_items} 件の出来事を表示しています。`
+        ? `${data.total_items} 件中 ${data.items.length} 件の出来事を表示しています${omittedNote}。`
+        : `${data.total_items} 件の出来事を表示しています${omittedNote}。`
       : ''
 
   return (
@@ -114,6 +126,7 @@ export function TimelinePanel({
             toUtc={data.to_utc}
             anchorUtc={dataAnchor}
             timeZone={c.timeZone}
+            metricOmitted={metricOmitted}
             onSelectRange={(range) => {
               if (validateResolvedRange(range) === null) c.zoomTo(range)
             }}
@@ -137,17 +150,33 @@ export function TimelinePanel({
                 </select>
               </label>
             </div>
-            {data.truncated ? (
-              <p className="timeline-truncated" role="note">
-                {data.total_items} 件中 {data.items.length} 件を表示しています。期間や対象を絞ってください
-              </p>
+            {data.truncated || omittedMessages.length > 0 ? (
+              <div className="timeline-notices">
+                {data.truncated ? (
+                  <p className="timeline-truncated" role="note">
+                    {data.total_items} 件中 {data.items.length} 件を表示しています。期間や対象を絞ってください
+                  </p>
+                ) : null}
+                {omittedMessages.map((message) => (
+                  <p key={message} className="timeline-truncated" role="note">
+                    {message}
+                  </p>
+                ))}
+              </div>
             ) : null}
             {data.items.length === 0 ? (
               <div className="timeline-empty">
-                <p className="table-empty">この期間に出来事はありません。</p>
-                <button type="button" className="btn btn--gray" onClick={c.widen}>
-                  期間を広げる
-                </button>
+                {omittedMessages.length > 0 ? (
+                  // 期間を広げると省かれる件数がさらに増えるので、広げるボタンは出さない
+                  <p className="table-empty">この期間に、一覧へ表示できる出来事はありません。期間を短くするか、対象を絞ってください。</p>
+                ) : (
+                  <>
+                    <p className="table-empty">この期間に出来事はありません。</p>
+                    <button type="button" className="btn btn--gray" onClick={c.widen}>
+                      期間を広げる
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <TimelineItemList

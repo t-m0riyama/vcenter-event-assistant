@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { apiGet } from '../api'
+import { ApiError, apiGet } from '../api'
 import {
   postIncidentTimelineView,
   TimelineBusyError,
@@ -68,7 +68,9 @@ function readSortOrder(): TimelineSortOrder {
 function toLoadError(e: unknown): TimelineLoadError {
   if (e instanceof TimelineBusyError) return { kind: 'busy', message: e.message }
   if (e instanceof TimelineRateLimitedError) return { kind: 'rate_limited', message: e.message }
-  // 422 は ApiError がサーバの detail をそのまま message にしている
+  // 422（件数が多すぎるなど）は同じ条件で読み直しても同じ結果なので、入力の誤りと同じ扱い（読み直しは出さない）。
+  // サーバの detail は ApiError が message にしている
+  if (e instanceof ApiError && e.status === 422) return { kind: 'invalid', message: e.message }
   return { kind: 'error', message: toErrorMessage(e) }
 }
 
@@ -408,6 +410,8 @@ export function useTimelineViewController(
 
   const setVcenterId = useCallback((vcenterId: string) => patch({ vcenterId }), [patch])
   const setMinScore = useCallback((minScore: number) => patch({ minScore }), [patch])
+  const setCpuThreshold = useCallback((cpuThresholdPct: number) => patch({ cpuThresholdPct }), [patch])
+  const setMemoryThreshold = useCallback((memoryThresholdPct: number) => patch({ memoryThresholdPct }), [patch])
   const setAnchor = useCallback(
     (anchor: string | null) => {
       // 行の時刻は Z の無い表記のことがあるので、UTC の ISO 8601 にそろえて持つ
@@ -477,6 +481,8 @@ export function useTimelineViewController(
     widen,
     setVcenterId,
     setMinScore,
+    setCpuThreshold,
+    setMemoryThreshold,
     setAnchor,
     toggleSource,
     filterByEntity,

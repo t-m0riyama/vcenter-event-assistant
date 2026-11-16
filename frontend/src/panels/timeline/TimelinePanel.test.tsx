@@ -8,6 +8,9 @@ import {
   emptyViewResponse,
   installTimelineFetchMock,
   jsonResponse,
+  LOG_ITEM_EXAMPLE,
+  METRIC_ITEM_EXAMPLE,
+  METRIC_ITEM_LEGACY_EXAMPLE,
   VIEW_RESPONSE_EXAMPLE,
 } from '../../test/timelineViewFixtures'
 import { TimelinePanel } from './TimelinePanel'
@@ -451,6 +454,17 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('イベントの種類が多すぎて集計できません。')
   })
 
+  it('422（件数が多すぎる）は、読み直しても同じ結果なので「再読み込み」を出さない。サーバの文言はそのまま出す', async () => {
+    setup()
+    renderTimeline()
+    await waitFor(() => expect(harness.calls.length).toBeGreaterThan(0))
+    await act(async () => {
+      harness.calls[0].resolve(jsonResponse({ detail: '対象の出来事が多すぎて集計できません。期間を短くしてください。' }, 422))
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent('対象の出来事が多すぎて集計できません。期間を短くしてください。')
+    expect(screen.queryByRole('button', { name: '再読み込み' })).not.toBeInTheDocument()
+  })
+
   it('混み合い（503 が続く）は「混み合っています」と分かる表示にする', async () => {
     setup()
     renderTimeline()
@@ -466,6 +480,8 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       harness.calls[1].resolve(jsonResponse({}, 503))
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('混み合っています')
+    // 読み直す意味があるエラーには、今までどおり「再読み込み」を出す
+    expect(screen.getByRole('button', { name: '再読み込み' })).toBeInTheDocument()
   })
 
   it('URL の条件（固定の期間・対象・vCenter）を復元して表示する', async () => {
@@ -489,15 +505,18 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     await answer(0, emptyViewResponse())
     fireEvent.click(screen.getByLabelText('イベント'))
     await answer(1, emptyViewResponse())
-    expect(harness.calls[1].body.sources).toEqual(['alert'])
-    expect(screen.getByLabelText('アラート')).toBeDisabled() // 最後の 1 つは外せない
+    expect(harness.calls[1].body.sources).toEqual(['alert', 'metric', 'log'])
+    for (const name of ['アラート', 'メトリクス', 'ログ']) fireEvent.click(screen.getByLabelText(name))
+    await answer(2, emptyViewResponse())
+    await answer(3, emptyViewResponse())
+    expect(screen.getByLabelText('ログ')).toBeDisabled() // 最後の 1 つは外せない
     const details = screen.getByText('詳細設定').closest('details')!
     expect(details).not.toHaveAttribute('open')
     const score = within(details).getByLabelText('最小スコア')
     fireEvent.change(score, { target: { value: '40' } })
     fireEvent.blur(score)
-    await answer(2, emptyViewResponse())
-    expect(harness.calls[2].body.min_score).toBe(40)
+    await answer(4, emptyViewResponse())
+    expect(harness.calls[4].body.min_score).toBe(40)
   })
 
   it('スナップショットは既定で閉じており、開くと一覧を読み、選ぶと期間と vCenter が条件へ入って読み直す', async () => {
@@ -686,4 +705,675 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     await answer(2)
     expect(harness.calls[2].body).toMatchObject({ from: '2026-03-22T05:55:00.000Z', to: '2026-03-22T05:55:05.000Z' })
   })
+
+  // ---- メトリクスの超過区間とエラーログ -------------------------------------------------
+
+  const METRIC_TITLE = /CPU 使用率が閾値（80%）を超過/
+  const LOG_TITLE = /vmkernel/
+
+  function bucketFull(start: string, extra: Partial<ReturnType<typeof bucket>> = {}) {
+    return { ...bucket(start), ...extra }
+  }
+
+  /** イベント 1 行・メトリクス 1 行・ログ 1 行。 */
+  function withMetricsAndLogs(overrides: Record<string, unknown> = {}) {
+    const items = [
+      {
+        ...METRIC_ITEM_EXAMPLE,
+      },
+      {
+        ...LOG_ITEM_EXAMPLE,
+      },
+      populated().items[0],
+    ]
+    return populated({
+      items,
+      total_items: 3,
+      overview: [
+        bucketFull('2026-03-22T00:00:00Z', { event_total: 1, metric_breach: 1 }),
+        bucketFull('2026-03-22T00:20:00Z', { metric_breach: 2, log_error: 3 }),
+        bucketFull('2026-03-22T00:40:00Z', { log_error: 5000 }),
+      ],
+      highlights: { first_signal: items[0], top_entities: [], new_event_types: [] },
+      ...overrides,
+    })
+  }
+
+  const openRow = async (name: RegExp) => {
+    fireEvent.click(await rowButton(name))
+    return screen.getByRole('region', { name: new RegExp(`${name.source} の詳細`) })
+  }
+
+  describe('条件バー: 種別としきい値', () => {
+    it('種別は「イベント」「アラート」「メトリクス」「ログ」の 4 つで、既定はすべて選ばれていて URL に出ない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      for (const name of ['イベント', 'アラート', 'メトリクス', 'ログ']) {
+        expect(screen.getByLabelText(name)).toBeChecked()
+      }
+      expect(harness.calls[0].body.sources).toEqual(['event', 'alert', 'metric', 'log'])
+      expect(window.location.hash).toBe('#/timeline?range=1h')
+    })
+
+    it('メトリクスとログの切り替えは要求の本文と URL に反映される', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByLabelText('ログ'))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body.sources).toEqual(['event', 'alert', 'metric'])
+      expect(window.location.hash).toBe('#/timeline?range=1h&sources=event%2Calert%2Cmetric')
+    })
+
+    it('URL の種別から復元する', async () => {
+      window.history.replaceState(null, '', '/#/timeline?range=1h&sources=metric,log')
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      expect(screen.getByLabelText('イベント')).not.toBeChecked()
+      expect(screen.getByLabelText('メトリクス')).toBeChecked()
+      expect(screen.getByLabelText('ログ')).toBeChecked()
+    })
+
+    it('詳細設定に CPU・メモリのしきい値（既定 80・85）があり、ディスクとネットワークの欄は無い', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      const details = screen.getByText('詳細設定').closest('details')!
+      expect(within(details).getByLabelText('CPU 使用率のしきい値（%）')).toHaveValue(80)
+      expect(within(details).getByLabelText('メモリ使用率のしきい値（%）')).toHaveValue(85)
+      expect(within(details).queryByLabelText(/ディスク/)).not.toBeInTheDocument()
+      expect(within(details).queryByLabelText(/ネットワーク/)).not.toBeInTheDocument()
+      expect(details).toHaveTextContent('ディスクとネットワークは対象外')
+    })
+
+    it('しきい値は Enter かフォーカスを外したときに確定し、要求の本文と URL に反映される（既定のときは URL に出ない）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      const cpu = screen.getByLabelText('CPU 使用率のしきい値（%）')
+      fireEvent.change(cpu, { target: { value: '9' } })
+      fireEvent.change(cpu, { target: { value: '90' } })
+      expect(harness.calls).toHaveLength(1) // 入力途中では読み込まない
+      fireEvent.keyDown(cpu, { key: 'Enter' })
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ metric_threshold_cpu_pct: 90, metric_threshold_memory_pct: 85 })
+      expect(window.location.hash).toBe('#/timeline?range=1h&cpu_threshold=90')
+      const memory = screen.getByLabelText('メモリ使用率のしきい値（%）')
+      fireEvent.change(memory, { target: { value: '70.5' } })
+      fireEvent.blur(memory)
+      await answer(2, emptyViewResponse())
+      expect(harness.calls[2].body).toMatchObject({ metric_threshold_cpu_pct: 90, metric_threshold_memory_pct: 70.5 })
+      fireEvent.change(cpu, { target: { value: '80' } })
+      fireEvent.blur(cpu)
+      await answer(3, emptyViewResponse())
+      expect(window.location.hash).toBe('#/timeline?range=1h&memory_threshold=70.5')
+    })
+
+    it.each([
+      ['abc', ''], // type=number は数値でない文字を空にする
+      ['', ''],
+      ['150', '0〜100'],
+      ['-1', '0〜100'],
+    ])('しきい値に %s を入れて確定すると、読み込まずに理由を示す', async (value, reason) => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      const cpu = screen.getByLabelText('CPU 使用率のしきい値（%）')
+      fireEvent.change(cpu, { target: { value } })
+      fireEvent.blur(cpu)
+      const alert = await screen.findByText(/CPU 使用率のしきい値は/)
+      expect(alert).toHaveTextContent(reason || '0〜100 の数値')
+      expect(cpu).toHaveAttribute('aria-invalid', 'true')
+      expect(harness.calls).toHaveLength(1)
+      // 直すと理由は消え、確定できる
+      fireEvent.change(cpu, { target: { value: '88' } })
+      expect(screen.queryByText(/CPU 使用率のしきい値は/)).not.toBeInTheDocument()
+      fireEvent.keyDown(cpu, { key: 'Enter' })
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body.metric_threshold_cpu_pct).toBe(88)
+    })
+
+    it('詳細設定の要約のしきい値は、小数 2 桁まで・末尾の 0 を書かない規則で書く', async () => {
+      window.history.replaceState(null, '', '/#/timeline?range=1h&cpu_threshold=80.123&memory_threshold=70.5')
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      const summary = screen.getByText('詳細設定').closest('summary')!
+      expect(summary).toHaveTextContent('CPU 80.12%・メモリ 70.5%')
+    })
+
+    it('URL のしきい値を復元して欄に出す', async () => {
+      window.history.replaceState(null, '', '/#/timeline?range=1h&memory_threshold=60')
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      expect(screen.getByLabelText('メモリ使用率のしきい値（%）')).toHaveValue(60)
+      expect(harness.calls[0].body.metric_threshold_memory_pct).toBe(60)
+    })
+  })
+
+  describe('メトリクスの超過区間の行', () => {
+    it('種別・レベル（文字）・対象・タイトルと、区間（から〜まで）・継続時間・ピーク・しきい値・サンプル数を行の中で読める', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      expect(within(row).getByText('メトリクス')).toBeInTheDocument()
+      expect(within(row).getByText('警告')).toBeInTheDocument()
+      expect(within(row).getByText('esx01')).toBeInTheDocument()
+      const interval = row.querySelector('.timeline-row__interval')!
+      expect(interval).toHaveTextContent(/12:05:00.* から .*12:15:00.* まで（継続 10 分）/)
+      const peak = row.querySelector('.timeline-row__peak')!
+      expect(peak).toHaveTextContent(/ピーク 92\.5%（.*12:10:00.*）/)
+      expect(peak).toHaveTextContent('しきい値 80%')
+      expect(peak).toHaveTextContent('サンプル 3 件')
+      // 構造化した値があるときは、detail をそのまま重ねて出さない
+      expect(row).not.toHaveTextContent('ピーク 92.5%、サンプル 3 件')
+    })
+
+    it('ピークの時刻は設定したタイムゾーンで表示する', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      expect(row.querySelector('.timeline-row__peak')).toHaveTextContent(/9:10:00/)
+      expect(row.querySelector('.timeline-row__interval')).toHaveTextContent(/9:05:00.* から .*9:15:00/)
+    })
+
+    it('end_utc が無い単発のサンプルは「単発」と分かる表示にする（継続時間は出さない）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ items: [{ ...METRIC_ITEM_EXAMPLE, end_utc: null }], total_items: 1 }))
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      const interval = row.querySelector('.timeline-row__interval')!
+      expect(interval).toHaveTextContent('単発')
+      expect(interval).not.toHaveTextContent('継続')
+      expect(interval).not.toHaveTextContent('から')
+    })
+
+    it('continues_from_before が真なら「期間の開始前から」と書き、継続時間は「N 分以上」にする', async () => {
+      setup()
+      renderTimeline()
+      const item = { ...METRIC_ITEM_EXAMPLE, ref: { ...METRIC_ITEM_EXAMPLE.ref, continues_from_before: true } }
+      await answer(0, withMetricsAndLogs({ items: [item], total_items: 1 }))
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      expect(row.querySelector('.timeline-row__interval')).toHaveTextContent(/期間の開始前から .*12:15:00.* まで（継続 10 分以上）/)
+    })
+
+    it('continues_after が真なら、終わりを言い切らず「期間の終わりでも継続中」と書く。単発でも「単発」と言わない', async () => {
+      setup()
+      renderTimeline()
+      const ref = { ...METRIC_ITEM_EXAMPLE.ref, continues_after: true }
+      await answer(
+        0,
+        withMetricsAndLogs({
+          items: [
+            { ...METRIC_ITEM_EXAMPLE, ref },
+            { ...METRIC_ITEM_EXAMPLE, id: 'metric:2', end_utc: null, title: '単発の続き', ref },
+          ],
+          total_items: 2,
+        }),
+      )
+      const long = (await rowButton(METRIC_TITLE)).closest('li')!.querySelector('.timeline-row__interval')!
+      expect(long).toHaveTextContent('期間の終わり（')
+      expect(long).toHaveTextContent('でも継続中。継続 10 分以上）')
+      expect(long).not.toHaveTextContent('まで')
+      const single = (await rowButton(/単発の続き/)).closest('li')!.querySelector('.timeline-row__interval')!
+      expect(single).toHaveTextContent('期間の終わりでも継続中')
+      expect(single).not.toHaveTextContent('単発（')
+    })
+
+    it('数値は小数 2 桁まで・末尾の 0 を書かない規則で表示する', async () => {
+      setup()
+      renderTimeline()
+      const ref = { ...METRIC_ITEM_EXAMPLE.ref, peak_value: 82.55, threshold_pct: 82.5 }
+      await answer(0, withMetricsAndLogs({ items: [{ ...METRIC_ITEM_EXAMPLE, ref }], total_items: 1 }))
+      const peak = (await rowButton(METRIC_TITLE)).closest('li')!.querySelector('.timeline-row__peak')!
+      expect(peak).toHaveTextContent('ピーク 82.55%')
+      expect(peak).toHaveTextContent('しきい値 82.5%')
+    })
+
+    it('期間の端で続いていなければ、その表示は出さない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      await rowButton(METRIC_TITLE)
+      expect(document.body).not.toHaveTextContent('期間の開始前から')
+      expect(document.body).not.toHaveTextContent('でも継続中')
+    })
+
+    it('構造化した値（ref の追加項目）が無い応答では detail をそのまま出し、しきい値などは出さない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ items: [METRIC_ITEM_LEGACY_EXAMPLE], total_items: 1 }))
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      expect(within(row).getByText('ピーク 92.5%、サンプル 3 件')).toBeInTheDocument()
+      expect(row.querySelector('.timeline-row__peak')).toBeNull()
+      expect(row).not.toHaveTextContent('しきい値')
+      // 区間は timestamp / end_utc から出せる
+      expect(row.querySelector('.timeline-row__interval')).toHaveTextContent('継続 10 分')
+    })
+
+    it('区間の表示は狭い幅でも折り返せる（折り返し可能なクラスで包む）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      expect(row.querySelector('.timeline-row__interval')).toBeInTheDocument()
+      expect(row.querySelector('.timeline-row__summary')).toBeInTheDocument()
+    })
+
+    it('操作は「この対象で絞る」「ここを起点にする」「イベントで開く」「グラフで開く」。ログで開く・ガイドは出さない', async () => {
+      setup()
+      renderTimeline({ onOpenInMetrics: vi.fn() })
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(METRIC_TITLE)
+      expect(within(region).getByRole('button', { name: 'この対象で絞る' })).toBeInTheDocument()
+      expect(within(region).getByRole('button', { name: 'ここを起点にする' })).toBeInTheDocument()
+      expect(within(region).getByRole('link', { name: 'イベントで開く' })).toBeInTheDocument()
+      expect(within(region).getByRole('button', { name: 'グラフで開く' })).toBeInTheDocument()
+      expect(within(region).queryByRole('link', { name: 'ログで開く' })).not.toBeInTheDocument()
+      expect(region.querySelector('.timeline-guide')).toBeNull()
+    })
+
+    it('「グラフで開く」は区間の開始の 30 分前から終了の 30 分後まで、指標、ピークの時刻の縦線を渡す', async () => {
+      const onOpen = vi.fn()
+      setup()
+      renderTimeline({ onOpenInMetrics: onOpen })
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(METRIC_TITLE)
+      fireEvent.click(within(region).getByRole('button', { name: 'グラフで開く' }))
+      expect(onOpen).toHaveBeenLastCalledWith({
+        from: '2026-03-21T23:35:00.000Z',
+        to: '2026-03-22T00:45:00.000Z',
+        vcenterId: VC,
+        markerUtc: '2026-03-22T00:10:00.000Z',
+        metricKey: 'host.cpu.usage_pct',
+      })
+    })
+
+    it('展開すると、指標・しきい値・ピーク・サンプル数・区間の長さを出す', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(METRIC_TITLE)
+      expect(region).toHaveTextContent('host.cpu.usage_pct')
+      expect(region).toHaveTextContent('80%')
+      expect(region).toHaveTextContent('92.5%')
+      expect(region).toHaveTextContent('3 件')
+      expect(region).toHaveTextContent('10 分')
+    })
+
+    it('「この対象で絞る」は対象と vCenter を条件に入れる', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(METRIC_TITLE)
+      fireEvent.click(within(region).getByRole('button', { name: 'この対象で絞る' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ entity: 'esx01', vcenter_id: VC })
+    })
+  })
+
+  describe('エラーログの行', () => {
+    it('種別・レベル（文字）・出どころ（タイトル）・メッセージの抜粋・まとめた件数（×N と最後の時刻）を出す', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const row = (await rowButton(LOG_TITLE)).closest('li')!
+      expect(within(row).getByText('ログ', { selector: '.timeline-row__kind' })).toBeInTheDocument()
+      expect(within(row).getByText('警告')).toBeInTheDocument()
+      expect(within(row).getByText(/×2（最後 .*1:01:00/)).toBeInTheDocument()
+      expect(within(row).getByText('vmhba0: timeout retrying command')).toBeInTheDocument()
+    })
+
+    it('タイトルが対象名で始まるときは、行の中ではログの種類だけを出す（ホスト名を 2 回出さない）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const row = (await rowButton(LOG_TITLE)).closest('li')!
+      expect(row.querySelector('.timeline-row__entity')).toHaveTextContent('esx01.example.com')
+      expect(row.querySelector('.timeline-row__title')?.textContent).toBe('vmkernel')
+      expect(row.textContent!.match(/esx01\.example\.com/g)).toHaveLength(1)
+      // 詳細領域の名前は、省かない完全なタイトル
+      fireEvent.click(row.querySelector('button')!)
+      expect(screen.getByRole('region', { name: 'esx01.example.com vmkernel の詳細' })).toBeInTheDocument()
+    })
+
+    it('タイトルが対象名で始まらないときは、タイトルをそのまま出す', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ items: [{ ...LOG_ITEM_EXAMPLE, title: 'other-host syslog' }], total_items: 1 }))
+      const row = (await rowButton(/syslog/)).closest('li')!
+      expect(row.querySelector('.timeline-row__title')?.textContent).toBe('other-host syslog')
+    })
+
+    it('開くとメッセージの全文を等幅・改行を保って出す', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(LOG_TITLE)
+      const message = region.querySelector('pre.timeline-row__log-message')!
+      expect(message.textContent).toBe('vmhba0: timeout\n  retrying command')
+      expect(region).toHaveTextContent('2 件')
+    })
+
+    it('1000 文字で切られたメッセージには、切れている旨を出す', async () => {
+      setup()
+      renderTimeline()
+      const long = `${'a'.repeat(999)}…`
+      await answer(0, withMetricsAndLogs({ items: [{ ...LOG_ITEM_EXAMPLE, detail: long }], total_items: 1 }))
+      const region = await openRow(LOG_TITLE)
+      expect(region).toHaveTextContent('1000 文字で切っています')
+    })
+
+    it('短いメッセージには、切れている旨を出さない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(LOG_TITLE)
+      expect(region).not.toHaveTextContent('1000 文字')
+    })
+
+    it('操作は「この対象で絞る」「ここを起点にする」「イベントで開く」「ログで開く」。グラフで開く・ガイドは出さない', async () => {
+      setup()
+      renderTimeline({ onOpenInMetrics: vi.fn() })
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(LOG_TITLE)
+      expect(within(region).getByRole('button', { name: 'この対象で絞る' })).toBeInTheDocument()
+      expect(within(region).getByRole('button', { name: 'ここを起点にする' })).toBeInTheDocument()
+      expect(within(region).getByRole('link', { name: 'イベントで開く' })).toBeInTheDocument()
+      expect(within(region).queryByRole('button', { name: 'グラフで開く' })).not.toBeInTheDocument()
+      expect(region.querySelector('.timeline-guide')).toBeNull()
+    })
+
+    it('「ログで開く」は最初の時刻の 5 分前から最後の時刻の 5 分後までと vCenter を渡す（ホスト・種類は渡せない）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(LOG_TITLE)
+      const href = within(region).getByRole('link', { name: 'ログで開く' }).getAttribute('href')!
+      expect(href.startsWith('#/logs?')).toBe(true)
+      const params = new URLSearchParams(href.split('?')[1])
+      expect(params.get('vcenter_id')).toBe(VC)
+      expect(params.get('from')).toBe('2026-03-22T00:55:00.000Z')
+      expect(params.get('to')).toBe('2026-03-22T01:06:00.000Z')
+      expect([...params.keys()].sort()).toEqual(['from', 'to', 'vcenter_id'])
+    })
+
+    it('イベント行では今までどおりガイドとログで開くが出る', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const region = await openRow(/VmPoweredOffEvent/)
+      expect(within(region).getByRole('link', { name: 'ログで開く' })).toBeInTheDocument()
+    })
+  })
+
+  describe('省かれた種別の知らせ', () => {
+    it('省いていなければ知らせを出さない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      await rowButton(LOG_TITLE)
+      expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    })
+
+    it('ログを省いたときは、一覧から省いたこと・件数はグラフにあること・対処を伝える', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ omitted_sources: [{ source: 'log', reason: 'too_many_rows' }] }))
+      const note = await screen.findByRole('note')
+      expect(note).toHaveTextContent('ログは件数が多すぎるため、一覧から省いています（件数は上のグラフに出ています）')
+      expect(note).toHaveTextContent('期間を短くするか、対象を絞ってください')
+    })
+
+    it('メトリクスを省いたときは、グラフにも出ていないと分かる文にする', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ omitted_sources: [{ source: 'metric', reason: 'too_many_rows' }] }))
+      const note = await screen.findByRole('note')
+      expect(note).toHaveTextContent('メトリクスの超過区間は件数が多すぎるため')
+      expect(note).toHaveTextContent('グラフにも出ていません')
+      expect(note).toHaveTextContent('しきい値を上げるか、期間を短くするか、対象を絞ってください')
+    })
+
+    it('両方省いたときは 1 種別 1 文で並べ、truncated の知らせとも並べて読める', async () => {
+      setup()
+      renderTimeline()
+      await answer(
+        0,
+        withMetricsAndLogs({
+          truncated: true,
+          total_items: 1500,
+          omitted_sources: [
+            { source: 'metric', reason: 'too_many_rows' },
+            { source: 'log', reason: 'too_many_rows' },
+          ],
+        }),
+      )
+      await rowButton(LOG_TITLE)
+      const notes = screen.getAllByRole('note')
+      expect(notes).toHaveLength(3)
+      expect(notes[0]).toHaveTextContent('1500 件中 3 件を表示しています')
+      expect(notes[1]).toHaveTextContent('メトリクスの超過区間')
+      expect(notes[2]).toHaveTextContent('ログは件数')
+      // 同じ入れ物（リスト）にまとまっていて、続けて読める
+      expect(notes[0].parentElement).toBe(notes[2].parentElement)
+    })
+
+    it('省いたため一覧が空でも、知らせを出し「出来事はありません」とは言わない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ items: [], total_items: 0, omitted_sources: [{ source: 'log', reason: 'too_many_rows' }] }))
+      expect(await screen.findByRole('note')).toHaveTextContent('ログは件数が多すぎる')
+      expect(screen.queryByText('この期間に出来事はありません。')).not.toBeInTheDocument()
+      // 期間を広げると件数がさらに増えるので、広げるボタンは出さず、短くする・絞る案内だけにする
+      expect(screen.queryByRole('button', { name: '期間を広げる' })).not.toBeInTheDocument()
+      expect(screen.getByText(/期間を短くするか、対象を絞ってください/, { selector: '.table-empty' })).toBeInTheDocument()
+    })
+
+    it('省いていないときの空の一覧には、今までどおり「期間を広げる」が出る', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      expect(await screen.findByRole('button', { name: '期間を広げる' })).toBeInTheDocument()
+    })
+
+    it('状態の欄は、省いた種別を「（ログは省いています）」と添える（読み上げも同じ）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ omitted_sources: [{ source: 'log', reason: 'too_many_rows' }] }))
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('3 件の出来事を表示しています（ログは省いています）。'),
+      )
+    })
+
+    it('状態の欄: 両方省いたときは省いた順に並べ、truncated とも矛盾しない', async () => {
+      setup()
+      renderTimeline()
+      await answer(
+        0,
+        withMetricsAndLogs({
+          truncated: true,
+          total_items: 1500,
+          omitted_sources: [
+            { source: 'metric', reason: 'too_many_rows' },
+            { source: 'log', reason: 'too_many_rows' },
+          ],
+        }),
+      )
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          '1500 件中 3 件の出来事を表示しています（メトリクス・ログは省いています）。',
+        ),
+      )
+    })
+
+    it('省いていなければ、状態の欄に「省いています」とは書かない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 件の出来事を表示しています。'))
+      expect(screen.getByRole('status')).not.toHaveTextContent('省いています')
+    })
+  })
+
+  describe('件数の俯瞰: メトリクス超過とエラーログ', () => {
+    const legendTexts = () => [...document.querySelectorAll('.recharts-legend-item-text')].map((e) => e.textContent)
+
+    const rectsOf = (name: string) =>
+      [...document.querySelectorAll('.recharts-bar-rectangle path')].filter((r) => r.getAttribute('name')?.includes(name))
+
+    it('エラーログは「件・右の軸」と凡例で伝える。メトリクス超過は凡例ではなく、積み上げの下の帯として説明する', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+      expect(legendTexts()).toContain('エラーログ（件・右の軸）')
+      expect(legendTexts().join()).not.toContain('メトリクス超過')
+      const band = document.querySelector('.timeline-overview__band')!
+      expect(band).toBeInTheDocument()
+      expect(band).toHaveTextContent('メトリクス超過')
+      expect(band).toHaveTextContent('かかっている超過区間の数')
+    })
+
+    it('メトリクス超過は積み上げに入れない（棒の高さが「出来事 + 区間数」の和にならない）。帯は濃いほど区間が多い', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+      // 積み上げの棒にメトリクスの系列は無く、帯に区間のある時間帯（3 本中 2 本）だけが描かれる
+      const bandRects = rectsOf('メトリクス超過')
+      const heights = bandRects.map((r) => Number(r.getAttribute('height')))
+      expect(heights.filter((h) => h > 0)).toHaveLength(2)
+      const stacked = document.querySelector('.timeline-overview__chart .recharts-wrapper')!
+      expect(stacked.querySelectorAll('.recharts-bar-rectangle path[name="メトリクス超過"]').length).toBeLessThanOrEqual(3)
+      const opacities = bandRects.map((r) => Number(r.getAttribute('fill-opacity') ?? '1')).filter((_, i) => heights[i] > 0)
+      // 1 区間の時間帯より 2 区間の時間帯のほうが濃い
+      expect(Math.max(...opacities)).toBeGreaterThan(Math.min(...opacities))
+    })
+
+    it('ログは積み上げに入れず、右の軸の折れ線にする（桁違いに多くても、ほかの種別の棒が潰れない）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+      expect(document.querySelectorAll('.recharts-line').length).toBe(1)
+      const axes = [...document.querySelectorAll('.recharts-yAxis')]
+      expect(axes.some((a) => a.querySelector('line')?.getAttribute('orientation') === 'right')).toBe(true)
+      expect(rectsOf('エラーログ')).toHaveLength(0)
+      // 積み上げの棒（イベント）の高さは、ログの 5000 件に引きずられない
+      const events = [...document.querySelectorAll('.recharts-bar-rectangle path')].filter(
+        (r) => !r.getAttribute('name')?.includes('メトリクス'),
+      )
+      expect(Math.max(...events.map((r) => Number(r.getAttribute('height'))))).toBeGreaterThan(45)
+    })
+
+    it('ログもメトリクスも無ければ、折れ線も帯も出さない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0)
+      await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+      expect(document.querySelectorAll('.recharts-line').length).toBe(0)
+      expect(document.querySelector('.timeline-overview__band')).toBeNull()
+      expect(legendTexts().join()).not.toContain('エラーログ')
+    })
+
+    it('メトリクスを省いたときは、overview に値があっても帯を出さない（ログは出す）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ omitted_sources: [{ source: 'metric', reason: 'too_many_rows' }] }))
+      await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+      expect(document.querySelector('.timeline-overview__band')).toBeNull()
+      expect(legendTexts().join()).toContain('エラーログ')
+    })
+
+    it('ログだけを省いたときも、件数は俯瞰に出す（帯も出す）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs({ omitted_sources: [{ source: 'log', reason: 'too_many_rows' }] }))
+      await screen.findByRole('application', { name: /件数の俯瞰グラフ/ })
+      expect(legendTexts().join()).toContain('エラーログ')
+      expect(document.querySelector('.timeline-overview__band')).toBeInTheDocument()
+    })
+
+    it('キーボード: 矢印・End・Enter で期間を絞れる（帯があっても今までどおり）', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const chart = await screen.findByRole('application', { name: '件数の俯瞰グラフ' })
+      chart.focus()
+      fireEvent.keyDown(chart, { key: 'End' })
+      fireEvent.keyDown(chart, { key: 'Enter' })
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ from: '2026-03-22T00:40:00.000Z', to: '2026-03-22T01:00:00.000Z' })
+    })
+
+    it('キーボードの案内は、メトリクス超過の区間の数を出来事の件数に足さない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const chart = await screen.findByRole('application', { name: '件数の俯瞰グラフ' })
+      chart.focus()
+      fireEvent.keyDown(chart, { key: 'ArrowRight' })
+      // 先頭の棒: イベント 1・メトリクス超過 1 区間
+      expect(chart.querySelector('.timeline-overview__announce')).toHaveTextContent('出来事 1 件')
+      expect(chart.querySelector('.timeline-overview__announce')).toHaveTextContent('メトリクス超過 1 区間')
+    })
+  })
+
+  describe('ハイライト: メトリクスとログ', () => {
+    it('最初の兆候がメトリクスの行でも、種別とレベルを出し、クリックで一覧の該当行が開く', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, withMetricsAndLogs())
+      const highlights = await screen.findByLabelText('ハイライト')
+      expect(within(highlights).getByText('メトリクス')).toBeInTheDocument()
+      fireEvent.click(within(highlights).getByRole('button', { name: /esx01 \/ CPU 使用率が閾値/ }))
+      const row = (await rowButton(METRIC_TITLE)).closest('li')!
+      expect(row).toHaveClass('timeline-row--revealed')
+      expect(row.querySelector('.timeline-row__summary')).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('最初の兆候がログの行のとき、対象名がタイトルに含まれていれば重ねて出さない', async () => {
+      setup()
+      renderTimeline()
+      const items = [LOG_ITEM_EXAMPLE]
+      await answer(
+        0,
+        withMetricsAndLogs({ items, total_items: 1, highlights: { first_signal: items[0], top_entities: [], new_event_types: [] } }),
+      )
+      const highlights = await screen.findByLabelText('ハイライト')
+      const link = within(highlights).getByRole('button', { name: /vmkernel/ })
+      expect(link).toHaveTextContent('esx01.example.com vmkernel')
+      expect(link.textContent).not.toContain('esx01.example.com / ')
+    })
+
+    it('影響の大きい対象に FQDN や IP が入っても、そのまま出して対象で絞れる', async () => {
+      setup()
+      renderTimeline()
+      await answer(
+        0,
+        withMetricsAndLogs({
+          highlights: {
+            first_signal: null,
+            top_entities: [
+              { entity_name: 'esx01.very-long-subdomain.example.co.jp', vcenter_id: VC, vcenter_name: 'vc-main', item_count: 12, first_seen_utc: '2026-03-22T00:10:00Z' },
+              { entity_name: '192.168.100.200', vcenter_id: VC, vcenter_name: 'vc-main', item_count: 3, first_seen_utc: '2026-03-22T00:12:00Z' },
+            ],
+            new_event_types: [],
+          },
+        }),
+      )
+      const highlights = await screen.findByLabelText('ハイライト')
+      fireEvent.click(within(highlights).getByRole('button', { name: '192.168.100.200' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ entity: '192.168.100.200', vcenter_id: VC })
+    })
+  })
 })
+

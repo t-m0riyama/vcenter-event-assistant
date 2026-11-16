@@ -66,3 +66,22 @@ def test_compose_uses_same_configurable_port_for_app_and_publish(compose_file: s
 
     assert '"127.0.0.1:${UVICORN_PORT:-8000}:${UVICORN_PORT:-8000}"' in compose
     assert "UVICORN_PORT: ${UVICORN_PORT:-8000}" in compose
+
+
+def test_timeline_metric_breach_sample_limit_defaults_and_reads_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TIMELINE_METRIC_BREACH_SAMPLE_LIMIT", raising=False)
+    assert Settings(_env_file=None).timeline_metric_breach_sample_limit == 40_000
+
+    monkeypatch.setenv("TIMELINE_METRIC_BREACH_SAMPLE_LIMIT", "200000")
+    assert Settings(_env_file=None).timeline_metric_breach_sample_limit == 200_000
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "100000001", "many"])
+def test_timeline_metric_breach_sample_limit_rejects_invalid_values(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("TIMELINE_METRIC_BREACH_SAMPLE_LIMIT", value)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
