@@ -1102,12 +1102,14 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     - 前のサンプルとの間隔が ``metric_max_gap_seconds``（アラート評価の鮮度の上限と同じ値。既定は
       収集間隔 × 3 = 15 分）を超えたら区切る。それ以内の欠け（収集の失敗）では区切らない。
 
-    読む量を抑えるため、期間内の**閾値以上のサンプルだけ**を読み、区切りの判定に要る「直前のサンプル」
-    （閾値未満も含む、期間の前でもよい）は、既存の索引 ``(vcenter_id, entity_moid, metric_key, sampled_at)``
-    を使う相関副問い合わせで 1 件ずつ引く。直前のサンプルが閾値以上で、間隔が上限以内なら前の区間の続き。
+    読む量を抑えるため、期間内の**閾値以上のサンプルだけ**を読む。区切りの判定は、1 つ前の閾値以上の
+    サンプルとの間隔と、その間に別のサンプル（必ず閾値未満）があるかで決め、後者は既存の索引
+    ``(vcenter_id, entity_moid, metric_key, sampled_at)`` だけで確かめる（表を引かない）。表を引いて直前の
+    サンプルの値を見るのは、系列ごとに期間内の最初の行（期間の開始前からの継続の判定）だけ。
     区間への番号付けとピーク・名前の算出は、閾値以上のサンプルだけに window 関数をかけて DB で行い、
     受け取るのは区間ごとに 1 行だけにする（超過が長く続いても行数は増えない。Issue #301 と同じ考え方）。
-    以前は期間内の全サンプルに window 関数をかけており、7 日・200 ホストで SQLite は 10 秒を超えた。
+    以前は期間内の全サンプルに window 関数をかけており、7 日・200 ホストで SQLite は 12〜16 秒かかった。
+    費用は閾値以上のサンプルの数に比例するので、超過が多いと時間が延びる（目安は運用ドキュメント）。
 
     上位 N 台に絞らない（``build_chat_period_metrics`` の上位 15 台の作りは使わない）ので、超過したホストは
     すべて出る。行数の上限（``context_aggregation_max_rows``）は区間の数に当て、超えたら 422 にせず
@@ -1155,9 +1157,37 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     # 対象（entity）の絞り込みはここではかけない。サンプル単位で除くと、名前の違うサンプルが抜けて
     # 区間の区切りが変わるので、区間にまとめた後の名前に当てる。
 
-    # 1. 期間内の閾値以上のサンプルと、その直前のサンプル（同じ系列。期間の前でもよい）。直前のサンプルが
-    #    閾値以上ならそのエポック秒、閾値未満なら NULL を、索引の seek 1 回（ORDER BY ... LIMIT 1）で引く。
-    #    id で結合して値を引く形にすると、PostgreSQL は表全体を読むハッシュ結合を選ぶ。
+    # 列の順は意味を変えない。索引 (vcenter_id, entity_moid, metric_key, sampled_at) の並びと一致させると、
+    # SQLite が並べ替えを省くためにその索引で期間外も含む全サンプルを読む計画を選ぶので、わざと順を変える。
+    def series_of(sub: Any) -> tuple[Any, Any, Any]:
+        return (sub.c.mk, sub.c.moid, sub.c.vc)
+
+    # 1. 期間内の閾値以上のサンプル
+    hits0 = (
+        select(
+            MetricSample.id.label("id"),
+            MetricSample.vcenter_id.label("vc"),
+            MetricSample.entity_moid.label("moid"),
+            MetricSample.metric_key.label("mk"),
+            MetricSample.sampled_at.label("at"),
+            MetricSample.value.label("value"),
+            func.nullif(func.trim(MetricSample.entity_name), "").label("nm"),
+            MetricSample.entity_type.label("etype"),
+        )
+        .where(*clauses)
+        .subquery("metric_hits0")
+    )
+    # 2. 同じ系列の 1 つ前の閾値以上のサンプルの時刻（期間内）
+    lagged = select(
+        hits0,
+        func.lag(hits0.c.at).over(partition_by=series_of(hits0), order_by=hits0.c.at).label("prev_hit_at"),
+    ).subquery("metric_hits_lagged")
+    # 3. 区間の始まり（starts=1）の印。読む量を抑えるため、表を引くのは系列ごとに期間内の最初の行だけにする。
+    #    - 期間内の最初の行（1 つ前の閾値以上の行が無い）: 直前のサンプル（期間の前でもよい）が閾値以上で、
+    #      間隔が上限以内なら続き（期間の開始前から継続）。直前のサンプルは索引の seek 1 回で引く。
+    #    - それ以外: 1 つ前の閾値以上の行との間隔が上限を超えたら始まり。上限以内でも、その間に別のサンプルが
+    #      あれば始まり（間に挟まるサンプルは必ず閾値未満。閾値以上なら 1 つ前の行になっているため）。
+    #      間のサンプルの有無は、索引 (vcenter_id, entity_moid, metric_key, sampled_at) だけで分かる（表を引かない）。
     prev = aliased(MetricSample, name="metric_prev")
     prev_hit_epoch = (
         select(
@@ -1170,47 +1200,48 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
             )
         )
         .where(
-            prev.vcenter_id == MetricSample.vcenter_id,
-            prev.entity_moid == MetricSample.entity_moid,
-            prev.metric_key == MetricSample.metric_key,
-            prev.sampled_at < MetricSample.sampled_at,
+            prev.vcenter_id == lagged.c.vc,
+            prev.entity_moid == lagged.c.moid,
+            prev.metric_key == lagged.c.mk,
+            prev.sampled_at < lagged.c.at,
         )
         .order_by(prev.sampled_at.desc())
         .limit(1)
         .scalar_subquery()
     )
-    hits0 = (
-        select(
-            MetricSample.id.label("id"),
-            MetricSample.vcenter_id.label("vc"),
-            MetricSample.entity_moid.label("moid"),
-            MetricSample.metric_key.label("mk"),
-            MetricSample.sampled_at.label("at"),
-            MetricSample.value.label("value"),
-            func.nullif(func.trim(MetricSample.entity_name), "").label("nm"),
-            MetricSample.entity_type.label("etype"),
-            prev_hit_epoch.label("prev_hit_epoch"),
+    between = aliased(MetricSample, name="metric_between")
+    sample_between = (
+        select(between.id)
+        .where(
+            between.vcenter_id == lagged.c.vc,
+            between.entity_moid == lagged.c.moid,
+            between.metric_key == lagged.c.mk,
+            between.sampled_at > lagged.c.prev_hit_at,
+            between.sampled_at < lagged.c.at,
         )
-        .where(*clauses)
-        .subquery("metric_hits0")
+        .exists()
     )
-    # 2. 区間の始まり（starts=1）の印。直前のサンプルが閾値以上で、間隔が上限以内のときだけ前の区間の続き。
-    #    直前のサンプルが無いとき・閾値未満のとき（NULL）も始まり。
-    gap = epoch_seconds_expr(hits0.c.at, scope.dialect_name) - hits0.c.prev_hit_epoch
+    at_epoch = epoch_seconds_expr(lagged.c.at, scope.dialect_name)
     hits = (
         select(
-            hits0.c.id, hits0.c.vc, hits0.c.moid, hits0.c.mk, hits0.c.at,
-            hits0.c.value, hits0.c.nm, hits0.c.etype,
-            case((gap <= max_gap, 0), else_=1).label("starts"),
+            lagged.c.id, lagged.c.vc, lagged.c.moid, lagged.c.mk, lagged.c.at,
+            lagged.c.value, lagged.c.nm, lagged.c.etype,
+            case(
+                (
+                    lagged.c.prev_hit_at.is_(None),
+                    case((at_epoch - prev_hit_epoch <= max_gap, 0), else_=1),
+                ),
+                (at_epoch - epoch_seconds_expr(lagged.c.prev_hit_at, scope.dialect_name) > max_gap, 1),
+                (sample_between, 1),
+                else_=0,
+            ).label("starts"),
         )
         # OFFSET 0 は最適化の壁。PostgreSQL がこの副問い合わせを外側に展開すると、starts を使う箇所ごとに
-        # 直前のサンプルの相関副問い合わせを実行し直す（2 回になる）ので、ここで 1 回だけ求めさせる。
+        # 相関副問い合わせを実行し直す（2 回になる）ので、ここで 1 回だけ求めさせる。
         .offset(0)
         .subquery("metric_hits")
     )
-    # 列の順は意味を変えない。索引 (vcenter_id, entity_moid, metric_key, sampled_at) の並びと一致させると、
-    # SQLite が並べ替えを省くためにその索引で期間外も含む全サンプルを読む計画を選ぶので、わざと順を変える。
-    hseries = (hits.c.mk, hits.c.moid, hits.c.vc)
+    hseries = series_of(hits)
     # 3. 始まりの印の累積和が区間の番号になる
     runs = select(
         hits,
