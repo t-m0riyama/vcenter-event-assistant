@@ -562,3 +562,9 @@
   color: var(--color-warning-text);
   font-size: var(--font-size-footnote);
 }
+
+.timeline-saved-banner__hint {
+  flex-basis: 100%;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-footnote);
+}

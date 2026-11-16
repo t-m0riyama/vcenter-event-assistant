@@ -73,6 +73,10 @@ export type SavedViewState = {
   readonly range: ResolvedRange
 }
 
+/** 保存済みの結果を読めず、現在のデータで再集計したときの注記。 */
+export const SAVED_RESULT_UNREADABLE_NOTICE =
+  '保存時点の結果はいまの形式で読めないため、現在のデータで再集計しました。'
+
 function readSortOrder(): TimelineSortOrder {
   try {
     return localStorage.getItem(TIMELINE_SORT_ORDER_STORAGE_KEY) === 'asc' ? 'asc' : 'desc'
@@ -124,6 +128,10 @@ export function useTimelineViewController(
   const [loadedRequest, setLoadedRequest] = useState<IncidentTimelineViewRequest | null>(null)
   /** 保存済みスナップショットの結果を表示中なら、その内容。あいだは自動の読み込みを止める。 */
   const [savedView, setSavedView] = useState<SavedViewState | null>(null)
+  /** 保存済みの結果を読めず再集計に落ちたときの注記。条件の変更・再集計・URL の変更で消える。 */
+  const [notice, setNotice] = useState<string | null>(null)
+  /** 利用者が条件を決め直した回数。詳細の取得中に条件が変わったかを見分け、古い結果で上書きしないために使う。 */
+  const intentRef = useRef(0)
   const savedViewActiveRef = useRef(false)
   savedViewActiveRef.current = savedView !== null
   const [loading, setLoading] = useState(false)
@@ -136,7 +144,9 @@ export function useTimelineViewController(
 
   /** 利用者が条件を変えたとき。URL の読めなかった部分は、この変更で置き換わる。 */
   const setConditions = useCallback((next: (c: TimelineConditions) => TimelineConditions) => {
+    intentRef.current += 1
     setUrlIssue(null)
+    setNotice(null)
     // 保存済みの結果の表示中に条件を変えたら、通常の表示（現在のデータ）に戻る
     setSavedView(null)
     setConditionsRaw(next)
@@ -255,7 +265,9 @@ export function useTimelineViewController(
     ) {
       return false
     }
+    intentRef.current += 1
     setSavedView(null)
+    setNotice(null)
     setConditionsRaw(incoming.conditions)
     setUrlIssue(incoming.issue)
     setEntityInput(incoming.conditions.entity)
@@ -323,6 +335,7 @@ export function useTimelineViewController(
       desiredRef.current = { id: ++jobCounterRef.current, body: null, abort }
       setData(null)
       setLoadedRange(null)
+      setLoadedRequest(null)
       setError({ kind: 'invalid', message: invalid })
       void pump()
       return
@@ -471,7 +484,11 @@ export function useTimelineViewController(
     patch({ entity: '' })
   }, [patch])
 
-  const refresh = useCallback(() => setReloadNonce((n) => n + 1), [])
+  const refresh = useCallback(() => {
+    // 保存済みの結果の表示中は「更新」で現在のデータに入れ替えない（再集計は専用の操作）
+    if (savedViewActiveRef.current) return
+    setReloadNonce((n) => n + 1)
+  }, [])
 
   /** 保存済みスナップショットの期間と vCenter を条件に反映する（対象・起点は外す）。 */
   const applySnapshotConditions = useCallback(
@@ -497,9 +514,15 @@ export function useTimelineViewController(
   const showSavedResult = useCallback(
     (saved: Omit<SavedViewState, 'range'>, request: SavedIncidentTimelineViewRequest) => {
       const conditions = conditionsFromViewRequest(request)
+      intentRef.current += 1
       desiredRef.current?.abort.abort()
       desiredRef.current = null
       lastKeyRef.current = null
+      // 外したあとに、開く前の別の条件の結果が出ないよう、通常の表示の結果も捨てる
+      setData(null)
+      setLoadedRange(null)
+      setLoadedRequest(null)
+      setNotice(null)
       setEntityInput(conditions.entity)
       setRangeHistory([])
       setRangeInputError(null)
@@ -514,26 +537,35 @@ export function useTimelineViewController(
 
   /** 保存時の `view_request` の条件へ戻して、現在のデータで集計し直す（保存済みの結果の表示ではないとき）。 */
   const applyViewRequest = useCallback(
-    (request: SavedIncidentTimelineViewRequest) => {
+    (request: SavedIncidentTimelineViewRequest, options: { notice?: string } = {}) => {
       const conditions = conditionsFromViewRequest(request)
       setEntityInput(conditions.entity)
       setRangeHistory([])
       setRangeInputError(null)
       setConditions(() => conditions)
+      // setConditions は注記を消すので、あとから入れる
+      if (options.notice) setNotice(options.notice)
     },
     [setConditions],
   )
 
   /** 保存済みの結果の表示をやめ、同じ条件で現在のデータを読み直す。 */
   const reaggregate = useCallback(() => {
+    intentRef.current += 1
     lastKeyRef.current = null
     setSavedView(null)
+    setNotice(null)
     setReloadNonce((n) => n + 1)
   }, [])
 
   const showingSaved = savedView !== null
 
+  /** 現在の「利用者の意図」の通し番号。取得の前後で変わっていたら、取得した内容は使わない。 */
+  const getIntent = useCallback(() => intentRef.current, [])
+
   return {
+    notice,
+    getIntent,
     savedView,
     showSavedResult,
     applyViewRequest,

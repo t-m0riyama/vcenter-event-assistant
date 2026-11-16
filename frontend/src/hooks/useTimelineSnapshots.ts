@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 
-import { apiGet, apiPost } from '../api'
+import { ApiError, apiGet, apiPost } from '../api'
 import { getManualSnapshotDetail } from '../api/incidentTimelineSnapshots'
 import { buildIncidentTimelineBuildRequestPayload } from '../api/buildIncidentTimelineBuildRequestPayload'
 import {
@@ -12,7 +12,7 @@ import {
   type SavedIncidentTimelineViewRequest,
 } from '../api/schemas'
 import type { ResolvedRange } from '../panels/timeline/timelineModel'
-import type { SavedViewState } from './useTimelineViewController'
+import { SAVED_RESULT_UNREADABLE_NOTICE, type SavedViewState } from './useTimelineViewController'
 import { toErrorMessage } from '../utils/errors'
 import {
   DEFAULT_METRIC_THRESHOLD_CPU_PCT,
@@ -20,6 +20,10 @@ import {
   DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
   DEFAULT_METRIC_THRESHOLD_NETWORK_PCT,
 } from './periodMetricThresholdDefaults'
+
+/** 保存する結果が大きすぎて 413 になったときの文言。 */
+export const SNAPSHOT_TOO_LARGE_MESSAGE =
+  '保存する結果が大きすぎます。期間を狭めるか、種別を減らしてからもう一度保存してください。'
 
 /** スナップショットから条件へ写す値。保存済みの期間と vCenter だけを使う。 */
 export function snapshotConditions(item: IncidentTimelineManualSnapshotListItem): {
@@ -50,15 +54,18 @@ export function useTimelineSnapshots(params: {
   /** 旧データ（条件が期間と vCenter だけ）を条件へ写して再集計する。 */
   applyConditions: (range: ResolvedRange, vcenterId: string) => void
   /** 保存した `view_request` の条件へ写して再集計する。 */
-  applyViewRequest: (request: SavedIncidentTimelineViewRequest) => void
+  applyViewRequest: (request: SavedIncidentTimelineViewRequest, options?: { notice?: string }) => void
+  /** 利用者の意図の通し番号（条件が変わったかを見分ける）。 */
+  getIntent: () => number
   /** 保存済みの結果をそのまま表示する。 */
   showSavedResult: (saved: Omit<SavedViewState, 'range'>, request: SavedIncidentTimelineViewRequest) => void
 }) {
-  const { onError, vcenterId, loadedRange, loadedRequest, applyConditions, applyViewRequest, showSavedResult } = params
+  const { onError, vcenterId, loadedRange, loadedRequest, applyConditions, applyViewRequest, showSavedResult, getIntent } = params
   const [open, setOpenState] = useState(false)
   const [items, setItems] = useState<IncidentTimelineManualSnapshotListItem[]>([])
   const [listLoaded, setListLoaded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
   const [operatorNote, setOperatorNote] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -85,41 +92,56 @@ export function useTimelineSnapshots(params: {
   const select = useCallback(
     async (item: IncidentTimelineManualSnapshotListItem) => {
       const seq = ++selectSeqRef.current
+      const previousId = selectedIdRef.current
       setSelectedId(item.snapshot_id)
-      const reaggregate = () => {
-        if (item.view_request) applyViewRequest(item.view_request)
-        else {
-          const { range, vcenterId: id } = snapshotConditions(item)
-          applyConditions(range, id)
-        }
+      selectedIdRef.current = item.snapshot_id
+      const restoreSelection = () => {
+        setSelectedId(previousId)
+        selectedIdRef.current = previousId
       }
-      if (!item.has_result || !item.view_request) {
-        reaggregate()
+      const { range, vcenterId: id } = snapshotConditions(item)
+      if (!item.has_result) {
+        // 結果の無い旧データ: 保存した条件（view_request か、期間と vCenter）で再集計する
+        if (item.view_request) applyViewRequest(item.view_request)
+        else applyConditions(range, id)
         return
+      }
+      const intent = getIntent()
+      // view_request が読めなかった結果つきスナップショットは、期間と vCenter だけの条件にする
+      const request: SavedIncidentTimelineViewRequest = item.view_request ?? {
+        from: range.from,
+        to: range.to,
+        ...(id ? { vcenter_id: id } : {}),
       }
       try {
         const detail = await getManualSnapshotDetail(item.snapshot_id)
-        // 続けて別のスナップショットを選んだなら、こちらの結果は捨てる
-        if (seq !== selectSeqRef.current) return
+        // 続けて別のものを選んだ・取得中に条件を変えたなら、この結果は使わない
+        if (seq !== selectSeqRef.current || getIntent() !== intent) {
+          if (seq === selectSeqRef.current) restoreSelection()
+          return
+        }
         if (detail.has_result && detail.result) {
           showSavedResult(
             {
               snapshotId: detail.snapshot_id,
               note: detail.operator_note,
-              savedAt: detail.timestamp_utc,
+              savedAt: detail.created_at ?? detail.timestamp_utc,
               result: detail.result,
             },
-            detail.view_request ?? item.view_request,
+            detail.view_request ?? request,
           )
         } else {
-          // 保存時のスキーマと合わず読めない結果。保存した条件で再集計する
-          reaggregate()
+          // 保存時のスキーマと合わず読めない結果。黙らず注記して、保存した条件で再集計する
+          applyViewRequest(detail.view_request ?? request, { notice: SAVED_RESULT_UNREADABLE_NOTICE })
         }
       } catch (e) {
-        if (seq === selectSeqRef.current) onError(toErrorMessage(e))
+        if (seq === selectSeqRef.current) {
+          restoreSelection()
+          onError(toErrorMessage(e))
+        }
       }
     },
-    [applyConditions, applyViewRequest, showSavedResult, onError],
+    [applyConditions, applyViewRequest, showSavedResult, getIntent, onError],
   )
 
   const save = useCallback(async () => {
@@ -161,7 +183,7 @@ export function useTimelineSnapshots(params: {
       await fetchItems()
       setOperatorNote('')
     } catch (e) {
-      onError(toErrorMessage(e))
+      onError(e instanceof ApiError && e.status === 413 ? SNAPSHOT_TOO_LARGE_MESSAGE : toErrorMessage(e))
     } finally {
       setSaving(false)
     }

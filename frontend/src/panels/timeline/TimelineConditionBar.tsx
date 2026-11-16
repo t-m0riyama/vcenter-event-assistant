@@ -136,6 +136,8 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
           type="button"
           className="btn btn--gray timeline-bar__refresh"
           onClick={c.refresh}
+          disabled={c.savedView !== null}
+          title={c.savedView ? '保存済みの結果を表示中です。現在のデータにするには「現在のデータで再集計」を押してください' : undefined}
           aria-busy={c.loading ? 'true' : 'false'}
         >
           更新

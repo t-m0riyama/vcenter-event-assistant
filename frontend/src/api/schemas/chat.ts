@@ -202,6 +202,7 @@ export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
   graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
+  created_at: isoOffsetDateTimeSchema.nullable().optional(),
 })
 
 export type IncidentTimelineManualSnapshotCreateResponse = z.infer<
@@ -221,6 +222,8 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
   /** 保存時点の結果を持つか（一覧には結果そのものは載らない）。古いサーバには無い。 */
   has_result: z.boolean().optional().default(false),
+  /** サーバが保存した日時。`timestamp_utc` は利用者側の値なので、「保存した日時」にはこちらを使う。 */
+  created_at: isoOffsetDateTimeSchema.nullable().optional(),
   /** 保存した view のリクエスト。読めない形のときは null として扱う。 */
   view_request: incidentTimelineViewRequestSchema.nullable().optional().catch(null),
 })

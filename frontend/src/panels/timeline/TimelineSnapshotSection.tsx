@@ -78,7 +78,7 @@ export function TimelineSnapshotSection({ snapshots: s, canSaveNow, showingSaved
                       グラフで開く
                     </button>
                   ) : null}{' '}
-                  <span className="timeline-snapshots__time">({formatIsoInTimeZone(item.timestamp_utc, timeZone)})</span>
+                  <span className="timeline-snapshots__time">({formatIsoInTimeZone(item.created_at ?? item.timestamp_utc, timeZone)})</span>
                 </li>
               ))}
             </ul>

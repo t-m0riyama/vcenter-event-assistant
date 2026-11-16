@@ -48,6 +48,7 @@ export function TimelinePanel({
     applyConditions: c.applySnapshotConditions,
     applyViewRequest: c.applyViewRequest,
     showSavedResult: c.showSavedResult,
+    getIntent: c.getIntent,
   })
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [reveal, setReveal] = useState<{ id: string; nonce: number } | null>(null)
@@ -96,12 +97,21 @@ export function TimelinePanel({
       <p className="timeline-status" role="status" aria-live="polite">
         {statusText}
       </p>
+      {c.notice ? (
+        <p className="timeline-truncated" role="note" aria-label="読み込みの注記">
+          {c.notice}
+        </p>
+      ) : null}
       {c.savedView ? (
         <div className="timeline-saved-banner" role="note" aria-label="保存時点の内容">
           <p>
             <strong>保存時点の内容を表示しています。</strong>
             保存した日時: {formatIsoInTimeZone(c.savedView.savedAt, c.timeZone)}（{c.timeZone}）。
             現在のデータとは異なります。
+          </p>
+          <p className="timeline-saved-banner__hint">
+            元のイベント・ログ・メトリクスが保持期間を過ぎていると、行の「イベントで開く」「ログで開く」「グラフで開く」の先は空になります。
+            「この対象で絞る」「ここを起点にする」は、現在のデータでの再集計になります。
           </p>
           <p className="timeline-saved-banner__memo">運用メモ: {c.savedView.note}</p>
           <button type="button" className="btn btn--gray" onClick={c.reaggregate}>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import json
 import logging
 import uuid
 
@@ -31,6 +32,7 @@ from vcenter_event_assistant.api.schemas.chat import (
     IncidentTimelineManualSnapshotListResponse,
 )
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineSavedViewRequest,
     IncidentTimelineViewRequest,
     IncidentTimelineViewResponse,
 )
@@ -41,6 +43,32 @@ from vcenter_event_assistant.services.incident_timeline_view import build_incide
 
 router = APIRouter(prefix="/incident-timeline", tags=["incident-timeline"])
 logger = logging.getLogger(__name__)
+
+# 保存する結果の各行の detail の文字数の上限（超えたら切って印を付ける。保存用のコピーだけに適用する）。
+SNAPSHOT_DETAIL_MAX_CHARS = 2000
+_DETAIL_CUT_MARK = "…（保存時に切り詰めました）"
+# 保存する結果の JSON（UTF-8）のバイト数の上限。超えたら保存せず 413 にする。
+MAX_SNAPSHOT_RESULT_BYTES = 8 * 1024 * 1024
+
+
+def _truncate_details_for_storage(value: object) -> object:
+    """結果の中の ``detail``（文字列）をすべて上限で切る。行・``highlights.first_signal`` など同じ形の場所に効く。"""
+    if isinstance(value, dict):
+        return {
+            key: (
+                item[:SNAPSHOT_DETAIL_MAX_CHARS] + _DETAIL_CUT_MARK
+                if key == "detail" and isinstance(item, str) and len(item) > SNAPSHOT_DETAIL_MAX_CHARS
+                else _truncate_details_for_storage(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_truncate_details_for_storage(item) for item in value]
+    return value
+
+
+def _json_utf8_size(value: object) -> int:
+    return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
 
 
 def _normalize_utc_datetime(value: datetime) -> datetime:
@@ -66,13 +94,13 @@ def _graph_context_for_response(snapshot: IncidentTimelineManualSnapshot) -> Inc
     return IncidentTimelineGraphContext.model_validate(raw)
 
 
-def _view_request_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineViewRequest | None:
+def _view_request_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineSavedViewRequest | None:
     """保存した view のリクエスト。将来スキーマが変わって読めないときは None（一覧・詳細を壊さない）。"""
     raw = snapshot.view_request_payload
     if not raw:
         return None
     try:
-        return IncidentTimelineViewRequest.model_validate(raw)
+        return IncidentTimelineSavedViewRequest.model_validate(raw)
     except ValidationError:
         logger.warning("snapshot %s has an unreadable view_request_payload", snapshot.id)
         return None
@@ -104,6 +132,7 @@ def _list_item(snapshot: IncidentTimelineManualSnapshot, *, has_result: bool) ->
         graph_context=_graph_context_for_response(snapshot),
         has_result=has_result,
         view_request=_view_request_for_response(snapshot),
+        created_at=_normalize_utc_datetime(snapshot.created_at) if snapshot.created_at else None,
     )
 
 
@@ -146,7 +175,12 @@ async def post_manual_snapshot(
             session, body.view_request, owner_key=principal_owner_key(principal)
         )
         view_request_payload = body.view_request.model_dump(mode="json", by_alias=True)
-        result_payload = result.model_dump(mode="json")
+        result_payload = _truncate_details_for_storage(result.model_dump(mode="json"))  # type: ignore[assignment]
+        if _json_utf8_size(result_payload) > MAX_SNAPSHOT_RESULT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="保存する結果が大きすぎます。期間を狭めるか、種別を減らしてからもう一度保存してください。",
+            )
         from_time, to_time = body.view_request.from_time, body.view_request.to_time
         # 旧形式の表示（結果を読めないときの再集計）用に、条件を build_request_payload にも写す。
         build_request_payload = build_request_payload or IncidentTimelineBuildRequest(
@@ -187,6 +221,7 @@ async def post_manual_snapshot(
         snapshot_kind=snapshot.snapshot_kind,
         trigger_id=snapshot.trigger_id,
         graph_context=_graph_context_for_response(snapshot),
+        created_at=_normalize_utc_datetime(snapshot.created_at) if snapshot.created_at else None,
     )
 
 

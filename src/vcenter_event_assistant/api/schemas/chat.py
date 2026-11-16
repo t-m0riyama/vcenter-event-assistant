@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineSavedViewRequest,
     IncidentTimelineViewRequest,
     IncidentTimelineViewResponse,
 )
@@ -292,6 +293,7 @@ class IncidentTimelineManualSnapshotCreateResponse(BaseModel):
     snapshot_kind: Literal["manual", "auto"] = "manual"
     trigger_id: str | None = None
     graph_context: IncidentTimelineGraphContext | None = None
+    created_at: datetime | None = Field(default=None, description="サーバが保存した日時（UTC）。timestamp_utc は利用者側の値")
 
 
 class IncidentTimelineManualSnapshotListItem(BaseModel):
@@ -310,7 +312,8 @@ class IncidentTimelineManualSnapshotListItem(BaseModel):
     trigger_evidence: dict[str, object] | None = None
     graph_context: IncidentTimelineGraphContext | None = None
     has_result: bool = Field(default=False, description="保存時点の view の結果を持つか（結果そのものは載せない）")
-    view_request: IncidentTimelineViewRequest | None = None
+    view_request: IncidentTimelineSavedViewRequest | None = None
+    created_at: datetime | None = Field(default=None, description="サーバが保存した日時（UTC）")
 
 
 class IncidentTimelineManualSnapshotDetail(IncidentTimelineManualSnapshotListItem):

@@ -3,6 +3,7 @@
 SQLite / PostgreSQL 向けの engine 生成、``session_scope``、起動時 Alembic マイグレーションを提供する。
 """
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from urllib.parse import unquote, urlsplit
@@ -69,13 +70,19 @@ def get_engine(*, settings: Settings | None = None):
             _engine = create_async_engine(
                 url,
                 echo=False,
+                json_serializer=_json_serializer,
                 connect_args={"check_same_thread": False, "timeout": 30.0},
                 poolclass=StaticPool if local_uri else None,
             )
             event.listen(_engine.sync_engine, "connect", _sqlite_enable_foreign_keys)
         else:
-            _engine = create_async_engine(url, echo=False)
+            _engine = create_async_engine(url, echo=False, json_serializer=_json_serializer)
     return _engine
+
+
+def _json_serializer(value: object) -> str:
+    """JSON 列の保存形式。日本語を ``\\uXXXX`` に展開しない（1 文字 6 バイトになり、結果の保存で大きくなるため）。"""
+    return json.dumps(value, ensure_ascii=False)
 
 
 def get_session_factory(*, settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
