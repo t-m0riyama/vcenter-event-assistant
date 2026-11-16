@@ -1393,10 +1393,11 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
             LogRecord.severity,
         )
         .where(*filters)
-        .order_by(LogRecord.effective_at, LogRecord.id)
+        # ORDER BY は付けない（Python で並べる）。上限 + 1 行で超えたかを見るだけなので SQL 側の並びは要らず、
+        # 付けると SQLite が並べ替えを省くために (vcenter_id, effective_at) などの索引を選び、期間内の全ログを読む。
         .limit(scope.max_rows + 1)
     )
-    rows = (await session.execute(list_stmt)).all()
+    rows = sorted((await session.execute(list_stmt)).all(), key=lambda r: (to_utc(r.effective_at), r.id))
     if len(rows) > scope.max_rows:
         # 422 にせず、ログの行だけを省く（イベントやアラートまで見えなくしない）。俯瞰の件数は返す。
         return _Collected(overview={"log_error": counts}, omitted=True)

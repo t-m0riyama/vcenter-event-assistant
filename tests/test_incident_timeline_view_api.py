@@ -1406,7 +1406,7 @@ async def test_log_detail_is_read_only_for_kept_items_and_truncated(
     signal = data["highlights"]["first_signal"]
     assert signal["kind"] == "log" and signal["detail"] == "earliest"
     sql = [str(s) for s in captured]
-    list_sql = [s for s in sql if "ORDER BY log_records.effective_at, log_records.id" in s]
+    list_sql = [s for s in sql if "SELECT log_records.id, log_records.effective_at" in s]
     assert list_sql and all("log_records.message" not in s for s in list_sql)
     # message を引くのは、残った行（まとめた行は最初のログ）と first_signal の id だけ
     assert _message_fetch_ids(captured, "log_records") == {merged_first, earliest}

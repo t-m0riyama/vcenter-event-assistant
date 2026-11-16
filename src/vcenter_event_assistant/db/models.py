@@ -97,6 +97,15 @@ Index(
     func.lower(func.trim(LogRecord.severity)),
     LogRecord.effective_at,
 )
+# 同じ問い合わせで vCenter を指定したとき用。SQLite は指定ありだと ix_log_vcenter_effective_time
+# （vcenter_id, effective_at）を選び、期間内の全ログ（大半は info / warning）を読むので、vCenter を先頭にした
+# 同じ式の索引を足す。
+Index(
+    "ix_log_records_vcenter_severity_norm_effective",
+    LogRecord.vcenter_id,
+    func.lower(func.trim(LogRecord.severity)),
+    LogRecord.effective_at,
+)
 
 
 class EventScoreRule(Base):
@@ -141,6 +150,17 @@ class MetricSample(Base):
             "metric_key",
             "sampled_at",
         ),
+        # タイムライン表示（incident_timeline_view._collect_metrics）が、期間内の閾値以上のサンプルを
+        # vCenter・指標ごとの範囲走査で探すため。value まで含めて、閾値未満の行では表を引かない。
+        # SQLite だけに作る。PostgreSQL は計測でこの索引を選ばず（期間が短いと sampled_at、長いと metric_key の
+        # 索引を使う）、書き込みの費用だけが増えるため。
+        Index(
+            "ix_metric_samples_vcenter_metric_sampled_value",
+            "vcenter_id",
+            "metric_key",
+            "sampled_at",
+            "value",
+        ).ddl_if(dialect="sqlite"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

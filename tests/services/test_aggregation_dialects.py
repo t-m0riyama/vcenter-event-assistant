@@ -535,3 +535,132 @@ async def test_incident_timeline_logs_on_each_dialect(session: AsyncSession) -> 
     assert [i.detail for i in filtered.items] == ["other host"]
 
 
+
+@pytest.mark.asyncio
+async def test_sqlite_timeline_queries_use_the_timeline_indexes(session: AsyncSession) -> None:
+    """SQLite の計画で、メトリクスとエラーログの問い合わせがタイムライン用の索引を使う（vCenter の指定の有無とも）。
+
+    SQLite は並べ替えを省ける索引を好むので、問い合わせの形（PARTITION BY の列の順、ログの一覧の ORDER BY を
+    付けないこと）を戻すと、期間内の全行を読む計画に戻る。その退行を見張る。
+    """
+    if session.get_bind().dialect.name != "sqlite":
+        pytest.skip("SQLite の計画の確認")
+    from vcenter_event_assistant.services import incident_timeline_view as itv
+
+    vid = uuid.uuid4()
+    session.add(VCenter(id=vid, name="vc-plan", host="h", port=443, username="u", password="p"))
+    await session.flush()
+    plans: list[str] = []
+    for vc in (None, vid):
+        scope = itv._Scope(
+            from_utc=FROM, to_utc=TO, vcenter_id=vc, entity=None, min_score=1, bucket_sec=60,
+            bucket_count=120, max_rows=10, dialect_name="sqlite", metric_name_lookback=timedelta(hours=6),
+            metric_thresholds=((METRIC_CPU, 80.0), (METRIC_MEM, 85.0)),
+        )
+        captured: list = []
+        original = AsyncSession.execute
+
+        async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+            captured.append(statement)
+            return await original(self, statement, *args, **kwargs)
+
+        AsyncSession.execute = spy  # type: ignore[method-assign]
+        try:
+            await itv._collect_metrics(session, scope)
+            await itv._collect_logs(session, scope)
+        finally:
+            AsyncSession.execute = original  # type: ignore[method-assign]
+        bind = session.get_bind()
+        for stmt in captured:
+            sql = str(stmt.compile(dialect=bind.dialect, compile_kwargs={"literal_binds": True}))
+            # SQLite の OFFSET に付く LIMIT -1 は literal_binds でもバインド変数のまま残る
+            sql = sql.replace("LIMIT ? OFFSET", "LIMIT -1 OFFSET")
+            if "metric_intervals" not in sql and "FROM log_records" not in sql:
+                continue
+            conn = await session.connection()
+            rows = (await conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql)).all()
+            plan = "\n".join(str(r[-1]) for r in rows)
+            plans.append(plan)
+            if "metric_intervals" in sql:
+                assert "SEARCH metric_samples USING INDEX ix_metric_samples_vcenter_metric_sampled_value" in plan, plan
+            else:
+                expected = (
+                    "ix_log_records_vcenter_severity_norm_effective" if vc else "ix_log_records_severity_norm_effective"
+                )
+                assert f"SEARCH log_records USING INDEX {expected}" in plan, plan
+    assert len(plans) == 6  # メトリクス 1 本 + ログ 2 本（俯瞰と一覧）× vCenter の指定なし・あり
+
+
+@pytest.mark.asyncio
+async def test_incident_timeline_all_sources_on_each_dialect(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API の経路と同じ入口（build_incident_timeline_view）で、4 種類すべて・vCenter の指定あり・行数の上限での
+    省略を両方の方言で通す（API のテストは conftest が SQLite に固定しているので、PostgreSQL はここで確かめる）。"""
+    from vcenter_event_assistant.settings_binding import require_settings
+
+    v1, v2 = uuid.uuid4(), uuid.uuid4()
+    for vid, name in ((v1, "vc-a"), (v2, "vc-b")):
+        session.add(VCenter(id=vid, name=name, host="h", port=443, username="u", password="p"))
+    await session.flush()
+    offsets = itertools.count(1)
+
+    def at(minute: float) -> datetime:
+        return FROM + timedelta(minutes=minute)
+
+    for vid in (v1, v2):
+        session.add(
+            EventRecord(
+                vcenter_id=vid, occurred_at=at(1), event_type="E", message="m", entity_name="esx01",
+                vmware_key=next(_keys), notable_score=50,
+            )
+        )
+        for moid, minute in (("host-1", 2), ("host-2", 3)):
+            session.add(
+                MetricSample(
+                    vcenter_id=vid, sampled_at=at(minute), entity_type="HostSystem", entity_moid=moid,
+                    entity_name="", metric_key=METRIC_CPU, value=90.0,
+                )
+            )
+        for kind, minute in (("vmkernel", 4), ("hostd", 5)):
+            session.add(
+                LogRecord(
+                    vcenter_id=vid, collector_id="c", source_id="s", host="esx01.example.com", log_kind=kind,
+                    file_generation="g", byte_offset=next(offsets), occurred_at=None, collected_at=at(minute),
+                    effective_at=at(minute), severity="ERROR", message=f"log {kind}",
+                )
+            )
+    rule = AlertRule(name="r", rule_type="event_score", alert_level="warning", config={})
+    session.add(rule)
+    await session.flush()
+    session.add(
+        AlertHistory(
+            rule_id=rule.id, alert_level="warning", state="firing", context_key="E",
+            notified_at=at(6), channel="none",
+        )
+    )
+    await session.flush()
+
+    out = await build_incident_timeline_view(
+        session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1), owner_key="dialect-test"
+    )
+    assert [(i.kind, i.vcenter_id) for i in out.items] == [
+        ("event", v1), ("metric", v1), ("metric", v1), ("log", v1), ("log", v1), ("alert", None),
+    ]
+    assert out.omitted_sources == []
+    # 名前が空の系列は moid で表示し、その moid で絞れる（vCenter の指定ありの経路）
+    by_moid = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1, entity="host-2", sources=["metric"]),
+        owner_key="dialect-test",
+    )
+    assert [(i.entity_name, i.vcenter_id) for i in by_moid.items] == [("host-2", v1)]
+
+    # 上限 1 行: イベント・アラートは 1 行ずつなので返り、メトリクス・ログ（2 行ずつ）は省く
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    out = await build_incident_timeline_view(
+        session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1), owner_key="dialect-test"
+    )
+    assert [i.kind for i in out.items] == ["event", "alert"]
+    assert [(o.source, o.reason) for o in out.omitted_sources] == [("metric", "too_many_rows"), ("log", "too_many_rows")]
+    assert sum(b.log_error for b in out.overview) == 2

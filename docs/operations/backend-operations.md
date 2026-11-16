@@ -419,7 +419,16 @@ TLS:
   - rate limit: `/api/incident-timeline` は `RATE_LIMIT_CHAT_PER_MINUTE` の 2 倍（既定 20 回/分、クライアントの IP ごと）。超えると 429
   - 同時実行数: `CONTEXT_AGGREGATION_CONCURRENCY`（全体、既定 4）と `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER`（利用者ごと、既定 1）。空きがなければ待たずに 503（`Retry-After` 付き）を返す。画面には「時間をおいて再度お試しください」と出る
   - イベントの集計行数: `CONTEXT_AGGREGATION_MAX_ROWS`（既定 100,000）。行数はおよそ「時間バケット数（最大 48 程度）× イベント種別数」で、超えると 422（vCenter を指定して絞り込むよう案内する）。メトリクスはカテゴリごとの上位 15 台を DB で選ぶので、この上限の対象ではない
-  - タイムライン画面の API（`POST /api/incident-timeline/view`）は、同じ `CONTEXT_AGGREGATION_MAX_ROWS` を種別ごとの行数に当てる。対象は、`min_score` 以上のイベント、通知履歴、メトリクスの超過区間（区間の数。サンプル数ではない）、重大度が error 以上のログ。イベントか通知履歴が超えると、要求全体が 422 になる。エラーログかメトリクスの超過区間が超えたときは、422 にせず、その種別の行だけを一覧とハイライトから省き、応答の `omitted_sources` で伝える（ログの俯瞰の件数 `log_error` は返す。メトリクスの俯瞰 `metric_breach` は数えられないので 0 になる）。メトリクスの超過区間は CPU・メモリだけで、ディスク・ネットワークの指標は KB/s なので % の閾値を当てない。error 以上のログを期間で絞るために、式の索引 `ix_log_records_severity_norm_effective`（`lower(trim(severity))`, `effective_at`）を使う
+  - タイムライン画面の API（`POST /api/incident-timeline/view`）は、同じ `CONTEXT_AGGREGATION_MAX_ROWS` を種別ごとの行数に当てる。対象は、`min_score` 以上のイベント、通知履歴、メトリクスの超過区間（区間の数。サンプル数ではない）、重大度が error 以上のログ。イベントか通知履歴が超えると、要求全体が 422 になる。エラーログかメトリクスの超過区間が超えたときは、422 にせず、その種別の行だけを一覧とハイライトから省き、応答の `omitted_sources` で伝える（ログの俯瞰の件数 `log_error` は返す。メトリクスの俯瞰 `metric_breach` は数えられないので 0 になる）。メトリクスの超過区間は CPU・メモリだけで、ディスク・ネットワークの指標は KB/s なので % の閾値を当てない。error 以上のログを期間で絞るために、式の索引 `ix_log_records_severity_norm_effective`（`lower(trim(severity))`, `effective_at`）と、vCenter を指定したとき用の `ix_log_records_vcenter_severity_norm_effective`（`vcenter_id`, `lower(trim(severity))`, `effective_at`）を使う
+  - タイムライン画面のメトリクスの超過区間の所要時間の目安（実測。200 ホスト、5 分間隔、指標 6 種、7 日で約 243 万行。各ホストが 1 日 1 時間だけ超過するデータ。メトリクスの問い合わせ 1 本の時間。幅は vCenter の指定の有無と、ディスクのキャッシュの状態による）。期間内の閾値以上のサンプルだけを読むので、時間は主に期間の長さと超過しているサンプルの数で決まる。SQLite は vCenter・指標・時刻の索引 `ix_metric_samples_vcenter_metric_sampled_value` を使う（SQLite だけに作る）
+
+    | 期間 | SQLite | PostgreSQL 16 |
+    |---|---|---|
+    | 1 時間 | 0.1 秒以下 | 0.1 秒以下 |
+    | 24 時間 | 0.2〜1 秒 | 0.1〜0.3 秒 |
+    | 7 日 | 2〜5.5 秒 | 0.55〜0.8 秒 |
+
+    SQLite の値は、統計（`ANALYZE`）の有無で大きく変わらない（アプリは `ANALYZE` を実行しない）。データの保持期間を延ばすと、期間が長い要求ほど時間が延びる。PostgreSQL では、この問い合わせの前にトランザクションの中だけ JIT を切る（行数の見積もりが大きく外れ、JIT のコンパイルが実行より長くかかるため）
   - 利用者ごとの同時実行数は、チャット・プレビュー・インシデントタイムラインで共有する。同じ利用者が別のタブでタイムラインを生成している間にチャットを送ると、片方が 503 になる。困る場合は `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER` を 2 にする
   - 要求を途中で取り消すと枠はすぐ返るが、SQLite では実行中のクエリが最後まで走る。取り消しを繰り返すと、一時的に上限より多くの集計が DB で走ることがある（PostgreSQL ではクエリも取り消される）
   - 上限はどれもプロセスごとに数える。複数のワーカーで動かすと、全体の上限は「上限 × ワーカー数」になる。リバースプロキシの後ろでは rate limit のキー（クライアントの IP）が全員同じになり、1 つの枠を共有する。認証を無効にしている場合、同時実行数は全員が 1 人の利用者として数えられる
@@ -572,7 +581,18 @@ docker compose run --rm app vcenter-event-assistant-admin create-user admin --ro
   - `plugin installation job failed`
 - 変更対象のAPIを1つ以上実行し、期待どおりか確認
 
-### 5.4 ロールバック手順（最小）
+### 5.4 索引を足すマイグレーションの所要時間
+
+アプリの更新で索引を足すマイグレーションが入ると、起動時の自動マイグレーション（`VEA_DB_AUTO_MIGRATE`）が索引を作り終えるまで、アプリは起動しない。索引の作成中は、その表への書き込み（収集の取り込み）も止まる。表が大きい環境では、更新の時間帯を収集の少ない時間に寄せる。複数のプロセスが同時に起動したときは、マイグレーションの完了をロックで待つ（`VEA_DB_MIGRATION_LOCK_TIMEOUT_SECS`、既定 300 秒）。索引の作成がこれより長くかかる環境では、値を延ばすか、1 つのプロセスで先にマイグレーションを済ませる。
+
+実測の目安（開発機。ディスクや同時の負荷で変わる）:
+
+- `e2f3a4b5c6d7`（`log_records` の式の索引）: PostgreSQL 16 で 300 万行 3.3 秒、605 万行 5.0 秒
+- `f3a4b5c6d7e8`（タイムライン用の索引 2 つ）:
+  - `log_records` の vCenter 付きの式の索引: PostgreSQL 16 で 605 万行 5.9 秒、SQLite で 30 万行 2.9 秒
+  - `metric_samples` の vCenter・指標・時刻・値の索引（SQLite だけ）: SQLite で 243 万行 33.9 秒
+
+### 5.5 ロールバック手順（最小）
 
 1. `.env` を変更前の値に戻す
 2. アプリケーションプロセスを再起動する
