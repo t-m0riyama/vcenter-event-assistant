@@ -204,9 +204,10 @@ export default function App() {
         id: 'timeline',
         label: 'タイムライン',
         panelLabel: 'タイムライン',
-        render: (onError) => (
+        render: (onError, active) => (
           <TimelinePanel
             onError={onError}
+            active={active}
             onOpenSnapshotInMetrics={(item) => {
               setMetricsSnapshotReplay(item)
               setMetricsReplayNonce((n) => n + 1)

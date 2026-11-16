@@ -18,6 +18,7 @@ vi.mock('./panels/metrics/MetricsPanel', () => ({
 }))
 
 import App from './App'
+import { emptyViewResponse } from './test/timelineViewFixtures'
 
 // 強制的な localStorage モック
 const storage: Record<string, string> = {}
@@ -118,8 +119,8 @@ describe('App メインタブ', () => {
             }),
           )
         }
-        if (url.endsWith('/api/incident-timeline') && init?.method === 'POST') {
-          return Promise.resolve(jsonResponse({ columns: [] }))
+        if (url.endsWith('/api/incident-timeline/view') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse(emptyViewResponse()))
         }
         return Promise.resolve(new Response('not found', { status: 404 }))
       }),
@@ -132,10 +133,20 @@ describe('App メインタブ', () => {
 
     within(tabNav()).getByRole('button', { name: 'タイムライン' }).click()
 
+    // 開くと「生成」を押さずに自動で読み込み、条件が URL に出る
     await waitFor(() => {
-      expect(
-        screen.getByText('「タイムラインを生成」を押すと、指定期間のインシデント統合タイムラインを表示します。'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('この期間に出来事はありません。')).toBeInTheDocument()
     })
+    expect(window.location.hash).toBe('#/timeline?range=1h')
+
+    // 別のタブを開いても、タイムラインは非表示のまま URL を奪わない
+    within(tabNav()).getByRole('button', { name: 'イベント' }).click()
+    await waitFor(() => expect(window.location.hash).toBe('#/events'))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(window.location.hash).toBe('#/events')
+
+    // 戻ると、持っている条件が URL に戻る
+    within(tabNav()).getByRole('button', { name: 'タイムライン' }).click()
+    await waitFor(() => expect(window.location.hash).toBe('#/timeline?range=1h'))
   })
 })

@@ -173,10 +173,6 @@ export const incidentTimelineGraphContextSchema = z
 
 export type IncidentTimelineGraphContext = z.infer<typeof incidentTimelineGraphContextSchema>
 
-export function parseIncidentTimelineResponse(raw: unknown): IncidentTimeline {
-  return incidentTimelineSchema.parse(raw)
-}
-
 export const incidentTimelineManualSnapshotCreateRequestSchema = z
   .object({
     from: isoUtcDateTimeSchema,

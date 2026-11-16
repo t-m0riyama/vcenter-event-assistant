@@ -11,6 +11,8 @@ type ZonedRangeDetailsProps = {
   className?: string
   /** 説明と入力欄のあいだに置くもの（グラフの自動更新など）。 */
   children?: ReactNode
+  /** 入力欄の下に置くもの（「適用」ボタンなど）。 */
+  footer?: ReactNode
 }
 
 /** 折りたためる「表示期間」（グラフ・チャット・タイムラインで共通）。 */
@@ -22,6 +24,7 @@ export function ZonedRangeDetails({
   onQuickPreset,
   className,
   children,
+  footer,
 }: ZonedRangeDetailsProps) {
   return (
     <details className={className ? `toolbar__filters-details ${className}` : 'toolbar__filters-details'}>
@@ -32,6 +35,7 @@ export function ZonedRangeDetails({
       <p className="hint toolbar__filters-hint">{hint}</p>
       {children}
       <ZonedRangeFields value={value} onChange={onChange} onQuickPreset={onQuickPreset} />
+      {footer}
     </details>
   )
 }

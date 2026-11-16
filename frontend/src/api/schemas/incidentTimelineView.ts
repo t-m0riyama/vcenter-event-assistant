@@ -1,0 +1,103 @@
+import { z } from 'zod'
+
+/**
+ * `POST /api/incident-timeline/view` の応答（`api/schemas/incident_timeline_view.py` に対応）。
+ * 時刻は SQLite 由来で `Z` の無い文字列が返ることがあるため、検証は `z.string()` にとどめ、
+ * 表示側で `parseApiUtcInstantMs` を使って UTC として解釈する。
+ */
+export const timelineSourceSchema = z.enum(['event', 'alert', 'metric', 'log'])
+export type TimelineSource = z.infer<typeof timelineSourceSchema>
+
+export const timelineLevelSchema = z.enum(['critical', 'error', 'warning', 'info'])
+export type TimelineLevel = z.infer<typeof timelineLevelSchema>
+
+export const timelineItemRefSchema = z.object({
+  event_id: z.number().nullable().optional(),
+  event_type: z.string().nullable().optional(),
+  alert_history_id: z.number().nullable().optional(),
+  alert_rule_id: z.number().nullable().optional(),
+  alert_rule_name: z.string().nullable().optional(),
+  alert_state: z.string().nullable().optional(),
+  metric_key: z.string().nullable().optional(),
+  entity_moid: z.string().nullable().optional(),
+  log_id: z.number().nullable().optional(),
+})
+export type TimelineItemRef = z.infer<typeof timelineItemRefSchema>
+
+export const timelineViewItemSchema = z.object({
+  id: z.string(),
+  kind: timelineSourceSchema,
+  timestamp_utc: z.string(),
+  end_utc: z.string().nullable().optional(),
+  level: timelineLevelSchema,
+  title: z.string(),
+  detail: z.string().nullable().optional(),
+  entity_name: z.string().nullable().optional(),
+  entity_type: z.string().nullable().optional(),
+  vcenter_id: z.string().nullable().optional(),
+  vcenter_name: z.string().nullable().optional(),
+  score: z.number().nullable().optional(),
+  count: z.number().int().min(1).default(1),
+  ref: timelineItemRefSchema.default({}),
+})
+export type TimelineViewItem = z.infer<typeof timelineViewItemSchema>
+
+export const timelineOverviewBucketSchema = z.object({
+  bucket_start_utc: z.string(),
+  event_total: z.number().int().min(0),
+  event_notable: z.number().int().min(0),
+  alert: z.number().int().min(0),
+  metric_breach: z.number().int().min(0),
+  log_error: z.number().int().min(0),
+})
+export type TimelineOverviewBucket = z.infer<typeof timelineOverviewBucketSchema>
+
+export const timelineTopEntitySchema = z.object({
+  entity_name: z.string(),
+  entity_type: z.string().nullable().optional(),
+  vcenter_id: z.string().nullable().optional(),
+  vcenter_name: z.string().nullable().optional(),
+  item_count: z.number().int(),
+  first_seen_utc: z.string(),
+})
+export type TimelineTopEntity = z.infer<typeof timelineTopEntitySchema>
+
+export const timelineNewEventTypeSchema = z.object({
+  event_type: z.string(),
+  count: z.number().int(),
+  first_seen_utc: z.string(),
+  max_score: z.number().int(),
+})
+export type TimelineNewEventType = z.infer<typeof timelineNewEventTypeSchema>
+
+export const timelineHighlightsSchema = z.object({
+  first_signal: timelineViewItemSchema.nullable().optional(),
+  top_entities: z.array(timelineTopEntitySchema).default([]),
+  new_event_types: z.array(timelineNewEventTypeSchema).default([]),
+})
+export type TimelineHighlights = z.infer<typeof timelineHighlightsSchema>
+
+export const incidentTimelineViewResponseSchema = z.object({
+  from_utc: z.string(),
+  to_utc: z.string(),
+  anchor_utc: z.string().nullable().optional(),
+  bucket_seconds: z.number().int().min(1),
+  overview: z.array(timelineOverviewBucketSchema),
+  items: z.array(timelineViewItemSchema),
+  truncated: z.boolean(),
+  total_items: z.number().int().min(0),
+  highlights: timelineHighlightsSchema,
+})
+export type IncidentTimelineViewResponse = z.infer<typeof incidentTimelineViewResponseSchema>
+
+/** `POST /api/incident-timeline/view` の本文。 */
+export type IncidentTimelineViewRequest = {
+  from: string
+  to: string
+  anchor?: string
+  vcenter_id?: string
+  entity?: string
+  min_score?: number
+  sources?: TimelineSource[]
+  item_limit?: number
+}
