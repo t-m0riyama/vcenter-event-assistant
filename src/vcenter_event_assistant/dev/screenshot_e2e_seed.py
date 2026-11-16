@@ -6,14 +6,20 @@ Playwright ドキュメント用スクリーンショット向けの最小 DB �
 投入内容: vCenter・イベント種別ガイド・イベントに加え、グラフタブ既定キー向けの
 ``MetricSample``（``datastore.space.used_bytes`` の時系列）、日次ダイジェスト 1 件、
 イベントスコア型アラートルール 1 件と通知履歴 1 行を含む。
+
+タイムライン（既定は直近 1 時間）が 4 種類の出来事と俯瞰グラフを示すよう、対象名つきのイベント、
+デモ用ホストの CPU・メモリのサンプル（期間内で始まって終わる超過区間を 1 つずつ）、重大度 error 以上のログも入れる。
+名前はすべてデモと分かるもの（実在のホスト・アカウントに見えるものは使わない）。
 """
 
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import (
     AlertHistory,
@@ -21,6 +27,7 @@ from vcenter_event_assistant.db.models import (
     DigestRecord,
     EventRecord,
     EventTypeGuide,
+    LogRecord,
     MetricSample,
     VCenter,
 )
@@ -89,10 +96,14 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                 event_type=_EVENT_TYPES[0],
                 message="（デモ）スクリーンショット用イベント",
                 severity="info",
+                entity_name="demo-vm-03",
+                entity_type="VirtualMachine",
                 vmware_key=9_001_001,
                 notable_score=10,
             ),
         )
+
+        _seed_timeline_demo(session, vc.id, now)
 
         # グラフタブはキー一覧の先頭（`datastore.space.used_bytes`）が既定選択になるため、その系列を投入する。
         _doc_metric_key = "datastore.space.used_bytes"
@@ -150,5 +161,89 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                 delivery_status="succeeded",
                 attempt_count=1,
                 last_attempt_at=now,
+            ),
+        )
+
+
+# タイムラインの既定の期間（直近 1 時間）に収まるよう、取得が数分遅れても外れない 8〜51 分前に置く。
+_DEMO_HOSTS = (("host-9001", "demo-esxi-01"), ("host-9002", "demo-esxi-02"))
+
+
+def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datetime) -> None:
+    """タイムライン用のデモ行（イベント・メトリクス・ログ）を足す。"""
+
+    def ago(minutes: float) -> datetime:
+        return now - timedelta(minutes=minutes)
+
+    # (何分前, 種別, 対象, スコア, 重大度, メッセージ)。同じ種別・同じ対象の連続（2 件）を 1 組含む。
+    events = (
+        (46, _EVENT_TYPES[1], "demo-vm-01", 60, "warning", "（デモ）仮想マシンの状態が変わりました"),
+        (42, _EVENT_TYPES[0], "demo-vm-02", 5, "info", "（デモ）通常の操作です"),
+        (41, _EVENT_TYPES[0], "demo-vm-02", 5, "info", "（デモ）通常の操作です"),
+        (33, _EVENT_TYPES[2], "demo-esxi-01", 85, "error", "（デモ）ホストで要確認の事象が起きました"),
+        (15, _EVENT_TYPES[1], "demo-vm-01", 30, "warning", "（デモ）仮想マシンの状態が再び変わりました"),
+    )
+    for i, (minutes, event_type, entity, score, severity, message) in enumerate(events):
+        session.add(
+            EventRecord(
+                vcenter_id=vcenter_id,
+                occurred_at=ago(minutes),
+                event_type=event_type,
+                message=message,
+                severity=severity,
+                entity_name=entity,
+                entity_type="HostSystem" if entity.startswith("demo-esxi") else "VirtualMachine",
+                vmware_key=9_002_001 + i,
+                notable_score=score,
+            ),
+        )
+
+    # 3 分間隔の CPU・メモリ。CPU は demo-esxi-01 が 30〜21 分前に 80% 以上、
+    # メモリは demo-esxi-02 が 36〜27 分前に 85% 以上（どちらも期間内で始まって終わる）。
+    cpu_breach = {30, 27, 24, 21}
+    mem_breach = {36, 33, 30, 27}
+    for step, minutes in enumerate(range(51, 5, -3)):
+        for host_index, (moid, name) in enumerate(_DEMO_HOSTS):
+            cpu = 35.0 + 3 * ((step + host_index) % 4)
+            mem = 55.0 + 2 * ((step + host_index) % 3)
+            if host_index == 0 and minutes in cpu_breach:
+                cpu = 88.0 + (minutes % 5)
+            if host_index == 1 and minutes in mem_breach:
+                mem = 91.0 + (minutes % 4)
+            for metric_key, value in (("host.cpu.usage_pct", cpu), ("host.mem.usage_pct", mem)):
+                session.add(
+                    MetricSample(
+                        vcenter_id=vcenter_id,
+                        sampled_at=ago(minutes),
+                        entity_type="HostSystem",
+                        entity_moid=moid,
+                        entity_name=name,
+                        metric_key=metric_key,
+                        value=value,
+                    ),
+                )
+
+    # 重大度 error 以上のログ。同じホスト・同じ種類の連続（3 件。間に別の出来事を挟まない）を 1 組と、別のホストの critical を 1 件。
+    logs = (
+        (40, "demo-esxi-01", "vmkernel", "error", "（デモ）ストレージへの応答が遅れています"),
+        (39, "demo-esxi-01", "vmkernel", "error", "（デモ）ストレージへの応答が遅れています"),
+        (38, "demo-esxi-01", "vmkernel", "error", "（デモ）ストレージへの応答が遅れています"),
+        (28, "demo-esxi-02", "hostd", "critical", "（デモ）管理サービスが応答しません"),
+    )
+    for i, (minutes, host, kind, severity, message) in enumerate(logs):
+        session.add(
+            LogRecord(
+                vcenter_id=vcenter_id,
+                collector_id="demo.logs",
+                source_id=f"demo-source-{host}",
+                host=host,
+                log_kind=kind,
+                file_generation="demo",
+                byte_offset=i * 200,
+                occurred_at=ago(minutes),
+                collected_at=ago(minutes),
+                effective_at=ago(minutes),
+                severity=severity,
+                message=message,
             ),
         )

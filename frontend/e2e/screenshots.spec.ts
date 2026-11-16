@@ -33,7 +33,8 @@ async function settleTabChrome(page: Page): Promise<void> {
 }
 
 async function openMainTab(page: Page, name: string): Promise<void> {
-  const tab = page.locator('nav.tabs').getByRole('button', { name, exact: true })
+  // 要注意・発火中のドットが付くと「概要 （要注意あり）」のように名前が伸びるので、先頭が一致すればよい
+  const tab = page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${name}(\\s|$)`) })
   await tab.click()
   await expect(tab).toHaveClass(/active/)
   await settleTabChrome(page)
@@ -127,7 +128,10 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
 
   await openMainTab(page, 'ログ')
   await expect(page.getByLabel('ログの操作')).toBeVisible()
-  await expect(page.getByText('条件に一致するログはありません')).toBeVisible()
+  // シードのログ（タイムライン用）が入るので、一覧か空の表示のどちらかが出るまで待つ
+  await expect(
+    page.locator('.logs-panel__table-scroll table:visible').or(page.getByText('条件に一致するログはありません')),
+  ).toBeVisible()
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'logs.png'),
     fullPage: false,
@@ -292,6 +296,17 @@ test('主要画面のスクリーンショットを docs/images に保存', asyn
   await expect(
     page.getByRole('list', { name: '出来事の時系列' }).or(page.getByText('この期間に出来事はありません。')),
   ).toBeVisible()
+  // 俯瞰グラフ（棒・エラーログの破線）、メトリクス超過の帯、ハイライトの描画が終わってから撮る
+  const overview = page.getByRole('region', { name: '件数の俯瞰' })
+  await expect(overview.locator('.recharts-bar-rectangle').first()).toBeAttached()
+  await expect(overview.locator('.recharts-line-curve').first()).toBeAttached()
+  await expect(overview.locator('.timeline-overview__band')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'ハイライト' })).toBeVisible()
+  // 1280×720 では条件バーだけで高さが埋まるので、俯瞰グラフがタブの帯の下に来るまで送り、グラフ・メトリクスの帯・ハイライトを撮る（一覧の先頭は 720px に入らない）
+  const target = await overview.evaluate((el) => el.getBoundingClientRect().top + window.scrollY - 56)
+  await page.evaluate((y) => window.scrollTo(0, y), target)
+  // 見出しへのホバー（settleTabChrome）は先頭へ戻してしまうので使わない
+  await page.waitForTimeout(250)
   await page.screenshot({
     path: path.join(screenshotOutputDir, 'timeline.png'),
     fullPage: false,

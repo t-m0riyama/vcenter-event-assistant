@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import func, select
 
@@ -11,6 +13,7 @@ from vcenter_event_assistant.db.models import (
     DigestRecord,
     EventRecord,
     EventTypeGuide,
+    LogRecord,
     MetricSample,
     VCenter,
 )
@@ -32,13 +35,15 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
         n_g = (await session.execute(select(func.count()).select_from(EventTypeGuide))).scalar_one()
         n_ev = (await session.execute(select(func.count()).select_from(EventRecord))).scalar_one()
         n_m = (await session.execute(select(func.count()).select_from(MetricSample))).scalar_one()
+        n_logs = (await session.execute(select(func.count()).select_from(LogRecord))).scalar_one()
         n_d = (await session.execute(select(func.count()).select_from(DigestRecord))).scalar_one()
         n_rules = (await session.execute(select(func.count()).select_from(AlertRule))).scalar_one()
         n_hist = (await session.execute(select(func.count()).select_from(AlertHistory))).scalar_one()
     assert n_vc == 1
     assert n_g == 3
-    assert n_ev == 1
+    assert n_ev == 6
     assert n_m >= 1
+    assert n_logs == 4
     assert n_d == 1
     assert n_rules == 1
     assert n_hist == 1
@@ -60,3 +65,48 @@ async def test_screenshot_e2e_seed_skipped_without_env() -> None:
     async with session_scope() as session:
         n_vc = (await session.execute(select(func.count()).select_from(VCenter))).scalar_one()
     assert n_vc == 0
+
+
+@pytest.mark.asyncio
+async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
+    monkeypatch: pytest.MonkeyPatch,
+    open_client,
+) -> None:
+    """既定の期間（直近 1 時間）のタイムラインに、4 種類の出来事とメトリクスの超過区間が出る。"""
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    await run_screenshot_e2e_seed_if_enabled()
+
+    now = datetime.now(timezone.utc)
+    app = create_app()
+    async with open_client(app=app) as ac:
+        resp = await ac.post(
+            "/api/incident-timeline/view",
+            json={
+                "from": (now - timedelta(hours=1)).isoformat(),
+                "to": (now + timedelta(minutes=1)).isoformat(),
+            },
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    items = body["items"]
+    kinds = {i["kind"] for i in items}
+    assert kinds == {"event", "alert", "metric", "log"}
+    assert body["omitted_sources"] == []
+
+    metrics = [i for i in items if i["kind"] == "metric"]
+    assert sorted(m["title"] for m in metrics) == [
+        "CPU 使用率が閾値（80%）を超過",
+        "メモリ使用率が閾値（85%）を超過",
+    ]
+    # 期間内で始まって終わる区間（期間の端で続いていない）
+    for m in metrics:
+        assert "継続" not in (m.get("detail") or "")
+
+    events = [i for i in items if i["kind"] == "event"]
+    assert all(e["entity_name"] for e in events)
+    # 同じ種別・同じ対象の連続は 1 行にまとまる
+    assert [e["count"] for e in events].count(2) == 1
+    logs = [i for i in items if i["kind"] == "log"]
+    assert sorted(log["count"] for log in logs) == [1, 3]
+    assert any(b["metric_breach"] > 0 for b in body["overview"])
+    assert any(b["log_error"] > 0 for b in body["overview"])
