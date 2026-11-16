@@ -241,8 +241,9 @@ describe('useTimelineViewController', () => {
       )
     })
     await waitFor(() => expect(result.current.error).not.toBeNull())
+    // 422 は読み直しても同じ結果なので、読み直しを出さない種類（invalid）にする
     expect(result.current.error).toEqual({
-      kind: 'error',
+      kind: 'invalid',
       message: 'イベントの種類が多すぎて集計できません。vCenter を指定して絞り込んでください。',
     })
   })
