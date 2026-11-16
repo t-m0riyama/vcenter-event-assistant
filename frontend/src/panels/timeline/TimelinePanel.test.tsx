@@ -917,6 +917,53 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('期間を狭めるか')))
   })
 
+  it('バックエンドが返す形（graph_context の metric_key などが null）の一覧でも、一覧が表示される', async () => {
+    setup({
+      snapshots: [
+        {
+          snapshot_id: '00000000-0000-4000-8000-0000000000dd',
+          from: '2026-03-22T00:00:00Z',
+          to: '2026-03-22T02:00:00Z',
+          operator_note: '実機の形',
+          timestamp_utc: '2026-03-22T03:00:00Z',
+          build_request_payload: { from: '2026-03-22T00:00:00Z', to: '2026-03-22T02:00:00Z', vcenter_id: null },
+          snapshot_kind: 'manual',
+          trigger_id: null,
+          trigger_evidence: null,
+          graph_context: {
+            metric_key: null,
+            chart_event_type: null,
+            marker_timestamp_utc: '2026-03-22T03:00:00Z',
+            vcenter_id: null,
+            captured_range: { from: '2026-03-22T00:00:00Z', to: '2026-03-22T02:00:00Z' },
+          },
+          has_result: false,
+          view_request: null,
+          created_at: '2026-03-22T03:00:01Z',
+        },
+      ],
+    })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    expect(await screen.findByRole('button', { name: '実機の形' })).toBeInTheDocument()
+    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+  })
+
+  it('一覧の応答が想定の形でないときは、zod の生の JSON ではなく短い文言を出し、「読み込み中…」のままにしない', async () => {
+    onError.mockClear()
+    setup({ snapshots: [{ snapshot_id: 'bad' }] })
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+    await waitFor(() => expect(onError).toHaveBeenCalled())
+    const message = String(onError.mock.calls[0][0])
+    expect(message).toContain('スナップショットの一覧を読み込めませんでした')
+    expect(message).not.toContain('"path"')
+    expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+    expect(screen.getByText(/一覧を読み込めませんでした/)).toBeInTheDocument()
+  })
+
   it('旧画面の「タイムラインを生成」ボタンは無い', async () => {
     setup()
     renderTimeline()

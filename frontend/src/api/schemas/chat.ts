@@ -158,20 +158,31 @@ export const incidentTimelineBuildRequestSchema = z
 
 export type IncidentTimelineBuildRequest = z.infer<typeof incidentTimelineBuildRequestSchema>
 
-/** スナップショットに保存するグラフ再生用メタ（すべて任意） */
+/**
+ * サーバは未指定の項目を null で返す（`str | None`）。null は未指定（undefined）と同じ扱いにそろえる。
+ * 使う側は `?? ''` などで読むので、型は optional のまま変わらない。
+ */
+function nullToUndefined<T extends z.ZodType>(schema: T) {
+  return schema
+    .nullish()
+    .transform((value): z.output<T> | undefined => (value === null ? undefined : value))
+}
+
+/** スナップショットに保存するグラフ再生用メタ（すべて任意。応答では未指定が null で返る） */
 export const incidentTimelineGraphContextSchema = z
   .object({
-    metric_key: z.string().max(512).optional(),
-    chart_event_type: z.string().max(512).optional(),
-    marker_timestamp_utc: isoUtcDateTimeSchema.optional(),
+    metric_key: nullToUndefined(z.string().max(512)),
+    chart_event_type: nullToUndefined(z.string().max(512)),
+    marker_timestamp_utc: nullToUndefined(isoUtcDateTimeSchema),
     vcenter_id: z.string().uuid().nullable().optional(),
-    captured_range: z
-      .object({
-        from: isoUtcDateTimeSchema,
-        to: isoUtcDateTimeSchema,
-      })
-      .strict()
-      .optional(),
+    captured_range: nullToUndefined(
+      z
+        .object({
+          from: isoUtcDateTimeSchema,
+          to: isoUtcDateTimeSchema,
+        })
+        .strict(),
+    ),
   })
   .strict()
 

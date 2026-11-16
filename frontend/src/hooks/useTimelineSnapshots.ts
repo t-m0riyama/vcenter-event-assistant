@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { ZodError } from 'zod'
 
 import { ApiError, apiGet, apiPost } from '../api'
 import { getManualSnapshotDetail } from '../api/incidentTimelineSnapshots'
@@ -20,6 +21,12 @@ import {
   DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
   DEFAULT_METRIC_THRESHOLD_NETWORK_PCT,
 } from './periodMetricThresholdDefaults'
+
+/** 応答の形が想定と違う（zod の検証に失敗した）ときに、生の検証エラーの代わりに出す文言。 */
+function snapshotErrorMessage(e: unknown, what: string): string {
+  if (e instanceof ZodError) return `${what}を読み込めませんでした（サーバの応答が想定の形式と異なります）。`
+  return toErrorMessage(e)
+}
 
 /** 保存する結果が大きすぎて 413 になったときの文言。 */
 export const SNAPSHOT_TOO_LARGE_MESSAGE =
@@ -64,6 +71,8 @@ export function useTimelineSnapshots(params: {
   const [open, setOpenState] = useState(false)
   const [items, setItems] = useState<IncidentTimelineManualSnapshotListItem[]>([])
   const [listLoaded, setListLoaded] = useState(false)
+  /** 一覧の取得に失敗した（「読み込み中…」のままにしないため）。 */
+  const [listFailed, setListFailed] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selectedIdRef = useRef<string | null>(null)
   const [operatorNote, setOperatorNote] = useState('')
@@ -74,8 +83,10 @@ export function useTimelineSnapshots(params: {
       const raw = await apiGet<unknown>('/api/incident-timeline/snapshots/manual?limit=20&offset=0')
       setItems(incidentTimelineManualSnapshotListResponseSchema.parse(raw).items)
       setListLoaded(true)
+      setListFailed(false)
     } catch (e) {
-      onError(toErrorMessage(e))
+      setListFailed(true)
+      onError(snapshotErrorMessage(e, 'スナップショットの一覧'))
     }
   }, [onError])
 
@@ -137,7 +148,7 @@ export function useTimelineSnapshots(params: {
       } catch (e) {
         if (seq === selectSeqRef.current) {
           restoreSelection()
-          onError(toErrorMessage(e))
+          onError(snapshotErrorMessage(e, 'スナップショットの詳細'))
         }
       }
     },
@@ -189,5 +200,5 @@ export function useTimelineSnapshots(params: {
     }
   }, [operatorNote, loadedRange, loadedRequest, onError, vcenterId, fetchItems])
 
-  return { open, setOpen, items, listLoaded, selectedId, select, operatorNote, setOperatorNote, saving, save }
+  return { open, setOpen, items, listLoaded, listFailed, selectedId, select, operatorNote, setOperatorNote, saving, save }
 }

@@ -59,7 +59,11 @@ export function TimelineSnapshotSection({ snapshots: s, canSaveNow, showingSaved
             </div>
           ) : null}
           {s.items.length === 0 ? (
-            <p className="hint">{s.listLoaded ? '保存済みスナップショットはまだありません。' : '読み込み中…'}</p>
+            <p className="hint">{s.listFailed
+                ? 'スナップショットの一覧を読み込めませんでした。'
+                : s.listLoaded
+                  ? '保存済みスナップショットはまだありません。'
+                  : '読み込み中…'}</p>
           ) : (
             <ul className="timeline-snapshots__list">
               {s.items.map((item) => (

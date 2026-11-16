@@ -366,3 +366,27 @@ async def test_list_query_does_not_select_the_result_body(client: AsyncClient) -
     for stmt in selects:
         # result_payload は IS NOT NULL の判定にだけ使い、本体は読まない
         assert re.findall(r"result_payload(?! IS NOT NULL)", stmt) == []
+
+
+@pytest.mark.asyncio
+async def test_unspecified_graph_context_fields_are_returned_as_null(client: AsyncClient) -> None:
+    """フロントの zod が null を受け付ける前提。ここが変わったら frontend の実応答フィクスチャも直す
+    （frontend/src/api/schemas/incidentTimelineSnapshotResult.test.ts の ACTUAL_*）。"""
+    body = _body(
+        graph_context={
+            "marker_timestamp_utc": "2026-03-22T03:00:00Z",
+            "captured_range": {"from": "2026-03-22T00:00:00Z", "to": "2026-03-22T02:00:00Z"},
+        },
+    )
+    created = await client.post(URL, json=body)
+    assert created.status_code == 201
+    expected = {
+        "metric_key": None,
+        "chart_event_type": None,
+        "marker_timestamp_utc": "2026-03-22T03:00:00Z",
+        "vcenter_id": None,
+        "captured_range": {"from": "2026-03-22T00:00:00Z", "to": "2026-03-22T02:00:00Z"},
+    }
+    assert created.json()["graph_context"] == expected
+    assert (await client.get(URL)).json()["items"][0]["graph_context"] == expected
+    assert (await client.get(f"{URL}/{created.json()['snapshot_id']}")).json()["graph_context"] == expected
