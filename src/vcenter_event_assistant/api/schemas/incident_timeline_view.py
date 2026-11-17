@@ -24,6 +24,19 @@ def _default_sources() -> list[TimelineSource]:
     return list(_ALL_SOURCES)
 
 
+def check_time_span(from_time: datetime, to_time: datetime) -> None:
+    """期間の from/to を検証する（from が to より前で、幅が 90 日以内）。
+
+    タイムゾーンの無い値は UTC とみなす。満たさなければ ``ValueError`` を投げる。
+    """
+    ft = from_time if from_time.tzinfo is not None else from_time.replace(tzinfo=timezone.utc)
+    tt = to_time if to_time.tzinfo is not None else to_time.replace(tzinfo=timezone.utc)
+    if ft >= tt:
+        raise ValueError("from must be before to")
+    if tt - ft > _MAX_SPAN:
+        raise ValueError("time range must not exceed 90 days")
+
+
 class IncidentTimelineViewRequest(BaseModel):
     """タイムライン表示用リクエスト。"""
 
@@ -72,16 +85,7 @@ class IncidentTimelineViewRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> IncidentTimelineViewRequest:
-        ft = self.from_time
-        tt = self.to_time
-        if ft.tzinfo is None:
-            ft = ft.replace(tzinfo=timezone.utc)
-        if tt.tzinfo is None:
-            tt = tt.replace(tzinfo=timezone.utc)
-        if ft >= tt:
-            raise ValueError("from must be before to")
-        if tt - ft > _MAX_SPAN:
-            raise ValueError("time range must not exceed 90 days")
+        check_time_span(self.from_time, self.to_time)
         return self
 
 
