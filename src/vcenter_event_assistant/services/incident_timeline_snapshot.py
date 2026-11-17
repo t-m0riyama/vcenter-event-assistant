@@ -31,13 +31,12 @@ def build_alert_rule_snapshot_build_request(
     to_time: datetime,
     lookback_hours: int,
 ) -> IncidentTimelineBuildRequest:
-    """firing 時点から再生成可能な build_request を組み立てる。"""
+    """自動スナップショットに保存する条件（``build_request_payload``）を組み立てる。期間は firing の前 ``lookback_hours`` 時間から ``to_time`` まで。"""
     return IncidentTimelineBuildRequest(
         from_time=fired_at - timedelta(hours=lookback_hours),
         to_time=to_time,
         include_period_metrics_cpu=True,
         include_period_metrics_memory=True,
-        alert_top_n=7,
         top_notable_min_score=1,
     )
 

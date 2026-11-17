@@ -314,7 +314,7 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
     assert metrics_bucket_sec == [3600]
     assert events_bucket_sec == [3600]
     # チャットの経路には alert_top_n_per_bucket を渡さない（既定値に任せる）ことの見張り。
-    # Issue #309 の再発の検出は tests/test_incident_timeline_api.py 側のテストが担う。
+    # 件数を指定できた旧 POST /api/incident-timeline は削除した（Issue #325）。
     assert len(events_kwargs) == 1
     assert "alert_top_n_per_bucket" not in events_kwargs[0]
 

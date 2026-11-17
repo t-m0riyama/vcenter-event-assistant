@@ -96,45 +96,4 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
     expect(payload.include_period_metrics_disk_io).toBe(true)
     expect(payload.include_period_metrics_network_io).toBe(true)
   })
-
-  it('alertTopN が指定されたら alert_top_n を本文に含める', () => {
-    const payload = buildIncidentTimelineBuildRequestPayload({
-      resolvedRange: {
-        from: '2026-05-07T00:00:00Z',
-        to: '2026-05-08T00:00:00Z',
-      },
-      options: {
-        vcenterId: '550e8400-e29b-41d4-a716-446655440000',
-        includePeriodMetricsCpu: false,
-        includePeriodMetricsMemory: false,
-        includePeriodMetricsDiskIo: false,
-        includePeriodMetricsNetworkIo: false,
-        metricThresholdCpuPct: null,
-        metricThresholdMemoryPct: null,
-        alertTopN: 7,
-      },
-    })
-
-    expect(payload.alert_top_n).toBe(7)
-  })
-
-  it('alertTopN が未指定なら alert_top_n を本文に含めない', () => {
-    const payload = buildIncidentTimelineBuildRequestPayload({
-      resolvedRange: {
-        from: '2026-05-07T00:00:00Z',
-        to: '2026-05-08T00:00:00Z',
-      },
-      options: {
-        vcenterId: '',
-        includePeriodMetricsCpu: false,
-        includePeriodMetricsMemory: false,
-        includePeriodMetricsDiskIo: false,
-        includePeriodMetricsNetworkIo: false,
-        metricThresholdCpuPct: null,
-        metricThresholdMemoryPct: null,
-      },
-    })
-
-    expect(payload).not.toHaveProperty('alert_top_n')
-  })
 })

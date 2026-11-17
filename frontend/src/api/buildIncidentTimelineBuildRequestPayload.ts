@@ -13,7 +13,6 @@ type IncidentTimelineContextOptions = {
   includePeriodMetricsNetworkIo: boolean
   metricThresholdCpuPct: number | null | undefined
   metricThresholdMemoryPct: number | null | undefined
-  alertTopN?: number
 }
 
 /**
@@ -40,9 +39,6 @@ export function buildIncidentTimelineBuildRequestPayload(params: {
   }
   if (options.vcenterId) {
     payload.vcenter_id = options.vcenterId
-  }
-  if (typeof options.alertTopN === 'number') {
-    payload.alert_top_n = options.alertTopN
   }
   return payload
 }

@@ -32,6 +32,10 @@ _UNUSED_DISK_THRESHOLD_DESCRIPTION = (
 _UNUSED_NETWORK_THRESHOLD_DESCRIPTION = (
     "互換のために受け取るが使わない。ネットワーク系の指標は値が KB/s なので、% の閾値を当てられない。"
 )
+_UNUSED_ALERT_TOP_N_DESCRIPTION = (
+    "互換のために受け取るが使わない。スナップショットを保存すると既定値も含めて build_request_payload に"
+    "書き出され、一覧・詳細の応答にも入るので、消すと保存済みの行を読めなくなる。"
+)
 
 # ファイル名はプロンプトに埋め込むため、行やコードフェンスを壊す文字を落とす
 _UNSAFE_FILENAME_CHARS_RE = re.compile(r"[\x00-\x1f\x7f`]")
@@ -221,7 +225,14 @@ class IncidentTimelineGraphContext(BaseModel):
 
 
 class IncidentTimelineBuildRequest(BaseModel):
-    """インシデントタイムライン構築用リクエスト。messages は受け付けない。"""
+    """手動・自動のスナップショットに保存する、タイムラインの条件（``build_request_payload``）。
+
+    このモデルで集計する経路はもう無い（集計は ``POST /api/incident-timeline/view`` が
+    ``IncidentTimelineViewRequest`` で行う）。画面がここから読むのは ``vcenter_id`` と、グラフの再生で
+    ``graph_context`` に期間が無いときの予備の ``from`` / ``to`` だけ。
+    保存済みの行を一覧・詳細の API で読むために残しており、``extra="forbid"`` なので、
+    保存済みの行に入っている項目は使わなくなっても消さない。
+    """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -229,27 +240,19 @@ class IncidentTimelineBuildRequest(BaseModel):
     to_time: datetime = Field(alias="to")
     vcenter_id: uuid.UUID | None = None
     top_notable_min_score: int = Field(default=1, ge=0, le=100)
-    alert_top_n: int = Field(
-        default=3,
-        ge=1,
-        le=20,
-        description="時間バケットごとに出すアラート種別の上位件数（include_period_metrics_* を 1 つ以上含めるときだけ効く）",
-    )
+    alert_top_n: int = Field(default=3, ge=1, le=20, description=_UNUSED_ALERT_TOP_N_DESCRIPTION)
     include_period_metrics_cpu: bool = Field(
-        default=False,
-        description="真のとき期間内 CPU 使用率をバケット平均で LLM コンテキストに含める（追加 DB クエリ）",
+        default=False, description="保存した条件として残すだけで、集計には使わない（CPU 使用率を含めるかどうか）"
     )
     include_period_metrics_memory: bool = Field(
-        default=False,
-        description="真のとき期間内メモリ使用率をバケット平均で含める",
+        default=False, description="保存した条件として残すだけで、集計には使わない（メモリ使用率を含めるかどうか）"
     )
     include_period_metrics_disk_io: bool = Field(
-        default=False,
-        description="真のとき期間内ディスク IO 系メトリクスをバケット平均で含める",
+        default=False, description="保存した条件として残すだけで、集計には使わない（ディスク IO を含めるかどうか）"
     )
     include_period_metrics_network_io: bool = Field(
         default=False,
-        description="真のとき期間内ネットワーク IO 系メトリクスをバケット平均で含める",
+        description="保存した条件として残すだけで、集計には使わない（ネットワーク IO を含めるかどうか）",
     )
     metric_threshold_cpu_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_memory_pct: float | None = Field(default=None, ge=0, le=100)

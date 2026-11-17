@@ -1,4 +1,8 @@
-"""POST /api/incident-timeline のテスト。"""
+"""インシデントタイムラインの集計と、手動スナップショットの API のテスト。
+
+集計の中身は、同じ集計を返すチャットのプレビュー（``POST /api/chat/preview`` の ``incident_timeline``）で確かめる。
+旧 ``POST /api/incident-timeline`` は画面から使われていなかったので削除した（Issue #325）。
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ import re
 
 import pytest
 from httpx import AsyncClient
-from vcenter_event_assistant.api.routes import incident_timeline as incident_timeline_route
+from vcenter_event_assistant import main as main_module
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
 from vcenter_event_assistant.db.models import EventRecord, IncidentTimelineManualSnapshot, VCenter
 from vcenter_event_assistant.db.session import session_scope
@@ -19,13 +23,28 @@ from vcenter_event_assistant.services.chat.chat_period_metrics import (
     PeriodMetricsPayload,
 )
 from vcenter_event_assistant.services.digest.digest_context import DigestContext
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
+
+PREVIEW_URL = "/api/chat/preview"
 
 
-def _request_body(**overrides: object) -> dict:
+@pytest.fixture
+def stub_preview_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """プレビューのプロンプト組み立てを差し替える。
+
+    集計関数を ``SimpleNamespace`` で差し替えるテストでは、プロンプト用の JSON 化ができない。
+    応答の ``incident_timeline`` は集計結果をそのまま返すので、プロンプトを組み立てなくても中身を確かめられる。
+    """
+    monkeypatch.setattr(
+        "vcenter_event_assistant.api.routes.chat.build_chat_preview",
+        lambda *a, **k: ("", [], None),
+    )
+
+
+def _preview_body(**overrides: object) -> dict:
     base = {
         "from": "2026-03-22T00:00:00Z",
         "to": "2026-03-23T00:00:00Z",
+        "messages": [{"role": "user", "content": "質問"}],
     }
     base.update(overrides)
     return base
@@ -45,6 +64,7 @@ def _manual_snapshot_request_body(**overrides: object) -> dict:
             "include_period_metrics_memory": True,
             "metric_threshold_cpu_pct": 90,
             "metric_threshold_memory_pct": 88,
+            # 使わなくなった項目だが、保存済みの行を読めることを確かめるために入れている（Issue #325）。
             "alert_top_n": 11,
         },
     }
@@ -53,16 +73,43 @@ def _manual_snapshot_request_body(**overrides: object) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_returns_incident_timeline_payload(
+@pytest.mark.parametrize(("with_frontend_dist", "expected_status"), [(True, 405), (False, 404)])
+async def test_legacy_post_incident_timeline_is_removed(
+    open_client,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    with_frontend_dist: bool,
+    expected_status: int,
+) -> None:
+    """旧 POST /api/incident-timeline は無い（Issue #325）。
+
+    画面のビルド（frontend/dist）があると SPA 用の GET の受け口がこのパスにも一致するので 405、無いと 404 になる。
+    手元と CI で結果が変わらないよう、dist の有無はテストの中で決める。
+    """
+    dist = tmp_path / "dist"
+    if with_frontend_dist:
+        dist.mkdir()
+        (dist / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setattr(main_module, "FRONTEND_DIST", dist)
+    async with open_client("admin") as client:
+        r = await client.post(
+            "/api/incident-timeline",
+            json={"from": "2026-03-22T00:00:00Z", "to": "2026-03-23T00:00:00Z"},
+        )
+    assert r.status_code == expected_status
+
+
+@pytest.mark.asyncio
+async def test_chat_preview_returns_incident_timeline_payload(
     client: AsyncClient,
 ) -> None:
     r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(include_period_metrics_cpu=True),
+        PREVIEW_URL,
+        json=_preview_body(include_period_metrics_cpu=True),
     )
     assert r.status_code == 200
 
-    data = r.json()
+    data = r.json()["incident_timeline"]
     assert isinstance(data, dict)
     assert set(data.keys()) == {"columns"}
     assert isinstance(data["columns"], list)
@@ -86,37 +133,8 @@ async def test_post_incident_timeline_returns_incident_timeline_payload(
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_accepts_request_without_messages(
-    client: AsyncClient,
-) -> None:
-    r = await client.post("/api/incident-timeline", json=_request_body())
-    assert r.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_post_incident_timeline_accepts_alert_top_n(
-    client: AsyncClient,
-) -> None:
-    r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(alert_top_n=5),
-    )
-    assert r.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_post_incident_timeline_rejects_alert_top_n_out_of_range(
-    client: AsyncClient,
-) -> None:
-    r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(alert_top_n=0),
-    )
-    assert r.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_post_incident_timeline_emits_alert_entries_per_bucket(
+@pytest.mark.usefixtures("stub_preview_prompt")
+async def test_chat_preview_emits_alert_entries_per_bucket(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -195,14 +213,14 @@ async def test_post_incident_timeline_emits_alert_entries_per_bucket(
     )
 
     r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(alert_top_n=3, include_period_metrics_cpu=True),
+        PREVIEW_URL,
+        json=_preview_body(include_period_metrics_cpu=True),
     )
     assert r.status_code == 200
 
     alert_items = [
         item
-        for column in r.json()["columns"]
+        for column in r.json()["incident_timeline"]["columns"]
         for item in column["items"]
         if item["kind"] == "alert"
     ]
@@ -224,45 +242,10 @@ async def test_post_incident_timeline_emits_alert_entries_per_bucket(
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_passes_alert_top_n_to_event_buckets(
+async def test_chat_preview_shows_top_three_alert_types_per_bucket(
     client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """alert_top_n が build_chat_event_time_buckets の alert_top_n_per_bucket に渡る（Issue #309）。"""
-    captured: dict[str, object] = {}
-
-    async def _spy_event_buckets(*a: object, **k: object) -> SimpleNamespace:
-        _ = a
-        captured.update(k)
-        return SimpleNamespace(buckets=[])
-
-    monkeypatch.setattr(
-        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
-        _spy_event_buckets,
-    )
-
-    r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(alert_top_n=5, include_period_metrics_cpu=True),
-    )
-    assert r.status_code == 200
-    assert captured["alert_top_n_per_bucket"] == 5
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("alert_top_n", "expected_alert_titles"),
-    [
-        (2, ["vim.Alert-A", "vim.Alert-B", "その他アラート (3件)"]),
-        (4, ["vim.Alert-A", "vim.Alert-B", "vim.Alert-C", "vim.Alert-D", "その他アラート (1件)"]),
-    ],
-)
-async def test_post_incident_timeline_alert_top_n_changes_alert_items(
-    client: AsyncClient,
-    alert_top_n: int,
-    expected_alert_titles: list[str],
-) -> None:
-    """差し替えなしで、alert_top_n が応答のアラート項目数と「その他」の件数に反映される。"""
+    """差し替えなしで、1 バケットのアラートは既定の上位 3 種別と「その他」で出る（件数は指定できない）。"""
     vid = uuid.uuid4()
     base = datetime(2026, 3, 22, 10, 0, tzinfo=timezone.utc)
     async with session_scope() as session:
@@ -299,13 +282,13 @@ async def test_post_incident_timeline_alert_top_n_changes_alert_items(
             )
 
     r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(alert_top_n=alert_top_n, include_period_metrics_cpu=True),
+        PREVIEW_URL,
+        json=_preview_body(include_period_metrics_cpu=True),
     )
     assert r.status_code == 200
     alert_items = [
         item
-        for column in r.json()["columns"]
+        for column in r.json()["incident_timeline"]["columns"]
         for item in column["items"]
         if item["kind"] == "alert" and item["timestamp_utc"] == "2026-03-22T10:00:00Z"
     ]
@@ -314,11 +297,12 @@ async def test_post_incident_timeline_alert_top_n_changes_alert_items(
         item["title"] if item["title"].startswith("その他") else item["title"].split(" (", 1)[0]
         for item in alert_items
     ]
-    assert sorted(titles) == sorted(expected_alert_titles)
+    assert sorted(titles) == sorted(["vim.Alert-A", "vim.Alert-B", "vim.Alert-C", "その他アラート (2件)"])
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
+@pytest.mark.usefixtures("stub_preview_prompt")
+async def test_chat_preview_auto_triggers_are_emitted_as_alerts(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -409,13 +393,13 @@ async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
     )
 
     r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(include_period_metrics_cpu=True),
+        PREVIEW_URL,
+        json=_preview_body(include_period_metrics_cpu=True),
     )
     assert r.status_code == 200
     alert_items = [
         item
-        for column in r.json()["columns"]
+        for column in r.json()["incident_timeline"]["columns"]
         for item in column["items"]
         if item["kind"] == "alert"
     ]
@@ -430,7 +414,8 @@ async def test_post_incident_timeline_auto_triggers_are_emitted_as_alerts(
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_does_not_persist_auto_trigger_snapshots(
+@pytest.mark.usefixtures("stub_preview_prompt")
+async def test_chat_preview_does_not_persist_auto_trigger_snapshots(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -503,8 +488,8 @@ async def test_post_incident_timeline_does_not_persist_auto_trigger_snapshots(
     )
 
     r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(include_period_metrics_cpu=True),
+        PREVIEW_URL,
+        json=_preview_body(include_period_metrics_cpu=True),
     )
     assert r.status_code == 200
 
@@ -519,73 +504,28 @@ async def test_post_incident_timeline_does_not_persist_auto_trigger_snapshots(
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_rejects_messages_field(
+async def test_post_manual_snapshot_rejects_build_request_payload_when_from_equals_to(
     client: AsyncClient,
 ) -> None:
-    r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(messages=[{"role": "user", "content": "test"}]),
-    )
+    """build_request_payload（IncidentTimelineBuildRequest）の from/to の検証。外側の from/to は正しい。"""
+    body = _manual_snapshot_request_body()
+    body["build_request_payload"].update({"from": "2026-03-23T00:00:00Z", "to": "2026-03-23T00:00:00Z"})
+    r = await client.post("/api/incident-timeline/snapshots/manual", json=body)
     assert r.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_post_incident_timeline_passes_original_request_model(
-    client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def _fake_build_incident_timeline_payload(
-        session: object,
-        body: IncidentTimelineBuildRequest,
-        **_kwargs: object,
-    ) -> IncidentTimelinePayload:
-        assert isinstance(body, IncidentTimelineBuildRequest)
-        assert not hasattr(body, "messages")
-        return IncidentTimelinePayload(columns=[])
-
-    monkeypatch.setattr(
-        incident_timeline_route,
-        "build_incident_timeline_payload",
-        _fake_build_incident_timeline_payload,
-    )
-
-    r = await client.post("/api/incident-timeline", json=_request_body())
-    assert r.status_code == 200
-    assert r.json() == {"columns": []}
-
-
-@pytest.mark.asyncio
-async def test_post_incident_timeline_returns_422_when_from_equals_to(
-    client: AsyncClient,
-) -> None:
-    r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(
-            **{
-                "from": "2026-03-23T00:00:00Z",
-                "to": "2026-03-23T00:00:00Z",
-            }
-        ),
-    )
-    assert r.status_code == 422
+    assert all("build_request_payload" in error["loc"] for error in r.json()["detail"])
     detail = str(r.json().get("detail", ""))
     assert "from" in detail.lower() or "前" in detail
 
 
 @pytest.mark.asyncio
-async def test_post_incident_timeline_returns_422_when_from_after_to(
+async def test_post_manual_snapshot_rejects_build_request_payload_when_from_after_to(
     client: AsyncClient,
 ) -> None:
-    r = await client.post(
-        "/api/incident-timeline",
-        json=_request_body(
-            **{
-                "from": "2026-03-24T00:00:00Z",
-                "to": "2026-03-23T00:00:00Z",
-            }
-        ),
-    )
+    body = _manual_snapshot_request_body()
+    body["build_request_payload"].update({"from": "2026-03-24T00:00:00Z", "to": "2026-03-23T00:00:00Z"})
+    r = await client.post("/api/incident-timeline/snapshots/manual", json=body)
     assert r.status_code == 422
+    assert all("build_request_payload" in error["loc"] for error in r.json()["detail"])
     detail = str(r.json().get("detail", ""))
     assert "from" in detail.lower() or "前" in detail
 
@@ -780,3 +720,53 @@ async def test_post_manual_snapshot_rejects_invalid_graph_context(
         json=request_body,
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_stored_auto_snapshot_with_legacy_build_request_is_readable(
+    client: AsyncClient,
+) -> None:
+    """Issue #325 より前の自動スナップショットの行（alert_top_n=7 を含む）を、一覧と詳細の API で読める。
+
+    ``build_request_payload`` は、当時の ``build_alert_rule_snapshot_build_request`` を
+    ``model_dump(mode="json", by_alias=True, exclude_none=True)`` した形（既定値の項目も含む）。
+    """
+    legacy_payload = {
+        "from": "2026-03-21T23:00:00Z",
+        "to": "2026-03-22T01:00:00Z",
+        "top_notable_min_score": 1,
+        "alert_top_n": 7,
+        "include_period_metrics_cpu": True,
+        "include_period_metrics_memory": True,
+        "include_period_metrics_disk_io": False,
+        "include_period_metrics_network_io": False,
+    }
+    async with session_scope() as session:
+        snapshot = IncidentTimelineManualSnapshot(
+            from_time=datetime(2026, 3, 21, 23, 0, tzinfo=timezone.utc),
+            to_time=datetime(2026, 3, 22, 1, 0, tzinfo=timezone.utc),
+            timestamp_utc=datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc),
+            operator_note="自動スナップショット: legacy rule (host-1)",
+            build_request_payload=legacy_payload,
+            snapshot_kind="auto",
+            trigger_id="alert_rule_1_host_1",
+            trigger_evidence={"trigger_type": "alert_rule", "rule_id": 1},
+        )
+        session.add(snapshot)
+        await session.flush()
+        snapshot_id = str(snapshot.id)
+
+    list_r = await client.get("/api/incident-timeline/snapshots/manual")
+    assert list_r.status_code == 200
+    listed = next(item for item in list_r.json()["items"] if item["snapshot_id"] == snapshot_id)
+    assert listed["snapshot_kind"] == "auto"
+    assert listed["build_request_payload"]["alert_top_n"] == 7
+    assert listed["build_request_payload"]["include_period_metrics_cpu"] is True
+
+    detail_r = await client.get(f"/api/incident-timeline/snapshots/manual/{snapshot_id}")
+    assert detail_r.status_code == 200
+    detail = detail_r.json()
+    assert detail["snapshot_kind"] == "auto"
+    assert detail["build_request_payload"]["alert_top_n"] == 7
+    assert detail["build_request_payload"]["from"] == "2026-03-21T23:00:00Z"
+    assert detail["result"] is None

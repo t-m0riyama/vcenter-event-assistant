@@ -42,7 +42,6 @@ def test_build_alert_rule_snapshot_build_request_lookback():
     assert req.to_time == now
     assert req.include_period_metrics_cpu is True
     assert req.include_period_metrics_memory is True
-    assert req.alert_top_n == 7
 
 
 def test_format_alert_rule_trigger_id():
