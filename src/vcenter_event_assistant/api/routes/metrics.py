@@ -46,7 +46,7 @@ async def _metric_list_vcenter_clauses(
     vCenter ごとの範囲走査で使える。期間なしの件数だけは SQLite でも遅くなるが、一覧が大きく速くなるので、
     期間なしの件数だけ条件を外すことはしない（条件は件数と一覧で同じにする）。PostgreSQL にはこの索引が無い
     （SQLite だけに作る）ので、id を並べても速くならず、期間なしの件数は metric_key の索引だけで数えられなくなって
-    遅くなる。計測は Issue #324 にある。
+    遅くなる（Issue #324）。計測は docs/operations/backend-operations.md にある。
 
     Returns:
         条件のリスト（SQLite 以外で vCenter を指定しないときは空）。SQLite で vCenter が 1 つも無いときは ``None``
