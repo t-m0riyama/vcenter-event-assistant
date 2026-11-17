@@ -7,7 +7,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient, Response
 
-from vcenter_event_assistant.api.schemas.incident_timeline_view import normalize_time_span
+from vcenter_event_assistant.api.schemas.chat import (
+    ChatRequest,
+    IncidentTimelineManualSnapshotCreateRequest,
+)
+from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineViewRequest,
+    normalize_time_span,
+)
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
 from vcenter_event_assistant.db.session import session_scope
 
@@ -246,6 +253,89 @@ async def test_saved_build_request_payload_without_utc_is_read_as_utc(client: As
     item = await _listed_item(client, snapshot_id)
     assert item["build_request_payload"]["from"] == "2026-01-01T00:00:00Z"
     assert item["build_request_payload"]["to"] == "2026-01-02T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    "saved_payload",
+    [
+        {"from": "0001-01-01T00:00:00+01:00", "to": "0001-01-02T00:00:00+01:00"},
+        {"from": "9999-12-30T23:30:00-01:00", "to": "9999-12-31T23:30:00-01:00"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_saved_build_request_payload_not_representable_in_utc_falls_back_to_columns(
+    client: AsyncClient, saved_payload: dict[str, str]
+) -> None:
+    """UTC に直せない build_request_payload を持つ保存済みの行も、一覧と詳細を 500 にせず、列の期間で返す。"""
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    async with session_scope() as session:
+        snapshot = IncidentTimelineManualSnapshot(
+            from_time=t0,
+            to_time=t0 + timedelta(days=1),
+            timestamp_utc=t0,
+            operator_note="変更前に保存できた行",
+            build_request_payload=saved_payload,
+        )
+        session.add(snapshot)
+        await session.flush()
+        snapshot_id = str(snapshot.id)
+
+    item = await _listed_item(client, snapshot_id)
+    assert item["build_request_payload"]["from"] == "2026-01-01T00:00:00Z"
+    assert item["build_request_payload"]["to"] == "2026-01-02T00:00:00Z"
+
+    detail = await client.get(f"{_MANUAL_SNAPSHOT_URL}/{snapshot_id}")
+    assert detail.status_code == 200
+    assert detail.json()["build_request_payload"]["from"] == "2026-01-01T00:00:00Z"
+    assert detail.json()["build_request_payload"]["to"] == "2026-01-02T00:00:00Z"
+
+
+_JST = timezone(timedelta(hours=9))
+# タイムゾーン無し・+09:00・Z の、どれも 2026-01-01T00:00:00Z〜2026-01-02T00:00:00Z を指す組
+_SAME_RANGE_IN_VARIOUS_ZONES = [
+    ("2026-01-01T00:00:00", "2026-01-02T00:00:00Z"),
+    ("2026-01-01T00:00:00Z", "2026-01-02T00:00:00"),
+    ("2026-01-01T09:00:00+09:00", "2026-01-02T09:00:00+09:00"),
+]
+_EXPECTED_FROM = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_EXPECTED_TO = datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+
+def _assert_utc_range(
+    model: ChatRequest | IncidentTimelineViewRequest | IncidentTimelineManualSnapshotCreateRequest,
+) -> None:
+    """from_time / to_time が timezone.utc で、正しい瞬間を指すことを確かめる（DB の列に入る値の確認）。"""
+    assert model.from_time.tzinfo is timezone.utc
+    assert model.to_time.tzinfo is timezone.utc
+    assert model.from_time == _EXPECTED_FROM
+    assert model.to_time == _EXPECTED_TO
+
+
+@pytest.mark.parametrize(("from_value", "to_value"), _SAME_RANGE_IN_VARIOUS_ZONES)
+def test_manual_snapshot_request_model_normalizes_ranges_to_utc(from_value: str, to_value: str) -> None:
+    """手動スナップショットの外側と view_request の from/to を UTC に揃える。"""
+    body = IncidentTimelineManualSnapshotCreateRequest.model_validate(
+        {
+            "from": from_value,
+            "to": to_value,
+            "timestamp_utc": "2026-01-01T12:00:00Z",
+            "operator_note": "UTC に揃える",
+            "view_request": {"from": from_value, "to": to_value},
+        }
+    )
+    _assert_utc_range(body)
+    assert body.view_request is not None
+    _assert_utc_range(body.view_request)
+
+
+@pytest.mark.parametrize(("from_value", "to_value"), _SAME_RANGE_IN_VARIOUS_ZONES)
+def test_chat_and_view_request_models_normalize_ranges_to_utc(from_value: str, to_value: str) -> None:
+    """ChatRequest と IncidentTimelineViewRequest も from/to を UTC に揃える。"""
+    chat = ChatRequest.model_validate(
+        {"from": from_value, "to": to_value, "messages": [{"role": "user", "content": "test"}]}
+    )
+    _assert_utc_range(chat)
+    _assert_utc_range(IncidentTimelineViewRequest.model_validate({"from": from_value, "to": to_value}))
 
 
 @pytest.mark.asyncio
