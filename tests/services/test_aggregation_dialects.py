@@ -593,13 +593,17 @@ async def test_sqlite_timeline_queries_use_the_timeline_indexes(session: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: AsyncSession) -> None:
-    """対象（entity）と閾値以上のサンプル数の上限を指定したタイムラインで、metric_samples を読む select が
-    すべて被覆索引で vCenter・指標・期間の範囲を読む（Issue #334）。
+@pytest.mark.parametrize("entity", [None, "esx"], ids=["no_entity", "entity"])
+async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: AsyncSession, entity: str | None) -> None:
+    """閾値以上のサンプル数の上限を指定したタイムラインで（対象 entity の指定の有無とも）、metric_samples を読む
+    select がすべて INDEXED BY で被覆索引に固定され、vCenter・指標・期間の範囲を読む（Issue #334）。
 
     - 対象に当たる系列（matching_series）は、系列の索引 (vcenter_id=?) でその vCenter の全履歴を読まない。
     - 上限の数え上げ（capped）と区間の問い合わせ（hits0）も、同じ索引で期間を絞る。
     - 直前のサンプル（metric_prev）と間のサンプル（metric_between）は別名なので、固定しない。
+
+    古い SQLite（3.47.1 など）はヒントが無くても同じ計画を選ぶことがあるので、ヒントがあることは SQL の文字列で、
+    計画が想定どおりかは計画で確かめる。
     """
     if session.get_bind().dialect.name != "sqlite":
         pytest.skip("SQLite の計画の確認")
@@ -614,9 +618,12 @@ async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: As
         "COVERING INDEX ix_metric_samples_vcenter_metric_sampled_value "
         "(vcenter_id=? AND metric_key=? AND sampled_at>? AND sampled_at<?)"
     )
+    hint = "metric_samples INDEXED BY ix_metric_samples_vcenter_metric_sampled_value"
+    # capped と hits0 に 1 つずつ、対象を指定したときは IN の副問い合わせ（matching_series）にもう 1 つ
+    expected_reads = 2 if entity else 1
     for vc in (None, vid):
         scope = itv._Scope(
-            from_utc=FROM, to_utc=TO, vcenter_id=vc, entity="esx", min_score=1, bucket_sec=60,
+            from_utc=FROM, to_utc=TO, vcenter_id=vc, entity=entity, min_score=1, bucket_sec=60,
             bucket_count=120, max_rows=10, dialect_name="sqlite", metric_name_lookback=timedelta(hours=6),
             metric_thresholds=((METRIC_CPU, 80.0), (METRIC_MEM, 85.0)), metric_breach_sample_limit=1000,
         )
@@ -646,13 +653,16 @@ async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: As
             conn = await session.connection()
             rows = (await conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql)).all()
             plan = "\n".join(str(r[-1]) for r in rows)
+            assert sql.count(hint) == expected_reads, sql
+            assert sql.count("INDEXED BY") == expected_reads, sql
             table_lines = [line for line in plan.splitlines() if " metric_samples " in f"{line} "]
-            # capped と matching_series（IN の副問い合わせ）、intervals は hits0 と matching_series
-            assert len(table_lines) == 2, plan
+            assert len(table_lines) == expected_reads, plan
             for line in table_lines:
                 assert "ix_metric_samples_vcenter_metric_sampled_value (vcenter_id=? AND metric_key=?" in line, plan
                 assert "sampled_at>? AND sampled_at<?" in line, plan
-            assert covering_range in plan, plan
+            # hits0 は entity_type も読むので被覆にならない。被覆になるのは capped と matching_series
+            if kind == "capped" or entity:
+                assert covering_range in plan, plan
             assert "ix_metric_samples_vcenter_entity_metric_sampled (vcenter_id=?)" not in plan, plan
             if kind == "intervals":
                 assert "SEARCH metric_prev USING" in plan, plan

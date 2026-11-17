@@ -29,10 +29,20 @@ def indexed_by(index_name: str) -> str:
     return f"{INDEXED_BY_PREFIX}{index_name}"
 
 
-def _get_from_hint_text(self: SQLCompiler, table: FromClause, text: str | None) -> str | None:
+# 差し替えた関数の目印。関数の同一性で判定すると、``importlib.reload`` などでこのモジュールが 2 回読まれたとき、
+# 前の回の関数を「基底の実装でない」とみなして import が失敗するため。
+_INSTALLED_MARKER = "_vea_indexed_by_hint"
+
+
+def _get_from_hint_text(
+    self: SQLCompiler, table: FromClause, text: str | None
+) -> str | None:
     if text is not None and text.startswith(INDEXED_BY_PREFIX):
         return text
     return None
+
+
+setattr(_get_from_hint_text, _INSTALLED_MARKER, True)
 
 
 def install(compiler_cls: type[SQLCompiler] = SQLiteCompiler) -> None:
@@ -43,7 +53,7 @@ def install(compiler_cls: type[SQLCompiler] = SQLiteCompiler) -> None:
             無いので、更新で前提が変わったら（SQLite のコンパイラが自前でヒントを扱うようになったら）気づけるようにする。
     """
     current = compiler_cls.get_from_hint_text
-    if current is _get_from_hint_text:
+    if getattr(current, _INSTALLED_MARKER, False):
         return
     if current is not SQLCompiler.get_from_hint_text:
         raise RuntimeError(

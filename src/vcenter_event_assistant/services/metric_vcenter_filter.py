@@ -54,4 +54,6 @@ def pin_metric_covering_index(stmt: _SelectT) -> _SelectT:
     付けても内側には伝わらない。別名（``aliased``）の表と PostgreSQL には付かない。索引の無い DB では
     ``no such index`` のエラーになる（索引はマイグレーションとモデルの両方で作る）。
     """
-    return stmt.with_hint(MetricSample.__table__, indexed_by(METRIC_COVERING_INDEX), dialect_name="sqlite")
+    return stmt.with_hint(
+        MetricSample.__table__, indexed_by(METRIC_COVERING_INDEX), dialect_name="sqlite"
+    )

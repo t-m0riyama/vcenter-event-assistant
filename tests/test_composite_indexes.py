@@ -210,9 +210,17 @@ async def two_vcenter_metric_engine() -> AsyncIterator[AsyncEngine]:
     await reset_db()
 
 
+VCENTER_METRIC_HINT = f"metric_samples INDEXED BY {VCENTER_METRIC_INDEX}"
+
+
 def _assert_uses_vcenter_metric_index(captured: list[tuple[str, Any]], plans: list[str]) -> None:
+    """INDEXED BY で被覆索引に固定し（SQL の文字列）、計画もその索引で読む（Issue #334）。
+
+    古い SQLite（3.47.1 など）はヒントが無くても同じ計画を選ぶので、ヒントがあることは文字列で確かめる。
+    """
     assert captured, "metric_samples の SELECT が捕まっていない"
     for (statement, _), plan in zip(captured, plans, strict=True):
+        assert VCENTER_METRIC_HINT in statement, statement
         assert f"COVERING INDEX {VCENTER_METRIC_INDEX}" in plan, f"{statement}\n---\n{plan}"
         assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
 
@@ -333,6 +341,7 @@ async def test_metrics_list_uses_vcenter_metric_index(
     plans = await _plans_of(two_vcenter_metric_engine, captured)
     assert len(captured) == 2, captured  # 件数と一覧
     for (statement, _), plan in zip(captured, plans, strict=True):
+        assert VCENTER_METRIC_HINT in statement, statement
         assert VCENTER_METRIC_INDEX in plan, f"{statement}\n---\n{plan}"
         assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
     count_plan = next(p for (s, _), p in zip(captured, plans, strict=True) if "count(" in s.lower())

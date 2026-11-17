@@ -30,17 +30,25 @@ def test_covering_index_constant_matches_model() -> None:
     indexes = {idx.name: idx for idx in MetricSample.__table__.indexes}
     assert METRIC_COVERING_INDEX in indexes
     index = indexes[METRIC_COVERING_INDEX]
-    assert [c.name for c in index.columns][:3] == ["vcenter_id", "metric_key", "sampled_at"]
+    assert [c.name for c in index.columns][:3] == [
+        "vcenter_id",
+        "metric_key",
+        "sampled_at",
+    ]
 
 
 def test_aiosqlite_dialect_uses_the_replaced_compiler() -> None:
     """アプリが使う aiosqlite の方言のコンパイラが、差し替えた関数に解決される（ドライバ側の上書きの見張り）。"""
     compiler_cls = SQLiteDialect_aiosqlite.statement_compiler
-    assert compiler_cls.get_from_hint_text is sqlite_hints._get_from_hint_text
+    assert getattr(
+        compiler_cls.get_from_hint_text, sqlite_hints._INSTALLED_MARKER, False
+    )
 
 
 def test_hint_is_rendered_in_subquery_cte_and_literal_binds() -> None:
-    inner = pin_metric_covering_index(select(MetricSample.id).where(MetricSample.metric_key == "k"))
+    inner = pin_metric_covering_index(
+        select(MetricSample.id).where(MetricSample.metric_key == "k")
+    )
     assert HINT in _sqlite_sql(inner)
     assert HINT in _sqlite_sql(select(func.count()).select_from(inner.subquery("sub")))
     cte = inner.cte("c")
@@ -53,7 +61,9 @@ def test_hint_is_rendered_in_subquery_cte_and_literal_binds() -> None:
 def test_hint_is_not_rendered_for_alias_or_postgresql() -> None:
     prev = aliased(MetricSample, name="metric_prev")
     stmt = pin_metric_covering_index(
-        select(MetricSample.id, prev.id).join(prev, prev.vcenter_id == MetricSample.vcenter_id)
+        select(MetricSample.id, prev.id).join(
+            prev, prev.vcenter_id == MetricSample.vcenter_id
+        )
     )
     sql = _sqlite_sql(stmt)
     assert sql.count("INDEXED BY") == 1, sql
@@ -66,14 +76,29 @@ def test_hint_without_indexed_by_prefix_is_not_rendered() -> None:
     """``INDEXED BY `` で始まらないヒント（方言を指定しないものも）は、SQLite でも出力しない。"""
     stmt = select(MetricSample.id).with_hint(MetricSample.__table__, "FOO")
     assert "FOO" not in _sqlite_sql(stmt)
-    stmt = select(MetricSample.id).with_hint(MetricSample.__table__, "WITH (NOLOCK)", dialect_name="sqlite")
+    stmt = select(MetricSample.id).with_hint(
+        MetricSample.__table__, "WITH (NOLOCK)", dialect_name="sqlite"
+    )
     assert "NOLOCK" not in _sqlite_sql(stmt)
 
 
 def test_install_is_idempotent() -> None:
     sqlite_hints.install()
     sqlite_hints.install(SQLiteCompiler)
-    assert SQLiteCompiler.get_from_hint_text is sqlite_hints._get_from_hint_text
+    assert getattr(
+        SQLiteCompiler.get_from_hint_text, sqlite_hints._INSTALLED_MARKER, False
+    )
+
+
+def test_reload_does_not_fail() -> None:
+    """モジュールを読み直しても（前の回の関数が残っていても）、差し替え済みとみなして例外にしない。"""
+    import importlib
+
+    before = SQLiteCompiler.get_from_hint_text
+    importlib.reload(sqlite_hints)
+    # 読み直した後も、前の回の関数のまま（差し替え直さない）で、ヒントは出力される
+    assert SQLiteCompiler.get_from_hint_text is before
+    assert HINT in _sqlite_sql(pin_metric_covering_index(select(MetricSample.id)))
 
 
 def test_install_fails_when_compiler_defines_its_own_hint_text() -> None:
@@ -86,4 +111,8 @@ def test_install_fails_when_compiler_defines_its_own_hint_text() -> None:
     with pytest.raises(RuntimeError, match="get_from_hint_text"):
         sqlite_hints.install(_OwnHintCompiler)
     # 失敗したときは書き換えない
-    assert _OwnHintCompiler.__dict__["get_from_hint_text"] is not sqlite_hints._get_from_hint_text
+    assert not getattr(
+        _OwnHintCompiler.__dict__["get_from_hint_text"],
+        sqlite_hints._INSTALLED_MARKER,
+        False,
+    )
