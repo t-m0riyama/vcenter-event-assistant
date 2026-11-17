@@ -6,9 +6,14 @@ import asyncio
 import ssl
 import uuid
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from httpx import ASGITransport, AsyncClient
 from ldap3 import MOCK_SYNC, Connection, Server
 from sqlalchemy import select, text
@@ -314,6 +319,25 @@ def _directory_body(**overrides: Any) -> dict[str, Any]:
     }
     body.update(overrides)
     return body
+
+
+def _self_signed_ca_pem() -> str:
+    """自己署名の CA 証明書を PEM で作る。OS の証明書ストアは環境によって空なので頼らない。"""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test CA")])
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    return cert.public_bytes(serialization.Encoding.PEM).decode()
 
 
 def _raw_client() -> AsyncClient:
@@ -1646,8 +1670,7 @@ async def test_connection_changes_require_bind_password_before_ldap(
         "bind_dn": f"cn=other,{BASE}",
     }
     if field == "ca_cert_pem":
-        ca = ssl.create_default_context().get_ca_certs(binary_form=True)[0]
-        changes[field] = ssl.DER_cert_to_PEM_cert(ca)
+        changes[field] = _self_signed_ca_pem()
     created = await client.post("/api/auth/directories", json=_directory_body(**overrides))
     assert created.status_code == 201, created.text
     directory_id = created.json()["id"]
