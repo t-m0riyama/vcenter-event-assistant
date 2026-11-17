@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from vcenter_event_assistant.api.schemas.base import UtcDateTime
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineSavedViewRequest,
     IncidentTimelineViewRequest,
@@ -200,8 +201,10 @@ class IncidentTimelineGraphCapturedRange(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    from_time: datetime = Field(alias="from")
-    to_time: datetime = Field(alias="to")
+    # 画面は一覧を末尾 Z 必須のスキーマで読むので、UTC に揃える（保存済みの行も読むときに揃う）。
+    # 表示範囲の値なので、from < to や幅の上限は検査しない。
+    from_time: UtcDateTime = Field(alias="from")
+    to_time: UtcDateTime = Field(alias="to")
 
 
 class IncidentTimelineGraphContext(BaseModel):
@@ -211,7 +214,7 @@ class IncidentTimelineGraphContext(BaseModel):
 
     metric_key: str | None = Field(default=None, max_length=512)
     chart_event_type: str | None = Field(default=None, max_length=512)
-    marker_timestamp_utc: datetime | None = None
+    marker_timestamp_utc: UtcDateTime | None = None
     vcenter_id: uuid.UUID | None = None
     captured_range: IncidentTimelineGraphCapturedRange | None = None
 
@@ -268,7 +271,8 @@ class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
 
     from_time: datetime = Field(alias="from")
     to_time: datetime = Field(alias="to")
-    timestamp_utc: datetime
+    # UTC に直せない値は保存の前に 422 にする（保存した後の応答の組み立てで 500 にしない）。
+    timestamp_utc: UtcDateTime
     operator_note: str = Field(min_length=1, max_length=10_000)
     build_request_payload: IncidentTimelineBuildRequest | None = None
     graph_context: IncidentTimelineGraphContext | None = None
