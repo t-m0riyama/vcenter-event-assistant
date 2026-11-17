@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import MetricSample
+from vcenter_event_assistant.db.models import MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 
 
@@ -183,3 +183,54 @@ async def test_metric_keys_empty_when_no_samples(client: AsyncClient) -> None:
     resp = await client.get("/api/metrics/keys")
     assert resp.status_code == 200
     assert resp.json()["metric_keys"] == []
+
+
+@pytest.mark.asyncio
+async def test_metrics_without_vcenter_include_samples_of_every_vcenter(client: AsyncClient) -> None:
+    """vCenter 未指定では、登録済みのすべての vCenter のサンプルを返す（期間の有無とも。Issue #310）。"""
+    base = datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
+    vids = [uuid.uuid4(), uuid.uuid4()]
+    async with session_scope() as session:
+        for n, vid in enumerate(vids):
+            session.add(VCenter(id=vid, name=f"all-{n}", host="h", username="u", password="p"))
+        await session.flush()
+        for n, vid in enumerate(vids):
+            session.add(
+                MetricSample(
+                    vcenter_id=vid,
+                    sampled_at=base + timedelta(minutes=n),
+                    entity_type="HostSystem",
+                    entity_moid=f"mo-{n}",
+                    entity_name=f"host-{n}",
+                    metric_key="host.cpu.usage_pct",
+                    value=float(10 + n),
+                )
+            )
+
+    ranged = (
+        "/api/metrics?metric_key=host.cpu.usage_pct"
+        "&from=2026-03-21T23:00:00Z&to=2026-03-22T01:00:00Z&limit=10000"
+    )
+    for q in (ranged, "/api/metrics?metric_key=host.cpu.usage_pct&limit=500"):
+        resp = await client.get(q)
+        assert resp.status_code == 200
+        assert resp.headers.get("X-Total-Count") == "2"
+        body = resp.json()
+        assert body["total"] == 2
+        assert [(p["vcenter_id"], p["entity_moid"]) for p in body["points"]] == [
+            (str(vids[0]), "mo-0"),
+            (str(vids[1]), "mo-1"),
+        ]
+
+
+@pytest.mark.asyncio
+async def test_metrics_without_any_vcenter_returns_empty_with_range(client: AsyncClient) -> None:
+    """vCenter が 1 つも無い（サンプルも無い）ときは、期間を指定しても件数 0・空の一覧を返す（Issue #310）。"""
+    resp = await client.get(
+        "/api/metrics?metric_key=host.cpu.usage_pct&from=2026-03-21T23:00:00Z&to=2026-03-22T01:00:00Z"
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Total-Count") == "0"
+    body = resp.json()
+    assert body["total"] == 0
+    assert body["points"] == []

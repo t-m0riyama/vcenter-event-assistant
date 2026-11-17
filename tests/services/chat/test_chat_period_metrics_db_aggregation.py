@@ -207,6 +207,63 @@ async def test_query_returns_aggregated_rows_not_orm_samples(monkeypatch: pytest
         out = await _build(session)
     assert out is not None and out.cpu is not None
     assert sum(p.n for p in out.cpu[0].series) == 24
-    assert len(statements) == 1
-    columns = {c.key for c in statements[0].selected_columns}  # type: ignore[attr-defined]
+    # vCenter 未指定なので、先に vCenter の id を取る SELECT vcenters.id が 1 本走る（Issue #310）。
+    metric_statements = [s for s in statements if "metric_samples" in str(s)]
+    assert len(metric_statements) == 1
+    columns = {c.key for c in metric_statements[0].selected_columns}  # type: ignore[attr-defined]
     assert columns == {"cat", "moid", "mk", "bidx", "avg", "n", "name"}
+
+
+@pytest.mark.asyncio
+async def test_without_vcenter_includes_samples_of_every_vcenter() -> None:
+    """vCenter 未指定では、登録済みのすべての vCenter のサンプルを集計する（Issue #310）。"""
+    async with session_scope() as session:
+        v1 = await _add_vcenter(session)
+        v2 = await _add_vcenter(session)
+        session.add_all(
+            [
+                _sample(v1, "a", METRIC_CPU, FROM + timedelta(minutes=1), 5.0),
+                _sample(v2, "b", METRIC_CPU, FROM + timedelta(minutes=1), 6.0),
+            ]
+        )
+        await session.flush()
+        out = await _build(session)
+    assert out is not None and out.cpu is not None
+    assert [s.entity_moid for s in out.cpu] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_without_vcenter_includes_samples_of_disabled_vcenter() -> None:
+    """無効にした vCenter のサンプルも集計に入れる（収集を止めただけで、過去のサンプルは残っている）。"""
+    async with session_scope() as session:
+        v1 = await _add_vcenter(session)
+        v2 = uuid.uuid4()
+        session.add(
+            VCenter(id=v2, name=f"vc-{v2.hex[:6]}", host="h", port=443, username="u", password="p", is_enabled=False)
+        )
+        await session.flush()
+        session.add_all(
+            [
+                _sample(v1, "a", METRIC_CPU, FROM + timedelta(minutes=1), 5.0),
+                _sample(v2, "b", METRIC_CPU, FROM + timedelta(minutes=1), 6.0),
+            ]
+        )
+        await session.flush()
+        out = await _build(session)
+    assert out is not None and out.cpu is not None
+    assert [s.entity_moid for s in out.cpu] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_without_any_vcenter_returns_same_payload_as_no_samples() -> None:
+    """vCenter が 1 つも無いときは、サンプルが無いときと同じ空の結果を返す（Issue #310）。"""
+    params = dict(include_memory=True, include_disk_io=True, include_network_io=True)
+    async with session_scope() as session:
+        no_vcenter = await _build(session, **params)
+        await _add_vcenter(session)
+        no_samples = await _build(session, **params)
+    assert no_vcenter is not None
+    assert no_vcenter == no_samples
+    assert (no_vcenter.cpu, no_vcenter.memory, no_vcenter.disk, no_vcenter.network) == (None, None, None, None)
+    assert no_vcenter.bucket_minutes == 15
+    assert (no_vcenter.from_utc, no_vcenter.to_utc) == (FROM, TO)
