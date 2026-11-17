@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from vcenter_event_assistant.api.schemas.base import _normalize_to_utc
+from vcenter_event_assistant.api.schemas.base import UtcDateTime, _normalize_to_utc
 
 
 class DigestRead(BaseModel):
@@ -49,8 +49,8 @@ class DigestRunRequest(BaseModel):
             "期間省略時はこの種別に応じた集計ウィンドウ（設定 TZ の暦）を使う。"
         ),
     )
-    from_time: datetime | None = None
-    to_time: datetime | None = None
+    from_time: UtcDateTime | None = None
+    to_time: UtcDateTime | None = None
 
     @model_validator(mode="after")
     def validate_window(self) -> DigestRunRequest:

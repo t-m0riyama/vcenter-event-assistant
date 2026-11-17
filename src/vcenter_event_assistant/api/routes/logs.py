@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
+from vcenter_event_assistant.api.schemas.base import UtcDateTime
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive as _contains_case_insensitive
 from vcenter_event_assistant.api.schemas.logs import LogListResponse, LogRead
@@ -31,8 +32,8 @@ def log_conditions(
     log_kind: str | None = Query(default=None, max_length=64),
     severity: str | None = Query(default=None, max_length=64),
     message_contains: str | None = Query(default=None, max_length=1000),
-    from_time: datetime | None = Query(default=None, alias="from"),
-    to_time: datetime | None = Query(default=None, alias="to"),
+    from_time: UtcDateTime | None = Query(default=None, alias="from"),
+    to_time: UtcDateTime | None = Query(default=None, alias="to"),
 ) -> list:
     if (
         from_time is not None

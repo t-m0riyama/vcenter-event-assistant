@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.auth_deps import RequireOperator, RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
+from vcenter_event_assistant.api.schemas.base import UtcDateTime
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
 from vcenter_event_assistant.api.schemas import (
     EventListResponse,
@@ -62,10 +63,11 @@ async def list_event_types(
 
 @router.get("/rate-series", dependencies=[RequireViewer], response_model=EventRateSeriesResponse)
 async def event_rate_series(
+    *,
     session: AsyncSession = Depends(get_session),
     event_type: str = Query(..., min_length=1, max_length=512),
-    from_time: datetime = Query(..., alias="from"),
-    to_time: datetime = Query(..., alias="to"),
+    from_time: Annotated[UtcDateTime, Query(alias="from")],
+    to_time: Annotated[UtcDateTime, Query(alias="to")],
     bucket_seconds: int | None = Query(default=None, ge=60, le=86400),
     vcenter_id: uuid.UUID | None = None,
     settings: Settings = Depends(get_app_settings),
@@ -105,8 +107,8 @@ async def event_rate_series(
 async def list_events(
     session: AsyncSession = Depends(get_session),
     vcenter_id: uuid.UUID | None = None,
-    from_time: datetime | None = Query(default=None, alias="from"),
-    to_time: datetime | None = Query(default=None, alias="to"),
+    from_time: UtcDateTime | None = Query(default=None, alias="from"),
+    to_time: UtcDateTime | None = Query(default=None, alias="to"),
     min_score: int | None = Query(default=None, ge=0, le=100),
     event_type_contains: str | None = Query(default=None),
     severity_contains: str | None = Query(default=None),
