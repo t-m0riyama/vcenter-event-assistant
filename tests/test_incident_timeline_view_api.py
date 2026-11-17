@@ -1146,7 +1146,7 @@ async def test_metric_disk_and_network_counters_are_not_judged_by_percent_thresh
     """ディスク系・ネットワーク系の指標は KB/s なので、% の閾値は当てない。"""
     vid = await _vcenter()
     for key in (
-        "host.disk.usage_pct", "host.disk.read_kbps", "host.disk.write_kbps",
+        "host.disk.usage_kbps", "host.disk.read_kbps", "host.disk.write_kbps",
         "host.net.bytes_rx_kbps", "host.net.bytes_tx_kbps", "host.net.usage_kbps",
     ):
         await _series(vid, "host-1", [(0, 5000.0)], key=key)

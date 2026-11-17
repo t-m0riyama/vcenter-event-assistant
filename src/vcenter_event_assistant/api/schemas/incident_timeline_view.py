@@ -43,7 +43,7 @@ class IncidentTimelineViewRequest(BaseModel):
         ge=0,
         le=100,
         description=(
-            "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_pct も vSphere の "
+            "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_kbps は vSphere の "
             "disk.usage.average で単位は KBps）なので、% の閾値を当てられない。"
         ),
     )

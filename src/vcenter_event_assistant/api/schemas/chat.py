@@ -26,7 +26,7 @@ ALLOWED_ATTACHMENT_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
 
 # ディスクとネットワークの閾値は、保存済みスナップショットの build_request_payload に入っているので項目は残す。
 _UNUSED_DISK_THRESHOLD_DESCRIPTION = (
-    "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_pct も vSphere の "
+    "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_kbps は vSphere の "
     "disk.usage.average で単位は KBps）なので、% の閾値を当てられない。"
 )
 _UNUSED_NETWORK_THRESHOLD_DESCRIPTION = (

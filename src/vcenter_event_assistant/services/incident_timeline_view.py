@@ -126,8 +126,8 @@ _LOG_DETAIL_MAX_CHARS = 1000
 #
 # 対象は単位が % の CPU・メモリだけ。chat_period_metrics の DISK_KEYS / NET_KEYS は % ではない:
 # - ``*_kbps`` は KB/s のスループット。
-# - ``host.disk.usage_pct`` は名前に反して vSphere のカウンタ ``disk.usage.average``（Aggregated disk I/O
-#   rate、単位 KBps）の値をそのまま保存している（collectors/host_perf_counters.py は単位を変換しない）。
+# - ``host.disk.usage_kbps`` は vSphere のカウンタ ``disk.usage.average``（Aggregated disk I/O rate、
+#   単位 KBps）の値をそのまま保存している（collectors/host_perf_counters.py は単位を変換しない）。
 # % の閾値（既定 75）を KB/s に当てると、I/O のあるホストはほぼ常に「超過」になり意味がないので、
 # ``metric_threshold_disk_pct`` / ``metric_threshold_network_pct`` は受け取るが使わない。
 _METRIC_LABELS: dict[str, str] = {METRIC_CPU: "CPU 使用率", METRIC_MEM: "メモリ使用率"}

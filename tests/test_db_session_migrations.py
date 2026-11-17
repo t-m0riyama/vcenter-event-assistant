@@ -323,3 +323,133 @@ async def test_snapshot_result_columns_are_added_without_rebuilding_the_table(
     assert tuple(row) == ("old", None, None)
     assert await get_applied_alembic_revision(engine) == get_alembic_head()
     await reset_db()
+
+
+@pytest.mark.asyncio
+async def test_disk_usage_metric_key_is_renamed_in_samples_rules_and_snapshots(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``host.disk.usage_pct`` は ``host.disk.usage_kbps`` に付け替わり、downgrade で元に戻る（Issue #316）。"""
+    import uuid
+    from datetime import datetime, timezone
+
+    from alembic import command
+    from sqlalchemy import select
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.db.models import (
+        AlertRule,
+        IncidentTimelineManualSnapshot,
+        MetricSample,
+        VCenter,
+    )
+    from vcenter_event_assistant.db.session import get_engine, session_scope
+
+    old_key = "host.disk.usage_pct"
+    new_key = "host.disk.usage_kbps"
+    previous_revision = "a4b5c6d7e8f9"
+
+    db_path = tmp_path / "rename_disk_usage.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await reset_db()
+    await init_db()
+    engine = get_engine()
+    cfg = alembic_config()
+
+    async def downgrade() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(
+                lambda c: _run_with_connection(c, cfg, lambda cc: command.downgrade(cc, previous_revision))
+            )
+
+    async def read_state() -> tuple[list[tuple[str, str, float]], dict[str, dict], dict[str, dict | None]]:
+        async with session_scope() as session:
+            samples = [
+                (row.entity_moid, row.metric_key, row.value)
+                for row in (
+                    await session.execute(select(MetricSample).order_by(MetricSample.entity_moid, MetricSample.metric_key))
+                ).scalars()
+            ]
+            rules = {row.name: dict(row.config) for row in (await session.execute(select(AlertRule))).scalars()}
+            snapshots = {
+                row.operator_note: row.graph_context
+                for row in (await session.execute(select(IncidentTimelineManualSnapshot))).scalars()
+            }
+        return samples, rules, snapshots
+
+    await downgrade()
+
+    t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
+    vc_id = uuid.uuid4()
+
+    def sample(moid: str, key: str, value: float) -> MetricSample:
+        return MetricSample(
+            vcenter_id=vc_id,
+            sampled_at=t0,
+            entity_type="HostSystem",
+            entity_moid=moid,
+            entity_name=moid,
+            metric_key=key,
+            value=value,
+        )
+
+    def snapshot(note: str, graph_context: dict | None) -> IncidentTimelineManualSnapshot:
+        row = IncidentTimelineManualSnapshot(
+            from_time=t0, to_time=t0, timestamp_utc=t0, operator_note=note, build_request_payload={}
+        )
+        if graph_context is not None:
+            row.graph_context = graph_context
+        return row
+
+    async with session_scope() as session:
+        session.add(VCenter(id=vc_id, name="vc", host="vc.example.local", username="u", password="p"))
+        await session.flush()
+        session.add_all(
+            [
+                sample("host-1", old_key, 1200.0),
+                # 新しい名前の行がすでにある点（新しいコードが先に書いた場合）。古い行は一意制約でぶつかる。
+                sample("host-2", old_key, 10.0),
+                sample("host-2", new_key, 20.0),
+                sample("host-3", "host.disk.read_kbps", 5.0),
+                AlertRule(name="disk", rule_type="metric_threshold", config={"metric_key": old_key, "threshold": 5000}),
+                AlertRule(
+                    name="cpu", rule_type="metric_threshold", config={"metric_key": "host.cpu.usage_pct", "threshold": 90}
+                ),
+                AlertRule(name="score", rule_type="event_score", config={"threshold": 60}),
+                snapshot("disk", {"metric_key": old_key, "chart_event_type": "vim.event.X"}),
+                snapshot("cpu", {"metric_key": "host.cpu.usage_pct"}),
+                snapshot("none", None),
+            ]
+        )
+
+    await init_db()
+    assert await get_applied_alembic_revision(engine) == get_alembic_head()
+
+    samples, rules, snapshots = await read_state()
+    assert samples == [
+        ("host-1", new_key, 1200.0),
+        ("host-2", new_key, 20.0),
+        ("host-3", "host.disk.read_kbps", 5.0),
+    ]
+    assert rules == {
+        "disk": {"metric_key": new_key, "threshold": 5000},
+        "cpu": {"metric_key": "host.cpu.usage_pct", "threshold": 90},
+        "score": {"threshold": 60},
+    }
+    assert snapshots == {
+        "disk": {"metric_key": new_key, "chart_event_type": "vim.event.X"},
+        "cpu": {"metric_key": "host.cpu.usage_pct"},
+        "none": None,
+    }
+
+    await downgrade()
+    samples, rules, snapshots = await read_state()
+    assert [key for _moid, key, _value in samples] == [old_key, old_key, "host.disk.read_kbps"]
+    assert rules["disk"] == {"metric_key": old_key, "threshold": 5000}
+    assert snapshots["disk"] == {"metric_key": old_key, "chart_event_type": "vim.event.X"}
+
+    await init_db()
+    await reset_db()
