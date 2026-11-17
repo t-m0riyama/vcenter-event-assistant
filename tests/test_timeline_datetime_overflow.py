@@ -178,7 +178,8 @@ async def test_manual_snapshot_returns_graph_context_in_utc(client: AsyncClient)
     )
     assert r.status_code == 201
     created = r.json()
-    for graph_context in (created["graph_context"], (await _listed_item(client, created["snapshot_id"]))["graph_context"]):
+    listed = await _listed_item(client, created["snapshot_id"])
+    for graph_context in (created["graph_context"], listed["graph_context"]):
         assert graph_context["marker_timestamp_utc"] == "2026-01-01T12:00:00Z"
         assert graph_context["captured_range"] == {"from": "2026-01-01T00:00:00Z", "to": "2026-01-02T00:00:00Z"}
 
@@ -212,7 +213,8 @@ async def test_saved_graph_context_without_utc_is_read_as_utc(client: AsyncClien
     )
     detail = await client.get(f"{_MANUAL_SNAPSHOT_URL}/{snapshot_id}")
     assert detail.status_code == 200
-    for graph_context in ((await _listed_item(client, snapshot_id))["graph_context"], detail.json()["graph_context"]):
+    listed = await _listed_item(client, snapshot_id)
+    for graph_context in (listed["graph_context"], detail.json()["graph_context"]):
         assert graph_context["metric_key"] == "host.cpu.usage_pct"
         assert graph_context["marker_timestamp_utc"] == "2026-01-01T12:00:00Z"
         assert graph_context["captured_range"] == {"from": "2026-01-01T00:00:00Z", "to": "2026-01-02T00:00:00Z"}

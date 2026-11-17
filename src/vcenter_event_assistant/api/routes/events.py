@@ -66,6 +66,8 @@ async def event_rate_series(
     *,
     session: AsyncSession = Depends(get_session),
     event_type: str = Query(..., min_length=1, max_length=512),
+    # 必須の日時は既定値の無い Annotated にする。`UtcDateTime = Query(...)` と書くと型の検証が外れて、
+    # UTC に直せない値が 500 になる。`Annotated[...] = ...` は OpenAPI で任意扱いになる。
     from_time: Annotated[UtcDateTime, Query(alias="from")],
     to_time: Annotated[UtcDateTime, Query(alias="to")],
     bucket_seconds: int | None = Query(default=None, ge=60, le=86400),
