@@ -143,3 +143,59 @@ describe('バックエンドの実際の応答の形（null を含む）', () =>
     expect(JSON.stringify(parsed.graph_context)).not.toContain('metric_key')
   })
 })
+
+/**
+ * 画面では読めない graph_context（Issue #332）。
+ * 日時は PR #339 より前のサーバが送られた形のまま保存して返していた。
+ * vcenter_id は今のサーバ（Python の uuid.UUID）も受け付けるが、zod の uuid() は RFC 4122 の形でないと拒否する。
+ */
+const UNREADABLE_GRAPH_CONTEXTS: Record<string, Record<string, unknown>> = {
+  'marker_timestamp_utc が +09:00': { ...ACTUAL_GRAPH_CONTEXT, marker_timestamp_utc: '2026-01-01T09:30:00+09:00' },
+  'captured_range.from にタイムゾーンが無い': {
+    ...ACTUAL_GRAPH_CONTEXT,
+    captured_range: { from: '2026-03-22T00:00:00', to: '2026-03-22T02:00:00Z' },
+  },
+  'vcenter_id が RFC 4122 の形でない': { ...ACTUAL_GRAPH_CONTEXT, vcenter_id: '11111111-1111-1111-1111-111111111111' },
+}
+const UNREADABLE_GRAPH_CONTEXT = UNREADABLE_GRAPH_CONTEXTS['marker_timestamp_utc が +09:00']
+
+describe('読めない graph_context（Issue #332）', () => {
+  it.each(Object.entries(UNREADABLE_GRAPH_CONTEXTS))('一覧の項目は graph_context を null として読む（%s）',(_, graph_context) => {
+    const item = incidentTimelineManualSnapshotListItemSchema.parse({ ...ACTUAL_LIST_ITEM, graph_context })
+    expect(item.graph_context).toBeNull()
+  })
+
+  it('読めない項目が 1 件あっても一覧全体は読め、他の項目の graph_context は残る', () => {
+    const parsed = incidentTimelineManualSnapshotListResponseSchema.parse({
+      items: [
+        { ...ACTUAL_LIST_ITEM, snapshot_id: 'bad', graph_context: UNREADABLE_GRAPH_CONTEXT },
+        { ...ACTUAL_LIST_ITEM, snapshot_id: 'good' },
+      ],
+      total: 2,
+      limit: 20,
+      offset: 0,
+    })
+    expect(parsed.items.map((item) => item.snapshot_id)).toEqual(['bad', 'good'])
+    expect(parsed.items[0].graph_context).toBeNull()
+    expect(parsed.items[1].graph_context?.marker_timestamp_utc).toBe('2026-03-22T03:00:00Z')
+  })
+
+  it('詳細と保存の応答も graph_context を null として読む', () => {
+    const graph_context = UNREADABLE_GRAPH_CONTEXT
+    const detail = incidentTimelineManualSnapshotDetailSchema.parse({ ...ACTUAL_LIST_ITEM, graph_context })
+    expect(detail.graph_context).toBeNull()
+    const createLike: Record<string, unknown> = { ...ACTUAL_LIST_ITEM, graph_context }
+    for (const key of ['has_result', 'view_request', 'trigger_evidence', 'from', 'to']) delete createLike[key]
+    expect(incidentTimelineManualSnapshotCreateResponseSchema.parse(createLike).graph_context).toBeNull()
+  })
+
+  it('保存の要求は、読めない graph_context を黙って捨てずに拒否する', () => {
+    const body = { from: ACTUAL_LIST_ITEM.from, to: ACTUAL_LIST_ITEM.to, timestamp_utc: '2026-03-22T03:00:00Z', operator_note: 'm' }
+    expect(() =>
+      incidentTimelineManualSnapshotCreateRequestSchema.parse({
+        ...body,
+        graph_context: { marker_timestamp_utc: '2026-01-01T09:30:00+09:00' },
+      }),
+    ).toThrow()
+  })
+})
