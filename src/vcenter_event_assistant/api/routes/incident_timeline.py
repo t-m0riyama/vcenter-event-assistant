@@ -37,8 +37,6 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineViewResponse,
 )
 from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
-from vcenter_event_assistant.services.chat.chat_context_payloads import build_incident_timeline_payload
-from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
 
 router = APIRouter(prefix="/incident-timeline", tags=["incident-timeline"])
@@ -133,17 +131,6 @@ def _list_item(snapshot: IncidentTimelineManualSnapshot, *, has_result: bool) ->
         has_result=has_result,
         view_request=_view_request_for_response(snapshot),
         created_at=_normalize_utc_datetime(snapshot.created_at) if snapshot.created_at else None,
-    )
-
-
-@router.post("", dependencies=[RequireViewer], response_model=IncidentTimelinePayload)
-async def post_incident_timeline(
-    body: IncidentTimelineBuildRequest,
-    session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(get_current_principal),
-) -> IncidentTimelinePayload:
-    return await build_incident_timeline_payload(
-        session, body, owner_key=principal_owner_key(principal)
     )
 
 

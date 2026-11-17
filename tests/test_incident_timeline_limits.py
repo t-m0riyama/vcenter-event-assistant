@@ -1,9 +1,12 @@
-"""インシデントタイムライン等の集計の上限（Issue #301）。
+"""チャットのコンテキスト（インシデントタイムラインを含む）の集計の上限（Issue #301）。
+
+この集計を通る API はチャット（``/api/chat``）とプレビュー（``/api/chat/preview``）で、ここではプレビューで確かめる。
+旧 ``/api/incident-timeline`` は削除した（Issue #325）。
 
 - 同じ秒の中の from/to は 400（500 にしない）
 - イベントの集計行が上限を超えたら 422
 - 同時実行数の上限（利用者ごと・全体）を超えたら待たずに 503
-- ``/api/incident-timeline`` にもレート制限がかかる
+- プレビューのレート制限は、タイムライン画面（``/api/incident-timeline/view``）とは別の枠で数える
 """
 
 from __future__ import annotations
@@ -24,19 +27,25 @@ from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import require_settings
 
 FROM = datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
+PREVIEW_URL = "/api/chat/preview"
 
 
 def _body(**overrides: object) -> dict:
+    """プレビューと /view の両方で使う本文（/view は ``messages`` を受け付けないので含めない）。"""
     base: dict[str, object] = {"from": "2026-03-22T00:00:00Z", "to": "2026-03-22T02:00:00Z"}
     base.update(overrides)
     return base
 
 
+def _preview_body(**overrides: object) -> dict:
+    return _body(messages=[{"role": "user", "content": "質問"}], **overrides)
+
+
 @pytest.mark.asyncio
 async def test_from_and_to_in_the_same_second_is_400(client: AsyncClient) -> None:
     r = await client.post(
-        "/api/incident-timeline",
-        json=_body(**{"from": "2026-03-22T00:00:00.100Z", "to": "2026-03-22T00:00:00.900Z"}),
+        PREVIEW_URL,
+        json=_preview_body(**{"from": "2026-03-22T00:00:00.100Z", "to": "2026-03-22T00:00:00.900Z"}),
     )
     assert r.status_code == 400
 
@@ -60,12 +69,12 @@ async def test_too_many_aggregated_event_rows_is_422(
                 )
             )
     monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 2)
-    r = await client.post("/api/incident-timeline", json=_body(include_period_metrics_cpu=True))
+    r = await client.post(PREVIEW_URL, json=_preview_body(include_period_metrics_cpu=True))
     assert r.status_code == 422
     assert "vCenter を指定" in r.json()["detail"]
 
     monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 3)
-    r = await client.post("/api/incident-timeline", json=_body(include_period_metrics_cpu=True))
+    r = await client.post(PREVIEW_URL, json=_preview_body(include_period_metrics_cpu=True))
     assert r.status_code == 200
 
 
@@ -91,21 +100,21 @@ async def test_concurrent_requests_are_limited_per_user_and_released(
 
     monkeypatch.setattr(chat_context_payloads, "build_digest_context", slow_digest)
 
-    async with open_client("admin") as admin, open_client("viewer") as viewer:
-        first = asyncio.create_task(admin.post("/api/incident-timeline", json=_body()))
+    async with open_client("admin") as admin, open_client("operator") as operator:
+        first = asyncio.create_task(admin.post(PREVIEW_URL, json=_preview_body()))
         await asyncio.wait_for(started.wait(), timeout=10)
 
-        busy = await admin.post("/api/incident-timeline", json=_body())
+        busy = await admin.post(PREVIEW_URL, json=_preview_body())
         assert busy.status_code == 503
         assert busy.headers.get("retry-after")
 
-        other_user = await viewer.post("/api/incident-timeline", json=_body())
+        other_user = await operator.post(PREVIEW_URL, json=_preview_body())
         assert other_user.status_code == 200
 
         release.set()
         assert (await first).status_code == 200
 
-        again = await admin.post("/api/incident-timeline", json=_body())
+        again = await admin.post(PREVIEW_URL, json=_preview_body())
         assert again.status_code == 200
 
 
@@ -129,10 +138,10 @@ async def test_global_concurrency_limit_rejects_other_users(
 
     monkeypatch.setattr(chat_context_payloads, "build_digest_context", slow_digest)
 
-    async with open_client("admin") as admin, open_client("viewer") as viewer:
-        first = asyncio.create_task(admin.post("/api/incident-timeline", json=_body()))
+    async with open_client("admin") as admin, open_client("operator") as operator:
+        first = asyncio.create_task(admin.post(PREVIEW_URL, json=_preview_body()))
         await asyncio.wait_for(started.wait(), timeout=10)
-        assert (await viewer.post("/api/incident-timeline", json=_body())).status_code == 503
+        assert (await operator.post(PREVIEW_URL, json=_preview_body())).status_code == 503
         release.set()
         assert (await first).status_code == 200
 
@@ -148,9 +157,9 @@ async def test_slot_is_released_when_aggregation_fails(
 
     monkeypatch.setattr(chat_context_payloads, "build_digest_context", broken_digest)
     with pytest.raises(RuntimeError):
-        await client.post("/api/incident-timeline", json=_body())
+        await client.post(PREVIEW_URL, json=_preview_body())
     monkeypatch.undo()
-    r = await client.post("/api/incident-timeline", json=_body())
+    r = await client.post(PREVIEW_URL, json=_preview_body())
     assert r.status_code == 200
 
 
@@ -168,26 +177,27 @@ async def test_slot_is_released_when_request_is_cancelled(
         await asyncio.Event().wait()
 
     monkeypatch.setattr(chat_context_payloads, "build_digest_context", hanging_digest)
-    task = asyncio.create_task(client.post("/api/incident-timeline", json=_body()))
+    task = asyncio.create_task(client.post(PREVIEW_URL, json=_preview_body()))
     await asyncio.wait_for(started.wait(), timeout=10)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 
     monkeypatch.setattr(chat_context_payloads, "build_digest_context", original)
-    r = await client.post("/api/incident-timeline", json=_body())
+    r = await client.post(PREVIEW_URL, json=_preview_body())
     assert r.status_code == 200
 
 
-def test_incident_timeline_is_rate_limited_path() -> None:
-    assert _rate_limit_spec("POST", "/api/incident-timeline") == ("incident_timeline", 60)
+def test_legacy_incident_timeline_is_not_rate_limited_path() -> None:
+    """旧 /api/incident-timeline は削除したので、レート制限の対象からも外す（Issue #325）。"""
+    assert _rate_limit_spec("POST", "/api/incident-timeline") is None
     assert _rate_limit_spec("GET", "/api/incident-timeline/snapshots/manual") is None
 
 
-async def test_incident_timeline_returns_429_over_the_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_chat_preview_returns_429_over_the_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     """上限値の辞書に登録漏れがあると、本番だけ KeyError で 500 になる。ミドルウェアを通して確かめる。"""
     monkeypatch.delenv("VEA_PYTEST")
-    monkeypatch.setenv("RATE_LIMIT_CHAT_PER_MINUTE", "1")  # タイムラインはその 2 倍
+    monkeypatch.setenv("RATE_LIMIT_CHAT_PER_MINUTE", "1")  # プレビューはその 2 倍
     get_settings.cache_clear()
     _rate_limiter._hits.clear()
     try:
@@ -195,8 +205,8 @@ async def test_incident_timeline_returns_429_over_the_limit(monkeypatch: pytest.
             codes = [
                 (
                     await ac.post(
-                        "/api/incident-timeline",
-                        json=_body(),
+                        PREVIEW_URL,
+                        json=_preview_body(),
                         headers={"X-Requested-With": "XMLHttpRequest"},
                     )
                 ).status_code
@@ -221,10 +231,10 @@ def test_manual_snapshot_save_shares_the_view_rate_limit_bucket() -> None:
     assert _rate_limit_spec("GET", "/api/incident-timeline/snapshots/manual/abc") is None
 
 
-async def test_incident_timeline_view_does_not_consume_the_timeline_limit(
+async def test_incident_timeline_view_does_not_consume_the_chat_preview_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """表示用 API を上限まで使っても、既存の /api/incident-timeline の枠は残る（上限の値は同じ）。"""
+    """表示用 API を上限まで使っても、プレビュー（/api/chat/preview）の枠は残る（上限の値は同じ）。"""
     monkeypatch.delenv("VEA_PYTEST")
     monkeypatch.setenv("RATE_LIMIT_CHAT_PER_MINUTE", "1")  # どちらもその 2 倍
     get_settings.cache_clear()
@@ -236,12 +246,10 @@ async def test_incident_timeline_view_does_not_consume_the_timeline_limit(
                 (await ac.post("/api/incident-timeline/view", json=_body(), headers=headers)).status_code
                 for _ in range(3)
             ]
-            timeline_code = (
-                await ac.post("/api/incident-timeline", json=_body(), headers=headers)
-            ).status_code
+            preview_code = (await ac.post(PREVIEW_URL, json=_preview_body(), headers=headers)).status_code
     finally:
         _rate_limiter._hits.clear()
         get_settings.cache_clear()
     assert 429 not in view_codes[:2] and 500 not in view_codes
     assert view_codes[2] == 429
-    assert timeline_code not in (429, 500)
+    assert preview_code not in (429, 500)

@@ -37,7 +37,6 @@ def build_alert_rule_snapshot_build_request(
         to_time=to_time,
         include_period_metrics_cpu=True,
         include_period_metrics_memory=True,
-        alert_top_n=7,
         top_notable_min_score=1,
     )
 
