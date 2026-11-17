@@ -17,11 +17,16 @@
   - 要求の項目も違う。`/view` は `include_period_metrics_*`・`alert_top_n`・`top_notable_min_score` を受け付けず、送ると 422 になる。重要度の下限は `min_score`、対象の種別は `sources` で指定する
   - 時間バケットごとの形が必要なら、同じ形の `incident_timeline` が `POST /api/chat/preview` の応答に入っている。ただし operator 以上の権限と `messages`（1 件以上）が要り、本番では `CHAT_PREVIEW_ENABLED=true` にしないと 404 になる
   - 保存済みのスナップショットはそのまま開ける
+- **`POST /api/incident-timeline/snapshots/manual` の外側の `from` / `to` に、常に 90 日の上限を当てるようにした**（Issue #330）。今まで `view_request` か `build_request_payload` が 90 日以内なら、外側が 90 日を超えていても 201 で保存できていた。これからは 422 になる
+  - 影響するのは、この API を直接呼んで、外側だけ 90 日を超える本文を送っているスクリプト
+  - 外側の `from` / `to` を、`view_request` と同じ 90 日以内の期間にする
+  - 画面は外側にも表示中の期間を送るので、画面からの保存には影響しない
 
 ### 修正
 
 - チャットで、ディスクとネットワークの指標（KB/s）に % の閾値を当てていたのをやめた。この 2 つはインシデントタイムラインの項目にせず、画面の「Disk 閾値（%）」「Network 閾値（%）」を外した。バケット平均は今までどおり LLM に渡る（Issue #316、PR #322）
 - グラフ画面で vCenter を「全て」にしたとき、SQLite で期間に関係なく指標の全サンプルを読んでいたのを直した。登録済みの vCenter の id を並べて絞り、索引を使えるようにした。24 時間の表示では、件数と一覧の合計が約 20 秒から約 0.6 秒になる。PostgreSQL は変わらない（Issue #324）
+- `POST /api/incident-timeline/snapshots/manual` が、外側の `from` / `to` が 90 日を超えて `view_request` も `build_request_payload` も無いときと、`from` と `to` の片方だけにタイムゾーンが無いときに 500 を返していたのを、422 にした。タイムゾーンの無い値は UTC とみなす（Issue #330）
 
 ## 0.2.0 - 2026-10-10
 
