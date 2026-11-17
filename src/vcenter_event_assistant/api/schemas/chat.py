@@ -229,7 +229,12 @@ class IncidentTimelineBuildRequest(BaseModel):
     to_time: datetime = Field(alias="to")
     vcenter_id: uuid.UUID | None = None
     top_notable_min_score: int = Field(default=1, ge=0, le=100)
-    alert_top_n: int = Field(default=3, ge=1, le=20)
+    alert_top_n: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="時間バケットごとに出すアラート種別の上位件数（include_period_metrics_* を 1 つ以上含めるときだけ効く）",
+    )
     include_period_metrics_cpu: bool = Field(
         default=False,
         description="真のとき期間内 CPU 使用率をバケット平均で LLM コンテキストに含める（追加 DB クエリ）",

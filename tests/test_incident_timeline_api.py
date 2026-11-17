@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import re
 
@@ -11,7 +11,7 @@ import pytest
 from httpx import AsyncClient
 from vcenter_event_assistant.api.routes import incident_timeline as incident_timeline_route
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
-from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
+from vcenter_event_assistant.db.models import EventRecord, IncidentTimelineManualSnapshot, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.chat.chat_period_metrics import (
     PeriodMetricBucketPoint,
@@ -221,6 +221,100 @@ async def test_post_incident_timeline_emits_alert_entries_per_bucket(
         "vim.event.VmPoweredOffEvent",
         "その他アラート",
     } <= alert_title_tokens
+
+
+@pytest.mark.asyncio
+async def test_post_incident_timeline_passes_alert_top_n_to_event_buckets(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """alert_top_n が build_chat_event_time_buckets の alert_top_n_per_bucket に渡る（Issue #309）。"""
+    captured: dict[str, object] = {}
+
+    async def _spy_event_buckets(*a: object, **k: object) -> SimpleNamespace:
+        _ = a
+        captured.update(k)
+        return SimpleNamespace(buckets=[])
+
+    monkeypatch.setattr(
+        "vcenter_event_assistant.services.chat.chat_context_payloads.build_chat_event_time_buckets",
+        _spy_event_buckets,
+    )
+
+    r = await client.post(
+        "/api/incident-timeline",
+        json=_request_body(alert_top_n=5, include_period_metrics_cpu=True),
+    )
+    assert r.status_code == 200
+    assert captured["alert_top_n_per_bucket"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("alert_top_n", "expected_alert_titles"),
+    [
+        (2, ["vim.Alert-A", "vim.Alert-B", "その他アラート (3件)"]),
+        (4, ["vim.Alert-A", "vim.Alert-B", "vim.Alert-C", "vim.Alert-D", "その他アラート (1件)"]),
+    ],
+)
+async def test_post_incident_timeline_alert_top_n_changes_alert_items(
+    client: AsyncClient,
+    alert_top_n: int,
+    expected_alert_titles: list[str],
+) -> None:
+    """差し替えなしで、alert_top_n が応答のアラート項目数と「その他」の件数に反映される。"""
+    vid = uuid.uuid4()
+    base = datetime(2026, 3, 22, 10, 0, tzinfo=timezone.utc)
+    async with session_scope() as session:
+        session.add(
+            VCenter(
+                id=vid,
+                name="vc",
+                host="h",
+                port=443,
+                username="u",
+                password="p",
+                is_enabled=True,
+            )
+        )
+        # 同じ 1 時間バケットに 5 種別（notable_score は種別ごとに異なる）。
+        for i, (event_type, score) in enumerate(
+            [
+                ("vim.Alert-A", 90),
+                ("vim.Alert-B", 80),
+                ("vim.Alert-C", 70),
+                ("vim.Alert-D", 60),
+                ("vim.Alert-E", 50),
+            ],
+        ):
+            session.add(
+                EventRecord(
+                    vcenter_id=vid,
+                    occurred_at=base + timedelta(minutes=i),
+                    event_type=event_type,
+                    message="",
+                    vmware_key=2000 + i,
+                    notable_score=score,
+                ),
+            )
+
+    r = await client.post(
+        "/api/incident-timeline",
+        json=_request_body(alert_top_n=alert_top_n, include_period_metrics_cpu=True),
+    )
+    assert r.status_code == 200
+    alert_items = [
+        item
+        for column in r.json()["columns"]
+        for item in column["items"]
+        if item["kind"] == "alert" and item["timestamp_utc"] == "2026-03-22T10:00:00Z"
+    ]
+    # 種別行は「種別名 (N件, max score=…)」、その他行は「その他アラート (N件)」。
+    titles = [
+        item["title"] if item["title"].startswith("その他") else item["title"].split(" (", 1)[0]
+        for item in alert_items
+    ]
+    assert sorted(titles) == sorted(expected_alert_titles)
 
 
 @pytest.mark.asyncio

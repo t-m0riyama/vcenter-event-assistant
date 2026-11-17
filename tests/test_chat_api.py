@@ -263,6 +263,7 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
     calls: list[int] = []
     metrics_bucket_sec: list[int] = []
     events_bucket_sec: list[int] = []
+    events_kwargs: list[dict[str, object]] = []
 
     async def _spy(*a: object, **k: object) -> PeriodMetricsPayload:
         calls.append(1)
@@ -276,6 +277,7 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
 
     async def _spy_buckets(*a: object, **k: object) -> EventTimeBucketsPayload:
         events_bucket_sec.append(int(k["bucket_sec"]))
+        events_kwargs.append(dict(k))
         return EventTimeBucketsPayload(
             bucket_minutes=60,
             from_utc=datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc),
@@ -311,6 +313,10 @@ async def test_post_chat_calls_period_metrics_builder_when_cpu_toggle_true(
     # 24h 窓は既定ルールで 3600 秒バケット。メトリクスとイベントバケットで同一値。
     assert metrics_bucket_sec == [3600]
     assert events_bucket_sec == [3600]
+    # チャットの経路には alert_top_n_per_bucket を渡さない（既定値に任せる）ことの見張り。
+    # Issue #309 の再発の検出は tests/test_incident_timeline_api.py 側のテストが担う。
+    assert len(events_kwargs) == 1
+    assert "alert_top_n_per_bucket" not in events_kwargs[0]
 
 
 @pytest.mark.asyncio
