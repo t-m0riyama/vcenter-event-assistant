@@ -58,21 +58,9 @@ async def build_chat_context_payloads(
 ) -> ChatContextPayloads:
     """チャット/プレビュー向けの共有ペイロードを生成する。
 
-    ``owner_key`` は同時実行数を利用者ごとに数えるための識別子（``aggregation_owner_key``）。
-    """
-    return await _build_context_payloads_common(session, body, owner_key=owner_key)
-
-
-async def _build_context_payloads_common(
-    session: AsyncSession,
-    body: ChatRequest,
-    *,
-    owner_key: str,
-) -> ChatContextPayloads:
-    """チャット/プレビューで共有するコンテキストを構築する。
-
     期間内のイベントとメトリクスを集計する重い処理なので、同時実行数（利用者ごと・全体）に上限を設け、
     空きがなければ待たずに 503 を返す。イベントの集計行が多すぎるときは 422（Issue #301）。
+    ``owner_key`` は同時実行数を利用者ごとに数えるための識別子（``aggregation_owner_key``）。
     """
     # DB 側の時間バケットは秒単位なので、期間は入口で 1 回だけ秒に揃え、以降の集計すべてで同じ値を使う。
     # 400 の判定より前に揃えるのは、同じ秒の中の from/to を 400 で返すため（各集計の ValueError で 500 にしない）。

@@ -135,6 +135,8 @@ def test_request_rejects_span_over_90_days() -> None:
     [
         {"from": "2026-03-22T02:00:00Z", "to": "2026-03-22T02:00:00Z"},
         {"from": "2026-03-22T03:00:00Z"},
+        # 期間の上限（90 日）を超える。
+        {"from": "2026-01-01T00:00:00Z", "to": "2026-04-02T00:00:00Z"},
         {"sources": []},
         {"sources": ["nope"]},
         {"item_limit": 0},

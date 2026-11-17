@@ -32,10 +32,12 @@ async def test_chat_rejects_excessive_time_range(client: AsyncClient) -> None:
         },
     )
     assert r.status_code == 422
+    detail = str(r.json().get("detail", ""))
+    assert "90" in detail
 
 
 @pytest.mark.asyncio
-async def test_incident_timeline_rejects_excessive_time_range(client: AsyncClient) -> None:
+async def test_manual_snapshot_rejects_excessive_build_request_range(client: AsyncClient) -> None:
     """IncidentTimelineBuildRequest の期間の上限（90 日）を、スナップショットの保存の build_request_payload で確かめる。
 
     外側の from/to は短く正しい期間にし、422 が入れ子の条件から出ることを確かめる。

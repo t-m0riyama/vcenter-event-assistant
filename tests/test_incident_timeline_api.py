@@ -64,6 +64,7 @@ def _manual_snapshot_request_body(**overrides: object) -> dict:
             "include_period_metrics_memory": True,
             "metric_threshold_cpu_pct": 90,
             "metric_threshold_memory_pct": 88,
+            # 使わなくなった項目だが、保存済みの行を読めることを確かめるために入れている（Issue #325）。
             "alert_top_n": 11,
         },
     }
@@ -719,3 +720,53 @@ async def test_post_manual_snapshot_rejects_invalid_graph_context(
         json=request_body,
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_stored_auto_snapshot_with_legacy_build_request_is_readable(
+    client: AsyncClient,
+) -> None:
+    """Issue #325 より前の自動スナップショットの行（alert_top_n=7 を含む）を、一覧と詳細の API で読める。
+
+    ``build_request_payload`` は、当時の ``build_alert_rule_snapshot_build_request`` を
+    ``model_dump(mode="json", by_alias=True, exclude_none=True)`` した形（既定値の項目も含む）。
+    """
+    legacy_payload = {
+        "from": "2026-03-21T23:00:00Z",
+        "to": "2026-03-22T01:00:00Z",
+        "top_notable_min_score": 1,
+        "alert_top_n": 7,
+        "include_period_metrics_cpu": True,
+        "include_period_metrics_memory": True,
+        "include_period_metrics_disk_io": False,
+        "include_period_metrics_network_io": False,
+    }
+    async with session_scope() as session:
+        snapshot = IncidentTimelineManualSnapshot(
+            from_time=datetime(2026, 3, 21, 23, 0, tzinfo=timezone.utc),
+            to_time=datetime(2026, 3, 22, 1, 0, tzinfo=timezone.utc),
+            timestamp_utc=datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc),
+            operator_note="自動スナップショット: legacy rule (host-1)",
+            build_request_payload=legacy_payload,
+            snapshot_kind="auto",
+            trigger_id="alert_rule_1_host_1",
+            trigger_evidence={"trigger_type": "alert_rule", "rule_id": 1},
+        )
+        session.add(snapshot)
+        await session.flush()
+        snapshot_id = str(snapshot.id)
+
+    list_r = await client.get("/api/incident-timeline/snapshots/manual")
+    assert list_r.status_code == 200
+    listed = next(item for item in list_r.json()["items"] if item["snapshot_id"] == snapshot_id)
+    assert listed["snapshot_kind"] == "auto"
+    assert listed["build_request_payload"]["alert_top_n"] == 7
+    assert listed["build_request_payload"]["include_period_metrics_cpu"] is True
+
+    detail_r = await client.get(f"/api/incident-timeline/snapshots/manual/{snapshot_id}")
+    assert detail_r.status_code == 200
+    detail = detail_r.json()
+    assert detail["snapshot_kind"] == "auto"
+    assert detail["build_request_payload"]["alert_top_n"] == 7
+    assert detail["build_request_payload"]["from"] == "2026-03-21T23:00:00Z"
+    assert detail["result"] is None
