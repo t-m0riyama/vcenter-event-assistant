@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
@@ -16,6 +17,7 @@ from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint,
 from vcenter_event_assistant.api.schemas.metrics import MetricCatalogResponse, MetricDefinitionRead
 from vcenter_event_assistant.db.models import MetricSample
 from vcenter_event_assistant.plugins.registry import get_collector_registry
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -30,17 +32,41 @@ async def metric_catalog() -> MetricCatalogResponse:
     ])
 
 
+async def _metric_list_vcenter_clauses(
+    session: AsyncSession,
+    vcenter_id: uuid.UUID | None,
+    *,
+    dialect_name: str,
+) -> list[ColumnElement[bool]] | None:
+    """メトリクス一覧の vCenter の条件を返す。
+
+    vCenter を指定したときは、方言に関係なくその vCenter で絞る。指定しないときに登録済みの vCenter の id を並べる
+    （``metric_vcenter_clause``）のは、SQLite のときだけにする。SQLite は統計が無いと ix_metric_samples_metric_key を
+    選び、期間に関係なくその指標の全サンプルを読む。id を並べると、ix_metric_samples_vcenter_metric_sampled_value を
+    vCenter ごとの範囲走査で使える。期間なしの件数だけは SQLite でも遅くなるが、一覧が大きく速くなるので、
+    期間なしの件数だけ条件を外すことはしない（条件は件数と一覧で同じにする）。PostgreSQL にはこの索引が無い
+    （SQLite だけに作る）ので、id を並べても速くならず、期間なしの件数は metric_key の索引だけで数えられなくなって
+    遅くなる（Issue #324）。計測は docs/operations/backend-operations.md にある。
+
+    Returns:
+        条件のリスト（SQLite 以外で vCenter を指定しないときは空）。SQLite で vCenter が 1 つも無いときは ``None``
+        （サンプルも無いので、呼び出し側は問い合わせずに空の結果を返す）。
+    """
+    if vcenter_id is None and dialect_name != "sqlite":
+        return []
+    clause = await metric_vcenter_clause(session, vcenter_id)
+    return None if clause is None else [clause]
+
+
 def _metric_filter_clauses(
     *,
     metric_key: str,
-    vcenter_id: uuid.UUID | None,
+    vcenter_clauses: list[ColumnElement[bool]],
     from_time: datetime | None,
     to_time: datetime | None,
     entity_moid: str | None,
 ) -> list:
-    clauses = [MetricSample.metric_key == metric_key]
-    if vcenter_id is not None:
-        clauses.append(MetricSample.vcenter_id == vcenter_id)
+    clauses = [MetricSample.metric_key == metric_key, *vcenter_clauses]
     if from_time is not None:
         clauses.append(MetricSample.sampled_at >= to_utc(from_time))
     if to_time is not None:
@@ -75,9 +101,19 @@ async def list_metrics(
     entity_moid: str | None = None,
     limit: int = Query(default=2000, ge=1, le=10000),
 ) -> MetricSeriesResponse:
+    bind = session.get_bind()
+    vcenter_clauses = await _metric_list_vcenter_clauses(
+        session,
+        vcenter_id,
+        dialect_name=bind.dialect.name if bind is not None else "sqlite",
+    )
+    # None は vCenter が 1 つも無い（問い合わせない）、[] は条件を足さない（SQLite 以外）。not で判定しないこと
+    if vcenter_clauses is None:
+        response.headers["X-Total-Count"] = "0"
+        return MetricSeriesResponse(points=[], total=0)
     clauses = _metric_filter_clauses(
         metric_key=metric_key,
-        vcenter_id=vcenter_id,
+        vcenter_clauses=vcenter_clauses,
         from_time=from_time,
         to_time=to_time,
         entity_moid=entity_moid,

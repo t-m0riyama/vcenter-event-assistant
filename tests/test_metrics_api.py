@@ -224,6 +224,44 @@ async def test_metrics_without_vcenter_include_samples_of_every_vcenter(client: 
 
 
 @pytest.mark.asyncio
+async def test_metrics_with_vcenter_return_only_that_vcenter(client: AsyncClient) -> None:
+    """vCenter を指定したときは、期間の有無とも、その vCenter のサンプルだけを返す（Issue #324）。"""
+    base = datetime(2026, 3, 22, 0, 0, 0, tzinfo=timezone.utc)
+    vids = [uuid.uuid4(), uuid.uuid4()]
+    async with session_scope() as session:
+        for n, vid in enumerate(vids):
+            session.add(VCenter(id=vid, name=f"one-{n}", host="h", username="u", password="p"))
+        await session.flush()
+        for n, vid in enumerate(vids):
+            for i in range(n + 1):
+                session.add(
+                    MetricSample(
+                        vcenter_id=vid,
+                        sampled_at=base + timedelta(minutes=i),
+                        entity_type="HostSystem",
+                        entity_moid=f"mo-{n}",
+                        entity_name=f"host-{n}",
+                        metric_key="host.cpu.usage_pct",
+                        value=float(10 + i),
+                    )
+                )
+
+    for n, vid in enumerate(vids):
+        ranged = (
+            f"/api/metrics?metric_key=host.cpu.usage_pct&vcenter_id={vid}"
+            "&from=2026-03-21T23:00:00Z&to=2026-03-22T01:00:00Z&limit=10000"
+        )
+        for q in (ranged, f"/api/metrics?metric_key=host.cpu.usage_pct&vcenter_id={vid}&limit=500"):
+            resp = await client.get(q)
+            assert resp.status_code == 200
+            assert resp.headers.get("X-Total-Count") == str(n + 1)
+            body = resp.json()
+            assert body["total"] == n + 1
+            assert {(p["vcenter_id"], p["entity_moid"]) for p in body["points"]} == {(str(vid), f"mo-{n}")}
+            assert len(body["points"]) == n + 1
+
+
+@pytest.mark.asyncio
 async def test_metrics_without_any_vcenter_returns_empty_with_range(client: AsyncClient) -> None:
     """vCenter が 1 つも無い（サンプルも無い）ときは、期間を指定しても件数 0・空の一覧を返す（Issue #310）。"""
     resp = await client.get(
