@@ -14,6 +14,8 @@
   - メトリクスの API を `metric_key=host.disk.usage_pct` で呼んでいるスクリプトは、新しい名前に直す
 - **`POST /api/incident-timeline` を消した**（Issue #325）。画面からは使っていなかった
   - この API を直接呼んでいるスクリプトは、`POST /api/incident-timeline/view` に移す。応答の形は違う（時間バケットごとの集計ではなく、個々の出来事の一覧）
+  - 要求の項目も違う。`/view` は `include_period_metrics_*`・`alert_top_n`・`top_notable_min_score` を受け付けず、送ると 422 になる。重要度の下限は `min_score`、対象の種別は `sources` で指定する
+  - 時間バケットごとの形が必要なら、同じ形の `incident_timeline` が `POST /api/chat/preview` の応答に入っている。ただし operator 以上の権限と `messages`（1 件以上）が要り、本番では `CHAT_PREVIEW_ENABLED=true` にしないと 404 になる
   - 保存済みのスナップショットはそのまま開ける
 
 ### 修正

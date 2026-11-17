@@ -152,7 +152,8 @@ export const incidentTimelineBuildRequestSchema = z
     metric_threshold_memory_pct: metricThresholdNullablePercentSchema,
     metric_threshold_disk_pct: metricThresholdNullablePercentSchema,
     metric_threshold_network_pct: metricThresholdNullablePercentSchema,
-    // 画面からは送らない。保存済みのスナップショットに入っているので、受け取れるようにしておく。
+    // 画面からは送らない。ただしサーバは、スナップショットの保存の応答・一覧・詳細に、既定値（3）も含めて必ずこの項目を
+    // 入れて返す。古い行だけでなく、いま保存した行も、この項目が無いと `.strict()` で読めなくなる。
     alert_top_n: z.number().int().min(1).max(20).optional(),
   })
   .strict()
