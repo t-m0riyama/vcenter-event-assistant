@@ -342,3 +342,153 @@ async def test_metric_threshold_firing_becomes_stale_and_notifies_once(monkeypat
     with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
         await evaluator.evaluate_all()
         mock_deliver.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_fires_for_hosts_of_every_vcenter() -> None:
+    """vCenter を指定しない評価で、登録済みのすべての vCenter の最新サンプルを見る（Issue #310）。"""
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        vc1 = VCenter(name="vc_all_1", host="vc_all_1", username="u", password="p")
+        vc2 = VCenter(name="vc_all_2", host="vc_all_2", username="u", password="p")
+        session.add_all([vc1, vc2])
+        await session.flush()
+        session.add(
+            AlertRule(
+                name="CPU every vCenter",
+                rule_type="metric_threshold",
+                is_enabled=True,
+                config={"metric_key": "cpu.usage", "threshold": 90.0},
+            )
+        )
+        for vc, moid, latest in ((vc1, "host-1", 95.0), (vc2, "host-2", 96.0)):
+            for at, value in ((now - timedelta(minutes=1), 10.0), (now, latest)):
+                session.add(
+                    MetricSample(
+                        vcenter_id=vc.id,
+                        sampled_at=at,
+                        entity_type="HostSystem",
+                        entity_moid=moid,
+                        entity_name=f"ESXi-{moid}",
+                        metric_key="cpu.usage",
+                        value=value,
+                    )
+                )
+        await session.flush()
+        expected = {metric_context_key(vc1.id, "host-1"), metric_context_key(vc2.id, "host-2")}
+
+    evaluator = AlertEvaluator(get_settings())
+    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+        await evaluator.evaluate_all()
+    assert {call.args[0].context_key for call in mock_deliver.call_args_list} == expected
+    assert {call.args[0].state for call in mock_deliver.call_args_list} == {"firing"}
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_evaluates_samples_of_disabled_vcenter() -> None:
+    """無効にした vCenter の新しいサンプルも評価し、状態を作る（評価は vCenter の有効・無効を見ない）。"""
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        enabled = VCenter(name="vc_on", host="vc_on", username="u", password="p")
+        disabled = VCenter(name="vc_off", host="vc_off", username="u", password="p", is_enabled=False)
+        session.add_all([enabled, disabled])
+        await session.flush()
+        rule = AlertRule(
+            name="CPU disabled vCenter",
+            rule_type="metric_threshold",
+            is_enabled=True,
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
+        )
+        session.add(rule)
+        for vc in (enabled, disabled):
+            session.add(
+                MetricSample(
+                    vcenter_id=vc.id,
+                    sampled_at=now,
+                    entity_type="HostSystem",
+                    entity_moid="host-1",
+                    entity_name=f"ESXi-{vc.name}",
+                    metric_key="cpu.usage",
+                    value=95.0,
+                )
+            )
+        await session.flush()
+        rule_id = rule.id
+        expected = {metric_context_key(enabled.id, "host-1"), metric_context_key(disabled.id, "host-1")}
+
+    evaluator = AlertEvaluator(get_settings())
+    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock):
+        await evaluator.evaluate_all()
+
+    async with session_scope() as session:
+        states = (await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))).scalars().all()
+    assert {st.context_key for st in states} == expected
+    assert {st.state for st in states} == {"firing"}
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_without_any_vcenter_does_not_notify() -> None:
+    """vCenter が 1 つも無い（サンプルも無い）ときは、何も通知しない（Issue #310）。"""
+    async with session_scope() as session:
+        session.add(
+            AlertRule(
+                name="CPU no vCenter",
+                rule_type="metric_threshold",
+                is_enabled=True,
+                config={"metric_key": "cpu.usage", "threshold": 90.0},
+            )
+        )
+
+    evaluator = AlertEvaluator(get_settings())
+    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+        await evaluator.evaluate_all()
+        mock_deliver.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_metric_threshold_firing_becomes_stale_after_last_vcenter_is_deleted() -> None:
+    """最後の vCenter を消してサンプルが CASCADE で消えても、発火中の状態は stale にして 1 回だけ通知する。"""
+    async with session_scope() as session:
+        vc = VCenter(name="vc_gone", host="vc_gone", username="u", password="p")
+        session.add(vc)
+        await session.flush()
+        rule = AlertRule(
+            name="CPU vCenter deleted",
+            rule_type="metric_threshold",
+            is_enabled=True,
+            config={"metric_key": "cpu.usage", "threshold": 90.0},
+        )
+        session.add(rule)
+        session.add(
+            MetricSample(
+                vcenter_id=vc.id,
+                sampled_at=datetime.now(timezone.utc),
+                entity_type="HostSystem",
+                entity_moid="host-1",
+                entity_name="ESXi-1",
+                metric_key="cpu.usage",
+                value=95.0,
+            )
+        )
+        await session.flush()
+        rule_id = rule.id
+        vc_id = vc.id
+
+    evaluator = AlertEvaluator(get_settings())
+    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+        await evaluator.evaluate_all()
+        assert mock_deliver.call_count == 1
+
+    async with session_scope() as session:
+        await session.execute(delete(VCenter).where(VCenter.id == vc_id))
+    async with session_scope() as session:
+        assert (await session.execute(select(MetricSample))).scalars().all() == []
+
+    with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock) as mock_deliver:
+        await evaluator.evaluate_all()
+        assert mock_deliver.call_count == 1
+        assert mock_deliver.call_args[0][0].state == "stale"
+
+    async with session_scope() as session:
+        state = (await session.execute(select(AlertState).where(AlertState.rule_id == rule_id))).scalar_one()
+        assert state.state == "stale"

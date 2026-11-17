@@ -13,6 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import MetricSample
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
 from vcenter_event_assistant.services.sql_time import bucket_index_expr, truncate_to_second
 
 METRIC_CPU = "host.cpu.usage_pct"
@@ -262,13 +263,16 @@ async def build_chat_period_metrics(
         bucket_sec_used = _bucket_seconds_for_range(from_utc, to_utc, max_buckets=max_buckets)
     bucket_minutes = max(1, bucket_sec_used // 60)
 
+    vcenter_clause = await metric_vcenter_clause(session, vcenter_id)
+    if vcenter_clause is None:
+        # vCenter が無ければサンプルも無い。サンプルが無いときと同じ空の結果にする。
+        return PeriodMetricsPayload(bucket_minutes=bucket_minutes, from_utc=from_utc, to_utc=to_utc)
     clauses = [
         MetricSample.metric_key.in_(keys),
         MetricSample.sampled_at >= from_utc,
         MetricSample.sampled_at < to_utc,
+        vcenter_clause,
     ]
-    if vcenter_id is not None:
-        clauses.append(MetricSample.vcenter_id == vcenter_id)
 
     acc, entity_name_by_moid = await _aggregate_top_hosts(
         session,

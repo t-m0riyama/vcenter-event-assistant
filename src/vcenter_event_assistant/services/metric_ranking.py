@@ -13,6 +13,7 @@ from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.db.models import EventRecord, MetricSample
 from vcenter_event_assistant.rules.notable import ALERT_KEYWORDS, final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
 
 
 async def query_top_metric_hosts(
@@ -28,14 +29,16 @@ async def query_top_metric_hosts(
     Find top N hosts by peak metric value in the given window.
     Uses row_number() over (partition by vcenter_id, entity_moid order by value desc, sampled_at desc).
     """
+    vcenter_clause = await metric_vcenter_clause(session, vcenter_id)
+    if vcenter_clause is None:
+        return []
     clauses = [
         MetricSample.metric_key == metric_key,
         MetricSample.sampled_at >= from_utc,
+        vcenter_clause,
     ]
     if to_utc is not None:
         clauses.append(MetricSample.sampled_at < to_utc)
-    if vcenter_id is not None:
-        clauses.append(MetricSample.vcenter_id == vcenter_id)
 
     rank_subq = (
         select(

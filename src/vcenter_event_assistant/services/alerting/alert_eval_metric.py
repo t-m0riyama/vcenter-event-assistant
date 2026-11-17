@@ -13,6 +13,7 @@ from vcenter_event_assistant.services.alerting.alert_eval_common import (
     AlertEvaluationDeps,
     metric_context_key,
 )
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
 
 logger = logging.getLogger("vcenter_event_assistant.services.alerting.alert_eval")
 
@@ -33,30 +34,35 @@ async def evaluate_metric_threshold_rule(
     cutoff = datetime.now(timezone.utc) - staleness
 
     async with session_scope(settings=deps.settings) as session:
-        rank_subq = (
-            select(
-                MetricSample.id,
-                func.row_number()
-                .over(
-                    partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
-                    order_by=desc(MetricSample.sampled_at),
+        latest_samples: dict[str, MetricSample] = {}
+        vcenter_clause = await metric_vcenter_clause(session, None)
+        # vCenter が無ければサンプルも無い。問い合わせだけを省き、発火中の状態を stale にする処理は続ける。
+        if vcenter_clause is not None:
+            rank_subq = (
+                select(
+                    MetricSample.id,
+                    func.row_number()
+                    .over(
+                        partition_by=(MetricSample.vcenter_id, MetricSample.entity_moid),
+                        order_by=desc(MetricSample.sampled_at),
+                    )
+                    .label("rn"),
                 )
-                .label("rn"),
+                .where(
+                    MetricSample.metric_key == metric_key,
+                    MetricSample.sampled_at >= cutoff,
+                    vcenter_clause,
+                )
+            ).subquery()
+            res = await session.execute(
+                select(MetricSample)
+                .join(rank_subq, MetricSample.id == rank_subq.c.id)
+                .where(rank_subq.c.rn == 1)
             )
-            .where(
-                MetricSample.metric_key == metric_key,
-                MetricSample.sampled_at >= cutoff,
-            )
-        ).subquery()
-        res = await session.execute(
-            select(MetricSample)
-            .join(rank_subq, MetricSample.id == rank_subq.c.id)
-            .where(rank_subq.c.rn == 1)
-        )
-        latest_samples = {
-            metric_context_key(sample.vcenter_id, sample.entity_moid): sample
-            for sample in res.scalars().all()
-        }
+            latest_samples = {
+                metric_context_key(sample.vcenter_id, sample.entity_moid): sample
+                for sample in res.scalars().all()
+            }
 
         res = await session.execute(select(AlertState).where(AlertState.rule_id == rule.id))
         states = {st.context_key: st for st in res.scalars().all()}

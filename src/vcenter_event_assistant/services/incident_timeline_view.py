@@ -65,6 +65,7 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
     aggregation_slot,
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive
 from vcenter_event_assistant.services.sql_time import (
     bucket_index_expr,
@@ -1147,23 +1148,16 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
             *[(metric_key_column == key, literal(float(value))) for key, value in thresholds.items()],
         )
 
+    vcenter_clause = await metric_vcenter_clause(session, scope.vcenter_id)
+    if vcenter_clause is None:
+        return _Collected(overview={"metric_breach": [0] * scope.bucket_count})
     clauses: list[ColumnElement[bool]] = [
         MetricSample.metric_key.in_(keys),
         MetricSample.sampled_at >= scope.from_utc,
         MetricSample.sampled_at < scope.to_utc,
         MetricSample.value >= threshold_of(MetricSample.metric_key),
+        vcenter_clause,
     ]
-    if scope.vcenter_id is not None:
-        clauses.append(MetricSample.vcenter_id == scope.vcenter_id)
-    else:
-        # vCenter を指定しないときも、登録済みの vCenter の id を並べて渡す。索引
-        # ix_metric_samples_vcenter_metric_sampled_value（vcenter_id, metric_key, sampled_at, value）を
-        # vCenter ごとの範囲走査で使えるようにするため（SQLite は統計が無いと、ほかの索引を選んで期間内の
-        # 全指標のサンプルを読む）。削除済みの vCenter のサンプルは外部キーの CASCADE で残らない。
-        vcenter_ids = (await session.execute(select(VCenter.id))).scalars().all()
-        if not vcenter_ids:
-            return _Collected(overview={"metric_breach": [0] * scope.bucket_count})
-        clauses.append(MetricSample.vcenter_id.in_(vcenter_ids))
     # 対象（entity）の絞り込みは、サンプル単位ではかけない。名前の違うサンプルが抜けて区間の区切りが変わる
     # ため。代わりに、名前（空なら moid）が対象に当たる閾値以上のサンプルを 1 件でも持つ系列に絞り、系列の中の
     # サンプルはすべて残す。区間の名前（区間の中の空でない最新の名前、無ければ moid）は、その区間のどれかの
