@@ -31,14 +31,6 @@ export type MetricConditionsToolbarProps = {
   metricThresholdMemoryPct: number
   setMetricThresholdMemoryInput: (value: string) => void
   setMetricThresholdMemoryPct: (value: number) => void
-  metricThresholdDiskInput: string
-  metricThresholdDiskPct: number
-  setMetricThresholdDiskInput: (value: string) => void
-  setMetricThresholdDiskPct: (value: number) => void
-  metricThresholdNetworkInput: string
-  metricThresholdNetworkPct: number
-  setMetricThresholdNetworkInput: (value: string) => void
-  setMetricThresholdNetworkPct: (value: number) => void
   onMetricThresholdInputChange: (
     rawValue: string,
     setInput: (value: string) => void,
@@ -54,11 +46,10 @@ export function MetricConditionsToolbar(props: MetricConditionsToolbarProps) {
   const { ariaLabel, metricsCaption, hint, children, vcenters, vcenterId, setVcenterId, loading } = props
   const captionId = useId()
 
+  // 閾値は単位が % の CPU とメモリだけ。ディスクとネットワークは値が KB/s なので欄を出さない（Issue #316）。
   const thresholds = [
     ['CPU 閾値（%）', props.metricThresholdCpuInput, props.metricThresholdCpuPct, props.setMetricThresholdCpuInput, props.setMetricThresholdCpuPct],
     ['Memory 閾値（%）', props.metricThresholdMemoryInput, props.metricThresholdMemoryPct, props.setMetricThresholdMemoryInput, props.setMetricThresholdMemoryPct],
-    ['Disk 閾値（%）', props.metricThresholdDiskInput, props.metricThresholdDiskPct, props.setMetricThresholdDiskInput, props.setMetricThresholdDiskPct],
-    ['Network 閾値（%）', props.metricThresholdNetworkInput, props.metricThresholdNetworkPct, props.setMetricThresholdNetworkInput, props.setMetricThresholdNetworkPct],
   ] as const
 
   const metrics = [

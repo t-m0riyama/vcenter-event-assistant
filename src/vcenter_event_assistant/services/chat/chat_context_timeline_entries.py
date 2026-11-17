@@ -109,14 +109,14 @@ def build_chat_incident_timeline_entries(
     timeline_period_metrics: PeriodMetricsPayload | None,
     include_period_metrics_cpu: bool,
     include_period_metrics_memory: bool,
-    include_period_metrics_disk_io: bool,
-    include_period_metrics_network_io: bool,
     metric_threshold_cpu_pct: float | None,
     metric_threshold_memory_pct: float | None,
-    metric_threshold_disk_pct: float | None,
-    metric_threshold_network_pct: float | None,
 ) -> list[IncidentTimelineEntry]:
-    """digest / バケット / メトリクスから incident timeline エントリ列を組み立てる。"""
+    """digest / バケット / メトリクスから incident timeline エントリ列を組み立てる。
+
+    メトリクスの項目は CPU とメモリだけ。ディスクとネットワークは値が KB/s で % の閾値で判定できないので、
+    項目にしない（Issue #316）。
+    """
 
     timeline_entries: list[IncidentTimelineEntry] = []
     if timeline_event_time_buckets is not None:
@@ -175,16 +175,12 @@ def build_chat_incident_timeline_entries(
         selected_metric_series = [
             *((timeline_period_metrics.cpu or []) if include_period_metrics_cpu else []),
             *((timeline_period_metrics.memory or []) if include_period_metrics_memory else []),
-            *((timeline_period_metrics.disk or []) if include_period_metrics_disk_io else []),
-            *((timeline_period_metrics.network or []) if include_period_metrics_network_io else []),
         ]
         timeline_entries.extend(
             build_timeline_metric_entries(
                 selected_metric_series,
                 threshold_cpu_pct=metric_threshold_cpu_pct,
                 threshold_memory_pct=metric_threshold_memory_pct,
-                threshold_disk_pct=metric_threshold_disk_pct,
-                threshold_network_pct=metric_threshold_network_pct,
             )
         )
     else:

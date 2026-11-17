@@ -297,12 +297,8 @@ def test_timeline_metric_hosts_are_anonymized_in_chat_payload_and_preview(
         timeline_period_metrics=metrics,
         include_period_metrics_cpu=True,
         include_period_metrics_memory=True,
-        include_period_metrics_disk_io=False,
-        include_period_metrics_network_io=False,
         metric_threshold_cpu_pct=None,
         metric_threshold_memory_pct=None,
-        metric_threshold_disk_pct=None,
-        metric_threshold_network_pct=None,
     )
     timeline = build_chat_incident_timeline(entries, max_visible_items_per_timestamp=1)
     public_timeline = timeline.model_dump(mode="json")

@@ -208,39 +208,44 @@ async def test_post_chat_preview_applies_metric_threshold_and_metric_title_forma
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("metric_key", "threshold_key", "threshold_value", "include_overrides"),
+    ("metric_key", "threshold_key", "threshold_value", "include_overrides", "expected_titles"),
     [
         (
             "host.mem.usage_pct",
             "metric_threshold_memory_pct",
             70.0,
             {"include_period_metrics_cpu": False, "include_period_metrics_memory": True},
+            ["esxi-02 host.mem.usage_pct: avg=70.00"],
         ),
+        # ディスクとネットワークは値が KB/s なので、閾値を受け取っても使わず、項目にもしない（Issue #316）。
         (
             "host.disk.usage_pct",
             "metric_threshold_disk_pct",
             80.0,
             {"include_period_metrics_cpu": False, "include_period_metrics_disk_io": True},
+            [],
         ),
         (
             "host.net.usage_kbps",
             "metric_threshold_network_pct",
             90.0,
             {"include_period_metrics_cpu": False, "include_period_metrics_network_io": True},
+            [],
         ),
     ],
 )
-async def test_post_chat_preview_applies_threshold_for_memory_disk_network(
+async def test_post_chat_preview_applies_threshold_only_to_memory_not_disk_network(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     metric_key: str,
     threshold_key: str,
     threshold_value: float,
     include_overrides: dict[str, object],
+    expected_titles: list[str],
 ) -> None:
     monkeypatch.setenv("LLM_DIGEST_API_KEY", "sk-test")
     get_settings.cache_clear()
-    captured: dict[str, object] = {"entries": None}
+    captured: dict[str, object] = {"entries": None, "period_metrics": None}
     t0 = datetime(2026, 3, 22, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc)
 
@@ -300,7 +305,7 @@ async def test_post_chat_preview_applies_threshold_for_memory_disk_network(
         from vcenter_event_assistant.api.schemas import ChatMessage
 
         _ = a
-        _ = k
+        captured["period_metrics"] = k["period_metrics"]
         return (
             "preview",
             [ChatMessage(role="user", content="質問")],
@@ -324,4 +329,13 @@ async def test_post_chat_preview_applies_threshold_for_memory_disk_network(
     entries = captured["entries"]
     assert isinstance(entries, list)
     metric_titles = [entry.title for entry in entries if entry.kind == "metric"]
-    assert metric_titles == [f"esxi-02 {metric_key}: avg={threshold_value:.2f}"]
+    assert metric_titles == expected_titles
+    # 項目にしない指標も、バケット平均は period_metrics として LLM に渡す。
+    period_metrics = captured["period_metrics"]
+    assert isinstance(period_metrics, PeriodMetricsPayload)
+    sent_series = [
+        *(period_metrics.memory or []),
+        *(period_metrics.disk or []),
+        *(period_metrics.network or []),
+    ]
+    assert [series.metric_key for series in sent_series] == [metric_key]

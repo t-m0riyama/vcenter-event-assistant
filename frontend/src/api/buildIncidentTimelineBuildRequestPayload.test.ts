@@ -17,8 +17,6 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
         includePeriodMetricsNetworkIo: false,
         metricThresholdCpuPct: 80,
         metricThresholdMemoryPct: 85,
-        metricThresholdDiskPct: 75,
-        metricThresholdNetworkPct: 70,
       },
     })
 
@@ -32,8 +30,6 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
       include_period_metrics_network_io: false,
       metric_threshold_cpu_pct: 80,
       metric_threshold_memory_pct: 85,
-      metric_threshold_disk_pct: 75,
-      metric_threshold_network_pct: 70,
     })
   })
 
@@ -51,8 +47,6 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
         includePeriodMetricsNetworkIo: false,
         metricThresholdCpuPct: 80,
         metricThresholdMemoryPct: 85,
-        metricThresholdDiskPct: 75,
-        metricThresholdNetworkPct: 75,
       },
     })
 
@@ -73,15 +67,34 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
         includePeriodMetricsNetworkIo: true,
         metricThresholdCpuPct: null,
         metricThresholdMemoryPct: undefined,
-        metricThresholdDiskPct: 0,
-        metricThresholdNetworkPct: 100,
       },
     })
 
     expect(payload.metric_threshold_cpu_pct).toBeNull()
     expect(payload).toHaveProperty('metric_threshold_memory_pct', undefined)
-    expect(payload.metric_threshold_disk_pct).toBe(0)
-    expect(payload.metric_threshold_network_pct).toBe(100)
+  })
+
+  it('ディスクとネットワークの閾値は本文に含めない（値が KB/s の指標に % は当てられない）', () => {
+    const payload = buildIncidentTimelineBuildRequestPayload({
+      resolvedRange: {
+        from: '2026-05-07T00:00:00Z',
+        to: '2026-05-08T00:00:00Z',
+      },
+      options: {
+        vcenterId: '',
+        includePeriodMetricsCpu: true,
+        includePeriodMetricsMemory: true,
+        includePeriodMetricsDiskIo: true,
+        includePeriodMetricsNetworkIo: true,
+        metricThresholdCpuPct: 80,
+        metricThresholdMemoryPct: 85,
+      },
+    })
+
+    expect(payload).not.toHaveProperty('metric_threshold_disk_pct')
+    expect(payload).not.toHaveProperty('metric_threshold_network_pct')
+    expect(payload.include_period_metrics_disk_io).toBe(true)
+    expect(payload.include_period_metrics_network_io).toBe(true)
   })
 
   it('alertTopN が指定されたら alert_top_n を本文に含める', () => {
@@ -98,8 +111,6 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
         includePeriodMetricsNetworkIo: false,
         metricThresholdCpuPct: null,
         metricThresholdMemoryPct: null,
-        metricThresholdDiskPct: null,
-        metricThresholdNetworkPct: null,
         alertTopN: 7,
       },
     })
@@ -121,8 +132,6 @@ describe('buildIncidentTimelineBuildRequestPayload', () => {
         includePeriodMetricsNetworkIo: false,
         metricThresholdCpuPct: null,
         metricThresholdMemoryPct: null,
-        metricThresholdDiskPct: null,
-        metricThresholdNetworkPct: null,
       },
     })
 

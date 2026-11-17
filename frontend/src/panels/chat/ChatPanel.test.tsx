@@ -1039,7 +1039,8 @@ describe(
     expect(sendAfter.getAttribute('aria-busy')).not.toBe('true')
   })
 
-  it('送信時にメトリクス有効化フラグと閾値4項目が POST 本文に含まれる', async () => {
+  it('送信時にメトリクス有効化フラグと CPU・メモリの閾値が POST 本文に含まれ、ディスクとネットワークの閾値は送らない', async () => {
+    let sentBody: Record<string, unknown> | null = null
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -1050,14 +1051,11 @@ describe(
           include_period_metrics_cpu?: boolean
           metric_threshold_cpu_pct?: number
           metric_threshold_memory_pct?: number
-          metric_threshold_disk_pct?: number
-          metric_threshold_network_pct?: number
         }
         expect(body.include_period_metrics_cpu).toBe(true)
         expect(body.metric_threshold_cpu_pct).toBe(80)
         expect(body.metric_threshold_memory_pct).toBe(85)
-        expect(body.metric_threshold_disk_pct).toBe(75)
-        expect(body.metric_threshold_network_pct).toBe(75)
+        sentBody = body as Record<string, unknown>
         return Promise.resolve(jsonResponse({ assistant_content: 'x', error: null }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -1081,6 +1079,16 @@ describe(
       )
       expect(posts.length).toBeGreaterThanOrEqual(1)
     })
+    expect(sentBody).toMatchObject({
+      include_period_metrics_cpu: true,
+      metric_threshold_cpu_pct: 80,
+      metric_threshold_memory_pct: 85,
+    })
+    // 値が KB/s の指標に % の閾値は当てられないので、欄も送信もない（Issue #316）
+    expect(sentBody).not.toHaveProperty('metric_threshold_disk_pct')
+    expect(sentBody).not.toHaveProperty('metric_threshold_network_pct')
+    expect(screen.queryByRole('spinbutton', { name: /Disk 閾値/ })).toBeNull()
+    expect(screen.queryByRole('spinbutton', { name: /Network 閾値/ })).toBeNull()
   })
 
   it('WEB 調査情報トグルは表示せず、include_research を送らない（サーバ既定 true に委ねる）', async () => {
@@ -1201,7 +1209,7 @@ describe(
     expect(screen.queryByRole('checkbox', { name: /WEB 検索を許可/ })).toBeNull()
   })
 
-  it('プレビュー時に変更した閾値4項目を POST /api/chat/preview 本文へ送る', async () => {
+  it('プレビュー時に変更した CPU・メモリの閾値を POST /api/chat/preview 本文へ送る', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/vcenters')) {
@@ -1211,13 +1219,9 @@ describe(
         const body = JSON.parse(String(init.body)) as {
           metric_threshold_cpu_pct?: number
           metric_threshold_memory_pct?: number
-          metric_threshold_disk_pct?: number
-          metric_threshold_network_pct?: number
         }
         expect(body.metric_threshold_cpu_pct).toBe(81)
         expect(body.metric_threshold_memory_pct).toBe(82)
-        expect(body.metric_threshold_disk_pct).toBe(73)
-        expect(body.metric_threshold_network_pct).toBe(74)
         return Promise.resolve(
           jsonResponse({
             context_block: 'ctx',
@@ -1239,12 +1243,6 @@ describe(
     })
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Memory 閾値（%）' }), {
       target: { value: '82' },
-    })
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Disk 閾値（%）' }), {
-      target: { value: '73' },
-    })
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Network 閾値（%）' }), {
-      target: { value: '74' },
     })
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
       target: { value: '質問' },
@@ -1301,12 +1299,6 @@ describe(
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Memory 閾値（%）' }), {
       target: { value: '77' },
     })
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Disk 閾値（%）' }), {
-      target: { value: '66' },
-    })
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Network 閾値（%）' }), {
-      target: { value: '55' },
-    })
 
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
       target: { value: '質問' },
@@ -1344,13 +1336,9 @@ describe(
         const body = JSON.parse(String(init.body)) as {
           metric_threshold_cpu_pct?: number
           metric_threshold_memory_pct?: number
-          metric_threshold_disk_pct?: number
-          metric_threshold_network_pct?: number
         }
         expect(body.metric_threshold_cpu_pct).toBe(80)
         expect(body.metric_threshold_memory_pct).toBe(85)
-        expect(body.metric_threshold_disk_pct).toBe(75)
-        expect(body.metric_threshold_network_pct).toBe(75)
         return Promise.resolve(jsonResponse({ assistant_content: 'ok', error: null }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -1364,18 +1352,12 @@ describe(
 
     const cpu = screen.getByRole('spinbutton', { name: 'CPU 閾値（%）' })
     const memory = screen.getByRole('spinbutton', { name: 'Memory 閾値（%）' })
-    const disk = screen.getByRole('spinbutton', { name: 'Disk 閾値（%）' })
-    const network = screen.getByRole('spinbutton', { name: 'Network 閾値（%）' })
 
     fireEvent.change(cpu, { target: { value: '' } })
     fireEvent.change(memory, { target: { value: '101' } })
-    fireEvent.change(disk, { target: { value: '-1' } })
-    fireEvent.change(network, { target: { value: '-' } })
 
     fireEvent.blur(cpu)
     fireEvent.blur(memory)
-    fireEvent.blur(disk)
-    fireEvent.blur(network)
 
     fireEvent.change(screen.getByPlaceholderText('質問を入力…'), {
       target: { value: '閾値ガード確認' },
