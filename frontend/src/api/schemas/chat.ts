@@ -214,7 +214,8 @@ export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
   build_request_payload: incidentTimelineBuildRequestSchema,
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
-  graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
+  /** 読めない形のときは null（保存できているのに失敗と表示して、送り直しで重複させないため）。 */
+  graph_context: incidentTimelineGraphContextSchema.nullable().optional().catch(null),
   created_at: isoOffsetDateTimeSchema.nullable().optional(),
 })
 
@@ -232,7 +233,11 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
   trigger_evidence: z.record(z.string(), z.unknown()).optional().nullable(),
-  graph_context: incidentTimelineGraphContextSchema.nullable().optional(),
+  /**
+   * 読めない形（末尾 Z の無い日時など）のときは null として扱い、一覧全体を壊さない。
+   * サーバの `_graph_context_for_response` と同じ扱い。共通のスキーマには付けない（保存の要求では拒否したい）。
+   */
+  graph_context: incidentTimelineGraphContextSchema.nullable().optional().catch(null),
   /** 保存時点の結果を持つか（一覧には結果そのものは載らない）。古いサーバには無い。 */
   has_result: z.boolean().optional().default(false),
   /** サーバが保存した日時。`timestamp_utc` は利用者側の値なので、「保存した日時」にはこちらを使う。 */
