@@ -7,10 +7,10 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
-    check_time_span,
     IncidentTimelineSavedViewRequest,
     IncidentTimelineViewRequest,
     IncidentTimelineViewResponse,
+    normalize_time_span,
 )
 from vcenter_event_assistant.services.chat.chat_incident_timeline import (
     IncidentTimelinePayload,
@@ -191,7 +191,7 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> ChatRequest:
-        check_time_span(self.from_time, self.to_time)
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         return self
 
 
@@ -257,7 +257,7 @@ class IncidentTimelineBuildRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> IncidentTimelineBuildRequest:
-        check_time_span(self.from_time, self.to_time)
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         return self
 
 
@@ -283,7 +283,7 @@ class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
     @model_validator(mode="after")
     def validate_time_range(self) -> IncidentTimelineManualSnapshotCreateRequest:
         # view_request や build_request_payload の有無にかかわらず、外側の from/to にも 90 日の上限を当てる
-        check_time_span(self.from_time, self.to_time)
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         note = self.operator_note.strip()
         if note == "":
             raise ValueError("operator_note は空白のみを許可しません")

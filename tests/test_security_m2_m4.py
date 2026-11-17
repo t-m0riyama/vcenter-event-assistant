@@ -7,7 +7,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient, Response
 
-from vcenter_event_assistant.api.schemas.incident_timeline_view import check_time_span
+from vcenter_event_assistant.api.schemas.incident_timeline_view import normalize_time_span
+from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
+from vcenter_event_assistant.db.session import session_scope
 
 
 @pytest.mark.asyncio
@@ -84,7 +86,18 @@ def _assert_rejected_by_outer_range(r: Response) -> None:
     for error in errors:
         assert "build_request_payload" not in error["loc"]
         assert "view_request" not in error["loc"]
-    assert "90" in str(errors)
+        assert "90" in error["msg"]
+
+
+async def _listed_items(client: AsyncClient) -> list[dict]:
+    listed = await client.get(_MANUAL_SNAPSHOT_URL)
+    assert listed.status_code == 200
+    return listed.json()["items"]
+
+
+async def _listed_item(client: AsyncClient, snapshot_id: str) -> dict:
+    by_id = {item["snapshot_id"]: item for item in await _listed_items(client)}
+    return by_id[snapshot_id]
 
 
 @pytest.mark.asyncio
@@ -101,36 +114,138 @@ async def test_manual_snapshot_rejects_excessive_outer_range_with_view_request(
     """view_request が 90 日以内でも、外側の from/to が 90 日を超えれば 422 にし、保存しない。"""
     r = await client.post(_MANUAL_SNAPSHOT_URL, json={**_OUTER_TOO_LONG, "view_request": _SHORT_RANGE})
     _assert_rejected_by_outer_range(r)
-
-    listed = await client.get(_MANUAL_SNAPSHOT_URL)
-    assert listed.status_code == 200
-    assert listed.json()["items"] == []
+    assert await _listed_items(client) == []
 
 
 @pytest.mark.asyncio
 async def test_manual_snapshot_rejects_excessive_outer_range_with_build_request_payload(
     client: AsyncClient,
 ) -> None:
-    """build_request_payload が 90 日以内でも、外側の from/to が 90 日を超えれば 422。"""
+    """build_request_payload が 90 日以内でも、外側の from/to が 90 日を超えれば 422 にし、保存しない。"""
     r = await client.post(
         _MANUAL_SNAPSHOT_URL, json={**_OUTER_TOO_LONG, "build_request_payload": _SHORT_RANGE}
     )
     _assert_rejected_by_outer_range(r)
+    assert await _listed_items(client) == []
+
+
+@pytest.mark.asyncio
+async def test_manual_snapshot_accepts_outer_range_of_exactly_90_days(client: AsyncClient) -> None:
+    """外側の from/to がちょうど 90 日なら保存する。"""
+    r = await client.post(
+        _MANUAL_SNAPSHOT_URL,
+        json={**_OUTER_TOO_LONG, "from": "2026-01-01T00:00:00Z", "to": "2026-04-01T00:00:00Z"},
+    )
+    assert r.status_code == 201
+
+
+async def _post_and_assert_utc_range(
+    client: AsyncClient, body: dict[str, object], *, expected_from: str, expected_to: str
+) -> dict:
+    """保存の応答と一覧の両方で、from/to が UTC の Z 付きの文字列で返ることを確かめ、一覧の 1 件を返す。
+
+    画面は一覧の build_request_payload を末尾 Z 必須のスキーマで読むので、Z でないと一覧ごと読めなくなる。
+    """
+    r = await client.post(_MANUAL_SNAPSHOT_URL, json=body)
+    assert r.status_code == 201
+    created = r.json()
+    assert created["build_request_payload"]["from"] == expected_from
+    assert created["build_request_payload"]["to"] == expected_to
+
+    item = await _listed_item(client, created["snapshot_id"])
+    assert item["from"] == expected_from
+    assert item["to"] == expected_to
+    assert item["build_request_payload"]["from"] == expected_from
+    assert item["build_request_payload"]["to"] == expected_to
+    return item
 
 
 @pytest.mark.asyncio
 async def test_manual_snapshot_accepts_outer_from_without_timezone(client: AsyncClient) -> None:
-    """外側の from だけタイムゾーンが無くても UTC とみなし、期間が正しければ保存する。"""
-    r = await client.post(
-        _MANUAL_SNAPSHOT_URL,
-        json={
+    """外側の from だけタイムゾーンが無くても UTC とみなし、保存して Z 付きで返す。"""
+    await _post_and_assert_utc_range(
+        client,
+        {
             "from": "2026-01-01T00:00:00",
             "to": "2026-01-02T00:00:00Z",
             "timestamp_utc": "2026-01-01T12:00:00Z",
             "operator_note": "タイムゾーンの混在",
         },
+        expected_from="2026-01-01T00:00:00Z",
+        expected_to="2026-01-02T00:00:00Z",
     )
-    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_manual_snapshot_accepts_outer_to_without_timezone(client: AsyncClient) -> None:
+    """外側の to だけタイムゾーンが無くても UTC とみなし、保存して Z 付きで返す。"""
+    await _post_and_assert_utc_range(
+        client,
+        {
+            "from": "2026-01-01T00:00:00Z",
+            "to": "2026-01-02T00:00:00",
+            "timestamp_utc": "2026-01-01T12:00:00Z",
+            "operator_note": "タイムゾーンの混在",
+        },
+        expected_from="2026-01-01T00:00:00Z",
+        expected_to="2026-01-02T00:00:00Z",
+    )
+
+
+@pytest.mark.asyncio
+async def test_manual_snapshot_converts_outer_offset_to_utc(client: AsyncClient) -> None:
+    """外側が +09:00 なら、同じ瞬間を UTC の Z 付きで保存して返す。"""
+    await _post_and_assert_utc_range(
+        client,
+        {
+            "from": "2026-01-01T09:00:00+09:00",
+            "to": "2026-01-02T09:00:00+09:00",
+            "timestamp_utc": "2026-01-01T12:00:00Z",
+            "operator_note": "オフセット付き",
+        },
+        expected_from="2026-01-01T00:00:00Z",
+        expected_to="2026-01-02T00:00:00Z",
+    )
+
+
+@pytest.mark.asyncio
+async def test_manual_snapshot_converts_view_request_offset_to_utc(client: AsyncClient) -> None:
+    """view_request が +09:00 なら、保存する条件（view_request と build_request_payload）も UTC の Z 付きになる。"""
+    item = await _post_and_assert_utc_range(
+        client,
+        {
+            "from": "2026-01-01T00:00:00Z",
+            "to": "2026-01-02T00:00:00Z",
+            "timestamp_utc": "2026-01-01T12:00:00Z",
+            "operator_note": "オフセット付きの view_request",
+            "view_request": {"from": "2026-01-01T10:00:00+09:00", "to": "2026-01-01T12:00:00+09:00"},
+        },
+        expected_from="2026-01-01T01:00:00Z",
+        expected_to="2026-01-01T03:00:00Z",
+    )
+    assert item["view_request"]["from"] == "2026-01-01T01:00:00Z"
+    assert item["view_request"]["to"] == "2026-01-01T03:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_saved_build_request_payload_without_utc_is_read_as_utc(client: AsyncClient) -> None:
+    """タイムゾーン無しや +09:00 で保存済みの build_request_payload も、一覧では UTC の Z 付きで返す。"""
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    async with session_scope() as session:
+        snapshot = IncidentTimelineManualSnapshot(
+            from_time=t0,
+            to_time=t0 + timedelta(days=1),
+            timestamp_utc=t0,
+            operator_note="変更前に保存した行",
+            build_request_payload={"from": "2026-01-01T00:00:00", "to": "2026-01-02T09:00:00+09:00"},
+        )
+        session.add(snapshot)
+        await session.flush()
+        snapshot_id = str(snapshot.id)
+
+    item = await _listed_item(client, snapshot_id)
+    assert item["build_request_payload"]["from"] == "2026-01-01T00:00:00Z"
+    assert item["build_request_payload"]["to"] == "2026-01-02T00:00:00Z"
 
 
 @pytest.mark.asyncio
@@ -146,18 +261,50 @@ async def test_manual_snapshot_rejects_outer_from_without_timezone_after_to(clie
         },
     )
     assert r.status_code == 422
+    errors = r.json()["detail"]
+    assert [error["loc"] for error in errors] == [["body"]]
+    assert "from must be before to" in errors[0]["msg"]
 
 
-def test_check_time_span_accepts_mixed_timezones() -> None:
-    """片方だけタイムゾーンが無くても TypeError にせず、UTC とみなして比べる。"""
-    check_time_span(datetime(2026, 1, 1), datetime(2026, 1, 2, tzinfo=timezone.utc))
+@pytest.mark.asyncio
+async def test_manual_snapshot_rejects_outer_range_not_representable_in_utc(client: AsyncClient) -> None:
+    """UTC に直すと datetime の範囲を外れる from/to は 422（OverflowError で 500 にしない）。"""
+    r = await client.post(
+        _MANUAL_SNAPSHOT_URL,
+        json={
+            "from": "0001-01-01T00:00:00+01:00",
+            "to": "0001-01-02T00:00:00+01:00",
+            "timestamp_utc": "2026-01-01T12:00:00Z",
+            "operator_note": "範囲外",
+        },
+    )
+    assert r.status_code == 422
+    assert [error["loc"] for error in r.json()["detail"]] == [["body"]]
+    assert await _listed_items(client) == []
+
+
+def test_normalize_time_span_returns_utc_for_mixed_timezones() -> None:
+    """片方だけタイムゾーンが無くても TypeError にせず、両方を UTC に揃えて返す。"""
+    jst = timezone(timedelta(hours=9))
+    ft, tt = normalize_time_span(datetime(2026, 1, 1), datetime(2026, 1, 2, 9, tzinfo=jst))
+    assert ft == datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert tt == datetime(2026, 1, 2, tzinfo=timezone.utc)
+    assert ft.tzinfo is timezone.utc
+    assert tt.tzinfo is timezone.utc
     with pytest.raises(ValueError, match="from"):
-        check_time_span(datetime(2026, 1, 3), datetime(2026, 1, 2, tzinfo=timezone.utc))
+        normalize_time_span(datetime(2026, 1, 3), datetime(2026, 1, 2, tzinfo=timezone.utc))
 
 
-def test_check_time_span_allows_exactly_90_days() -> None:
+def test_normalize_time_span_allows_exactly_90_days() -> None:
     """90 日ちょうどは通し、それを超えたら拒否する。"""
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    check_time_span(start, start + timedelta(days=90))
+    normalize_time_span(start, start + timedelta(days=90))
     with pytest.raises(ValueError, match="90"):
-        check_time_span(start, start + timedelta(days=90, seconds=1))
+        normalize_time_span(start, start + timedelta(days=90, seconds=1))
+
+
+def test_normalize_time_span_rejects_values_not_representable_in_utc() -> None:
+    """UTC に直すと範囲外になる値は OverflowError ではなく ValueError にする。"""
+    plus_one = timezone(timedelta(hours=1))
+    with pytest.raises(ValueError):
+        normalize_time_span(datetime.min.replace(tzinfo=plus_one), datetime(1, 1, 2, tzinfo=plus_one))

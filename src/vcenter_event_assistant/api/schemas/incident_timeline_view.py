@@ -24,17 +24,29 @@ def _default_sources() -> list[TimelineSource]:
     return list(_ALL_SOURCES)
 
 
-def check_time_span(from_time: datetime, to_time: datetime) -> None:
-    """期間の from/to を検証する（from が to より前で、幅が 90 日以内）。
+def _to_utc(value: datetime) -> datetime:
+    """UTC に揃える。タイムゾーンの無い値は UTC とみなす。"""
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    try:
+        return value.astimezone(timezone.utc)
+    except OverflowError as exc:
+        # datetime.min / max の近くは UTC に直すと範囲を外れる。validator の中で 500 にしない。
+        raise ValueError("from and to must be within the supported datetime range in UTC") from exc
+
+
+def normalize_time_span(from_time: datetime, to_time: datetime) -> tuple[datetime, datetime]:
+    """期間の from/to を UTC に揃えて検証し、揃えた組を返す（from が to より前で、幅が 90 日以内）。
 
     タイムゾーンの無い値は UTC とみなす。満たさなければ ``ValueError`` を投げる。
     """
-    ft = from_time if from_time.tzinfo is not None else from_time.replace(tzinfo=timezone.utc)
-    tt = to_time if to_time.tzinfo is not None else to_time.replace(tzinfo=timezone.utc)
+    ft = _to_utc(from_time)
+    tt = _to_utc(to_time)
     if ft >= tt:
         raise ValueError("from must be before to")
     if tt - ft > _MAX_SPAN:
         raise ValueError("time range must not exceed 90 days")
+    return ft, tt
 
 
 class IncidentTimelineViewRequest(BaseModel):
@@ -85,7 +97,7 @@ class IncidentTimelineViewRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> IncidentTimelineViewRequest:
-        check_time_span(self.from_time, self.to_time)
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         return self
 
 
