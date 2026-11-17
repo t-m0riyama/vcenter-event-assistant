@@ -17,7 +17,7 @@ from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint,
 from vcenter_event_assistant.api.schemas.metrics import MetricCatalogResponse, MetricDefinitionRead
 from vcenter_event_assistant.db.models import MetricSample
 from vcenter_event_assistant.plugins.registry import get_collector_registry
-from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -120,14 +120,19 @@ async def list_metrics(
     )
 
     count_q = select(func.count()).select_from(MetricSample).where(*clauses)
-    total = int((await session.execute(count_q)).scalar_one() or 0)
-
     q = (
         select(MetricSample)
         .where(*clauses)
         .order_by(MetricSample.sampled_at.asc())
         .limit(limit)
     )
+    # SQLite では、対象を指定しないときだけ vCenter・指標・期間の索引に固定する（Issue #334）。対象を指定したときは、
+    # 対象・指標・期間で絞れる ix_metric_samples_vcenter_entity_metric_sampled のほうが向く。
+    if entity_moid is None:
+        count_q = pin_metric_covering_index(count_q)
+        q = pin_metric_covering_index(q)
+    total = int((await session.execute(count_q)).scalar_one() or 0)
+
     res = await session.execute(q)
     rows = list(res.scalars().all())
     points = [

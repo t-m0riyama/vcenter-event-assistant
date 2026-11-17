@@ -13,7 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import MetricSample
-from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 from vcenter_event_assistant.services.sql_time import bucket_index_expr, truncate_to_second
 
 METRIC_CPU = "host.cpu.usage_pct"
@@ -149,7 +149,8 @@ async def _aggregate_top_hosts(
         (MetricSample.metric_key.in_(DISK_KEYS), literal("disk")),
         else_=literal("network"),
     )
-    base = (
+    # SQLite では vCenter・指標・期間の被覆索引に固定する（vCenter の指定の有無とも。Issue #334）
+    base = pin_metric_covering_index(
         select(
             category.label("cat"),
             MetricSample.entity_moid.label("moid"),
@@ -162,10 +163,8 @@ async def _aggregate_top_hosts(
             ).label("bidx"),
             MetricSample.value.label("value"),
             MetricSample.entity_name.label("name"),
-        )
-        .where(and_(*clauses))
-        .subquery("base")
-    )
+        ).where(and_(*clauses))
+    ).subquery("base")
     agg = (
         select(
             base.c.cat,

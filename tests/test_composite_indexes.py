@@ -210,18 +210,47 @@ async def two_vcenter_metric_engine() -> AsyncIterator[AsyncEngine]:
     await reset_db()
 
 
+VCENTER_METRIC_HINT = f"metric_samples INDEXED BY {VCENTER_METRIC_INDEX}"
+
+
 def _assert_uses_vcenter_metric_index(captured: list[tuple[str, Any]], plans: list[str]) -> None:
+    """INDEXED BY で被覆索引に固定し（SQL の文字列）、計画もその索引で読む（Issue #334）。
+
+    古い SQLite（3.47.1 など）はヒントが無くても同じ計画を選ぶので、ヒントがあることは文字列で確かめる。
+    """
     assert captured, "metric_samples の SELECT が捕まっていない"
     for (statement, _), plan in zip(captured, plans, strict=True):
+        assert VCENTER_METRIC_HINT in statement, statement
         assert f"COVERING INDEX {VCENTER_METRIC_INDEX}" in plan, f"{statement}\n---\n{plan}"
         assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
 
 
+def _assert_outer_looks_up_by_rowid(captured: list[tuple[str, Any]], plans: list[str]) -> None:
+    """副問い合わせの id で表を引く外側の select は、主キーで 1 行ずつ引く（索引の全体を読まない）。
+
+    ヒントは内側の副問い合わせにだけ付ける。外側に付けると、この引き当てが索引の全体を読む計画に変わる。
+    """
+    for (statement, _), plan in zip(captured, plans, strict=True):
+        assert "SEARCH metric_samples USING INTEGER PRIMARY KEY (rowid=?)" in plan, f"{statement}\n---\n{plan}"
+        assert statement.count("INDEXED BY") == 1, statement
+
+
+async def _first_vcenter_id() -> uuid.UUID:
+    async with session_scope() as session:
+        return (await session.execute(select(VCenter.id).order_by(VCenter.name).limit(1))).scalar_one()
+
+
 @pytest.mark.asyncio
-async def test_chat_period_metrics_without_vcenter_uses_vcenter_metric_index(
+@pytest.mark.parametrize("with_vcenter", [False, True], ids=["all_vcenters", "one_vcenter"])
+async def test_chat_period_metrics_uses_vcenter_metric_index(
     two_vcenter_metric_engine: AsyncEngine,
+    with_vcenter: bool,
 ) -> None:
-    """vCenter 未指定のチャットの集計も、vCenter・指標・期間の被覆索引で範囲を読む（Issue #310）。"""
+    """チャットの集計は、vCenter の指定の有無とも、vCenter・指標・期間の被覆索引で範囲を読む（Issue #310・#334）。
+
+    新しい SQLite（3.51.0 以降で確認）は統計が無いと UNIQUE 制約の自動索引を選ぶので、INDEXED BY で固定している。
+    """
+    vcenter_id = await _first_vcenter_id() if with_vcenter else None
     to_utc = datetime.now(timezone.utc)
     with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
         async with session_scope() as session:
@@ -229,7 +258,7 @@ async def test_chat_period_metrics_without_vcenter_uses_vcenter_metric_index(
                 session,
                 to_utc - timedelta(hours=6),
                 to_utc,
-                vcenter_id=None,
+                vcenter_id=vcenter_id,
                 include_cpu=True,
                 include_memory=True,
                 include_disk_io=False,
@@ -247,7 +276,9 @@ async def test_top_metric_hosts_without_vcenter_uses_vcenter_metric_index(
     with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
         async with session_scope() as session:
             await query_top_metric_hosts(session, METRIC_CPU, to_utc - timedelta(hours=24), to_utc)
-    _assert_uses_vcenter_metric_index(captured, await _plans_of(two_vcenter_metric_engine, captured))
+    plans = await _plans_of(two_vcenter_metric_engine, captured)
+    _assert_uses_vcenter_metric_index(captured, plans)
+    _assert_outer_looks_up_by_rowid(captured, plans)
 
 
 @pytest.mark.asyncio
@@ -268,7 +299,9 @@ async def test_metric_threshold_evaluation_uses_vcenter_metric_index(
     with patch.object(evaluator, "_enqueue_notification", new_callable=AsyncMock):
         with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
             await evaluator.evaluate_all()
-    _assert_uses_vcenter_metric_index(captured, await _plans_of(two_vcenter_metric_engine, captured))
+    plans = await _plans_of(two_vcenter_metric_engine, captured)
+    _assert_uses_vcenter_metric_index(captured, plans)
+    _assert_outer_looks_up_by_rowid(captured, plans)
 
 
 async def _call_list_metrics(**kwargs: Any) -> None:
@@ -287,22 +320,28 @@ async def _call_list_metrics(**kwargs: Any) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("with_vcenter", [False, True], ids=["all_vcenters", "one_vcenter"])
 @pytest.mark.parametrize("ranged", [True, False], ids=["range", "no_range"])
-async def test_metrics_list_without_vcenter_uses_vcenter_metric_index(
+async def test_metrics_list_uses_vcenter_metric_index(
     two_vcenter_metric_engine: AsyncEngine,
     ranged: bool,
+    with_vcenter: bool,
 ) -> None:
-    """vCenter 未指定のメトリクス一覧 API も、件数・一覧とも vCenter・指標・期間の索引で範囲を読む（Issue #324）。
+    """メトリクス一覧 API は、vCenter の指定の有無とも、件数・一覧とも vCenter・指標・期間の索引で範囲を読む
+    （Issue #324・#334）。
 
     一覧は表の列も返すので被覆索引にはならない（索引名だけを見る）。件数は索引だけで済む。
     """
     to_utc = datetime.now(timezone.utc)
     kwargs: dict[str, Any] = {"from_time": to_utc - timedelta(hours=24), "to_time": to_utc} if ranged else {}
+    if with_vcenter:
+        kwargs["vcenter_id"] = await _first_vcenter_id()
     with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
         await _call_list_metrics(limit=10000 if ranged else 500, **kwargs)
     plans = await _plans_of(two_vcenter_metric_engine, captured)
     assert len(captured) == 2, captured  # 件数と一覧
     for (statement, _), plan in zip(captured, plans, strict=True):
+        assert VCENTER_METRIC_HINT in statement, statement
         assert VCENTER_METRIC_INDEX in plan, f"{statement}\n---\n{plan}"
         assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
     count_plan = next(p for (s, _), p in zip(captured, plans, strict=True) if "count(" in s.lower())
@@ -325,6 +364,8 @@ async def test_metrics_list_without_vcenter_by_entity_uses_entity_index(
         assert METRICS_INDEX in plan, f"{statement}\n---\n{plan}"
         assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
         assert "ix_metric_samples_entity_moid" not in plan, f"{statement}\n---\n{plan}"
+        # 対象を指定したときは被覆索引に固定しない（対象・指標・期間で絞れる索引のほうが向く）
+        assert "INDEXED BY" not in statement, statement
 
 
 @pytest.mark.asyncio
