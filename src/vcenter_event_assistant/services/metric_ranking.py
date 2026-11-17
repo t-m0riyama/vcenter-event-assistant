@@ -13,7 +13,7 @@ from vcenter_event_assistant.api.schemas import HighCpuHostRow, HighMemHostRow
 from vcenter_event_assistant.db.models import EventRecord, MetricSample
 from vcenter_event_assistant.rules.notable import ALERT_KEYWORDS, final_notable_score
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
-from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 
 
 async def query_top_metric_hosts(
@@ -40,7 +40,9 @@ async def query_top_metric_hosts(
     if to_utc is not None:
         clauses.append(MetricSample.sampled_at < to_utc)
 
-    rank_subq = (
+    # SQLite では内側だけを被覆索引に固定する（Issue #334）。外側に付けると、id での引き当てが索引の全体を読む
+    # 計画に変わる。
+    rank_subq = pin_metric_covering_index(
         select(
             MetricSample.id,
             func.row_number()
@@ -49,8 +51,7 @@ async def query_top_metric_hosts(
                 order_by=(MetricSample.value.desc(), MetricSample.sampled_at.desc()),
             )
             .label("rn"),
-        )
-        .where(*clauses)
+        ).where(*clauses)
     ).subquery()
 
     q = (

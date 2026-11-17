@@ -65,7 +65,7 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
     aggregation_slot,
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
-from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause
+from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive
 from vcenter_event_assistant.services.sql_time import (
     bucket_index_expr,
@@ -1163,8 +1163,14 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     # サンプルはすべて残す。区間の名前（区間の中の空でない最新の名前、無ければ moid）は、その区間のどれかの
     # サンプルの名前か moid なので、対象に当たる区間はかならずこの系列に入る（区間の名前での絞り込みは最後に
     # かける）。数え上げも区間の問い合わせも、絞った後のサンプルだけを読む。
+    #
+    # SQLite では、metric_samples を読む select（matching_series・capped・hits0）を vCenter・指標・期間の被覆索引に
+    # 固定する（Issue #334）。対象は名前の部分一致で索引の検索に使えないので、対象の指定の有無にかかわらず固定する。
+    # 固定しないと、新しい SQLite（3.51.0 以降で確認）は期間内の全指標を読む。matching_series は、古い SQLite でも
+    # vCenter を指定しないと、系列の索引 (vcenter_id=?) でその vCenter の全履歴を読む。別名（metric_prev・metric_between
+    # など）は 1 行ずつ引く問い合わせなので固定しない。
     if scope.entity:
-        matching_series = (
+        matching_series = pin_metric_covering_index(
             select(MetricSample.vcenter_id, MetricSample.entity_moid, MetricSample.metric_key)
             .where(
                 *clauses,
@@ -1186,7 +1192,7 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
     limit = scope.metric_breach_sample_limit
     if limit is not None:
         # 上限 + 1 件で打ち切って数える（全件は数えない）
-        capped = select(literal(1)).select_from(MetricSample).where(*clauses).limit(limit + 1)
+        capped = pin_metric_covering_index(select(literal(1)).select_from(MetricSample).where(*clauses).limit(limit + 1))
         breaching = (
             await session.execute(select(func.count()).select_from(capped.subquery("metric_breach_count")))
         ).scalar_one()
@@ -1199,7 +1205,7 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
         return (sub.c.mk, sub.c.moid, sub.c.vc)
 
     # 1. 期間内の閾値以上のサンプル
-    hits0 = (
+    hits0 = pin_metric_covering_index(
         select(
             MetricSample.id.label("id"),
             MetricSample.vcenter_id.label("vc"),
@@ -1209,10 +1215,8 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
             MetricSample.value.label("value"),
             func.nullif(func.trim(MetricSample.entity_name), "").label("nm"),
             MetricSample.entity_type.label("etype"),
-        )
-        .where(*clauses)
-        .subquery("metric_hits0")
-    )
+        ).where(*clauses)
+    ).subquery("metric_hits0")
     # 2. 同じ系列の 1 つ前の閾値以上のサンプルの時刻（期間内）
     lagged = select(
         hits0,

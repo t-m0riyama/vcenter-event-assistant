@@ -587,8 +587,77 @@ async def test_sqlite_timeline_queries_use_the_timeline_indexes(session: AsyncSe
                 expected = (
                     "ix_log_records_vcenter_severity_norm_effective" if vc else "ix_log_records_severity_norm_effective"
                 )
-                assert f"SEARCH log_records USING INDEX {expected}" in plan, plan
+                # 新しい SQLite（3.51.0 以降で確認）は、同じ索引を式の索引でも被覆として扱い COVERING INDEX と出す
+                assert re.search(rf"SEARCH log_records USING (COVERING )?INDEX {expected} ", plan), plan
     assert len(plans) == 6  # メトリクス 1 本 + ログ 2 本（俯瞰と一覧）× vCenter の指定なし・あり
+
+
+@pytest.mark.asyncio
+async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: AsyncSession) -> None:
+    """対象（entity）と閾値以上のサンプル数の上限を指定したタイムラインで、metric_samples を読む select が
+    すべて被覆索引で vCenter・指標・期間の範囲を読む（Issue #334）。
+
+    - 対象に当たる系列（matching_series）は、系列の索引 (vcenter_id=?) でその vCenter の全履歴を読まない。
+    - 上限の数え上げ（capped）と区間の問い合わせ（hits0）も、同じ索引で期間を絞る。
+    - 直前のサンプル（metric_prev）と間のサンプル（metric_between）は別名なので、固定しない。
+    """
+    if session.get_bind().dialect.name != "sqlite":
+        pytest.skip("SQLite の計画の確認")
+    from vcenter_event_assistant.services import incident_timeline_view as itv
+
+    vid = uuid.uuid4()
+    # vCenter を指定しないときに IN の要素が 2 つ以上になるよう、2 つ登録する
+    for v, name in ((vid, "vc-plan"), (uuid.uuid4(), "vc-plan-2")):
+        session.add(VCenter(id=v, name=name, host="h", port=443, username="u", password="p"))
+    await session.flush()
+    covering_range = (
+        "COVERING INDEX ix_metric_samples_vcenter_metric_sampled_value "
+        "(vcenter_id=? AND metric_key=? AND sampled_at>? AND sampled_at<?)"
+    )
+    for vc in (None, vid):
+        scope = itv._Scope(
+            from_utc=FROM, to_utc=TO, vcenter_id=vc, entity="esx", min_score=1, bucket_sec=60,
+            bucket_count=120, max_rows=10, dialect_name="sqlite", metric_name_lookback=timedelta(hours=6),
+            metric_thresholds=((METRIC_CPU, 80.0), (METRIC_MEM, 85.0)), metric_breach_sample_limit=1000,
+        )
+        captured: list = []
+        original = AsyncSession.execute
+
+        async def spy(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+            captured.append(statement)
+            return await original(self, statement, *args, **kwargs)
+
+        AsyncSession.execute = spy  # type: ignore[method-assign]
+        try:
+            await itv._collect_metrics(session, scope)
+        finally:
+            AsyncSession.execute = original  # type: ignore[method-assign]
+        bind = session.get_bind()
+        checked: list[str] = []
+        for stmt in captured:
+            sql = str(stmt.compile(dialect=bind.dialect, compile_kwargs={"literal_binds": True}))
+            sql = sql.replace("LIMIT ? OFFSET", "LIMIT -1 OFFSET")
+            if "metric_breach_count" in sql:
+                kind = "capped"
+            elif "metric_intervals" in sql:
+                kind = "intervals"
+            else:
+                continue
+            conn = await session.connection()
+            rows = (await conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql)).all()
+            plan = "\n".join(str(r[-1]) for r in rows)
+            table_lines = [line for line in plan.splitlines() if " metric_samples " in f"{line} "]
+            # capped と matching_series（IN の副問い合わせ）、intervals は hits0 と matching_series
+            assert len(table_lines) == 2, plan
+            for line in table_lines:
+                assert "ix_metric_samples_vcenter_metric_sampled_value (vcenter_id=? AND metric_key=?" in line, plan
+                assert "sampled_at>? AND sampled_at<?" in line, plan
+            assert covering_range in plan, plan
+            assert "ix_metric_samples_vcenter_entity_metric_sampled (vcenter_id=?)" not in plan, plan
+            if kind == "intervals":
+                assert "SEARCH metric_prev USING" in plan, plan
+            checked.append(kind)
+        assert checked == ["capped", "intervals"], checked
 
 
 @pytest.mark.asyncio
