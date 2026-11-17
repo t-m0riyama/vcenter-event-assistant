@@ -188,12 +188,8 @@ async def _build_context_payloads_in_slot(
         timeline_period_metrics=timeline_period_metrics,
         include_period_metrics_cpu=body.include_period_metrics_cpu,
         include_period_metrics_memory=body.include_period_metrics_memory,
-        include_period_metrics_disk_io=body.include_period_metrics_disk_io,
-        include_period_metrics_network_io=body.include_period_metrics_network_io,
         metric_threshold_cpu_pct=body.metric_threshold_cpu_pct,
         metric_threshold_memory_pct=body.metric_threshold_memory_pct,
-        metric_threshold_disk_pct=body.metric_threshold_disk_pct,
-        metric_threshold_network_pct=body.metric_threshold_network_pct,
     )
     incident_timeline = build_chat_incident_timeline(
         timeline_entries,

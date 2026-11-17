@@ -55,14 +55,6 @@ export function ChatPanel({
         metricThresholdMemoryPct={c.metricThresholdMemoryPct}
         setMetricThresholdMemoryInput={c.setMetricThresholdMemoryInput}
         setMetricThresholdMemoryPct={c.setMetricThresholdMemoryPct}
-        metricThresholdDiskInput={c.metricThresholdDiskInput}
-        metricThresholdDiskPct={c.metricThresholdDiskPct}
-        setMetricThresholdDiskInput={c.setMetricThresholdDiskInput}
-        setMetricThresholdDiskPct={c.setMetricThresholdDiskPct}
-        metricThresholdNetworkInput={c.metricThresholdNetworkInput}
-        metricThresholdNetworkPct={c.metricThresholdNetworkPct}
-        setMetricThresholdNetworkInput={c.setMetricThresholdNetworkInput}
-        setMetricThresholdNetworkPct={c.setMetricThresholdNetworkPct}
         onMetricThresholdInputChange={c.handleMetricThresholdInputChange}
       />
 

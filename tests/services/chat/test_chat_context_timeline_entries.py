@@ -160,12 +160,8 @@ def test_build_chat_incident_timeline_entries_from_event_buckets_includes_alert_
         timeline_period_metrics=None,
         include_period_metrics_cpu=False,
         include_period_metrics_memory=False,
-        include_period_metrics_disk_io=False,
-        include_period_metrics_network_io=False,
         metric_threshold_cpu_pct=None,
         metric_threshold_memory_pct=None,
-        metric_threshold_disk_pct=None,
-        metric_threshold_network_pct=None,
     )
     alert_titles = [e.title for e in entries if e.kind == "alert"]
     assert any("vim.event.Alarm" in title for title in alert_titles)
@@ -195,12 +191,8 @@ def test_build_chat_incident_timeline_entries_without_buckets_uses_notable_group
         timeline_period_metrics=None,
         include_period_metrics_cpu=False,
         include_period_metrics_memory=False,
-        include_period_metrics_disk_io=False,
-        include_period_metrics_network_io=False,
         metric_threshold_cpu_pct=None,
         metric_threshold_memory_pct=None,
-        metric_threshold_disk_pct=None,
-        metric_threshold_network_pct=None,
     )
     assert [e.kind for e in entries] == ["alert", "event"]
     assert "vim.event.VmPoweredOn (4件)" in entries[0].title
@@ -238,12 +230,8 @@ def test_build_chat_incident_timeline_entries_without_period_metrics_uses_high_c
         timeline_period_metrics=None,
         include_period_metrics_cpu=False,
         include_period_metrics_memory=False,
-        include_period_metrics_disk_io=False,
-        include_period_metrics_network_io=False,
         metric_threshold_cpu_pct=None,
         metric_threshold_memory_pct=None,
-        metric_threshold_disk_pct=None,
-        metric_threshold_network_pct=None,
     )
     metric_titles = [e.title for e in entries if e.kind == "metric"]
     assert metric_titles == [

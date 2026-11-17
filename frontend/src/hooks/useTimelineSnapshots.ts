@@ -17,9 +17,7 @@ import { SAVED_RESULT_UNREADABLE_NOTICE, type SavedViewState } from './useTimeli
 import { toErrorMessage } from '../utils/errors'
 import {
   DEFAULT_METRIC_THRESHOLD_CPU_PCT,
-  DEFAULT_METRIC_THRESHOLD_DISK_PCT,
   DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
-  DEFAULT_METRIC_THRESHOLD_NETWORK_PCT,
 } from './periodMetricThresholdDefaults'
 
 /** 応答の形が想定と違う（zod の検証に失敗した）ときに、生の検証エラーの代わりに出す文言。 */
@@ -171,8 +169,6 @@ export function useTimelineSnapshots(params: {
           includePeriodMetricsNetworkIo: false,
           metricThresholdCpuPct: DEFAULT_METRIC_THRESHOLD_CPU_PCT,
           metricThresholdMemoryPct: DEFAULT_METRIC_THRESHOLD_MEMORY_PCT,
-          metricThresholdDiskPct: DEFAULT_METRIC_THRESHOLD_DISK_PCT,
-          metricThresholdNetworkPct: DEFAULT_METRIC_THRESHOLD_NETWORK_PCT,
         },
       })
       const tsIso = new Date().toISOString()

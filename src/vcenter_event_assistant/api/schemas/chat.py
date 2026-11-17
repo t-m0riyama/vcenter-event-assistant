@@ -24,6 +24,15 @@ ALLOWED_ATTACHMENT_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
     {"image/png", "image/jpeg"},
 )
 
+# ディスクとネットワークの閾値は、保存済みスナップショットの build_request_payload に入っているので項目は残す。
+_UNUSED_DISK_THRESHOLD_DESCRIPTION = (
+    "互換のために受け取るが使わない。ディスク系の指標は値が KB/s（host.disk.usage_pct も vSphere の "
+    "disk.usage.average で単位は KBps）なので、% の閾値を当てられない。"
+)
+_UNUSED_NETWORK_THRESHOLD_DESCRIPTION = (
+    "互換のために受け取るが使わない。ネットワーク系の指標は値が KB/s なので、% の閾値を当てられない。"
+)
+
 # ファイル名はプロンプトに埋め込むため、行やコードフェンスを壊す文字を落とす
 _UNSAFE_FILENAME_CHARS_RE = re.compile(r"[\x00-\x1f\x7f`]")
 
@@ -134,8 +143,12 @@ class ChatRequest(BaseModel):
     )
     metric_threshold_cpu_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_memory_pct: float | None = Field(default=None, ge=0, le=100)
-    metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
-    metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_disk_pct: float | None = Field(
+        default=None, ge=0, le=100, description=_UNUSED_DISK_THRESHOLD_DESCRIPTION
+    )
+    metric_threshold_network_pct: float | None = Field(
+        default=None, ge=0, le=100, description=_UNUSED_NETWORK_THRESHOLD_DESCRIPTION
+    )
     include_research: bool = Field(
         default=True,
         description=(
@@ -235,8 +248,12 @@ class IncidentTimelineBuildRequest(BaseModel):
     )
     metric_threshold_cpu_pct: float | None = Field(default=None, ge=0, le=100)
     metric_threshold_memory_pct: float | None = Field(default=None, ge=0, le=100)
-    metric_threshold_disk_pct: float | None = Field(default=None, ge=0, le=100)
-    metric_threshold_network_pct: float | None = Field(default=None, ge=0, le=100)
+    metric_threshold_disk_pct: float | None = Field(
+        default=None, ge=0, le=100, description=_UNUSED_DISK_THRESHOLD_DESCRIPTION
+    )
+    metric_threshold_network_pct: float | None = Field(
+        default=None, ge=0, le=100, description=_UNUSED_NETWORK_THRESHOLD_DESCRIPTION
+    )
 
     @model_validator(mode="after")
     def validate_time_span(self) -> IncidentTimelineBuildRequest:

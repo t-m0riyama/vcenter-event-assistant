@@ -21,7 +21,7 @@ export function ChatContextBar(props: ChatContextBarProps) {
           {...props}
           ariaLabel="チャットの条件"
           metricsCaption="LLM に含めるメトリクス"
-          hint="閾値（%）はインシデントの判定に使います。含めるメトリクスは、期間内をバケット平均で LLM に送ります（DB への問い合わせが増えます）。"
+          hint="閾値（%）は CPU とメモリのインシデントの判定に使います。含めるメトリクスは、期間内をバケット平均で LLM に送ります（DB への問い合わせが増えます）。"
         />
       </section>
 

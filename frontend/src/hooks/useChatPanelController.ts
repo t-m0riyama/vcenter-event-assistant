@@ -277,8 +277,6 @@ export function useChatPanelController(
               includePeriodMetricsNetworkIo,
               metricThresholdCpuPct: thresholdFields.metricThresholdCpuPct,
               metricThresholdMemoryPct: thresholdFields.metricThresholdMemoryPct,
-              metricThresholdDiskPct: thresholdFields.metricThresholdDiskPct,
-              metricThresholdNetworkPct: thresholdFields.metricThresholdNetworkPct,
             },
           }),
           enable_web_search: webSearchAvailable && enableWebSearch,
@@ -316,8 +314,6 @@ export function useChatPanelController(
       webSearchPrefs.aggressiveness,
       thresholdFields.metricThresholdCpuPct,
       thresholdFields.metricThresholdMemoryPct,
-      thresholdFields.metricThresholdDiskPct,
-      thresholdFields.metricThresholdNetworkPct,
     ],
   )
 

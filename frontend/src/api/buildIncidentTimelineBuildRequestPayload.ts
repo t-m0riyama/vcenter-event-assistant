@@ -13,13 +13,14 @@ type IncidentTimelineContextOptions = {
   includePeriodMetricsNetworkIo: boolean
   metricThresholdCpuPct: number | null | undefined
   metricThresholdMemoryPct: number | null | undefined
-  metricThresholdDiskPct: number | null | undefined
-  metricThresholdNetworkPct: number | null | undefined
   alertTopN?: number
 }
 
 /**
  * チャット/タイムライン共通で使う、期間コンテキスト用 POST 本文を組み立てる。
+ *
+ * ディスクとネットワークの閾値（`metric_threshold_disk_pct` / `metric_threshold_network_pct`）は送らない。
+ * 値が KB/s の指標に % の閾値は当てられず、サーバも使わない（Issue #316）。
  */
 export function buildIncidentTimelineBuildRequestPayload(params: {
   resolvedRange: ResolvedRange
@@ -36,8 +37,6 @@ export function buildIncidentTimelineBuildRequestPayload(params: {
     include_period_metrics_network_io: options.includePeriodMetricsNetworkIo,
     metric_threshold_cpu_pct: options.metricThresholdCpuPct,
     metric_threshold_memory_pct: options.metricThresholdMemoryPct,
-    metric_threshold_disk_pct: options.metricThresholdDiskPct,
-    metric_threshold_network_pct: options.metricThresholdNetworkPct,
   }
   if (options.vcenterId) {
     payload.vcenter_id = options.vcenterId
