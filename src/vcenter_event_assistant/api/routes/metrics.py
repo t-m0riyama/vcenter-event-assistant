@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.auth_deps import RequireViewer
 from vcenter_event_assistant.api.datetime_utils import to_utc
+from vcenter_event_assistant.api.schemas.base import UtcDateTime
 from vcenter_event_assistant.api.deps import get_session
 from vcenter_event_assistant.api.schemas import MetricKeysResponse, MetricPoint, MetricSeriesResponse
 from vcenter_event_assistant.api.schemas.metrics import MetricCatalogResponse, MetricDefinitionRead
@@ -96,8 +97,8 @@ async def list_metrics(
     session: AsyncSession = Depends(get_session),
     vcenter_id: uuid.UUID | None = None,
     metric_key: str = Query(..., min_length=1, max_length=256),
-    from_time: datetime | None = Query(default=None, alias="from"),
-    to_time: datetime | None = Query(default=None, alias="to"),
+    from_time: UtcDateTime | None = Query(default=None, alias="from"),
+    to_time: UtcDateTime | None = Query(default=None, alias="to"),
     entity_moid: str | None = None,
     limit: int = Query(default=2000, ge=1, le=10000),
 ) -> MetricSeriesResponse:

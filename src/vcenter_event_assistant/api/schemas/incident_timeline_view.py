@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from vcenter_event_assistant.api.schemas.base import UtcDateTime, to_utc_or_value_error
 
 TimelineSource = Literal["event", "alert", "metric", "log"]
 TimelineLevel = Literal["critical", "error", "warning", "info"]
@@ -24,24 +26,17 @@ def _default_sources() -> list[TimelineSource]:
     return list(_ALL_SOURCES)
 
 
-def _to_utc(value: datetime) -> datetime:
-    """UTC に揃える。タイムゾーンの無い値は UTC とみなす。"""
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=timezone.utc)
-    try:
-        return value.astimezone(timezone.utc)
-    except OverflowError as exc:
-        # datetime.min / max の近くは UTC に直すと範囲を外れる。validator の中で 500 にしない。
-        raise ValueError("from and to must be within the supported datetime range in UTC") from exc
-
-
 def normalize_time_span(from_time: datetime, to_time: datetime) -> tuple[datetime, datetime]:
     """期間の from/to を UTC に揃えて検証し、揃えた組を返す（from が to より前で、幅が 90 日以内）。
 
     タイムゾーンの無い値は UTC とみなす。満たさなければ ``ValueError`` を投げる。
     """
-    ft = _to_utc(from_time)
-    tt = _to_utc(to_time)
+    try:
+        ft = to_utc_or_value_error(from_time)
+        tt = to_utc_or_value_error(to_time)
+    except ValueError as exc:
+        # model_validator から呼ぶのでエラーの loc は ["body"] になる。どの項目かを文言で示す。
+        raise ValueError("from and to must be within the supported datetime range in UTC") from exc
     if ft >= tt:
         raise ValueError("from must be before to")
     if tt - ft > _MAX_SPAN:
@@ -58,7 +53,7 @@ class IncidentTimelineViewRequest(BaseModel):
     to_time: datetime = Field(alias="to")
     vcenter_id: uuid.UUID | None = None
     entity: str | None = Field(default=None, max_length=256, description="対象名の部分一致（大文字小文字を区別しない）")
-    anchor_time: datetime | None = Field(default=None, alias="anchor")
+    anchor_time: UtcDateTime | None = Field(default=None, alias="anchor")
     min_score: int = Field(default=1, ge=0, le=100)
     sources: list[TimelineSource] = Field(default_factory=_default_sources, min_length=1)
     metric_threshold_cpu_pct: float = Field(default=80.0, ge=0, le=100)

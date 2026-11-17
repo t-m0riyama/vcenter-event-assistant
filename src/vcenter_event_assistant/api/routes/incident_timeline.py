@@ -99,10 +99,17 @@ def _build_request_payload_for_response(snapshot: IncidentTimelineManualSnapshot
 
 
 def _graph_context_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineGraphContext | None:
+    """保存したグラフ再生用メタ。読めないとき（UTC に直せない日時を含む古い行など）は None（一覧・詳細を壊さない）。"""
     raw = snapshot.graph_context
     if not raw:
         return None
-    return IncidentTimelineGraphContext.model_validate(raw)
+    try:
+        return IncidentTimelineGraphContext.model_validate(raw)
+    except ValidationError as exc:
+        # 入力値はログに出さない。どの項目がなぜ読めないかだけを残す。
+        reasons = [(e["loc"], e["type"]) for e in exc.errors(include_input=False, include_url=False)]
+        logger.warning("snapshot %s has an unreadable graph_context: %s", snapshot.id, reasons)
+        return None
 
 
 def _view_request_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineSavedViewRequest | None:
