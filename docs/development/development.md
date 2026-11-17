@@ -321,7 +321,7 @@ AD / LDAP でのログインは、自動テストでは ldap3 の MOCK とスタ
 
 - `GET /api/digests` … 保存済みダイジェスト一覧（`limit` / `offset`）
 - `GET /api/digests/{id}` … 1 件取得
-- `POST /api/digests/run` … 手動生成。JSON 省略時は **`kind` と `DIGEST_DISPLAY_TIMEZONE` に基づく直前期間**（日次=直前暦日、週次=直前週、月次=直前月）を対象。`from_time` / `to_time` を両方指定すると任意期間
+- `POST /api/digests/run` … 手動生成。JSON 省略時は **`kind` と `DIGEST_DISPLAY_TIMEZONE` に基づく直前期間**（日次=直前暦日、週次=直前週、月次=直前月）を対象。`from_time` / `to_time` を両方指定すると任意期間（タイムゾーンの無い値は UTC とみなす。UTC に直すと日時の範囲を外れる値は 422）
 
 環境変数は `.env.example` の「Batch digest」と LLM 節を参照。`LLM_DIGEST_API_KEY` 未設定時は集約テンプレートのみで保存され、外部 LLM は呼ばれない。Ollama などローカルの OpenAI 互換 API の例は README の「ダイジェスト用 LLM」と `.env.example` を参照する。
 

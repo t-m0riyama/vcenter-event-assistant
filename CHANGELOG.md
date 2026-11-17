@@ -27,6 +27,12 @@
 - チャットで、ディスクとネットワークの指標（KB/s）に % の閾値を当てていたのをやめた。この 2 つはインシデントタイムラインの項目にせず、画面の「Disk 閾値（%）」「Network 閾値（%）」を外した。バケット平均は今までどおり LLM に渡る（Issue #316、PR #322）
 - グラフ画面で vCenter を「全て」にしたとき、SQLite で期間に関係なく指標の全サンプルを読んでいたのを直した。登録済みの vCenter の id を並べて絞り、索引を使えるようにした。24 時間の表示では、件数と一覧の合計が約 20 秒から約 0.6 秒になる。PostgreSQL は変わらない（Issue #324）。新しい SQLite（3.51.0 以降で確認）でも、統計が無いときにこの索引を使うよう、`INDEXED BY` で固定した（Issue #334）
 - `POST /api/incident-timeline/snapshots/manual` が、外側の `from` / `to` が 90 日を超えて `view_request` も `build_request_payload` も無いときに 500 を返していたのを、422 にした。`from` と `to` の片方だけにタイムゾーンが無いときも 500 を返していたが、タイムゾーンの無い値を UTC とみなして受け付けるようにした。期間の `from` / `to` に、UTC に直すと日時の範囲を外れる値（`0001-01-01T00:00:00+01:00` など）を送ったときも、500 ではなく 422 にした。タイムラインとチャットの要求の `from` / `to` は UTC に揃えて保存し、保存済みのスナップショットの `build_request_payload` も読むときに UTC で返すため、UTC 以外で保存したスナップショットで画面の一覧が読めなくなる問題も起きなくなる。保存済みのスナップショットの `build_request_payload` が UTC に直せない値を含むときは、一覧と詳細の API が 500 にならないよう、保存した期間（列の `from` / `to`）から作って返す（Issue #330）
+- 日時の項目に、UTC に直すと日時の範囲を外れる値（`0001-01-01T00:00:00+01:00` など）を送ったとき、500 ではなく 422 を返すようにした（Issue #331）
+  - 対象は `POST /api/incident-timeline/snapshots/manual` の `timestamp_utc`・`graph_context` の `marker_timestamp_utc` と `captured_range` の `from` / `to`・`view_request` の `anchor`、`POST /api/incident-timeline/view` の `anchor`、`POST /api/digests/run` の `from_time` / `to_time`、`GET /api/events`・`/api/events/rate-series`・`/api/logs`・`/api/logs/export.csv`・`/api/metrics` のクエリの `from` / `to`
+  - `timestamp_utc` は今まで行を保存した後に 500 を返していたので、クライアントが送り直すと同じスナップショットが重複していた。これからは保存の前に 422 になる
+  - `timestamp_utc` と `graph_context` の日時は UTC に揃えて保存して返すようにした。今まで `timestamp_utc` を +09:00 などで送ると、SQLite ではオフセットが落ちて 9 時間ずれた時刻で保存されていた。すでにずれて保存された値は直らない
+  - `graph_context` は送った形のまま保存して返していたので、UTC 以外の値が 1 件あると画面の一覧が読めなくなっていた。保存済みの `graph_context` も読むときに UTC で返す。UTC に直せない値を含むときは、一覧と詳細が 500 にならないよう `graph_context` を null で返す
+  - `POST /api/digests/run` で `from_time` と `to_time` の片方だけにタイムゾーンが無いと 500 を返していたのを、タイムゾーンの無い値を UTC とみなして受け付けるようにした
 
 ## 0.2.0 - 2026-10-10
 
