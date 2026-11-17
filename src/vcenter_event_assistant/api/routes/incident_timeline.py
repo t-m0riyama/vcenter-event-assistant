@@ -77,8 +77,21 @@ def _normalize_utc_datetime(value: datetime) -> datetime:
 
 
 def _build_request_payload_for_response(snapshot: IncidentTimelineManualSnapshot) -> IncidentTimelineBuildRequest:
+    """保存した条件。読めないとき（UTC に直せない日時を含む古い行など）は列の期間から作る（一覧・詳細を壊さない）。
+
+    列の期間から作ると ``vcenter_id`` など保存した他の項目は失われるが、読めない行なので許容する。
+    """
     if snapshot.build_request_payload:
-        return IncidentTimelineBuildRequest.model_validate(snapshot.build_request_payload)
+        try:
+            return IncidentTimelineBuildRequest.model_validate(snapshot.build_request_payload)
+        except ValidationError as exc:
+            # 入力値はログに出さない。どの項目がなぜ読めないかだけを残す。
+            reasons = [(e["loc"], e["type"]) for e in exc.errors(include_input=False, include_url=False)]
+            logger.warning(
+                "snapshot %s has an unreadable build_request_payload; falling back to the stored range: %s",
+                snapshot.id,
+                reasons,
+            )
     return IncidentTimelineBuildRequest(
         from_time=_normalize_utc_datetime(snapshot.from_time),
         to_time=_normalize_utc_datetime(snapshot.to_time),

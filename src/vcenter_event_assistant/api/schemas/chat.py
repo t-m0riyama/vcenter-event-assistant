@@ -3,13 +3,14 @@ import base64
 import binascii
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineSavedViewRequest,
     IncidentTimelineViewRequest,
     IncidentTimelineViewResponse,
+    normalize_time_span,
 )
 from vcenter_event_assistant.services.chat.chat_incident_timeline import (
     IncidentTimelinePayload,
@@ -190,16 +191,7 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> ChatRequest:
-        ft = self.from_time
-        tt = self.to_time
-        if ft.tzinfo is None:
-            ft = ft.replace(tzinfo=timezone.utc)
-        if tt.tzinfo is None:
-            tt = tt.replace(tzinfo=timezone.utc)
-        if ft >= tt:
-            raise ValueError("from must be before to")
-        if tt - ft > timedelta(days=90):
-            raise ValueError("time range must not exceed 90 days")
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         return self
 
 
@@ -265,16 +257,7 @@ class IncidentTimelineBuildRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> IncidentTimelineBuildRequest:
-        ft = self.from_time
-        tt = self.to_time
-        if ft.tzinfo is None:
-            ft = ft.replace(tzinfo=timezone.utc)
-        if tt.tzinfo is None:
-            tt = tt.replace(tzinfo=timezone.utc)
-        if ft >= tt:
-            raise ValueError("from must be before to")
-        if tt - ft > timedelta(days=90):
-            raise ValueError("time range must not exceed 90 days")
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         return self
 
 
@@ -299,8 +282,8 @@ class IncidentTimelineManualSnapshotCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_range(self) -> IncidentTimelineManualSnapshotCreateRequest:
-        if self.from_time >= self.to_time:
-            raise ValueError("from は to より前である必要があります")
+        # view_request や build_request_payload の有無にかかわらず、外側の from/to にも 90 日の上限を当てる
+        self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         note = self.operator_note.strip()
         if note == "":
             raise ValueError("operator_note は空白のみを許可しません")
