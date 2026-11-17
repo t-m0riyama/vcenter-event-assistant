@@ -106,7 +106,7 @@ PERFORMANCE = tuple(
         ("host.net.bytes_rx_kbps", "Network receive throughput", "kbps", "network"),
         ("host.net.bytes_tx_kbps", "Network transmit throughput", "kbps", "network"),
         ("host.net.usage_kbps", "Network usage", "kbps", "network"),
-        ("host.disk.usage_pct", "Disk usage", "%", "disk"),
+        ("host.disk.usage_kbps", "Disk I/O rate", "kbps", "disk"),
         ("host.disk.read_kbps", "Disk read throughput", "kbps", "disk"),
         ("host.disk.write_kbps", "Disk write throughput", "kbps", "disk"),
     )

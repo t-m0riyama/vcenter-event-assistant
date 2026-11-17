@@ -7,7 +7,7 @@ export const KNOWN_METRIC_KEYS: readonly string[] = [
   'datastore.space.used_pct',
   'host.cpu.usage_pct',
   'host.disk.read_kbps',
-  'host.disk.usage_pct',
+  'host.disk.usage_kbps',
   'host.disk.write_kbps',
   'host.mem.usage_pct',
   'host.net.bytes_rx_kbps',

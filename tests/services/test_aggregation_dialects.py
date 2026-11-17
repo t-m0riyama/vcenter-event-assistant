@@ -429,7 +429,7 @@ async def test_incident_timeline_metric_intervals_on_each_dialect(session: Async
             sample(v1, "h3", at(25), 97.0, key=METRIC_MEM),
             sample(v1, "h3", TO, 99.0, key=METRIC_MEM),
             # ディスクの KB/s は対象外
-            sample(v1, "h3", at(25), 5000.0, key="host.disk.usage_pct"),
+            sample(v1, "h3", at(25), 5000.0, key="host.disk.usage_kbps"),
             # h6 (v2): 名前が空白だけ → 名前は moid。期間の終わりの 20 分前で途絶える → 終わりでは続いていない
             sample(v2, "h6", at(100), 90.0, name="   "),
             # h4 (v1): 期間の終わりの 1.5 分前まで超過 → 終わりでも継続

@@ -608,6 +608,10 @@ docker compose run --rm app vcenter-event-assistant-admin create-user admin --ro
   - `log_records` の vCenter 付きの式の索引: PostgreSQL 16 で 605 万行 5.9 秒、SQLite で 30 万行 2.9 秒
   - `metric_samples` の vCenter・指標・時刻・値・moid・名前の索引（SQLite だけ）: SQLite で 243 万行 25〜34 秒
 
+データを書き換えるマイグレーションも、終わるまでアプリは起動しない:
+
+- `b5c6d7e8f9a0`（指標名 `host.disk.usage_pct` を `host.disk.usage_kbps` に付け替える）: `metric_samples` のうち、この指標の行だけを UPDATE する。所要時間は計測していない。行数は `SELECT count(*) FROM metric_samples WHERE metric_key = 'host.disk.usage_pct'` で確かめられる
+
 ### 5.5 ロールバック手順（最小）
 
 1. `.env` を変更前の値に戻す

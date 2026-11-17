@@ -20,7 +20,7 @@ METRIC_MEM = "host.mem.usage_pct"
 DISK_KEYS: tuple[str, ...] = (
     "host.disk.read_kbps",
     "host.disk.write_kbps",
-    "host.disk.usage_pct",
+    "host.disk.usage_kbps",
 )
 NET_KEYS: tuple[str, ...] = (
     "host.net.bytes_rx_kbps",

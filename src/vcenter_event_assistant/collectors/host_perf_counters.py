@@ -21,6 +21,8 @@ _DEFAULT_REALTIME_INTERVAL_SEC = 20
 # 生成規則はメトリクスの重複排除キーの一部なので、変更すると時系列が分断される。
 
 # (metric_key, perf group, counter name, rollup)
+# metric_key の接尾辞は単位を表す。``disk.usage`` は Aggregated disk I/O rate（KBps）なので ``_kbps``
+# （以前は ``host.disk.usage_pct`` だった。Issue #316）。
 _TARGET_SPECS: tuple[tuple[str, str, str, int], ...] = (
     ("host.net.errors_rx_total", "net", "errorsRx", vim.PerformanceManager.CounterInfo.RollupType.summation),
     ("host.net.errors_tx_total", "net", "errorsTx", vim.PerformanceManager.CounterInfo.RollupType.summation),
@@ -29,7 +31,7 @@ _TARGET_SPECS: tuple[tuple[str, str, str, int], ...] = (
     ("host.net.bytes_rx_kbps", "net", "bytesRx", vim.PerformanceManager.CounterInfo.RollupType.average),
     ("host.net.bytes_tx_kbps", "net", "bytesTx", vim.PerformanceManager.CounterInfo.RollupType.average),
     ("host.net.usage_kbps", "net", "usage", vim.PerformanceManager.CounterInfo.RollupType.average),
-    ("host.disk.usage_pct", "disk", "usage", vim.PerformanceManager.CounterInfo.RollupType.average),
+    ("host.disk.usage_kbps", "disk", "usage", vim.PerformanceManager.CounterInfo.RollupType.average),
     ("host.disk.read_kbps", "disk", "read", vim.PerformanceManager.CounterInfo.RollupType.average),
     ("host.disk.write_kbps", "disk", "write", vim.PerformanceManager.CounterInfo.RollupType.average),
 )

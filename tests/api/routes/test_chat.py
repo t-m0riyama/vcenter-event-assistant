@@ -219,7 +219,7 @@ async def test_post_chat_preview_applies_metric_threshold_and_metric_title_forma
         ),
         # ディスクとネットワークは値が KB/s なので、閾値を受け取っても使わず、項目にもしない（Issue #316）。
         (
-            "host.disk.usage_pct",
+            "host.disk.usage_kbps",
             "metric_threshold_disk_pct",
             80.0,
             {"include_period_metrics_cpu": False, "include_period_metrics_disk_io": True},
@@ -282,7 +282,7 @@ async def test_post_chat_preview_applies_threshold_only_to_memory_not_disk_netwo
             to_utc=t1,
             cpu=[],
             memory=[series] if metric_key == "host.mem.usage_pct" else None,
-            disk=[series] if metric_key == "host.disk.usage_pct" else None,
+            disk=[series] if metric_key == "host.disk.usage_kbps" else None,
             network=[series] if metric_key == "host.net.usage_kbps" else None,
         )
 

@@ -70,7 +70,7 @@ def test_build_timeline_metric_entries_applies_threshold_per_category() -> None:
     [
         "host.disk.read_kbps",
         "host.disk.write_kbps",
-        "host.disk.usage_pct",
+        "host.disk.usage_kbps",
         "host.net.bytes_rx_kbps",
         "host.net.bytes_tx_kbps",
         "host.net.usage_kbps",
