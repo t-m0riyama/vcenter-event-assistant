@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       # Trusted Publishing の OIDC トークンを取るために必要。
       id-token: write
