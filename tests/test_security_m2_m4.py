@@ -290,7 +290,6 @@ async def test_saved_build_request_payload_not_representable_in_utc_falls_back_t
     assert detail.json()["build_request_payload"]["to"] == "2026-01-02T00:00:00Z"
 
 
-_JST = timezone(timedelta(hours=9))
 # タイムゾーン無し・+09:00・Z の、どれも 2026-01-01T00:00:00Z〜2026-01-02T00:00:00Z を指す組
 _SAME_RANGE_IN_VARIOUS_ZONES = [
     ("2026-01-01T00:00:00", "2026-01-02T00:00:00Z"),
