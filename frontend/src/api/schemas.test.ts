@@ -340,7 +340,7 @@ describe('chatRequestSchema', () => {
 })
 
 describe('incidentTimelineSchema', () => {
-  it('parses incident timeline response payload for /api/incident-timeline', () => {
+  it('parses incident timeline payload included in the chat preview response', () => {
     const parsed = incidentTimelineSchema.parse({
       columns: [
         {

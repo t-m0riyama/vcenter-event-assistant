@@ -152,6 +152,7 @@ export const incidentTimelineBuildRequestSchema = z
     metric_threshold_memory_pct: metricThresholdNullablePercentSchema,
     metric_threshold_disk_pct: metricThresholdNullablePercentSchema,
     metric_threshold_network_pct: metricThresholdNullablePercentSchema,
+    // 画面からは送らない。保存済みのスナップショットに入っているので、受け取れるようにしておく。
     alert_top_n: z.number().int().min(1).max(20).optional(),
   })
   .strict()
