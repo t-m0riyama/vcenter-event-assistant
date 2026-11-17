@@ -6,14 +6,15 @@ on:
   pull_request:
 
 jobs:
-  # ランナーは ubuntu-24.04 に固定する。ubuntu-latest（26.04）では Playwright が Chromium を入れられず、
-  # uv が入れる Python の SQLite と CA 証明書の違いで一部のテストも落ちる（Issue #334）。
+  # ランナーは Ubuntu の版を明示する（ubuntu-latest にしない）。ubuntu-latest が 24.04 から 26.04 に
+  # 黙って変わり、CI が落ちたため（Issue #334）。版を上げるときは、PR で意図して上げる。
+  # 26.04 には Python 3.12 が無く、uv がダウンロードした Python（同梱の SQLite が新しい）でテストが動く。
   #
   # ドキュメントだけの変更（計画書の更新など）では、後続のジョブを省く（Issue #262）。
   # on.paths は pull_request では PR 全体の差分で判定するため、コードを含む PR に後から
   # ドキュメントだけのコミットを push しても省けない。ここではその push で増えたコミットだけを見る。
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       actions: read  # 前の先頭の CI の結果を読む
@@ -90,7 +91,7 @@ jobs:
   python:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -181,7 +182,7 @@ jobs:
   frontend-unit:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -205,7 +206,7 @@ jobs:
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
