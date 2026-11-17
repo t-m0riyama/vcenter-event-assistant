@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import inspect
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,7 +56,7 @@ async def build_chat_context_payloads(
     *,
     owner_key: str,
 ) -> ChatContextPayloads:
-    """チャット/プレビュー/タイムライン API 向けの共有ペイロードを生成する。
+    """チャット/プレビュー向けの共有ペイロードを生成する。
 
     ``owner_key`` は同時実行数を利用者ごとに数えるための識別子（``aggregation_owner_key``）。
     """
@@ -69,11 +68,13 @@ async def _build_context_payloads_common(
     body: ChatRequest | IncidentTimelineBuildRequest,
     *,
     owner_key: str,
+    alert_top_n: int | None = None,
 ) -> ChatContextPayloads:
     """メッセージ有無に依存せず共有コンテキストを構築する。
 
     期間内のイベントとメトリクスを集計する重い処理なので、同時実行数（利用者ごと・全体）に上限を設け、
     空きがなければ待たずに 503 を返す。イベントの集計行が多すぎるときは 422（Issue #301）。
+    ``alert_top_n`` は 1 バケットに出すアラート種別の上位件数。``None`` なら集計関数の既定値に任せる。
     """
     # DB 側の時間バケットは秒単位なので、期間は入口で 1 回だけ秒に揃え、以降の集計すべてで同じ値を使う。
     # 400 の判定より前に揃えるのは、同じ秒の中の from/to を 400 で返すため（各集計の ValueError で 500 にしない）。
@@ -99,6 +100,7 @@ async def _build_context_payloads_common(
                 ft,
                 tt,
                 max_rows=settings.context_aggregation_max_rows,
+                alert_top_n=alert_top_n,
             )
     except AggregationBusy:
         raise HTTPException(
@@ -120,6 +122,7 @@ async def _build_context_payloads_in_slot(
     tt: datetime,
     *,
     max_rows: int,
+    alert_top_n: int | None = None,
 ) -> ChatContextPayloads:
     ctx = await build_digest_context(
         session,
@@ -154,18 +157,15 @@ async def _build_context_payloads_in_slot(
             include_network_io=body.include_period_metrics_network_io,
             bucket_sec=bucket_sec,
         )
-        event_bucket_kwargs = {
-            "vcenter_id": body.vcenter_id,
-            "bucket_sec": bucket_sec,
-            "max_rows": max_rows,
-        }
-        if "alert_top_n" in inspect.signature(build_chat_event_time_buckets).parameters:
-            event_bucket_kwargs["alert_top_n"] = body.alert_top_n
+        # None のときは alert_top_n_per_bucket を渡さず、集計関数の既定値に任せる。
         timeline_event_time_buckets = await build_chat_event_time_buckets(
             session,
             ft,
             tt,
-            **event_bucket_kwargs,
+            vcenter_id=body.vcenter_id,
+            bucket_sec=bucket_sec,
+            max_rows=max_rows,
+            **({} if alert_top_n is None else {"alert_top_n_per_bucket": alert_top_n}),
         )
 
     period_metrics = None
@@ -210,5 +210,10 @@ async def build_incident_timeline_payload(
     owner_key: str,
 ) -> IncidentTimelinePayload:
     """タイムライン専用 API 用に incident_timeline を抽出して返す。"""
-    payloads = await _build_context_payloads_common(session, body, owner_key=owner_key)
+    payloads = await _build_context_payloads_common(
+        session,
+        body,
+        owner_key=owner_key,
+        alert_top_n=body.alert_top_n,
+    )
     return payloads.incident_timeline
