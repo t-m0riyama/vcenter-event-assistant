@@ -728,10 +728,23 @@ async def test_metrics_list_vcenter_clauses_by_dialect(session: AsyncSession) ->
 
     方言名を引数で渡すので、CI（SQLite だけ）でも PostgreSQL 向けの分岐を確かめられる。
     """
+    from sqlalchemy.sql import operators
+    from sqlalchemy.sql.elements import BinaryExpression, BindParameter
+
     from vcenter_event_assistant.api.routes.metrics import _metric_list_vcenter_clauses
 
-    def sql(clauses: list) -> list[str]:
-        return [str(c.compile(dialect=pg_asyncpg.dialect())) for c in clauses]  # type: ignore[attr-defined]
+    def vcenter_condition(clauses: list | None) -> tuple[object, object]:
+        """条件が vcenter_id の列に対する 1 つの比較であることを確かめ、演算子と右辺の値を返す。
+
+        SQLAlchemy の SQL の描き方やバインド名に依らないよう、式の構造を見る。
+        """
+        assert clauses is not None and len(clauses) == 1, clauses
+        clause = clauses[0]
+        assert isinstance(clause, BinaryExpression), clause
+        # ORM の属性から作った式の左辺は注釈付きの列なので、is ではなく compare で比べる
+        assert clause.left.compare(MetricSample.__table__.c.vcenter_id), clause.left
+        assert isinstance(clause.right, BindParameter), clause.right
+        return clause.operator, clause.right.value
 
     # vCenter が 1 つも無い: SQLite は問い合わせずに空で返す合図（None）、PostgreSQL は条件を足さない
     assert await _metric_list_vcenter_clauses(session, None, dialect_name="sqlite") is None
@@ -742,14 +755,15 @@ async def test_metrics_list_vcenter_clauses_by_dialect(session: AsyncSession) ->
         session.add(VCenter(id=vid, name=f"vc-{vid.hex[:6]}", host="h", port=443, username="u", password="p"))
     await session.flush()
 
-    got = await _metric_list_vcenter_clauses(session, None, dialect_name="sqlite")
-    assert got is not None and sql(got) == ["metric_samples.vcenter_id IN (__[POSTCOMPILE_vcenter_id_1])"]
-    assert set(got[0].right.value) == {v1, v2}
+    op, value = vcenter_condition(await _metric_list_vcenter_clauses(session, None, dialect_name="sqlite"))
+    assert op is operators.in_op
+    assert isinstance(value, list) and set(value) == {v1, v2}
     assert await _metric_list_vcenter_clauses(session, None, dialect_name="postgresql") == []
     # 指定したときは方言に関係なく、その vCenter で絞る
     for dialect_name in ("sqlite", "postgresql"):
-        got = await _metric_list_vcenter_clauses(session, v1, dialect_name=dialect_name)
-        assert got is not None and sql(got) == ["metric_samples.vcenter_id = $1::UUID"]
+        op, value = vcenter_condition(await _metric_list_vcenter_clauses(session, v1, dialect_name=dialect_name))
+        assert op is operators.eq
+        assert value == v1
 
 
 @pytest.mark.asyncio
@@ -794,8 +808,7 @@ async def test_metrics_list_on_each_dialect(session: AsyncSession, monkeypatch: 
             if "FROM metric_samples" in str(stmt)
         ]
         assert len(metric_sql) == 2  # 件数と一覧
+        # 条件の形は test_metrics_list_vcenter_clauses_by_dialect で見るので、ここは WHERE に列が出るかだけを見る
         for s in metric_sql:
-            if dialect_name == "sqlite":
-                assert "metric_samples.vcenter_id IN" in s, s
-            else:
-                assert "vcenter_id" not in s.split("WHERE", 1)[1], s
+            where = s.split("WHERE", 1)[1]
+            assert ("vcenter_id" in where) is (dialect_name == "sqlite"), s

@@ -40,15 +40,16 @@ async def _metric_list_vcenter_clauses(
 ) -> list[ColumnElement[bool]] | None:
     """メトリクス一覧の vCenter の条件を返す。
 
-    指定したときは方言に関係なく、その vCenter で絞る。指定しないときに登録済みの vCenter の id を並べる
-    （``metric_vcenter_clause``）のは SQLite のときだけ。SQLite は統計が無いと ix_metric_samples_metric_key を選び、
-    期間に関係なくその指標の全サンプルを読むため（約 323 万行で、24 時間の件数・一覧がそれぞれ約 10 秒。Issue #324）。
-    PostgreSQL には vcenter_id・metric_key を前に置いた索引が無く（ix_metric_samples_vcenter_metric_sampled_value は
-    SQLite だけに作る）、計測（PostgreSQL 16、約 323 万行）では、当てても 5 ケースは計画も時間も変わらず、
-    期間なしの件数だけが metric_key の索引だけで数えられなくなって表を読み、9.9 ms から 125.8 ms に遅くなったため。
+    vCenter を指定したときは、方言に関係なくその vCenter で絞る。指定しないときに登録済みの vCenter の id を並べる
+    （``metric_vcenter_clause``）のは、SQLite のときだけにする。SQLite は統計が無いと ix_metric_samples_metric_key を
+    選び、期間に関係なくその指標の全サンプルを読む。id を並べると、ix_metric_samples_vcenter_metric_sampled_value を
+    vCenter ごとの範囲走査で使える。期間なしの件数だけは SQLite でも遅くなるが、一覧が大きく速くなるので、
+    期間なしの件数だけ条件を外すことはしない（条件は件数と一覧で同じにする）。PostgreSQL にはこの索引が無い
+    （SQLite だけに作る）ので、id を並べても速くならず、期間なしの件数は metric_key の索引だけで数えられなくなって
+    遅くなる。計測は Issue #324 にある。
 
     Returns:
-        条件のリスト（PostgreSQL で未指定のときは空）。SQLite で vCenter が 1 つも無いときは ``None``
+        条件のリスト（SQLite 以外で vCenter を指定しないときは空）。SQLite で vCenter が 1 つも無いときは ``None``
         （サンプルも無いので、呼び出し側は問い合わせずに空の結果を返す）。
     """
     if vcenter_id is None and dialect_name != "sqlite":
@@ -106,6 +107,7 @@ async def list_metrics(
         vcenter_id,
         dialect_name=bind.dialect.name if bind is not None else "sqlite",
     )
+    # None は vCenter が 1 つも無い（問い合わせない）、[] は条件を足さない（SQLite 以外）。not で判定しないこと
     if vcenter_clauses is None:
         response.headers["X-Total-Count"] = "0"
         return MetricSeriesResponse(points=[], total=0)
