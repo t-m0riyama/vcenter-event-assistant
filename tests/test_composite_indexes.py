@@ -10,9 +10,11 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import Response
 from sqlalchemy import event, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from vcenter_event_assistant.api.routes.metrics import list_metrics
 from vcenter_event_assistant.db.models import AlertHistory, AlertRule, EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
@@ -267,6 +269,62 @@ async def test_metric_threshold_evaluation_uses_vcenter_metric_index(
         with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
             await evaluator.evaluate_all()
     _assert_uses_vcenter_metric_index(captured, await _plans_of(two_vcenter_metric_engine, captured))
+
+
+async def _call_list_metrics(**kwargs: Any) -> None:
+    """``list_metrics`` を関数として呼ぶ（Query の既定値を使わないよう、引数はすべて渡す）。"""
+    params: dict[str, Any] = {
+        "vcenter_id": None,
+        "metric_key": METRIC_CPU,
+        "from_time": None,
+        "to_time": None,
+        "entity_moid": None,
+        "limit": 2000,
+    }
+    params.update(kwargs)
+    async with session_scope() as session:
+        await list_metrics(Response(), session, **params)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ranged", [True, False], ids=["range", "no_range"])
+async def test_metrics_list_without_vcenter_uses_vcenter_metric_index(
+    two_vcenter_metric_engine: AsyncEngine,
+    ranged: bool,
+) -> None:
+    """vCenter 未指定のメトリクス一覧 API も、件数・一覧とも vCenter・指標・期間の索引で範囲を読む（Issue #324）。
+
+    一覧は表の列も返すので被覆索引にはならない（索引名だけを見る）。件数は索引だけで済む。
+    """
+    to_utc = datetime.now(timezone.utc)
+    kwargs: dict[str, Any] = {"from_time": to_utc - timedelta(hours=24), "to_time": to_utc} if ranged else {}
+    with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
+        await _call_list_metrics(limit=10000 if ranged else 500, **kwargs)
+    plans = await _plans_of(two_vcenter_metric_engine, captured)
+    assert len(captured) == 2, captured  # 件数と一覧
+    for (statement, _), plan in zip(captured, plans, strict=True):
+        assert VCENTER_METRIC_INDEX in plan, f"{statement}\n---\n{plan}"
+        assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
+    count_plan = next(p for (s, _), p in zip(captured, plans, strict=True) if "count(" in s.lower())
+    assert f"COVERING INDEX {VCENTER_METRIC_INDEX}" in count_plan, count_plan
+
+
+@pytest.mark.asyncio
+async def test_metrics_list_without_vcenter_by_entity_uses_entity_index(
+    two_vcenter_metric_engine: AsyncEngine,
+) -> None:
+    """vCenter 未指定で対象（entity_moid）を指定したときは、vCenter・対象・指標・期間の索引を使う（Issue #324）。"""
+    to_utc = datetime.now(timezone.utc)
+    with _capture_metric_sample_selects(two_vcenter_metric_engine) as captured:
+        await _call_list_metrics(
+            from_time=to_utc - timedelta(hours=24), to_time=to_utc, entity_moid="host-0", limit=10000
+        )
+    plans = await _plans_of(two_vcenter_metric_engine, captured)
+    assert len(captured) == 2, captured
+    for (statement, _), plan in zip(captured, plans, strict=True):
+        assert METRICS_INDEX in plan, f"{statement}\n---\n{plan}"
+        assert "ix_metric_samples_metric_key" not in plan, f"{statement}\n---\n{plan}"
+        assert "ix_metric_samples_entity_moid" not in plan, f"{statement}\n---\n{plan}"
 
 
 @pytest.mark.asyncio
