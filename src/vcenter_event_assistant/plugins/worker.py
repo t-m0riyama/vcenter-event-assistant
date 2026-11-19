@@ -23,6 +23,7 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from importlib.metadata import entry_points, distributions
 from typing import Any
 
@@ -32,6 +33,11 @@ from vcenter_event_assistant_plugin_api.validation import (
 from vcenter_event_assistant.collectors.connection import VCENTER_HTTPS_REQUIRED, VCenterProtocolPolicyError
 from vcenter_event_assistant_plugin_api.validation import (
     ManifestValidationError as _ManifestValidationError,
+)
+
+from vcenter_event_assistant.plugins.request_files import (
+    materialize_request_files,
+    replace_ssh_paths,
 )
 
 ENTRY_POINT_GROUP = "vcenter_event_assistant.collectors"
@@ -197,34 +203,37 @@ async def _handle(host: _PluginHost, request: dict[str, Any]) -> Any:
         await plugin.stop()
         return {}
     if op in {"collect", "setup"}:
-        raw_context = request["context"]
-        params = ConnectionParams.from_json(request["connection"])
-        context = CollectionContext(
-            target=target_from_json(raw_context["target"]),
-            config=dict(raw_context.get("config", {})),
-            previous_cursor=raw_context.get("previous_cursor"),
-            open_vcenter_connection=lambda: _open_connection(params),
-            mock_mode=bool(raw_context.get("mock_mode", False)),
-        )
-        if op == "setup":
-            from dataclasses import asdict
+        with materialize_request_files(request.get("files", {})) as paths:
+            raw_context = request["context"]
+            params = ConnectionParams.from_json(request["connection"])
+            if params.ca_bundle_path and params.ca_bundle_path in paths:
+                params = replace(params, ca_bundle_path=paths[params.ca_bundle_path])
+            context = CollectionContext(
+                target=target_from_json(raw_context["target"]),
+                config=replace_ssh_paths(dict(raw_context.get("config", {})), paths),
+                previous_cursor=raw_context.get("previous_cursor"),
+                open_vcenter_connection=lambda: _open_connection(params),
+                mock_mode=bool(raw_context.get("mock_mode", False)),
+            )
+            if op == "setup":
+                from dataclasses import asdict
 
-            if request["action"] not in {a.id for a in plugin.manifest.setup_actions}:
-                raise NotImplementedError("undeclared setup action")
-            return {"setup": asdict(await plugin.setup(context, request["action"]))}
-        started = time.monotonic()
-        batch = await plugin.collect(context)
-        logger.info(
-            "collect finished entry_point=%s elapsed_ms=%d events=%d metrics=%d "
-            "had_cursor=%s advanced_cursor=%s",
-            entry_point_name,
-            int((time.monotonic() - started) * 1000),
-            len(batch.events),
-            len(batch.metrics),
-            context.previous_cursor is not None,
-            batch.next_cursor is not None,
-        )
-        return {"batch": batch_to_json(batch)}
+                if request["action"] not in {a.id for a in plugin.manifest.setup_actions}:
+                    raise NotImplementedError("undeclared setup action")
+                return {"setup": asdict(await plugin.setup(context, request["action"]))}
+            started = time.monotonic()
+            batch = await plugin.collect(context)
+            logger.info(
+                "collect finished entry_point=%s elapsed_ms=%d events=%d metrics=%d "
+                "had_cursor=%s advanced_cursor=%s",
+                entry_point_name,
+                int((time.monotonic() - started) * 1000),
+                len(batch.events),
+                len(batch.metrics),
+                context.previous_cursor is not None,
+                batch.next_cursor is not None,
+            )
+            return {"batch": batch_to_json(batch)}
 
     raise ValueError(f"unknown op: {op}")
 

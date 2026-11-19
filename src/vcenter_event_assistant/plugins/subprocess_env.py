@@ -16,6 +16,7 @@ from vcenter_event_assistant.settings import Settings
 
 #: 子プロセスの Settings に ``.env`` を読ませない印（``settings._settings_env_file``）。
 IGNORE_DOTENV_ENV_VAR = "VEA_SETTINGS_IGNORE_DOTENV"
+ROLE_LOCAL_TLS_ENV = ("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
 
 # OS・Python・TLS・プロキシなど、秘密を含まない実行環境の変数。
 _RUNTIME_ENV_VARS = frozenset(
@@ -36,10 +37,7 @@ _RUNTIME_ENV_VARS = frozenset(
         "PYTHONPATH",
         "PYTHONIOENCODING",
         "PYTHONUTF8",
-        "SSL_CERT_FILE",
-        "SSL_CERT_DIR",
-        "REQUESTS_CA_BUNDLE",
-        "CURL_CA_BUNDLE",
+        *ROLE_LOCAL_TLS_ENV,
         "NO_PROXY",
         "no_proxy",
     }
@@ -51,20 +49,18 @@ _RUNTIME_ENV_PREFIXES = ("LC_",)
 # インストーラ（uv）だけに渡す変数。インデックスの URL と資格情報（UV_INDEX_URL、
 # UV_DEFAULT_INDEX、UV_INDEX_<名前>_PASSWORD など）は、sdist のビルドのコードから読めるので
 # 渡さない。インデックスは ``VEA_PLUGIN_INDEX_URL`` で指定する。
-_INSTALLER_ENV_VARS = frozenset(
+INSTALLER_JOB_ENV_VARS = frozenset(
     {
-        "UV_CACHE_DIR",
         "UV_NO_CACHE",
         "UV_NATIVE_TLS",
         "UV_HTTP_TIMEOUT",
         "UV_CONCURRENT_DOWNLOADS",
         "UV_CONCURRENT_BUILDS",
-        "UV_LINK_MODE",
         "UV_OFFLINE",
         "UV_NO_PROGRESS",
-        "XDG_CACHE_HOME",
     }
 )
+_INSTALLER_ENV_VARS = INSTALLER_JOB_ENV_VARS | {"UV_CACHE_DIR", "UV_LINK_MODE", "XDG_CACHE_HOME"}
 
 
 def url_has_credentials(url: str | None) -> bool:

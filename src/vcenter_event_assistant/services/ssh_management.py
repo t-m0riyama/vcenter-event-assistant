@@ -15,6 +15,7 @@ from uuid import UUID
 
 from vcenter_event_assistant.db.models import SSHConnection, SSHCredential
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.plugins.request_files import encode_file
 
 
 def check_ssh_port(settings, port: int) -> None:
@@ -47,7 +48,11 @@ def connection_read(c):
     }
 
 
-def ssh_objects(value, schema, *, require_connections=False):
+class LegacySSHPathError(ValueError):
+    """An isolated worker requires a registered SSH connection."""
+
+
+def ssh_objects(value, schema, *, require_connections=False, allow_legacy=True):
     if not isinstance(schema, dict):
         return
     if isinstance(value, dict):
@@ -56,21 +61,34 @@ def ssh_objects(value, schema, *, require_connections=False):
             value.get(name)
             for name in ("host", "username", "private_key_file", "known_hosts_file")
         )
-        if field and require_connections and not value.get(field) and not legacy_connection:
-            raise ValueError("各収集対象のSSH接続先を選択して保存してください。")
+        if field and not value.get(field):
+            if legacy_connection and not allow_legacy:
+                raise LegacySSHPathError(
+                    "分離モードではSSH鍵とknown_hostsのファイルパスを直接指定できません。"
+                    "登録済みのSSH接続先を選択して保存してください。"
+                )
+            if require_connections and not legacy_connection:
+                raise ValueError("各収集対象のSSH接続先を選択して保存してください。")
         if field and value.get(field):
             yield value, str(value[field])
         for key, child in schema.get("properties", {}).items():
             if key in value:
-                yield from ssh_objects(value[key], child, require_connections=require_connections)
+                yield from ssh_objects(
+                    value[key], child, require_connections=require_connections, allow_legacy=allow_legacy,
+                )
     elif isinstance(value, list):
         for item in value:
-            yield from ssh_objects(item, schema.get("items", {}), require_connections=require_connections)
+            yield from ssh_objects(
+                item, schema.get("items", {}),
+                require_connections=require_connections, allow_legacy=allow_legacy,
+            )
 
 
-async def reference_digest(session, config, schema):
+async def reference_digest(session, config, schema, *, allow_legacy=True):
     references = []
-    for _, identifier in ssh_objects(config, schema, require_connections=True):
+    for _, identifier in ssh_objects(
+        config, schema, require_connections=True, allow_legacy=allow_legacy,
+    ):
         c = await session.get(SSHConnection, UUID(identifier))
         if c is None or not c.approved_key:
             raise ValueError("SSH接続先が未登録、またはホスト鍵が未承認です。")
@@ -100,10 +118,14 @@ def cleanup_stale_ssh_files():
 
 
 @asynccontextmanager
-async def materialize_ssh(settings, config, schema, target_id=None):
+async def materialize_ssh(
+    settings, config, schema, target_id=None, *, worker_files: dict[str, str] | None = None,
+):
     """Files live for exactly one worker request, including timeout/exception paths."""
     resolved = copy.deepcopy(config)
-    objects = list(ssh_objects(resolved, schema, require_connections=True))
+    objects = list(ssh_objects(
+        resolved, schema, require_connections=True, allow_legacy=worker_files is None,
+    ))
     if not objects:
         yield resolved
         return
@@ -140,9 +162,12 @@ async def materialize_ssh(settings, config, schema, target_id=None):
                         f"{host_pattern} {c.approved_key.strip()}\n",
                     ),
                 ):
-                    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
-                    with os.fdopen(fd, "w") as output:
-                        output.write(content)
+                    if worker_files is not None:
+                        worker_files[str(path)] = encode_file(content.encode())
+                    else:
+                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+                        with os.fdopen(fd, "w") as output:
+                            output.write(content)
                 obj.update(
                     host=c.host,
                     port=c.port,

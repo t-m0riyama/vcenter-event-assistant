@@ -20,16 +20,20 @@ COPY packages ./packages
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 # /app（アプリのコードと .venv）は root 所有のままにし、実行ユーザー appuser には書かせない。
-# プラグインは appuser で動くので、書けると本体のコードを書き換えられる（監査 M-1、Issue #235）。
-# appuser が書けるのは /data（DB・プラグイン）と /var/log/vea だけ。
+# Compose ではワーカー・インストーラ・ビルダーもそれぞれ別の非 root UID で動く（Issue #274）。
 # アプリの既定の置き場所（./data/vea.dev.db・data/plugins）は /app/data なので、/data へのリンクにする。
 # ENV で DATABASE_URL などを指定すると、/app/.env に書いた値より優先されてしまうので使わない。
 ENV UV_COMPILE_BYTECODE=1
 RUN uv sync --frozen --no-dev \
     && .venv/bin/python -m compileall -q src packages \
     && useradd --create-home --uid 1000 appuser \
-    && mkdir -p /var/log/vea /data \
-    && chown -R appuser:appuser /var/log/vea /data \
+    && useradd --no-create-home --uid 1001 vea-worker \
+    && useradd --no-create-home --uid 1002 vea-installer \
+    && useradd --no-create-home --uid 1003 vea-builder \
+    && install -d -o appuser -g appuser /var/log/vea /data /data/plugins /legacy-data \
+    && install -d -m 2710 -o vea-worker -g appuser /sockets/worker \
+    && install -d -m 2710 -o vea-installer -g appuser /sockets/installer \
+    && install -d -m 2710 -o vea-builder -g appuser /sockets/builder \
     && ln -s /data /app/data
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

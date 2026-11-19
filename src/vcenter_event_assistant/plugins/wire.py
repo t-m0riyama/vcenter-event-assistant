@@ -28,6 +28,7 @@ from vcenter_event_assistant_plugin_api import (
 )
 
 PROTOCOL_VERSION = 1
+MAX_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 

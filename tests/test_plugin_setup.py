@@ -15,6 +15,7 @@ from vcenter_event_assistant_plugin_api import (
     CollectionBatch,
 )
 from vcenter_event_assistant.db.models import CollectorPluginSetting, SSHCredential
+from vcenter_event_assistant.api.routes import plugin_setup
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.config import CollectorConfig
 from vcenter_event_assistant.plugins.registry import (
@@ -23,6 +24,7 @@ from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
     set_collector_registry,
 )
+from vcenter_event_assistant.plugins.request_files import materialize_request_files, replace_ssh_paths
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 from vcenter_event_assistant.services.ssh_management import materialize_ssh
@@ -271,6 +273,29 @@ async def test_draft_testing_and_atomic_apply(client, setup_enabled, monkeypatch
     result = await client.post(base + "/actions/test", json={"revision": d["revision"]})
     assert result.status_code == 200 and result.json()["ok"]
     assert result.json()["samples"] == [{"value": 42}]
+    previous = get_collector_registry()
+    with monkeypatch.context() as patch:
+        build = plugin_setup.build_collector_registry
+
+        def discovery_failed(*args, **kwargs):
+            candidate = build(*args, **kwargs)
+            registrations = dict(candidate.registrations)
+            registrations["discovery"] = CollectorRegistration(
+                "discovery", None, "discovery", None, "failed", "service unavailable",
+            )
+            return CollectorRegistry(registrations, generation=candidate.generation)
+
+        patch.setenv("VEA_PLUGIN_SERVICE_SOCKET_DIR", "/sockets")
+        patch.setattr(
+            "vcenter_event_assistant.api.routes.plugin_setup.build_collector_registry",
+            discovery_failed,
+        )
+        get_settings.cache_clear()
+        assert (
+            await client.post(base + "/apply", json={"revision": d["revision"]})
+        ).status_code == 503
+        assert get_collector_registry() is previous
+    get_settings.cache_clear()
     assert (
         await client.post(base + "/apply", json={"revision": d["revision"]})
     ).status_code == 200
@@ -360,6 +385,21 @@ async def test_secret_file_cleanup_on_error_and_mode(
             assert file_path.read_text().startswith("-----BEGIN OPENSSH PRIVATE KEY")
             raise RuntimeError("test failure")
     assert not file_path.exists()
+
+    worker_files = {}
+    async with materialize_ssh(
+        get_settings(), d["config_values"], SCHEMA, UUID(vc), worker_files=worker_files,
+    ) as resolved:
+        target = resolved["targets"][0]
+        assert not Path(target["private_key_file"]).exists()
+        assert not Path(target["known_hosts_file"]).exists()
+        with materialize_request_files(worker_files) as paths:
+            worker_target = replace_ssh_paths(resolved, paths)["targets"][0]
+            worker_key = Path(worker_target["private_key_file"])
+            assert stat.S_IMODE(worker_key.stat().st_mode) == 0o400
+            assert worker_key.read_text().startswith("-----BEGIN OPENSSH PRIVATE KEY")
+            assert "ssh-" in Path(worker_target["known_hosts_file"]).read_text()
+        assert not worker_key.exists()
 
 
 def test_unsupported_definition_does_not_break_manifest():
@@ -572,6 +612,7 @@ async def test_remote_log_schema_resolves_connection_into_worker_context(
 
 
 async def test_legacy_external_ssh_files_do_not_require_managed_reference():
+    from vcenter_event_assistant.services.plugin_configuration import validate_values
     from vea_remote_log_collector import RemoteLogCollector
 
     legacy = {"sources": [{
@@ -583,6 +624,13 @@ async def test_legacy_external_ssh_files_do_not_require_managed_reference():
         get_settings(), legacy, RemoteLogCollector.manifest.configuration_schema
     ) as resolved:
         assert resolved == legacy
+    with pytest.raises(ValueError, match="登録済みのSSH接続先"):
+        async with materialize_ssh(
+            get_settings(), legacy, RemoteLogCollector.manifest.configuration_schema, worker_files={},
+        ):
+            pytest.fail("isolated workers require a managed SSH connection")
+    with pytest.raises(ValueError, match="登録済みのSSH接続先"):
+        validate_values(legacy, RemoteLogCollector.manifest.configuration_schema, allow_legacy_ssh=False)
 
 
 async def test_secret_files_removed_after_timeout(client, setup_enabled, monkeypatch):

@@ -179,6 +179,19 @@ jobs:
             )
           done
 
+  plugin-compose:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify plugin service isolation
+        run: PYTHONPATH=packages/plugin-api/src python3 tests/compose_plugin_isolation.py ${{ matrix.database }}
+
   frontend-unit:
     needs: changes
     if: needs.changes.outputs.code == 'true'

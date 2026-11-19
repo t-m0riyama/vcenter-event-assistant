@@ -1,3 +1,12 @@
+x-plugin-service: &plugin-service
+  build: .
+  image: ${VEA_IMAGE:-${COMPOSE_PROJECT_NAME}-app}
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp]
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,6 +14,7 @@ services:
       POSTGRES_USER: vea
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: vcenter_event_assistant
+    networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vea -d vcenter_event_assistant"]
       interval: 5s
@@ -14,11 +24,11 @@ services:
       - pg_data:/var/lib/postgresql/data
 
   app:
-    build: .
+    <<: *plugin-service
     ports:
       - "127.0.0.1:${UVICORN_PORT:-8000}:${UVICORN_PORT:-8000}"
     env_file:
-      - .env
+      - ${VEA_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql+asyncpg://vea:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vcenter_event_assistant
       UVICORN_PORT: ${UVICORN_PORT:-8000}
@@ -28,25 +38,82 @@ services:
       UVICORN_LOG_FILE: /var/log/vea/uvicorn.log
       # 動的インストールしたプラグインの配置先（read_only の rootfs 外に置く必要がある）
       VEA_PLUGIN_DIR: /data/plugins
-      # uv のキャッシュも書き込み可能な場所へ（tmpfs の /tmp）
-      UV_CACHE_DIR: /tmp/uv-cache
+      VEA_PLUGIN_SERVICE_SOCKET_DIR: /sockets
     # /app（アプリのコードと .venv）はイメージで root 所有。さらにルートファイルシステムを読み取り専用にし、
     # 書けるのはボリューム（/data・/var/log/vea）と tmpfs（/tmp）だけにする
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp
     volumes:
       - vea_logs:/var/log/vea
       - vea_data:/data
+      - vea_plugins:/data/plugins
+      - vea_worker_socket:/sockets/worker:ro
+      - vea_installer_socket:/sockets/installer:ro
+      - vea_builder_socket:/sockets/builder:ro
+    networks: [default, backend]
     depends_on:
       postgres:
         condition: service_healthy
+      plugin-migrate:
+        condition: service_completed_successfully
+      plugin-worker:
+        condition: service_healthy
+
+  plugin-migrate:
+    <<: *plugin-service
+    command: [python, -m, vcenter_event_assistant.plugins.publication, /legacy-data/plugins, /data/plugins]
+    network_mode: none
+    volumes:
+      - vea_data:/legacy-data:ro
+      - vea_plugins:/data/plugins
+
+  plugin-worker:
+    <<: *plugin-service
+    user: "1001:1001"
+    command: [python, -m, vcenter_event_assistant.plugins.service, worker]
+    environment:
+      VEA_PLUGIN_SERVICE_SOCKET_DIR: /sockets
+      VEA_PLUGIN_DIR: /data/plugins
+    healthcheck:
+      test: [CMD, python, -c, "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect('/sockets/worker/service.sock'); s.close()"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks: [worker]
+    volumes:
+      - vea_worker_socket:/sockets/worker
+      - vea_plugins:/data/plugins:ro
+
+  plugin-installer:
+    <<: *plugin-service
+    user: "1002:1002"
+    command: [python, -m, vcenter_event_assistant.plugins.service, installer]
+    environment:
+      VEA_PLUGIN_SERVICE_SOCKET_DIR: /sockets
+    networks: [installer]
+    volumes:
+      - vea_installer_socket:/sockets/installer
+
+  plugin-builder:
+    <<: *plugin-service
+    user: "1003:1003"
+    command: [python, -m, vcenter_event_assistant.plugins.service, builder]
+    environment:
+      VEA_PLUGIN_SERVICE_SOCKET_DIR: /sockets
+    networks: [builder]
+    volumes:
+      - vea_builder_socket:/sockets/builder
 
 volumes:
   pg_data:
   vea_logs:
   vea_data:
+  vea_plugins:
+  vea_worker_socket:
+  vea_installer_socket:
+  vea_builder_socket:
+
+networks:
+  worker:
+  installer:
+  builder:
+  backend:
+    internal: true

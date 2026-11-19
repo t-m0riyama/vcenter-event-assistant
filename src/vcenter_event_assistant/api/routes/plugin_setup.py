@@ -31,17 +31,18 @@ from vcenter_event_assistant.plugins.config import collector_environment_prefix
 from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
     build_collector_registry,
-    start_collector_registry,
     shutdown_collector_registry,
     activate_collector_registry,
 )
-from vcenter_event_assistant.plugins.reload import _reload_lock
+from vcenter_event_assistant.plugins.reload import _reload_lock, start_replacement_registry
+from vcenter_event_assistant.plugins.remote import CollectorWorkerServiceError, RemoteCollectorPlugin
 from vcenter_event_assistant.services.plugin_configuration import (
     run_setup,
     schema_error,
     validate_values,
     validate_targets,
 )
+from vcenter_event_assistant.services.plugin_installs import prune_retired_plugin_generations
 from vcenter_event_assistant.services.plugin_settings import load_collector_db_overrides
 from vcenter_event_assistant.services.ssh_management import (
     check_ssh_port,
@@ -229,13 +230,19 @@ async def import_configuration(
 
 
 @router.post("/collectors/{plugin_id}/draft/validate")
-async def validate_draft(plugin_id: str, session: AsyncSession = Depends(get_session)):
+async def validate_draft(
+    plugin_id: str, session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
+):
     r = registration(plugin_id)
     d = await session.get(PluginConfigurationDraft, plugin_id)
     if not d:
         raise HTTPException(422, "下書きを保存してください。")
     try:
-        validate_values(d.config_values, r.plugin.manifest.configuration_schema)
+        validate_values(
+            d.config_values, r.plugin.manifest.configuration_schema,
+            allow_legacy_ssh=not (settings.plugin_service_socket_dir and isinstance(r.plugin, RemoteCollectorPlugin)),
+        )
         await validate_targets(
             session, d.config_values, r.plugin.manifest.configuration_schema
         )
@@ -267,7 +274,8 @@ async def execute_action(
     check_revision(d, body.revision)
     try:
         digest = await reference_digest(
-            session, d.config_values, r.plugin.manifest.configuration_schema
+            session, d.config_values, r.plugin.manifest.configuration_schema,
+            allow_legacy=not (settings.plugin_service_socket_dir and isinstance(r.plugin, RemoteCollectorPlugin)),
         )
         started = time.monotonic()
         result = await run_setup(settings, r, copy.deepcopy(d.config_values), action)
@@ -305,7 +313,10 @@ async def apply_configuration(
             409, "環境変数で固定されています。環境変数の設定を確認してください。"
         )
     try:
-        validate_values(d.config_values, r.plugin.manifest.configuration_schema)
+        validate_values(
+            d.config_values, r.plugin.manifest.configuration_schema,
+            allow_legacy_ssh=not (settings.plugin_service_socket_dir and isinstance(r.plugin, RemoteCollectorPlugin)),
+        )
         await validate_targets(
             session, d.config_values, r.plugin.manifest.configuration_schema
         )
@@ -336,7 +347,10 @@ async def apply_configuration(
         generation=previous.generation + 1,
         db_overrides=overrides,
     )
-    candidate = await start_collector_registry(candidate)
+    try:
+        candidate = await start_replacement_registry(settings, candidate)
+    except CollectorWorkerServiceError as exc:
+        raise HTTPException(503, "プラグイン検出に失敗しました。現在の設定は維持されています。") from exc
     failures = [
         x
         for x in candidate.registrations.values()
@@ -349,7 +363,8 @@ async def apply_configuration(
             )
         )
     ]
-    if failures or candidate.get(plugin_id).status != "enabled":
+    applied = candidate.get(plugin_id)
+    if failures or applied is None or applied.status != "enabled":
         await shutdown_collector_registry(candidate)
         raise HTTPException(
             422, "設定を適用できませんでした。既存の収集設定は維持されています。"
@@ -374,6 +389,7 @@ async def apply_configuration(
         ) from None
     activate_collector_registry(candidate)
     await shutdown_collector_registry(previous)
+    await prune_retired_plugin_generations(settings, candidate)
     return {"ok": True, "generation": candidate.generation}
 
 
