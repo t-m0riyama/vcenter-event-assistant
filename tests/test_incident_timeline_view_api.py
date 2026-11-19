@@ -1502,7 +1502,8 @@ async def test_log_source_only_issues_log_queries(client: AsyncClient, monkeypat
     data = await _post(client, sources=["log"])
     monkeypatch.setattr(AsyncSession, "execute", original)
     assert [i["kind"] for i in data["items"]] == ["log"]
-    assert captured and all("log_records" in s or "vcenters" in s for s in captured)
+    timeline_queries = [statement for statement in captured if "FROM auth_sessions" not in statement]
+    assert timeline_queries and all("log_records" in s or "vcenters" in s for s in timeline_queries)
     assert data["highlights"]["new_event_types"] == []
     for b in data["overview"]:
         assert (b["event_total"], b["event_notable"], b["alert"], b["metric_breach"]) == (0, 0, 0, 0)

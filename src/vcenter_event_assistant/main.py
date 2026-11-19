@@ -51,11 +51,13 @@ from vcenter_event_assistant.api.routes.plugins import (
     router as plugins_router,
 )
 from vcenter_event_assistant.auth.bootstrap import ensure_bootstrap_admin
+from vcenter_event_assistant.auth.service import session_policy
+from vcenter_event_assistant.auth.sessions import purge_expired_sessions
 from vcenter_event_assistant.auth.csrf import CsrfMiddleware
 from vcenter_event_assistant.auth.principal_header import PrincipalHeaderMiddleware
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
-from vcenter_event_assistant.db.session import init_db
+from vcenter_event_assistant.db.session import init_db, session_scope
 from vcenter_event_assistant.db.secret_storage_migration import ensure_secret_storage
 from vcenter_event_assistant.jobs.scheduler import setup_scheduler, shutdown_scheduler
 from vcenter_event_assistant.logging_config import configure_logging
@@ -152,6 +154,9 @@ async def lifespan(app: FastAPI):
     )
     cleanup_stale_upload_dirs()
     await init_db(settings=settings)
+    if not settings.local_login_enabled:
+        async with session_scope(settings) as db:
+            await purge_expired_sessions(db, session_policy(settings))
     await recover_plugin_publication(settings)
     await warn_invalid_vcenter_transports(settings)
     await ensure_bootstrap_admin(settings)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
-import os
 import time
 from uuid import UUID
 
@@ -27,7 +26,6 @@ from vcenter_event_assistant.db.models import (
     SSHCredential,
     VCenter,
 )
-from vcenter_event_assistant.plugins.config import collector_environment_prefix
 from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
     build_collector_registry,
@@ -91,12 +89,13 @@ def registration(plugin_id):
     r = get_collector_registry().get(plugin_id)
     if r is None or r.plugin is None:
         raise HTTPException(404, "プラグインが見つかりません。")
+    if r.env_conflict:
+        raise HTTPException(409, r.error)
     return r
 
 
 def definition(r):
     manifest = r.plugin.manifest
-    prefix = collector_environment_prefix(manifest.id)
     return {
         "schema": manifest.configuration_schema,
         "unavailable_reason": schema_error(manifest.configuration_schema),
@@ -104,9 +103,7 @@ def definition(r):
             {"id": a.id, "title": a.title, "required_for_enable": a.required_for_enable}
             for a in manifest.setup_actions
         ],
-        "env_locked_fields": [
-            key[len(prefix) :].lower() for key in os.environ if key.startswith(prefix)
-        ],
+        "env_locked_fields": list(r.env_locked_fields),
     }
 
 

@@ -14,6 +14,7 @@ import logging
 import socket
 import sys
 import time
+from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -540,10 +541,14 @@ def build_remote_plugins(
     """
     paths = _active_paths(plugin_dir)
     discovered = discover_collectors_at(paths, include_environment=include_environment)
+    names = Counter(str(item.get("name", "")) for item in discovered)
     plugins: list[RemoteCollectorPlugin] = []
     failures: dict[str, str] = {}
     for item in discovered:
         name = str(item.get("name", ""))
+        if names[name] > 1:
+            failures[name] = "duplicate collector entry point"
+            continue
         if "manifest" not in item:
             # detail はワーカーが allow-list（import 名など機密を含みえない型）に
             # 限って付けてくる。付いていれば失敗理由として表に出す。

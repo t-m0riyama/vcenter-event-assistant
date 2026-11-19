@@ -31,11 +31,13 @@ from vcenter_event_assistant.auth.service import (
     GENERIC_LOGIN_ERROR,
     authenticate,
     list_realms,
+    record_local_password_failure,
     session_policy,
 )
 from vcenter_event_assistant.auth.principal_header import principal_marker
 from vcenter_event_assistant.auth.sessions import create_session, resolve_session, revoke_session
 from vcenter_event_assistant.auth.tokens import hash_token
+from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
     PasswordChangedConcurrentlyError,
@@ -229,12 +231,19 @@ async def change_own_password(
     user = await db.get(User, principal.user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="ログインが必要です。")
+    if user.locked_until is not None and as_utc(user.locked_until) > utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="試行回数の上限に達しました。時間を置いてから再試行してください。",
+        )
     # この値を条件に更新するので、検証中に別の変更が確定していたら上書きしない
     verified_hash = user.password_hash
     if not (await verify_password(verified_hash, body.current_password)).ok:
-        raise HTTPException(
+        if await record_local_password_failure(db, settings, user.id, verified_hash):
+            audit("login_lockout", realm=LOCAL_REALM, username=user.username, ip=_client_ip(request))
+        return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="現在のパスワードが正しくありません。",
+            content={"detail": "現在のパスワードが正しくありません。"},
         )
     if body.current_password == body.new_password:
         raise HTTPException(
@@ -249,6 +258,7 @@ async def change_own_password(
             password_min_length=settings.password_min_length,
             keep_session_id=principal.session_id,
             expected_hash=verified_hash,
+            require_unlocked=True,
         )
     except PasswordChangedConcurrentlyError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None

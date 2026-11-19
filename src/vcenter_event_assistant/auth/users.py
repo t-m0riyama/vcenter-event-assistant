@@ -10,11 +10,12 @@ import weakref
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
+from vcenter_event_assistant.auth import LOCAL_REALM as LOCAL_REALM
 from vcenter_event_assistant.auth.directory.connection import ConnectOptions, allowed_by_security
 from vcenter_event_assistant.auth.directory.runner import connect_options
 from vcenter_event_assistant.auth.passwords import (
@@ -32,7 +33,6 @@ from vcenter_event_assistant.db.models import (
     User,
 )
 
-LOCAL_REALM = "local"
 USERNAME_MAX_LENGTH = 256
 # User.display_name / User.email の列長
 DISPLAY_NAME_MAX_LENGTH = 256
@@ -286,12 +286,14 @@ async def set_local_password(
     password_min_length: int,
     keep_session_id: uuid.UUID | None = None,
     expected_hash: str | None = None,
+    require_unlocked: bool = False,
 ) -> None:
     """パスワードを変更し、ロックを解除して他のセッションを全部失効させる。
 
     ``expected_hash`` を渡すと、DB 上のハッシュがまだその値のときだけ更新する。現在のパスワードを
     検証してから変更する場合に使う（検証中に別の変更が確定していたら上書きせず
     ``PasswordChangedConcurrentlyError``）。
+    ``require_unlocked`` は自己変更用で、現在のセッションとアカウントの状態も更新時に照合する。
     """
     if user.realm_key != LOCAL_REALM:
         raise UserError("ディレクトリ由来のユーザーのパスワードは変更できません。")
@@ -305,6 +307,18 @@ async def set_local_password(
     stmt = update(User).where(User.id == user.id)
     if expected_hash is not None:
         stmt = stmt.where(User.password_hash == expected_hash)
+    if require_unlocked:
+        current_session = select(AuthSession.id).where(
+            AuthSession.id == keep_session_id,
+            AuthSession.user_id == User.id,
+            AuthSession.authorization_generation == User.authorization_generation,
+        ).exists()
+        stmt = stmt.where(
+            User.is_active.is_(True),
+            User.authorization_generation == user.authorization_generation,
+            or_(User.locked_until.is_(None), User.locked_until <= utcnow()),
+            current_session,
+        )
     result = await db.execute(stmt.values(**values).execution_options(synchronize_session=False))
     if not result.rowcount:
         raise PasswordChangedConcurrentlyError()

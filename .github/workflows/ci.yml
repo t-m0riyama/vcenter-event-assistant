@@ -179,6 +179,34 @@ jobs:
             )
           done
 
+  auth-postgres:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-26.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vea_ci
+          POSTGRES_PASSWORD: vea_ci
+          POSTGRES_DB: vea_ci
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U vea_ci -d vea_ci"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.10.4"
+      - run: uv sync --locked --all-groups
+      - run: uv run --no-sync pytest -q tests/test_auth_postgres.py
+        env:
+          VEA_TEST_AUTH_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
+
   plugin-compose:
     needs: changes
     if: needs.changes.outputs.code == 'true'

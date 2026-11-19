@@ -99,6 +99,20 @@ def validate_vcenter_host(
         allowed_suffixes: 本番で許可する FQDN サフィックス（``VCENTER_ALLOWED_HOST_SUFFIXES``）。
         resolve_dns: True のとき DNS 解決後の IP も検査する（接続直前は True、スキーマ層は False）。
     """
+    normalized, _ = _validated_target(host, allowed_suffixes, resolve_dns=resolve_dns)
+    return normalized
+
+
+def resolve_vcenter_target(
+    host: str, *, allowed_suffixes: list[str] | None = None
+) -> tuple[str, tuple[str, ...]]:
+    """Return the original hostname and the addresses approved for this connection."""
+    return _validated_target(host, allowed_suffixes, resolve_dns=True)
+
+
+def _validated_target(
+    host: str, allowed_suffixes: list[str] | None, *, resolve_dns: bool
+) -> tuple[str, tuple[str, ...]]:
     normalized = _normalize_host(host)
     suffixes = allowed_suffixes or []
     lowered = normalized.lower()
@@ -119,7 +133,7 @@ def validate_vcenter_host(
             raise ValueError(
                 "host resolves to a blocked IP range (private, loopback, link-local, or metadata)"
             )
-        return normalized
+        return normalized, (str(ip),)
 
     if not _HOSTNAME_RE.match(normalized):
         raise ValueError("host must be a valid hostname or public IP address")
@@ -130,7 +144,7 @@ def validate_vcenter_host(
         )
 
     if not resolve_dns:
-        return normalized
+        return normalized, ()
 
     resolved_ips = _resolve_host_ips(normalized)
     # Suffix 一致ホストはオンプレ向けに RFC1918 プライベート IP を許可する。
@@ -155,4 +169,4 @@ def validate_vcenter_host(
                 "(private, loopback, link-local, or metadata)"
             )
 
-    return normalized
+    return normalized, tuple(str(ip) for ip in resolved_ips)

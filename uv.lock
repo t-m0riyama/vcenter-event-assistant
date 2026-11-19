@@ -2143,7 +2143,7 @@ dev = [
 
 [[package]]
 name = "vcenter-event-assistant-plugin-api"
-version = "1.5.0"
+version = "1.5.1"
 source = { editable = "packages/plugin-api" }
 
 [package.optional-dependencies]

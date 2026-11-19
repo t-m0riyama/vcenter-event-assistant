@@ -22,6 +22,7 @@ from vcenter_event_assistant.plugins.config import (
     CollectorConfig,
     apply_collector_database_overrides,
     apply_collector_environment,
+    collector_environment,
     load_collector_config_file,
 )
 from vcenter_event_assistant.settings import Settings
@@ -39,6 +40,8 @@ class CollectorRegistration:
     status: str
     error: str | None = None
     worker_service_failed: bool = False
+    env_locked_fields: tuple[str, ...] = ()
+    env_conflict: bool = False
 
 
 class CollectorRegistry:
@@ -248,6 +251,7 @@ def build_collector_registry(
             "discovery", None, "discovery", None, "failed", discovery_error
         )
     metric_owners: dict[str, str] = {}
+    valid_candidates = []
     for plugin, source, candidate_id in candidates:
         try:
             plugin_id = plugin.manifest.id
@@ -267,12 +271,30 @@ def build_collector_registry(
                 f"invalid plugin contract: {type(exc).__name__}",
             )
             continue
+        valid_candidates.append((plugin, source, plugin_id, error))
+
+    environment, conflicts = collector_environment(
+        {plugin_id for _, _, plugin_id, error in valid_candidates if error is None}
+    )
+    ambiguous = {plugin_id for owners in conflicts.values() for plugin_id in owners}
+    for name in sorted(conflicts):
+        logger.error("Ambiguous collector environment variable %s; migrate to VEA_COLLECTOR_ID__", name)
+    for plugin, source, plugin_id, error in valid_candidates:
+        fields = tuple(sorted(environment.get(plugin_id, {})))
+        if plugin_id in ambiguous:
+            registrations[plugin_id] = CollectorRegistration(
+                plugin_id, plugin, source, None, "failed",
+                "ambiguous collector environment variable; migrate to VEA_COLLECTOR_ID__",
+                env_locked_fields=fields,
+                env_conflict=True,
+            )
+            continue
         raw = apply_collector_environment(
-            plugin_id,
             apply_collector_database_overrides(
                 configured.get(plugin_id, {}),
                 (db_overrides or {}).get(plugin_id),
             ),
+            environment.get(plugin_id, {}),
         )
         default_enabled = source == "builtin"
         enabled = bool(raw.get("enabled", default_enabled))
@@ -296,16 +318,9 @@ def build_collector_registry(
         if plugin_id in registrations:
             error = "duplicate plugin id"
             previous = registrations[plugin_id]
-            registrations[plugin_id] = CollectorRegistration(
-                plugin_id,
-                previous.plugin,
-                previous.source,
-                previous.config,
-                "failed",
-                error,
-            )
+            registrations[plugin_id] = replace(previous, status="failed", error=error)
             continue
-        for definition in plugin.manifest.metric_definitions if enabled else ():
+        for definition in plugin.manifest.metric_definitions if enabled and not error else ():
             owner = metric_owners.get(definition.key)
             if owner is not None:
                 error = f"metric key {definition.key!r} is already owned by {owner}"
@@ -313,7 +328,7 @@ def build_collector_registry(
             metric_owners[definition.key] = plugin_id
         status = "failed" if error else ("enabled" if enabled else "disabled")
         registrations[plugin_id] = CollectorRegistration(
-            plugin_id, plugin, source, config, status, error
+            plugin_id, plugin, source, config, status, error, env_locked_fields=fields
         )
 
     for plugin_id in configured.keys() - registrations.keys():

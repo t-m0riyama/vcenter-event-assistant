@@ -8,7 +8,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import case, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,7 +27,11 @@ from vcenter_event_assistant.auth.passwords import (
     hash_password,
     verify_password,
 )
-from vcenter_event_assistant.auth.sessions import SessionPolicy, credential_marker, revoke_all_for_user
+from vcenter_event_assistant.auth.sessions import (
+    SessionPolicy,
+    credential_marker,
+    invalidate_user_authorization,
+)
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     DISPLAY_NAME_MAX_LENGTH,
@@ -69,6 +73,7 @@ def session_policy(settings: Settings) -> SessionPolicy:
         idle_timeout=timedelta(minutes=settings.session_idle_timeout_minutes),
         absolute_timeout=timedelta(hours=settings.session_absolute_timeout_hours),
         directory_options=connect_options(settings),
+        local_login_enabled=settings.local_login_enabled,
     )
 
 
@@ -145,7 +150,7 @@ async def _upsert_directory_user(
             if user.role != values["role"]:
                 # ロールは毎リクエストでユーザー行から読むので、ほかのセッションを残すと古い Cookie が
                 # 新しいロールで使えてしまう。ローカルユーザーのロール変更と同じく失効させる
-                await revoke_all_for_user(db, user.id)
+                await invalidate_user_authorization(db, user)
             for key, value in values.items():
                 setattr(user, key, value)
             await db.flush()
@@ -258,9 +263,11 @@ async def _authenticate_local(
         return LoginOutcome(None, "locked")
 
     generation = credential_marker(user)
-    result = await verify_password(user.password_hash, password)
+    authorization_generation = user.authorization_generation
+    verified_hash = user.password_hash
+    result = await verify_password(verified_hash, password)
     if not result.ok:
-        if await _record_failure(db, settings, user.id, now):
+        if await record_local_password_failure(db, settings, user.id, verified_hash):
             audit("login_lockout", level=logging.WARNING, realm=LOCAL_REALM, username=user.username)
         return LoginOutcome(None, "bad_password")
 
@@ -278,9 +285,8 @@ async def _authenticate_local(
         # 検証している間にパスワード変更・無効化が確定した。これより後の変更は
         # セッションの世代照合（sessions.credential_marker）で無効になる。
         return LoginOutcome(None, "credential_changed")
-    if not await _record_success(db, user.id, now):
-        # 検証している間に、並行した失敗でロックされた
-        return LoginOutcome(None, "locked")
+    if not await _record_success(db, user, now, authorization_generation):
+        return LoginOutcome(None, "credentials_or_authorization_changed")
     if result.needs_rehash and user.password_hash is not None:
         await _rehash(db, user, password)
     return LoginOutcome(user, "ok")
@@ -291,29 +297,31 @@ async def _authenticate_local(
 _NO_SYNC = {"synchronize_session": False}
 
 
-async def _record_failure(
-    db: AsyncSession, settings: Settings, user_id: uuid.UUID, now: datetime
+async def record_local_password_failure(
+    db: AsyncSession, settings: Settings, user_id: uuid.UUID, verified_hash: str | None
 ) -> bool:
     """失敗回数を 1 増やし、閾値に達したらロックする。ロックしたら ``True``。"""
-    count = await db.scalar(
+    now = utcnow()
+    count = User.failed_login_count + 1
+    threshold_reached = count >= settings.login_max_failed_attempts
+    locked_until = await db.scalar(
         update(User)
-        .where(User.id == user_id)
-        .values(failed_login_count=User.failed_login_count + 1)
-        .returning(User.failed_login_count)
-        .execution_options(**_NO_SYNC)
-    )
-    if count is None or count < settings.login_max_failed_attempts:
-        return False
-    locked = await db.execute(
-        update(User)
-        .where(User.id == user_id, User.failed_login_count >= settings.login_max_failed_attempts)
-        .values(
-            locked_until=now + timedelta(minutes=settings.login_lockout_minutes),
-            failed_login_count=0,
+        .where(
+            User.id == user_id,
+            User.is_active.is_(True),
+            User.password_hash == verified_hash,
+            or_(User.locked_until.is_(None), User.locked_until <= now),
         )
+        .values(
+            locked_until=case(
+                (threshold_reached, now + timedelta(minutes=settings.login_lockout_minutes))
+            ),
+            failed_login_count=case((threshold_reached, 0), else_=count),
+        )
+        .returning(User.locked_until)
         .execution_options(**_NO_SYNC)
     )
-    return bool(locked.rowcount)
+    return locked_until is not None
 
 
 async def _rehash(db: AsyncSession, user: User, password: str) -> None:
@@ -334,13 +342,18 @@ async def _rehash(db: AsyncSession, user: User, password: str) -> None:
         set_committed_value(user, "password_hash", new_hash)
 
 
-async def _record_success(db: AsyncSession, user_id: uuid.UUID, now: datetime) -> bool:
+async def _record_success(
+    db: AsyncSession, user: User, now: datetime, authorization_generation: int
+) -> bool:
     """ロックされていなければ失敗回数を戻して ``True``。ロック中なら ``False``。"""
     done = await db.execute(
         update(User)
         .where(
-            User.id == user_id,
-            or_(User.locked_until.is_(None), User.locked_until <= now),
+            User.id == user.id,
+            User.authorization_generation == authorization_generation,
+            User.password_changed_at == user.password_changed_at,
+            User.is_active.is_(True),
+            or_(User.locked_until.is_(None), User.locked_until <= utcnow()),
         )
         .values(failed_login_count=0, locked_until=None, last_login_at=now)
         .execution_options(**_NO_SYNC)

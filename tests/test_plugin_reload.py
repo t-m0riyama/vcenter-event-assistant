@@ -12,7 +12,7 @@ from vcenter_event_assistant.jobs.scheduler import (
     _collector_job_id,
     reconcile_collector_jobs,
 )
-from vcenter_event_assistant.plugins.config import collector_env_locked_fields
+from vcenter_event_assistant.plugins.config import collector_environment, collector_env_locked_fields
 from vcenter_event_assistant.plugins.registry import (
     build_collector_registry,
     set_collector_registry,
@@ -68,14 +68,45 @@ def test_environment_beats_database_override(monkeypatch: pytest.MonkeyPatch) ->
         Settings(), db_overrides={EVENTS_ID: {"interval_seconds": 999}}
     )
     assert registry.get(EVENTS_ID).config.interval_seconds == 77
-    assert collector_env_locked_fields(EVENTS_ID) == ["interval_seconds"]
+    assert collector_env_locked_fields(registry.get(EVENTS_ID).env_locked_fields) == ["interval_seconds"]
 
 
 def test_env_locked_fields_ignores_plugin_specific_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("VEA_COLLECTOR__BUILTIN_VCENTER_EVENTS__SENSOR", "cpu")
-    assert collector_env_locked_fields(EVENTS_ID) == []
+    registry = build_collector_registry(Settings())
+    assert collector_env_locked_fields(registry.get(EVENTS_ID).env_locked_fields) == []
+
+
+def test_exact_collector_environment_overrides_legacy_for_the_same_field() -> None:
+    encoded_id = EVENTS_ID.encode().hex().upper()
+    values, conflicts = collector_environment({EVENTS_ID}, {
+        "VEA_COLLECTOR__BUILTIN_VCENTER_EVENTS__INTERVAL_SECONDS": "77",
+        f"VEA_COLLECTOR_ID__{encoded_id}__INTERVAL_SECONDS": "99",
+        f"VEA_COLLECTOR_ID__{encoded_id}__SENSOR": "cpu",
+    })
+    assert not conflicts
+    assert values[EVENTS_ID] == {"interval_seconds": "99", "sensor": "cpu"}
+
+
+def test_exact_collector_environment_keeps_distinct_ids_separate() -> None:
+    ids = {"example.sensor", "example-sensor"}
+    variables = {
+        f"VEA_COLLECTOR_ID__{plugin_id.encode().hex().upper()}__ENABLED": plugin_id
+        for plugin_id in ids
+    }
+    values, conflicts = collector_environment(ids, variables)
+    assert not conflicts
+    assert values == {plugin_id: {"enabled": plugin_id} for plugin_id in ids}
+
+
+def test_legacy_collector_environment_requires_exactly_one_owner() -> None:
+    ids = {"example.sensor", "example.sensor__backup"}
+    variable = "VEA_COLLECTOR__EXAMPLE_SENSOR__BACKUP__ENABLED"
+    values, conflicts = collector_environment(ids, {variable: "true"})
+    assert conflicts == {variable: frozenset(ids)}
+    assert values == {plugin_id: {} for plugin_id in ids}
 
 
 def test_none_columns_delegate_to_lower_sources(tmp_path) -> None:
@@ -251,9 +282,10 @@ async def test_reload_required_ignores_env_locked_fields(
     monkeypatch.setenv("VEA_COLLECTOR__BUILTIN_VCENTER_EVENTS__INTERVAL_SECONDS", "77")
     set_collector_registry(build_collector_registry(Settings()))
     try:
-        await client.patch(
+        response = await client.patch(
             f"/api/plugins/collectors/{EVENTS_ID}", json={"interval_seconds": 600}
         )
+        assert response.status_code == 422
         body = (await client.get("/api/plugins/collectors")).json()
     finally:
         set_collector_registry(None)

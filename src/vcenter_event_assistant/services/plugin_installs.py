@@ -183,13 +183,9 @@ async def _run_install_job(
     upload_dir: Path | None = None,
 ) -> None:
     try:
-        if settings.plugin_service_socket_dir:
-            async with _publication_lock:
+        async with _publication_lock:
+            if settings.plugin_service_socket_dir:
                 await _finish_publication(settings)
-                await _install_and_record(
-                    settings, distribution=distribution, source=source, from_index=from_index
-                )
-        else:
             await _install_and_record(
                 settings, distribution=distribution, source=source, from_index=from_index
             )
