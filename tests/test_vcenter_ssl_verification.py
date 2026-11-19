@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import ssl
 from unittest.mock import MagicMock, patch
 
@@ -28,6 +29,30 @@ class TestBuildSslContext:
 
 
 class TestConnectVcenterVerifySsl:
+    @patch("vcenter_event_assistant.collectors.connection.SmartConnect")
+    def test_unverified_direct_connection_uses_checked_address(self, mock_sc: MagicMock) -> None:
+        connect_vcenter(host="vc", port=8443, username="u", password="p", verify_ssl=False)
+        assert mock_sc.call_args.kwargs["host"] == "93.184.216.34"
+        assert mock_sc.call_args.kwargs["customHeaders"] == {"Host": "vc:8443"}
+        context = mock_sc.call_args.kwargs["sslContext"]
+        with socket.socket() as sock:
+            with context.wrap_socket(
+                sock, server_hostname="93.184.216.34", do_handshake_on_connect=False,
+            ) as tls:
+                assert tls.server_hostname == "vc"
+
+    @patch("vcenter_event_assistant.collectors.connection.SmartConnect")
+    @patch("vcenter_event_assistant.collectors.connection.resolve_vcenter_target")
+    def test_unverified_direct_connection_retries_only_checked_addresses(
+        self, resolve_target: MagicMock, mock_sc: MagicMock,
+    ) -> None:
+        resolve_target.return_value = ("vc", ("192.0.2.1", "192.0.2.2"))
+        service_instance = object()
+        mock_sc.side_effect = (OSError("connection refused"), service_instance)
+        assert connect_vcenter(host="vc", port=443, username="u", password="p", verify_ssl=False) is service_instance
+        resolve_target.assert_called_once()
+        assert [call.kwargs["host"] for call in mock_sc.call_args_list] == ["192.0.2.1", "192.0.2.2"]
+
     @patch("vcenter_event_assistant.collectors.connection.SmartConnect")
     def test_passes_verify_ssl_to_ssl_context(self, mock_sc: MagicMock) -> None:
         mock_sc.return_value = MagicMock()

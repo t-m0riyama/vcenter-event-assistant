@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shutil
 import uuid
@@ -20,15 +21,16 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from vcenter_event_assistant.plugins.config import collector_environment, collector_environment_prefix
 from vcenter_event_assistant.plugins.install_client import install_via_service
-from vcenter_event_assistant.plugins.publication import publish, unpublish
+from vcenter_event_assistant.plugins.publication import installed_paths, publish, unpublish
 from vcenter_event_assistant.plugins.service_protocol import PluginServiceError
 from vcenter_event_assistant.plugins.subprocess_env import (
     installer_env,
     proxy_has_credentials,
     url_has_credentials,
 )
-from vcenter_event_assistant.plugins.remote import discover_collectors_at
+from vcenter_event_assistant.plugins.remote import discover_collectors_at, plugin_search_paths
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -211,6 +213,49 @@ def _validate_provides_collectors(path: Path) -> tuple[str, ...]:
     return tuple(str(item["manifest"]["id"]) for item in discovered)
 
 
+def _check_environment_before_publication(
+    root: Path, distribution: str, version: str, new_ids: tuple[str, ...], *, separated: bool
+) -> None:
+    prefixes = tuple(collector_environment_prefix(plugin_id) for plugin_id in new_ids)
+    if not any(name.startswith(prefixes) for name in os.environ):
+        return
+
+    from vcenter_event_assistant.plugins.builtin import builtin_collectors
+
+    if separated:
+        installed = installed_paths(root)
+        replaced = installed.pop((distribution, version), None)
+        paths = list(installed.values())
+    else:
+        replaced = str((root / distribution / version).resolve())
+        paths = [path for path in plugin_search_paths(str(root)) if path != replaced]
+    current = {plugin.manifest.id for plugin in builtin_collectors()}
+    current.update(
+        item["manifest"]["id"]
+        for item in discover_collectors_at(paths, include_environment=True)
+        if "manifest" in item
+    )
+    replaced_discovery = (
+        discover_collectors_at([replaced])
+        if replaced is not None and Path(replaced).is_dir() else []
+    )
+    replaced_ids = {
+        item["manifest"]["id"] for item in replaced_discovery
+        if "manifest" in item
+    }
+    _, previous_conflicts = collector_environment(current | replaced_ids)
+    _, proposed_conflicts = collector_environment(current | set(new_ids))
+    introduced = sorted(
+        name for name, owners in proposed_conflicts.items()
+        if owners - previous_conflicts.get(name, frozenset())
+    )
+    if introduced:
+        raise PluginInstallError(
+            "ambiguous collector environment variables; migrate to VEA_COLLECTOR_ID__: "
+            + ", ".join(introduced)
+        )
+
+
 async def install_plugin(
     settings: Settings, *, source: str, from_index: bool
 ) -> InstallOutcome:
@@ -257,6 +302,10 @@ async def install_plugin(
             await _run_install(_install_command(settings, staging, source, from_index=from_index))
             distribution, version = await asyncio.to_thread(_installed_distribution, staging)
         collector_ids = await asyncio.to_thread(_validate_provides_collectors, staging)
+        await asyncio.to_thread(
+            _check_environment_before_publication, root, distribution, version, collector_ids,
+            separated=bool(settings.plugin_service_socket_dir),
+        )
 
         if settings.plugin_service_socket_dir:
             job = asyncio.get_running_loop().run_in_executor(

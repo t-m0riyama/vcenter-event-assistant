@@ -10,6 +10,7 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
+from vcenter_event_assistant.auth import LOCAL_REALM
 from vcenter_event_assistant.auth.directory.connection import ConnectOptions, allowed_by_security
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.tokens import hash_token, new_session_token
@@ -29,6 +30,7 @@ class SessionPolicy:
     absolute_timeout: timedelta
     # ディレクトリの接続の方針。指定があれば、方針で接続を拒否されるディレクトリのセッションも使わせない
     directory_options: ConnectOptions | None = None
+    local_login_enabled: bool = True
 
     @property
     def touch_interval(self) -> timedelta:
@@ -77,6 +79,7 @@ async def create_session(
             client_ip=(client_ip or None) and client_ip[:_CLIENT_IP_MAX],
             user_agent=(user_agent or None) and user_agent[:_USER_AGENT_MAX],
             credential_marker=credential_marker(user),
+            authorization_generation=user.authorization_generation,
         )
     )
     await db.flush()
@@ -105,28 +108,32 @@ async def resolve_session(
     if not token:
         return None
     now = now or utcnow()
-    row = await db.scalar(select(AuthSession).where(AuthSession.token_hash == hash_token(token)))
-    if row is None:
+    lookup = (
+        select(AuthSession, User).join(User, User.id == AuthSession.user_id)
+        .where(AuthSession.token_hash == hash_token(token))
+        .execution_options(populate_existing=True)
+    )
+    record = (await db.execute(lookup)).one_or_none()
+    if record is None:
         return None
+    row, user = record
     if _is_expired(row, policy, now):
         if await _delete_if_still_expired(db, row, policy, now):
             return None
         # 削除されなかったのは、読み込んだ後に別のリクエストが last_seen_at を進めたか、
         # 先に削除したため。行がなければ None になる 1 回の SELECT で読み直す
         # （存在確認と refresh を分けると、その間に削除されたとき例外になる）。
-        fresh = await db.scalar(
-            select(AuthSession)
-            .where(AuthSession.id == row.id)
-            .execution_options(populate_existing=True)
-        )
-        if fresh is None:
+        record = (await db.execute(lookup)).one_or_none()
+        if record is None:
             db.expunge(row)
             return None
-        row = fresh
-    user = await db.get(User, row.user_id)
+        row, user = record
+        if _is_expired(row, policy, now):
+            return None
     if (
-        user is None
-        or not user.is_active
+        not user.is_active
+        or (user.realm_key == LOCAL_REALM and not policy.local_login_enabled)
+        or row.authorization_generation != user.authorization_generation
         or row.credential_marker != credential_marker(user)
         or not await _directory_usable(db, user, policy.directory_options)
     ):
@@ -222,6 +229,29 @@ async def revoke_all_for_user(
     await db.execute(stmt)
 
 
+async def invalidate_user_authorization(
+    db: AsyncSession, user: User, *, except_session_id: uuid.UUID | None = None
+) -> None:
+    """Advance the authorization generation and revoke the old sessions atomically."""
+    generation = await db.scalar(
+        update(User)
+        .where(User.id == user.id)
+        .values(authorization_generation=User.authorization_generation + 1)
+        .returning(User.authorization_generation)
+        .execution_options(synchronize_session=False)
+    )
+    await revoke_all_for_user(db, user.id, except_session_id=except_session_id)
+    if generation is None:
+        return
+    set_committed_value(user, "authorization_generation", generation)
+    if except_session_id is not None:
+        await db.execute(
+            update(AuthSession)
+            .where(AuthSession.id == except_session_id, AuthSession.user_id == user.id)
+            .values(authorization_generation=generation)
+        )
+
+
 async def purge_expired_sessions(
     db: AsyncSession,
     policy: SessionPolicy,
@@ -229,12 +259,11 @@ async def purge_expired_sessions(
     now: datetime | None = None,
 ) -> int:
     now = now or utcnow()
-    result = await db.execute(
-        delete(AuthSession).where(
-            or_(
-                AuthSession.expires_at <= now,
-                AuthSession.last_seen_at <= now - policy.idle_timeout,
-            )
-        )
-    )
+    conditions = [
+        AuthSession.expires_at <= now,
+        AuthSession.last_seen_at <= now - policy.idle_timeout,
+    ]
+    if not policy.local_login_enabled:
+        conditions.append(AuthSession.user_id.in_(select(User.id).where(User.realm_key == LOCAL_REALM)))
+    result = await db.execute(delete(AuthSession).where(or_(*conditions)))
     return int(result.rowcount or 0)

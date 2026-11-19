@@ -141,7 +141,7 @@ def _collector_reads(
                 timeout_seconds=registration.config.timeout_seconds
                 if registration.config
                 else None,
-                env_locked_fields=collector_env_locked_fields(registration.plugin_id),
+                env_locked_fields=collector_env_locked_fields(registration.env_locked_fields),
                 runs=runs_by_plugin.get(registration.plugin_id, []),
             )
         )
@@ -159,7 +159,7 @@ def _reload_required(registry: CollectorRegistry, overrides: dict[str, dict]) ->
         if registration is None or registration.config is None:
             # 未インストール、または設定が組み立てられなかったものは判定対象外。
             continue
-        locked = set(collector_env_locked_fields(plugin_id))
+        locked = set(collector_env_locked_fields(registration.env_locked_fields))
         config = registration.config
         effective = {
             "enabled": registration.status == "enabled",
@@ -199,9 +199,15 @@ async def update_collector(
 ) -> CollectorStatusListResponse:
     """設定を DB に保存する。稼働中の世代への反映は明示的なリロードで行う。"""
     registry = get_collector_registry()
-    if registry.get(plugin_id) is None:
-        raise HTTPException(status_code=404, detail="collector is not registered")
     current = registry.get(plugin_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="collector is not registered")
+    if current.env_conflict:
+        raise HTTPException(409, current.error)
+    for field in collector_env_locked_fields(current.env_locked_fields):
+        value = getattr(payload, field)
+        if value is not None and (current.config is None or value != getattr(current.config, field)):
+            raise HTTPException(422, "環境変数で設定した項目は変更できません。")
     if (
         payload.enabled is True
         and current.plugin
@@ -238,7 +244,7 @@ async def update_collector(
                     raise HTTPException(
                         422, "現在の設定で接続テストを完了してください。"
                     )
-        elif not current.config.values:
+        elif current.config is None or not current.config.values:
             raise HTTPException(
                 422, "設定を始めるから接続テストと設定の適用を行ってください。"
             )

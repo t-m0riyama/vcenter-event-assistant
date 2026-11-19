@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- Reject IPv6 literals with scope identifiers in SSH configuration and connections. Use a permitted address without a scope identifier or a DNS name.
+
 ## 1.5.0
 
 - `network` submodule: `check_ssh_address` and `resolve_ssh_address` resolve an SSH target once and reject loopback, link-local (cloud metadata), multicast, unspecified and reserved addresses, so that plugins connect to the checked IP instead of resolving the name again (DNS rebinding).
@@ -42,7 +46,22 @@
 一致すること**を確認したうえでビルド・検証し、PyPI の Trusted Publishing（OIDC）で
 公開する。API トークンはシークレットに置かない。
 
-`workflow_dispatch` から `dry_run` で起動すると、公開せずにビルドと検証だけを行える。
+`workflow_dispatch` は常にビルドと検証だけを行う。公開ジョブは `main` に含まれるコミットへの
+タグの push で起動し、`pypi` Environment の承認を待つ。
+
+### Trusted Publishing の設定と切替
+
+1. GitHub の `pypi` Environment で承認者を設定し、デプロイ対象をタグ `plugin-api-v*` に限定する。
+   同じタグの作成権限をリリース担当者に絞り、更新・削除を ruleset で保護する。
+   承認者が一人の間は自己承認になる。独立した承認者を追加できる場合は自己承認を禁止する。
+2. PyPI の Publishing 設定で Owner `t-m0riyama`、Repository `vcenter-event-assistant`、
+   Workflow `release-plugin-api.yml`、Environment `pypi` の Publisher を登録する。
+   初回公開前の場合は、同じ値で Pending Publisher を登録する。
+3. 同じワークフローの Environment 指定なしの Publisher を削除し、一覧で残っていないことを確認する。
+4. ワークフローを `main` にマージし、手動実行で検証用成果物が生成されることを確認してからタグを作る。
+
+アプリ本体はワークスペースに同梱した Plugin API を使用する。インデックスから Plugin API
+`1.5.1` 以上を要求するプラグインを導入する場合は、そのバージョンの PyPI 公開後に行う。
 
 ## [1.3.0] - 2026-10-02
 

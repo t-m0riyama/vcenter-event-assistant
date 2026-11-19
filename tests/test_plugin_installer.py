@@ -13,6 +13,7 @@ import pytest
 from httpx import AsyncClient
 from plugin_wheel_fixture import build_wheel
 
+from vcenter_event_assistant.plugins import installer
 from vcenter_event_assistant.plugins.installer import (
     PluginInstallError,
     install_plugin,
@@ -136,6 +137,23 @@ async def test_install_rolls_back_when_the_package_is_not_installable(
     broken.write_bytes(b"not a wheel at all")
     with pytest.raises(PluginInstallError):
         await install_plugin(plugin_settings, source=str(broken), from_index=False)
+    assert plugin_search_paths(plugin_settings.plugin_dir) == []
+
+
+async def test_install_requires_unambiguous_legacy_environment(
+    plugin_settings, wheel_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VEA_COLLECTOR__EXAMPLE_TEMPERATURE__UNITS", "celsius")
+    original_discovery = installer.discover_collectors_at
+
+    def discover(paths, *, include_environment=False):
+        if include_environment:
+            return [{"manifest": {"id": "example-temperature"}}]
+        return original_discovery(paths)
+
+    monkeypatch.setattr(installer, "discover_collectors_at", discover)
+    with pytest.raises(PluginInstallError, match="ambiguous collector environment"):
+        await install_plugin(plugin_settings, source=str(wheel_path), from_index=False)
     assert plugin_search_paths(plugin_settings.plugin_dir) == []
 
 

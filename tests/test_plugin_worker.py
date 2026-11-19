@@ -107,6 +107,7 @@ def _params() -> ConnectionParams:
 
 
 def test_plugin_search_paths_lists_distribution_versions(plugin_dir, tmp_path) -> None:
+    (Path(plugin_dir) / ".staging" / "pending").mkdir(parents=True)
     paths = plugin_search_paths(plugin_dir)
     assert len(paths) == 1
     assert paths[0].endswith("example-collector/0.1.0")

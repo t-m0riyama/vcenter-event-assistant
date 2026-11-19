@@ -779,9 +779,10 @@ async def test_local_admins_do_not_count_when_local_login_is_disabled(
     directory_id = (await client.post("/api/auth/directories", json=_directory_body())).json()["id"]
     monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
-    resp = await client.patch(f"/api/auth/directories/{directory_id}", json={"is_enabled": False})
-    assert resp.status_code == 409
-    assert (await client.delete(f"/api/auth/directories/{directory_id}")).status_code == 409
+    async with _DirectoryAdmin(f"dir:{directory_id}") as admin:
+        resp = await admin.patch(f"/api/auth/directories/{directory_id}", json={"is_enabled": False})
+        assert resp.status_code == 409
+        assert (await admin.delete(f"/api/auth/directories/{directory_id}")).status_code == 409
 
 
 async def test_removing_the_last_admin_mapping_is_guarded(
@@ -798,14 +799,15 @@ async def test_removing_the_last_admin_mapping_is_guarded(
     # ディレクトリ専用の運用では、唯一の admin の対応はなくせない（確認の資格情報を付けても同じ）
     monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
-    resp = await client.patch(url, json=without_admin)
-    assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
-    resp = await client.patch(url, json={**without_admin, "verification": ALICE_CREDENTIALS})
-    assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
-    # ほかに admin の対応を持つ有効なディレクトリがあればよい
-    other = _directory_body(name="Other LDAP")
-    assert (await client.post("/api/auth/directories", json=other)).status_code == 201
-    assert (await client.patch(url, json=without_admin)).status_code == 200
+    async with _DirectoryAdmin(f"dir:{directory_id}") as admin:
+        resp = await admin.patch(url, json=without_admin)
+        assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
+        resp = await admin.patch(url, json={**without_admin, "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 409 and "管理者" in resp.json()["detail"]
+        other = await admin.post("/api/auth/directories", json=_directory_body(name="Other LDAP"))
+        assert other.status_code == 201
+    async with _DirectoryAdmin(f"dir:{other.json()['id']}") as other_admin:
+        assert (await other_admin.patch(url, json=without_admin)).status_code == 200
 
 
 def test_ad_domain_qualified_login_matches_the_domain(directory: FakeDirectory) -> None:
@@ -1987,7 +1989,7 @@ async def test_directory_admin_must_verify_changes_to_their_own_directory(client
 async def test_changes_must_be_verified_when_no_other_admin_path_exists(
     client, directory: FakeDirectory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """(b) 設定上ほかに admin の経路がなければ、ほかの経路の admin が操作するときも確かめる。"""
+    """ローカルログインからディレクトリ専用に切り替えると、保存前の確認が必要になる。"""
     directory_id = await _create_directory(client)
     url = f"/api/auth/directories/{directory_id}"
     change = {"user_search_filter": "(uid={username})"}
@@ -1997,13 +1999,14 @@ async def test_changes_must_be_verified_when_no_other_admin_path_exists(
 
     monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
-    resp = await client.patch(url, json=change)
-    assert resp.status_code == 409
-    assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
-    resp = await client.patch(url, json={"username_attribute": "cn", "verification": ALICE_CREDENTIALS})
-    assert resp.status_code == 409
-    resp = await client.patch(url, json={**change, "verification": ALICE_CREDENTIALS})
-    assert resp.status_code == 200, resp.text
+    async with _DirectoryAdmin(f"dir:{directory_id}") as admin:
+        resp = await admin.patch(url, json=change)
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
+        resp = await admin.patch(url, json={"username_attribute": "cn", "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 409
+        resp = await admin.patch(url, json={**change, "verification": ALICE_CREDENTIALS})
+        assert resp.status_code == 200, resp.text
 
 
 async def test_verification_refuses_users_disabled_in_the_app(
@@ -2022,13 +2025,19 @@ async def test_verification_refuses_users_disabled_in_the_app(
     get_settings.cache_clear()
     url = f"/api/auth/directories/{directory_id}"
     change = {"user_search_filter": "(uid={username})"}
-    resp = await client.patch(url, json={**change, "verification": {"username": "bob", "password": "bob-secret"}})
-    assert resp.status_code == 409
-    assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
-    assert "無効" in resp.json()["detail"]
-    # まだ行のない（初回ログイン前の）ユーザーなら、ログインすると有効な行が作られるので通す
-    resp = await client.patch(url, json={**change, "verification": ALICE_CREDENTIALS})
-    assert resp.status_code == 200, resp.text
+    directory.entries[f"uid=carol,ou=people,{BASE}"] = {
+        **directory.entries[ALICE_DN], "uid": "carol", "entryUUID": "6f1c-carol",
+    }
+    async with _DirectoryAdmin(realm) as admin:
+        resp = await admin.patch(url, json={**change, "verification": {"username": "bob", "password": "bob-secret"}})
+        assert resp.status_code == 409
+        assert resp.headers[VERIFICATION_HEADER] == "directory_verification_failed"
+        assert "無効" in resp.json()["detail"]
+        # 初回ログインで有効なユーザーになる資格情報なら保存できる。
+        resp = await admin.patch(
+            url, json={**change, "verification": {"username": "carol", "password": "alice-secret"}}
+        )
+        assert resp.status_code == 200, resp.text
 
 
 async def test_directory_admin_cannot_disable_their_own_directory(client, directory: FakeDirectory) -> None:
@@ -2109,7 +2118,8 @@ async def test_verification_is_required_if_the_other_admin_path_disappears_befor
             yield
 
     monkeypatch.setattr(auth_directories, "admin_change_guard", disable_other_first)
-    resp = await client.patch(f"/api/auth/directories/{directory_id}", json={"user_search_filter": "(uid={username})"})
+    async with _DirectoryAdmin(f"dir:{other_id}") as admin:
+        resp = await admin.patch(f"/api/auth/directories/{directory_id}", json={"user_search_filter": "(uid={username})"})
     assert resp.status_code == 409, resp.text
     assert resp.headers[VERIFICATION_HEADER] == "directory_verification_required"
     assert (await _stored_directory(directory_id))["user_search_filter"] is None

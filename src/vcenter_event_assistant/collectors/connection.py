@@ -5,13 +5,17 @@ vCenter への SmartConnect / Disconnect と接続テスト用情報の取得を
 
 from __future__ import annotations
 
+import socket
 import ssl
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from pyVim.connect import Disconnect, SmartConnect
 
-from vcenter_event_assistant.services.vcenter_host_validation import validate_vcenter_host
+from vcenter_event_assistant.services.vcenter_host_validation import (
+    resolve_vcenter_target,
+    validate_vcenter_host,
+)
 from vcenter_event_assistant.settings import Settings
 from vcenter_event_assistant.settings_binding import require_settings
 
@@ -51,9 +55,38 @@ def parse_proxy_url(url: str | None) -> tuple[str | None, int | None]:
     return host, port
 
 
-def build_ssl_context(*, verify_ssl: bool, ca_bundle_path: str | None = None) -> ssl.SSLContext:
+class _PinnedAddressSSLContext(ssl.SSLContext):
+    """Keep the original TLS server name when pyVmomi connects to a numeric address."""
+
+    def __new__(cls, server_name: str) -> _PinnedAddressSSLContext:
+        context = super().__new__(cls, ssl.PROTOCOL_TLS_CLIENT)
+        context._server_name = server_name
+        return context
+
+    def wrap_socket(
+        self,
+        sock: socket.socket,
+        server_side: bool = False,
+        do_handshake_on_connect: bool = True,
+        suppress_ragged_eofs: bool = True,
+        server_hostname: str | bytes | None = None,
+        session: ssl.SSLSession | None = None,
+    ) -> ssl.SSLSocket:
+        return super().wrap_socket(
+            sock, server_side, do_handshake_on_connect, suppress_ragged_eofs,
+            server_hostname=self._server_name, session=session,
+        )
+
+
+def build_ssl_context(
+    *, verify_ssl: bool, ca_bundle_path: str | None = None, server_name: str | None = None
+) -> ssl.SSLContext:
     """HTTPS 接続用 ``SSLContext`` を組み立てる。"""
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx = (
+        _PinnedAddressSSLContext(server_name)
+        if server_name is not None
+        else ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    )
     if verify_ssl:
         ctx.check_hostname = True
         ctx.verify_mode = ssl.CERT_REQUIRED
@@ -86,20 +119,32 @@ def connect_vcenter(
         raise ValueError("vCenter port must be an integer between 1 and 65535")
     settings = require_settings()
     validate_vcenter_protocol(protocol, settings)
-    validate_vcenter_host(
-        host,
-        allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
-    )
     proxy_host, proxy_port = parse_proxy_url(proxy_url)
+    suffixes = settings.vcenter_allowed_host_suffix_list or None
+    addresses: tuple[str, ...] = ()
+    if protocol == "https" and not verify_ssl and proxy_host is None:
+        host, addresses = resolve_vcenter_target(host, allowed_suffixes=suffixes)
+    else:
+        host = validate_vcenter_host(host, allowed_suffixes=suffixes)
     kwargs: dict = dict(host=host, user=username, pwd=password, port=port, protocol=protocol)
     if protocol == "https":
         kwargs["sslContext"] = build_ssl_context(
             verify_ssl=verify_ssl,
             ca_bundle_path=ca_bundle_path,
+            server_name=host if addresses else None,
         )
     if proxy_host is not None:
         kwargs["httpProxyHost"] = proxy_host
         kwargs["httpProxyPort"] = proxy_port
+    if addresses:
+        authority = f"[{host}]" if ":" in host else host
+        kwargs["customHeaders"] = {"Host": authority if port == 443 else f"{authority}:{port}"}
+        for address in addresses[:-1]:
+            try:
+                return SmartConnect(**{**kwargs, "host": address})
+            except OSError:
+                continue
+        kwargs["host"] = addresses[-1]
     return SmartConnect(**kwargs)
 
 

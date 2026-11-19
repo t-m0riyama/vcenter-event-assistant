@@ -53,6 +53,8 @@ def check_ssh_address(address: str) -> str:
         ValueError: IP アドレスでないか、拒否する宛先のとき。
     """
     parsed = ipaddress.ip_address(address)
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.scope_id is not None:
+        raise ValueError("SSH hosts must use an IPv6 address without a scope identifier")
     reason = _blocked_reason(parsed)
     if reason is not None:
         raise ValueError(f"connections to {reason} addresses are not allowed")

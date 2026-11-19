@@ -143,12 +143,15 @@ class _PluginHost:
         plugin = self._plugins.get(entry_point_name)
         if plugin is not None:
             return plugin
-        for ep in entry_points(group=ENTRY_POINT_GROUP):
-            if ep.name == entry_point_name:
-                plugin = ep.load()()
-                self._plugins[entry_point_name] = plugin
-                return plugin
-        raise EntryPointNotFound(f"entry point not found: {entry_point_name}")
+        matches = entry_points(group=ENTRY_POINT_GROUP, name=entry_point_name)
+        if not matches:
+            raise EntryPointNotFound(f"entry point not found: {entry_point_name}")
+        if len(matches) > 1:
+            raise EntryPointNotFound(f"duplicate entry point: {entry_point_name}")
+        (entry,) = matches
+        plugin = entry.load()()
+        self._plugins[entry_point_name] = plugin
+        return plugin
 
     def loaded(self) -> list[Any]:
         return list(self._plugins.values())

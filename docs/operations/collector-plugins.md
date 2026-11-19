@@ -31,11 +31,18 @@ sensor = "system-board"
 
 プラグイン固有の機密値は、そのプラグインが所有し文書化した環境変数から読み取るべきです。ワーカーには
 許可した環境変数しか渡らないので、その変数名を `VEA_PLUGIN_WORKER_ENV_PASSTHROUGH` に書きます（下の
-「脅威モデル」）。共通
-設定と単純なプラグイン値は、`VEA_COLLECTOR__<正規化したプラグインID>__ENABLED`、
-`__INTERVAL_SECONDS`、`__TIMEOUT_SECONDS`、`__<設定キー>` により TOML を上書きできます。
-ID 中のドットとハイフンはアンダースコアになります。たとえば
-`VEA_COLLECTOR__EXAMPLE_HOST_TEMPERATURE__SENSOR=cpu-package` は `config.sensor` を上書きします。
+「脅威モデル」）。共通設定と単純なプラグイン値は、`VEA_COLLECTOR_ID__<ID の UTF-8 バイト列を大文字16進表記>__<設定キー>`
+で TOML と DB の設定を上書きできます。設定キーは従来と同じく、大文字と小文字を区別しません。
+たとえば `example.host.temperature` の `config.sensor` を上書きする変数は次のように確認できます。
+
+```sh
+python3 -c 'print("VEA_COLLECTOR_ID__" + "example.host.temperature".encode().hex().upper() + "__SENSOR")'
+```
+
+旧形式の `VEA_COLLECTOR__<ドット・ハイフンをアンダースコアにした大文字のID>__<設定キー>`
+も、一つのプラグインに対応する場合は使えます。同じ項目に新旧両方の指定があるときは新形式が優先されます。
+複数のプラグインに対応する旧変数がある場合は、稼働中に読み込まれるプラグインを停止状態にし、導入で新たな衝突が生じる場合は公開を拒否します。
+ログに出た旧変数を削除し、意図したプラグインの新形式の変数に置き換えてから再読み込みしてください。
 機密値を TOML ファイルに置いてはなりません。不正・欠落・非互換のプラグインは
 `GET /api/plugins/collectors` で `failed` として表示されます。アプリケーションの起動は妨げません。
 

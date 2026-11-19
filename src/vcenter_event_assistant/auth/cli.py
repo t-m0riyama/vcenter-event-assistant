@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError
 from vcenter_event_assistant.auth.roles import Role
-from vcenter_event_assistant.auth.sessions import revoke_all_for_user
+from vcenter_event_assistant.auth.sessions import invalidate_user_authorization
 from vcenter_event_assistant.auth.users import (
     UserError,
     admin_change_guard,
@@ -85,7 +85,7 @@ async def _set_role(settings: Settings, args: argparse.Namespace) -> str:
         if args.role != Role.ADMIN.value:
             await ensure_not_last_admin(db, user, settings)
         user.role = Role(args.role).value
-        await revoke_all_for_user(db, user.id)
+        await invalidate_user_authorization(db, user)
         return f"ユーザー '{user.username}' のロールを {user.role} にしました。"
 
 
@@ -95,7 +95,7 @@ async def _unlock(settings: Settings, args: argparse.Namespace) -> str:
         unlock_user(user)
         if not user.is_active:
             # 無効化前のセッション（盗まれたものを含む）を有効化で復活させない
-            await revoke_all_for_user(db, user.id)
+            await invalidate_user_authorization(db, user)
             user.is_active = True
         return f"ユーザー '{user.username}' のロックを解除し、有効にしました。"
 

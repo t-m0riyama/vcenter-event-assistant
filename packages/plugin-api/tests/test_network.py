@@ -14,6 +14,14 @@ from vcenter_event_assistant_plugin_api import network
 from vcenter_event_assistant_plugin_api.network import check_ssh_address, resolve_ssh_address
 
 
+async def test_ssh_requires_an_unscoped_ipv6_literal() -> None:
+    with pytest.raises(ValueError, match="scope identifier"):
+        check_ssh_address("fd12::1%zone")
+    with pytest.raises(ValueError, match="scope identifier"):
+        await resolve_ssh_address("[fd12::1%zone]", 22)
+    assert await resolve_ssh_address("[fd12::1]", 22) == "fd12::1"
+
+
 @pytest.mark.parametrize(
     "address",
     [

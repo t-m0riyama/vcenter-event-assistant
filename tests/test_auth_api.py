@@ -204,6 +204,29 @@ async def test_realms_lists_local() -> None:
     }
 
 
+async def test_password_change_shares_the_account_lockout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VEA_LOGIN_MAX_FAILED_ATTEMPTS", "2")
+    get_settings.cache_clear()
+    await _make_user()
+    async with _raw_client() as ac, _raw_client() as other:
+        assert (await _login(ac)).status_code == 200
+        assert (await _login(other, password="wrong password!!")).status_code == 401
+        bad = await ac.post(
+            "/api/auth/me/password",
+            json={"current_password": "wrong password!!", "new_password": "brand new password"},
+            headers=XHR,
+        )
+        assert bad.status_code == 400
+        locked = await ac.post(
+            "/api/auth/me/password",
+            json={"current_password": PASSWORD, "new_password": "brand new password"},
+            headers=XHR,
+        )
+        assert locked.status_code == 429
+        assert (await ac.get("/api/auth/me")).status_code == 200
+        assert (await _login(other)).status_code == 401
+
+
 async def test_local_login_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
@@ -211,6 +234,19 @@ async def test_local_login_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> N
     async with _raw_client() as ac:
         assert (await ac.get("/api/auth/realms")).json()["realms"] == []
         assert (await _login(ac)).status_code == 401
+
+
+async def test_local_session_stays_revoked_after_reenabling_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    await _make_user()
+    async with _raw_client() as ac:
+        assert (await _login(ac)).status_code == 200
+        monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "false")
+        get_settings.cache_clear()
+        assert (await ac.get("/api/auth/me")).status_code == 401
+        monkeypatch.setenv("VEA_LOCAL_LOGIN_ENABLED", "true")
+        get_settings.cache_clear()
+        assert (await ac.get("/api/auth/me")).status_code == 401
+        assert (await _login(ac)).status_code == 200
 
 
 class TestCsrf:

@@ -4,11 +4,8 @@
 #
 #     git tag plugin-api-v1.1.0 && git push origin plugin-api-v1.1.0
 #
-# 認証は PyPI の Trusted Publishing（OIDC）を使う。API トークンをシークレットに置かない。
-# PyPI 側で次の publisher を登録しておくこと。
-#
-#     Owner: t-m0riyama / Repository: vcenter-event-assistant
-#     Workflow: release-plugin-api.yml / Environment: (空欄)
+# PyPI の Trusted Publisher は pypi Environment に紐付ける。
+# 管理設定と切替手順は packages/plugin-api/CHANGELOG.md を参照。
 #
 # 公開前に、タグとパッケージのバージョンが一致することを必ず確認する。ここがずれると
 # 意図しないバージョンが世に出て、取り消せない。
@@ -18,32 +15,28 @@ on:
   push:
     tags: ["plugin-api-v*"]
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Build and verify without publishing"
-        type: boolean
-        default: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-26.04
     permissions:
-      # Trusted Publishing の OIDC トークンを取るために必要。
-      id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          version: "0.8.15"
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.10.4"
 
-      - name: Check the tag against the package version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Check tag ancestry and package version
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
           tag_version="${GITHUB_REF_NAME#plugin-api-v}"
           # pyproject.toml を直接読む（uv のサブコマンドの有無に依存しないため）。
           package_version="$(python3 -c "
@@ -60,8 +53,8 @@ jobs:
       - name: Test the package on its own
         run: |
           set -euo pipefail
-          uv sync --all-groups
-          uv run pytest packages/plugin-api/tests -q
+          uv sync --locked --all-groups
+          uv run --no-sync pytest packages/plugin-api/tests -q
 
       - name: Build
         run: |
@@ -100,14 +93,28 @@ jobs:
           print("verified", api.__version__)
           EOF
 
-      - name: Publish to PyPI
-        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
-        # `always` にして、OIDC が取れないときに黙って別の方法へ落ちないようにする。
-        run: uv publish --trusted-publishing always dist/plugin-api-release/*
-
       - name: Upload the artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: plugin-api-dist
           path: dist/plugin-api-release/*
           if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/plugin-api-v')
+    runs-on: ubuntu-26.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: plugin-api-dist
+          path: dist/plugin-api-release
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.10.4"
+          enable-cache: false
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always dist/plugin-api-release/*

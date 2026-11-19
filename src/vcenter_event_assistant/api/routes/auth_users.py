@@ -24,7 +24,7 @@ from vcenter_event_assistant.api.schemas.auth import (
 from vcenter_event_assistant.auth.audit import audit
 from vcenter_event_assistant.auth.passwords import PasswordPolicyError
 from vcenter_event_assistant.auth.roles import Role
-from vcenter_event_assistant.auth.sessions import revoke_all_for_user
+from vcenter_event_assistant.auth.sessions import invalidate_user_authorization
 from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.auth.users import (
     LOCAL_REALM,
@@ -167,7 +167,7 @@ async def update_user(
 
             user.updated_at = utcnow()
             if revoke:
-                await revoke_all_for_user(db, user.id)
+                await invalidate_user_authorization(db, user)
             await db.flush()
     except LastAdminError as exc:
         raise _conflict(exc) from None
@@ -239,7 +239,7 @@ async def revoke_sessions(
 ) -> Response:
     user = await _get_user(db, user_id)
     keep = principal.session_id if principal.user_id == user.id else None
-    await revoke_all_for_user(db, user.id, except_session_id=keep)
+    await invalidate_user_authorization(db, user, except_session_id=keep)
     audit("sessions_revoked", actor=_actor(principal), username=user.username)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

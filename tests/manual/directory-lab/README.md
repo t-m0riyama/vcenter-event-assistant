@@ -28,7 +28,9 @@ docker compose -f tests/manual/directory-lab/compose.yml down
 sh tests/manual/directory-lab/run-app.sh
 ```
 
-- ローカルの初期 admin は `labadmin` / `Lab-Passw0rd!local`
+- 起動前に、ラボ専用の秘密鍵 `LAB_SECRET_KEY` と初期 admin のパスワード `LAB_ADMIN_PASSWORD` を環境に設定する。初期 admin の名前は既定で `labadmin`。別の名前を使う場合は `LAB_ADMIN_USERNAME` を設定する。
+- アプリは `127.0.0.1` にだけバインドする。同じ DB を使い続ける場合は同じ秘密鍵を使う。
+- 以前に作成したラボでは、既存 admin のパスワードを画面または管理 CLI で変更する。鍵を変える場合は暗号化済みの資格情報を再入力するか、別のラボ DB を作って接続を設定し直す。
 - 外部への接続はモックにする（`MOCK_MODE=1`。認証には影響しない）
 - 短時間に何度もログインするので、ログインの rate limit を 300 回/分に緩めている
 - ディレクトリだけの運用を試すときは `VEA_LOCAL_LOGIN_ENABLED=false sh tests/manual/directory-lab/run-app.sh`（このときは初期 admin の環境変数を渡さない。渡すとアプリが起動を止める）

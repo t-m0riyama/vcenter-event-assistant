@@ -484,6 +484,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), default="viewer")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    authorization_generation: Mapped[int] = mapped_column(Integer, server_default="0")
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -520,6 +521,7 @@ class AuthSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
     # 認証に使ったパスワードの世代（User.password_changed_at）。変更後は一致しなくなり無効になる。
     credential_marker: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    authorization_generation: Mapped[int] = mapped_column(Integer, server_default="0")
 
     user: Mapped["User"] = relationship(back_populates="sessions")
 

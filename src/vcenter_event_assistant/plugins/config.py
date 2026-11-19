@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import tomllib
 import os
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -66,27 +66,53 @@ def apply_collector_database_overrides(
 
 
 def collector_environment_prefix(plugin_id: str) -> str:
-    """Deterministic env var prefix for one plugin id."""
+    """Legacy environment variable prefix."""
     normalized = re.sub(r"[^A-Z0-9]", "_", plugin_id.upper())
     return f"VEA_COLLECTOR__{normalized}__"
 
 
-def collector_env_locked_fields(plugin_id: str) -> list[str]:
-    """Common fields pinned by environment variables for this plugin.
-
-    環境変数は DB 設定より優先されるため、UI はこれらを編集不可として表示する。
-    """
-    prefix = collector_environment_prefix(plugin_id)
-    locked = {
-        name[len(prefix) :].lower()
-        for name in os.environ
-        if name.startswith(prefix)
+def collector_environment(
+    plugin_ids: set[str],
+    environ: Mapping[str, str] = os.environ,
+) -> tuple[dict[str, dict[str, str]], dict[str, frozenset[str]]]:
+    """Resolve settings once for an installed set, without sharing ambiguous legacy values."""
+    values: dict[str, dict[str, str]] = {plugin_id: {} for plugin_id in plugin_ids}
+    conflicts: dict[str, frozenset[str]] = {}
+    legacy = {plugin_id: collector_environment_prefix(plugin_id) for plugin_id in plugin_ids}
+    exact = {
+        plugin_id.encode("utf-8").hex().upper(): plugin_id
+        for plugin_id in plugin_ids
     }
-    return sorted(locked & set(_DB_OVERRIDE_FIELDS))
+    for name, value in environ.items():
+        if not name.startswith("VEA_COLLECTOR__"):
+            continue
+        matches = {
+            plugin_id for plugin_id, prefix in legacy.items()
+            if name.startswith(prefix) and len(name) > len(prefix)
+        }
+        if len(matches) > 1:
+            conflicts[name] = frozenset(matches)
+        elif matches:
+            plugin_id = matches.pop()
+            values[plugin_id][name[len(legacy[plugin_id]):].lower()] = value
+
+    for name, value in environ.items():
+        if not name.startswith("VEA_COLLECTOR_ID__"):
+            continue
+        prefix, separator, key = name[len("VEA_COLLECTOR_ID__"):].partition("__")
+        plugin_id = exact.get(prefix)
+        if plugin_id is not None and separator and key:
+            values[plugin_id][key.lower()] = value
+    return values, conflicts
+
+
+def collector_env_locked_fields(fields: tuple[str, ...]) -> list[str]:
+    """Only the common fields can be updated through the collector settings API."""
+    return sorted(set(fields).intersection(_DB_OVERRIDE_FIELDS))
 
 
 def apply_collector_environment(
-    plugin_id: str, raw: Mapping[str, Any]
+    raw: Mapping[str, Any], environment: Mapping[str, str]
 ) -> dict[str, Any]:
     """Overlay common and plugin-specific values from a deterministic env prefix."""
     merged = dict(raw)
@@ -95,11 +121,7 @@ def apply_collector_environment(
         if isinstance(merged.get("config", {}), dict)
         else {}
     )
-    prefix = collector_environment_prefix(plugin_id)
-    for name, value in os.environ.items():
-        if not name.startswith(prefix):
-            continue
-        key = name[len(prefix) :].lower()
+    for key, value in environment.items():
         if key == "enabled":
             merged["enabled"] = value.strip().lower() in {"1", "true", "yes", "on"}
         elif key in {"interval_seconds", "timeout_seconds"}:
