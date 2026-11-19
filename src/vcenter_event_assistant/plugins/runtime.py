@@ -45,6 +45,7 @@ from vcenter_event_assistant.plugins.wire import ConnectionParams
 from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
 from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
 from vcenter_event_assistant.services.ingestion import _insert_on_conflict_do_nothing
+from vcenter_event_assistant.services.ssh_management import LegacySSHPathError
 from vcenter_event_assistant.settings import Settings
 
 _locks: dict[tuple[str, str], asyncio.Lock] = {}
@@ -110,6 +111,8 @@ def _safe_error(exc: BaseException) -> str:
     """
     if is_vcenter_protocol_policy_error(exc):
         return VCENTER_HTTPS_REQUIRED
+    if isinstance(exc, LegacySSHPathError):
+        return str(exc)
     if isinstance(exc, CollectorWorkerError):
         # str(exc) はワーカーが返したプラグイン側の例外型名。
         plugin_error = str(exc) or type(exc).__name__
@@ -379,12 +382,17 @@ async def run_collector_for_vcenter(
             timeout_seconds = registration.config.timeout_seconds
             from dataclasses import replace
             from vcenter_event_assistant.services.ssh_management import materialize_ssh
-            async with materialize_ssh(settings, dict(context.config), registration.plugin.manifest.configuration_schema, vcenter_id) as resolved:
+            remote = isinstance(registration.plugin, RemoteCollectorPlugin)
+            worker_files: dict[str, str] | None = {} if remote and settings.plugin_service_socket_dir else None
+            async with materialize_ssh(
+                settings, dict(context.config), registration.plugin.manifest.configuration_schema,
+                vcenter_id, worker_files=worker_files,
+            ) as resolved:
                 context = replace(context, config=resolved)
                 if isinstance(registration.plugin, RemoteCollectorPlugin):
                     # ワーカーが自前でタイムアウトを監視し、超過時はプロセスごと kill する。
                     batch = await registration.plugin.collect_with_connection(
-                        context, params, timeout=timeout_seconds
+                        context, params, timeout=timeout_seconds, worker_files=worker_files,
                     )
                 else:
                     async with asyncio.timeout(timeout_seconds):

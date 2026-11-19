@@ -17,8 +17,12 @@ import re
 import shutil
 import uuid
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
+from vcenter_event_assistant.plugins.install_client import install_via_service
+from vcenter_event_assistant.plugins.publication import publish, unpublish
+from vcenter_event_assistant.plugins.service_protocol import PluginServiceError
 from vcenter_event_assistant.plugins.subprocess_env import (
     installer_env,
     proxy_has_credentials,
@@ -187,7 +191,8 @@ def _installed_distribution(target: Path) -> tuple[str, str]:
 
 
 def _plugin_root(settings: Settings) -> Path:
-    return Path(settings.plugin_dir)
+    root = Path(settings.plugin_dir)
+    return root.resolve() if settings.plugin_service_socket_dir else root
 
 
 def _validate_provides_collectors(path: Path) -> tuple[str, ...]:
@@ -228,16 +233,55 @@ async def install_plugin(
     staging = root / _STAGING_DIR / uuid.uuid4().hex
     staging.mkdir(parents=True, exist_ok=True)
     try:
-        await _run_install(
-            _install_command(settings, staging, source, from_index=from_index)
-        )
-        distribution, version = await asyncio.to_thread(
-            _installed_distribution, staging
-        )
+        if settings.plugin_service_socket_dir:
+            # The discovery service needs read-only access during validation.
+            staging.parent.chmod(0o711)
+            staging.chmod(0o755)
+            try:
+                await install_via_service(
+                    settings, source, from_index=from_index, destination=staging,
+                    timeout=INSTALL_TIMEOUT_SECONDS,
+                )
+            except TimeoutError as exc:
+                raise PluginInstallError("installation timed out") from exc
+            except PluginServiceError as exc:
+                raise PluginInstallError(str(exc)) from exc
+            requested, _ = (
+                parse_requirement(source) if from_index else parse_upload_filename(Path(source).name)
+            )
+            # Dependencies can also have dist-info directories. Publish only under
+            # the name of the package the administrator requested.
+            version = _requested_distribution_version(staging, requested)
+            distribution = requested
+        else:
+            await _run_install(_install_command(settings, staging, source, from_index=from_index))
+            distribution, version = await asyncio.to_thread(_installed_distribution, staging)
         collector_ids = await asyncio.to_thread(_validate_provides_collectors, staging)
 
-        final = root / distribution / version
-        await asyncio.to_thread(_replace_directory, staging, final)
+        if settings.plugin_service_socket_dir:
+            job = asyncio.get_running_loop().run_in_executor(
+                None,
+                partial(publish, root, staging, distribution, version,
+                        source="index" if from_index else "upload"),
+            )
+            try:
+                final = await asyncio.shield(job)
+            except asyncio.CancelledError:
+                # Keep the publication lock and staging directory until the
+                # thread finishes. Its journal is replayed when necessary.
+                while not job.done():
+                    try:
+                        await asyncio.shield(job)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+                if not job.cancelled():
+                    job.exception()
+                raise
+        else:
+            final = root / distribution / version
+            await asyncio.to_thread(_replace_directory, staging, final)
     except BaseException:
         await asyncio.to_thread(shutil.rmtree, staging, True)
         raise
@@ -256,6 +300,17 @@ async def install_plugin(
         install_path=str(final),
         collector_ids=collector_ids,
     )
+
+
+def _requested_distribution_version(target: Path, requested: str) -> str:
+    matches = []
+    for candidate in target.glob("*.dist-info"):
+        name, separator, version = candidate.name.removesuffix(".dist-info").rpartition("-")
+        if separator and normalize_distribution(name) == requested and candidate.is_dir():
+            matches.append(version)
+    if len(matches) != 1 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+!-]{0,63}", matches[0]):
+        raise PluginInstallError("could not determine the requested distribution version")
+    return matches[0]
 
 
 def _replace_directory(staging: Path, final: Path) -> None:
@@ -288,6 +343,8 @@ def uninstall_plugin(settings: Settings, distribution: str) -> bool:
     if not _NAME_RE.fullmatch(distribution.strip()):
         raise PluginInstallError("invalid distribution name")
     normalized = normalize_distribution(distribution.strip())
+    if settings.plugin_service_socket_dir:
+        return unpublish(_plugin_root(settings), normalized)
     target = _plugin_root(settings) / normalized
     if not target.is_dir():
         return False

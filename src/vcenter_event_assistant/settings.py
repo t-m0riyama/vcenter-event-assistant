@@ -263,6 +263,17 @@ class AppLogSettingsMixin(BaseModel):
             "配下に ``<distribution>/<version>/`` 単位でインストールする。"
         ),
     )
+    plugin_service_socket_dir: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("plugin_service_socket_dir", "VEA_PLUGIN_SERVICE_SOCKET_DIR"),
+    )
+    plugin_allow_unauthenticated_build_endpoints: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "plugin_allow_unauthenticated_build_endpoints",
+            "VEA_PLUGIN_ALLOW_UNAUTHENTICATED_BUILD_ENDPOINTS",
+        ),
+    )
     plugin_management_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices(
@@ -388,6 +399,7 @@ class AppLogSettingsMixin(BaseModel):
         "uvicorn_log_file",
         "collector_config_file",
         "plugin_index_url",
+        "plugin_service_socket_dir",
         "uv_bin",
         "collector_worker_log_level",
         mode="before",

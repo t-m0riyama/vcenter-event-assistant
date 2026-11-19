@@ -16,7 +16,7 @@ from vcenter_event_assistant.db.models import VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.remote import RemoteCollectorPlugin
 from vcenter_event_assistant.plugins.runtime import _connection_params, _open_connection, is_vcenter_protocol_policy_error
-from vcenter_event_assistant.services.ssh_management import materialize_ssh
+from vcenter_event_assistant.services.ssh_management import materialize_ssh, ssh_objects
 
 _TYPES = {"object", "array", "string", "number", "integer", "boolean"}
 _WIDGETS = {"vcenter", "esxi-host", "ssh-connection"}
@@ -73,10 +73,14 @@ def schema_error(schema):
     return None
 
 
-def validate_values(config, schema):
+def validate_values(config, schema, *, allow_legacy_ssh=True):
     reason = schema_error(schema)
     if reason:
         raise ValueError(reason)
+    if not allow_legacy_ssh:
+        # Report the migration error before schema validation rejects old fields.
+        for _ in ssh_objects(config, schema, allow_legacy=False):
+            pass
     errors = list(Draft202012Validator(schema).iter_errors(config))
     if errors:
         paths = [
@@ -139,7 +143,11 @@ async def run_setup(settings, registration, config, action):
         raise ValueError("有効なvCenterを登録してください。")
     checks, samples, warnings = [], [], []
     for target, params in targets:
-        async with materialize_ssh(settings, config, schema, target.id) as resolved:
+        plugin = registration.plugin
+        worker_files = {} if settings.plugin_service_socket_dir and isinstance(plugin, RemoteCollectorPlugin) else None
+        async with materialize_ssh(
+            settings, config, schema, target.id, worker_files=worker_files,
+        ) as resolved:
             context = CollectionContext(
                 target,
                 resolved,
@@ -147,12 +155,11 @@ async def run_setup(settings, registration, config, action):
                 lambda: _open_connection(params),
                 settings.mock_mode,
             )
-            plugin = registration.plugin
             timeout = registration.config.timeout_seconds
             try:
                 if isinstance(plugin, RemoteCollectorPlugin):
                     result = await plugin.setup_with_connection(
-                        context, params, action, timeout=timeout
+                        context, params, action, timeout=timeout, worker_files=worker_files,
                     )
                 else:
                     async with asyncio.timeout(timeout):

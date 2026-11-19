@@ -132,6 +132,10 @@ def is_spa_fallback_reserved_path(full_path: str) -> bool:
 async def lifespan(app: FastAPI):
     """起動時に DB 初期化とスケジューラ開始、終了時に scheduler を停止する。"""
     settings = get_settings()
+    if settings.plugin_service_socket_dir:
+        from vcenter_event_assistant.plugins.service_protocol import verify_local_uid
+
+        verify_local_uid("app")
     # プラグインのワーカーを起動する前に行う。
     harden_process(settings)
     warn_if_parent_keeps_secrets()
@@ -142,9 +146,13 @@ async def lifespan(app: FastAPI):
         )
     from vcenter_event_assistant.services.ssh_management import cleanup_stale_ssh_files
     cleanup_stale_ssh_files()
-    from vcenter_event_assistant.services.plugin_installs import cleanup_stale_upload_dirs
+    from vcenter_event_assistant.services.plugin_installs import (
+        cleanup_stale_upload_dirs,
+        recover_plugin_publication,
+    )
     cleanup_stale_upload_dirs()
     await init_db(settings=settings)
+    await recover_plugin_publication(settings)
     await warn_invalid_vcenter_transports(settings)
     await ensure_bootstrap_admin(settings)
     await ensure_secret_storage(settings=settings)

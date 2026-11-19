@@ -8,17 +8,34 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import socket
 import sys
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+
+from vcenter_event_assistant.plugins.publication import published_paths
+from vcenter_event_assistant.plugins.request_files import read_file
+from vcenter_event_assistant.plugins.service_protocol import (
+    WORKER_SESSION_READY,
+    PluginServiceError,
+    connect,
+    encode_header,
+    read_header,
+    socket_path,
+    verify_peer,
+)
 
 from vcenter_event_assistant.plugins.subprocess_env import worker_env
 from vcenter_event_assistant_plugin_api import CollectionBatch, CollectorManifest
 
 from vcenter_event_assistant.plugins.wire import (
     ConnectionParams,
+    MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
     batch_from_json,
     context_to_json,
@@ -46,6 +63,10 @@ class CollectorWorkerError(RuntimeError):
         self.detail = detail
 
 
+class CollectorWorkerServiceError(CollectorWorkerError):
+    """The separated worker service could not be contacted."""
+
+
 def plugin_search_paths(plugin_dir: str | None) -> list[str]:
     """``<plugin_dir>/<distribution>/<version>/`` を列挙する。
 
@@ -59,7 +80,7 @@ def plugin_search_paths(plugin_dir: str | None) -> list[str]:
         return []
     paths: list[str] = []
     for distribution in sorted(root.iterdir()):
-        if not distribution.is_dir():
+        if distribution.name.startswith(".") or not distribution.is_dir():
             continue
         for version in sorted(distribution.iterdir()):
             if version.is_dir():
@@ -85,15 +106,38 @@ class CollectorWorker:
         self._plugin_paths = plugin_paths
         self._label = label
         self._process: asyncio.subprocess.Process | None = None
+        self._streams: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None
         self._lock = asyncio.Lock()
         self._next_id = 0
 
     @property
     def is_running(self) -> bool:
+        if self._streams:
+            reader, writer = self._streams
+            return not reader.at_eof() and not writer.is_closing()
         return self._process is not None and self._process.returncode is None
 
     async def ensure_started(self) -> None:
         if self.is_running:
+            return
+        await self.kill()
+        settings = get_settings()
+        if root := settings.plugin_service_socket_dir:
+            try:
+                header = encode_header({"paths": self._plugin_paths, "env": worker_env(settings)})
+                reader, writer = await connect(root, "worker", limit=MAX_RESPONSE_BYTES + 1)
+                self._streams = reader, writer
+                async with asyncio.timeout(6):
+                    writer.write(header)
+                    await writer.drain()
+                    if await read_header(reader) != WORKER_SESSION_READY:
+                        raise PluginServiceError("worker session unavailable")
+            except (OSError, ValueError, PluginServiceError) as exc:
+                await self.kill()
+                raise CollectorWorkerServiceError("plugin worker service is unavailable") from exc
+            except asyncio.CancelledError:
+                await self.kill()
+                raise
             return
         self._process = await asyncio.create_subprocess_exec(
             *_worker_command(self._plugin_paths),
@@ -101,7 +145,7 @@ class CollectorWorker:
             stdout=asyncio.subprocess.PIPE,
             stderr=None,
             limit=MAX_RESPONSE_BYTES + 1,
-            env=worker_env(get_settings()),
+            env=worker_env(settings),
         )
         logger.info(
             "collector worker started label=%s pid=%s", self._label, self._process.pid
@@ -116,16 +160,23 @@ class CollectorWorker:
         """
         async with self._lock:
             await self.ensure_started()
-            process = self._process
-            assert process is not None and process.stdin and process.stdout
+            separated = self._streams is not None
+            if self._streams is not None:
+                reader, writer = self._streams
+            else:
+                process = self._process
+                assert process is not None and process.stdin and process.stdout
+                reader, writer = process.stdout, process.stdin
             self._next_id += 1
             payload = {**payload, "id": self._next_id}
+            encoded = (json.dumps(payload) + "\n").encode()
+            if self._streams and len(encoded) > MAX_REQUEST_BYTES:
+                raise CollectorWorkerError("plugin worker request exceeds size limit")
             try:
-                process.stdin.write((json.dumps(payload) + "\n").encode())
-                await process.stdin.drain()
-                line = await asyncio.wait_for(
-                    process.stdout.readline(), timeout=timeout
-                )
+                async with asyncio.timeout(timeout):
+                    writer.write(encoded)
+                    await writer.drain()
+                    line = await reader.readline()
             except asyncio.TimeoutError:
                 logger.warning(
                     "collector worker timed out label=%s op=%s; killing worker",
@@ -133,13 +184,25 @@ class CollectorWorker:
                     payload.get("op"),
                 )
                 await self.kill()
+                if separated and payload.get("op") == "start":
+                    await _verify_worker_listener()
                 raise
-            except (BrokenPipeError, ConnectionResetError, ValueError) as exc:
+            except ValueError as exc:
                 await self.kill()
+                raise CollectorWorkerError("worker response exceeds size limit") from exc
+            except OSError as exc:
+                await self.kill()
+                if separated and payload.get("op") == "start":
+                    await _verify_worker_listener()
                 raise CollectorWorkerError("worker pipe is closed") from exc
+            except asyncio.CancelledError:
+                await self.kill()
+                raise
 
             if not line:
                 await self.kill()
+                if separated and payload.get("op") == "start":
+                    await _verify_worker_listener()
                 raise CollectorWorkerError("worker exited before responding")
             if len(line) > MAX_RESPONSE_BYTES:
                 await self.kill()
@@ -149,6 +212,11 @@ class CollectorWorker:
             except json.JSONDecodeError as exc:
                 await self.kill()
                 raise CollectorWorkerError("worker sent malformed response") from exc
+            if not isinstance(response, dict) or (
+                self._streams is not None and response.get("id") != self._next_id
+            ):
+                await self.kill()
+                raise CollectorWorkerError("worker sent an invalid response ID")
             if not response.get("ok"):
                 detail = response.get("detail")
                 raise CollectorWorkerError(
@@ -158,6 +226,10 @@ class CollectorWorker:
             return response.get("result") or {}
 
     async def kill(self) -> None:
+        if self._streams is not None:
+            _, writer = self._streams
+            self._streams = None
+            writer.transport.abort()
         process, self._process = self._process, None
         if process is None or process.returncode is not None:
             return
@@ -171,6 +243,15 @@ class CollectorWorker:
 
     async def shutdown(self) -> None:
         """stdin を閉じて自然終了を待ち、猶予を過ぎたら kill する。"""
+        if self._streams is not None:
+            reader, writer = self._streams
+            try:
+                writer.write_eof()
+                with contextlib.suppress(OSError, TimeoutError):
+                    await asyncio.wait_for(reader.read(1), _SHUTDOWN_GRACE_SECONDS)
+            finally:
+                await self.kill()
+            return
         process = self._process
         if process is None or process.returncode is not None:
             self._process = None
@@ -200,11 +281,23 @@ class RemoteCollectorPlugin:
         self._worker = worker
         self._start_timeout_seconds = start_timeout_seconds
 
+    @property
+    def installed_paths(self) -> tuple[str, ...]:
+        return tuple(self._worker._plugin_paths)
+
+    @property
+    def is_running(self) -> bool:
+        return self._worker.is_running
+
     async def start(self) -> None:
-        await self._worker.request(
-            {"op": "start", "entry_point": self.entry_point},
-            timeout=self._start_timeout_seconds,
-        )
+        try:
+            await self._worker.request(
+                {"op": "start", "entry_point": self.entry_point},
+                timeout=self._start_timeout_seconds,
+            )
+        except (CollectorWorkerError, TimeoutError):
+            await self._worker.kill()
+            raise
 
     async def collect(self, context) -> CollectionBatch:
         """インプロセス用の署名。リモートでは接続情報を別途渡す必要がある。
@@ -217,26 +310,27 @@ class RemoteCollectorPlugin:
         )
 
     async def collect_with_connection(
-        self, context, params: ConnectionParams, *, timeout: float
+        self, context, params: ConnectionParams, *, timeout: float,
+        worker_files: dict[str, str] | None = None,
     ) -> CollectionBatch:
         result = await self._worker.request(
             {
                 "op": "collect",
                 "entry_point": self.entry_point,
-                "context": context_to_json(context),
-                "connection": params.to_json(),
+                **await _request_context(context, params, worker_files),
             },
             timeout=timeout,
         )
         return batch_from_json(result["batch"])
 
-    async def setup_with_connection(self, context, params, action, *, timeout):
+    async def setup_with_connection(
+        self, context, params, action, *, timeout, worker_files: dict[str, str] | None = None,
+    ):
         result = await self._worker.request(
             {
                 "op": "setup",
                 "entry_point": self.entry_point,
-                "context": context_to_json(context),
-                "connection": params.to_json(),
+                **await _request_context(context, params, worker_files),
                 "action": action,
             },
             timeout=timeout,
@@ -257,9 +351,93 @@ class RemoteCollectorPlugin:
         await self._worker.shutdown()
 
 
+async def _request_context(context, params: ConnectionParams, worker_files: dict[str, str] | None):
+    payload = {"context": context_to_json(context), "connection": params.to_json()}
+    if get_settings().plugin_service_socket_dir:
+        files = dict(worker_files or {})
+        if params.verify_ssl and params.ca_bundle_path:
+            files[params.ca_bundle_path] = await asyncio.to_thread(read_file, params.ca_bundle_path)
+        if files:
+            payload["files"] = files
+    return payload
+
+
+async def _verify_worker_listener() -> None:
+    """Distinguish a child failure from loss of the authenticated listener."""
+    root = get_settings().plugin_service_socket_dir
+    if root is None:
+        return
+    try:
+        async with asyncio.timeout(5):
+            reader, writer = await connect(root, "worker")
+            try:
+                writer.write(encode_header({"health": True}))
+                await writer.drain()
+                if await read_header(reader) != {"healthy": True}:
+                    raise PluginServiceError("invalid worker health response")
+            finally:
+                writer.close()
+    except (PluginServiceError, OSError, ValueError) as exc:
+        raise CollectorWorkerServiceError("plugin worker service is unavailable") from exc
+    writer.close()
+
+
 def discover_remote_collectors(plugin_dir: str | None) -> list[dict[str, Any]]:
     """インストール済みディレクトリ全体から entry point と manifest を列挙する。"""
-    return discover_collectors_at(plugin_search_paths(plugin_dir))
+    return discover_collectors_at(_active_paths(plugin_dir))
+
+
+def _active_paths(plugin_dir: str | None) -> list[str]:
+    if get_settings().plugin_service_socket_dir and plugin_dir:
+        return published_paths(Path(plugin_dir).resolve())
+    return plugin_search_paths(plugin_dir)
+
+
+def _discovery_lines(connection: socket.socket, deadline: float) -> Iterator[bytes]:
+    remaining_bytes = MAX_RESPONSE_BYTES + len(encode_header(WORKER_SESSION_READY))
+    line = bytearray()
+    while remaining_bytes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("plugin discovery timed out")
+        connection.settimeout(remaining)
+        chunk = connection.recv(min(65536, remaining_bytes))
+        if not chunk:
+            return
+        remaining_bytes -= len(chunk)
+        parts = chunk.split(b"\n")
+        for part in parts[:-1]:
+            line.extend(part)
+            yield bytes(line)
+            line.clear()
+        line.extend(parts[-1])
+
+
+def _discover_via_service(root: str, paths: list[str], request: str) -> str:
+    deadline = time.monotonic() + _DISCOVER_TIMEOUT_SECONDS
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(_DISCOVER_TIMEOUT_SECONDS)
+            connection.connect(str(socket_path(root, "worker")))
+            verify_peer(connection, "worker")
+            connection.settimeout(max(0.0, deadline - time.monotonic()))
+            connection.sendall(
+                encode_header({"paths": paths, "env": worker_env(get_settings())})
+                + request.encode()
+            )
+            lines = _discovery_lines(connection, deadline)
+            if next(lines, None) != encode_header(WORKER_SESSION_READY).rstrip(b"\n"):
+                raise CollectorWorkerServiceError("plugin discovery session unavailable")
+            for line in lines:
+                try:
+                    response = json.loads(line)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if isinstance(response, dict) and response.get("id") == 1 and type(response.get("ok")) is bool:
+                    return line.decode()
+            raise CollectorWorkerError("plugin discovery did not return a complete response")
+    except (OSError, ValueError, PluginServiceError) as exc:
+        raise CollectorWorkerError("plugin worker discovery service is unavailable") from exc
 
 
 def _log_discovery_output(stderr: str, level: int) -> None:
@@ -298,20 +476,27 @@ def discover_collectors_at(
         )
         + "\n"
     )
-    try:
-        completed = subprocess.run(
-            _worker_command(paths),
-            input=request,
-            capture_output=True,
-            text=True,
-            timeout=_DISCOVER_TIMEOUT_SECONDS,
-            env=worker_env(get_settings()),
-        )
-    except subprocess.TimeoutExpired:
-        logger.error("collector plugin discovery timed out")
-        raise CollectorWorkerError("plugin discovery timed out") from None
+    settings = get_settings()
+    if root := settings.plugin_service_socket_dir:
+        stdout = _discover_via_service(root, paths, request)
+        stderr, returncode = "", None
+    else:
+        try:
+            completed = subprocess.run(
+                _worker_command(paths),
+                input=request,
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=_DISCOVER_TIMEOUT_SECONDS,
+                env=worker_env(settings),
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("collector plugin discovery timed out")
+            raise CollectorWorkerError("plugin discovery timed out") from None
+        stdout, stderr, returncode = completed.stdout, completed.stderr, completed.returncode
 
-    for line in completed.stdout.splitlines():
+    for line in stdout.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -319,8 +504,10 @@ def discover_collectors_at(
             response = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(response, dict) or "ok" not in response:
+            continue
         if not response.get("ok"):
-            _log_discovery_output(completed.stderr, logging.WARNING)
+            _log_discovery_output(stderr, logging.WARNING)
             raise CollectorWorkerError(
                 str(response.get("error", "discovery failed")),
                 detail=str(response["detail"]) if response.get("detail") else None,
@@ -331,12 +518,12 @@ def discover_collectors_at(
         # 失敗があったときだけ親のログへ転記する。
         failed = any("manifest" not in item for item in plugins)
         _log_discovery_output(
-            completed.stderr, logging.WARNING if failed else logging.DEBUG
+            stderr, logging.WARNING if failed else logging.DEBUG
         )
         return plugins
 
     logger.error(
-        "collector plugin discovery produced no response rc=%s", completed.returncode
+        "collector plugin discovery produced no response rc=%s", returncode
     )
     raise CollectorWorkerError("plugin discovery produced no response")
 
@@ -351,10 +538,8 @@ def build_remote_plugins(
     Returns:
         ``(プロキシ一覧, entry point 名 → 失敗理由)``。
     """
-    discovered = discover_collectors_at(
-        plugin_search_paths(plugin_dir), include_environment=include_environment
-    )
-    paths = plugin_search_paths(plugin_dir)
+    paths = _active_paths(plugin_dir)
+    discovered = discover_collectors_at(paths, include_environment=include_environment)
     plugins: list[RemoteCollectorPlugin] = []
     failures: dict[str, str] = {}
     for item in discovered:

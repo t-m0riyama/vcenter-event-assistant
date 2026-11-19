@@ -45,12 +45,15 @@ class IngestRunResult:
 
 async def run_registered_collector(settings: Settings, plugin_id: str) -> tuple[CollectorRunResult, ...]:
     """Run one enabled collector for every enabled vCenter."""
-    registration = get_collector_registry().get(plugin_id)
-    if registration is None:
-        return (CollectorRunResult(plugin_id, "failed", error="collector not found"),)
-    async with session_scope(settings=settings) as session:
-        ids = [vc.id for vc in await list_enabled_vcenters(session)]
-    return tuple(await asyncio.gather(*(run_collector_for_vcenter(settings, registration, vid) for vid in ids)))
+    with get_collector_registry().reserve() as registry:
+        registration = registry.get(plugin_id)
+        if registration is None:
+            return (CollectorRunResult(plugin_id, "failed", error="collector not found"),)
+        async with session_scope(settings=settings) as session:
+            ids = [vc.id for vc in await list_enabled_vcenters(session)]
+        return tuple(await asyncio.gather(
+            *(run_collector_for_vcenter(settings, registration, vid) for vid in ids)
+        ))
 
 
 @asynccontextmanager

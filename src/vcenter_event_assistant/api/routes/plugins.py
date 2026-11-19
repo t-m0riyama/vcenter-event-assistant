@@ -33,7 +33,9 @@ from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
 )
 from vcenter_event_assistant.plugins.reload import reload_collector_registry
+from vcenter_event_assistant.plugins.remote import CollectorWorkerError
 from vcenter_event_assistant.services.plugin_installs import (
+    PluginPublicationBusyError,
     create_upload_dir,
     list_installed_plugins,
     remove_installed_plugin,
@@ -268,9 +270,12 @@ async def reload_collectors(
     settings: Settings = Depends(get_app_settings),
 ) -> CollectorReloadResponse:
     """レジストリを再構築して原子的に差し替え、スケジューラのジョブを追従させる。"""
-    result = await reload_collector_registry(
-        settings, scheduler=getattr(request.app.state, "scheduler", None)
-    )
+    try:
+        result = await reload_collector_registry(
+            settings, scheduler=getattr(request.app.state, "scheduler", None)
+        )
+    except CollectorWorkerError as exc:
+        raise HTTPException(503, "プラグイン検出に失敗しました。現在の設定は維持されています。") from exc
     registry = get_collector_registry()
     runs_by_plugin = await _run_statuses_by_plugin(session)
     return CollectorReloadResponse(
@@ -406,6 +411,8 @@ async def uninstall(
     """配布物を削除する。稼働中の世代への反映には別途リロードが必要である。"""
     try:
         removed = await remove_installed_plugin(session, settings, distribution)
+    except PluginPublicationBusyError as exc:
+        raise HTTPException(409, detail=str(exc)) from exc
     except PluginInstallError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not removed:

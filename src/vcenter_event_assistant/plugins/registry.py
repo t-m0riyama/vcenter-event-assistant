@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from importlib.metadata import entry_points
 from types import MappingProxyType
@@ -35,6 +38,7 @@ class CollectorRegistration:
     config: CollectorConfig | None
     status: str
     error: str | None = None
+    worker_service_failed: bool = False
 
 
 class CollectorRegistry:
@@ -43,6 +47,24 @@ class CollectorRegistry:
     ):
         self._registrations = MappingProxyType(dict(registrations))
         self.generation = generation
+        self._users = 0
+        self._idle = asyncio.Event()
+        self._idle.set()
+
+    @contextmanager
+    def reserve(self) -> Iterator[CollectorRegistry]:
+        """Keep this generation available from dispatch through completion."""
+        self._users += 1
+        self._idle.clear()
+        try:
+            yield self
+        finally:
+            self._users -= 1
+            if not self._users:
+                self._idle.set()
+
+    async def wait_until_idle(self) -> None:
+        await self._idle.wait()
 
     @property
     def registrations(self) -> Mapping[str, CollectorRegistration]:
@@ -78,6 +100,8 @@ def activate_collector_registry(registry: CollectorRegistry) -> None:
 
 async def start_collector_registry(registry: CollectorRegistry) -> CollectorRegistry:
     """Start enabled plugins, isolating lifecycle failures into a new snapshot."""
+    from vcenter_event_assistant.plugins.remote import CollectorWorkerServiceError
+
     registrations = dict(registry.registrations)
     for registration in registry.enabled():
         assert registration.plugin is not None
@@ -91,21 +115,29 @@ async def start_collector_registry(registry: CollectorRegistry) -> CollectorRegi
                 registration,
                 status="failed",
                 error=f"start failed: {type(exc).__name__}",
+                worker_service_failed=isinstance(exc, CollectorWorkerServiceError),
             )
     return CollectorRegistry(registrations, generation=registry.generation)
 
 
 async def shutdown_collector_registry(registry: CollectorRegistry) -> None:
     """Stop a registry generation without allowing one plugin to block the others."""
+    from vcenter_event_assistant.plugins.remote import RemoteCollectorPlugin
     from vcenter_event_assistant.plugins.runtime import drain_collector_runs
 
+    await registry.wait_until_idle()
     await drain_collector_runs(
         {registration.plugin_id for registration in registry.enabled()}
     )
-    for registration in registry.enabled():
-        assert registration.plugin is not None
+    for registration in registry.registrations.values():
+        plugin = registration.plugin
+        if plugin is None or (
+            registration.status != "enabled"
+            and not (isinstance(plugin, RemoteCollectorPlugin) and plugin.is_running)
+        ):
+            continue
         try:
-            await registration.plugin.stop()
+            await plugin.stop()
         except Exception:
             logger.exception(
                 "collector plugin stop failed plugin_id=%s", registration.plugin_id
@@ -148,15 +180,16 @@ def _discover_external_collectors(settings: Settings):
         plugin_search_paths,
     )
 
-    try:
-        installed_names = [
-            ep.name for ep in entry_points(group="vcenter_event_assistant.collectors")
-        ]
-    except Exception:
-        logger.exception("collector entry point enumeration failed")
-        installed_names = []
-    if not installed_names and not plugin_search_paths(settings.plugin_dir):
-        return [], {}, None
+    if not settings.plugin_service_socket_dir:
+        try:
+            installed_names = [
+                ep.name for ep in entry_points(group="vcenter_event_assistant.collectors")
+            ]
+        except Exception:
+            logger.exception("collector entry point enumeration failed")
+            installed_names = []
+        if not installed_names and not plugin_search_paths(settings.plugin_dir):
+            return [], {}, None
 
     try:
         plugins, failures = build_remote_plugins(settings.plugin_dir)

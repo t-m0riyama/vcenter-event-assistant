@@ -18,6 +18,8 @@ from vcenter_event_assistant.plugins.registry import (
     shutdown_collector_registry,
     start_collector_registry,
 )
+from vcenter_event_assistant.plugins.remote import CollectorWorkerServiceError
+from vcenter_event_assistant.services.plugin_installs import prune_retired_plugin_generations
 from vcenter_event_assistant.services.plugin_settings import (
     load_collector_db_overrides_with_settings,
 )
@@ -32,6 +34,21 @@ _reload_lock = asyncio.Lock()
 class ReloadResult:
     generation: int
     job_changes: dict[str, list[str]]
+
+
+async def start_replacement_registry(
+    settings: Settings, candidate: CollectorRegistry
+) -> CollectorRegistry:
+    discovery = candidate.get("discovery")
+    if settings.plugin_service_socket_dir and discovery and discovery.source == "discovery":
+        raise CollectorWorkerServiceError("plugin worker discovery is unavailable")
+    started = await start_collector_registry(candidate)
+    if settings.plugin_service_socket_dir and any(
+        registration.worker_service_failed for registration in started.registrations.values()
+    ):
+        await shutdown_collector_registry(started)
+        raise CollectorWorkerServiceError("plugin worker service is unavailable")
+    return started
 
 
 async def reload_collector_registry(
@@ -58,7 +75,7 @@ async def reload_collector_registry(
             generation=previous.generation + 1,
             db_overrides=overrides,
         )
-        started = await start_collector_registry(candidate)
+        started = await start_replacement_registry(settings, candidate)
         activate_collector_registry(started)
 
         job_changes: dict[str, list[str]] = {
@@ -70,6 +87,7 @@ async def reload_collector_registry(
             job_changes = reconcile_collector_jobs(scheduler, settings, started)
 
         await shutdown_collector_registry(previous)
+        await prune_retired_plugin_generations(settings, started)
         logger.info(
             "collector registry reloaded generation=%s jobs=%s",
             started.generation,
