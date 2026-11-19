@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  incidentTimelineBuildRequestSchema,
   incidentTimelineManualSnapshotCreateRequestSchema,
   incidentTimelineManualSnapshotCreateResponseSchema,
   incidentTimelineManualSnapshotListResponseSchema,
@@ -197,5 +198,47 @@ describe('読めない graph_context（Issue #332）', () => {
         graph_context: { marker_timestamp_utc: '2026-01-01T09:30:00+09:00' },
       }),
     ).toThrow()
+  })
+})
+
+describe('保存済み build_request_payload の vcenter_id（Issue #341）', () => {
+  const legacyId = '11111111-1111-1111-1111-111111111111'
+  const regularId = 'ef25d69a-f85c-419b-9fec-b98354eca459'
+  const payload = { ...ACTUAL_BUILD_REQUEST, vcenter_id: legacyId }
+
+  it('通常の UUID と RFC 形式以外の UUID が混在する一覧を読み、全項目を保持する', () => {
+    const regularPayload = { ...ACTUAL_BUILD_REQUEST, vcenter_id: regularId }
+    const parsed = incidentTimelineManualSnapshotListResponseSchema.parse({
+      items: [
+        { ...ACTUAL_LIST_ITEM, build_request_payload: regularPayload },
+        { ...ACTUAL_LIST_ITEM, snapshot_id: 'legacy', build_request_payload: payload },
+      ],
+      total: 2, limit: 20, offset: 0,
+    })
+    expect(parsed.items.map((item) => item.build_request_payload)).toEqual([regularPayload, payload])
+  })
+
+  it('保存の応答と詳細も build_request_payload 全体を保持する', () => {
+    const response = { ...ACTUAL_LIST_ITEM, build_request_payload: payload }
+    expect(incidentTimelineManualSnapshotCreateResponseSchema.parse(response).build_request_payload).toEqual(payload)
+    expect(incidentTimelineManualSnapshotDetailSchema.parse(response).build_request_payload).toEqual(payload)
+  })
+
+  it('null と省略を受け付け、不正な ID は拒否する', () => {
+    for (const build_request_payload of [ACTUAL_BUILD_REQUEST, base.build_request_payload]) {
+      expect(incidentTimelineManualSnapshotListItemSchema.parse({ ...ACTUAL_LIST_ITEM, build_request_payload }).build_request_payload)
+        .toEqual(build_request_payload)
+    }
+    expect(() => incidentTimelineManualSnapshotListItemSchema.parse({
+      ...ACTUAL_LIST_ITEM, build_request_payload: { ...payload, vcenter_id: 'not-a-uuid' },
+    })).toThrow()
+  })
+
+  it('保存の要求では RFC 形式以外の UUID を拒否する', () => {
+    expect(() => incidentTimelineBuildRequestSchema.parse(payload)).toThrow()
+    expect(() => incidentTimelineManualSnapshotCreateRequestSchema.parse({
+      from: base.from, to: base.to, timestamp_utc: base.timestamp_utc, operator_note: 'm',
+      build_request_payload: payload,
+    })).toThrow()
   })
 })
