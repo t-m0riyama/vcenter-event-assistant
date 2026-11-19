@@ -30,7 +30,7 @@ async def postgres_sessions():
         pytest.skip("requires a dedicated PostgreSQL test database")
 
     settings = Settings(_env_file=None, database_url=url)
-    engine = create_async_engine(url)
+    engine = create_async_engine(url, connect_args={"timeout": 5})
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
         await run_startup_migration(engine, settings=settings)

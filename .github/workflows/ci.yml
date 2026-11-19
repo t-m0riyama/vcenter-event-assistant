@@ -193,7 +193,7 @@ jobs:
         ports:
           - 5432/tcp
         options: >-
-          --health-cmd "pg_isready -U vea_ci -d vea_ci"
+          --health-cmd "pg_isready -h 127.0.0.1 -U vea_ci -d vea_ci"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 10
@@ -205,7 +205,7 @@ jobs:
       - run: uv sync --locked --all-groups
       - run: uv run --no-sync pytest -q tests/test_auth_postgres.py
         env:
-          VEA_TEST_AUTH_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@localhost:${{ job.services.postgres.ports['5432'] }}/vea_ci
+          VEA_TEST_AUTH_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
   plugin-compose:
     needs: changes
