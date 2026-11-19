@@ -160,6 +160,11 @@ export const incidentTimelineBuildRequestSchema = z
 
 export type IncidentTimelineBuildRequest = z.infer<typeof incidentTimelineBuildRequestSchema>
 
+// 保存済みの応答には Python が受け付ける RFC 形式以外の UUID も含まれる。
+const incidentTimelineBuildResponseSchema = incidentTimelineBuildRequestSchema.extend({
+  vcenter_id: z.guid().nullable().optional(),
+})
+
 /**
  * サーバは未指定の項目を null で返す（`str | None`）。null は未指定（undefined）と同じ扱いにそろえる。
  * 使う側は `?? ''` などで読むので、型は optional のまま変わらない。
@@ -211,7 +216,7 @@ export const incidentTimelineManualSnapshotCreateResponseSchema = z.object({
   snapshot_id: z.string().min(1),
   operator_note: z.string(),
   timestamp_utc: isoOffsetDateTimeSchema,
-  build_request_payload: incidentTimelineBuildRequestSchema,
+  build_request_payload: incidentTimelineBuildResponseSchema,
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
   /** 読めない形のときは null（保存できているのに失敗と表示して、送り直しで重複させないため）。 */
@@ -229,7 +234,7 @@ export const incidentTimelineManualSnapshotListItemSchema = z.object({
   to: isoOffsetDateTimeSchema,
   operator_note: z.string(),
   timestamp_utc: isoOffsetDateTimeSchema,
-  build_request_payload: incidentTimelineBuildRequestSchema,
+  build_request_payload: incidentTimelineBuildResponseSchema,
   snapshot_kind: z.enum(['manual', 'auto']).optional().default('manual'),
   trigger_id: z.string().optional().nullable(),
   trigger_evidence: z.record(z.string(), z.unknown()).optional().nullable(),
