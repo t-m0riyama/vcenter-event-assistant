@@ -65,6 +65,30 @@ async def test_it_converts_events_with_the_natural_key() -> None:
     assert all(collector.destroyed for collector in si.event_collectors)
 
 
+@pytest.mark.parametrize(
+    ("event_type_id", "expected"),
+    [
+        ("  esx.problem.storage.apd.start\t", "esx.problem.storage.apd.start"),
+        (" \t ", "EventEx"),
+        ("a" * 513, "EventEx"),
+        (123, "EventEx"),
+    ],
+    ids=["padded", "blank", "too-long", "non-string"],
+)
+async def test_it_uses_a_valid_event_type_id(event_type_id: str | int, expected: str) -> None:
+    si = FakeServiceInstance(
+        events=[fake_event(event_type="EventEx", eventTypeId=event_type_id)]
+    )
+
+    batch = await run_collect(
+        PowerEventCollector(),
+        connection=si,
+        config={"event_types": "esx.problem.storage.apd.start"},
+    )
+
+    assert [event.event_type for event in batch.events] == [expected]
+
+
 async def test_it_asks_vcenter_only_for_the_declared_event_types() -> None:
     si = FakeServiceInstance()
     await run_collect(PowerEventCollector(), connection=si)

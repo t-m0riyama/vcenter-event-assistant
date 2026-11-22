@@ -235,6 +235,7 @@ from vcenter_event_assistant_plugin_api import (
     get_plugin_logger,
     timeutils,
 )
+from vcenter_event_assistant_plugin_api.limits import MAX_EVENT_TYPE
 
 #: entry point 名（pyproject.toml）と一致させること。
 PLUGIN_ID = "$plugin_id"
@@ -312,10 +313,16 @@ class $class_name(EventCollector):
             return None
         entity = getattr(event, "entity", None)
         severity = getattr(event, "severity", None)
+        event_type = type(event).__name__
+        event_type_id = getattr(event, "eventTypeId", None)
+        if isinstance(event_type_id, str):
+            event_type_id = event_type_id.strip()
+            if event_type_id and len(event_type_id) <= MAX_EVENT_TYPE:
+                event_type = event_type_id
         return EventInput(
             # naive な datetime はバッチ全体の拒否になる。
             occurred_at=timeutils.ensure_aware(event.createdTime),
-            event_type=type(event).__name__,
+            event_type=event_type,
             message=getattr(event, "fullFormattedMessage", None) or str(event),
             vmware_key=int(key),
             severity=str(severity).lower() if severity is not None else None,

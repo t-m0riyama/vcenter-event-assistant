@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pyVmomi import vim
+from vcenter_event_assistant_plugin_api.limits import MAX_EVENT_TYPE
 from vcenter_event_assistant_plugin_api.timeutils import ensure_aware
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
@@ -102,12 +103,21 @@ def fetch_events_from_connection_blocking(
     return normalized, max_ts
 
 
+def _event_type_of(e: Any) -> str:
+    event_type_id = getattr(e, "eventTypeId", None)
+    if isinstance(event_type_id, str):
+        event_type_id = event_type_id.strip()
+        if event_type_id and len(event_type_id) <= MAX_EVENT_TYPE:
+            return event_type_id
+    return type(e).__name__
+
+
 def normalize_event(e: Any) -> dict[str, Any] | None:
     """Map a pyVmomi event object to a plain dict for persistence.
 
     ``key`` が無い、または ``None`` のイベントは ``vmware_key=0`` に潰さずスキップする。
     """
-    event_type = type(e).__name__
+    event_type = _event_type_of(e)
     created = getattr(e, "createdTime", None) or datetime.now(timezone.utc)
     created = _ensure_aware(created)
     message = getattr(e, "fullFormattedMessage", None) or str(e)

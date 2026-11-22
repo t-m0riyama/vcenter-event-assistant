@@ -8,6 +8,11 @@
 
 ### 更新の前に（互換性のない変更）
 
+- **`EventEx` と `ExtendedEvent` のイベント種別に `eventTypeId` を使うようにした**（Issue #346）。前後の空白を除いて空か 512 文字を超える場合は、クラス名を使う
+  - `vim.event.EventEx` と `vim.event.ExtendedEvent` に設定したスコアルールとガイドは、それぞれのクラス名で保存した古い行と、`eventTypeId` が空などでクラス名を使う新しい行にだけ当たる。`ExtendedEvent` は `eventTypeId` が必須なので、ほぼすべてが新しい種別になる。ID で取り込まれるイベントに適用するには、`esx.problem.storage.apd.start` などの ID で設定し直す。スコアルールは種別の完全一致で適用する
+  - イベントスコアのアラートは種別を状態のキー（`context_key`）にする。これまでクラス名ごとに 1 件にまとまっていたアラートの状態と再通知の間隔は `eventTypeId` ごとに分かれるため、更新直後から通知が増えることがある
+  - `vim.event.EventEx` と `vim.event.ExtendedEvent` で発火中のイベントスコアのアラートは自動で解消されないため、手で解消する
+  - 保存済みの古い行は `event_retention_days`（既定 7 日）が過ぎると消える
 - アラートルールを更新する `PATCH /api/alerts/rules/{id}` には、一覧などで取得した `revision` が必要になった（Issue #279）。直接呼び出すスクリプトは本文に `revision` を含める。複数台で運用する場合は旧バックエンドを停止し、全台を更新してから書き込みを再開する。 [API の仕様](docs/development/backend.md#24-ルールガイドアラート)
 - ローカルログインを無効にすると、ローカルユーザーの既存セッションも失効する（Issue #292）。複数台で運用する場合は旧設定のインスタンスを停止してから切替を完了する。[ディレクトリ認証ガイド](docs/userguide/directory-auth.md#11-ディレクトリだけで運用する)
 - 旧形式のプラグイン用環境変数が複数のプラグインに対応する場合は、対象のプラグインが起動しない（Issue #299）。起動ログに出る変数を一意な新形式に置き換える。[移行方法](docs/operations/collector-plugins.md)

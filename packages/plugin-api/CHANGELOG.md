@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.2
+
+- 雛形が生成するイベントコレクタでは、`eventTypeId` の前後の空白を除いた値が 1〜512 文字ならイベント種別に使い、それ以外ならクラス名を使う（Issue #346）。
+
 ## 1.5.1
 
 - Reject IPv6 literals with scope identifiers in SSH configuration and connections. Use a permitted address without a scope identifier or a DNS name.

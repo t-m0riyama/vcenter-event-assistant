@@ -11,10 +11,12 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from runpy import run_path
 
 import pytest
 
 from vcenter_event_assistant_plugin_api import __version__, scaffold
+from vcenter_event_assistant_plugin_api.testing import fake_event
 
 
 class TestNames:
@@ -126,6 +128,38 @@ class TestRenderedProject:
         assert "vmware_key=int(key)" in module
         # ハッシュ由来のキーを勧めてはならない（重複排除で静かに消える）。
         assert "stable_int31" not in module
+
+    @pytest.mark.parametrize(
+        ("event_type", "attributes", "expected"),
+        [
+            (
+                "EventEx",
+                {"eventTypeId": "esx.problem.net.vmnic.linkstate.down"},
+                "esx.problem.net.vmnic.linkstate.down",
+            ),
+            ("VmPoweredOnEvent", {}, "VmPoweredOnEvent"),
+            ("EventEx", {"eventTypeId": " \t "}, "EventEx"),
+            ("EventEx", {"eventTypeId": "a" * 513}, "EventEx"),
+            (
+                "EventEx",
+                {"eventTypeId": "  esx.problem.net.vmnic.linkstate.down\t"},
+                "esx.problem.net.vmnic.linkstate.down",
+            ),
+            ("EventEx", {"eventTypeId": 123}, "EventEx"),
+        ],
+        ids=["id", "missing", "blank", "too-long", "padded", "non-string"],
+    )
+    def test_the_generated_event_converter_resolves_event_type(
+        self, tmp_path: Path, event_type: str, attributes: dict[str, object], expected: str
+    ) -> None:
+        scaffold.write_project(_render("event"), tmp_path)
+        module = run_path(str(tmp_path / "src" / "acme_sensor_collector" / "__init__.py"))
+        collector = module["build_collector"]()
+
+        result = collector._convert(fake_event(event_type=event_type, **attributes))
+
+        assert result is not None
+        assert result.event_type == expected
 
 
 class TestWriteProject:

@@ -139,11 +139,16 @@ def _to_event_input(raw: Any) -> EventInput | None:
     entity = getattr(raw, "entity", None)
     severity = getattr(raw, "severity", None)
     message = getattr(raw, "fullFormattedMessage", None) or str(raw)
+    event_type = type(raw).__name__
+    event_type_id = getattr(raw, "eventTypeId", None)
+    if isinstance(event_type_id, str):
+        event_type_id = event_type_id.strip()
+        if event_type_id and len(event_type_id) <= limits.MAX_EVENT_TYPE:
+            event_type = event_type_id
     return EventInput(
         # naive な datetime はバッチ全体の拒否になる。
         occurred_at=timeutils.ensure_aware(raw.createdTime),
-        # アプリはイベント種別をクラス名から取る。
-        event_type=type(raw).__name__,
+        event_type=event_type,
         message=message,
         vmware_key=key,
         severity=str(severity).lower() if severity is not None else None,
