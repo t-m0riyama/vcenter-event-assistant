@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, UUID4, model_validator
 
 
 class AlertRuleCreate(BaseModel):
@@ -39,6 +39,7 @@ class AlertRuleCreate(BaseModel):
 
 
 class AlertRuleUpdate(BaseModel):
+    revision: UUID4
     name: str | None = Field(default=None, min_length=1, max_length=255)
     is_enabled: bool | None = None
     alert_level: Literal["critical", "error", "warning"] | None = None
@@ -55,6 +56,7 @@ class AlertRuleRead(BaseModel):
     alert_level: Literal["critical", "error", "warning"]
     config: dict
     created_at: datetime
+    revision: UUID4
 
 
 class AlertRulesImportRequest(BaseModel):

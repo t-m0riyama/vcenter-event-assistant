@@ -10,6 +10,7 @@ export const alertRuleRowSchema = z.object({
   alert_level: z.enum(['critical', 'error', 'warning']),
   config: alertRuleConfigSchema,
   created_at: z.string(),
+  revision: z.uuidv4(),
 })
 
 export type AlertRuleRow = z.infer<typeof alertRuleRowSchema>

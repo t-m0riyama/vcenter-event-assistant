@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { toErrorMessage } from '../../utils/errors'
 
 type IdentifiableRow = { id: number }
+type ListUpdate<TItem> = (items: TItem[]) => TItem[]
 
 /**
  * Settings 系パネル共通: 一覧取得 + id キーの draft マップ同期。
@@ -62,15 +63,31 @@ export function useSettingsListFetch<TItem>(options: {
   const { onError, fetchList } = options
   const [list, setList] = useState<TItem[]>([])
   const [loading, setLoading] = useState(true)
+  const requests = useRef({ started: 0, applied: 0 })
+  const pendingReads = useRef(new Set<ListUpdate<TItem>[]>())
 
-  const load = useCallback(async () => {
+  const updateList = useCallback((update: ListUpdate<TItem>) => {
+    // Apply saves to reads already in flight so their other rows can still be used.
+    for (const updates of pendingReads.current) updates.push(update)
+    setList(update)
+  }, [])
+
+  const load = useCallback(async (onSuccess?: () => void) => {
+    const request = ++requests.current.started
+    const updates: ListUpdate<TItem>[] = []
+    pendingReads.current.add(updates)
     try {
       onError('')
       const parsed = await fetchList()
-      setList(parsed)
+      if (request > requests.current.applied) {
+        requests.current.applied = request
+        setList(updates.reduce((items, update) => update(items), parsed))
+        onSuccess?.()
+      }
     } catch (e) {
-      onError(toErrorMessage(e))
+      if (request > requests.current.applied) onError(toErrorMessage(e))
     } finally {
+      pendingReads.current.delete(updates)
       setLoading(false)
     }
   }, [onError, fetchList])
@@ -79,5 +96,5 @@ export function useSettingsListFetch<TItem>(options: {
     void load()
   }, [load])
 
-  return { list, setList, loading, load }
+  return { list, updateList, loading, load }
 }

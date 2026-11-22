@@ -81,7 +81,10 @@
 - `GET /api/alerts/history`
 
 アラートルールは `alert_level`（`critical` / `error` / `warning`）を持ち、メール通知の件名・本文および `alert_history` の各行に、通知時点のレベルが記録される。既存 DB はマイグレーションで `warning` を既定とする。イベント行の `severity`（VMware 由来）とは別の運用重大度である。
-`PATCH /api/alerts/rules/{id}` では `name` の重複更新は `409` を返し、`config` は部分更新ではなく全置換として扱う。
+
+アラートルールの一覧・作成・更新レスポンスには、不透明な UUID の `revision` が入る。`PATCH /api/alerts/rules/{id}` の JSON 本文には、編集の基準にしたルールから取得した `revision` を含める。欠落や形式違反は `422`、更新対象が削除済みなら `404` を返す。版が古い場合は `409` と `X-VEA-Error-Code: alert_rule_stale` を返すので、最新の内容を読み直して変更を確認する。名前の重複も `409` になる。`config` を送ると設定全体が置き換わる。
+
+ルール保存とインポートの上書き時には新しい版を発行する。エクスポート／インポートでは従来の JSON 形式を使う。
 
 #### 定期アラート評価（トラブルシュート）
 

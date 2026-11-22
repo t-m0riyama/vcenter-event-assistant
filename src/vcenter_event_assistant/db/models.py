@@ -315,6 +315,7 @@ class AlertRule(Base):
     # critical / error / warning（運用上の重大度）
     alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
+    revision: Mapped[uuid.UUID] = mapped_column(Uuid(), default=uuid.uuid4)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
