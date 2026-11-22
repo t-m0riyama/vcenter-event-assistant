@@ -206,6 +206,10 @@ jobs:
       - run: uv run --no-sync pytest -q tests/test_auth_postgres.py
         env:
           VEA_TEST_AUTH_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
+      - name: Verify alert rule revision migration and concurrent saves
+        run: uv run --no-sync pytest -q tests/services/alerting/test_outbox_database.py -k alert_rule_revision
+        env:
+          VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
   plugin-compose:
     needs: changes

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
@@ -5,10 +6,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import AlertHistory, AlertRule, AlertState, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.settings import get_settings
 
 @pytest.mark.asyncio
 async def test_alerts_rules_crud(client: AsyncClient):
@@ -21,21 +24,25 @@ async def test_alerts_rules_crud(client: AsyncClient):
     })
     assert resp.status_code == 201
     rule_id = resp.json()["id"]
+    revision = resp.json()["revision"]
+    assert uuid.UUID(revision).version == 4
     assert resp.json()["alert_level"] == "error"
     
     # List
     resp = await client.get("/api/alerts/rules")
     assert resp.status_code == 200
-    assert any(r["id"] == rule_id for r in resp.json())
+    assert any(r["id"] == rule_id and r["revision"] == revision for r in resp.json())
     
     # Patch
     resp = await client.patch(f"/api/alerts/rules/{rule_id}", json={
+        "revision": revision,
         "is_enabled": False,
         "alert_level": "critical",
     })
     assert resp.status_code == 200
     assert resp.json()["is_enabled"] is False
     assert resp.json()["alert_level"] == "critical"
+    assert resp.json()["revision"] != revision
     
     # Delete
     resp = await client.delete(f"/api/alerts/rules/{rule_id}")
@@ -75,7 +82,7 @@ async def test_alerts_rules_patch_name_success(client: AsyncClient):
 
     patch_resp = await client.patch(
         f"/api/alerts/rules/{rule_id}",
-        json={"name": "Patch Name After"},
+        json={"revision": create_resp.json()["revision"], "name": "Patch Name After"},
     )
     assert patch_resp.status_code == 200
     body = patch_resp.json()
@@ -109,18 +116,25 @@ async def test_alerts_rules_patch_name_conflict_returns_409(client: AsyncClient)
     assert second_resp.status_code == 201
     second_id = second_resp.json()["id"]
 
-    patch_resp = await client.patch(
-        f"/api/alerts/rules/{second_id}",
-        json={"name": "Patch Conflict A"},
-    )
+    path = f"/api/alerts/rules/{second_id}"
+    revision = second_resp.json()["revision"]
+    patch_resp = await client.patch(path, json={"revision": revision, "name": "Patch Conflict A"})
     assert patch_resp.status_code == 409
     assert patch_resp.json()["detail"] == "Alert rule with this name already exists"
+    assert "X-VEA-Error-Code" not in patch_resp.headers
 
     verify_resp = await client.get("/api/alerts/rules")
     assert verify_resp.status_code == 200
     by_id = {item["id"]: item for item in verify_resp.json()}
     assert by_id[first_id]["name"] == "Patch Conflict A"
     assert by_id[second_id]["name"] == "Patch Conflict B"
+    assert by_id[second_id]["revision"] == revision
+
+    updated = await client.patch(path, json={"revision": revision, "is_enabled": False})
+    assert updated.status_code == 200
+    stale = await client.patch(path, json={"revision": revision, "name": "Patch Conflict A"})
+    assert stale.status_code == 409
+    assert stale.headers["X-VEA-Error-Code"] == "alert_rule_stale"
 
 
 @pytest.mark.asyncio
@@ -139,7 +153,10 @@ async def test_alerts_rules_patch_config_updates_config_only(client: AsyncClient
 
     patch_resp = await client.patch(
         f"/api/alerts/rules/{rule_id}",
-        json={"config": {"metric_key": "host.cpu.usage_pct", "threshold": 95}},
+        json={
+            "revision": create_resp.json()["revision"],
+            "config": {"metric_key": "host.cpu.usage_pct", "threshold": 95},
+        },
     )
     assert patch_resp.status_code == 200
     body = patch_resp.json()
@@ -148,6 +165,94 @@ async def test_alerts_rules_patch_config_updates_config_only(client: AsyncClient
     assert body["name"] == "Patch Config Rule"
     assert body["rule_type"] == "metric_threshold"
     assert body["alert_level"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_alert_rule_patch_requires_revision_and_rejects_reused_id(client: AsyncClient):
+    payload = {"name": "Recreated rule", "rule_type": "event_score", "alert_level": "warning"}
+    response = await client.post("/api/alerts/rules", json=payload)
+    assert response.status_code == 201
+    original = response.json()
+    path = f"/api/alerts/rules/{original['id']}"
+    change = {"alert_level": "error"}
+
+    assert (await client.patch(path, json=change)).status_code == 422
+    assert (await client.patch(path, json={**change, "revision": "invalid"})).status_code == 422
+    assert (await client.delete(path)).status_code == 204
+
+    stale_change = {**change, "revision": original["revision"]}
+    assert (await client.patch(path, json=stale_change)).status_code == 404
+
+    response = await client.post("/api/alerts/rules", json=payload)
+    assert response.status_code == 201
+    replacement = response.json()
+    assert replacement["id"] == original["id"]  # SQLite reuses the deleted ID.
+    assert replacement["revision"] != original["revision"]
+    stale = await client.patch(path, json=stale_change)
+    assert stale.status_code == 409
+    assert stale.headers["X-VEA-Error-Code"] == "alert_rule_stale"
+    assert (await client.get("/api/alerts/rules")).json() == [replacement]
+
+
+async def test_concurrent_alert_rule_patch_keeps_winning_update_in_memory(open_client, monkeypatch):
+    monkeypatch.setenv("VEA_AUTH_ENABLED", "0")
+    get_settings.cache_clear()
+    async with open_client(role=None) as client:
+        created = await client.post("/api/alerts/rules", json={
+            "name": "Concurrent rule", "rule_type": "event_score", "alert_level": "warning",
+        })
+        assert created.status_code == 201
+        rule = created.json()
+        path = f"/api/alerts/rules/{rule['id']}"
+
+        writer_has_updated = asyncio.Event()
+        other_has_connection = asyncio.Event()
+        finish_first_commit = asyncio.Event()
+        update_sessions = []
+        connections = []
+        scalars = AsyncSession.scalars
+        commit = AsyncSession.commit
+
+        async def track_rule_update(session, statement, *args, **kwargs):
+            if statement.is_update and statement.table.name == "alert_rules":
+                connection = await session.connection()
+                connections.append(connection.sync_connection.connection.driver_connection)
+                update_sessions.append(session)
+                if len(connections) == 2:
+                    other_has_connection.set()
+            return await scalars(session, statement, *args, **kwargs)
+
+        async def hold_first_commit(session):
+            if update_sessions and session is update_sessions[0] and not writer_has_updated.is_set():
+                writer_has_updated.set()
+                await finish_first_commit.wait()
+            await commit(session)
+
+        monkeypatch.setattr(AsyncSession, "scalars", track_rule_update)
+        monkeypatch.setattr(AsyncSession, "commit", hold_first_commit)
+
+        async def save(threshold):
+            return await client.patch(path, json={
+                "revision": rule["revision"], "config": {"threshold": threshold},
+            })
+
+        async with asyncio.TaskGroup() as tasks:
+            first = tasks.create_task(save(70))
+            try:
+                await asyncio.wait_for(writer_has_updated.wait(), timeout=5)
+                second = tasks.create_task(save(90))
+                await asyncio.wait_for(other_has_connection.wait(), timeout=5)
+                assert connections[0] is not connections[1]
+            finally:
+                finish_first_commit.set()
+
+        assert first.result().status_code == 200
+        assert second.result().status_code == 409
+        assert second.result().headers["X-VEA-Error-Code"] == "alert_rule_stale"
+        saved = first.result().json()
+        assert saved["config"] == {"threshold": 70}
+        assert saved["revision"] != rule["revision"]
+        assert (await client.get("/api/alerts/rules")).json() == [saved]
 
 
 @pytest.mark.asyncio
@@ -231,21 +336,19 @@ async def test_alert_rules_import_overwrite_existing_updates_fields(client: Asyn
     )
     assert created.status_code == 201
 
-    imp = await client.post(
-        "/api/alerts/rules/import",
-        json={
-            "overwrite_existing": True,
-            "delete_rules_not_in_import": False,
-            "rules": [
-                {
-                    "name": "Overwrite Target",
-                    "rule_type": "metric_threshold",
-                    "alert_level": "critical",
-                    "config": {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5},
-                },
-            ],
-        },
-    )
+    original = created.json()
+    imported = {
+        "name": "Overwrite Target",
+        "rule_type": "metric_threshold",
+        "alert_level": "critical",
+        "config": {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5},
+    }
+    path = "/api/alerts/rules/import"
+    skipped = await client.post(path, json={"overwrite_existing": False, "rules": [imported]})
+    assert skipped.status_code == 200
+    assert (await client.get("/api/alerts/rules")).json() == [original]
+
+    imp = await client.post(path, json={"overwrite_existing": True, "rules": [imported]})
     assert imp.status_code == 200
     assert imp.json()["rules_count"] == 1
 
@@ -253,9 +356,17 @@ async def test_alert_rules_import_overwrite_existing_updates_fields(client: Asyn
     assert listed.status_code == 200
     by_name = {item["name"]: item for item in listed.json()}
     target = by_name["Overwrite Target"]
+    assert target["id"] == original["id"]
+    assert target["revision"] != original["revision"]
     assert target["rule_type"] == "metric_threshold"
     assert target["alert_level"] == "critical"
     assert target["config"] == {"metric_key": "host.cpu.usage_pct", "threshold": 95, "window_minutes": 5}
+
+    path = f"/api/alerts/rules/{target['id']}"
+    stale = await client.patch(path, json={"revision": original["revision"], "alert_level": "error"})
+    assert stale.status_code == 409
+    assert stale.headers["X-VEA-Error-Code"] == "alert_rule_stale"
+    assert (await client.get("/api/alerts/rules")).json() == [target]
 
 
 @pytest.mark.asyncio

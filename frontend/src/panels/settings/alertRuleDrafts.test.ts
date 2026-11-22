@@ -4,15 +4,21 @@ import {
   discardAlertRuleDraft,
   draftKey,
   draftValues,
+  markAlertRuleDraftConflict,
   reconcileAlertRuleDrafts,
   type AlertRuleDraftSource,
   type AlertRuleDrafts,
 } from './alertRuleDrafts'
 
+const initialRevision = '81d535f3-9d2b-4050-a276-284566833a48'
+const recentRevision = '24cc5d8e-b239-4250-80fb-e6478ff2c8bc'
+
 const rule = (patch: Partial<AlertRuleDraftSource> = {}): AlertRuleDraftSource => ({
   id: 7,
   created_at: '2026-10-01T00:00:00Z',
+  revision: initialRevision,
   name: 'High score',
+  rule_type: 'event_score',
   alert_level: 'critical',
   is_enabled: true,
   config: { threshold: 80, cooldown_minutes: 30 },
@@ -43,6 +49,25 @@ describe('alertRuleDrafts', () => {
   it('読み直しで変化が無ければ同じオブジェクトを返す', () => {
     const drafts = applyAlertRuleEdit({}, rule(), { name: 'Renamed' })
     expect(reconcileAlertRuleDrafts(drafts, [rule()])).toBe(drafts)
+  })
+
+  it('編集欄の値が同じでも読み直した版を保存に使う', () => {
+    const drafts = applyAlertRuleEdit({}, rule(), { name: 'Renamed' })
+    const next = reconcileAlertRuleDrafts(drafts, [rule({ revision: recentRevision })])
+    expect(next[key]).toMatchObject({ baseRevision: recentRevision, edits: { name: 'Renamed' }, conflict: false })
+  })
+
+  it('インポートでルールの種別が変わったら、別の項目を編集していた場合も競合にする', () => {
+    const drafts = applyAlertRuleEdit({}, rule(), { name: 'Renamed' })
+    const next = reconcileAlertRuleDrafts(drafts, [rule({ rule_type: 'metric_threshold', revision: recentRevision })])
+    expect(next[key]).toMatchObject({ edits: { name: 'Renamed' }, conflict: true })
+  })
+
+  it('保存で競合したら、別の操作で一覧が更新されても下書きを保持する', () => {
+    const drafts = applyAlertRuleEdit({}, rule(), { name: 'Renamed' })
+    const conflicted = markAlertRuleDraftConflict(drafts, rule())
+    const next = reconcileAlertRuleDrafts(conflicted, [rule({ name: 'Renamed', revision: recentRevision })])
+    expect(next[key]).toMatchObject({ edits: { name: 'Renamed' }, conflict: true })
   })
 
   it('触っていない項目がサーバで変わっても競合にせず、base を読み直した値にする', () => {

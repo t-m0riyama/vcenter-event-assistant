@@ -24,7 +24,7 @@ cp .env.example .env
 | SQLite ファイル      | `sqlite+aiosqlite:///./data/vea.db`（先に `mkdir -p data`）                 |
 | SQLite メモリ       | `sqlite+aiosqlite:///:memory:`（主にテスト）                                   |
 
-**運用上の目安:** SQLite（ファイル・メモリとも）は **小規模・単一ノード・開発向け**。vCenter を多数接続する本番や同時に API・取り込み・評価が走る環境では **PostgreSQL を推奨**する。SQLite 利用時は 1 接続（StaticPool）で処理が直列化され、大きな取り込みトランザクション中は API 応答が遅くなることがある。詳細は [backend-operations.md](backend-operations.md) を参照。
+**運用上の目安:** SQLite（ファイル・メモリとも）は **小規模・単一ノード・開発向け**。vCenter を多数接続する本番や同時に API・取り込み・評価が走る環境では **PostgreSQL を推奨**する。SQLite は書き込みを直列化するため、大きな取り込みトランザクション中は API 応答が遅くなることがある。詳細は [backend-operations.md](backend-operations.md) を参照。
 
 ### ダイジェスト用 LLM（任意）
 

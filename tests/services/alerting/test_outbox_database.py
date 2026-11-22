@@ -1,13 +1,17 @@
 """Migration and delivery against SQLite and an explicitly dedicated PostgreSQL DB."""
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from alembic import command
+from fastapi import HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from vcenter_event_assistant.api.routes.alerts import import_alert_rules, patch_alert_rule
+from vcenter_event_assistant.api.schemas.alerts import AlertRulesImportRequest, AlertRuleUpdate
 from vcenter_event_assistant.db.alembic_runner import (
     _run_with_connection,
     alembic_config,
@@ -18,7 +22,7 @@ from vcenter_event_assistant.db.models import (
     AlertRule,
     AlertState,
 )
-from vcenter_event_assistant.db.session import init_db, reset_db, session_scope
+from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
 from vcenter_event_assistant.services.alerting.alert_eval_common import (
     PendingAlertNotification,
@@ -222,3 +226,95 @@ async def test_replayed_migration_preserves_pending_intents(database):
         )
         assert [row.delivery_status for row in histories] == ["pending", "retrying"]
         assert len((await session.scalars(select(AlertNotificationOutbox))).all()) == 2
+
+
+async def test_alert_rule_revision_migration_preserves_alert_delivery(database):
+    settings, _ = database
+    await init_db(settings=settings)
+    now = utc_now()
+    async with session_scope(settings=settings) as session:
+        rule = AlertRule(name="Keep history", rule_type="event_score")
+        other = AlertRule(name="Another rule", rule_type="event_score")
+        session.add_all([rule, other])
+        await session.flush()
+        rule_id = rule.id
+        original_revision = rule.revision
+        session.add(AlertState(rule_id=rule_id, state="firing", context_key="event", fired_at=now))
+        await outbox.enqueue_notification(
+            session,
+            settings,
+            PendingAlertNotification(rule_id, rule.name, rule.rule_type, "warning", "firing", "event", now, now, {}),
+        )
+
+    engine = get_engine(settings=settings)
+    cfg = alembic_config(settings=settings)
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync: _run_with_connection(
+                sync, cfg, lambda config: command.downgrade(config, "c6d7e8f9a0b1")
+            )
+        )
+        await connection.execute(text("UPDATE alert_rules SET created_at = CURRENT_TIMESTAMP"))
+    await migrate(engine, settings, "head")
+
+    async with session_scope(settings=settings) as session:
+        rules = {rule.id: rule for rule in (await session.scalars(select(AlertRule))).all()}
+        assert len(rules) == 2
+        assert all(rule.revision.version == 4 for rule in rules.values())
+        assert len({rule.revision for rule in rules.values()}) == 2
+        revision = rules[rule_id].revision
+        assert revision != original_revision
+        assert (await session.scalars(select(AlertState))).one().rule_id == rule_id
+        history = (await session.scalars(select(AlertHistory))).one()
+        assert history.rule_id == rule_id
+        assert (await session.scalars(select(AlertNotificationOutbox))).one().history_id == history.id
+
+    async with session_scope(settings=settings) as session:
+        updated = await patch_alert_rule(rule_id, AlertRuleUpdate(revision=revision, alert_level="error"), session)
+        assert updated.alert_level == "error"
+        assert updated.revision != revision
+
+
+async def test_alert_rule_revision_allows_only_one_concurrent_save(database):
+    settings, _ = database
+    await init_db(settings=settings)
+    async with session_scope(settings=settings) as session:
+        rule = AlertRule(name="Concurrent rule", rule_type="event_score")
+        session.add(rule)
+        await session.flush()
+        rule_id, revision = rule.id, rule.revision
+
+    both_read = asyncio.Barrier(2)
+
+    async def save(threshold: int):
+        try:
+            async with session_scope(settings=settings) as session:
+                read_revision = await session.scalar(select(AlertRule.revision).where(AlertRule.id == rule_id))
+                assert read_revision == revision
+                await both_read.wait()
+                return await patch_alert_rule(
+                    rule_id, AlertRuleUpdate(revision=read_revision, config={"threshold": threshold}), session
+                )
+        except HTTPException as exc:
+            assert exc.status_code == 409
+            assert exc.headers == {"X-VEA-Error-Code": "alert_rule_stale"}
+            return None
+
+    results = await asyncio.wait_for(asyncio.gather(save(70), save(90)), timeout=10)
+    assert results.count(None) == 1
+    winner = next(result for result in results if result is not None)
+    assert winner.revision != revision
+    async with session_scope(settings=settings) as session:
+        stored = await session.get(AlertRule, rule_id)
+        assert stored.revision == winner.revision
+        assert stored.config == winner.config
+
+    async with session_scope(settings=settings) as session:
+        await import_alert_rules(AlertRulesImportRequest.model_validate({
+            "rules": [{"name": winner.name, "rule_type": "event_score", "alert_level": "critical"}],
+        }), session)
+    async with session_scope(settings=settings) as session:
+        stored = await session.get(AlertRule, rule_id)
+        assert stored.revision != winner.revision
+        assert stored.config == {}
+        assert stored.alert_level == "critical"

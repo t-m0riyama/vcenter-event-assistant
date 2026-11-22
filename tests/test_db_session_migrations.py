@@ -331,6 +331,7 @@ async def test_disk_usage_metric_key_is_renamed_in_samples_rules_and_snapshots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``host.disk.usage_pct`` は ``host.disk.usage_kbps`` に付け替わり、downgrade で元に戻る（Issue #316）。"""
+    import json
     import uuid
     from datetime import datetime, timezone
 
@@ -373,7 +374,7 @@ async def test_disk_usage_metric_key_is_renamed_in_samples_rules_and_snapshots(
                     await session.execute(select(MetricSample).order_by(MetricSample.entity_moid, MetricSample.metric_key))
                 ).scalars()
             ]
-            rules = {row.name: dict(row.config) for row in (await session.execute(select(AlertRule))).scalars()}
+            rules = dict((await session.execute(select(AlertRule.name, AlertRule.config))).all())
             snapshots = {
                 row.operator_note: row.graph_context
                 for row in (await session.execute(select(IncidentTimelineManualSnapshot))).scalars()
@@ -414,15 +415,21 @@ async def test_disk_usage_metric_key_is_renamed_in_samples_rules_and_snapshots(
                 sample("host-2", old_key, 10.0),
                 sample("host-2", new_key, 20.0),
                 sample("host-3", "host.disk.read_kbps", 5.0),
-                AlertRule(name="disk", rule_type="metric_threshold", config={"metric_key": old_key, "threshold": 5000}),
-                AlertRule(
-                    name="cpu", rule_type="metric_threshold", config={"metric_key": "host.cpu.usage_pct", "threshold": 90}
-                ),
-                AlertRule(name="score", rule_type="event_score", config={"threshold": 60}),
                 snapshot("disk", {"metric_key": old_key, "chart_event_type": "vim.event.X"}),
                 snapshot("cpu", {"metric_key": "host.cpu.usage_pct"}),
                 snapshot("none", None),
             ]
+        )
+        await session.execute(
+            text(
+                "INSERT INTO alert_rules (name, rule_type, is_enabled, alert_level, config, created_at) "
+                "VALUES (:name, :rule_type, 1, 'warning', :config, CURRENT_TIMESTAMP)"
+            ),
+            [
+                {"name": "disk", "rule_type": "metric_threshold", "config": json.dumps({"metric_key": old_key, "threshold": 5000})},
+                {"name": "cpu", "rule_type": "metric_threshold", "config": json.dumps({"metric_key": "host.cpu.usage_pct", "threshold": 90})},
+                {"name": "score", "rule_type": "event_score", "config": json.dumps({"threshold": 60})},
+            ],
         )
 
     await init_db()

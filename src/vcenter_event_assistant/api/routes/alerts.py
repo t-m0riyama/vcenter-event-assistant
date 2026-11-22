@@ -1,10 +1,10 @@
 from __future__ import annotations
 import uuid
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, select, desc, func
+from sqlalchemy import delete, select, desc, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from vcenter_event_assistant.api.schemas import (
     AlertRulesImportResponse, AlertStateResolveRequest,
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
+from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     MetricProbe,
     ResolvedEntity,
@@ -75,37 +76,43 @@ async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depen
     await session.refresh(rule)
     return rule
 
+async def _alert_rule_update_session(
+    settings: Settings = Depends(get_app_settings),
+) -> AsyncIterator[AsyncSession]:
+    async with session_scope(settings=settings, isolate_memory=True) as session:
+        yield session
+
+
 @router.patch("/rules/{rule_id}", dependencies=[RequireAdmin], response_model=AlertRuleRead)
-async def patch_alert_rule(rule_id: int, body: AlertRuleUpdate, session: AsyncSession = Depends(get_session)):
-    rule = await session.get(AlertRule, rule_id)
-    if not rule:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-
-    previous_name = rule.name
-    name_changed = body.name is not None and body.name != previous_name
-    
-    if body.name is not None:
-        existing = await session.execute(
-            select(AlertRule.id).where(AlertRule.name == body.name, AlertRule.id != rule_id)
-        )
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="Alert rule with this name already exists")
-        rule.name = body.name
-    if body.is_enabled is not None:
-        rule.is_enabled = body.is_enabled
-    if body.config is not None:
-        rule.config = body.config
-    if body.alert_level is not None:
-        rule.alert_level = body.alert_level
-
+async def patch_alert_rule(
+    rule_id: int,
+    body: AlertRuleUpdate,
+    session: AsyncSession = Depends(_alert_rule_update_session, scope="function"),
+):
+    changes = body.model_dump(exclude={"revision"}, exclude_none=True)
+    statement = (
+        update(AlertRule)
+        .where(AlertRule.id == rule_id, AlertRule.revision == body.revision)
+        .values(**changes, revision=uuid.uuid4())
+        .returning(AlertRule)
+    )
     try:
-        await session.flush()
+        rule = (await session.scalars(statement)).one_or_none()
     except IntegrityError as exc:
-        if name_changed and _is_alert_rule_name_unique_violation(exc):
+        if _is_alert_rule_name_unique_violation(exc):
             raise HTTPException(status_code=409, detail="Alert rule with this name already exists") from exc
         raise
-    await session.refresh(rule)
-    return rule
+    if rule is not None:
+        return rule
+
+    existing_id = await session.scalar(select(AlertRule.id).where(AlertRule.id == rule_id))
+    if existing_id is None:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    raise HTTPException(
+        status_code=409,
+        detail="Alert rule has changed since it was read",
+        headers={"X-VEA-Error-Code": "alert_rule_stale"},
+    )
 
 @router.delete("/rules/{rule_id}", dependencies=[RequireAdmin], status_code=status.HTTP_204_NO_CONTENT)
 async def delete_alert_rule(rule_id: int, session: AsyncSession = Depends(get_session)):
@@ -128,41 +135,32 @@ async def import_alert_rules(
             detail="duplicate name in rules",
         )
 
-    for imported_rule in body.rules:
-        res = await session.execute(select(AlertRule).where(AlertRule.name == imported_rule.name))
-        existing = res.scalar_one_or_none()
-        if existing is None:
-            session.add(
-                AlertRule(
-                    name=imported_rule.name,
-                    rule_type=imported_rule.rule_type,
-                    is_enabled=imported_rule.is_enabled,
-                    alert_level=imported_rule.alert_level,
-                    config=imported_rule.config,
-                ),
-            )
-        elif body.overwrite_existing:
-            existing.rule_type = imported_rule.rule_type
-            existing.is_enabled = imported_rule.is_enabled
-            existing.alert_level = imported_rule.alert_level
-            existing.config = imported_rule.config
-
     if body.delete_rules_not_in_import:
         reject_empty_destructive_import(
             item_count=len(body.rules),
             delete_not_in_import=True,
             resource_label="alert rules",
         )
-        names = set(names_in_file)
-        if not names:
-            await session.execute(delete(AlertRule))
+
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+
+    for imported_rule in body.rules:
+        values = imported_rule.model_dump(exclude={"name"})
+        values["revision"] = uuid.uuid4()
+        statement = dialect_insert(AlertRule).values(name=imported_rule.name, **values)
+        if body.overwrite_existing:
+            statement = statement.on_conflict_do_update(index_elements=[AlertRule.name], set_=values)
         else:
-            await session.execute(delete(AlertRule).where(~AlertRule.name.in_(sorted(names))))
+            statement = statement.on_conflict_do_nothing(index_elements=[AlertRule.name])
+        await session.execute(statement)
 
-    await session.flush()
+    if body.delete_rules_not_in_import:
+        await session.execute(delete(AlertRule).where(~AlertRule.name.in_(names_in_file)))
 
-    count_res = await session.execute(select(AlertRule.id))
-    rules_count = len(list(count_res.scalars().all()))
+    rules_count = (await session.execute(select(func.count()).select_from(AlertRule))).scalar_one()
     return AlertRulesImportResponse(rules_count=rules_count)
 
 async def _resolve_history_entities(

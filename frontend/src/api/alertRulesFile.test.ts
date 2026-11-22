@@ -59,6 +59,7 @@ describe('buildAlertRulesExportPayload', () => {
         alert_level: 'critical',
         config: { threshold: 70, cooldown_minutes: 5 },
         created_at: '2026-05-06T00:00:00Z',
+        revision: '81d535f3-9d2b-4050-a276-284566833a48',
       },
     ])
     expect(payload.format).toBe('vea-alert-rules')
