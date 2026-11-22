@@ -247,10 +247,10 @@ def _filter_events(events: list[Any], filter_spec: Any) -> list[Any]:
 
 
 class _FakeEvent:
-    """イベントの基底。``type(event).__name__`` がイベント種別になる。
+    """偽イベントの基底。
 
-    アプリの ``normalize_event`` はクラス名を ``event_type`` として使うため、
-    :func:`fake_event` は種別ごとに動的な型を作る。
+    アプリは有効な ``eventTypeId`` があればイベント種別に使い、無ければクラス名を使う。
+    :func:`fake_event` はクラス名を指定できるように動的な型を作る。
     """
 
     def __init__(self, **attributes: Any) -> None:
@@ -277,8 +277,10 @@ def fake_event(
     ``key`` は vCenter が振る**自然キー**であり、``EventInput.vmware_key`` に
     そのまま使うべき値である（ハッシュで作ると重複排除で静かに消える）。
 
-    ``event_type`` はクラス名になる。アプリはイベント種別を ``type(event).__name__``
-    から取るため、文字列属性ではなく型を作る必要がある。
+    ``event_type`` はクラス名になる。アプリは有効な ``eventTypeId`` があれば
+    イベント種別に使い、無ければクラス名を使う。たとえば
+    ``fake_event(event_type="EventEx", eventTypeId="esx.problem.storage.apd.start")``
+    で ``EventEx`` を模せる。
     """
     from vcenter_event_assistant_plugin_api.timeutils import now_utc
 
