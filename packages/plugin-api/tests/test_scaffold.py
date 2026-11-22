@@ -16,7 +16,7 @@ from runpy import run_path
 import pytest
 
 from vcenter_event_assistant_plugin_api import __version__, scaffold
-from vcenter_event_assistant_plugin_api.testing import fake_event
+from vcenter_event_assistant_plugin_api.testing import fake_event, fake_event_argument, fake_host
 
 
 class TestNames:
@@ -160,6 +160,21 @@ class TestRenderedProject:
 
         assert result is not None
         assert result.event_type == expected
+
+
+    def test_the_generated_event_converter_uses_the_primary_entity(self, tmp_path: Path) -> None:
+        scaffold.write_project(_render("event"), tmp_path)
+        module = run_path(str(tmp_path / "src" / "acme_sensor_collector" / "__init__.py"))
+        collector = module["build_collector"]()
+        result = collector._convert(
+            fake_event(
+                event_type="HostConnectionLostEvent",
+                host=fake_event_argument(fake_host("host-10", "esx01")),
+            )
+        )
+
+        assert result is not None
+        assert (result.entity_name, result.entity_type) == ("esx01", "HostSystem")
 
 
 class TestWriteProject:

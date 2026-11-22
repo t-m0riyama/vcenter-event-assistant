@@ -79,6 +79,7 @@ from vcenter_event_assistant_plugin_api.testing._vmomi import (
     ViewLeakError,
     fake_datastore,
     fake_event,
+    fake_event_argument,
     fake_host,
     fake_vm,
 )
@@ -99,6 +100,7 @@ __all__ = [
     "fake_connection",
     "fake_datastore",
     "fake_event",
+    "fake_event_argument",
     "fake_host",
     "fake_vm",
     "failing_connection",

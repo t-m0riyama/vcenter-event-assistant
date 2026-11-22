@@ -12,7 +12,8 @@ from vcenter_event_assistant_plugin_api.testing import (
     FakeServiceInstance,
     assert_manifest_valid,
     fake_event,
-    fake_host,
+    fake_event_argument,
+    fake_vm,
     run_collect,
 )
 
@@ -42,7 +43,7 @@ async def test_it_converts_events_with_the_natural_key() -> None:
                 101,
                 event_type="VmPoweredOnEvent",
                 created_time=now - timedelta(minutes=2),
-                entity=fake_host("vm-1", "web-01"),
+                vm=fake_event_argument(fake_vm("vm-1", "web-01")),
             ),
             fake_event(
                 102,
@@ -60,6 +61,7 @@ async def test_it_converts_events_with_the_natural_key() -> None:
         "VmPoweredOffEvent",
     ]
     assert batch.events[0].entity_name == "web-01"
+    assert batch.events[0].entity_type == "VirtualMachine"
     assert batch.events[0].occurred_at.tzinfo is not None
     # イベントコレクタは破棄済み（`run_collect` も検査している）。
     assert all(collector.destroyed for collector in si.event_collectors)
@@ -156,7 +158,7 @@ async def test_keys_outside_the_int32_range_are_skipped() -> None:
 @pytest.mark.parametrize("length", [2000])
 async def test_a_long_entity_name_is_truncated_to_the_column_limit(length: int) -> None:
     si = FakeServiceInstance(
-        events=[fake_event(11, entity=fake_host("vm-1", "x" * length))]
+        events=[fake_event(11, vm=fake_event_argument(fake_vm("vm-1", "x" * length)))]
     )
     batch = await run_collect(PowerEventCollector(), connection=si)
     assert len(batch.events[0].entity_name) == 1024

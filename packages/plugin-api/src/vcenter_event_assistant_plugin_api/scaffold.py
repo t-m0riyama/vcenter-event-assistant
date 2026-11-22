@@ -234,6 +234,7 @@ from vcenter_event_assistant_plugin_api import (
     config,
     get_plugin_logger,
     timeutils,
+    vmware,
 )
 from vcenter_event_assistant_plugin_api.limits import MAX_EVENT_TYPE
 
@@ -311,7 +312,9 @@ class $class_name(EventCollector):
         if key is None:
             # key の無いイベントは 0 に潰さずスキップする（潰すと 1 件しか残らない）。
             return None
-        entity = getattr(event, "entity", None)
+        primary = next(
+            (item for item in vmware.event_entities(event) if item.is_primary), None
+        )
         severity = getattr(event, "severity", None)
         event_type = type(event).__name__
         event_type_id = getattr(event, "eventTypeId", None)
@@ -327,8 +330,8 @@ class $class_name(EventCollector):
             vmware_key=int(key),
             severity=str(severity).lower() if severity is not None else None,
             user_name=getattr(event, "userName", None),
-            entity_name=getattr(entity, "name", None) if entity is not None else None,
-            entity_type=type(entity).__name__ if entity is not None else None,
+            entity_name=primary.entity_name if primary is not None else None,
+            entity_type=primary.entity_type if primary is not None else None,
             chain_id=int(event.chainId) if getattr(event, "chainId", None) else None,
         )
 
@@ -401,6 +404,8 @@ from vcenter_event_assistant_plugin_api.testing import (
     FakeServiceInstance,
     assert_manifest_valid,
     fake_event,
+    fake_event_argument,
+    fake_vm,
     run_collect,
 )
 
@@ -417,7 +422,12 @@ async def test_it_converts_events_and_advances_the_cursor() -> None:
     now = datetime.now(timezone.utc)
     si = FakeServiceInstance(
         events=[
-            fake_event(101, event_type="VmPoweredOnEvent", created_time=now - timedelta(minutes=2)),
+            fake_event(
+                101,
+                event_type="VmPoweredOnEvent",
+                created_time=now - timedelta(minutes=2),
+                vm=fake_event_argument(fake_vm("vm-1", "web-01")),
+            ),
             fake_event(102, event_type="VmPoweredOffEvent", created_time=now - timedelta(minutes=1)),
         ]
     )
@@ -426,6 +436,8 @@ async def test_it_converts_events_and_advances_the_cursor() -> None:
     # vmware_key は vCenter の自然キーをそのまま使う（ハッシュにすると静かに消える）。
     assert [event.vmware_key for event in batch.events] == [101, 102]
     assert batch.events[0].occurred_at.tzinfo is not None
+    assert batch.events[0].entity_name == "web-01"
+    assert batch.events[0].entity_type == "VirtualMachine"
     # カーソルは最新イベントの時刻まで進む。
     assert batch.next_cursor == (now - timedelta(minutes=1)).isoformat()
 

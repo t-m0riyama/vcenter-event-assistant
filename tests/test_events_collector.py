@@ -77,6 +77,45 @@ def test_normalize_event_maps_fields() -> None:
 
 
 @pytest.mark.parametrize(
+    ("event", "name", "entity_type"),
+    [
+        (
+            vim.event.HostConnectionLostEvent(
+                host=vim.event.HostEventArgument(host=vim.HostSystem("host-10"), name="esx01")
+            ),
+            "esx01", "HostSystem",
+        ),
+        (
+            vim.event.AlarmStatusChangedEvent(
+                entity=vim.event.ManagedEntityEventArgument(
+                    entity=vim.HostSystem("host-10"), name="esx01"
+                )
+            ),
+            "esx01", "HostSystem",
+        ),
+        (
+            vim.event.VmPoweredOnEvent(
+                vm=vim.event.VmEventArgument(vm=vim.VirtualMachine("vm-1"), name="web-01"),
+                host=vim.event.HostEventArgument(host=vim.HostSystem("host-10"), name="esx01"),
+            ),
+            "web-01", "VirtualMachine",
+        ),
+        (vim.event.Event(), None, None),
+    ],
+)
+def test_normalize_event_uses_primary_entity(
+    event: vim.event.Event, name: str | None, entity_type: str | None,
+) -> None:
+    event.createdTime = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    event.fullFormattedMessage = "message"
+    row = normalize_event(event)
+    assert row is not None
+    assert (row["entity_name"], row["entity_type"]) == (name, entity_type)
+    assert "entity_moid" not in row
+    assert "entities" not in row
+
+
+@pytest.mark.parametrize(
     ("event_type_id", "expected"),
     [
         (_APD_EVENT_TYPE, _APD_EVENT_TYPE),

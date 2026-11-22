@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- `vmware.event_entities()` と `EventEntityInput` を追加した（Issue #347）。イベントの対象をすべて取り出し、主な対象に `is_primary` を付ける。
+- イベントコレクタの雛形は、主な対象の名前と `HostSystem` などの種別を使う。ホストの接続切れなどのイベントにも名前が入る。取り込み済みの行と新しい行は、アプリの保持期間（`event_retention_days`、既定 7 日）が過ぎるまで混ざる。
+- `testing.fake_host()` などの偽オブジェクトに型名を持たせ、イベントの引数を作る `testing.fake_event_argument()` を追加した。
+
 ## 1.5.2
 
 - 雛形が生成するイベントコレクタでは、`eventTypeId` の前後の空白を除いた値が 1〜512 文字ならイベント種別に使い、それ以外ならクラス名を使う（Issue #346）。

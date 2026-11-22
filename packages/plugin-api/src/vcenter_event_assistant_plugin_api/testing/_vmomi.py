@@ -17,6 +17,7 @@ __all__ = [
     "ViewLeakError",
     "fake_datastore",
     "fake_event",
+    "fake_event_argument",
     "fake_host",
     "fake_vm",
 ]
@@ -119,7 +120,7 @@ class FakeServiceInstance:
         self.view_calls: list[tuple[Any, tuple[str, ...], bool]] = []
         #: ``RetrieveContent`` の呼び出し回数。
         self.retrieve_count = 0
-        self.root_folder = FakeManagedObject("group-d1", name="Datacenters")
+        self.root_folder = FakeManagedObject("group-d1", name="Datacenters", _wsdlName="Folder")
         self.about = about
 
     def objects_of(self, type_name: str) -> list[Any]:
@@ -297,6 +298,38 @@ def fake_event(
     )
 
 
+_EVENT_ARGUMENT_TYPES = {
+    "HostSystem": ("HostEventArgument", "host"),
+    "VirtualMachine": ("VmEventArgument", "vm"),
+    "Datastore": ("DatastoreEventArgument", "datastore"),
+    "Network": ("NetworkEventArgument", "network"),
+    "DistributedVirtualPortgroup": ("NetworkEventArgument", "network"),
+    "OpaqueNetwork": ("NetworkEventArgument", "network"),
+    "DistributedVirtualSwitch": ("DvsEventArgument", "dvs"),
+    "VmwareDistributedVirtualSwitch": ("DvsEventArgument", "dvs"),
+    "ComputeResource": ("ComputeResourceEventArgument", "computeResource"),
+    "ClusterComputeResource": ("ComputeResourceEventArgument", "computeResource"),
+    "ResourcePool": ("ResourcePoolEventArgument", "resourcePool"),
+    "VirtualApp": ("ResourcePoolEventArgument", "resourcePool"),
+    "Datacenter": ("DatacenterEventArgument", "datacenter"),
+    "Folder": ("FolderEventArgument", "folder"),
+    "StoragePod": ("FolderEventArgument", "folder"),
+}
+
+
+def fake_event_argument(obj: Any, *, name: str | None = None) -> Any:
+    """管理対象の参照と表示名を持つイベント引数を模す。"""
+    argument_type, field = _EVENT_ARGUMENT_TYPES.get(
+        getattr(obj, "_wsdlName", ""), ("ManagedEntityEventArgument", "entity")
+    )
+    if name is None:
+        try:
+            name = vars(obj).get("name")
+        except TypeError:
+            name = None
+    return _Namespace(_wsdlName=argument_type, name=name, **{field: obj})
+
+
 def fake_host(
     moid: str = "host-1",
     name: str = "esxi-01.example.com",
@@ -309,6 +342,7 @@ def fake_host(
     ``vmware.host_is_connected`` が見る ``runtime.connectionState`` を持つ。
     """
     runtime = _Namespace(connectionState="connected" if connected else "disconnected")
+    attributes.setdefault("_wsdlName", "HostSystem")
     return FakeManagedObject(moid, name=name, runtime=runtime, **attributes)
 
 
@@ -325,6 +359,7 @@ def fake_datastore(
     summary = _Namespace(
         name=name, capacity=capacity, freeSpace=free_space, accessible=accessible
     )
+    attributes.setdefault("_wsdlName", "Datastore")
     return FakeManagedObject(moid, name=name, summary=summary, **attributes)
 
 
@@ -337,6 +372,7 @@ def fake_vm(
 ) -> FakeManagedObject:
     """``VirtualMachine`` を模したオブジェクト。"""
     runtime = _Namespace(powerState=power_state)
+    attributes.setdefault("_wsdlName", "VirtualMachine")
     return FakeManagedObject(moid, name=name, runtime=runtime, **attributes)
 
 

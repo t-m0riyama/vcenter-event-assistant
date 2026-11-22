@@ -9,6 +9,7 @@ from typing import Any
 from pyVmomi import vim
 from vcenter_event_assistant_plugin_api.limits import MAX_EVENT_TYPE
 from vcenter_event_assistant_plugin_api.timeutils import ensure_aware
+from vcenter_event_assistant_plugin_api.vmware import event_entities
 
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
 
@@ -139,12 +140,7 @@ def normalize_event(e: Any) -> dict[str, Any] | None:
     if severity is not None:
         severity = str(severity).lower()
 
-    entity_name = None
-    entity_type = None
-    ent = getattr(e, "entity", None)
-    if ent is not None:
-        entity_name = getattr(ent, "name", None)
-        entity_type = type(ent).__name__
+    primary = next((item for item in event_entities(e) if item.is_primary), None)
 
     user_name = getattr(e, "userName", None)
 
@@ -154,8 +150,8 @@ def normalize_event(e: Any) -> dict[str, Any] | None:
         "message": message,
         "severity": severity,
         "user_name": user_name,
-        "entity_name": entity_name,
-        "entity_type": entity_type,
+        "entity_name": primary.entity_name if primary is not None else None,
+        "entity_type": primary.entity_type if primary is not None else None,
         "vmware_key": vmware_key,
         "chain_id": chain_id,
     }

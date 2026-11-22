@@ -118,7 +118,7 @@ def test_everything_in_all_actually_exists() -> None:
 
 def test_all_exports_the_type_aliases_authors_need() -> None:
     """従来 `ConnectionFactory` などは定義済みなのに未公開で、型注釈に使えなかった。"""
-    for name in ("ConnectionFactory", "DataKind", "SeriesMode", "CollectionContext"):
+    for name in ("ConnectionFactory", "DataKind", "SeriesMode", "CollectionContext", "EventEntityInput"):
         assert name in api.__all__
 
 

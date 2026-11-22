@@ -15,14 +15,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from typing import Any
 
+from vcenter_event_assistant_plugin_api import limits
+
 __all__ = [
+    "EventEntityInput",
     "PyVmomiUnavailableError",
     "container_view",
     "datastore_is_accessible",
+    "event_entities",
     "host_is_connected",
     "iter_datastores",
     "iter_hosts",
@@ -112,6 +117,268 @@ def moid(managed_object: Any) -> str:
     pyVmomi は MOID を private 風の ``_moId`` で持つ。その参照をここ 1 箇所に閉じる。
     """
     return str(managed_object._moId)
+
+
+@dataclass(frozen=True, slots=True)
+class EventEntityInput:
+    """vCenter イベントが指す管理対象。"""
+
+    role: str
+    position: int = 0
+    entity_type: str | None = None
+    entity_moid: str | None = None
+    entity_name: str | None = None
+    is_primary: bool = False
+
+
+# pyVmomi 9.0.0.0 のインベントリの型と、それらを包む引数の型。
+_MANAGED_ENTITY_TYPES = frozenset(
+    {
+        "ClusterComputeResource",
+        "ComputeResource",
+        "Datacenter",
+        "Datastore",
+        "DistributedVirtualPortgroup",
+        "DistributedVirtualSwitch",
+        "Folder",
+        "HostSystem",
+        "ManagedEntity",
+        "Network",
+        "OpaqueNetwork",
+        "ResourcePool",
+        "StoragePod",
+        "VirtualApp",
+        "VirtualMachine",
+        "VmwareDistributedVirtualSwitch",
+    }
+)
+_ENTITY_ARGUMENT_TYPES = frozenset(
+    {
+        "ComputeResourceEventArgument",
+        "DatacenterEventArgument",
+        "DatastoreEventArgument",
+        "DvsEventArgument",
+        "EntityEventArgument",
+        "FolderEventArgument",
+        "HostEventArgument",
+        "ManagedEntityEventArgument",
+        "NetworkEventArgument",
+        "ResourcePoolEventArgument",
+        "VmEventArgument",
+    }
+)
+
+_PRIMARY_PRIORITIES = {
+    "entity": (1, 0),
+    "object": (1, 1),
+    "managedObject": (1, 2),
+    "vm": (2, 0),
+    "ds": (4, 0),
+    "net": (4, 1),
+    "dvs": (4, 2),
+    "host": (5, 0),
+    "computeResource": (6, 0),
+    "datacenter": (7, 0),
+}
+_CHILD_PRIORITIES = {
+    role: index
+    for index, role in enumerate(
+        (
+            "failedHost",
+            "isolatedHost",
+            "hostJoined",
+            "hostLeft",
+            "hostBackInSync",
+            "hostMember",
+            "hostOutOfSync",
+            "datastore",
+            "resourcePool",
+            "referenceHost",
+            "info.entity",
+        )
+    )
+}
+_FALLBACK_PREFIXES = ("source", "src", "old", "prev", "conflicted", "dest", "dst")
+_FALLBACK_ROLES = {"parent", "newParent", "connectee"}
+
+
+def _entity_priority(entity: EventEntityInput) -> tuple[int, int, str, int]:
+    role = entity.role
+    if role in _PRIMARY_PRIORITIES:
+        tier, order = _PRIMARY_PRIORITIES[role]
+    elif role in _FALLBACK_ROLES or role.startswith(_FALLBACK_PREFIXES):
+        tier, order = 8, 0
+    else:
+        tier, order = 3, _CHILD_PRIORITIES.get(role, len(_CHILD_PRIORITIES))
+    return tier, order, role, entity.position
+
+
+def _instance_vars(value: Any) -> dict[str, Any]:
+    try:
+        attributes: dict[str, Any] = vars(value)
+        return attributes
+    except TypeError:
+        return {}
+
+
+def _property_names(value: Any) -> Iterable[str]:
+    properties = getattr(value, "_GetPropertyList", None)
+    if properties is not None:
+        return (prop.name for prop in properties())
+    return _instance_vars(value)
+
+
+def _text(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _managed_entity(
+    value: Any,
+    role: str,
+    position: int,
+    name: str | None,
+) -> EventEntityInput | None:
+    if not hasattr(value, "_moId"):
+        return None
+    # SOAP の参照から属性を読むと通信が起きる。名前はイベントのデータか偽オブジェクトの
+    # インスタンス辞書から取る。
+    entity_type = getattr(value, "_wsdlName", None)
+    class_name = type(value).__name__
+    if entity_type is None and class_name.startswith("vim."):
+        entity_type = class_name.removeprefix("vim.")
+    if entity_type is not None and entity_type not in _MANAGED_ENTITY_TYPES:
+        return None
+    raw_moid = value._moId
+    entity_moid = str(raw_moid) if raw_moid is not None else ""
+    if not entity_moid and name is None:
+        return None
+    return EventEntityInput(
+        role,
+        position,
+        entity_type,
+        entity_moid or None,
+        name,
+    )
+
+
+def _argument_entity(value: Any, role: str, position: int) -> EventEntityInput | None:
+    if hasattr(value, "_moId"):
+        return None
+    argument_type = getattr(value, "_wsdlName", type(value).__name__.rsplit(".", 1)[-1])
+    if argument_type not in _ENTITY_ARGUMENT_TYPES:
+        return None
+    name = _text(getattr(value, "name", None))
+    for field in _property_names(value):
+        ref = getattr(value, field, None)
+        if hasattr(ref, "_moId"):
+            return _managed_entity(ref, role, position, name)
+    if name is None:
+        return None
+    return EventEntityInput(role, position, entity_name=name)
+
+
+def _event_ex_object(event: Any) -> EventEntityInput | None:
+    entity_moid = _text(getattr(event, "objectId", None))
+    name = _text(getattr(event, "objectName", None))
+    if entity_moid is None and name is None:
+        return None
+
+    object_type = getattr(event, "objectType", None)
+    if isinstance(object_type, str):
+        entity_type = object_type.removeprefix("vim.") if object_type else None
+    elif isinstance(object_type, type):
+        entity_type = _text(getattr(object_type, "_wsdlName", None))
+    else:
+        entity_type = None
+    if entity_type is not None and entity_type not in _MANAGED_ENTITY_TYPES:
+        return None
+    return EventEntityInput(
+        "object",
+        entity_type=entity_type,
+        entity_moid=entity_moid,
+        entity_name=name,
+    )
+
+
+def _fit_entity_limits(entity: EventEntityInput, *, primary: bool) -> EventEntityInput:
+    entity_type = entity.entity_type
+    entity_moid = entity.entity_moid
+    name = entity.entity_name
+    return replace(
+        entity,
+        entity_type=entity_type
+        if entity_type and len(entity_type) <= limits.MAX_EVENT_ENTITY_TYPE
+        else None,
+        entity_moid=entity_moid
+        if entity_moid and len(entity_moid) <= limits.MAX_ENTITY_MOID
+        else None,
+        entity_name=limits.truncate(name, limits.MAX_ENTITY_NAME)
+        if name is not None
+        else None,
+        is_primary=primary,
+    )
+
+
+def event_entities(event: Any) -> tuple[EventEntityInput, ...]:
+    """イベントの対象をすべて返す。空でなければ、is_primary が真のものがちょうど 1 つある。"""
+    if hasattr(event, "_moId"):
+        return ()
+    entities: list[EventEntityInput] = []
+    managed_entities: list[EventEntityInput] = []
+    if (
+        getattr(event, "_wsdlName", type(event).__name__.rsplit(".", 1)[-1])
+        == "EventEx"
+    ):
+        obj = _event_ex_object(event)
+        if obj is not None:
+            entities.append(obj)
+
+    for role in _property_names(event):
+        if role in {"reason", "fault"}:
+            continue
+        value = getattr(event, role, None)
+        items = value if isinstance(value, (list, tuple)) else (value,)
+        for position, item in enumerate(items):
+            if item is None:
+                continue
+            role_name = role
+            if hasattr(item, "_moId"):
+                name = _text(getattr(event, f"{role}Name", None))
+            elif role == "connectee":
+                item, name = getattr(item, "connectedEntity", None), None
+            elif role == "info":
+                item, name = (
+                    getattr(item, "entity", None),
+                    _text(getattr(item, "entityName", None)),
+                )
+                role_name = "info.entity"
+            else:
+                if role == "hostOutOfSync":
+                    item = getattr(item, "outOfSyncHost", None)
+                argument = _argument_entity(item, role, position)
+                if argument is not None:
+                    entities.append(argument)
+                continue
+            # 管理対象の name プロパティは vCenter への問い合わせを起こす。
+            name = name or _text(_instance_vars(item).get("name"))
+            managed = _managed_entity(item, role_name, position, name)
+            if managed is not None:
+                managed_entities.append(managed)
+
+    # moid を列長に合わせる前に、別の役割で得られた名前を補う。
+    names_by_moid: dict[str, str] = {}
+    for entity in sorted(entities + managed_entities, key=_entity_priority):
+        if entity.entity_moid is not None and entity.entity_name is not None:
+            names_by_moid.setdefault(entity.entity_moid, entity.entity_name)
+    for entity in managed_entities:
+        if entity.entity_name is None and entity.entity_moid in names_by_moid:
+            entity = replace(entity, entity_name=names_by_moid[entity.entity_moid])
+        entities.append(entity)
+    entities.sort(key=_entity_priority)
+    return tuple(
+        _fit_entity_limits(entity, primary=index == 0)
+        for index, entity in enumerate(entities)
+    )
 
 
 def host_is_connected(host: Any) -> bool:
