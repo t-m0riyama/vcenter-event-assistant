@@ -8,6 +8,8 @@
 
 ### 更新の前に（互換性のない変更）
 
+- **イベントに主な対象の名前と種別を入れるようにした**（Issue #347）。ホストの接続切れなどのイベントに対象の名前が入り、`entity_type` は `HostSystem` や `VirtualMachine` の形になる
+  - 保存済みの行は更新しない。保持期間（`event_retention_days`、既定 7 日）が過ぎるまでは、空欄や引数の型名が入った古い行と新しい行が混ざる
 - **`EventEx` と `ExtendedEvent` のイベント種別に `eventTypeId` を使うようにした**（Issue #346）。前後の空白を除いて空か 512 文字を超える場合は、クラス名を使う
   - `vim.event.EventEx` と `vim.event.ExtendedEvent` に設定したスコアルールとガイドは、それぞれのクラス名で保存した古い行と、`eventTypeId` が空などでクラス名を使う新しい行にだけ当たる。`ExtendedEvent` は `eventTypeId` が必須なので、ほぼすべてが新しい種別になる。ID で取り込まれるイベントに適用するには、`esx.problem.storage.apd.start` などの ID で設定し直す。スコアルールは種別の完全一致で適用する
   - イベントスコアのアラートは種別を状態のキー（`context_key`）にする。これまでクラス名ごとに 1 件にまとまっていたアラートの状態と再通知の間隔は `eventTypeId` ごとに分かれるため、更新直後から通知が増えることがある

@@ -47,9 +47,11 @@ class TemperatureCollector(MetricCollector):
 build_collector = TemperatureCollector   # クラス自体が引数なしファクトリになる
 ```
 
+`vmware.event_entities()` を使う場合は、plugin-api 1.6 以上を指定する。
+
 ```toml
 [project]
-dependencies = ["vcenter-event-assistant-plugin-api>=1.1,<2"]
+dependencies = ["vcenter-event-assistant-plugin-api>=1.6,<2"]
 
 # entry point の名前は CollectorManifest.id と一致させる。
 [project.entry-points."vcenter_event_assistant.collectors"]
@@ -70,7 +72,7 @@ dependencies = ["vcenter-event-assistant-plugin-api>=1.1,<2"]
 
 | モジュール | 用途 |
 |---|---|
-| （ルート） | `CollectorPlugin` / `CollectorManifest` / `CollectionBatch` などの契約 |
+| （ルート） | `CollectorPlugin` / `CollectorManifest` / `CollectionBatch` / `EventEntityInput` などの契約 |
 | `collector` | `MetricCollector` / `EventCollector`。宣言的な基底クラス |
 | `cursors` | `TimestampCursor`。空バッチでも前進し、境界を取りこぼさない |
 | `config` | 設定値の型を吸収する（環境変数由来は常に `str`） |
@@ -79,12 +81,14 @@ dependencies = ["vcenter-event-assistant-plugin-api>=1.1,<2"]
 | `timeutils` | `now_utc()` / `ensure_aware()` / `to_utc()` |
 | `blocking` | `run_blocking()`。キャンセル安全なスレッド退避 |
 | `logs` | `get_plugin_logger()`。ロガー名の規約 |
-| `vmware` | pyVmomi でのインベントリ走査（pyVmomi は遅延 import） |
+| `vmware` | インベントリ走査と `event_entities()` によるイベントの対象の取り出し |
 | `network` | `resolve_ssh_address()`。接続先を名前解決して検証し、接続に使う IP を返す（DNS rebinding 対策） |
 | `testing` | アプリを起動せずにコレクタを回すテストハーネス |
 | `scaffold` | そのまま動くプロジェクトを生成する CLI |
 
-`vmware` ヘルパをアプリの外で動かすときだけ pyVmomi が要る。
+インベントリ走査のヘルパーをアプリの外で動かすときは pyVmomi が要る。
+`event_entities()` は pyVmomi に依存せず、主な対象に `is_primary` を付けた
+`EventEntityInput` のタプルを返す。
 
 ```bash
 pip install "vcenter-event-assistant-plugin-api[vmware]"

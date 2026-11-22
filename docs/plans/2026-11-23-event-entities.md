@@ -10,8 +10,8 @@ Issue #347 の計画書。[障害調査を楽にする機能 10 案](2026-11-22-
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | レビュー中 |
-| B | 対象の取り出しと、主な対象の名前・種別（DB の変更なし。plugin-api 1.6.0） | 未着手 |
+| A | 本書 | マージ済み [PR #352](https://github.com/t-m0riyama/vcenter-event-assistant/pull/352) |
+| B | 対象の取り出しと、主な対象の名前・種別（DB の変更なし。plugin-api 1.6.0） | レビュー中 |
 | C1 | moid と子表の保存（移行、plugin-api 1.7.0、取り込みの経路） | 未着手 |
 | C2 | API と画面（`EventRead.entity_moid`、フロントの zod と CSV） | 未着手 |
 
@@ -144,7 +144,7 @@ def event_entities(event: Any) -> tuple[EventEntityInput, ...]:
    - 参照を持つ引数: `ComputeResourceEventArgument`・`DatacenterEventArgument`・`DatastoreEventArgument`・`DvsEventArgument`・`FolderEventArgument`・`HostEventArgument`・`ManagedEntityEventArgument`・`NetworkEventArgument`・`ResourcePoolEventArgument`・`VmEventArgument`
    - 名前だけの引数: `EntityEventArgument`
 
-   参照は、引数の中で `_moId` を持つ属性の値とする。参照が None の引数は、名前だけの対象として残す。`AlarmEventArgument`・`ScheduledTaskEventArgument`・`ProfileEventArgument`・`RoleEventArgument` は、名前があっても対象にしない。
+   参照は、引数の中で `_moId` を持つ属性の値とする。参照が None の引数は、名前だけの対象として残す。名前も参照も無いものは捨てる。`AlarmEventArgument`・`ScheduledTaskEventArgument`・`ProfileEventArgument`・`RoleEventArgument` は、名前があっても対象にしない。
 2. **管理対象そのもの**: `_moId` を持つ値。型が分かり、それが `ManagedEntity` の子クラス（1 章の 16 種類）でないものは除く。型が分からないものは、種別を NULL にして残す。「型が分かる」のは、`_wsdlName` を持つか、クラス名が `vim.` で始まるときだけである。`_wsdlName` の無い偽オブジェクト（`FakeManagedObject` を直接作ったものや `SimpleNamespace(_moId=...)`）は、型が分からないものとして残す。
 3. **EventEx の `object`**: `objectId`・`objectType`・`objectName` から 1 件を作る。
    - `objectType` は、型なら `_wsdlName` を使い、文字列なら先頭の `vim.` を外す。16 種類に無い型名は除く。値が無ければ種別を NULL にする。

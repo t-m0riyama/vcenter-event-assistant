@@ -132,6 +132,25 @@ build_collector = TemperatureCollector   # クラス自体が引数なしファ�
 既に `manifest = CollectorManifest(...)` と書いているプラグインは、そのまま基底クラスだけを
 使うこともできます。宣言的な書き方へ一度に移行する必要はありません。
 
+### イベントの対象を取り出す
+
+pyVmomi のイベントから対象を取り出すには、plugin-api 1.6.0 以降の
+`vmware.event_entities(event)` を使います。各 `EventEntityInput` に役割、配列内の
+位置、種別、moid、名前が入り、対象があれば 1 件に `is_primary` が付きます。
+
+```python
+from vcenter_event_assistant_plugin_api import vmware
+
+primary = next((item for item in vmware.event_entities(event) if item.is_primary), None)
+entity_name = primary.entity_name if primary is not None else None
+entity_type = primary.entity_type if primary is not None else None
+```
+
+この名前と種別を `EventInput` に渡します。種別は `HostSystem` などの短い名前です。
+対象の名前はイベントのデータから取り、管理対象の `name` を問い合わせません。
+名前が列長を超える場合は、ヘルパーが切り詰めます。
+テストでは `fake_event(host=fake_event_argument(fake_host()))` のようにイベントの引数を作れます。
+
 ## パッケージの entry point
 
 プラグインは `vcenter-event-assistant-plugin-api` のみに依存し、引数なしのファクトリを公開します。
@@ -157,7 +176,7 @@ temperature = "example_temperature:build_collector"
 | `timeutils` | `now_utc()` / `ensure_aware()` / `to_utc()`。naive な datetime はバッチ全体の拒否につながる |
 | `blocking` | `run_blocking()`。`asyncio.to_thread` と違い、タイムアウトでキャンセルされてもスレッドと vCenter セッションを取り残さない |
 | `logs` | `get_plugin_logger()`。`VEA_COLLECTOR_WORKER_LOG_LEVEL` が効くロガー名を返す |
-| `vmware` | pyVmomi でのインベントリ走査。`container_view()` が `Destroy()` を保証する |
+| `vmware` | pyVmomi でのインベントリ走査とイベントの対象の取り出し。`container_view()` が `Destroy()` を保証する |
 | `testing` | アプリを起動せずにコレクタを回すテストハーネス（下記参照） |
 | `scaffold` | そのまま動くプラグインのひな形を生成する CLI（上記参照） |
 
@@ -251,6 +270,7 @@ async def test_mock_mode_works():
 | `run_collect(plugin, ...)` | 上記をまとめて行う。1 行のスモークテスト |
 | `make_context(...)` / `make_target(...)` | `CollectionContext` を組み立てる。**既定で動く接続**が入る |
 | `FakeServiceInstance` / `fake_host` / `fake_datastore` / `fake_vm` | インベントリを模す |
+| `fake_event` / `fake_event_argument` | イベントと、管理対象の参照を持つ引数を模す |
 | `failing_connection(exc)` | `mock_mode=True` が接続を開いていないことを確かめる |
 | `assert_batch_valid(manifest, batch)` | バッチだけを個別に検証する |
 | `StubCollector` / `stub_manifest()` | 正しく振る舞うコレクタのスタブ |

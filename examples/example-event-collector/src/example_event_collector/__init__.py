@@ -32,6 +32,7 @@ from vcenter_event_assistant_plugin_api import (
     get_plugin_logger,
     limits,
     timeutils,
+    vmware,
 )
 
 PLUGIN_ID = "example.vcenter.power_events"
@@ -136,7 +137,7 @@ def _to_event_input(raw: Any) -> EventInput | None:
         logger.warning("event key out of range, skipping: %s", key)
         return None
 
-    entity = getattr(raw, "entity", None)
+    primary = next((item for item in vmware.event_entities(raw) if item.is_primary), None)
     severity = getattr(raw, "severity", None)
     message = getattr(raw, "fullFormattedMessage", None) or str(raw)
     event_type = type(raw).__name__
@@ -153,12 +154,8 @@ def _to_event_input(raw: Any) -> EventInput | None:
         vmware_key=key,
         severity=str(severity).lower() if severity is not None else None,
         user_name=getattr(raw, "userName", None),
-        # 列長を超えると DB で落ちる。表示名なので切り詰めてよい。
-        entity_name=limits.truncate(
-            getattr(entity, "name", "") or "", limits.MAX_ENTITY_NAME
-        )
-        or None,
-        entity_type=type(entity).__name__ if entity is not None else None,
+        entity_name=primary.entity_name if primary is not None else None,
+        entity_type=primary.entity_type if primary is not None else None,
         chain_id=int(raw.chainId) if getattr(raw, "chainId", None) else None,
     )
 
