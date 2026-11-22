@@ -20,6 +20,7 @@ from vcenter_event_assistant.collectors.events import (
 from vcenter_event_assistant.db.models import EventRecord, EventScoreRule, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.plugins.registry import build_collector_registry, set_collector_registry
+from vcenter_event_assistant.rules.notable import score_event
 from vcenter_event_assistant.services.ingest_runner import run_ingest_events
 from vcenter_event_assistant.settings import get_settings
 
@@ -140,6 +141,21 @@ def test_normalize_regular_vmware_event_type() -> None:
     row = normalize_event(event)
     assert row is not None
     assert row["event_type"] == "vim.event.VmPoweredOnEvent"
+
+
+def test_normalize_host_connection_lost_event_scores_as_high_risk() -> None:
+    event = vim.event.HostConnectionLostEvent(
+        key=1,
+        chainId=1,
+        createdTime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        fullFormattedMessage="m",
+    )
+    row = normalize_event(event)
+    assert row is not None
+    assert row["severity"] is None
+    result = score_event(event_type=row["event_type"], severity=row["severity"], message=row["message"])
+    assert result.score == 40
+    assert "high_risk_type" in result.tags
 
 
 def test_fetch_events_from_connection_uses_event_ex_id() -> None:

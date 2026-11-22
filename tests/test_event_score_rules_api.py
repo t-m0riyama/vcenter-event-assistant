@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pytest
 from httpx import AsyncClient
 
-from vcenter_event_assistant.db.models import EventRecord
+from vcenter_event_assistant.db.models import EventRecord, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.rules.notable import final_notable_score
 
@@ -97,6 +97,59 @@ async def test_event_score_rules_crud_recalculates_events(client: AsyncClient) -
     lst = await client.get("/api/event-score-rules")
     assert lst.status_code == 200
     assert lst.json() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["create", "import"])
+async def test_event_score_rules_recalculate_notable_tags(client: AsyncClient, operation: str) -> None:
+    high_risk_type = "vim.event.HostConnectionLostEvent"
+    short_type = "HostConnectionLostEvent"
+    vid = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        session.add(VCenter(id=vid, name="score-rules-vc", host="vc.example", port=443, username="u", password="p"))
+        await session.flush()
+        session.add_all(
+            [
+                EventRecord(
+                    vcenter_id=vid,
+                    occurred_at=now,
+                    event_type=high_risk_type,
+                    message="ok",
+                    vmware_key=1,
+                    notable_score=0,
+                ),
+                EventRecord(
+                    vcenter_id=vid,
+                    occurred_at=now,
+                    event_type=short_type,
+                    message="ok",
+                    vmware_key=2,
+                    notable_score=40,
+                    notable_tags=["high_risk_type"],
+                ),
+            ]
+        )
+
+    if operation == "create":
+        for event_type in (high_risk_type, short_type):
+            response = await client.post("/api/event-score-rules", json={"event_type": event_type, "score_delta": 0})
+            assert response.status_code == 201
+    else:
+        response = await client.post(
+            "/api/event-score-rules/import",
+            json={"rules": [{"event_type": high_risk_type, "score_delta": 0}]},
+        )
+        assert response.status_code == 200
+        assert response.json()["events_updated"] == 2
+
+    response = await client.get("/api/events?limit=10")
+    assert response.status_code == 200
+    rows = {item["event_type"]: item for item in response.json()["items"]}
+    assert rows[high_risk_type]["notable_tags"] == ["high_risk_type"]
+    assert rows[short_type]["notable_tags"] == []
+    assert rows[high_risk_type]["notable_score"] == 40
+    assert rows[short_type]["notable_score"] == 0
 
 
 @pytest.mark.asyncio

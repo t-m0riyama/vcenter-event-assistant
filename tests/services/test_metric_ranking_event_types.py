@@ -22,9 +22,9 @@ _keys = itertools.count(1)
 
 # (event_type, severity, message)。保存値はわざと 0 にして、保存値ではなく現行ルールで計算することを確かめる。
 ROWS: list[tuple[str, str | None, str | None]] = [
-    ("HostConnectionLostEvent", "info", "connection LOST to host"),
-    ("HostConnectionLostEvent", "warning", "ok"),
-    ("HostConnectionLostEvent", None, None),
+    ("vim.event.HostConnectionLostEvent", "info", "connection LOST to host"),
+    ("vim.event.HostConnectionLostEvent", "warning", "ok"),
+    ("vim.event.HostConnectionLostEvent", None, None),
     ("VmPoweredOnEvent", "INFO", "powered on"),
     ("VmPoweredOnEvent", "Error", "Task TIMEOUT"),
     ("VmPoweredOnEvent", "user", ""),
@@ -67,9 +67,11 @@ async def test_max_score_matches_per_row_recalculation() -> None:
     async with session_scope() as session:
         await _seed(session)
         got = await query_top_event_type_buckets(session, [EventRecord.occurred_at >= T0])
-    assert {b.event_type: b.max_notable_score for b in got} == _expected()
+    scores = {b.event_type: b.max_notable_score for b in got}
+    assert scores["vim.event.HostConnectionLostEvent"] == 60  # 種別 40 点と warning 20 点
+    assert scores == _expected()
     assert {b.event_type: b.event_count for b in got} == {
-        "HostConnectionLostEvent": 3,
+        "vim.event.HostConnectionLostEvent": 3,
         "VmPoweredOnEvent": 3,
         "CustomEvent": 2,
     }
