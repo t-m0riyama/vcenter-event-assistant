@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from vcenter_event_assistant_plugin_api import EventEntityInput
+
+MOCK_HOST_MOID = "host-mock-01"
+MOCK_VM_MOID = "vm-mock-01"
+
 _MOCK_EVENT_TYPES = (
     "vim.event.MockDemoVmPoweredOnEvent",
     "vim.event.MockDemoAlarmStatusChangedEvent",
@@ -34,6 +39,11 @@ def fetch_mock_events_blocking(
             "user_name": "mock-user",
             "entity_name": "esxi-mock-01",
             "entity_type": "HostSystem",
+            "entity_moid": MOCK_HOST_MOID,
+            "entities": (EventEntityInput(
+                "host", entity_moid=MOCK_HOST_MOID, entity_name="esxi-mock-01",
+                entity_type="HostSystem", is_primary=True,
+            ),),
             "vmware_key": key_base,
             "chain_id": key_base,
         },
@@ -45,6 +55,11 @@ def fetch_mock_events_blocking(
             "user_name": None,
             "entity_name": "vm-mock-web-01",
             "entity_type": "VirtualMachine",
+            "entity_moid": MOCK_VM_MOID,
+            "entities": (EventEntityInput(
+                "vm", entity_moid=MOCK_VM_MOID, entity_name="vm-mock-web-01",
+                entity_type="VirtualMachine", is_primary=True,
+            ),),
             "vmware_key": key_base + 1,
             "chain_id": key_base + 1,
         },
@@ -57,13 +72,12 @@ def sample_mock_hosts_blocking() -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
     # 分単位でわずかに変動させてグラフに動きを出す
     wobble = (int(now.timestamp()) // 60) % 20
-    host_moid = "host-mock-01"
     ds_moid = "datastore-mock-01"
     return [
         {
             "sampled_at": now,
             "entity_type": "HostSystem",
-            "entity_moid": host_moid,
+            "entity_moid": MOCK_HOST_MOID,
             "entity_name": "esxi-mock-01",
             "metric_key": "host.cpu.usage_pct",
             "value": float(35 + wobble),
@@ -71,7 +85,7 @@ def sample_mock_hosts_blocking() -> list[dict[str, Any]]:
         {
             "sampled_at": now,
             "entity_type": "HostSystem",
-            "entity_moid": host_moid,
+            "entity_moid": MOCK_HOST_MOID,
             "entity_name": "esxi-mock-01",
             "metric_key": "host.mem.usage_pct",
             "value": float(48 + wobble // 2),

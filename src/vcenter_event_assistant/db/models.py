@@ -46,6 +46,7 @@ class EventRecord(Base):
     __table_args__ = (
         UniqueConstraint("vcenter_id", "collector_id", "vmware_key", name="uq_event_collector_vmware_key"),
         Index("ix_events_vcenter_id_occurred_at", "vcenter_id", "occurred_at"),
+        Index("ix_events_vcenter_id_entity_moid", "vcenter_id", "entity_moid"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -58,6 +59,7 @@ class EventRecord(Base):
     user_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     entity_name: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
     entity_type: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    entity_moid: Mapped[str | None] = mapped_column(String(256), nullable=True)
     vmware_key: Mapped[int] = mapped_column(Integer, index=True)
     chain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notable_score: Mapped[int] = mapped_column(Integer, default=0, index=True)
@@ -65,6 +67,31 @@ class EventRecord(Base):
     user_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     vcenter: Mapped["VCenter"] = relationship(back_populates="events")
+
+    entities: Mapped[list["EventEntity"]] = relationship(
+        back_populates="event",
+        passive_deletes="all",
+    )
+
+
+class EventEntity(Base):
+    __tablename__ = "event_entities"
+    __table_args__ = (
+        UniqueConstraint("event_id", "role", "position", name="uq_event_entities_event_id_role_position"),
+        Index("ix_event_entities_vcenter_id_entity_moid", "vcenter_id", "entity_moid"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True))
+    role: Mapped[str] = mapped_column(String(64))
+    position: Mapped[int] = mapped_column(Integer)
+    is_primary: Mapped[bool] = mapped_column(Boolean)
+    entity_type: Mapped[str | None] = mapped_column(String(256))
+    entity_moid: Mapped[str | None] = mapped_column(String(256))
+    entity_name: Mapped[str | None] = mapped_column(String(1024))
+
+    event: Mapped["EventRecord"] = relationship(back_populates="entities")
 
 
 class LogRecord(Base):

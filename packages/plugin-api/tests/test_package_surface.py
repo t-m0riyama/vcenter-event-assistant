@@ -18,6 +18,7 @@ import sys
 from importlib import metadata
 
 import vcenter_event_assistant_plugin_api as api
+from vcenter_event_assistant_plugin_api import vmware
 
 PACKAGE_ROOT = pathlib.Path(api.__file__).parent
 SOURCE_FILES = sorted(PACKAGE_ROOT.rglob("*.py"))
@@ -120,6 +121,14 @@ def test_all_exports_the_type_aliases_authors_need() -> None:
     """従来 `ConnectionFactory` などは定義済みなのに未公開で、型注釈に使えなかった。"""
     for name in ("ConnectionFactory", "DataKind", "SeriesMode", "CollectionContext", "EventEntityInput"):
         assert name in api.__all__
+
+
+def test_vmware_entity_priority_is_public() -> None:
+    assert "entity_priority" in vmware.__all__
+    entities = [api.EventEntityInput("sourceHost"), api.EventEntityInput("vm")]
+    assert [entity.role for entity in sorted(entities, key=vmware.entity_priority)] == [
+        "vm", "sourceHost",
+    ]
 
 
 def test_only_the_fixtures_module_imports_pytest() -> None:

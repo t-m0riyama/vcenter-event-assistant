@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import Integer, String
 from vcenter_event_assistant_plugin_api import limits
 
-from vcenter_event_assistant.db.models import EventRecord, MetricSample
+from vcenter_event_assistant.db.models import EventEntity, EventRecord, MetricSample
 
 
 def _length(model, column_name: str) -> int:
@@ -34,6 +34,11 @@ def _length(model, column_name: str) -> int:
         (EventRecord, "user_name", limits.MAX_USER_NAME),
         (EventRecord, "entity_name", limits.MAX_ENTITY_NAME),
         (EventRecord, "entity_type", limits.MAX_EVENT_ENTITY_TYPE),
+        (EventRecord, "entity_moid", limits.MAX_ENTITY_MOID),
+        (EventEntity, "role", limits.MAX_EVENT_ENTITY_ROLE),
+        (EventEntity, "entity_name", limits.MAX_ENTITY_NAME),
+        (EventEntity, "entity_type", limits.MAX_EVENT_ENTITY_TYPE),
+        (EventEntity, "entity_moid", limits.MAX_ENTITY_MOID),
     ],
 )
 def test_string_limits_match_the_columns(model, column: str, constant: int) -> None:

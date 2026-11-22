@@ -142,7 +142,8 @@ vCenter Event Assistant は以下の **11個のエンドポイントグループ
 | テーブル | 用途 | 主要カラム | レコード保持 |
 |--------|------|----------|----------|
 | **vcenters** | vCenter接続情報 | id, name, host, port, username (暗号化), password (暗号化), is_enabled | 手動削除まで保持 |
-| **events** | イベント本体 | id, vcenter_id, occurred_at, event_type, message, severity, user_name, entity_name/type, **notable_score** (計算値), user_comment, vmware_key | `EVENT_RETENTION_DAYS` (既定7日) で自動削除 |
+| **events** | イベント本体 | id, vcenter_id, occurred_at, event_type, message, severity, user_name, entity_name, entity_type, entity_moid（主な対象）, **notable_score** (計算値), user_comment, vmware_key | `EVENT_RETENTION_DAYS` (既定7日) で自動削除 |
+| **event_entities** | 主な対象を含むすべてのイベント対象 | id, event_id, vcenter_id, role, position, is_primary, entity_type, entity_moid, entity_name | 親イベントの削除に連動 |
 | **metric_samples** | ホストメトリクス時系列 | id, vcenter_id, sampled_at, entity_type, entity_moid, entity_name, metric_key, value (%) | `METRIC_RETENTION_DAYS` (既定7日) で自動削除 |
 | **event_score_rules** | イベント種別スコア調整 | id, event_type, score_delta (加算値) | 手動削除まで保持（変更時は関連イベントスコア再計算） |
 | **event_type_guides** | イベント種別説明 | id, event_type, general_meaning, typical_causes, remediation, action_required | 手動削除まで保持 |

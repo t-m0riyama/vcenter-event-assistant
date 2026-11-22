@@ -105,6 +105,15 @@ async def test_mock_mode_ingestion_skips_pyvmomi(monkeypatch: pytest.MonkeyPatch
             n_ev = await ingest_events_for_vcenter(session, vc, settings=settings)
             n_m = await ingest_metrics_for_vcenter(session, vc, settings=settings)
 
+        vm_moids = (await session.scalars(
+            select(EventRecord.entity_moid).where(
+                EventRecord.vcenter_id == vc.id,
+                EventRecord.entity_type == "VirtualMachine",
+            )
+        )).all()
+        assert len(vm_moids) == 3
+        assert set(vm_moids) == {"vm-mock-01"}
+
     assert n_ev >= 1
     assert n_m >= 1
 

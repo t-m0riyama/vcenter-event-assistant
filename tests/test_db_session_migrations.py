@@ -326,6 +326,105 @@ async def test_snapshot_result_columns_are_added_without_rebuilding_the_table(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_event_entities_migration_round_trip(tmp_path, backend) -> None:
+    """対象を保存する移行は既存イベントを残し、元に戻して再適用できる。"""
+    import os
+    from uuid import uuid4
+
+    from alembic import command
+    from sqlalchemy import Uuid, bindparam
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+
+    if backend == "postgres":
+        url = os.environ.get("VEA_TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    else:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'event_entities.db'}"
+    settings = get_settings().model_copy(update={"database_url": url})
+    cfg = alembic_config(settings=settings)
+    engine = create_async_engine(url)
+    vcenter_id = uuid4()
+
+    def check_old_schema(sync_conn) -> None:
+        inspector = inspect(sync_conn)
+        assert not inspector.has_table("event_entities")
+        assert "entity_moid" not in {c["name"] for c in inspector.get_columns("events")}
+        assert "ix_events_vcenter_id_entity_moid" not in {
+            i["name"] for i in inspector.get_indexes("events")
+        }
+
+    def check_new_schema(sync_conn) -> None:
+        inspector = inspect(sync_conn)
+        columns = {c["name"]: c for c in inspector.get_columns("events")}
+        assert columns["entity_moid"]["nullable"] is True
+        assert columns["entity_moid"]["type"].length == 256
+        indexes = {i["name"]: i["column_names"] for i in inspector.get_indexes("events")}
+        assert indexes["ix_events_vcenter_id_entity_moid"] == ["vcenter_id", "entity_moid"]
+        indexes = {
+            i["name"]: i["column_names"] for i in inspector.get_indexes("event_entities")
+            if not i.get("duplicates_constraint")
+        }
+        assert indexes == {"ix_event_entities_vcenter_id_entity_moid": ["vcenter_id", "entity_moid"]}
+        keys = inspector.get_foreign_keys("event_entities")
+        assert len(keys) == 1 and keys[0]["referred_table"] == "events"
+        assert keys[0]["options"]["ondelete"] == "CASCADE"
+        constraints = inspector.get_unique_constraints("event_entities")
+        assert {c["name"]: c["column_names"] for c in constraints} == {
+            "uq_event_entities_event_id_role_position": ["event_id", "role", "position"]
+        }
+
+    def upgrade(sync_conn) -> None:
+        _run_with_connection(sync_conn, cfg, lambda cc: command.upgrade(cc, "head"))
+
+    def downgrade(sync_conn) -> None:
+        _run_with_connection(sync_conn, cfg, lambda cc: command.downgrade(cc, "d7e8f9a0b1c2"))
+        check_old_schema(sync_conn)
+
+    try:
+        async with engine.connect() as conn:
+            async with conn.begin() as transaction:
+                if backend == "postgres":
+                    # CI 内の他のテストと DB を共有するため、この試験用のスキーマを使う。
+                    schema = f"event_entities_{vcenter_id.hex}"
+                    await conn.execute(text(f"CREATE SCHEMA {schema}"))
+                    await conn.execute(text(f"SET LOCAL search_path TO {schema}"))
+
+                await conn.run_sync(upgrade)
+                await conn.run_sync(downgrade)
+                await conn.execute(
+                    text("""INSERT INTO vcenters
+                        (id, name, host, protocol, port, username, password, verify_ssl, is_enabled, created_at)
+                        VALUES (:id, 'legacy', 'vc.example', 'https', 443, 'u', 'p', true, true, CURRENT_TIMESTAMP)""")
+                    .bindparams(bindparam("id", type_=Uuid())),
+                    {"id": vcenter_id},
+                )
+                await conn.execute(
+                    text("""INSERT INTO events
+                        (vcenter_id, collector_id, occurred_at, event_type, message, vmware_key, notable_score)
+                        VALUES (:id, 'builtin.vcenter.events', CURRENT_TIMESTAMP, 'legacy', 'old', 11, 0)""")
+                    .bindparams(bindparam("id", type_=Uuid())),
+                    {"id": vcenter_id},
+                )
+
+                for _ in range(2):
+                    await conn.run_sync(upgrade)
+                    await conn.run_sync(check_new_schema)
+                    rows = await conn.execute(text("SELECT message, entity_moid FROM events"))
+                    assert rows.all() == [("old", None)]
+                    assert await conn.scalar(text("SELECT count(*) FROM event_entities")) == 0
+                    assert await get_applied_alembic_revision(conn) == get_alembic_head(settings=settings)
+                    await conn.run_sync(downgrade)
+
+                await transaction.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_disk_usage_metric_key_is_renamed_in_samples_rules_and_snapshots(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

@@ -312,9 +312,8 @@ class $class_name(EventCollector):
         if key is None:
             # key の無いイベントは 0 に潰さずスキップする（潰すと 1 件しか残らない）。
             return None
-        primary = next(
-            (item for item in vmware.event_entities(event) if item.is_primary), None
-        )
+        entities = vmware.event_entities(event)
+        primary = next((item for item in entities if item.is_primary), None)
         severity = getattr(event, "severity", None)
         event_type = type(event).__name__
         event_type_id = getattr(event, "eventTypeId", None)
@@ -333,6 +332,8 @@ class $class_name(EventCollector):
             entity_name=primary.entity_name if primary is not None else None,
             entity_type=primary.entity_type if primary is not None else None,
             chain_id=int(event.chainId) if getattr(event, "chainId", None) else None,
+            entity_moid=primary.entity_moid if primary is not None else None,
+            entities=entities,
         )
 
 

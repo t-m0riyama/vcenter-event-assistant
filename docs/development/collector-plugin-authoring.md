@@ -141,12 +141,19 @@ pyVmomi のイベントから対象を取り出すには、plugin-api 1.6.0 以�
 ```python
 from vcenter_event_assistant_plugin_api import vmware
 
-primary = next((item for item in vmware.event_entities(event) if item.is_primary), None)
+entities = vmware.event_entities(event)
+primary = next((item for item in entities if item.is_primary), None)
 entity_name = primary.entity_name if primary is not None else None
 entity_type = primary.entity_type if primary is not None else None
+entity_moid = primary.entity_moid if primary is not None else None
 ```
 
-この名前と種別を `EventInput` に渡します。種別は `HostSystem` などの短い名前です。
+主な対象の `entity_name`、`entity_type`、`entity_moid` と、すべての対象を含む
+`entities` を `EventInput` の同名の項目に渡します。`entity_moid` と `entities` は
+plugin-api 1.7.0 以降で使えます。種別は `HostSystem` などの短い名前です。
+アプリは主な対象の各列を `EventInput` の同名の項目から保存し、上限を超えた moid は NULL にします。
+`entities` は別の表に保存します。
+`entities` が空の場合、イベント本体だけを保存します。
 対象の名前はイベントのデータから取り、管理対象の `name` を問い合わせません。
 名前が列長を超える場合は、ヘルパーが切り詰めます。
 テストでは `fake_event(host=fake_event_argument(fake_host()))` のようにイベントの引数を作れます。

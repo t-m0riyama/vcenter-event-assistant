@@ -25,7 +25,7 @@ from uuid import UUID
 from vcenter_event_assistant_plugin_api.vmware import EventEntityInput
 
 #: 配布パッケージのバージョン（SemVer）。機能検出に使える。
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 
 #: 契約世代。アプリが ``manifest.api_version`` と突き合わせる。**安易に上げないこと。**
 PLUGIN_API_VERSION = 1
@@ -124,6 +124,8 @@ class EventInput:
     entity_name: str | None = None
     entity_type: str | None = None
     chain_id: int | None = None
+    entity_moid: str | None = None
+    entities: tuple[EventEntityInput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

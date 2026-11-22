@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0
+
+- `EventInput` に主な対象の `entity_moid` と、すべての対象を渡す `entities` を追加した（Issue #347）。どちらも省略できる。
+- `limits.MAX_EVENT_ENTITY_ROLE` を追加した。検証では、対象の列長、役割と位置の重複、主な対象の件数に問題があれば warning を返す。イベントコレクタの雛形は対象の moid と全件を渡す。
+- `vmware.entity_priority()` を公開した。イベントの対象を、主な対象を選ぶ順に並べ替えるキーとして使える。
+
 ## 1.6.0
 
 - `vmware.event_entities()` と `EventEntityInput` を追加した（Issue #347）。イベントの対象をすべて取り出し、主な対象に `is_primary` を付ける。

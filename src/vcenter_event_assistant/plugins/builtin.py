@@ -41,6 +41,8 @@ def _event(row: dict[str, Any]) -> EventInput:
         entity_name=row.get("entity_name"),
         entity_type=row.get("entity_type"),
         chain_id=row.get("chain_id"),
+        entity_moid=row.get("entity_moid"),
+        entities=row.get("entities", ()),
     )
 
 

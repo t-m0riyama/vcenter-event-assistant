@@ -12,13 +12,14 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
 from vcenter_event_assistant_plugin_api import (
     CollectionBatch,
     CollectorManifest,
+    EventEntityInput,
     EventInput,
     LogRecordInput,
     MetricDefinition,
@@ -198,6 +199,8 @@ def batch_to_json(batch: CollectionBatch) -> dict[str, Any]:
                 "entity_name": event.entity_name,
                 "entity_type": event.entity_type,
                 "chain_id": event.chain_id,
+                "entity_moid": event.entity_moid,
+                "entities": [asdict(entity) for entity in event.entities],
             }
             for event in batch.events
         ],
@@ -237,6 +240,19 @@ def batch_from_json(raw: dict[str, Any]) -> CollectionBatch:
                 entity_name=event.get("entity_name"),
                 entity_type=event.get("entity_type"),
                 chain_id=event.get("chain_id"),
+                entity_moid=event.get("entity_moid"),
+                entities=tuple(
+                    EventEntityInput(
+                        role=entity.get("role"),
+                        position=entity.get("position", 0),
+                        entity_type=entity.get("entity_type"),
+                        entity_moid=entity.get("entity_moid"),
+                        entity_name=entity.get("entity_name"),
+                        is_primary=entity.get("is_primary", False),
+                    )
+                    for entity in (event.get("entities") or ())
+                    if isinstance(entity, dict) and "role" in entity
+                ),
             )
             for event in raw.get("events", ())
         ),
