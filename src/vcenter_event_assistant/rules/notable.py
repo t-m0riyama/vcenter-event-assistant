@@ -9,12 +9,11 @@ from dataclasses import dataclass
 
 HIGH_ATTENTION_TYPES: frozenset[str] = frozenset(
     {
-        "VmFailedToPowerOnEvent",
-        "VmFailedToStandbyGuestEvent",
-        "VmFailedToSuspendEvent",
-        "HostConnectionLostEvent",
-        "HostNotRespondingEvent",
-        "DatastoreRemovedOnHostEvent",
+        "vim.event.VmFailedToPowerOnEvent",
+        "vim.event.VmFailedToStandbyGuestEvent",
+        "vim.event.VmFailedToSuspendEvent",
+        "vim.event.HostConnectionLostEvent",
+        "vim.event.DatastoreRemovedOnHostEvent",
     }
 )
 
@@ -67,7 +66,7 @@ def score_event(
 
     for p in HIGH_ATTENTION_TYPES:
         if _matches_pattern(event_type, p):
-            score += 35
+            score += 40
             tags.append("high_risk_type")
             break
 

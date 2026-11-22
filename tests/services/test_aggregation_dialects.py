@@ -29,7 +29,6 @@ from vcenter_event_assistant.db.models import (
     MetricSample,
     VCenter,
 )
-from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.services.chat.chat_event_time_buckets import build_chat_event_time_buckets
 from vcenter_event_assistant.services.alerting.alert_eval_common import metric_context_key
 from vcenter_event_assistant.services.chat.chat_period_metrics import (
@@ -98,8 +97,14 @@ async def _seed(session: AsyncSession) -> None:
         ]
     )
     rows = [
-        (FROM + timedelta(minutes=14, seconds=59, microseconds=999_600), "HostConnectionLostEvent", "info", "LOST", 0),
-        (FROM + timedelta(minutes=15), "HostConnectionLostEvent", "warning", "ok", 0),
+        (
+            FROM + timedelta(minutes=14, seconds=59, microseconds=999_600),
+            "vim.event.HostConnectionLostEvent",
+            "info",
+            "LOST",
+            0,
+        ),
+        (FROM + timedelta(minutes=15), "vim.event.HostConnectionLostEvent", "warning", "ok", 0),
         (FROM + timedelta(minutes=16), "CustomEvent", "Error", "Disk Corrupt", 0),
         (FROM + timedelta(minutes=17), "CustomEvent", None, "", 0),
         (TO, "CustomEvent", "error", "fail", 0),
@@ -151,8 +156,8 @@ async def test_event_buckets_on_each_dialect(session: AsyncSession) -> None:
     await _seed(session)
     out = await build_chat_event_time_buckets(session, FROM, TO, vcenter_id=None, bucket_sec=BUCKET)
     assert [b.bucket_start_utc for b in out.buckets] == [FROM, FROM + timedelta(minutes=15)]
-    assert out.buckets[0].by_type == {"HostConnectionLostEvent": 1}
-    assert out.buckets[1].by_type == {"CustomEvent": 2, "HostConnectionLostEvent": 1}
+    assert out.buckets[0].by_type == {"vim.event.HostConnectionLostEvent": 1}
+    assert out.buckets[1].by_type == {"CustomEvent": 2, "vim.event.HostConnectionLostEvent": 1}
 
 
 @pytest.mark.asyncio
@@ -161,17 +166,10 @@ async def test_top_event_type_scores_on_each_dialect(session: AsyncSession) -> N
     got = await query_top_event_type_buckets(
         session, [EventRecord.occurred_at >= FROM, EventRecord.occurred_at < TO]
     )
-    expected = {
-        "HostConnectionLostEvent": max(
-            final_notable_score(event_type="HostConnectionLostEvent", severity="info", message="LOST"),
-            final_notable_score(event_type="HostConnectionLostEvent", severity="warning", message="ok"),
-        ),
-        "CustomEvent": max(
-            final_notable_score(event_type="CustomEvent", severity="Error", message="Disk Corrupt", score_delta=7),
-            final_notable_score(event_type="CustomEvent", severity=None, message="", score_delta=7),
-        ),
+    assert {b.event_type: b.max_notable_score for b in got} == {
+        "vim.event.HostConnectionLostEvent": 60,  # 種別 40 点と warning 20 点
+        "CustomEvent": 57,  # error 40 点と警告語 10 点、スコアルール 7 点
     }
-    assert {b.event_type: b.max_notable_score for b in got} == expected
 
 
 @pytest.mark.asyncio
@@ -276,7 +274,7 @@ async def test_incident_timeline_view_on_each_dialect(session: AsyncSession) -> 
         EventRecord(
             vcenter_id=vid,
             occurred_at=FROM - timedelta(minutes=30),
-            event_type="HostConnectionLostEvent",
+            event_type="vim.event.HostConnectionLostEvent",
             message="",
             vmware_key=next(_keys),
             notable_score=0,
