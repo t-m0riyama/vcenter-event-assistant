@@ -335,7 +335,7 @@ def event_entities(event: Any) -> tuple[EventEntityInput, ...]:
 - `EventRead` に `entity_moid` を足す（`from_attributes` なので、列がそのまま出る）。
 - フロントは、zod のスキーマ（`frontend/src/api/schemas/events.ts`）と CSV の列（`frontend/src/events/eventCsv.ts`・`eventRowToCsv.ts`）を足す。CSV のテストはヘッダーを文字列で比べているので、合わせて直す。
 - 子表の内容を返す API と画面は、本書では作らない。使うのは #1・#5 である。
-- LLM に渡す文脈（チャット・ダイジェスト）には、moid を入れない。匿名化（`services/llm/llm_anonymization.py`）が名前しか扱わないため。
+- チャット・ダイジェストの集約文脈には、保存したイベントの `entity_moid` や `event_entities` を含めない。メトリクスの `entity_moid` や、イベントのメッセージ・添付 CSV などの本文に現れる moid は、LLM の送信前に匿名化する（`services/llm/llm_anonymization.py`）。
 
 ## 6. PR の分け方
 

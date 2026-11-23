@@ -373,7 +373,7 @@ def prepare_chat_payload(
 ) -> tuple[dict[str, Any], list[ChatMessage], str | None, dict[str, str]]:
     """digest_context から high_cpu/mem を除外 → payload 構築 → 匿名化。
 
-    添付テキストは会話本文と同一の匿名化トークン体系に載せる（画像は匿名化できない）。
+    テキスト添付の本文とファイル名は会話本文と同一の匿名化トークン体系に載せる（画像は匿名化できない）。
 
     Returns:
         (payload, trimmed_messages, attachment_block, reverse_map)
@@ -389,20 +389,24 @@ def prepare_chat_payload(
         payload["event_time_buckets"] = event_time_buckets.model_dump(mode="json")
 
     trimmed_msgs = messages[-MAX_CHAT_MESSAGES:]
-    attachment_list = list(attachments or [])
-    attachment_bodies = [a.text or "" for a in text_attachments(attachment_list)]
+    attachment_list = text_attachments(attachments or [])
+    attachment_bodies = [a.text or "" for a in attachment_list]
     reverse_map: dict[str, str] = {}
     if settings.llm_anonymization_enabled:
-        pl, contents, attachment_bodies, reverse_map = anonymize_chat_for_llm(
+        payload, contents, attachment_bodies, filenames, reverse_map = anonymize_chat_for_llm(
             payload,
             [m.content for m in trimmed_msgs],
             extra_vcenter_strings=extra_vcenter_strings,
             attachment_texts=attachment_bodies,
+            attachment_filenames=[a.filename for a in attachment_list],
             incident_timeline=incident_timeline,
         )
-        payload = pl
         trimmed_msgs = [
             ChatMessage(role=m.role, content=c) for m, c in zip(trimmed_msgs, contents, strict=True)
+        ]
+        attachment_list = [
+            attachment.model_copy(update={"filename": filename})
+            for attachment, filename in zip(attachment_list, filenames, strict=True)
         ]
     elif incident_timeline is not None:
         payload["incident_timeline"] = incident_timeline.model_dump(mode="json")

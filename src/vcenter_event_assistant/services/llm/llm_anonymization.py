@@ -13,17 +13,14 @@ from vcenter_event_assistant.services.vcenter_labels import first_hostname_label
 if TYPE_CHECKING:
     from vcenter_event_assistant.services.chat.chat_incident_timeline import IncidentTimelinePayload
 
-# entity_name / user 系で先に登録した原文を message 内で置換する際に使う
-_COLLECT_KEYS: tuple[tuple[str, str], ...] = (
-    ("entity_name", "entity"),
-    ("user_name", "user"),
-    ("username", "user"),
-    ("vcenter_label", "vcenter"),
-)
-
-_ANONYMIZE_KEYS: frozenset[str] = frozenset(
-    {"entity_name", "message", "user_name", "username", "vcenter_label"},
-)
+# 本文を置換する前に、JSON の識別子を登録する。
+_COLLECT_KEYS = {
+    "entity_name": "entity",
+    "entity_moid": "moid",
+    "user_name": "user",
+    "username": "user",
+    "vcenter_label": "vcenter",
+}
 
 # 文字列内 IPv4（簡易）
 _IPV4_RE = re.compile(
@@ -32,6 +29,19 @@ _IPV4_RE = re.compile(
     r"(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}"
     r"(?![0-9])",
 )
+
+# pyVmomi の _GetMoId() はサーバーから受け取った文字列を返す。
+# govmomi の simulator/registry.go の refValueMap を参照。VirtualApp は resgroup-v、StoragePod は group-p。
+# Folder の group-/group-d/h/n/v/s、OpaqueNetwork の network-o、Alarm の alarm- は vCenter の表記に合わせる
+# （Broadcom KB 415622, 426491, 417248, 450412, 434473, 383952）。
+# govmomi の Registry.newReference はカウンターを 1 ずつ増やし、%d でゼロ埋めせず採番する。
+_MOID_WORD = r"[A-Za-z0-9_-]"
+_MOID_WORD_RE = re.compile(_MOID_WORD)
+_MOID_PATTERN = (
+    r"(?:(?:vm|host|datastore|dvportgroup|dvs|datacenter|snapshot|envbrowser|task|alarm)-"
+    r"|network-o?|resgroup-v?|domain-[cs]|group-[dhnpsv]?)[1-9][0-9]*"
+)
+_MOID_RE = re.compile(rf"(?<!{_MOID_WORD}){_MOID_PATTERN}(?!{_MOID_WORD})")
 
 
 class LlmAnonymizer:
@@ -49,6 +59,8 @@ class LlmAnonymizer:
         if not value:
             return ""
         cat_key = category.strip().lower()
+        if cat_key == "entity" and self.has_registered_moid(value):
+            cat_key = "moid"
         cat_upper = cat_key.upper()
         pair = (cat_key, value)
         if pair in self._pair_to_token:
@@ -59,6 +71,10 @@ class LlmAnonymizer:
         self._pair_to_token[pair] = tok
         self._reverse[tok] = value
         return tok
+
+    def has_registered_moid(self, value: str) -> bool:
+        """同じ文字列が moid として登録済みかどうか。"""
+        return ("moid", value) in self._pair_to_token
 
     def share_token_with(self, category: str, alias: str, canonical: str) -> None:
         """
@@ -80,13 +96,12 @@ class LlmAnonymizer:
         """トークン → 原文（逆変換用）。"""
         return dict(self._reverse)
 
-    def replacements_longest_first(self) -> list[tuple[str, str]]:
-        """原文が長い順に (原文, トークン)。message 内の部分置換に用いる。"""
-        pairs: list[tuple[str, str]] = [
-            (orig, tok) for (_cat, orig), tok in self._pair_to_token.items()
+    def registered_replacements(self) -> list[tuple[str, str, str]]:
+        """(カテゴリ, 原文, トークン) の一覧。既知の形式の moid は正規表現でまとめて探す。"""
+        return [
+            (cat, orig, tok) for (cat, orig), tok in self._pair_to_token.items()
+            if cat != "moid" or _MOID_RE.fullmatch(orig) is None
         ]
-        pairs.sort(key=lambda x: len(x[0]), reverse=True)
-        return pairs
 
 
 def strip_ipv4(text: str) -> str:
@@ -129,7 +144,7 @@ def _apply_entity_fqdn_short_aliases(
     candidates_by_short: dict[str, list[str]] = defaultdict(list)
     for name in entity_names:
         short = first_hostname_label_if_fqdn(name)
-        if short and short not in entity_names:
+        if short and short not in entity_names and not a.has_registered_moid(short):
             candidates_by_short[short].append(name)
     for short, candidates in candidates_by_short.items():
         if len(candidates) == 1:
@@ -138,39 +153,67 @@ def _apply_entity_fqdn_short_aliases(
             a.token_for("entity", short)
 
 
-def _collect_entity_user_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
-    """ツリー内の entity / user フィールドを先に列挙する。"""
+def _collect_pairs(obj: Any, acc: list[tuple[str, str]]) -> None:
+    """ツリー内の識別子フィールドを先に列挙する。"""
     if isinstance(obj, dict):
         for k, v in obj.items():
-            if isinstance(v, str) and v:
-                for field, cat in _COLLECT_KEYS:
-                    if k == field:
-                        acc.append((cat, v))
-                        break
-            _collect_entity_user_pairs(v, acc)
+            if isinstance(v, str) and v and k in _COLLECT_KEYS:
+                acc.append((_COLLECT_KEYS[k], v))
+            _collect_pairs(v, acc)
     elif isinstance(obj, list):
         for x in obj:
-            _collect_entity_user_pairs(x, acc)
+            _collect_pairs(x, acc)
+
+
+def _register_pairs(pairs: list[tuple[str, str]]) -> LlmAnonymizer:
+    a = LlmAnonymizer()
+    # 名前の代わりに入った moid は、entity_moid と同じトークンに揃える。
+    for category, value in pairs:
+        if category == "moid":
+            a.token_for(category, value)
+    for category, value in pairs:
+        if category != "moid":
+            a.token_for(category, value)
+    _apply_entity_fqdn_short_aliases(a, pairs)
+    return a
 
 
 def anonymize_plain_text(text: str, a: LlmAnonymizer) -> str:
-    """IPv4 と登録済みの原文を置換する。生成済みトークンは再走査しない。"""
+    """IPv4、登録済みの原文、既知の形式の moid を置換する。生成済みトークンは再走査しない。"""
     if not text:
         return text
     # 原文の文字位置を確保し、IPv4、長い原文の順に重複しない置換範囲を集める。
     claimed = bytearray(len(text))
-    replacements: list[tuple[int, int, str]] = []
+    replacements: list[tuple[int, int, str | None]] = []
     for match in _IPV4_RE.finditer(text):
         start, end = match.span()
         claimed[start:end] = b"\x01" * (end - start)
         replacements.append((start, end, a.token_for("ip", match.group(0))))
 
-    for original, token in a.replacements_longest_first():
+    candidates: list[tuple[str, str, str | None, int | None]] = [
+        (category, original, token, None) for category, original, token in a.registered_replacements()
+    ]
+    candidates.extend(("moid", match[0], None, match.start()) for match in _MOID_RE.finditer(text))
+    # 長い原文を優先する。同じ長さなら、先に並べた登録済みの候補を優先する。
+    candidates.sort(key=lambda candidate: len(candidate[1]), reverse=True)
+    for category, original, token, position in candidates:
+        if position is not None:
+            end = position + len(original)
+            if claimed.find(b"\x01", position, end) == -1:
+                claimed[position:end] = b"\x01" * len(original)
+                replacements.append((position, end, None))
+            continue
         if len(original) < 2:
             continue
         search_from = 0
         while (start := text.find(original, search_from)) != -1:
             end = start + len(original)
+            if category == "moid" and (
+                (start > 0 and _MOID_WORD_RE.match(text, start - 1))
+                or _MOID_WORD_RE.match(text, end)
+            ):
+                search_from = start + 1
+                continue
             overlap = claimed.find(b"\x01", start, end)
             if overlap != -1:
                 # 同じ長さの候補は、重複位置から続く確保済み範囲の途中でも一致できない。
@@ -185,6 +228,8 @@ def anonymize_plain_text(text: str, a: LlmAnonymizer) -> str:
     parts: list[str] = []
     previous_end = 0
     for start, end, token in sorted(replacements):
+        if token is None:
+            token = a.token_for("moid", text[start:end])
         parts.extend((text[previous_end:start], token))
         previous_end = end
     parts.append(text[previous_end:])
@@ -195,17 +240,10 @@ def _anonymize_node(obj: Any, a: LlmAnonymizer) -> Any:
     if isinstance(obj, dict):
         out: dict[str, Any] = {}
         for k, v in obj.items():
-            if k in _ANONYMIZE_KEYS and isinstance(v, str):
-                if k == "message":
-                    out[k] = anonymize_plain_text(v, a)
-                elif k in ("user_name", "username"):
-                    out[k] = a.token_for("user", v)
-                elif k == "entity_name":
-                    out[k] = a.token_for("entity", v)
-                elif k == "vcenter_label":
-                    out[k] = a.token_for("vcenter", v)
-                else:
-                    out[k] = copy.deepcopy(v)
+            if k == "message" and isinstance(v, str):
+                out[k] = anonymize_plain_text(v, a)
+            elif k in _COLLECT_KEYS and isinstance(v, str):
+                out[k] = a.token_for(_COLLECT_KEYS[k], v)
             else:
                 out[k] = _anonymize_node(v, a)
         return out
@@ -218,15 +256,11 @@ def anonymize_json_like(obj: Any) -> tuple[Any, dict[str, str]]:
     """
     JSON 互換オブジェクトを再帰的に匿名化する。
 
-    手順: 先にツリー全体から entity / user の値を収集してトークン登録し、
-    その後に各フィールドを匿名化（message は IPv4 + 登録済み原文の部分置換）。
+    先にツリー全体から識別子を収集して登録し、その後でフィールドと message の本文を匿名化する。
     """
     pairs: list[tuple[str, str]] = []
-    _collect_entity_user_pairs(obj, pairs)
-    a = LlmAnonymizer()
-    for cat, val in pairs:
-        a.token_for(cat, val)
-    _apply_entity_fqdn_short_aliases(a, pairs)
+    _collect_pairs(obj, pairs)
+    a = _register_pairs(pairs)
     out = _anonymize_node(obj, a)
     return out, a.reverse_map
 
@@ -244,12 +278,9 @@ def anonymize_for_llm(
     JSON に無い文字列も Markdown からトークン化する。
     """
     pairs: list[tuple[str, str]] = []
-    _collect_entity_user_pairs(context_dict, pairs)
+    _collect_pairs(context_dict, pairs)
     _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
-    a = LlmAnonymizer()
-    for cat, val in pairs:
-        a.token_for(cat, val)
-    _apply_entity_fqdn_short_aliases(a, pairs)
+    a = _register_pairs(pairs)
     ctx_out = _anonymize_node(context_dict, a)
     md_out = anonymize_plain_text(template_markdown, a)
     return ctx_out, md_out, a.reverse_map
@@ -261,21 +292,22 @@ def anonymize_chat_for_llm(
     *,
     extra_vcenter_strings: Sequence[str] | None = None,
     attachment_texts: Sequence[str] | None = None,
+    attachment_filenames: Sequence[str] | None = None,
     incident_timeline: IncidentTimelinePayload | None = None,
-) -> tuple[dict[str, Any], list[str], list[str], dict[str, str]]:
+) -> tuple[dict[str, Any], list[str], list[str], list[str], dict[str, str]]:
     """
-    チャット用: マージ済みペイロード・会話本文・添付本文を同一 ``LlmAnonymizer`` で匿名化する。
+    チャット用: マージ済みペイロード・会話本文・テキスト添付を同一 ``LlmAnonymizer`` で匿名化する。
 
     ``extra_vcenter_strings`` により登録済み vCenter 名を会話本文からもトークン化する。
-    ``attachment_texts`` は添付ファイルの本文。会話と同じトークン体系に載せるため、
-    別インスタンスを作らずここでまとめて処理する（画像は匿名化できない）。
+    ``attachment_texts`` と ``attachment_filenames`` はテキスト添付の本文とファイル名。
+    会話と同じトークン体系で処理する（画像は匿名化できない）。
     ``incident_timeline`` のメトリクスタイトルは、送信用の JSON でホスト名の部分だけを置換する。
 
     Returns:
-        (payload, message_contents, attachment_texts, reverse_map)
+        (payload, message_contents, attachment_texts, attachment_filenames, reverse_map)
     """
     pairs: list[tuple[str, str]] = []
-    _collect_entity_user_pairs(payload, pairs)
+    _collect_pairs(payload, pairs)
     timeline_json = None
     metric_titles: list[tuple[dict[str, Any], str, slice]] = []
     if incident_timeline is not None:
@@ -288,10 +320,7 @@ def anonymize_chat_for_llm(
                         pairs.append(("entity", host))
                         metric_titles.append((item_json, host, span))
     _append_extra_vcenter_pairs(pairs, extra_vcenter_strings)
-    a = LlmAnonymizer()
-    for cat, val in pairs:
-        a.token_for(cat, val)
-    _apply_entity_fqdn_short_aliases(a, pairs)
+    a = _register_pairs(pairs)
     out_payload = _anonymize_node(payload, a)
     if timeline_json is not None:
         for item_json, host, span in metric_titles:
@@ -300,4 +329,5 @@ def anonymize_chat_for_llm(
         out_payload["incident_timeline"] = timeline_json
     out_contents = [anonymize_plain_text(c, a) for c in message_contents]
     out_attachments = [anonymize_plain_text(t, a) for t in (attachment_texts or [])]
-    return out_payload, out_contents, out_attachments, a.reverse_map
+    out_filenames = [anonymize_plain_text(name, a) for name in (attachment_filenames or [])]
+    return out_payload, out_contents, out_attachments, out_filenames, a.reverse_map

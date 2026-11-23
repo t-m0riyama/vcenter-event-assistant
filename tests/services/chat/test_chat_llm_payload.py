@@ -418,6 +418,85 @@ def _text_attachment(name: str = "big.log", body: str = "x") -> ChatAttachment:
     return ChatAttachment(kind="text", filename=name, media_type="text/plain", text=body)
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_chat_payload_anonymizes_period_metric_moid_and_event_csv(enabled: bool) -> None:
+    context = _minimal_ctx()
+    t0 = context.from_utc
+    metrics = PeriodMetricsPayload(
+        bucket_minutes=15,
+        from_utc=t0,
+        to_utc=t0,
+        cpu=[
+            PeriodMetricHostSeries(
+                entity_name="host-45",
+                entity_moid="host-45",
+                metric_key="host.cpu.usage_pct",
+                series=[PeriodMetricBucketPoint(bucket_start_utc=t0, avg=91.0, n=1)],
+            ),
+        ],
+    )
+    entries = build_chat_incident_timeline_entries(
+        context=context,
+        timeline_event_time_buckets=None,
+        timeline_period_metrics=metrics,
+        include_period_metrics_cpu=True,
+        include_period_metrics_memory=False,
+        metric_threshold_cpu_pct=None,
+        metric_threshold_memory_pct=None,
+    )
+    timeline = build_chat_incident_timeline(entries)
+    messages = [ChatMessage(role="user", content="host-45 と vm-123 を調べる")]
+    body = (
+        "id,occurred_at,vcenter_name,event_type,severity,message,user_name,entity_name,"
+        "entity_type,entity_moid,notable_score,notable_tags,user_comment\r\n"
+        '1,2026-03-22T00:00:00Z,vc,VmMigratedEvent,info,"Moved to host-45",,app,VirtualMachine,vm-123,0,,\r\n'
+    )
+    payload, conversation, attachment, reverse_map = prepare_chat_payload(
+        context, messages, metrics, None, timeline, None,
+        settings=Settings(llm_anonymization_enabled=enabled),
+        attachments=[_text_attachment("host-45.csv", body)],
+    )
+
+    host_token = "__LM_MOID_001__" if enabled else "host-45"
+    vm_token = "__LM_MOID_002__" if enabled else "vm-123"
+    series = payload["period_metrics"]["cpu"][0]
+    assert series["entity_name"] == series["entity_moid"] == host_token
+    column = payload["incident_timeline"]["columns"][0]
+    assert column["items"][0]["title"].startswith(f"{host_token} ")
+    assert column["visible_items"] == column["items"]
+    assert conversation[0].content == f"{host_token} と {vm_token} を調べる"
+    assert attachment is not None
+    assert f"添付ファイル: {host_token}.csv" in attachment
+    assert f'"Moved to {host_token}",,app,VirtualMachine,{vm_token},0,,' in attachment
+    assert body in deanonymize_text(attachment, reverse_map)
+    if enabled:
+        assert "host-45" not in str(payload)
+        assert "vm-123" not in attachment
+    else:
+        assert reverse_map == {}
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_chat_payload_anonymizes_attachment_filenames_with_their_contents(enabled: bool) -> None:
+    host = "esx01.example.com"
+    ip = "192.0.2.11"
+    body = f"{host} at {ip}"
+    _, conversation, attachment, reverse_map = prepare_chat_payload(
+        _minimal_ctx(), [ChatMessage(role="user", content=body)], None, None, None, [host],
+        settings=Settings(llm_anonymization_enabled=enabled),
+        attachments=[_text_attachment(f"{host}.log", body), _text_attachment(f"{ip}.log", body)],
+    )
+
+    host_token = "__LM_VCENTER_001__" if enabled else host
+    ip_token = "__LM_IP_001__" if enabled else ip
+    assert attachment is not None
+    assert f"添付ファイル: {host_token}.log" in attachment
+    assert f"添付ファイル: {ip_token}.log" in attachment
+    assert attachment.count(f"{host_token} at {ip_token}") == 2
+    assert conversation[0].content == f"{host_token} at {ip_token}"
+    assert deanonymize_text(attachment, reverse_map).count(body) == 2
+
+
 def test_estimate_chat_input_tokens_counts_attachments_and_images() -> None:
     base = estimate_chat_input_tokens("block", [])
     with_text = estimate_chat_input_tokens("block", [], "添付本文", 0)
