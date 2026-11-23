@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Callable
+from contextlib import ExitStack
+from datetime import datetime, timezone
+from functools import partial
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import defer
@@ -36,17 +40,28 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineViewRequest,
     IncidentTimelineViewResponse,
 )
-from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot
-from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
+from vcenter_event_assistant.db.models import IncidentTimelineManualSnapshot, VCenter
+from vcenter_event_assistant.services.incident_timeline_export import (
+    DETAIL_MAX_CHARS,
+    RESULT_MAX_BYTES,
+    ExportFormat,
+    ExportResultTooLarge,
+    SavedSnapshotSource,
+    generate_investigation_export,
+)
+from vcenter_event_assistant.services.incident_timeline_view import (
+    build_incident_timeline_view,
+    timeline_aggregation_slot,
+)
 
 router = APIRouter(prefix="/incident-timeline", tags=["incident-timeline"])
 logger = logging.getLogger(__name__)
 
 # 保存する結果の各行の detail の文字数の上限（超えたら切って印を付ける。保存用のコピーだけに適用する）。
-SNAPSHOT_DETAIL_MAX_CHARS = 2000
+SNAPSHOT_DETAIL_MAX_CHARS = DETAIL_MAX_CHARS
 _DETAIL_CUT_MARK = "…（保存時に切り詰めました）"
 # 保存する結果の JSON（UTF-8）のバイト数の上限。超えたら保存せず 413 にする。
-MAX_SNAPSHOT_RESULT_BYTES = 8 * 1024 * 1024
+MAX_SNAPSHOT_RESULT_BYTES = RESULT_MAX_BYTES
 
 
 def _truncate_details_for_storage(value: object) -> object:
@@ -165,6 +180,97 @@ async def post_incident_timeline_view(
     )
 
 
+def _export_time_zone(time_zone: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(time_zone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=422,
+            detail="time_zone に有効な IANA タイムゾーン名を指定してください",
+        ) from None
+
+
+async def _run_export(
+    slot: ExitStack,
+    generate: Callable[[], tuple[str, bytes]],
+    export_format: ExportFormat,
+    source: str,
+) -> Response:
+    worker = asyncio.create_task(asyncio.to_thread(generate))
+    try:
+        filename, content = await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # 要求が取り消されてもスレッドは走り続けるので、生成が終わるまで枠を返さない。
+        held_slot = slot.pop_all()
+
+        def release_when_done(done: asyncio.Task[tuple[str, bytes]]) -> None:
+            held_slot.close()
+            if not done.cancelled():
+                done.exception()
+
+        worker.add_done_callback(release_when_done)
+        raise
+    except ExportResultTooLarge:
+        raise HTTPException(
+            status_code=413,
+            detail="出力する結果が大きすぎます。期間を狭めるか、種別を減らしてください",
+        ) from None
+    logger.info(
+        "Incident timeline export: source=%s format=%s bytes=%d",
+        source,
+        export_format,
+        len(content),
+    )
+    return Response(
+        content,
+        media_type="text/markdown; charset=utf-8"
+        if export_format == "md"
+        else "application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/export", dependencies=[RequireViewer], response_class=Response)
+async def post_incident_timeline_export(
+    body: IncidentTimelineViewRequest,
+    format: ExportFormat,
+    time_zone: str = Query(default="UTC", max_length=128),
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(get_current_principal),
+) -> Response:
+    zone = _export_time_zone(time_zone)
+    owner_key = principal_owner_key(principal)
+    result = await build_incident_timeline_view(session, body, owner_key=owner_key)
+    aggregated_at = datetime.now(timezone.utc)
+    # 集計が枠を返してから生成用に取り直す。間に await を入れない。
+    # 入れると、集計を終えた後に 503 になる窓ができる。
+    with ExitStack() as slot:
+        slot.enter_context(timeline_aggregation_slot(owner_key))
+        vcenter_name = None
+        if body.vcenter_id is not None:
+            vcenter_name = await session.scalar(
+                select(VCenter.name).where(VCenter.id == body.vcenter_id)
+            )
+        return await _run_export(
+            slot,
+            partial(
+                generate_investigation_export,
+                result,
+                body,
+                format,
+                zone,
+                datetime.now(timezone.utc),
+                aggregated_at=aggregated_at,
+                current_vcenter_name=vcenter_name,
+            ),
+            format,
+            "current",
+        )
+
+
 @router.post("/snapshots/manual", dependencies=[RequireOperator], response_model=IncidentTimelineManualSnapshotCreateResponse, status_code=201)
 async def post_manual_snapshot(
     body: IncidentTimelineManualSnapshotCreateRequest,
@@ -267,14 +373,85 @@ async def get_manual_snapshot(
     snapshot_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> IncidentTimelineManualSnapshotDetail:
-    try:
-        parsed_id = uuid.UUID(snapshot_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="スナップショットが見つかりません") from None
-    row = await session.get(IncidentTimelineManualSnapshot, parsed_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="スナップショットが見つかりません")
+    row = await _get_snapshot(session, _parse_snapshot_id(snapshot_id))
     # 保存時のスキーマで読めない結果は「結果なし」として返し、画面が再集計に落ちられるようにする。
     result = _result_for_response(row)
     base = _list_item(row, has_result=result is not None)
     return IncidentTimelineManualSnapshotDetail(**base.model_dump(), result=result)
+
+
+def _parse_snapshot_id(snapshot_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(snapshot_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=404, detail="スナップショットが見つかりません"
+        ) from None
+
+
+async def _get_snapshot(
+    session: AsyncSession, snapshot_id: uuid.UUID
+) -> IncidentTimelineManualSnapshot:
+    row = await session.get(IncidentTimelineManualSnapshot, snapshot_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="スナップショットが見つかりません")
+    return row
+
+
+def _generate_saved_export(
+    row: IncidentTimelineManualSnapshot,
+    export_format: ExportFormat,
+    zone: ZoneInfo,
+    exported_at: datetime,
+) -> tuple[str, bytes]:
+    """保存した結果を読み、再集計せずに資料を作る。"""
+    result = _result_for_response(row) if row.snapshot_kind == "manual" else None
+    if result is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "結果が保存されていません。開いて再集計してから、今の表示を出力してください。"
+                "元データの保持期間（既定 7 日）を過ぎていると、再集計の結果は空か一部になります"
+            ),
+            headers={"X-VEA-Error-Code": "snapshot_result_missing"},
+        )
+    snapshot = SavedSnapshotSource(
+        row.id, row.created_at or row.timestamp_utc, row.operator_note
+    )
+    return generate_investigation_export(
+        result,
+        _view_request_for_response(row),
+        export_format,
+        zone,
+        exported_at,
+        snapshot=snapshot,
+    )
+
+
+@router.get(
+    "/snapshots/manual/{id}/export",
+    dependencies=[RequireViewer],
+    response_class=Response,
+)
+async def get_manual_snapshot_export(
+    id: str,
+    format: ExportFormat,
+    time_zone: str = Query(default="UTC", max_length=128),
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(get_current_principal),
+) -> Response:
+    zone = _export_time_zone(time_zone)
+    snapshot_id = _parse_snapshot_id(id)
+    with ExitStack() as slot:
+        slot.enter_context(timeline_aggregation_slot(principal_owner_key(principal)))
+        row = await _get_snapshot(session, snapshot_id)
+        # 要求の終了でセッションが閉じても、読み込んだ列をスレッドから参照できるようにする。
+        session.expunge(row)
+        return await _run_export(
+            slot,
+            partial(
+                _generate_saved_export, row, format, zone, datetime.now(timezone.utc)
+            ),
+            format,
+            str(row.id),
+        )

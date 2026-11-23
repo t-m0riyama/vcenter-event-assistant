@@ -231,6 +231,22 @@ def test_manual_snapshot_save_shares_the_view_rate_limit_bucket() -> None:
     assert _rate_limit_spec("GET", "/api/incident-timeline/snapshots/manual/abc") is None
 
 
+def test_exports_share_the_incident_timeline_view_rate_limit() -> None:
+    assert _rate_limit_spec("POST", "/api/incident-timeline/export") == (
+        "incident_timeline_view",
+        60,
+    )
+    assert _rate_limit_spec(
+        "GET", "/api/incident-timeline/snapshots/manual/abc/export"
+    ) == ("incident_timeline_view", 60)
+    assert (
+        _rate_limit_spec(
+            "GET", "/api/incident-timeline/snapshots/manual/abc/def/export"
+        )
+        is None
+    )
+
+
 async def test_incident_timeline_view_does_not_consume_the_chat_preview_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

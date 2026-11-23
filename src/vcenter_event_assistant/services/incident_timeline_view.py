@@ -14,10 +14,11 @@
 from __future__ import annotations
 
 import uuid
-from decimal import ROUND_HALF_UP, Decimal
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
 
 from fastapi import HTTPException
@@ -525,6 +526,38 @@ def _merge_pair(first: TimelineEntry, nxt: TimelineEntry) -> TimelineEntry:
     )
 
 
+def select_without_anchor(
+    items: Sequence[TimelineEntry | IncidentTimelineViewItem], limit: int
+) -> list[int]:
+    """起点なしの優先順位とログの上限を適用し、選んだ項目の位置を入力順で返す。"""
+    if len(items) <= limit:
+        return list(range(len(items)))
+
+    def priority(index: int) -> tuple[float, ...]:
+        item = items[index]
+        return (
+            -_LEVEL_RANK[item.level],
+            _KIND_ORDER.get(item.kind, len(_KIND_ORDER)),
+            -(item.score if item.score is not None else -1),
+            -to_utc(item.timestamp_utc).timestamp(),
+            index,
+        )
+
+    others = sum(1 for item in items if item.kind != "log")
+    log_cap = limit - min(others, limit // 4)
+    chosen: list[int] = []
+    logs = 0
+    for index in sorted(range(len(items)), key=priority):
+        if len(chosen) >= limit:
+            break
+        if items[index].kind == "log":
+            if logs >= log_cap:
+                continue
+            logs += 1
+        chosen.append(index)
+    return sorted(chosen)
+
+
 def select_within_limit(
     entries: Sequence[TimelineEntry],
     limit: int,
@@ -550,36 +583,21 @@ def select_within_limit(
     """
     if len(entries) <= limit:
         return list(entries), False
+    if anchor is None:
+        return [entries[index] for index in select_without_anchor(entries, limit)], True
 
-    def priority(indexed: tuple[int, TimelineEntry]) -> tuple[float, ...]:
-        idx, e = indexed
-        tail = (
+    def priority(index: int) -> tuple[float, ...]:
+        e = entries[index]
+        return (
+            _distance_seconds(e, anchor),
+            -_LEVEL_RANK[e.level],
             -(e.score if e.score is not None else -1),
             -e.timestamp_utc.timestamp(),
-            idx,
+            index,
         )
-        if anchor is None:
-            return (-_LEVEL_RANK[e.level], _KIND_ORDER.get(e.kind, len(_KIND_ORDER)), *tail)
-        return (_distance_seconds(e, anchor), -_LEVEL_RANK[e.level], *tail)
 
-    ranked = sorted(enumerate(entries), key=priority)
-    if anchor is None:
-        others = sum(1 for e in entries if e.kind != "log")
-        log_cap = limit - min(others, limit // 4)
-        chosen: list[tuple[int, TimelineEntry]] = []
-        logs = 0
-        for pair in ranked:
-            if len(chosen) >= limit:
-                break
-            if pair[1].kind == "log":
-                if logs >= log_cap:
-                    continue
-                logs += 1
-            chosen.append(pair)
-    else:
-        chosen = ranked[:limit]
-    chosen.sort(key=lambda pair: pair[0])
-    return [e for _, e in chosen], True
+    chosen = sorted(range(len(entries)), key=priority)[:limit]
+    return [entries[index] for index in sorted(chosen)], True
 
 
 def _distance_seconds(entry: TimelineEntry, anchor: datetime) -> float:
@@ -743,6 +761,25 @@ def pick_new_event_types(
 # --- 入口 -------------------------------------------------------------------------------
 
 
+@contextmanager
+def timeline_aggregation_slot(owner_key: str) -> Iterator[None]:
+    """集計と資料の生成で共通の枠を使い、空きが無ければ 503 を返す。"""
+    settings = require_settings()
+    try:
+        with aggregation_slot(
+            owner_key,
+            global_limit=settings.context_aggregation_concurrency,
+            per_owner_limit=settings.context_aggregation_concurrency_per_user,
+        ):
+            yield
+    except AggregationBusy:
+        raise HTTPException(
+            status_code=503,
+            detail="集計の処理が混み合っています。しばらく待ってから再度お試しください。",
+            headers={"Retry-After": str(_BUSY_RETRY_AFTER_SECONDS)},
+        ) from None
+
+
 async def build_incident_timeline_view(
     session: AsyncSession,
     body: IncidentTimelineViewRequest,
@@ -765,11 +802,7 @@ async def build_incident_timeline_view(
     # サービス層なので bind 済みの Settings を直接読む（ルートの Depends(get_app_settings) の差し替えは効かない）。
     settings = require_settings()
     try:
-        with aggregation_slot(
-            owner_key,
-            global_limit=settings.context_aggregation_concurrency,
-            per_owner_limit=settings.context_aggregation_concurrency_per_user,
-        ):
+        with timeline_aggregation_slot(owner_key):
             return await _build_in_slot(
                 session,
                 body,
@@ -780,12 +813,6 @@ async def build_incident_timeline_view(
                 metric_max_gap_seconds=settings.effective_metric_staleness_window_seconds,
                 metric_breach_sample_limit=settings.timeline_metric_breach_sample_limit,
             )
-    except AggregationBusy:
-        raise HTTPException(
-            status_code=503,
-            detail="集計の処理が混み合っています。しばらく待ってから再度お試しください。",
-            headers={"Retry-After": str(_BUSY_RETRY_AFTER_SECONDS)},
-        ) from None
     except AggregationLimitExceeded as exc:
         raise HTTPException(
             status_code=422, detail=_limit_message(exc, entity_moid=body.entity_moid)

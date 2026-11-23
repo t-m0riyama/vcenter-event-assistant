@@ -85,9 +85,11 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/chat"): OPERATOR,
     ("POST", "/api/chat/preview"): OPERATOR,
     ("POST", "/api/incident-timeline/view"): VIEWER,
+    ("POST", "/api/incident-timeline/export"): VIEWER,
     ("POST", "/api/incident-timeline/snapshots/manual"): OPERATOR,
     ("GET", "/api/incident-timeline/snapshots/manual"): VIEWER,
     ("GET", "/api/incident-timeline/snapshots/manual/{snapshot_id}"): VIEWER,
+    ("GET", "/api/incident-timeline/snapshots/manual/{id}/export"): VIEWER,
     # アラート
     ("GET", "/api/alerts/rules"): VIEWER,
     ("POST", "/api/alerts/rules"): ADMIN,

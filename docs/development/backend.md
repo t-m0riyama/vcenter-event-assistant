@@ -154,6 +154,19 @@
 
 判定は各パターンの時間幅だけ期間の起点より前からイベントを読み、期間内のイベントを含む検知を返す。対象の絞り込みは子表の `entity_moid` を使い、名前だけが指定された場合は判定後に `entity_name` に部分一致を当てる。`min_score` に関わらず判定する。
 
+#### 調査資料の出力
+
+どちらの API も viewer 以上で使える。
+
+- `GET /api/incident-timeline/snapshots/manual/{id}/export` は保存した結果を出力する。スナップショットが無ければ 404、結果が無いか現在のスキーマで読めなければ 409（`X-VEA-Error-Code: snapshot_result_missing`）を返す。
+- `POST /api/incident-timeline/export` は `/view` と同じ本文を受け付け、同じ条件で集計し直す。集計の 400・422・503 はそのまま返す。詳細は 2,000 文字で切って印を付ける。ZIP に入れる結果の JSON が 8 MiB を超えると 413 を返す。
+- クエリの `format` は `md` または `zip`。任意の `time_zone` は IANA タイムゾーン名で、既定は UTC、上限は 128 文字。不正な指定には 422 を返す。応答には `Content-Disposition: attachment` と `Cache-Control: no-store` が付く。
+- Markdown は注目すべき出来事を最大 100 件載せる。ZIP には `report.md`、表示範囲の `items.csv`、俯瞰の `overview.csv`、`result.json`、`conditions.json` が入る。CSV は UTF-8 の BOM 付きで、時刻ごとに UTC からのずれを別の列に持つ。
+
+保存した結果を読み出すとき、DB から受け取った `result_payload` の JSON の解析はイベントループ上で行う。解析後のスキーマ検証と資料の生成は別スレッドで行う。
+
+報告書は GFM（GitHub・GitLab）と CommonMark 向け。Jira のウィキ記法や Redmine の Textile に貼るときはコードブロックに入れるか、ファイルを添付する。貼り付け先の文字数上限を超える場合も添付する。資料には vCenter・ホスト・VM の名前や moid、イベントとログの内容などが含まれるため、外部に渡す前に中身を確認する。出力したファイルはアプリの保持期間を過ぎても残る。
+
 ### 2.7 インベントリ
 
 両 API とも viewer 以上で参照できる。
