@@ -14,13 +14,14 @@ from vcenter_event_assistant.services.ingest_runner import ingest_for_enabled_vc
 from vcenter_event_assistant.settings import Settings
 
 _INTERVAL_JOB_IDS = frozenset(
-    {"poll_events", "poll_perf", "evaluate_alerts", "purge_metrics"},
+    {"poll_events", "poll_perf", "inventory_sync", "evaluate_alerts", "purge_metrics"},
 )
 
 
 _INTERVAL_JOB_MISFIRE = {
     "poll_events": 60,  # default 120s interval / 2
     "poll_perf": 150,  # default 300s / 2
+    "inventory_sync": 300,  # default 600s / 2
     "evaluate_alerts": 30,  # default 60s / 2
     "purge_metrics": 6 * 3600 // 2,  # default 6h / 2
 }
@@ -31,7 +32,7 @@ async def test_setup_scheduler_interval_jobs_use_coalesce_and_max_instances_one(
     None
 ):
     app = MagicMock()
-    scheduler = setup_scheduler(app, Settings())
+    scheduler = setup_scheduler(app, Settings(scheduler_enabled=True))
     try:
         for job_id in _INTERVAL_JOB_IDS:
             job = scheduler.get_job(job_id)
@@ -47,8 +48,10 @@ async def test_setup_scheduler_interval_jobs_use_coalesce_and_max_instances_one(
 async def test_setup_scheduler_interval_misfire_scales_with_settings() -> None:
     app = MagicMock()
     settings = Settings(
+        scheduler_enabled=True,
         event_poll_interval_seconds=200,
         perf_sample_interval_seconds=400,
+        inventory_sync_interval_seconds=180,
         alert_eval_interval_seconds=100,
         purge_interval_hours=4,
     )
@@ -56,6 +59,7 @@ async def test_setup_scheduler_interval_misfire_scales_with_settings() -> None:
     try:
         assert scheduler.get_job("poll_events").misfire_grace_time == 100
         assert scheduler.get_job("poll_perf").misfire_grace_time == 200
+        assert scheduler.get_job("inventory_sync").misfire_grace_time == 90
         assert scheduler.get_job("evaluate_alerts").misfire_grace_time == 50
         assert scheduler.get_job("purge_metrics").misfire_grace_time == 4 * 3600 // 2
     finally:
@@ -151,5 +155,18 @@ async def test_setup_scheduler_adds_web_research_job_with_provider() -> None:
         assert job.coalesce is True
         assert job.max_instances == 1
         assert job.misfire_grace_time == 300  # default 600s interval / 2
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("disabled", ["inventory_sync_enabled", "scheduler_enabled"])
+async def test_setup_scheduler_omits_inventory_when_disabled(disabled) -> None:
+    flags = dict.fromkeys(("inventory_sync_enabled", "scheduler_enabled"), True)
+    flags[disabled] = False
+    settings = Settings(**flags)
+    scheduler = setup_scheduler(MagicMock(), settings)
+    try:
+        assert scheduler.get_job("inventory_sync") is None
     finally:
         scheduler.shutdown(wait=False)

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
@@ -319,3 +319,78 @@ def test_mock_mode_disables_langsmith_tracer() -> None:
     )
     cfg = build_llm_runnable_config(s, run_kind="digest")
     assert "callbacks" not in cfg
+
+
+@pytest.mark.asyncio
+async def test_inventory_mock_seed_and_job_share_topology(monkeypatch) -> None:
+    from vcenter_event_assistant.db.models import (
+        InventoryObject,
+        InventoryRelation,
+        InventorySyncRun,
+        InventorySyncState,
+    )
+    from vcenter_event_assistant.mocks.mock_collectors import (
+        MOCK_HOST_MOID,
+        MOCK_VM_MOID,
+    )
+    from vcenter_event_assistant.mocks.mock_inventory import mock_inventory
+    from vcenter_event_assistant.services import inventory
+
+    _enable_mock_mode(monkeypatch)
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    monkeypatch.setattr(
+        "vcenter_event_assistant.dev.mock_mode_seed.datetime",
+        type("FrozenDateTime", (datetime,), {"now": staticmethod(lambda _: now)}),
+    )
+    await run_mock_mode_seed_if_enabled()
+    async with session_scope() as session:
+        # この変更より前にシードした DB を再現する。
+        for model in (
+            InventorySyncState,
+            InventorySyncRun,
+            InventoryRelation,
+            InventoryObject,
+        ):
+            await session.execute(delete(model))
+    await run_mock_mode_seed_if_enabled()
+
+    def unexpected(*args):
+        pytest.fail("モックで vCenter に接続した")
+
+    monkeypatch.setattr(inventory, "read_vcenter_inventory", unexpected)
+    async with session_scope() as session:
+        vc = (await session.scalars(select(VCenter))).one()
+        state = await session.get(InventorySyncState, vc.id)
+        seed = mock_inventory(now)
+        assert state.instance_uuid == seed.instance_uuid
+        assert state.object_count == 10
+        objects = {
+            item.moid: item.name
+            for item in await session.scalars(select(InventoryObject))
+        }
+        assert objects[MOCK_HOST_MOID] == "esxi-mock-01"
+        assert objects[MOCK_VM_MOID] == "vm-mock-web-01"
+        assert objects["datastore-mock-01"] == "mock-datastore"
+        rows = (await session.scalars(select(InventoryRelation))).all()
+        closed = [r for r in rows if r.valid_to is not None]
+        assert len(closed) == 1 and closed[0].kind == "vm_host"
+        assert closed[0].child_moid == MOCK_VM_MOID
+        assert state.first_success_at == closed[0].valid_from
+        oldest_event = await session.scalar(select(func.min(EventRecord.occurred_at)))
+        oldest_metric = await session.scalar(select(func.min(MetricSample.sampled_at)))
+        assert state.first_success_at < oldest_event
+        assert state.first_success_at < oldest_metric
+        assert await session.scalar(select(InventorySyncRun.id).limit(1)) is not None
+        assert {
+            (r.kind, r.child_moid, r.parent_moid) for r in rows if r.valid_to is None
+        } == seed.relations
+
+    monkeypatch.setattr(inventory, "utcnow", lambda: now + timedelta(minutes=30))
+    await inventory.sync_inventory(get_settings())
+    async with session_scope() as session:
+        rows = (await session.scalars(select(InventoryRelation))).all()
+        assert len([r for r in rows if r.valid_to is not None]) == 2
+        moved = mock_inventory(now + timedelta(minutes=30))
+        assert {
+            (r.kind, r.child_moid, r.parent_moid) for r in rows if r.valid_to is None
+        } == moved.relations

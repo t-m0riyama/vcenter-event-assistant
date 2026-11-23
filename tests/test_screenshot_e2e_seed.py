@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from vcenter_event_assistant.db.models import (
     AlertHistory,
@@ -117,3 +117,67 @@ async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
     assert sorted(log["count"] for log in logs) == [1, 3]
     assert any(b["metric_breach"] > 0 for b in body["overview"])
     assert any(b["log_error"] > 0 for b in body["overview"])
+
+
+@pytest.mark.asyncio
+async def test_screenshot_e2e_seed_inventory_history(monkeypatch) -> None:
+    from vcenter_event_assistant.db.models import (
+        InventoryObject,
+        InventoryRelation,
+        InventorySyncRun,
+        InventorySyncState,
+    )
+    from vcenter_event_assistant.mocks.mock_inventory import mock_inventory
+
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    await run_screenshot_e2e_seed_if_enabled()
+    async with session_scope() as session:
+        # この変更より前にシードした DB を再現する。
+        for model in (
+            InventorySyncState,
+            InventorySyncRun,
+            InventoryRelation,
+            InventoryObject,
+        ):
+            await session.execute(delete(model))
+    await run_screenshot_e2e_seed_if_enabled()
+    await run_screenshot_e2e_seed_if_enabled()
+    async with session_scope() as session:
+        state = (await session.scalars(select(InventorySyncState))).one()
+        vc = await session.get(VCenter, state.vcenter_id)
+        current = mock_inventory(
+            state.last_success_at.replace(tzinfo=timezone.utc), vcenter_name=vc.name
+        )
+        collected = set(await session.scalars(select(InventoryObject.moid)))
+        event_targets = set(await session.scalars(select(EventRecord.entity_moid)))
+        metric_targets = set(await session.scalars(select(MetricSample.entity_moid)))
+        assert event_targets | metric_targets <= collected
+        assert state.instance_uuid == current.instance_uuid
+        rows = (await session.scalars(select(InventoryRelation))).all()
+        closed = [r for r in rows if r.valid_to is not None]
+        assert len(closed) == 1 and closed[0].kind == "vm_host"
+        assert state.first_success_at == closed[0].valid_from
+        assert state.first_success_at < await session.scalar(
+            select(func.min(EventRecord.occurred_at))
+        )
+        assert closed[0].parent_moid == "host-9001"
+        vm_host = next(
+            row
+            for row in rows
+            if row.kind == "vm_host"
+            and row.child_moid == "vm-9001"
+            and row.valid_to is None
+        )
+        assert vm_host.parent_moid == "host-9002"
+        assert closed[0].valid_to == vm_host.valid_from
+        later = state.last_success_at.replace(tzinfo=timezone.utc) + timedelta(
+            minutes=30
+        )
+        assert (
+            mock_inventory(later, vcenter_name=vc.name).relations == current.relations
+        )
+        assert {
+            (r.kind, r.child_moid, r.parent_moid) for r in rows if r.valid_to is None
+        } == current.relations
+        runs = (await session.scalars(select(InventorySyncRun.observed_at))).all()
+        assert state.last_success_at in runs

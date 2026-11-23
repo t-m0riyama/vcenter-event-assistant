@@ -40,6 +40,10 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_incident_timeline_snapshots,
     purge_old_metrics,
 )
+from vcenter_event_assistant.services.inventory import (
+    purge_old_inventory,
+    sync_inventory,
+)
 from vcenter_event_assistant.services.research.research_job import run_research_cycle
 from vcenter_event_assistant.services.research.search_provider import (
     build_search_provider,
@@ -115,6 +119,7 @@ async def purge_retention(settings: Settings) -> None:
     try:
         async with session_scope(settings=settings) as session:
             await purge_old_logs(session, settings=settings)
+            await purge_old_inventory(session, settings=settings)
             n_ev = await purge_old_events(session, settings=settings)
             if n_ev:
                 logger.info("purged old events count=%s", n_ev)
@@ -294,6 +299,16 @@ def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> Asy
             seconds=interval,
             id=_collector_job_id(registration.plugin_id),
             kwargs={"settings": settings, "plugin_id": registration.plugin_id},
+            **_job_options_for_interval(interval),
+        )
+    if settings.scheduler_enabled and settings.inventory_sync_enabled:
+        interval = settings.inventory_sync_interval_seconds
+        scheduler.add_job(
+            sync_inventory,
+            "interval",
+            seconds=interval,
+            id="inventory_sync",
+            kwargs={"settings": settings},
             **_job_options_for_interval(interval),
         )
     scheduler.add_job(

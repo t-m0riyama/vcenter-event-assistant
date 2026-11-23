@@ -214,14 +214,14 @@ jobs:
       - name: Verify event entity migrations and ingestion
         run: >-
           uv run --no-sync pytest -q tests/test_event_entity_ingestion.py
-          tests/test_db_session_migrations.py -k "postgres and (event_entity or event_entities)"
+          tests/test_db_session_migrations.py -k "postgres and (event_entity or event_entities or inventory)"
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
       - name: Verify timeline entity moid filtering and event patterns
         run: >-
-          uv run --no-sync pytest -q tests/services/test_aggregation_dialects.py
-          -k "postgres and (entity_moid or event_pattern)"
+          uv run --no-sync pytest -q tests/services/test_aggregation_dialects.py tests/services/test_inventory.py
+          -k "postgres and (entity_moid or event_pattern or inventory)"
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 

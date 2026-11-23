@@ -38,6 +38,7 @@
 
 - `poll_events`（イベント収集）
 - `poll_perf`（メトリクス収集）
+- `inventory_sync`（インベントリの関係を収集。`INVENTORY_SYNC_ENABLED=true` のときに登録）
 - `evaluate_alerts`（アラート評価）
 - `purge_metrics`（古いデータ削除、6時間ごと）
 - `digest_daily` / `digest_weekly` / `digest_monthly`（有効化時のみ）
@@ -154,6 +155,7 @@
 
 - `event poll failed`
 - `perf poll failed`
+- `inventory sync failed`
 - `alert evaluation job failed`
 - `purge failed`
 - `daily digest job failed` / `weekly digest job failed` / `monthly digest job failed`
@@ -174,6 +176,8 @@
 整合確認:
 
 - アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+
+- インベントリは `EVENT_RETENTION_DAYS`（既定 7 日）を使う。週次の容量点検では、期限を超えた閉じた関係、見えなくなった管理対象、成功した観測の記録が削除されているかも確認する。開いている関係と見えている管理対象は、収集を停止しても残る。
 
 **スナップショットの保存結果の保持期間:**
 
@@ -327,6 +331,16 @@ TLS:
 
 アップグレード後に HTTP の登録が残っていた場合は、起動ログの `vCenter requires HTTPS in production` に対象 ID と有効・無効の状態が出る。HTTPS の登録で保存済みポートが 1〜65535 の整数でない場合は、`vCenter requires a valid port in production` が出る。アプリは起動を続けるので、設定を修正できる。小数のポートが DB に保存されていて管理画面の一覧を取得できない場合は、管理者権限で `PATCH /api/vcenters/{id}` に正しい `port`（例 `{"port": 443}`）を送る。`{id}` には起動ログの対象 ID を使う。
 
+#### インベントリの関係の収集が進まない
+
+インベントリの収集には、対象の VM、ホスト、クラスタ、データストア、ポートグループを参照できる vCenter の読み取り権限が必要。見える範囲は登録したアカウントの権限に従う。管理対象の件数が前回の成功から半分以下に減った場合は、`inventory_sync_states` の `last_warning` と `last_warning_at` を確認する。
+
+`INVENTORY_SYNC_TIMEOUT_SECONDS` は vCenter ごとの観測の待ち時間と、収集用の HTTP ソケットのタイムアウトに使う。pyVmomi の制約により、`SmartConnect` の最初の API バージョン探索（`vimServiceVersions.xml` の取得）には HTTP タイムアウトが効かない。
+
+探索で止まったデーモンスレッドは、呼び出しが戻るまで専用の収集枠を占める。ジョブは観測がタイムアウトすると次の vCenter に進む。前回の読み取りが残っている場合や専用スレッドに空きがない場合は、待たずにその回の失敗として記録する。イベントの取り込みは別のスレッドで動く。アプリの終了時は新しい読み取りの受付を閉じ、実行中のデーモンスレッドの完了を待たずに終了する。
+
+vCenter を順に収集するため、1 回のジョブの読み取り待ち時間は最大で「有効な vCenter の数 × `INVENTORY_SYNC_TIMEOUT_SECONDS`」になり、DB 更新時間が加わる。前のジョブが収集間隔を超えて次回の実行時刻にも動いていると、APScheduler は次の実行を飛ばし、`maximum number of running instances reached` を WARNING で記録する。
+
 ### 3.4 DB障害（接続失敗/遅い/ディスク）
 
 症状:
@@ -416,8 +430,9 @@ TLS:
 - DB: `DATABASE_URL`
 - API 待受: `UVICORN_HOST`, `UVICORN_PORT`（ポート未設定時は `8000`）
 - スケジューラ有効化: `SCHEDULER_ENABLED`
+- インベントリ収集は `INVENTORY_SYNC_ENABLED`（既定 `true`）で切り替える。`INVENTORY_SYNC_INTERVAL_SECONDS`（既定 600 秒、下限 60 秒）で収集間隔を、`INVENTORY_SYNC_TIMEOUT_SECONDS`（既定 300 秒）で vCenter ごとの読み取りを待つ上限を設定する。
 - APScheduler の `misfire_grace_time`: interval ジョブは各間隔の半分、cron ダイジェストは 3600 秒（`jobs/scheduler.py`）。イベントループ停止後の取りこぼし軽減用
-- 保持期間: `EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（いずれも `0` でパージ無効）、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`（スナップショットの保存結果だけを消す。`0` は消さない。詳細は「スナップショットの保存結果の保持期間」）
+- イベントとインベントリの保持期間は `EVENT_RETENTION_DAYS`（既定 7 日、下限 1 日）で設定する。メトリクスは `METRIC_RETENTION_DAYS` で設定する。`ALERT_HISTORY_RETENTION_DAYS`、`DIGEST_RETENTION_DAYS`、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS` は `0` でそれぞれの削除を無効にする。`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` は保存結果だけの保持期間を設定し、`0` で保存結果の削除を無効にする。詳細は「スナップショットの保存結果の保持期間」を参照する。
   - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。先に結果だけを消したいときは、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` を設定する。保存する結果は 1 件あたり最大 8 MB で、超えると保存せず 413 を返す。
   - SQLite は、削除した行の領域をファイルサイズへ戻さない（空いた領域は次の書き込みで再利用される）。ファイルを縮めるには `VACUUM` が要る。
 - ダイジェスト: `DIGEST_*`

@@ -36,7 +36,7 @@ DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db
 VEA_BOOTSTRAP_ADMIN_USERNAME=admin
 VEA_BOOTSTRAP_ADMIN_PASSWORD=demo-admin-password
 
-# 任意: true なら合成イベント／メトリクスを定期追加（false なら起動時シードのみ）
+# 任意: true なら合成イベント・メトリクス・インベントリを定期収集（false なら起動時シードのみ）
 # SCHEDULER_ENABLED=true
 ```
 
@@ -107,11 +107,13 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 
 ---
 
+シードには、クラスタ 1 つ、ホスト 2 台、VM 3 台、データストア 2 つ、ポートグループ 2 つと、HA で VM 1 台がホストを移った履歴が入る。`SCHEDULER_ENABLED=true` かつ `INVENTORY_SYNC_ENABLED=true` のとき、インベントリの定期ジョブも同じ構成を使い、30 分ごとに VM 1 台の移動を再現する。vCenter への接続は発生せず、関係の開閉は通常と同じ方法で DB に記録される。
+
 ## 5. 何がモックされるか
 
 | 機能 | モック時の挙動 |
 |------|----------------|
-| vCenter 接続・イベント／メトリクス収集 | pyVmomi を使わず合成データを返す |
+| vCenter 接続・イベント／メトリクス／インベントリ収集 | pyVmomi を使わず合成データを返す |
 | アラートメール | SMTP せず、サーバログに件名などを出し **成功扱い**（通知履歴のチャネルは `mock`） |
 | チャット / ダイジェスト LLM | 決定論的な固定テキスト。外部 LLM・Copilot CLI は呼ばない |
 | WEB 検索（Tavily / Firecrawl） | 固定のデモ結果。実検索 API は呼ばない |

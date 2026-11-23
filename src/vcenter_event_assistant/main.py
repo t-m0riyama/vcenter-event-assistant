@@ -65,6 +65,10 @@ from vcenter_event_assistant.logging_config import configure_logging
 from vcenter_event_assistant.services.digest.legacy_settings_deprecation import (
     warn_if_legacy_digest_settings_in_use,
 )
+from vcenter_event_assistant.services.inventory import (
+    shutdown_inventory_reads,
+    start_inventory_reads,
+)
 from vcenter_event_assistant.settings import get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 from vcenter_event_assistant.process_hardening import harden_process, warn_if_parent_keeps_secrets
@@ -165,13 +169,17 @@ async def lifespan(app: FastAPI):
     registry = await build_initial_collector_registry(settings)
     await run_screenshot_e2e_seed_if_enabled()
     await run_mock_mode_seed_if_enabled()
-    if settings.scheduler_enabled:
-        setup_scheduler(app, settings, registry=registry)
-    yield
-    shutdown_scheduler(app)
-    # ホットリロード後は起動時のローカル変数が旧世代を指すため、現行スナップショットを引き直す。
-    await shutdown_collector_registry(get_collector_registry())
-    set_collector_registry(None)
+    start_inventory_reads()
+    try:
+        if settings.scheduler_enabled:
+            setup_scheduler(app, settings, registry=registry)
+        yield
+    finally:
+        shutdown_inventory_reads()
+        shutdown_scheduler(app)
+        # ホットリロード後は起動時のローカル変数が旧世代を指すため、現行スナップショットを引き直す。
+        await shutdown_collector_registry(get_collector_registry())
+        set_collector_registry(None)
 
 
 def create_app() -> FastAPI:

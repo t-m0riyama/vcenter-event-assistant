@@ -110,8 +110,15 @@ def connect_vcenter(
     proxy_url: str | None = None,
     verify_ssl: bool = True,
     ca_bundle_path: str | None = None,
+    http_connection_timeout: int | None = None,
 ):
-    """vCenter セッションを確立する。呼び出し元で ``Disconnect(si)`` すること。"""
+    """vCenter セッションを確立する。呼び出し元で ``Disconnect(si)`` すること。
+
+    pyVmomi の制約により、HTTP タイムアウトは SmartConnect の最初の
+    API バージョン探索（vimServiceVersions.xml の取得）には効かない。
+    探索で専用スレッドが止まることがある。インベントリ収集は空きがなければ
+    待たずに失敗を記録して次の vCenter に進む。イベント取り込みは別の枠で動く。
+    """
     if protocol not in {"https", "http"}:
         raise ValueError("protocol must be 'https' or 'http'")
     # pyVmomi は負のポートを平文 HTTP の指定として扱う。
@@ -127,6 +134,8 @@ def connect_vcenter(
     else:
         host = validate_vcenter_host(host, allowed_suffixes=suffixes)
     kwargs: dict = dict(host=host, user=username, pwd=password, port=port, protocol=protocol)
+    if http_connection_timeout is not None:
+        kwargs["httpConnectionTimeout"] = http_connection_timeout
     if protocol == "https":
         kwargs["sslContext"] = build_ssl_context(
             verify_ssl=verify_ssl,
