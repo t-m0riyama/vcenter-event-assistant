@@ -1,6 +1,6 @@
 # 調査資料の出力（タイムラインとスナップショット）
 
-最終更新: 2026-11-24（PR B レビュー中）
+最終更新: 2026-11-24（PR C レビュー中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 10」にあたる。タイムラインの結果を、障害報告や引き継ぎに添えられる資料として出力する。10 案の計画書は、土台（案 0a・0b）の次にこの案を勧めている。Issue は起票していない。
 
@@ -11,8 +11,8 @@
 | PR | 内容 | 状態 |
 |---|---|---|
 | A | 本書 | マージ済み [PR #371](https://github.com/t-m0riyama/vcenter-event-assistant/pull/371) |
-| B | 出力の生成と API（Markdown・ZIP） | レビュー中 |
-| C | 画面（出力の操作）と文書 | 未着手 |
+| B | 出力の生成と API（Markdown・ZIP） | マージ済み [PR #372](https://github.com/t-m0riyama/vcenter-event-assistant/pull/372) |
+| C | 画面（出力の操作）と文書 | レビュー中 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
@@ -250,7 +250,7 @@ ASCII だけにする。
   - 422 は、本文の detail を読み、文字列ならそのまま、配列（Pydantic）なら既存の `formatValidationMessage`（`api/incidentTimelineView.ts`）と同じように整える。そのため、Blob を受ける関数は、失敗したときに本文を読む。共通の `errorMessageFromResponse` は 400 などの本文を読み捨てるので使わない。
 - **文書:** `docs/userguide/timeline.md` と CHANGELOG を更新する。資料の取り扱い（外部に渡すときの確認、保持期間の外で残ること、貼り付け先の対象）も書く。
 - **スクリーンショット:**
-  - ボタンが見える位置に増えるので、`docs/images/timeline.png`（`frontend/e2e/screenshots.spec.ts` が撮る）を撮り直す。
+  - `docs/images/timeline.png`（`frontend/e2e/screenshots.spec.ts` が撮る）は、俯瞰のグラフの位置まで送ってから撮るので、出力の操作は写らない。撮り直さない（PR C で撮り直して確かめた）。
   - PR の画像は、別ブランチに置く。
 
 ## 5. PR の分け方

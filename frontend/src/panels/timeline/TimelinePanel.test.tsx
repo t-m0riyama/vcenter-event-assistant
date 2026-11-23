@@ -149,6 +149,9 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       harness.calls[index].resolve(jsonResponse(data))
     })
   }
+  const mainExport = () => within(screen.getByRole('group', { name: '調査資料を出力' }))
+  const markdownExport = { name: '調査資料を Markdown で出力' }
+  const zipExport = { name: '調査資料を ZIP で出力' }
   /** 時系列リストの行のボタン（ハイライトの同名ボタンと区別する）。 */
   const rowButton = async (name: RegExp) =>
     within(await screen.findByRole('list', { name: '出来事の時系列' })).getByRole('button', { name })
@@ -356,12 +359,98 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     setup()
     renderTimeline()
     expect(screen.queryByRole('button', { name: /生成/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('読み込み中')
+    expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent('読み込み中')
     await answer(0)
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 件の出来事を表示しています。'))
+    await waitFor(() => expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent('3 件の出来事を表示しています。'))
     expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '直近 1 時間' })).toHaveAttribute('aria-pressed', 'true')
     expect(window.location.hash).toBe('#/timeline?range=1h')
+  })
+
+  it('今の表示の条件と表示タイムゾーンを送り、出力中は両方の形式を無効にする', async () => {
+    setup()
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+    window.history.replaceState(null, '', timelineEntryHash({ at: '2026-03-22T00:30:00Z', entity: 'vm-a' }))
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:timeline')
+    const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      let finish!: (response: Response) => void
+      const pending = new Promise<Response>((resolve) => { finish = resolve })
+      const fetchExport = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() => pending)
+      vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        return url.startsWith('/api/incident-timeline/export?')
+          ? fetchExport(url, init)
+          : harness.fetchMock(input, init)
+      }))
+      renderTimeline()
+      await answer(0)
+      fireEvent.click(screen.getByLabelText('イベント'))
+      await waitFor(() => expect(harness.calls).toHaveLength(2))
+      expect(harness.calls[0].body.sources).toContain('event')
+      expect(harness.calls[1].body.sources).not.toContain('event')
+      const markdown = mainExport().getByRole('button', markdownExport)
+      const zip = mainExport().getByRole('button', zipExport)
+      fireEvent.click(markdown)
+      expect(markdown).toHaveTextContent('出力中…')
+      expect(markdown).toBeDisabled()
+      expect(zip).toBeDisabled()
+      fireEvent.click(markdown)
+      fireEvent.click(zip)
+      expect(fetchExport).toHaveBeenCalledTimes(1)
+      const [path, init] = fetchExport.mock.calls[0]
+      expect(path).toBe('/api/incident-timeline/export?format=md&time_zone=Asia%2FTokyo')
+      expect(init?.method).toBe('POST')
+      const exportBody = JSON.parse(String(init?.body))
+      expect(exportBody).toEqual(harness.calls[0].body)
+      expect(exportBody).not.toEqual(harness.calls[1].body)
+      expect(mainExport().getByRole('status')).toHaveTextContent('出力しています…')
+      await act(async () => finish(new Response('# 調査資料', {
+        headers: { 'Content-Disposition': 'attachment; filename="timeline-20261124-120000.md"' },
+      })))
+      expect(mainExport().getByRole('status')).toHaveTextContent('ダウンロードを開始しました')
+      expect(createUrl).toHaveBeenCalledWith(expect.any(Blob))
+      expect(click.mock.contexts[0]).toHaveProperty('download', 'timeline-20261124-120000.md')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(revokeUrl).toHaveBeenCalledWith('blob:timeline')
+      expect(markdown).toBeEnabled()
+    } finally {
+      createUrl.mockRestore()
+      revokeUrl.mockRestore()
+      click.mockRestore()
+    }
+  })
+
+  it.each([
+    [413, 'too large', '出力する結果が大きすぎます。Markdown で出力するか、期間を狭めるか、種別を減らしてください。'],
+    [422, [{ loc: ['query', 'time_zone'], msg: '無効です' }], '出力条件を確認してください。query.time_zone: 無効です'],
+    [422, [{ loc: ['query', 'time_zone'] }], 'リクエストに失敗しました。時間をおいて再度お試しください。'],
+    [422, '', 'リクエストに失敗しました。時間をおいて再度お試しください。'],
+    [429, 'rate limited', '短時間に操作が多すぎます。少し待ってから出力してください。'],
+    [503, 'busy', 'サーバが混み合っています。しばらく待ってから出力してください。'],
+    [409, '別のタブで利用者が切り替わったため、操作を中止しました。', '別のタブで利用者が切り替わったため、操作を中止しました。'],
+  ])('調査資料の出力が %s で失敗すると理由を読み上げる（%j）', async (status, detail, message) => {
+    setup()
+    const fetchExport = vi.fn(() => jsonResponse({ detail }, status, { 'Retry-After': '0' }))
+    harness.extra.set('/api/incident-timeline/export?', fetchExport)
+    renderTimeline()
+    await answer(0)
+    fireEvent.click(mainExport().getByRole('button', zipExport))
+    await waitFor(() => expect(mainExport().getByRole('status').textContent).toBe(message))
+    expect(fetchExport).toHaveBeenCalledTimes(status === 503 ? 2 : 1)
+  })
+
+  it('タイムラインの読み込み前と失敗後は調査資料を出力できない', async () => {
+    setup()
+    renderTimeline()
+    expect(mainExport().getByRole('button', markdownExport)).toBeDisabled()
+    expect(mainExport().getByRole('button', zipExport)).toBeDisabled()
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    await act(async () => harness.calls[0].resolve(jsonResponse({ detail: '読み込み失敗' }, 422)))
+    expect(screen.getByRole('alert')).toHaveTextContent('読み込み失敗')
+    expect(mainExport().getByRole('button', markdownExport)).toBeDisabled()
+    expect(mainExport().getByRole('button', zipExport)).toBeDisabled()
   })
 
   it('行に時刻・種別・レベル（文字）・対象・タイトル・抜粋・まとめた件数を出す', async () => {
@@ -1125,12 +1214,72 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
     }
 
+    it('保存した結果を表示中は、表示タイムゾーンを付けて保存結果の ZIP を GET する', async () => {
+      localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
+      await openSnapshot(listItem(), detailOf())
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      expect(screen.getByRole('button', { name: /スナップショット「結果つきメモ」.+の調査資料を ZIP で出力/ })).toBeEnabled()
+      const snapshotPath = `/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`
+      harness.extra.delete(snapshotPath)
+      const path = `${snapshotPath}/export`
+      const fetchExport = vi.fn<(url: string, init?: RequestInit) => Response>(() => new Response(null, { status: 404 }))
+      harness.extra.set(path, fetchExport)
+      fireEvent.click(mainExport().getByRole('button', zipExport))
+      expect(fetchExport).toHaveBeenCalledWith(`${path}?format=zip&time_zone=America%2FNew_York`, expect.objectContaining({ method: 'GET' }))
+      expect(fetchExport.mock.calls[0][1]?.body).toBeUndefined()
+      await waitFor(() => expect(mainExport().getByRole('status')).toHaveTextContent('スナップショットが見つかりません'))
+      fireEvent.click(screen.getByRole('button', { name: '現在のデータで再集計' }))
+      expect(mainExport().getByRole('status')).toBeEmptyDOMElement()
+    })
+
+    it('スナップショット一覧で結果が無い行は理由を表示し、両方の出力を無効にする', async () => {
+      const note = '調'.repeat(40)
+      setup({ snapshots: [listItem({ has_result: false, operator_note: `${note}この続きは省略する` })] })
+      renderTimeline()
+      await answer(0)
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      const row = within(await within(screen.getByRole('region', { name: 'スナップショット' })).findByRole('listitem'))
+      const label = `スナップショット「${note}…」（3/10/26, 3:30:00 AM）の調査資料を`
+      expect(row.getByRole('button', { name: `${label} Markdown で出力` })).toBeDisabled()
+      expect(row.getByRole('button', { name: `${label} ZIP で出力` })).toBeDisabled()
+      expect(row.getByText('結果が保存されていません。')).toBeInTheDocument()
+    })
+
+    it('一覧の行から出力中はほかの出力を無効にし、409 の案内を対象の行で読み上げる', async () => {
+      setup({ snapshots: [
+        listItem(),
+        listItem({ snapshot_id: '00000000-0000-4000-8000-0000000000bb', operator_note: '別のメモ' }),
+      ] })
+      const path = `/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}/export`
+      const detail = '結果が保存されていません。開いて再集計してから、今の表示を出力してください。'
+      const fetchExport = vi.fn(() => jsonResponse({ detail }, 409, { 'X-VEA-Error-Code': 'snapshot_result_missing' }))
+      harness.extra.set(path, fetchExport)
+      renderTimeline()
+      await answer(0)
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      const markdown = await screen.findByRole('button', { name: /スナップショット「結果つきメモ」.+の調査資料を Markdown で出力/ })
+      const otherRow = screen.getByRole('button', { name: /スナップショット「別のメモ」.+の調査資料を Markdown で出力/ })
+      const top = mainExport().getByRole('button', zipExport)
+      fireEvent.click(markdown)
+      expect(markdown).toBeDisabled()
+      expect(otherRow).toBeDisabled()
+      expect(top).toBeDisabled()
+      fireEvent.click(otherRow)
+      fireEvent.click(top)
+      expect(fetchExport).toHaveBeenCalledTimes(1)
+      expect(fetchExport).toHaveBeenCalledWith(`${path}?format=md&time_zone=UTC`, expect.objectContaining({ method: 'GET' }))
+      const status = screen.getByRole('status', { name: /スナップショット「結果つきメモ」.+の調査資料の出力状況/ })
+      await waitFor(() => expect(status).toHaveTextContent(detail))
+      expect(otherRow).toBeEnabled()
+      expect(top).toBeEnabled()
+    })
+
     it('開くと保存済みの結果を表示し、「保存時点の内容」と保存日時を注記し、現在のデータは取りに行かない', async () => {
       await openSnapshot(listItem(), detailOf())
       const note = await screen.findByRole('note', { name: '保存時点の内容' })
       expect(note).toHaveTextContent('保存時点の内容')
       expect(note).toHaveTextContent(/保存した日時: .*3\/10\/26.*3:30/)
-      expect(await screen.findByRole('status')).toHaveTextContent('3 件の出来事を表示しています。')
+      expect(await screen.findByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent('3 件の出来事を表示しています。')
       expect(await rowButton(/VmPoweredOffEvent/)).toBeInTheDocument()
       // 条件には保存時の値が入る（URL にも反映）
       expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('esx01')
@@ -2180,7 +2329,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       renderTimeline()
       await answer(0, withMetricsAndLogs({ omitted_sources: [{ source: 'log', reason: 'too_many_rows' }] }))
       await waitFor(() =>
-        expect(screen.getByRole('status')).toHaveTextContent('3 件の出来事を表示しています（ログは省いています）。'),
+        expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent('3 件の出来事を表示しています（ログは省いています）。'),
       )
     })
 
@@ -2199,7 +2348,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
         }),
       )
       await waitFor(() =>
-        expect(screen.getByRole('status')).toHaveTextContent(
+        expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent(
           '1500 件中 3 件の出来事を表示しています（メトリクス・ログは省いています）。',
         ),
       )
@@ -2209,8 +2358,8 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       setup()
       renderTimeline()
       await answer(0, withMetricsAndLogs())
-      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 件の出来事を表示しています。'))
-      expect(screen.getByRole('status')).not.toHaveTextContent('省いています')
+      await waitFor(() => expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent('3 件の出来事を表示しています。'))
+      expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).not.toHaveTextContent('省いています')
     })
   })
 

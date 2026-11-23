@@ -2,9 +2,11 @@ import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
 import { useAuth } from '../../auth/useAuth'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import type { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
+import { TimelineExportControls, type TimelineExportActivity } from './TimelineExportControls'
 
 type Props = {
   snapshots: ReturnType<typeof useTimelineSnapshots>
+  exportActivity: TimelineExportActivity
   /** 表示中の結果があり、保存できる状態か。 */
   canSaveNow: boolean
   /** 保存済みの結果を表示中か（このあいだは新しく保存できない）。 */
@@ -14,7 +16,7 @@ type Props = {
 }
 
 /** 画面下部の折りたたみ（既定は閉じる）。手動スナップショットの保存・一覧・グラフで開く。 */
-export function TimelineSnapshotSection({ snapshots: s, canSaveNow, showingSaved = false, timeZone, onOpenSnapshotInMetrics }: Props) {
+export function TimelineSnapshotSection({ snapshots: s, exportActivity, canSaveNow, showingSaved = false, timeZone, onOpenSnapshotInMetrics }: Props) {
   // 手動スナップショットの保存は operator 以上（閲覧は viewer でもできる）
   const canSave = useAuth().hasRole('operator')
   return (
@@ -66,25 +68,37 @@ export function TimelineSnapshotSection({ snapshots: s, canSaveNow, showingSaved
                   : '読み込み中…'}</p>
           ) : (
             <ul className="timeline-snapshots__list">
-              {s.items.map((item) => (
-                <li key={item.snapshot_id}>
-                  <button
-                    type="button"
-                    className="btn btn--gray"
-                    aria-pressed={s.selectedId === item.snapshot_id}
-                    onClick={() => void s.select(item)}
-                  >
-                    {item.operator_note}
-                  </button>{' '}
-                  {item.has_result ? <span className="timeline-snapshots__badge">結果あり</span> : null}{' '}
-                  {onOpenSnapshotInMetrics ? (
-                    <button type="button" className="btn btn--gray" onClick={() => onOpenSnapshotInMetrics(item)}>
-                      グラフで開く
-                    </button>
-                  ) : null}{' '}
-                  <span className="timeline-snapshots__time">({formatIsoInTimeZone(item.created_at ?? item.timestamp_utc, timeZone)})</span>
-                </li>
-              ))}
+              {s.items.map((item) => {
+                const savedAt = formatIsoInTimeZone(item.created_at ?? item.timestamp_utc, timeZone)
+                const note = Array.from(item.operator_note.trim().replace(/\s+/g, ' '))
+                const shortNote = note.length > 40 ? `${note.slice(0, 40).join('')}…` : note.join('')
+                return (
+                  <li key={item.snapshot_id}>
+                    <button
+                      type="button"
+                      className="btn btn--gray"
+                      aria-pressed={s.selectedId === item.snapshot_id}
+                      onClick={() => void s.select(item)}
+                    >
+                      {item.operator_note}
+                    </button>{' '}
+                    {item.has_result ? <span className="timeline-snapshots__badge">結果あり</span> : null}{' '}
+                    {onOpenSnapshotInMetrics ? (
+                      <button type="button" className="btn btn--gray" onClick={() => onOpenSnapshotInMetrics(item)}>
+                        グラフで開く
+                      </button>
+                    ) : null}{' '}
+                    <span className="timeline-snapshots__time">({savedAt})</span>
+                    <TimelineExportControls
+                      activity={exportActivity}
+                      source={item.has_result ? { snapshotId: item.snapshot_id } : null}
+                      sourceLabel={`スナップショット「${shortNote}」（${savedAt}）`}
+                      timeZone={timeZone}
+                      unavailableReason={item.has_result ? undefined : '結果が保存されていません。'}
+                    />
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

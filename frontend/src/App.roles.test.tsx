@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Me, Role } from './api/schemas'
 import { AuthContext } from './auth/authContext'
 import { roleAtLeast } from './auth/roles'
+import { emptyViewResponse } from './test/timelineViewFixtures'
 
 vi.mock('./panels/metrics/MetricsPanel', () => ({ MetricsPanel: () => <div /> }))
 
@@ -82,6 +83,7 @@ describe('App のロールによる出し分け', () => {
           )
         }
         if (url.includes('/api/vcenters')) return Promise.resolve(jsonResponse([VCENTER]))
+        if (url === '/api/incident-timeline/view') return Promise.resolve(jsonResponse(emptyViewResponse()))
         if (url === '/api/inventory/status') {
           return Promise.resolve(jsonResponse({
             enabled: true,
@@ -131,6 +133,15 @@ describe('App のロールによる出し分け', () => {
   it('operator にはチャットタブを出す', async () => {
     renderAs('operator')
     expect(await within(mainNav()).findByRole('button', { name: 'チャット' })).toBeInTheDocument()
+  })
+
+  it('viewer もタイムラインの調査資料を出力できる', async () => {
+    window.history.replaceState(null, '', '/#/timeline')
+    renderAs('viewer')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '調査資料を Markdown で出力' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: '調査資料を ZIP で出力' })).toBeEnabled()
+    })
   })
 
   it('viewer にはサーバ保存の設定を閲覧専用で見せ、エクスポートも出さない', async () => {

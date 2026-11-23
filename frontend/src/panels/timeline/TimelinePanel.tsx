@@ -14,6 +14,7 @@ import { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
 import { useTimelineViewController } from '../../hooks/useTimelineViewController'
 import { TimelineConditionBar } from './TimelineConditionBar'
 import { createGuideLoader } from './eventTypeGuideLoader'
+import { TimelineExportControls, type TimelineExportActivity } from './TimelineExportControls'
 import { TimelineHighlights } from './TimelineHighlights'
 import { TimelineImpactSection } from './TimelineImpactSection'
 import { TimelineItemList } from './TimelineItemList'
@@ -64,8 +65,26 @@ export function TimelinePanel({
   const [guideLoader] = useState(createGuideLoader)
   const [patternTitles, setPatternTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
   const requestedPatternTitles = useRef(false)
+  const [activeExport, setActiveExport] = useState<TimelineExportActivity['active']>(null)
+  const exportInProgress = useRef(false)
+  const exportActivity: TimelineExportActivity = {
+    active: activeExport,
+    claim(ownerId, format) {
+      if (exportInProgress.current) return false
+      exportInProgress.current = true
+      setActiveExport({ ownerId, format })
+      return true
+    },
+    release() {
+      exportInProgress.current = false
+      setActiveExport(null)
+    },
+  }
 
   const { data } = c
+  const exportSource = c.savedView
+    ? { snapshotId: c.savedView.snapshotId }
+    : data && c.loadedRequest ? { request: c.loadedRequest } : null
   const { entityMoid, vcenterId } = c.conditions
   const showImpact = !c.urlIssue && validateApiRange(c.resolvedRange) === null && entityMoid && vcenterId
   const impactRange = c.loadedRange ?? c.resolvedRange
@@ -128,9 +147,10 @@ export function TimelinePanel({
     <div className="panel timeline-panel">
       <TimelineConditionBar c={c} />
 
-      <p className="timeline-status" role="status" aria-live="polite">
+      <p className="timeline-status" role="status" aria-label="タイムラインの読み込み" aria-live="polite">
         {statusText}
       </p>
+      <TimelineExportControls activity={exportActivity} source={exportSource} timeZone={c.timeZone} />
       {c.notice ? (
         <p className="timeline-truncated" role="note" aria-label="読み込みの注記">
           {c.notice}
@@ -283,6 +303,7 @@ export function TimelinePanel({
 
       <TimelineSnapshotSection
         snapshots={snapshots}
+        exportActivity={exportActivity}
         canSaveNow={c.loadedRequest !== null && !c.loading}
         showingSaved={c.savedView !== null}
         timeZone={c.timeZone}

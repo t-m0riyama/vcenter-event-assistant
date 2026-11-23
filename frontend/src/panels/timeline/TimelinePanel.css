@@ -126,6 +126,28 @@
   min-height: 1.4em;
 }
 
+.timeline-export {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin: var(--spacing-2) 0;
+  font-size: var(--font-size-footnote);
+}
+
+.timeline-export__message {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.timeline-export__message:empty {
+  position: absolute;
+}
+
+.timeline-export__message--error {
+  color: var(--color-error);
+}
+
 .timeline-error {
   display: flex;
   flex-wrap: wrap;
