@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import literal, select
 from httpx import AsyncClient
 from pydantic import ValidationError
 
@@ -142,7 +143,7 @@ def test_request_rejects_span_over_90_days() -> None:
         {"item_limit": 0},
         {"item_limit": 1001},
         {"min_score": 101},
-        {"entity": "x" * 257},
+        {"entity": "x" * 1025},
         {"metric_threshold_cpu_pct": 101},
         {"unknown_field": 1},
     ],
@@ -817,7 +818,7 @@ async def test_vcenter_filter_is_applied_in_sql_before_the_alert_row_limit(
     r = await client.post(URL, json=_body())
     assert r.status_code == 422
     detail = r.json()["detail"]
-    assert "期間を短く" in detail and "vCenter" not in detail
+    assert "期間を短く" in detail and "vCenter を選んで絞り込んで" in detail
 
 
 @pytest.mark.asyncio
@@ -1806,3 +1807,237 @@ async def test_metric_row_shown_by_moid_is_kept_when_filtering_by_its_entity_nam
     for item in items:
         filtered = _metrics(await _post(client, entity=item["entity_name"]))
         assert [i["id"] for i in filtered] == [item["id"]]
+
+
+@pytest.mark.asyncio
+async def test_entity_moid_request_validation(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    missing_vcenter = await client.post(URL, json=_body(entity_moid="vm-1"))
+    assert missing_vcenter.status_code == 422
+
+    long_moid = await client.post(URL, json=_body(vcenter_id=str(vid), entity_moid="x" * 257))
+    assert long_moid.status_code == 422
+
+    (event_id,) = await _events(vid, (1, "Example", "x" * 1024, 50, {"entity_moid": "v" * 256}))
+    data = await _post(client, vcenter_id=str(vid), entity="x" * 1024, entity_moid=f" {'v' * 256} ")
+    assert [item["id"] for item in data["items"]] == [f"event:{event_id}"]
+    blank_moid = await _post(client, entity="x" * 1024, entity_moid="  ")
+    assert [item["id"] for item in blank_moid["items"]] == [f"event:{event_id}"]
+
+
+def test_saved_view_request_preserves_optional_entity_moid() -> None:
+    from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineSavedViewRequest
+
+    assert IncidentTimelineSavedViewRequest.model_validate(_body()).entity_moid is None
+    saved = IncidentTimelineSavedViewRequest.model_validate(_body(entity_moid="vm-1"))
+    assert saved.entity_moid == "vm-1"
+
+
+@pytest.mark.asyncio
+async def test_entity_moid_distinguishes_same_named_vms(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    other = await _vcenter("vc-2")
+    keep, other_vm = await _events(
+        vid,
+        (1, "VmEvent", "web-1", 50, {"entity_moid": "vm-1", "entity_type": "VirtualMachine"}),
+        (2, "VmEvent", "web-1", 50, {"entity_moid": "vm-2", "entity_type": "VirtualMachine"}),
+    )
+    await _events(other, (1, "VmEvent", "web-1", 50, {"entity_moid": "vm-1"}))
+    await _series(vid, "vm-1", [(3, 92), (4, 91)], name="web-old", entity_type="VirtualMachine")
+    await _series(vid, "vm-2", [(3, 93)], name="web-1", entity_type="VirtualMachine")
+    await _series(other, "vm-1", [(3, 94)], name="web-1")
+    alert_id = await _metric_alert(vid, "vm-1", 5, name="vm-1-high")
+    await _metric_alert(vid, "vm-2", 5, name="vm-2-high")
+    await _metric_alert(other, "vm-1", 5, name="other-vc")
+    await _alert_history("metric_threshold", "vm-1", 5, name="old-key")
+    await _alert_history("event_score", metric_context_key(vid, "vm-1"), 5, name="event-score")
+
+    unfiltered = await _post(client, vcenter_id=str(vid), sources=["event"])
+    assert [(i["id"], i["count"], i["ref"]["entity_moid"]) for i in unfiltered["items"]] == [
+        (f"event:{keep}", 1, "vm-1"), (f"event:{other_vm}", 1, "vm-2"),
+    ]
+
+    data = await _post(client, vcenter_id=str(vid), entity_moid="vm-1", entity="web-1")
+    assert [i["kind"] for i in data["items"]] == ["event", "metric", "alert"]
+    assert [i["ref"]["entity_moid"] for i in data["items"]] == ["vm-1", "vm-1", "vm-1"]
+    assert data["items"][0]["id"] == f"event:{keep}"
+    (metric,) = _metrics(data)
+    assert metric["entity_name"] == "web-old"
+    assert metric["ref"]["sample_count"] == 2
+    assert data["items"][2]["id"] == f"alert:{alert_id}"
+    assert data["items"][2]["entity_name"] == "web-old"
+
+
+@pytest.mark.asyncio
+async def test_entity_moid_alert_filter_applies_before_row_limit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = await _vcenter()
+    keep = await _metric_alert(vid, "vm-1", 5, name="keep")
+    await _metric_alert(vid, "vm-10", 1, name="other")
+    await _alert_history("event_score", "Event", 2, name="event-score")
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+    data = await _post(client, vcenter_id=str(vid), entity_moid="vm-1", sources=["alert"])
+    assert [item["id"] for item in data["items"]] == [f"alert:{keep}"]
+
+
+@pytest.mark.asyncio
+async def test_entity_moid_highlight_uses_latest_named_row_after_renaming(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _events(
+        vid,
+        (1, "VmEvent", "web-old", 50, {"entity_moid": "vm-1"}),
+        (4, "VmEvent", "web-new", 50, {"entity_moid": "vm-1"}),
+        (7, "LegacyEvent", "WEB-OLD", 50),
+        (8, "LegacyEvent", "vm-1", 50),
+    )
+    # 区間はイベントより前に始まり、後に終わる。同時刻のイベントよりメトリクスを優先する。
+    await _series(vid, "vm-1", [(2, 90), (4, 90)], name="web-latest")
+    await _series(vid, "vm-1", [(5, 10), (6, 90)], name="")
+    data = await _post(client)
+    top = data["highlights"]["top_entities"]
+    assert [(i["entity_moid"], i["entity_name"], i["item_count"]) for i in top] == [
+        ("vm-1", "web-latest", 5), (None, "vm-1", 1),
+    ]
+    assert _dt(top[0]["first_seen_utc"]) == _at(1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ambiguous", [False, True])
+async def test_entity_moid_matches_legacy_event_and_log_by_exact_name(client: AsyncClient, ambiguous: bool) -> None:
+    vid = await _vcenter()
+    other = await _vcenter("vc-2")
+    current, legacy, _ = await _events(
+        vid,
+        (3, "HostEvent", "web-1", 50, {"entity_moid": "host-1"}),
+        (4, "LegacyEvent", "wEB-1", 50),
+        (5, "LegacyEvent", "web-10", 50),
+    )
+    if ambiguous:
+        await _events(vid, (6, "HostEvent", "WEB-1", 50, {"entity_moid": "host-2"}))
+    await _events(other, (4, "LegacyEvent", "web-1", 50))
+    log, _, _ = await _logs(
+        vid,
+        (1, "ERROR", "m1", {"host": "wEB-1"}),
+        (2, "ERROR", "m2", {"host": "wEB-1"}),
+        (7, "ERROR", "m3", {"host": "web-10"}),
+    )
+    await _logs(other, (1, "ERROR", "m1", {"host": "web-1"}))
+
+    data = await _post(client, vcenter_id=str(vid), entity_moid="host-1", entity="Web-1")
+    assert [i["id"] for i in data["items"]] == [f"log:{log}", f"event:{current}", f"event:{legacy}"]
+    assert data["items"][0]["count"] == 2
+    (top,) = data["highlights"]["top_entities"]
+    assert (top["entity_moid"], top["entity_type"], top["item_count"]) == ("host-1", "HostSystem", 3)
+
+    no_name = await _post(client, vcenter_id=str(vid), entity_moid="host-1")
+    assert [i["id"] for i in no_name["items"]] == [f"event:{current}"]
+    unfiltered = await _post(client, vcenter_id=str(vid))
+    highlights = unfiltered["highlights"]["top_entities"]
+    by_identity = {(i["entity_moid"], i["entity_name"]): i["item_count"] for i in highlights}
+    if ambiguous:
+        assert by_identity == {("host-1", "web-1"): 1, ("host-2", "WEB-1"): 1,
+                               (None, "wEB-1"): 2, (None, "web-10"): 2}
+    else:
+        assert by_identity == {("host-1", "web-1"): 3, (None, "web-10"): 2}
+
+
+@pytest.mark.asyncio
+async def test_entity_moid_highlight_includes_unresolved_metric_alerts(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _metric_alert(vid, "host-1", 2, name="unresolved")
+    await _alert_history("metric_threshold", "host-1", 3, name="legacy")
+    data = await _post(client, sources=["alert"])
+    assert len(data["items"]) == 2
+    assert all(i["entity_name"] is None for i in data["items"])
+    (top,) = data["highlights"]["top_entities"]
+    assert (top["vcenter_id"], top["entity_moid"], top["entity_name"], top["item_count"]) == (
+        str(vid), "host-1", "host-1", 1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_entity_moid_applies_to_previous_period(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _events(
+        vid,
+        (-4, "SeenOnOtherVm", "web-1", 50, {"entity_moid": "vm-2"}),
+        (-3, "SeenOnSameVm", "web-old", 50, {"entity_moid": "vm-1"}),
+        (-2, "SeenOnLegacy", "WEB-1", 0),
+        (-1, "SeenOnOtherLegacy", "web-10", 50),
+        (1, "SeenOnOtherVm", "web-1", 50, {"entity_moid": "vm-1"}),
+        (2, "SeenOnSameVm", "web-1", 50, {"entity_moid": "vm-1"}),
+        (3, "SeenOnLegacy", "web-1", 50, {"entity_moid": "vm-1"}),
+        (4, "SeenOnOtherLegacy", "web-1", 50, {"entity_moid": "vm-1"}),
+    )
+    data = await _post(client, vcenter_id=str(vid), entity_moid="vm-1", entity="web-1")
+    assert [i["event_type"] for i in data["highlights"]["new_event_types"]] == [
+        "SeenOnOtherVm", "SeenOnOtherLegacy",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("value", "needle", "expected"),
+    [
+        ("WEB-1", "web-1", True),
+        ("web-10", "web-1", False),
+        ("web_1%", "WEB_1%", True),
+        ("web-10", "web_1%", False),
+        ("É-1", "É-1", True),
+        (None, "", None),
+    ],
+)
+async def test_equals_case_insensitive(value: str | None, needle: str, expected: bool | None) -> None:
+    from vcenter_event_assistant.services.sql_like import equals_case_insensitive
+
+    async with session_scope() as session:
+        assert await session.scalar(select(equals_case_insensitive(literal(value), needle))) is expected
+
+
+@pytest.mark.asyncio
+async def test_alert_row_limit_with_entity_moid_only_suggests_shorter_period(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vid = await _vcenter()
+    await _metric_alert(vid, "host-1", 1, name="first")
+    await _metric_alert(vid, "host-1", 2, name="second")
+    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
+
+    response = await client.post(
+        URL, json=_body(vcenter_id=str(vid), entity_moid="host-1", sources=["alert"])
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "通知履歴が多すぎて集計できません。期間を短くしてください。"
+
+
+@pytest.mark.asyncio
+async def test_top_entities_groups_case_variants_without_moid(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    await _events(vid, (1, "Event", "wEB-1", 50), (2, "Event", "WEB-1", 50))
+
+    data = await _post(client, sources=["event"])
+    (top,) = data["highlights"]["top_entities"]
+    assert (top["entity_moid"], top["entity_name"], top["item_count"]) == (None, "WEB-1", 2)
+    assert _dt(top["first_seen_utc"]) == _at(1)
+
+
+@pytest.mark.asyncio
+async def test_empty_event_entity_moid_is_treated_as_missing(client: AsyncClient) -> None:
+    vid = await _vcenter()
+    legacy, _, current, _ = await _events(
+        vid,
+        (1, "HostEvent", "WEB-1", 50, {"entity_moid": ""}),
+        (2, "HostEvent", "WEB-1", 50),
+        (3, "HostEvent", "web-1", 50, {"entity_moid": "host-1"}),
+        (4, "HostEvent", "web-10", 50, {"entity_moid": ""}),
+    )
+
+    data = await _post(client, vcenter_id=str(vid), entity_moid="host-1", entity="web-1", sources=["event"])
+    assert [(i["id"], i["ref"]["entity_moid"], i["count"]) for i in data["items"]] == [
+        (f"event:{legacy}", None, 2),
+        (f"event:{current}", "host-1", 1),
+    ]
+    (top,) = data["highlights"]["top_entities"]
+    assert (top["entity_moid"], top["entity_name"], top["item_count"]) == ("host-1", "web-1", 3)

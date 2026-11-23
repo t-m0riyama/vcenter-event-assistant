@@ -198,11 +198,12 @@ def _history_item_to_read(
         and (item.rule_id, item.context_key) in firing_keys
     )
     vcenter_id: uuid.UUID | None = None
+    entity_moid: str | None = None
     entity_name: str | None = None
     if rule_type == "metric_threshold":
         probe = metric_probe(item.context_key, item.rule.config if item.rule else None, item.occurred_at)
         if probe is not None:
-            vcenter_id = probe[0]
+            vcenter_id, entity_moid, _, _ = probe
             hit = (entities or {}).get(probe)
             entity_name = hit.name if hit is not None else None
     return AlertHistoryRead(
@@ -216,6 +217,7 @@ def _history_item_to_read(
         notified_at=item.notified_at,
         occurred_at=item.occurred_at,
         vcenter_id=vcenter_id,
+        entity_moid=entity_moid,
         entity_name=entity_name,
         channel=item.channel,
         success=item.success,

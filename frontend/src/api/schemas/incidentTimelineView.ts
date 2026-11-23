@@ -63,6 +63,7 @@ export type TimelineOverviewBucket = z.infer<typeof timelineOverviewBucketSchema
 
 export const timelineTopEntitySchema = z.object({
   entity_name: z.string(),
+  entity_moid: z.string().nullish(),
   entity_type: z.string().nullable().optional(),
   vcenter_id: z.string().nullable().optional(),
   vcenter_name: z.string().nullable().optional(),

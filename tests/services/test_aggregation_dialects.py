@@ -591,8 +591,16 @@ async def test_sqlite_timeline_queries_use_the_timeline_indexes(session: AsyncSe
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("entity", [None, "esx"], ids=["no_entity", "entity"])
-async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: AsyncSession, entity: str | None) -> None:
+@pytest.mark.parametrize(
+    ("entity", "entity_moid"),
+    [(None, None), ("esx", None), ("esx", "host-1")],
+    ids=["no_entity", "entity", "moid"],
+)
+async def test_sqlite_timeline_metric_queries_pin_the_covering_index(
+    session: AsyncSession,
+    entity: str | None,
+    entity_moid: str | None,
+) -> None:
     """閾値以上のサンプル数の上限を指定したタイムラインで（対象 entity の指定の有無とも）、metric_samples を読む
     select がすべて INDEXED BY で被覆索引に固定され、vCenter・指標・期間の範囲を読む（Issue #334）。
 
@@ -617,13 +625,24 @@ async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: As
         "(vcenter_id=? AND metric_key=? AND sampled_at>? AND sampled_at<?)"
     )
     hint = "metric_samples INDEXED BY ix_metric_samples_vcenter_metric_sampled_value"
-    # capped と hits0 に 1 つずつ、対象を指定したときは IN の副問い合わせ（matching_series）にもう 1 つ
-    expected_reads = 2 if entity else 1
-    for vc in (None, vid):
+    # capped と hits0 に 1 つずつ、名前だけで絞るときは IN の副問い合わせ（matching_series）にもう 1 つ
+    name_filter = entity is not None and entity_moid is None
+    expected_reads = 2 if name_filter else 1
+    for vc in (vid,) if entity_moid is not None else (None, vid):
         scope = itv._Scope(
-            from_utc=FROM, to_utc=TO, vcenter_id=vc, entity=entity, min_score=1, bucket_sec=60,
-            bucket_count=120, max_rows=10, dialect_name="sqlite", metric_name_lookback=timedelta(hours=6),
-            metric_thresholds=((METRIC_CPU, 80.0), (METRIC_MEM, 85.0)), metric_breach_sample_limit=1000,
+            from_utc=FROM,
+            to_utc=TO,
+            vcenter_id=vc,
+            entity=entity,
+            entity_moid=entity_moid,
+            min_score=1,
+            bucket_sec=60,
+            bucket_count=120,
+            max_rows=10,
+            dialect_name="sqlite",
+            metric_name_lookback=timedelta(hours=6),
+            metric_thresholds=((METRIC_CPU, 80.0), (METRIC_MEM, 85.0)),
+            metric_breach_sample_limit=1000,
         )
         captured: list = []
         original = AsyncSession.execute
@@ -659,9 +678,12 @@ async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: As
                 assert "ix_metric_samples_vcenter_metric_sampled_value (vcenter_id=? AND metric_key=?" in line, plan
                 assert "sampled_at>? AND sampled_at<?" in line, plan
             # hits0 は entity_type も読むので被覆にならない。被覆になるのは capped と matching_series
-            if kind == "capped" or entity:
+            if kind == "capped" or name_filter:
                 assert covering_range in plan, plan
             assert "ix_metric_samples_vcenter_entity_metric_sampled (vcenter_id=?)" not in plan, plan
+            if kind == "capped" and entity_moid is not None:
+                series_lookup = "ix_metric_samples_vcenter_entity_metric_sampled (vcenter_id=? AND entity_moid=?"
+                assert series_lookup not in plan, plan
             if kind == "intervals":
                 assert "SEARCH metric_prev USING" in plan, plan
             checked.append(kind)
@@ -669,7 +691,7 @@ async def test_sqlite_timeline_metric_queries_pin_the_covering_index(session: As
 
 
 @pytest.mark.asyncio
-async def test_incident_timeline_all_sources_on_each_dialect(
+async def test_incident_timeline_all_sources_and_entity_moid_on_each_dialect(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """API の経路と同じ入口（build_incident_timeline_view）で、4 種類すべて・vCenter の指定あり・行数の上限での
@@ -689,7 +711,7 @@ async def test_incident_timeline_all_sources_on_each_dialect(
         session.add(
             EventRecord(
                 vcenter_id=vid, occurred_at=at(1), event_type="E", message="m", entity_name="esx01",
-                vmware_key=next(_keys), notable_score=50,
+                vmware_key=next(_keys), notable_score=50, entity_moid="host-2",
             )
         )
         for moid, minute in (("host-1", 2), ("host-2", 3)):
@@ -734,13 +756,56 @@ async def test_incident_timeline_all_sources_on_each_dialect(
     assert [(i.entity_name, i.vcenter_id) for i in by_moid.items] == [("host-2", v1)]
 
     # 上限 1 行: イベント・アラートは 1 行ずつなので返り、メトリクス・ログ（2 行ずつ）は省く
-    monkeypatch.setattr(require_settings(), "context_aggregation_max_rows", 1)
-    out = await build_incident_timeline_view(
-        session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1), owner_key="dialect-test"
-    )
+    with monkeypatch.context() as m:
+        m.setattr(require_settings(), "context_aggregation_max_rows", 1)
+        out = await build_incident_timeline_view(
+            session, IncidentTimelineViewRequest(from_time=FROM, to_time=TO, vcenter_id=v1), owner_key="dialect-test"
+        )
     assert [i.kind for i in out.items] == ["event", "alert"]
     assert [(o.source, o.reason) for o in out.omitted_sources] == [("metric", "too_many_rows"), ("log", "too_many_rows")]
     assert sum(b.log_error for b in out.overview) == 2
+
+    legacy_events = [
+        EventRecord(
+            vcenter_id=v1,
+            occurred_at=at(minute),
+            event_type="LegacyEvent",
+            message="m",
+            entity_name=name,
+            vmware_key=next(_keys),
+            notable_score=50,
+        )
+        for minute, name in ((8, "esx01.example.com"), (9, "extra-esx01.example.com"))
+    ]
+    session.add_all(legacy_events)
+    metric_rule = AlertRule(name="metric", rule_type="metric_threshold", alert_level="warning", config={})
+    session.add(metric_rule)
+    await session.flush()
+    for key in (metric_context_key(v1, "host-2"), metric_context_key(v1, "host-1"), "host-2"):
+        session.add(
+            AlertHistory(
+                rule_id=metric_rule.id, alert_level="warning", state="firing", context_key=key,
+                notified_at=at(7), channel="none",
+            )
+        )
+    await session.flush()
+
+    filtered = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(
+            from_time=FROM, to_time=TO, vcenter_id=v1, entity_moid="host-2", entity="ESX01.EXAMPLE.COM"
+        ),
+        owner_key="dialect-test",
+    )
+    assert [(i.kind, i.vcenter_id, i.ref.entity_moid) for i in filtered.items] == [
+        ("event", v1, "host-2"),
+        ("metric", v1, "host-2"),
+        ("log", v1, None),
+        ("log", v1, None),
+        ("alert", v1, "host-2"),
+        ("event", v1, None),
+    ]
+    assert filtered.items[-1].ref.event_id == legacy_events[0].id
 
 
 @pytest.mark.asyncio

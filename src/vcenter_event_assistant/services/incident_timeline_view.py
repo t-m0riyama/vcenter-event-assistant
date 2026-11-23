@@ -59,6 +59,7 @@ from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     metric_probe,
     resolve_metric_entities_at,
 )
+from vcenter_event_assistant.services.alerting.alert_eval_common import metric_context_key
 from vcenter_event_assistant.services.chat.aggregation_limiter import (
     AggregationBusy,
     AggregationLimitExceeded,
@@ -66,7 +67,7 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
 from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
-from vcenter_event_assistant.services.sql_like import contains_case_insensitive
+from vcenter_event_assistant.services.sql_like import contains_case_insensitive, equals_case_insensitive
 from vcenter_event_assistant.services.sql_time import (
     bucket_index_expr,
     epoch_seconds_expr,
@@ -183,6 +184,8 @@ class TimelineEntry:
     merge_key: tuple[Any, ...] | None = None
     is_signal: bool = True
     ref: Mapping[str, Any] = field(default_factory=dict)
+    # メトリクスの名前が無く、表示用に moid を入れたか。
+    entity_name_is_fallback: bool = False
 
     @property
     def item_id(self) -> str:
@@ -231,6 +234,7 @@ class _Scope:
     max_rows: int
     dialect_name: str
     metric_name_lookback: timedelta
+    entity_moid: str | None = None
     # (metric_key, 閾値 %) の組。超過区間の判定に使う。
     metric_thresholds: tuple[tuple[str, float], ...] = ()
     # 隣のサンプルとの間隔がこの秒数以内なら同じ超過区間につなぐ（サンプルの欠けで区切らない）。
@@ -591,49 +595,92 @@ def first_signal(entries: Sequence[TimelineEntry]) -> TimelineEntry | None:
     return None
 
 
+@dataclass(slots=True)
+class _TopEntityCount:
+    name: str
+    first_seen: datetime
+    entity_type: str | None
+    vcenter_name: str | None
+    count: int = 0
+    latest_name_key: tuple[datetime, int, int] | None = None
+
+    def add(self, entry: TimelineEntry) -> None:
+        self.count += 1 if entry.kind == "log" else entry.count
+        self.first_seen = min(self.first_seen, entry.timestamp_utc)
+        if self.entity_type is None and entry.entity_type:
+            self.entity_type = entry.entity_type
+        if self.vcenter_name is None and entry.vcenter_name:
+            self.vcenter_name = entry.vcenter_name
+
+    def record_name(self, entry: TimelineEntry, name: str) -> None:
+        timestamp, kind_order, source_id = entry_sort_key(entry)
+        key = (entry.end_utc or timestamp, kind_order, source_id)
+        if self.latest_name_key is None or self.latest_name_key < key:
+            self.latest_name_key = key
+            self.name = name
+
+
 def top_entities(
     entries: Sequence[TimelineEntry],
     *,
     limit: int = _TOP_ENTITIES_LIMIT,
 ) -> list[IncidentTimelineTopEntity]:
-    """``(vcenter_id, entity_name)`` ごとに件数を合計し、多い順に上位を返す。
+    """vCenter と moid ごとに数え、moid の無い行は同名の対象が一意なら合算する。
 
-    イベントなどは ``count``（まとめる前の件数）で数える。ログはまとめた行を 1 件として数える
-    （同じ内容のエラーを短時間に大量に出すホストが、まとめる前の行数で「影響の大きい対象」を占めないように）。
-
-    同じ名前でも vCenter が違えば別の対象として数える。同数なら最初に現れた時刻が早い順、
-    それも同じなら名前・vCenter の順。``entity_type`` と ``vcenter_name`` は最初に分かった値を使う。
+    イベントなどは ``count``（まとめる前の件数）で数える。ログはまとめた行を 1 件として数える。
+    moid のある行から先に集計し、表示名はその対象の最新の名前、種別は moid のある行の値を優先する。
     """
-    acc: dict[tuple[uuid.UUID | None, str], list[Any]] = {}
-    for e in entries:
-        if not e.entity_name:
+    by_moid: dict[tuple[uuid.UUID, str], _TopEntityCount] = {}
+    name_owners: dict[tuple[uuid.UUID, str], set[str]] = {}
+    named_only: list[TimelineEntry] = []
+    for entry in entries:
+        vid = entry.vcenter_id
+        moid = entry.ref.get("entity_moid")
+        name = entry.entity_name
+        if vid is None or not moid:
+            if name:
+                named_only.append(entry)
             continue
-        weight = 1 if e.kind == "log" else e.count
-        key = (e.vcenter_id, e.entity_name)
-        slot = acc.get(key)
+        moid_key = (vid, moid)
+        slot = by_moid.get(moid_key)
         if slot is None:
-            acc[key] = [weight, e.timestamp_utc, e.entity_type, e.vcenter_name]
+            slot = by_moid[moid_key] = _TopEntityCount(moid, entry.timestamp_utc, entry.entity_type, entry.vcenter_name)
+        slot.add(entry)
+        if name and not entry.entity_name_is_fallback:
+            name_owners.setdefault((vid, name.lower()), set()).add(moid)
+            slot.record_name(entry, name)
+
+    by_name: dict[tuple[uuid.UUID | None, str], _TopEntityCount] = {}
+    for entry in named_only:
+        vid, name = entry.vcenter_id, entry.entity_name
+        assert name is not None
+        owners = name_owners.get((vid, name.lower())) if vid is not None else None
+        if vid is not None and owners is not None and len(owners) == 1:
+            by_moid[(vid, next(iter(owners)))].add(entry)
             continue
-        slot[0] += weight
-        if e.timestamp_utc < slot[1]:
-            slot[1] = e.timestamp_utc
-        if slot[2] is None and e.entity_type:
-            slot[2] = e.entity_type
-        if slot[3] is None and e.vcenter_name:
-            slot[3] = e.vcenter_name
-    ranked = sorted(
-        acc.items(), key=lambda kv: (-kv[1][0], kv[1][1], kv[0][1], str(kv[0][0] or ""))
-    )[:limit]
+        name_key = (vid, name.lower())
+        slot = by_name.get(name_key)
+        if slot is None:
+            slot = by_name[name_key] = _TopEntityCount(name, entry.timestamp_utc, entry.entity_type, entry.vcenter_name)
+        slot.add(entry)
+        slot.record_name(entry, name)
+
+    ranked: list[tuple[uuid.UUID | None, str | None, _TopEntityCount]] = [
+        (vid, moid, slot) for (vid, moid), slot in by_moid.items()
+    ]
+    ranked.extend((vid, None, slot) for (vid, _), slot in by_name.items())
+    ranked.sort(key=lambda row: (-row[2].count, row[2].first_seen, row[2].name, str(row[0] or ""), row[1] or ""))
     return [
         IncidentTimelineTopEntity(
-            entity_name=name,
-            entity_type=etype,
+            entity_name=slot.name,
+            entity_moid=moid,
+            entity_type=slot.entity_type,
             vcenter_id=vid,
-            vcenter_name=vname,
-            item_count=count,
-            first_seen_utc=first_seen,
+            vcenter_name=slot.vcenter_name,
+            item_count=slot.count,
+            first_seen_utc=slot.first_seen,
         )
-        for (vid, name), (count, first_seen, etype, vname) in ranked
+        for vid, moid, slot in ranked[:limit]
     ]
 
 
@@ -729,14 +776,17 @@ async def build_incident_timeline_view(
             headers={"Retry-After": str(_BUSY_RETRY_AFTER_SECONDS)},
         ) from None
     except AggregationLimitExceeded as exc:
-        raise HTTPException(status_code=422, detail=_limit_message(exc)) from None
+        raise HTTPException(
+            status_code=422, detail=_limit_message(exc, entity_moid=body.entity_moid)
+        ) from None
 
 
-def _limit_message(exc: AggregationLimitExceeded) -> str:
+def _limit_message(exc: AggregationLimitExceeded, *, entity_moid: str | None) -> str:
     """上限を超えた種別ごとに、実際に効く対処だけを案内する。"""
     if exc.what == _ALERTS_LIMIT:
-        # 対象（entity）の絞り込みは対象を解決した後に Python 側でかけるので、行数は減らない。
-        return "通知履歴が多すぎて集計できません。期間を短くしてください。"
+        if entity_moid is not None:
+            return "通知履歴が多すぎて集計できません。期間を短くしてください。"
+        return "通知履歴が多すぎて集計できません。期間を短くするか、vCenter を選んで絞り込んでください。"
     return (
         "対象の出来事が多すぎて集計できません。"
         "期間を短くするか、vCenter を指定して絞り込んでください。"
@@ -762,6 +812,7 @@ async def _build_in_slot(
         to_utc=tt,
         vcenter_id=body.vcenter_id,
         entity=body.entity,
+        entity_moid=body.entity_moid,
         min_score=body.min_score,
         bucket_sec=bucket_sec,
         bucket_count=n_buckets,
@@ -830,28 +881,36 @@ async def _build_in_slot(
 
 
 def _event_filters(
+    scope: _Scope,
     from_utc: datetime,
     to_utc: datetime,
-    *,
-    vcenter_id: uuid.UUID | None,
-    entity: str | None,
 ) -> list[ColumnElement[bool]]:
+    entity, entity_moid = scope.entity, scope.entity_moid
     clauses: list[ColumnElement[bool]] = [
         EventRecord.occurred_at >= from_utc,
         EventRecord.occurred_at < to_utc,
     ]
-    if vcenter_id is not None:
-        clauses.append(EventRecord.vcenter_id == vcenter_id)
-    if entity:
+    if scope.vcenter_id is not None:
+        clauses.append(EventRecord.vcenter_id == scope.vcenter_id)
+    if entity_moid is not None:
+        match_moid = EventRecord.entity_moid == entity_moid
+        if entity:
+            match_moid = or_(
+                match_moid,
+                and_(
+                    or_(EventRecord.entity_moid.is_(None), EventRecord.entity_moid == ""),
+                    equals_case_insensitive(EventRecord.entity_name, entity),
+                ),
+            )
+        clauses.append(match_moid)
+    elif entity:
         clauses.append(contains_case_insensitive(EventRecord.entity_name, entity))
     return clauses
 
 
 async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
     """``event_total`` / ``event_notable`` の俯瞰（DB 側の GROUP BY）と、``min_score`` 以上の個別イベント。"""
-    filters = _event_filters(
-        scope.from_utc, scope.to_utc, vcenter_id=scope.vcenter_id, entity=scope.entity
-    )
+    filters = _event_filters(scope, scope.from_utc, scope.to_utc)
 
     # PostgreSQL では同じ式でも SELECT と GROUP BY で別のバインド変数になるため、バケット番号は
     # 副問い合わせの列にしてから集計する（sql_time.py の注意書き）。
@@ -891,6 +950,7 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
             EventRecord.event_type,
             EventRecord.severity,
             EventRecord.entity_name,
+            EventRecord.entity_moid,
             EventRecord.entity_type,
             EventRecord.vcenter_id,
             EventRecord.notable_score,
@@ -906,6 +966,10 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
     entries: list[TimelineEntry] = []
     for row in rows:
         level = event_level(row.notable_score, row.severity)
+        ref = {"event_id": int(row.id), "event_type": row.event_type}
+        if row.entity_moid:
+            ref["entity_moid"] = row.entity_moid
+        merge_moid = (row.entity_moid or None) if row.vcenter_id is not None else None
         entries.append(
             TimelineEntry(
                 kind="event",
@@ -918,8 +982,8 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
                 vcenter_id=row.vcenter_id,
                 score=int(row.notable_score),
                 # level が違うものはまとめない（悪化した時点を別の行として残す）
-                merge_key=("event", row.event_type, row.entity_name, row.vcenter_id, level),
-                ref={"event_id": int(row.id), "event_type": row.event_type},
+                merge_key=("event", row.event_type, row.entity_name, row.vcenter_id, merge_moid, level),
+                ref=ref,
             )
         )
     return _Collected(entries=entries, overview={"event_total": totals, "event_notable": notables})
@@ -952,9 +1016,7 @@ async def _event_types_seen_in_previous_period(
 ) -> set[str]:
     """直前の同じ長さの期間に（スコアに関係なく）1 件でもあった種別。DB 側の GROUP BY で求める。"""
     prev_from = scope.from_utc - (scope.to_utc - scope.from_utc)
-    filters = _event_filters(
-        prev_from, scope.from_utc, vcenter_id=scope.vcenter_id, entity=scope.entity
-    )
+    filters = _event_filters(scope, prev_from, scope.from_utc)
     seen: set[str] = set()
     for chunk in chunks(sorted(event_types), IN_CHUNK_SIZE):
         stmt = (
@@ -980,7 +1042,7 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     - ``event_score``: ``context_key`` はイベント種別。対象と vCenter は持たない。
     - vCenter の絞り込みは行数の上限より前に SQL で行う。event_score は vCenter を持たないので
       全 vCenter にまたがる情報として残し、旧形式の metric の key は取り違えを避けるため除く。
-    - 対象の絞り込みでは、アラートごとに「その時点の名前」が一致するものだけを残す。
+    - moid の指定は metric_threshold の key の完全一致で SQL で絞る。名前だけの指定は解決後の名前に当てる。
     """
     stmt = (
         select(
@@ -1002,7 +1064,12 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
         .order_by(AlertHistory.occurred_at, AlertHistory.id)
         .limit(scope.max_rows + 1)
     )
-    if scope.vcenter_id is not None:
+    if scope.entity_moid is not None and scope.vcenter_id is not None:
+        stmt = stmt.where(
+            AlertRule.rule_type == "metric_threshold",
+            AlertHistory.context_key == metric_context_key(scope.vcenter_id, scope.entity_moid),
+        )
+    elif scope.vcenter_id is not None:
         # 行数の上限より前に vCenter で絞る。metric は context_key が "{vcenter_id}:" で始まるものだけ
         # （旧形式の moid だけの key は別の vCenter の同じ moid と取り違えるので除く）、event_score は
         # vCenter を持たないので全 vCenter にまたがる情報として残す。
@@ -1037,7 +1104,7 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
         ):
             # SQL でも絞っているが、旧形式の key（vCenter 不明）もここで確実に除く。
             continue
-        if scope.entity and not entity_matches(entry.entity_name, scope.entity):
+        if scope.entity_moid is None and scope.entity and not entity_matches(entry.entity_name, scope.entity):
             continue
         entries.append(entry)
 
@@ -1158,18 +1225,21 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
         MetricSample.value >= threshold_of(MetricSample.metric_key),
         vcenter_clause,
     ]
-    # 対象（entity）の絞り込みは、サンプル単位ではかけない。名前の違うサンプルが抜けて区間の区切りが変わる
+    # 名前（entity）での絞り込みは、サンプル単位ではかけない。名前の違うサンプルが抜けて区間の区切りが変わる
     # ため。代わりに、名前（空なら moid）が対象に当たる閾値以上のサンプルを 1 件でも持つ系列に絞り、系列の中の
     # サンプルはすべて残す。区間の名前（区間の中の空でない最新の名前、無ければ moid）は、その区間のどれかの
     # サンプルの名前か moid なので、対象に当たる区間はかならずこの系列に入る（区間の名前での絞り込みは最後に
     # かける）。数え上げも区間の問い合わせも、絞った後のサンプルだけを読む。
     #
     # SQLite では、metric_samples を読む select（matching_series・capped・hits0）を vCenter・指標・期間の被覆索引に
-    # 固定する（Issue #334）。対象は名前の部分一致で索引の検索に使えないので、対象の指定の有無にかかわらず固定する。
+    # 固定する（Issue #334）。名前や moid の指定の有無にかかわらず、指標と期間の範囲走査にこの索引を使う。
     # 固定しないと、新しい SQLite（3.51.0 以降で確認）は期間内の全指標を読む。matching_series は、古い SQLite でも
     # vCenter を指定しないと、系列の索引 (vcenter_id=?) でその vCenter の全履歴を読む。別名（metric_prev・metric_between
     # など）は 1 行ずつ引く問い合わせなので固定しない。
-    if scope.entity:
+    if scope.entity_moid is not None:
+        # moid は系列のキーなので、サンプル単位で絞っても区間の区切りは変わらない。
+        clauses.append(MetricSample.entity_moid == scope.entity_moid)
+    elif scope.entity:
         matching_series = pin_metric_covering_index(
             select(MetricSample.vcenter_id, MetricSample.entity_moid, MetricSample.metric_key)
             .where(
@@ -1336,7 +1406,7 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
         .exists()
     )
     stmt = select(intervals, has_later.label("has_later"))
-    if scope.entity:
+    if scope.entity_moid is None and scope.entity:
         # 表示と同じ規則（名前が空なら moid）に当てる。moid で表示した行も「この対象で絞る」で消えない。
         stmt = stmt.where(
             contains_case_insensitive(func.coalesce(intervals.c.name, intervals.c.moid), scope.entity)
@@ -1378,6 +1448,7 @@ async def _collect_metrics(session: AsyncSession, scope: _Scope) -> _Collected:
                     peak, sample_count, continued=continued, continues_after=continues_after
                 ),
                 entity_name=row.name or row.moid,
+                entity_name_is_fallback=not row.name,
                 entity_type=row.etype,
                 vcenter_id=row.vc,
                 # 区間はそれ自体が「まとめた」行なので、隣とはまとめない。count は 1 のまま
@@ -1419,7 +1490,8 @@ def _log_filters(scope: _Scope) -> list[ColumnElement[bool]]:
         clauses.append(LogRecord.vcenter_id == scope.vcenter_id)
     if scope.entity:
         # ログには entity_name が無いので、対象の絞り込みは host に当てる。
-        clauses.append(contains_case_insensitive(LogRecord.host, scope.entity))
+        match_name = equals_case_insensitive if scope.entity_moid is not None else contains_case_insensitive
+        clauses.append(match_name(LogRecord.host, scope.entity))
     return clauses
 
 
@@ -1437,6 +1509,8 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
     （IP のこともある）で、イベントやメトリクスの対象名と突き合わせる確かな手がかりが無く、別のホストを
     混ぜるほうが調査を誤らせるため。
     """
+    if scope.entity_moid is not None and scope.entity is None:
+        return _Collected()
     filters = _log_filters(scope)
     base = (
         select(

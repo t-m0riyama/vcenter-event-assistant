@@ -689,6 +689,7 @@ async def test_alerts_history_resolves_vcenter_and_entity_for_metric_rows(client
     item = (await _history_by_id(client))[row_id]
     assert item["vcenter_id"] == str(vid)
     assert item["entity_name"] == "esx01"
+    assert item["entity_moid"] == "host-1"
     assert datetime.fromisoformat(item["occurred_at"].replace("Z", "+00:00")).replace(tzinfo=timezone.utc) == _T0 + timedelta(minutes=1)
 
 
@@ -696,12 +697,13 @@ async def test_alerts_history_resolves_vcenter_and_entity_for_metric_rows(client
 async def test_alerts_history_event_score_and_legacy_key_have_no_vcenter_or_entity(client: AsyncClient):
     vid = await _history_vcenter("vc-hist-2")
     await _history_sample(vid, "host-legacy", "esx-legacy", _T0)
-    es = await _history_row("event_score", "VmPoweredOffEvent", occurred_at=_T0, name="hist-es")
+    es = await _history_row("event_score", f"{vid}:host-legacy", occurred_at=_T0, name="hist-es")
     legacy = await _history_row("metric_threshold", "host-legacy", occurred_at=_T0, name="hist-legacy")
     items = await _history_by_id(client)
     for row_id in (es, legacy):
         assert items[row_id]["vcenter_id"] is None
         assert items[row_id]["entity_name"] is None
+        assert items[row_id]["entity_moid"] is None
         assert items[row_id]["occurred_at"]
 
 
