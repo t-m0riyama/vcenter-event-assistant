@@ -290,3 +290,10 @@ export function metricIntervalText(
   if (end === null) return before ? `超過区間: ${head} ${start} まで（継続）` : `超過区間: ${start}（単発）`
   return `超過区間: ${head ? `${head} ` : `${start} から `}${end} まで（継続 ${length}${before ? '以上' : ''}）`
 }
+
+/** 影響範囲は、起点、最初の兆候、期間の始まりの順に時点を選ぶ。 */
+export function defaultImpactTime(from: string, anchor?: string | null, firstSignal?: string | null): string {
+  const at = anchor ?? firstSignal ?? from
+  // タイムラインは末尾の Z がない時刻も UTC として返す。観測の境界に使う小数秒はそのまま渡す。
+  return /(?:Z|[+-]\d{2}:\d{2})$/.test(at) ? at : `${at}Z`
+}

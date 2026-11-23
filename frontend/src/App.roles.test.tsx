@@ -16,7 +16,7 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 const VCENTER = {
-  id: 'vc-1',
+  id: '11111111-1111-4111-8111-111111111111',
   name: 'vc-lab',
   host: 'vc.example.com',
   protocol: 'https',
@@ -82,6 +82,27 @@ describe('App のロールによる出し分け', () => {
           )
         }
         if (url.includes('/api/vcenters')) return Promise.resolve(jsonResponse([VCENTER]))
+        if (url === '/api/inventory/status') {
+          return Promise.resolve(jsonResponse({
+            enabled: true,
+            interval_seconds: 600,
+            timeout_seconds: 300,
+            vcenters: [{
+              vcenter_id: VCENTER.id,
+              vcenter_name: VCENTER.name,
+              is_enabled: VCENTER.is_enabled,
+              first_success_at: null,
+              last_started_at: null,
+              last_success_at: null,
+              last_failure_at: null,
+              last_error: null,
+              last_warning: null,
+              last_warning_at: null,
+              object_count: null,
+              relation_count: null,
+            }],
+          }))
+        }
         if (url.includes('/api/event-score-rules')) {
           return Promise.resolve(jsonResponse([{ id: 1, event_type: 'vim.event.VmPoweredOnEvent', score_delta: 10 }]))
         }
@@ -168,6 +189,7 @@ describe('App のロールによる出し分け', () => {
     const { unmount } = renderAs('viewer')
     await openSettings('vCenter')
     expect(await screen.findByText('vc-lab')).toBeInTheDocument()
+    expect(await screen.findByText('最後の成功 未収集')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '接続テスト' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '編集' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '追加' })).not.toBeInTheDocument()

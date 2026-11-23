@@ -20,6 +20,7 @@ import { TimelinePanel } from './TimelinePanel'
 
 const TEST_TIMEOUT_MS = 15_000
 const VC = '11111111-1111-4111-8111-111111111111'
+const FIXED_IMPACT_HASH = `/#/timeline?vcenter_id=${VC}&entity_moid=vm-10&from=2026-03-22T00:00:00Z&to=2026-03-22T01:00:00Z`
 const DETECTED_PATTERN: TimelineDetectedPattern = {
   pattern_id: 'host-conn-flapping',
   title: 'ホストの切断の繰り返し',
@@ -166,6 +167,189 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('対象名だけで絞ったときは影響範囲の欄も要求も出さない', async () => {
+    setup()
+    const impact = vi.fn(() => jsonResponse({}))
+    harness.extra.set('/api/inventory/impact?', impact)
+    window.history.replaceState(null, '', timelineEntryHash({ at: '2026-03-22T00:30:00Z', vcenterId: VC, entity: 'vm-a' }))
+    renderTimeline()
+    await answer(0)
+    expect(harness.calls[0].body.entity).toBe('vm-a')
+    expect(impact).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: '影響範囲' })).not.toBeInTheDocument()
+  })
+
+  it('影響範囲は最新のタイムラインの応答を待ち、その期間と最初の兆候を使う', async () => {
+    setup()
+    const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
+    harness.extra.set('/api/inventory/impact?', impact)
+    window.history.replaceState(null, '', `/#/timeline?vcenter_id=${VC}&entity_moid=vm-10`)
+    renderTimeline()
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    expect(impact).not.toHaveBeenCalled()
+    await answer(0)
+    await screen.findByText('この vCenter は登録されていません。')
+    const params = new URL(impact.mock.calls[0][0], window.location.origin).searchParams
+    expect(Object.fromEntries(params)).toEqual({
+      vcenter_id: VC,
+      entity_moid: 'vm-10',
+      from: harness.calls[0].body.from,
+      to: harness.calls[0].body.to,
+      at: '2026-03-22T00:10:00Z',
+    })
+    fireEvent.change(screen.getByLabelText('影響範囲の時点'), { target: { value: 'end' } })
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(2))
+    const requestedTime = (index: number) => new URL(impact.mock.calls[index][0], window.location.origin).searchParams.get('at')
+    expect(requestedTime(1)).toBe(params.get('to'))
+    fireEvent.change(screen.getByLabelText('影響範囲の時点'), { target: { value: 'start' } })
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(3))
+    expect(requestedTime(2)).toBe(params.get('from'))
+    fireEvent.change(screen.getByLabelText('影響範囲の時点'), { target: { value: 'default' } })
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(4))
+
+    fireEvent.click(screen.getByLabelText('イベント'))
+    await waitFor(() => expect(harness.calls).toHaveLength(2))
+    expect(impact).toHaveBeenCalledTimes(4)
+    await answer(1, emptyViewResponse())
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(5))
+    expect(requestedTime(4)).toBe(harness.calls[1].body.from)
+  })
+
+  it.each([true, false])('タイムラインが 422 のときは起点または期間の始まりを使う（起点あり: %s）', async (hasAnchor) => {
+    setup()
+    const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
+    harness.extra.set('/api/inventory/impact?', impact)
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH + (hasAnchor ? '&anchor=2026-03-22T00:30:00Z' : ''))
+    renderTimeline()
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    expect(impact).not.toHaveBeenCalled()
+    await act(async () => {
+      harness.calls[0].resolve(jsonResponse({ detail: '出来事が多すぎます。' }, 422))
+    })
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(1))
+    const at = new URL(impact.mock.calls[0][0], window.location.origin).searchParams.get('at')
+    expect(at).toBe(hasAnchor ? '2026-03-22T00:30:00.000Z' : '2026-03-22T00:00:00.000Z')
+  })
+
+  it.each([429, 500, 503, 'network'])('タイムラインの %s 失敗では影響範囲を取得せず案内を出す', async (failure) => {
+    setup()
+    const impact = vi.fn(() => jsonResponse({}))
+    harness.extra.set('/api/inventory/impact?', impact)
+    if (failure === 'network') {
+      vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).endsWith('/api/incident-timeline/view')
+          ? Promise.reject(new TypeError('通信できません'))
+          : harness.fetchMock(input, init),
+      ))
+    }
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    if (failure !== 'network') {
+      const fail = async (index: number) => {
+        await waitFor(() => expect(harness.calls).toHaveLength(index + 1))
+        await act(async () => {
+          harness.calls[index].resolve(jsonResponse({ detail: '読み込みに失敗しました' }, failure, { 'Retry-After': '0' }))
+        })
+      }
+      await fail(0)
+      if (failure === 503) await fail(1)
+    }
+    const section = within(screen.getByRole('region', { name: '影響範囲' }))
+    expect(await section.findByRole('status')).toHaveTextContent('タイムラインを読み込めなかったため、影響範囲を出せません')
+    expect(impact).not.toHaveBeenCalled()
+  })
+
+  it('要求の起点より応答の anchor_utc を優先し、Z のない時刻を UTC として送る', async () => {
+    setup()
+    const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
+    harness.extra.set('/api/inventory/impact?', impact)
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH + '&anchor=2026-03-22T00:30:00Z')
+    renderTimeline()
+    await answer(0, populated({ anchor_utc: '2026-03-22T00:20:00.123456' }))
+    expect(harness.calls[0].body.anchor).toBe('2026-03-22T00:30:00.000Z')
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(1))
+    expect(new URL(impact.mock.calls[0][0], window.location.origin).searchParams.get('at')).toBe('2026-03-22T00:20:00.123456Z')
+  })
+
+  it.each(['start', 'end'])('選択した %s と表示結果を再集計中やタブ移動後も保ち、同じ要求を送らない', async (selection) => {
+    setup()
+    const impact = vi.fn((url: string) => {
+      const at = new URL(url, window.location.origin).searchParams.get('at')
+      return jsonResponse({
+        target: { moid: 'vm-10', entity_type: 'VirtualMachine', name: 'vm-10' },
+        at, status: 'unknown_target', recorded_since: null, last_success_at: null,
+        observed_before: null, observed_after: null, groups: [],
+      })
+    })
+    harness.extra.set('/api/inventory/impact?', impact)
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    const { rerender } = renderTimeline()
+    const select = screen.getByLabelText('影響範囲の時点')
+    await answer(0)
+    await screen.findByText('この対象の関係の記録がありません。')
+    fireEvent.change(select, { target: { value: selection } })
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(2))
+    const result = await screen.findByText('この対象の関係の記録がありません。')
+
+    fireEvent.click(screen.getByLabelText('イベント'))
+    await waitFor(() => expect(harness.calls).toHaveLength(2))
+    expect(select).toHaveValue(selection)
+    expect(result).toBeInTheDocument()
+    expect(impact).toHaveBeenCalledTimes(2)
+    await answer(1)
+    expect(select).toHaveValue(selection)
+    expect(result).toBeInTheDocument()
+    expect(impact).toHaveBeenCalledTimes(2)
+
+    const showTab = (active: boolean) => rerender(
+      <ThemeProvider><TimeZoneProvider><TimelinePanel onError={onError} active={active} /></TimeZoneProvider></ThemeProvider>,
+    )
+    window.history.replaceState(null, '', '/#/settings/vcenters')
+    showTab(false)
+    expect(screen.getByLabelText('影響範囲の時点')).toBe(select)
+    window.history.replaceState(null, '', '/#/timeline')
+    showTab(true)
+    expect(screen.getByLabelText('影響範囲の時点')).toBe(select)
+    expect(select).toHaveValue(selection)
+    expect(impact).toHaveBeenCalledTimes(2)
+
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH
+      .replace('from=2026-03-22T00:00:00Z', 'from=2026-03-21T23:30:00Z')
+      .replace('to=2026-03-22T01:00:00Z', 'to=2026-03-22T01:30:00Z'))
+    fireEvent(window, new HashChangeEvent('hashchange'))
+    await waitFor(() => expect(harness.calls).toHaveLength(3))
+    expect(select).toHaveValue(selection)
+    expect(impact).toHaveBeenCalledTimes(2)
+    await answer(2)
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(3))
+    expect(select).toHaveValue(selection)
+    expect(new URL(impact.mock.calls[2][0], window.location.origin).searchParams.get('at'))
+      .toBe(selection === 'start' ? '2026-03-21T23:30:00.000Z' : '2026-03-22T01:30:00.000Z')
+  })
+
+  it.each([
+    [/UserLoginSessionEvent/, '2026-03-22T00:50:00Z'],
+    [/VmPoweredOffEvent/, '2026-03-22T00:10:00Z'],
+  ])('期間の終わりを選んだ後で起点 %s を付けると既定へ戻る', async (item, anchor) => {
+    setup()
+    const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
+    harness.extra.set('/api/inventory/impact?', impact)
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await answer(0)
+    const select = screen.getByLabelText('影響範囲の時点')
+    await waitFor(() => expect(select).not.toBeDisabled())
+    fireEvent.change(select, { target: { value: 'end' } })
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(2))
+    fireEvent.click(await rowButton(item))
+    fireEvent.click(within(screen.getByRole('list', { name: '出来事の時系列' })).getByRole('button', { name: 'ここを起点にする' }))
+    expect(select).toHaveValue('end')
+    await answer(1, populated({ anchor_utc: anchor }))
+    expect(select).toHaveValue('default')
+    await waitFor(() => expect(impact).toHaveBeenCalledTimes(3))
+    expect(new URL(impact.mock.calls[2][0], window.location.origin).searchParams.get('at')).toBe(anchor)
   })
 
   it('開くと「生成」を押さずに自動で読み込み、完了と件数をライブ領域で知らせる', async () => {
@@ -931,8 +1115,9 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       result: populated({ from_utc: '2026-03-10T00:00:00Z', to_utc: '2026-03-10T03:00:00Z' }),
       ...overrides,
     })
-    const openSnapshot = async (item: unknown, detail: unknown) => {
+    const openSnapshot = async (item: unknown, detail: unknown, impact?: (url: string) => Response) => {
       setup({ snapshots: [item] })
+      if (impact) harness.extra.set('/api/inventory/impact?', impact)
       harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () => jsonResponse(detail))
       renderTimeline()
       await answer(0, emptyViewResponse())
@@ -952,6 +1137,19 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       expect(window.location.hash).toContain('from=2026-03-10T00%3A00%3A00.000Z')
       // 再集計の要求は出ていない（最初の読み込みの 1 本だけ）
       expect(harness.calls).toHaveLength(1)
+    })
+
+    it('保存した結果の対象・起点・期間で影響範囲を取得する', async () => {
+      const savedRequest = { ...viewRequest, entity_moid: 'host-20', anchor: '2026-03-10T01:00:00Z' }
+      const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
+      await openSnapshot(listItem({ view_request: savedRequest }), detailOf({ view_request: savedRequest }), impact)
+      await screen.findByText('この vCenter は登録されていません。')
+      expect(harness.calls).toHaveLength(1)
+      expect(impact).toHaveBeenCalledTimes(1)
+      expect(Object.fromEntries(new URL(impact.mock.calls[0][0], window.location.origin).searchParams)).toEqual({
+        vcenter_id: VC, entity_moid: 'host-20',
+        from: '2026-03-10T00:00:00.000Z', to: '2026-03-10T03:00:00.000Z', at: '2026-03-10T01:00:00.000Z',
+      })
     })
 
     it('検知の 3 項目が無い保存済みの結果も表示する', async () => {
