@@ -177,7 +177,7 @@ describe('タイムラインで見る', () => {
     vi.mocked(apiGet).mockResolvedValue({ total: 2, items: [
       { ...base, id: 1, rule_name: 'CPU 高負荷', context_key: `${VC}:host-1`, delivery_status: 'succeeded', success: true,
         attempt_count: 1, notified_at: '2026-10-03T03:00:00Z', occurred_at: '2026-10-03T01:00:00Z',
-        vcenter_id: VC, entity_name: 'esx01' },
+        vcenter_id: VC, entity_name: 'esx01', entity_moid: 'host-1' },
       { ...base, id: 2, rule_name: 'スコア', rule_type: 'event_score', context_key: 'VmPoweredOffEvent',
         delivery_status: 'succeeded', success: true, attempt_count: 1,
         occurred_at: '2026-10-03T02:00:00Z', vcenter_id: null, entity_name: null },
@@ -190,11 +190,26 @@ describe('タイムラインで見る', () => {
     expect(mp.get('to')).toBe('2026-10-03T01:30:00.000Z')
     expect(mp.get('vcenter_id')).toBe(VC)
     expect(mp.get('entity')).toBe('esx01')
+    expect(mp.get('entity_moid')).toBe('host-1')
     const es = screen.getAllByRole('link', { name: /スコア・VmPoweredOffEvent（.*）をタイムラインで見る/ })[0]
     const ep = new URLSearchParams(es.getAttribute('href')!.split('?')[1])
     expect(ep.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
     expect(ep.has('vcenter_id')).toBe(false)
     expect(ep.has('entity')).toBe(false)
+  })
+
+  it('対象名を解決できない通知は vCenter と moid で開く', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [
+      { ...base, id: 1, rule_name: 'CPU 高負荷', context_key: `${VC}:host-1`, delivery_status: 'succeeded',
+        success: true, attempt_count: 1, occurred_at: '2026-10-03T01:00:00Z',
+        vcenter_id: VC, entity_name: null, entity_moid: 'host-1' },
+    ] })
+    show()
+    const link = await screen.findByRole('link', { name: /CPU 高負荷・.*host-1（.*）をタイムラインで見る/ })
+    const params = new URLSearchParams(link.getAttribute('href')!.split('?')[1])
+    expect(params.get('vcenter_id')).toBe(VC)
+    expect(params.get('entity_moid')).toBe('host-1')
+    expect(params.has('entity')).toBe(false)
   })
 
   it('occurred_at が無い（古いサーバ）ときは notified_at を起点にする', async () => {

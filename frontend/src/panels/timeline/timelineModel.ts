@@ -129,6 +129,7 @@ export function conditionsFromViewRequest(request: SavedIncidentTimelineViewRequ
     anchor: Number.isFinite(anchorMs) ? iso(anchorMs) : null,
     vcenterId: request.vcenter_id ?? '',
     entity: request.entity ?? '',
+    entityMoid: request.vcenter_id ? request.entity_moid?.trim() || null : null,
     minScore: request.min_score ?? DEFAULT_TIMELINE_MIN_SCORE,
     sources: sources.length > 0 ? sources : TIMELINE_SOURCE_KINDS,
     cpuThresholdPct: request.metric_threshold_cpu_pct ?? DEFAULT_METRIC_THRESHOLD_CPU_PCT,
@@ -147,7 +148,10 @@ export function buildViewRequest(conditions: TimelineConditions, range: Resolved
     metric_threshold_memory_pct: conditions.memoryThresholdPct,
   }
   if (conditions.anchor) body.anchor = conditions.anchor
-  if (conditions.vcenterId) body.vcenter_id = conditions.vcenterId
+  if (conditions.vcenterId) {
+    body.vcenter_id = conditions.vcenterId
+    if (conditions.entityMoid) body.entity_moid = conditions.entityMoid
+  }
   if (conditions.entity) body.entity = conditions.entity
   return body
 }

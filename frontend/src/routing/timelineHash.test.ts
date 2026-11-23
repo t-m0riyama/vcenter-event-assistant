@@ -17,6 +17,7 @@ const FIXED: TimelineConditions = {
   anchor: '2026-03-22T00:40:00.000Z',
   vcenterId: '11111111-1111-4111-8111-111111111111',
   entity: 'esx 01',
+  entityMoid: 'host-10',
   minScore: 40,
   sources: ['alert'],
   cpuThresholdPct: 90,
@@ -27,6 +28,7 @@ describe('timelineHash', () => {
   it('固定の期間と全条件を往復できる', () => {
     const hash = buildTimelineHash(FIXED)
     expect(hash).toContain('from=2026-03-22T00%3A00%3A00.000Z')
+    expect(hash).toContain('entity_moid=host-10')
     expect(parseTimelineHash(hash)).toEqual({ conditions: FIXED, issue: null })
   })
 
@@ -57,6 +59,12 @@ describe('timelineHash', () => {
     expect(parseTimelineHash('#/timeline?range=1h&anchor=bad')?.issue).toContain('anchor')
     expect(parseTimelineHash('#/timeline?range=1h&vcenter_id=not-a-uuid')?.issue).toContain('UUID')
     expect(parseTimelineHash('#/timeline?range=1h&vcenter_id=not-a-uuid')?.conditions.vcenterId).toBe('')
+  })
+
+  it.each(['', '&vcenter_id=not-a-uuid'])('vCenter が無いか読めない URL では moid を捨てて理由を返す（%s）', (vcenter) => {
+    const parsed = parseTimelineHash(`#/timeline?range=1h&entity=esx&entity_moid=host-10${vcenter}`)
+    expect(parsed?.issue).toContain('entity_moid')
+    expect(parsed?.conditions).toMatchObject({ entity: 'esx', entityMoid: null, vcenterId: '' })
   })
 
   it('範囲外の min_score と不明な sources は既定に落とす（issue にはしない）', () => {
@@ -172,7 +180,7 @@ describe('timelineEntryHash', () => {
     expect(hash).toContain('to=2026-03-22T01%3A10%3A00.000Z')
     expect(hash).not.toContain('vcenter_id')
     expect(hash).not.toContain('entity')
-    expect(timelineEntryHash({ at: '2026-03-22T01:00:00Z', vcenterId: '', entity: null })).not.toContain('entity')
+    expect(timelineEntryHash({ at: '2026-03-22T01:00:00Z', vcenterId: '', entity: null, entityMoid: 'host-10' })).not.toContain('entity')
   })
 
   it('Z の無い時刻は UTC として読む（ローカル時刻にしない）', () => {

@@ -115,6 +115,7 @@ export type IncidentTimelineViewRequest = {
   anchor?: string
   vcenter_id?: string
   entity?: string
+  entity_moid?: string | null
   min_score?: number
   sources?: TimelineSource[]
   metric_threshold_cpu_pct?: number
@@ -132,6 +133,7 @@ export const incidentTimelineViewRequestSchema = z.object({
   anchor: z.string().nullable().optional(),
   vcenter_id: z.string().nullable().optional(),
   entity: z.string().nullable().optional(),
+  entity_moid: z.string().nullish(),
   min_score: z.number().nullish(),
   sources: z.array(timelineSourceSchema).nullish(),
   metric_threshold_cpu_pct: z.number().nullish(),

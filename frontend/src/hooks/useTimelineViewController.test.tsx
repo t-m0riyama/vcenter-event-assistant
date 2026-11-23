@@ -156,6 +156,102 @@ describe('useTimelineViewController', () => {
     expect(result.current.entityInput).toBe('vm-a')
   })
 
+  it.each(['vm-b', 'vm-a'])('対象欄を編集して %s にすると、待ち時間のあとに名前だけで読み込む', async (name) => {
+    window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC_A}&entity=vm-a&entity_moid=vm-10`)
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await answer(0)
+    expect(harness.calls[0].body.entity_moid).toBe('vm-10')
+    act(() => result.current.setEntityInput('vm-'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+    })
+    act(() => result.current.setEntityInput(name))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TIMELINE_ENTITY_DEBOUNCE_MS - 100)
+    })
+    expect(harness.calls).toHaveLength(1)
+    expect(window.location.hash).toContain('entity_moid=vm-10')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+    })
+    await answer(1)
+    expect(harness.calls[1].body).toMatchObject({ entity: name, vcenter_id: VC_A })
+    expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+    expect(window.location.hash).not.toContain('entity_moid')
+    expect(harness.calls).toHaveLength(2)
+  })
+
+  it('対象欄の入力待ち中に moid 付きの対象を選ぶと、クリックの条件で 1 回だけ読み込む', async () => {
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await answer(0)
+    act(() => result.current.setEntityInput('入力途中'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+    })
+    act(() => result.current.filterByEntity('vm-a', VC_A, 'vm-10'))
+    await answer(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    expect(harness.calls).toHaveLength(2)
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', entity_moid: 'vm-10', vcenter_id: VC_A })
+    expect(window.location.hash).toContain('entity_moid=vm-10')
+    expect(result.current.entityInput).toBe('vm-a')
+    expect(result.current.entityInputEdited).toBe(false)
+  })
+
+  it('戻る・進むで moid のある条件と名前だけの条件を切り替え、入力待ちの編集を捨てる', async () => {
+    const moidHash = `/#/timeline?range=1h&vcenter_id=${VC_A}&entity=vm-a&entity_moid=vm-10`
+    const nameHash = `/#/timeline?range=1h&vcenter_id=${VC_A}&entity=vm-a`
+    window.history.replaceState(null, '', nameHash)
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await answer(0)
+    expect(harness.calls[0].body).not.toHaveProperty('entity_moid')
+
+    const navigateWhileEditing = async (hash: string, callIndex: number) => {
+      act(() => result.current.setEntityInput('入力途中'))
+      expect(result.current.entityInputEdited).toBe(true)
+      act(() => {
+        window.history.replaceState(null, '', hash)
+        window.dispatchEvent(new HashChangeEvent('hashchange'))
+      })
+      await answer(callIndex)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+      expect(harness.calls).toHaveLength(callIndex + 1)
+      expect(result.current.entityInput).toBe('vm-a')
+      expect(result.current.entityInputEdited).toBe(false)
+    }
+
+    await navigateWhileEditing(moidHash, 1)
+    expect(result.current.conditions).toMatchObject({ entity: 'vm-a', entityMoid: 'vm-10' })
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', entity_moid: 'vm-10', vcenter_id: VC_A })
+
+    await navigateWhileEditing(nameHash, 2)
+    expect(result.current.conditions).toMatchObject({ entity: 'vm-a', entityMoid: null })
+    expect(harness.calls[2].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC_A })
+    expect(harness.calls[2].body).not.toHaveProperty('entity_moid')
+  })
+
+  it.each(['vCenter の変更', '対象の解除'])('%s で moid を外す', async (operation) => {
+    window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC_A}&entity=vm-a&entity_moid=vm-10`)
+    const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
+    await answer(0)
+    expect(harness.calls[0].body.entity_moid).toBe('vm-10')
+    if (operation === 'vCenter の変更') {
+      act(() => result.current.setVcenterId(VC_B))
+    } else {
+      act(() => result.current.clearEntity())
+    }
+    await answer(1)
+    expect(harness.calls[1].body.vcenter_id).toBe(operation === 'vCenter の変更' ? VC_B : VC_A)
+    expect(harness.calls[1].body.entity).toBe(operation === 'vCenter の変更' ? 'vm-a' : undefined)
+    expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+    expect(window.location.hash).not.toContain('entity_moid')
+  })
+
   it('503 は待って 1 回だけ自動で再試行し、成功すれば表示する', async () => {
     const { result } = renderHook(() => useTimelineViewController(onError), { wrapper })
     await waitFor(() => expect(harness.calls).toHaveLength(1))

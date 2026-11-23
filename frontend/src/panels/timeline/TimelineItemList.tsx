@@ -19,7 +19,7 @@ type Props = {
   /** 最初の兆候などからの移動の要求。`nonce` が変わるたびにスクロールしてフォーカスする。 */
   reveal: { id: string; nonce: number } | null
   guideLoader: GuideLoader
-  onFilterEntity: (entityName: string, vcenterId: string | null | undefined) => void
+  onFilterEntity: (entityName: string, vcenterId: string | null | undefined, entityMoid?: string | null) => void
   onSetAnchor: (timestampUtc: string) => void
   /** 渡すと、vCenter のある行に「グラフで開く」を出す。 */
   onOpenInMetrics?: (focus: MetricsFocus) => void
@@ -227,7 +227,11 @@ function ItemRow({
           {item.kind === 'event' ? <TimelineEventGuide item={item} loader={guideLoader} /> : null}
           <div className="timeline-row__actions">
             {item.entity_name ? (
-              <button type="button" className="btn btn--gray" onClick={() => onFilterEntity(item.entity_name!, item.vcenter_id)}>
+              <button
+                type="button"
+                className="btn btn--gray"
+                onClick={() => onFilterEntity(item.entity_name!, item.vcenter_id, item.vcenter_id ? item.ref.entity_moid : undefined)}
+              >
                 この対象で絞る
               </button>
             ) : null}

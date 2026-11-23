@@ -31,6 +31,7 @@ export type TimelineConditions = {
   readonly anchor: string | null
   readonly vcenterId: string
   readonly entity: string
+  readonly entityMoid: string | null
   readonly minScore: number
   readonly sources: readonly TimelineSourceKind[]
   /** CPU 使用率の超過区間のしきい値（%）。ディスクとネットワークは対象外（値が KB/s のため）。 */
@@ -46,6 +47,7 @@ export const DEFAULT_TIMELINE_CONDITIONS: TimelineConditions = {
   anchor: null,
   vcenterId: '',
   entity: '',
+  entityMoid: null,
   minScore: DEFAULT_TIMELINE_MIN_SCORE,
   sources: TIMELINE_SOURCE_KINDS,
   cpuThresholdPct: DEFAULT_METRIC_THRESHOLD_CPU_PCT,
@@ -127,6 +129,11 @@ export function parseTimelineHash(hash: string): ParsedTimelineHash | null {
     safeVcenterId = ''
   }
 
+  const entityMoid = params.get('entity_moid')?.trim() || null
+  if (entityMoid && !safeVcenterId) {
+    issues.push('URL の entity_moid を使うには有効な vcenter_id が必要です。')
+  }
+
   const cpuThresholdPct = readThreshold(params, 'cpu_threshold', DEFAULT_METRIC_THRESHOLD_CPU_PCT, issues)
   const memoryThresholdPct = readThreshold(params, 'memory_threshold', DEFAULT_METRIC_THRESHOLD_MEMORY_PCT, issues)
 
@@ -140,6 +147,7 @@ export function parseTimelineHash(hash: string): ParsedTimelineHash | null {
       anchor,
       vcenterId: safeVcenterId,
       entity: (params.get('entity') ?? '').trim(),
+      entityMoid: safeVcenterId ? entityMoid : null,
       minScore:
         params.get('min_score') !== null && Number.isInteger(minScoreRaw) && minScoreRaw >= 0 && minScoreRaw <= 100
           ? minScoreRaw
@@ -174,6 +182,7 @@ export function buildTimelineHash(conditions: TimelineConditions): string {
   if (conditions.anchor) params.set('anchor', conditions.anchor)
   if (conditions.vcenterId) params.set('vcenter_id', conditions.vcenterId)
   if (conditions.entity) params.set('entity', conditions.entity)
+  if (conditions.vcenterId && conditions.entityMoid) params.set('entity_moid', conditions.entityMoid)
   if (conditions.minScore !== DEFAULT_TIMELINE_MIN_SCORE) params.set('min_score', String(conditions.minScore))
   if (conditions.sources.length !== TIMELINE_SOURCE_KINDS.length) params.set('sources', conditions.sources.join(','))
   if (conditions.cpuThresholdPct !== DEFAULT_METRIC_THRESHOLD_CPU_PCT) {
@@ -202,8 +211,9 @@ export type TimelineEntryInput = {
   /** 起点の時刻（ISO 文字列。`Z` が無ければ UTC として読む）。 */
   readonly at: string | null | undefined
   readonly vcenterId?: string | null
-  /** 対象名（部分一致で絞る）。 */
+  /** 対象名（moid が無ければ部分一致で絞る）。 */
   readonly entity?: string | null
+  readonly entityMoid?: string | null
   readonly halfWidthMs?: number
 }
 
@@ -223,5 +233,6 @@ export function timelineEntryHash(input: TimelineEntryInput): string | null {
     anchor: new Date(anchorMs).toISOString(),
     vcenterId: input.vcenterId ?? '',
     entity: input.entity?.trim() ?? '',
+    entityMoid: input.entityMoid?.trim() || null,
   })
 }

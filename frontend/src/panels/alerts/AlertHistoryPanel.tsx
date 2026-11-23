@@ -250,6 +250,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                         at={h.occurred_at ?? h.notified_at}
                         vcenterId={h.vcenter_id}
                         entity={h.entity_name}
+                        entityMoid={h.vcenter_id ? h.entity_moid : undefined}
                         ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}・${h.entity_name || h.context_key}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
                       />
                       {canDelete && (

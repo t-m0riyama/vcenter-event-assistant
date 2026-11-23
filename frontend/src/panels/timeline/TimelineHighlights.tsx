@@ -8,7 +8,7 @@ type Props = {
   listedIds: ReadonlySet<string>
   timeZone: string
   onRevealItem: (id: string) => void
-  onFilterEntity: (entityName: string, vcenterId: string | null | undefined) => void
+  onFilterEntity: (entityName: string, vcenterId: string | null | undefined, entityMoid?: string | null) => void
 }
 
 function firstSignalLabel(item: TimelineViewItem): string {
@@ -57,7 +57,7 @@ export function TimelineHighlights({ highlights, listedIds, timeZone, onRevealIt
                   <button
                     type="button"
                     className="btn btn--gray timeline-highlights__link"
-                    onClick={() => onFilterEntity(e.entity_name, e.vcenter_id)}
+                    onClick={() => onFilterEntity(e.entity_name, e.vcenter_id, e.vcenter_id ? e.entity_moid : undefined)}
                   >
                     {e.entity_name}
                   </button>{' '}
