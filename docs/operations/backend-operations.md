@@ -56,7 +56,7 @@
 ### 2.4 設定依存の監視ポイント
 
 - 収集周期:
-  - `EVENT_POLL_INTERVAL_SECONDS`
+  - `EVENT_POLL_INTERVAL_SECONDS`（組み込みのイベントと完了したタスクの収集間隔。既定 120 秒）
   - `PERF_SAMPLE_INTERVAL_SECONDS`
 - アラート評価周期:
   - `ALERT_EVAL_INTERVAL_SECONDS`

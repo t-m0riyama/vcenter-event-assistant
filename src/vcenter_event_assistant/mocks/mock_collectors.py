@@ -87,6 +87,56 @@ def fetch_mock_events_blocking(
     return rows, now
 
 
+def fetch_mock_tasks_blocking(since: datetime | None) -> list[dict[str, Any]]:
+    """同じ 30 分枠では、同じキーと完了時刻でタスクを返す。
+
+    ``since`` は実収集との互換のために受け取り、重複は取り込み時に除く。
+    """
+    _ = since
+    now = datetime.now(timezone.utc)
+    interval = int(now.timestamp()) // (30 * 60)
+    interval_start = datetime.fromtimestamp(interval * 30 * 60, tz=timezone.utc)
+    entity = EventEntityInput(
+        "entity",
+        entity_moid=MOCK_VM_MOID,
+        entity_name="vm-mock-web-01",
+        entity_type="VirtualMachine",
+        is_primary=True,
+    )
+    examples = (
+        ("success", "VirtualMachine.powerOn", "info", "succeeded"),
+        (
+            "error",
+            "VirtualMachine.powerOn",
+            "error",
+            "failed: Invalid power state [InvalidPowerState]",
+        ),
+        ("canceled", "VirtualMachine.migrate", "warning", "was canceled"),
+    )
+    rows = []
+    for i, (result, operation, severity, outcome) in enumerate(examples):
+        completed = interval_start - timedelta(minutes=3 - i)
+        started = completed - timedelta(seconds=12.3)
+        rows.append(
+            {
+                "occurred_at": completed,
+                "event_type": f"task.{result}.{operation}",
+                "message": (
+                    f"Task {operation} {outcome} "
+                    f"(started: {started.isoformat()}, duration: 12.3s, reason: user)"
+                ),
+                "severity": severity,
+                "user_name": "mock-user",
+                "entity_name": entity.entity_name,
+                "entity_type": entity.entity_type,
+                "entity_moid": entity.entity_moid,
+                "entities": (entity,),
+                "vmware_key": -(interval * 3 + i + 1),
+            }
+        )
+    return rows
+
+
 def sample_mock_hosts_blocking() -> list[dict[str, Any]]:
     """ホスト／Datastore の合成メトリクス行を返す。"""
     now = datetime.now(timezone.utc)

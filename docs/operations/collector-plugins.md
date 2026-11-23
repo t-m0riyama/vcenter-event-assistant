@@ -14,6 +14,11 @@ Python コードであり、アプリケーションと同じ権限で動作し�
 `VEA_COLLECTOR_CONFIG_FILE` に TOML ファイルを指定します。組み込みコレクタは既定で有効です。
 外部コレクタは、テーブルで `enabled = true` を設定しない限り無効です。
 
+`builtin.vcenter.events` と `builtin.vcenter.tasks` の既定の実行間隔は
+`EVENT_POLL_INTERVAL_SECONDS`（既定 120 秒）で決まります。個別に変更する場合は
+各コレクタの `interval_seconds` を指定してください。完了したタスクの結果の取り込みを
+止めるには、`builtin.vcenter.tasks` を無効にします。
+
 ```toml
 [collectors."builtin.vcenter.events"]
 enabled = true

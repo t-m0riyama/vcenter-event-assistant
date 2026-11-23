@@ -23,6 +23,7 @@ from vcenter_event_assistant.plugins.config import CollectorConfig
 from vcenter_event_assistant.plugins.registry import (
     CollectorRegistration,
     CollectorRegistry,
+    _legacy_interval,
     build_collector_registry,
     set_collector_registry,
     start_collector_registry,
@@ -45,12 +46,13 @@ class SampleCollector(StubCollector):
     )
 
 
-def test_registry_contains_four_builtin_collectors(
+def test_registry_contains_five_builtin_collectors(
     no_external_collectors: None,
 ) -> None:
     registry = build_collector_registry(Settings())
     assert {item.plugin_id for item in registry.enabled()} == {
         "builtin.vcenter.events",
+        "builtin.vcenter.tasks",
         "builtin.vcenter.host_quickstats",
         "builtin.vcenter.host_performance",
         "builtin.vcenter.datastore_capacity",
@@ -59,6 +61,27 @@ def test_registry_contains_four_builtin_collectors(
         "host.cpu.usage_pct",
         "datastore.space.used_bytes",
     }
+
+
+@pytest.mark.parametrize(
+    ("plugin_id", "expected"),
+    [
+        ("builtin.vcenter.events", 45),
+        ("builtin.vcenter.tasks", 45),
+        ("builtin.vcenter.host_quickstats", 180),
+        ("builtin.vcenter.host_performance", 180),
+        ("builtin.vcenter.datastore_capacity", 180),
+        ("builtin.vcenter.future", 90),
+        ("example.host.temperature", 90),
+    ],
+)
+def test_legacy_interval_only_overrides_known_collectors(plugin_id, expected):
+    settings = Settings(
+        event_poll_interval_seconds=45, perf_sample_interval_seconds=180
+    )
+    plugin = StubCollector(stub_manifest(id=plugin_id, default_interval_seconds=90))
+
+    assert _legacy_interval(settings, plugin_id, plugin) == expected
 
 
 def test_registry_toml_can_disable_builtin_and_reports_missing_plugin(
