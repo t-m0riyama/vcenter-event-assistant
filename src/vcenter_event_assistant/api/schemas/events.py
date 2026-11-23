@@ -33,6 +33,7 @@ class EventRead(BaseModel):
     user_name: str | None
     entity_name: str | None
     entity_type: str | None
+    entity_moid: str | None
     notable_score: int
     notable_tags: list | None
     user_comment: str | None = None

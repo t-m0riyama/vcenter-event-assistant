@@ -13,6 +13,7 @@ export type EventCsvRow = {
   user_name?: string | null
   entity_name?: string | null
   entity_type?: string | null
+  entity_moid?: string | null
   notable_score: number
   notable_tags?: unknown[] | null
   user_comment?: string | null
@@ -28,6 +29,7 @@ const HEADER = [
   'user_name',
   'entity_name',
   'entity_type',
+  'entity_moid',
   'notable_score',
   'notable_tags',
   'user_comment',
@@ -57,6 +59,7 @@ export function eventRowsToCsv(rows: EventCsvRow[]): string {
         escapeCsvField(e.user_name ?? ''),
         escapeCsvField(e.entity_name ?? ''),
         escapeCsvField(e.entity_type ?? ''),
+        escapeCsvField(e.entity_moid ?? ''),
         String(e.notable_score),
         notableTagsToField(e.notable_tags),
         escapeCsvField(e.user_comment ?? ''),

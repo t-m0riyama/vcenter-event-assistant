@@ -18,6 +18,7 @@ export function eventRowToCsvRow(
     user_name: e.user_name ?? null,
     entity_name: e.entity_name ?? null,
     entity_type: e.entity_type ?? null,
+    entity_moid: e.entity_moid ?? null,
     notable_score: e.notable_score,
     notable_tags: e.notable_tags as unknown[] | null,
     user_comment: e.user_comment ?? null,

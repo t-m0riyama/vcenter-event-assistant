@@ -633,6 +633,7 @@ async def test_top_notable_events_includes_type_guide_action_required(client: As
                 occurred_at=base,
                 event_type="NeedActionEvt",
                 message="msg",
+                entity_moid="host-101",
                 vmware_key=1,
                 notable_score=55,
             )
@@ -643,6 +644,7 @@ async def test_top_notable_events_includes_type_guide_action_required(client: As
     top = resp.json()["top_notable_events"]
     assert len(top) >= 1
     row = next(x for x in top if x["event_type"] == "NeedActionEvt")
+    assert row["entity_moid"] == "host-101"
     assert row["type_guide"] is not None
     assert row["type_guide"]["action_required"] is True
     assert row["type_guide"]["general_meaning"] == "説明"
