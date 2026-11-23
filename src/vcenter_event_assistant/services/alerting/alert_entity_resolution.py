@@ -3,9 +3,10 @@
 - ``metric_threshold``: ``context_key`` は ``{vcenter_id}:{entity_moid}``。vCenter と moid を取り出し、
   **そのアラートの ``occurred_at`` の時点の** ``MetricSample`` の名前で対象名を引く（``resolve_metric_entities_at``）。
   旧形式（moid だけ）は vCenter が分からず、moid は vCenter をまたいで重複し得るので、解決しない。
+- ``event_pattern``: vCenter と moid の組ごとに、保持されている最新のイベントの子表から対象を解決する。
 - ``event_score``: ``context_key`` はイベント種別。vCenter も対象も持たない。
 
-名前をアラートの時刻だけで決めるので、表示期間（タイムライン）やページの区切り（通知履歴）が変わっても
+メトリクスの名前はアラートの時刻で決めるので、表示期間（タイムライン）やページの区切り（通知履歴）が変わっても
 同じアラートは同じ名前になる。通知履歴の行のリンク（``entity_name`` で絞る）で開いたタイムラインに、
 その行自身が必ず出るのはこのため。
 """
@@ -18,15 +19,18 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, TypeVar
 
-from sqlalchemy import Integer, column, select
+from sqlalchemy import Integer, and_, column, select
 from sqlalchemy import values as sql_values
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
-from vcenter_event_assistant.db.models import MetricSample
-from vcenter_event_assistant.services.alerting.alert_eval_common import is_vcenter_scoped_context_key
+from vcenter_event_assistant.db.models import EventEntity, EventRecord, MetricSample
+from vcenter_event_assistant.services.alerting.alert_eval_common import (
+    is_vcenter_scoped_context_key,
+    parse_event_pattern_context_key,
+)
 
 # アラートの時刻からさかのぼって、メトリクスの対象名を探す幅の最小値。metric_name_lookback を参照。
 _METRIC_NAME_LOOKBACK_MIN = timedelta(hours=6)
@@ -237,3 +241,67 @@ async def _resolve_chunk(
         if name:
             out[chunk[int(n)]] = ResolvedEntity(name=name, entity_type=etype or None)
     return out
+
+
+EventPatternEntityKey = tuple[uuid.UUID, str]
+
+
+async def resolve_event_pattern_entities(
+    session: AsyncSession, context_keys: Iterable[str],
+) -> dict[EventPatternEntityKey, ResolvedEntity]:
+    """vCenter と moid の組ごとに、最新のイベントの子表から名前と種類を引く。"""
+    keys = sorted({parsed[:2] for key in context_keys if (parsed := parse_event_pattern_context_key(key)) is not None})
+    resolved: dict[EventPatternEntityKey, ResolvedEntity] = {}
+    for batch in chunks(keys, IN_CHUNK_SIZE):
+        table = EventEntity.__table__.c
+        probes = (
+            sql_values(
+                column("vcenter_id", table.vcenter_id.type),
+                column("entity_moid", table.entity_moid.type),
+            )
+            .data(batch)
+            .cte("pattern_entity_probes")
+        )
+        target_moid = EventEntity.entity_moid == probes.c.entity_moid
+        event_has_target = (
+            select(EventEntity.id)
+            .where(EventEntity.event_id == EventRecord.id, target_moid)
+            .correlate(EventRecord, probes)
+            .exists()
+        )
+        # vCenter のイベントを新しい方からたどり、対象を含む最初のイベントで止める。
+        latest_event_id = (
+            select(EventRecord.id)
+            .where(EventRecord.vcenter_id == probes.c.vcenter_id, event_has_target)
+            .order_by(EventRecord.occurred_at.desc(), EventRecord.id.desc())
+            .limit(1)
+            .correlate(probes)
+            .scalar_subquery()
+        )
+        # 同じイベントの子表だけを、パターン判定と同じ順で並べる。
+        has_name = and_(EventEntity.entity_name.is_not(None), EventEntity.entity_name != "")
+        entity_id = (
+            select(EventEntity.id)
+            .where(EventEntity.event_id == latest_event_id, target_moid)
+            .order_by(has_name.desc(), EventEntity.entity_type.is_not(None).desc(), EventEntity.id)
+            .limit(1)
+            .correlate(probes)
+            .scalar_subquery()
+        )
+        # 保持期間などで子表から消えた対象は、vCenter のイベントをたどる前に除く。
+        target_exists = (
+            select(EventEntity.id)
+            .where(EventEntity.vcenter_id == probes.c.vcenter_id, target_moid)
+            .correlate(probes)
+            .exists()
+        )
+        stmt = (
+            select(probes.c.vcenter_id, probes.c.entity_moid, EventEntity.entity_name, EventEntity.entity_type)
+            .select_from(probes)
+            .join(EventEntity, EventEntity.id == entity_id)
+            .where(target_exists)
+        )
+        for vid, moid, name, entity_type in (await session.execute(stmt)).all():
+            if name:
+                resolved[vid, moid] = ResolvedEntity(name, entity_type)
+    return resolved

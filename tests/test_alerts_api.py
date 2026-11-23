@@ -740,3 +740,109 @@ async def test_alerts_history_occurred_at_stays_when_notified_at_advances(client
     after = (await _history_by_id(client))[row_id]
     assert after["occurred_at"] == before["occurred_at"]
     assert after["notified_at"] != before["notified_at"]
+
+
+@pytest.mark.asyncio
+async def test_event_pattern_rule_create_patch_and_import(client: AsyncClient):
+    rule = {
+        "name": "APD",
+        "rule_type": "event_pattern",
+        "alert_level": "error",
+        "config": {"pattern_ids": ["apd-timeout"], "cooldown_minutes": 10},
+    }
+    invalid_config = {"pattern_ids": ["unknown"], "cooldown_minutes": 10}
+    invalid_rule = {**rule, "config": invalid_config}
+    assert (await client.post("/api/alerts/rules", json=invalid_rule)).status_code == 422
+    created = await client.post("/api/alerts/rules", json=rule)
+    assert created.status_code == 201
+    stored = created.json()
+    path = f"/api/alerts/rules/{stored['id']}"
+    assert (await client.patch(path, json={
+        "revision": stored["revision"], "config": invalid_config,
+    })).status_code == 422
+    updated = await client.patch(path, json={
+        "revision": stored["revision"], "config": {"pattern_ids": [], "cooldown_minutes": 5},
+    })
+    assert updated.status_code == 200
+    assert updated.json()["config"] == {"pattern_ids": [], "cooldown_minutes": 5}
+    assert (await client.post("/api/alerts/rules/import", json={"rules": [invalid_rule]})).status_code == 422
+    assert (await client.post("/api/alerts/rules/import", json={"rules": [rule]})).status_code == 200
+    listed = await client.get("/api/alerts/rules")
+    assert listed.json()[0]["config"] == rule["config"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("rule_type", "config", "status"), [
+    ("metric_threshold", {"metric_key": "x", "threshold": 150}, 200),
+    ("event_score", {"threshold": 150}, 422),
+    ("event_score", {"cooldown_minutes": 0}, 422),
+])
+async def test_alert_rule_patch_config_validation_by_type(client, rule_type, config, status):
+    create = await client.post("/api/alerts/rules", json={
+        "name": "Validation",
+        "rule_type": rule_type,
+        "alert_level": "warning",
+        "config": {"metric_key": "x", "threshold": 80},
+    })
+    assert create.status_code == 201
+    rule = create.json()
+    result = await client.patch(f"/api/alerts/rules/{rule['id']}", json={
+        "revision": rule["revision"], "config": config,
+    })
+    assert result.status_code == status
+    if status == 200:
+        assert result.json()["config"] == config
+    else:
+        assert (await client.get("/api/alerts/rules")).json() == [rule]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["threshold", "cooldown_minutes"])
+@pytest.mark.parametrize("value", ["Infinity", "-Infinity", "NaN"])
+async def test_event_score_rejects_nonfinite_config_on_create_patch_and_import(client, field, value):
+    rule_json = (
+        '{"name":"Score","rule_type":"event_score","alert_level":"warning",'
+        f'"config":{{"{field}":{value}}}}}'
+    )
+    headers = {"Content-Type": "application/json"}
+    result = await client.post("/api/alerts/rules", headers=headers, content=rule_json)
+    assert result.status_code == 422
+    result = await client.post(
+        "/api/alerts/rules/import", headers=headers, content='{"rules":[' + rule_json + ']}',
+    )
+    assert result.status_code == 422
+    created = await client.post("/api/alerts/rules", json={
+        "name": "Score", "rule_type": "event_score", "alert_level": "warning",
+    })
+    assert created.status_code == 201
+    rule = created.json()
+    result = await client.patch(
+        f"/api/alerts/rules/{rule['id']}", headers=headers,
+        content=f'{{"revision":"{rule["revision"]}","config":{{"{field}":{value}}}}}',
+    )
+    assert result.status_code == 422
+    assert (await client.get("/api/alerts/rules")).json() == [rule]
+
+
+@pytest.mark.asyncio
+async def test_event_pattern_normalizes_duplicate_ids_before_create_patch_and_import(client):
+    entry = {"name": "Pattern", "rule_type": "event_pattern", "alert_level": "warning"}
+    ids = ["ha-failover", "apd-timeout"]
+    config = {"pattern_ids": [ids[0], ids[1], ids[0], ids[1]], "cooldown_minutes": 5}
+    created = await client.post("/api/alerts/rules", json={**entry, "config": config})
+    assert created.status_code == 201
+    rule = created.json()
+    assert rule["config"] == {**config, "pattern_ids": ids}
+
+    patched = await client.patch(f"/api/alerts/rules/{rule['id']}", json={
+        "revision": rule["revision"], "config": {**config, "pattern_ids": config["pattern_ids"][::-1]},
+    })
+    assert patched.status_code == 200
+    assert patched.json()["config"] == {**config, "pattern_ids": ids[::-1]}
+
+    imported = await client.post("/api/alerts/rules/import", json={
+        "rules": [{**entry, "config": config}],
+    })
+    assert imported.status_code == 200
+    [stored] = (await client.get("/api/alerts/rules")).json()
+    assert stored["config"] == {**config, "pattern_ids": ids}

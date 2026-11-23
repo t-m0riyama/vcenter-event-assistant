@@ -14,6 +14,8 @@
  *   「編集を破棄して読み直す」を選ぶまで保存させない（黙ってどちらかで上書きしない）
  */
 
+import type { AlertRuleRow } from '../../api/schemas'
+
 export type AlertLevel = 'critical' | 'error' | 'warning'
 
 export interface EditDraft {
@@ -23,6 +25,7 @@ export interface EditDraft {
   threshold: number
   metric_key: string
   cooldown_minutes: number
+  pattern_ids: string[]
 }
 
 export interface AlertRuleDraftSource {
@@ -30,10 +33,10 @@ export interface AlertRuleDraftSource {
   created_at: string
   revision: string
   name: string
-  rule_type: 'event_score' | 'metric_threshold'
+  rule_type: AlertRuleRow['rule_type']
   alert_level: string
   is_enabled: boolean
-  config: { threshold?: number; metric_key?: string; cooldown_minutes?: number }
+  config: { threshold?: number; metric_key?: string; cooldown_minutes?: number; pattern_ids?: string[] }
 }
 
 export interface AlertRuleDraft {
@@ -63,11 +66,22 @@ export function editValuesFromRule(rule: AlertRuleDraftSource): EditDraft {
     threshold: Number(rule.config.threshold ?? 0),
     metric_key: rule.config.metric_key ?? '',
     cooldown_minutes: Number(rule.config.cooldown_minutes ?? 10),
+    pattern_ids: rule.config.pattern_ids ?? [],
   }
 }
 
 function fieldsOf(values: Partial<EditDraft>): (keyof EditDraft)[] {
   return Object.keys(values) as (keyof EditDraft)[]
+}
+
+/** パターンの選択は順序に関係なく比べる。 */
+export function samePatternIds(left: readonly string[], right: readonly string[]): boolean {
+  const ids = new Set(left)
+  return ids.size === new Set(right).size && right.every((id) => ids.has(id))
+}
+
+function sameValue(left: EditDraft[keyof EditDraft] | undefined, right: EditDraft[keyof EditDraft]): boolean {
+  return Array.isArray(left) && Array.isArray(right) ? samePatternIds(left, right) : left === right
 }
 
 /** 編集欄に出す値（サーバの値に、利用者が変えた項目だけを重ねる）。 */
@@ -94,7 +108,7 @@ export function applyAlertRuleEdit(
   }
   const edits: Partial<EditDraft> = { ...prev.edits, ...patch }
   for (const field of fieldsOf(edits)) {
-    if (edits[field] === prev.base[field]) delete edits[field]
+    if (sameValue(edits[field], prev.base[field])) delete edits[field]
   }
   const next = { ...drafts }
   if (fieldsOf(edits).length === 0) delete next[key]
@@ -153,11 +167,11 @@ export function reconcileAlertRuleDrafts(
     let conflict = false
     for (const field of fieldsOf(draft.edits)) {
       const mine = draft.edits[field]
-      if (mine === current[field]) continue
-      if (current[field] !== draft.base[field]) conflict = true
+      if (sameValue(mine, current[field])) continue
+      if (!sameValue(current[field], draft.base[field])) conflict = true
       ;(edits as Record<string, unknown>)[field] = mine
     }
-    const baseChanged = fieldsOf(current).some((field) => current[field] !== draft.base[field])
+    const baseChanged = fieldsOf(current).some((field) => !sameValue(current[field], draft.base[field]))
     const editsChanged = fieldsOf(edits).length !== fieldsOf(draft.edits).length
     if (fieldsOf(edits).length === 0) {
       changed = true

@@ -74,3 +74,28 @@ describe('buildAlertRulesExportPayload', () => {
     ])
   })
 })
+
+it('障害パターンの設定を読み込み、パターン ID と再通知間隔の型を検証する', () => {
+  const rule = {
+    name: 'APD', rule_type: 'event_pattern', is_enabled: true, alert_level: 'error',
+    config: { pattern_ids: ['apd-timeout'], cooldown_minutes: 10 },
+  }
+  const file = (config: unknown) => ({
+    format: 'vea-alert-rules', version: 1, rules: [{ ...rule, config }],
+  })
+  expect(alertRulesFileSchema.parse(file(rule.config)).rules[0]).toEqual(rule)
+  expect(alertRulesFileSchema.safeParse(file({ pattern_ids: 'apd-timeout' })).success).toBe(false)
+  expect(alertRulesFileSchema.safeParse(file({ cooldown_minutes: 0 })).success).toBe(false)
+})
+
+it('インポートする障害パターン ID を初出順でまとめる', () => {
+  const result = alertRulesFileSchema.parse({
+    format: 'vea-alert-rules',
+    version: 1,
+    rules: [{
+      name: '複数の障害パターン', rule_type: 'event_pattern', is_enabled: true, alert_level: 'error',
+      config: { pattern_ids: ['ha-failover', 'apd-timeout', 'ha-failover'], cooldown_minutes: 10 },
+    }],
+  })
+  expect(result.rules[0].config).toEqual({ pattern_ids: ['ha-failover', 'apd-timeout'], cooldown_minutes: 10 })
+})

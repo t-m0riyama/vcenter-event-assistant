@@ -136,6 +136,7 @@ class IncidentTimelineItemRef(BaseModel):
     alert_history_id: int | None = None
     alert_rule_id: int | None = None
     alert_rule_name: str | None = None
+    alert_rule_type: str | None = None
     alert_state: str | None = None
     metric_key: str | None = None
     entity_moid: str | None = None

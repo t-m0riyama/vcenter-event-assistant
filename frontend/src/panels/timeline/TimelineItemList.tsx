@@ -226,7 +226,7 @@ function ItemRow({
           </dl>
           {item.kind === 'event' ? <TimelineEventGuide item={item} loader={guideLoader} /> : null}
           <div className="timeline-row__actions">
-            {item.entity_name ? (
+            {item.entity_name && item.ref.alert_rule_type !== 'event_pattern' ? (
               <button
                 type="button"
                 className="btn btn--gray"

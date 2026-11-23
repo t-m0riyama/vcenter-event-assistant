@@ -5,7 +5,7 @@ export const alertRuleConfigSchema = z.record(z.string(), z.unknown())
 export const alertRuleRowSchema = z.object({
   id: z.number(),
   name: z.string(),
-  rule_type: z.enum(['event_score', 'metric_threshold']),
+  rule_type: z.enum(['event_score', 'metric_threshold', 'event_pattern']),
   is_enabled: z.boolean(),
   alert_level: z.enum(['critical', 'error', 'warning']),
   config: alertRuleConfigSchema,
@@ -21,7 +21,7 @@ export const alertRuleExportEntrySchema = z.object({
     .string()
     .transform((s) => s.trim())
     .pipe(z.string().min(1).max(255)),
-  rule_type: z.enum(['event_score', 'metric_threshold']),
+  rule_type: z.enum(['event_score', 'metric_threshold', 'event_pattern']),
   is_enabled: z.boolean(),
   alert_level: z.enum(['critical', 'error', 'warning']),
   config: alertRuleConfigSchema,
@@ -40,7 +40,20 @@ export const alertRulesFileSchema = z
   .superRefine((data, ctx) => {
     const seen = new Set<string>()
     for (let i = 0; i < data.rules.length; i += 1) {
-      const ruleName = data.rules[i].name
+      const { name: ruleName, rule_type, config } = data.rules[i]
+      if (rule_type === 'event_pattern') {
+        const { pattern_ids, cooldown_minutes } = config
+        if (pattern_ids !== undefined && (
+          !Array.isArray(pattern_ids) || pattern_ids.some((id) => typeof id !== 'string')
+        )) {
+          ctx.addIssue({ code: 'custom', message: 'pattern_ids', path: ['rules', i, 'config', 'pattern_ids'] })
+        }
+        if (cooldown_minutes !== undefined && (
+          typeof cooldown_minutes !== 'number' || !Number.isInteger(cooldown_minutes) || cooldown_minutes < 1
+        )) {
+          ctx.addIssue({ code: 'custom', message: 'cooldown_minutes', path: ['rules', i, 'config', 'cooldown_minutes'] })
+        }
+      }
       if (seen.has(ruleName)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -52,6 +65,13 @@ export const alertRulesFileSchema = z
       seen.add(ruleName)
     }
   })
+  .transform((file) => ({
+    ...file,
+    rules: file.rules.map((rule) => {
+      if (rule.rule_type !== 'event_pattern' || !Array.isArray(rule.config.pattern_ids)) return rule
+      return { ...rule, config: { ...rule.config, pattern_ids: [...new Set(rule.config.pattern_ids)] } }
+    }),
+  }))
 
 export type AlertRulesFile = z.infer<typeof alertRulesFileSchema>
 

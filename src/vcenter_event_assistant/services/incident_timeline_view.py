@@ -51,6 +51,7 @@ from vcenter_event_assistant.db.models import (
 )
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     IN_CHUNK_SIZE,
+    EventPatternEntityKey,
     MetricProbe,
     ResolvedEntity,
     chunks,
@@ -58,15 +59,21 @@ from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     metric_key_of,
     metric_name_lookback,
     metric_probe,
+    resolve_event_pattern_entities,
     resolve_metric_entities_at,
 )
-from vcenter_event_assistant.services.alerting.alert_eval_common import metric_context_key
+from vcenter_event_assistant.services.alerting.alert_eval_common import (
+    event_pattern_context_key,
+    metric_context_key,
+    parse_event_pattern_context_key,
+)
 from vcenter_event_assistant.services.chat.aggregation_limiter import (
     AggregationBusy,
     AggregationLimitExceeded,
     aggregation_slot,
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
+from vcenter_event_assistant.services.event_patterns.definitions import BUILTIN_PATTERNS
 from vcenter_event_assistant.services.event_patterns.query import query_event_patterns
 from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive, equals_case_insensitive
@@ -1085,10 +1092,11 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
       （``resolve_metric_entities_at``。表示期間や居合わせるほかのアラートに依存しないので、通知履歴と同じ名前になる）。
       旧形式（moid だけ）の key は vCenter が分からず、moid は vCenter をまたいで重複し得るので、
       誤った対象に紐付けないよう名前は解決しない。
+    - ``event_pattern``: ``context_key`` の vCenter と moid で、保持されている最新のイベントの対象名を引く。
     - ``event_score``: ``context_key`` はイベント種別。対象と vCenter は持たない。
     - vCenter の絞り込みは行数の上限より前に SQL で行う。event_score は vCenter を持たないので
       全 vCenter にまたがる情報として残し、旧形式の metric の key は取り違えを避けるため除く。
-    - moid の指定は metric_threshold の key の完全一致で SQL で絞る。名前だけの指定は解決後の名前に当てる。
+    - moid の指定は metric_threshold と event_pattern の key の完全一致で SQL で絞る。名前だけの指定は解決後の名前に当てる。
     """
     stmt = (
         select(
@@ -1112,17 +1120,27 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     )
     if scope.entity_moid is not None and scope.vcenter_id is not None:
         stmt = stmt.where(
-            AlertRule.rule_type == "metric_threshold",
-            AlertHistory.context_key == metric_context_key(scope.vcenter_id, scope.entity_moid),
-        )
-    elif scope.vcenter_id is not None:
-        # 行数の上限より前に vCenter で絞る。metric は context_key が "{vcenter_id}:" で始まるものだけ
-        # （旧形式の moid だけの key は別の vCenter の同じ moid と取り違えるので除く）、event_score は
-        # vCenter を持たないので全 vCenter にまたがる情報として残す。
-        stmt = stmt.where(
             or_(
                 and_(
                     AlertRule.rule_type == "metric_threshold",
+                    AlertHistory.context_key == metric_context_key(scope.vcenter_id, scope.entity_moid),
+                ),
+                and_(
+                    AlertRule.rule_type == "event_pattern",
+                    AlertHistory.context_key.in_([
+                        event_pattern_context_key(scope.vcenter_id, scope.entity_moid, pattern.id)
+                        for pattern in BUILTIN_PATTERNS
+                    ]),
+                ),
+            )
+        )
+    elif scope.vcenter_id is not None:
+        # 対象を持つアラートは、行数の上限より前に vCenter で絞る。
+        # event_score は vCenter にまたがる情報として残す。
+        stmt = stmt.where(
+            or_(
+                and_(
+                    AlertRule.rule_type.in_(("metric_threshold", "event_pattern")),
                     AlertHistory.context_key.startswith(f"{scope.vcenter_id}:", autoescape=True),
                 ),
                 AlertRule.rule_type == "event_score",
@@ -1140,12 +1158,15 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
         session, probes, lookback=scope.metric_name_lookback
     )
 
+    pattern_entities = await resolve_event_pattern_entities(
+        session, (row.context_key for row in rows if row.rule_type == "event_pattern"),
+    )
     entries: list[TimelineEntry] = []
     for row in rows:
-        entry = _alert_entry(row, resolved)
+        entry = _alert_entry(row, resolved, pattern_entities)
         if (
             scope.vcenter_id is not None
-            and row.rule_type == "metric_threshold"
+            and row.rule_type in ("metric_threshold", "event_pattern")
             and entry.vcenter_id != scope.vcenter_id
         ):
             # SQL でも絞っているが、旧形式の key（vCenter 不明）もここで確実に除く。
@@ -1164,11 +1185,16 @@ async def _collect_alerts(session: AsyncSession, scope: _Scope) -> _Collected:
     return _Collected(entries=entries, overview={"alert": counts})
 
 
-def _alert_entry(row: Any, resolved: Mapping[MetricProbe, ResolvedEntity]) -> TimelineEntry:
+def _alert_entry(
+    row: Any,
+    resolved: Mapping[MetricProbe, ResolvedEntity],
+    pattern_entities: Mapping[EventPatternEntityKey, ResolvedEntity],
+) -> TimelineEntry:
     ref: dict[str, Any] = {
         "alert_history_id": int(row.id),
         "alert_rule_id": int(row.rule_id),
         "alert_rule_name": row.rule_name,
+        "alert_rule_type": row.rule_type,
         "alert_state": row.state,
     }
     vcenter_id: uuid.UUID | None = None
@@ -1189,6 +1215,19 @@ def _alert_entry(row: Any, resolved: Mapping[MetricProbe, ResolvedEntity]) -> Ti
             moid = row.context_key
         ref["entity_moid"] = moid
         detail = f"対象: {entity_name or moid}"
+    elif row.rule_type == "event_pattern":
+        parsed = parse_event_pattern_context_key(row.context_key)
+        if parsed is not None:
+            vcenter_id, moid, pattern_id = parsed
+            ref["entity_moid"] = moid
+            hit = pattern_entities.get((vcenter_id, moid))
+            if hit is not None:
+                entity_name, entity_type = hit.name, hit.entity_type
+            pattern = next((pattern for pattern in BUILTIN_PATTERNS if pattern.id == pattern_id), None)
+            target = f"{entity_name} ({moid})" if entity_name else moid
+            detail = f"{pattern.title if pattern else pattern_id} / 対象: {target}"
+            if pattern is not None:
+                detail = f"{detail} / {pattern.description}"
     elif row.rule_type == "event_score":
         ref["event_type"] = row.context_key
         detail = f"イベント種別: {row.context_key}"

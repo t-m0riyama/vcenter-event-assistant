@@ -17,8 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.db.models import AlertRule, AlertState
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_eval_common import (
+    MANUALLY_RESOLVABLE_RULE_TYPES,
     AlertEvaluationDeps,
     PendingAlertNotification,
+)
+from vcenter_event_assistant.services.alerting.alert_eval_event_pattern import (
+    evaluate_event_pattern_rule,
 )
 from vcenter_event_assistant.services.alerting.alert_eval_event_score import (
     evaluate_event_score_rule,
@@ -36,6 +40,7 @@ logger = logging.getLogger(__name__)
 RuleEvaluator = Callable[[AlertEvaluationDeps, AlertRule], Awaitable[tuple[int, int]]]
 
 _RULE_EVALUATORS: dict[str, RuleEvaluator] = {
+    "event_pattern": evaluate_event_pattern_rule,
     "event_score": evaluate_event_score_rule,
     "metric_threshold": evaluate_metric_threshold_rule,
 }
@@ -120,14 +125,18 @@ class AlertEvaluator:
     async def resolve_event_score_manually(
         self, rule_id: int, context_key: str
     ) -> None:
-        """イベントスコア型の発火中アラートを手動で resolved にし、回復通知を登録する。"""
+        """既存のイベントスコア用の呼び出し口から手動解消する。"""
+        await self.resolve_event_alert_manually(rule_id, context_key)
+
+    async def resolve_event_alert_manually(self, rule_id: int, context_key: str) -> None:
+        """イベントの発火中アラートを手動で解消し、回復通知を登録する。"""
         async with session_scope(settings=self._settings) as session:
             rule = await session.get(AlertRule, rule_id)
             if rule is None:
                 raise LookupError("alert rule not found")
-            if rule.rule_type != "event_score":
+            if rule.rule_type not in MANUALLY_RESOLVABLE_RULE_TYPES:
                 raise ValueError(
-                    "manual resolve is only supported for event_score rules"
+                    "manual resolve is only supported for event_score and event_pattern rules"
                 )
 
             res = await session.execute(
@@ -146,12 +155,13 @@ class AlertEvaluator:
             state.resolved_at = now
             await session.flush()
 
+            target = "event pattern" if rule.rule_type == "event_pattern" else "event type"
             pending = _pending_from_notify_args(
                 rule,
                 state,
                 {
                     "details": (
-                        f"Alert manually resolved for event type: {context_key}"
+                        f"Alert manually resolved for {target}: {context_key}"
                     ),
                 },
             )

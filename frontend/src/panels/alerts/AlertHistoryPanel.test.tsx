@@ -245,3 +245,31 @@ describe('対象の列', () => {
     expect(cell(rows[2]).querySelector('.context-key-note')).toBeNull()
   })
 })
+
+it('障害パターンは vCenter と発生時刻で開き、対象のアラートを解消できる', async () => {
+  const vcenter = '11111111-1111-4111-8111-111111111111'
+  const key = `${vcenter}:domain-c1:ha-failover`
+  vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [{
+    ...base, id: 1, rule_name: 'HA', rule_type: 'event_pattern', context_key: key,
+    vcenter_id: vcenter, entity_name: 'Cluster', entity_moid: 'domain-c1',
+    occurred_at: '2026-10-03T01:00:00Z', can_resolve: true,
+  }] })
+  vi.mocked(apiPost).mockResolvedValue(undefined)
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  try {
+    show()
+    const link = await screen.findByRole('link', { name: /HA・Cluster.*をタイムラインで見る/ })
+    const params = new URLSearchParams(link.getAttribute('href')!.split('?')[1])
+    expect(params.get('anchor')).toBe('2026-10-03T01:00:00.000Z')
+    expect(params.get('vcenter_id')).toBe(vcenter)
+    expect(params.has('entity')).toBe(false)
+    expect(params.has('entity_moid')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '解消' }))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('障害パターン'))
+    expect(apiPost).toHaveBeenCalledWith('/api/alerts/states/resolve', {
+      rule_id: base.rule_id, context_key: key,
+    })
+  } finally {
+    confirm.mockRestore()
+  }
+})
