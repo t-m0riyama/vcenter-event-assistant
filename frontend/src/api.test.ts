@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
   apiDelete,
+  apiFetchBlob,
   apiGet,
   apiPatch,
   apiPost,
@@ -37,6 +38,135 @@ describe('api', () => {
   })
 
   const fetchMock = () => globalThis.fetch as ReturnType<typeof vi.fn>
+
+  describe('apiFetchBlob', () => {
+    it('応答のファイル名と Blob を返し、POST に変更系のヘッダと中断のシグナルを付ける', async () => {
+      fetchMock().mockResolvedValueOnce(new Response('# 調査資料', {
+        headers: {
+          'Content-Disposition': 'attachment; filename="timeline-20261124-120000.md"',
+          'Content-Type': 'text/markdown; charset=utf-8',
+        },
+      }))
+      const signal = new AbortController().signal
+      const body = { from: '2026-11-24T03:00:00Z', to: '2026-11-24T04:00:00Z' }
+      const file = await apiFetchBlob('/api/export', { method: 'POST', body, signal })
+      expect(file.filename).toBe('timeline-20261124-120000.md')
+      expect(file.blob.type).toBe('text/markdown; charset=utf-8')
+      expect(await file.blob.text()).toBe('# 調査資料')
+      const [url, init] = fetchMock().mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('/api/export')
+      expect(init).toMatchObject({ method: 'POST', body: JSON.stringify(body), signal })
+      const headers = new Headers(init.headers)
+      expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest')
+      expect(headers.get('Content-Type')).toBe('application/json')
+    })
+
+    it.each([
+      ['期間を短くしてください', '期間を短くしてください'],
+      [[{ loc: ['body', 'from'], msg: '必須です' }, { loc: ['query', 'time_zone'], msg: '無効です' }], 'from: 必須です / query.time_zone: 無効です'],
+    ])('422 の detail を表示用に返す（%j）', async (detail, message) => {
+      fetchMock().mockResolvedValueOnce(Response.json({ detail }, { status: 422 }))
+      await expect(apiFetchBlob('/api/export')).rejects.toMatchObject({ status: 422, message })
+    })
+
+    it.each([
+      [null, null],
+      ["attachment; filename*=UTF-8''%E8%AA%BF%E6%9F%BB.md", '調査.md'],
+      ["attachment; filename=report.md; filename*=utf-8'ja'%E8%AA%BF%E6%9F%BB.md", '調査.md'],
+      ['attachment; filename="report\\"draft;1.md"', 'report"draft;1.md'],
+      ["attachment; filename*=UTF-8''%FF; filename=report.md", 'report.md'],
+    ])('添付名を読む（%s）', async (disposition, filename) => {
+      fetchMock().mockResolvedValueOnce(new Response('report', {
+        headers: disposition === null ? {} : { 'Content-Disposition': disposition },
+      }))
+      await expect(apiFetchBlob('/api/export')).resolves.toMatchObject({ filename })
+    })
+
+    it('401 で認証ゲートへ通知する', async () => {
+      const listener = vi.fn()
+      const unsubscribe = onUnauthorized(listener)
+      try {
+        fetchMock().mockResolvedValueOnce(new Response(null, { status: 401 }))
+        await expect(apiFetchBlob('/api/export')).rejects.toMatchObject({ status: 401, message: SESSION_EXPIRED_MESSAGE })
+        expect(listener).toHaveBeenCalledTimes(1)
+      } finally {
+        unsubscribe()
+      }
+    })
+
+    it('400 の detail を返す', async () => {
+      const detail = '終了は開始より後にしてください。'
+      fetchMock().mockResolvedValueOnce(Response.json({ detail }, { status: 400 }))
+      await expect(apiFetchBlob('/api/export')).rejects.toMatchObject({ status: 400, message: detail })
+    })
+
+    it.each([
+      [null, 3000],
+      ['60', 10_000],
+    ])('503 後に %s の Retry-After に応じて待ち、成功したファイルを返す', async (retryAfter, waitMs) => {
+      vi.useFakeTimers()
+      try {
+        fetchMock()
+          .mockResolvedValueOnce(new Response(null, {
+            status: 503,
+            headers: retryAfter === null ? {} : { 'Retry-After': retryAfter },
+          }))
+          .mockResolvedValueOnce(new Response('report', {
+            headers: { 'Content-Disposition': 'attachment; filename=report.md' },
+          }))
+        const result = apiFetchBlob('/api/export')
+        await vi.advanceTimersByTimeAsync(waitMs - 1)
+        expect(fetchMock()).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(1)
+        await expect(result).resolves.toMatchObject({ filename: 'report.md' })
+        expect(fetchMock()).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('503 は Retry-After に従って 1 回だけ再試行する', async () => {
+      vi.useFakeTimers()
+      try {
+        fetchMock().mockImplementation(() => new Response('', { status: 503, headers: { 'Retry-After': '2' } }))
+        const result = expect(apiFetchBlob('/api/export')).rejects.toMatchObject({ status: 503 })
+        await vi.advanceTimersByTimeAsync(1999)
+        expect(fetchMock()).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(1)
+        await result
+        expect(fetchMock()).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('再試行の待機中に中断すると再送しない', async () => {
+      vi.useFakeTimers()
+      try {
+        fetchMock().mockResolvedValueOnce(new Response('', { status: 503 }))
+        const controller = new AbortController()
+        const result = expect(apiFetchBlob('/api/export', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+        await vi.advanceTimersByTimeAsync(1000)
+        controller.abort()
+        await result
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(fetchMock()).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('保存結果が無い 409 のエラーコードと detail を返す', async () => {
+      const detail = '結果が保存されていません。'
+      fetchMock().mockResolvedValueOnce(Response.json({ detail }, {
+        status: 409,
+        headers: { 'X-VEA-Error-Code': 'snapshot_result_missing' },
+      }))
+      await expect(apiFetchBlob('/api/export')).rejects.toMatchObject({
+        status: 409, errorCode: 'snapshot_result_missing', message: detail,
+      })
+    })
+  })
 
   it('apiGet returns parsed JSON on success', async () => {
     fetchMock().mockResolvedValueOnce(

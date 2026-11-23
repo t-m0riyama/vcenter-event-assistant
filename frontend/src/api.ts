@@ -1,6 +1,6 @@
 import { fetchWithActivity } from './userActivity'
 
-const GENERIC_API_ERROR =
+export const GENERIC_API_ERROR =
   'リクエストに失敗しました。時間をおいて再度お試しください。'
 export const SESSION_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。再度ログインしてください。'
 export const FORBIDDEN_MESSAGE = 'この操作を行う権限がありません。'
@@ -117,11 +117,10 @@ function mutationHeaders(): Record<string, string> {
 /** ブラウザ既定キャッシュで GET が古い JSON を返すのを防ぐ */
 const fetchNoStore: RequestInit = { cache: 'no-store' }
 
-/** FastAPI の ``{"detail": "..."}`` なら detail の文字列を返す（それ以外は null）。 */
-function detailMessage(text: string): string | null {
+function responseDetail(text: string): unknown {
   try {
     const body: unknown = JSON.parse(text)
-    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
+    if (body && typeof body === 'object' && 'detail' in body) {
       return body.detail
     }
   } catch {
@@ -130,20 +129,43 @@ function detailMessage(text: string): string | null {
   return null
 }
 
-async function errorMessageFromResponse(r: Response): Promise<string> {
-  const text = await r.text()
-  if (r.status >= 500) {
+/** Pydantic の検証エラーを「項目: 理由」の形に整える。 */
+export function formatValidationMessage(text: string): string | null {
+  return formatValidationDetail(responseDetail(text))
+}
+
+function formatValidationDetail(detail: unknown): string | null {
+  if (!Array.isArray(detail)) return null
+  const lines = detail.flatMap((entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || !('msg' in entry) || typeof entry.msg !== 'string') return []
+    const loc = 'loc' in entry && Array.isArray(entry.loc)
+      ? entry.loc.filter((part: unknown) => part !== 'body').join('.')
+      : ''
+    return [loc ? `${loc}: ${entry.msg}` : entry.msg]
+  })
+  return lines.length > 0 ? lines.join(' / ') : null
+}
+
+function responseErrorMessage(status: number, text: string, download: boolean): string {
+  if (status >= 500) {
     return GENERIC_API_ERROR
   }
-  if (r.status === 401) {
+  if (status === 401) {
     notifyUnauthorized()
     return SESSION_EXPIRED_MESSAGE
   }
-  if (r.status === 403) {
+  if (status === 403) {
     return FORBIDDEN_MESSAGE
   }
-  if (r.status === 422 || r.status === 409 || r.status === 413) {
-    return detailMessage(text) ?? (text || GENERIC_API_ERROR)
+  if ([422, 409, 413].includes(status) || (download && status === 400)) {
+    const detail = responseDetail(text)
+    if (download && status === 422) {
+      const message = typeof detail === 'string' ? detail : formatValidationDetail(detail)
+      return message?.trim() ? message : GENERIC_API_ERROR
+    }
+    if (typeof detail === 'string') return detail
+    if (download) return GENERIC_API_ERROR
+    return text || GENERIC_API_ERROR
   }
   return GENERIC_API_ERROR
 }
@@ -171,14 +193,88 @@ export class ApiError extends Error {
   }
 }
 
-async function apiError(r: Response): Promise<ApiError> {
+async function apiError(r: Response, { download = false } = {}): Promise<ApiError> {
   const retryAfter = Number(r.headers.get('Retry-After'))
   return new ApiError(
-    await errorMessageFromResponse(r),
+    responseErrorMessage(r.status, await r.text(), download),
     r.status,
     r.headers.get('X-VEA-Error-Code'),
     Number.isFinite(retryAfter) && retryAfter >= 0 && r.headers.get('Retry-After') !== null ? retryAfter : null,
   )
+}
+
+/** Retry-After が無ければ 3 秒、値が大きくても最大 10 秒待つ。 */
+export async function waitForRetryAfter(seconds: number | null, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal?.reason)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, Math.min((seconds ?? 3) * 1000, 10_000))
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+type BlobRequest = { signal?: AbortSignal } & (
+  | { method?: 'GET' }
+  | { method: 'POST'; body: unknown }
+)
+
+function attachmentFilename(disposition: string): string | null {
+  let filename = null
+  const parameters = disposition.matchAll(/;\s*([^=;\s]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^";\s]+))/g)
+  for (const [, name, quoted, token] of parameters) {
+    if (name.toLowerCase() === 'filename') {
+      filename = quoted?.replace(/\\(.)/g, '$1') ?? token
+    } else if (name.toLowerCase() === 'filename*' && token) {
+      const encoded = /^UTF-8'[^']*'(.+)$/i.exec(token)?.[1]
+      if (!encoded) continue
+      try {
+        return decodeURIComponent(encoded)
+      } catch {
+        // 拡張形式を読めない場合は通常のファイル名を使う。
+      }
+    }
+  }
+  return filename || null
+}
+
+/** ファイルと添付名を受け取る。503 のときだけ待って 1 回再試行する。 */
+export async function apiFetchBlob(
+  path: string,
+  options: BlobRequest = {},
+): Promise<{ blob: Blob; filename: string | null }> {
+  const { method = 'GET', signal } = options
+  const principal = expectedPrincipal
+  const init: RequestInit = {
+    ...fetchNoStore,
+    method,
+    signal,
+    headers: {
+      ...(options.method === 'POST' ? mutationHeaders() : {}),
+      Accept: '*/*',
+    },
+    ...(options.method === 'POST' ? { body: JSON.stringify(options.body) } : {}),
+  }
+  const call = async () => {
+    signal?.throwIfAborted()
+    if (expectedPrincipal !== principal) throw new Error(PRINCIPAL_SWITCHED_MESSAGE)
+    const r = await send(path, init)
+    if (!r.ok) throw await apiError(r, { download: true })
+    const disposition = r.headers.get('Content-Disposition') ?? ''
+    return { blob: await r.blob(), filename: attachmentFilename(disposition) }
+  }
+  try {
+    return await call()
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 503) throw e
+    await waitForRetryAfter(e.retryAfterSeconds, signal)
+    return call()
+  }
 }
 
 /** JSON GET（``cache: 'no-store'``）。 */
