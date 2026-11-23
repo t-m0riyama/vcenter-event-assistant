@@ -1043,3 +1043,89 @@ async def test_sqlite_event_patterns_use_the_event_type_time_index(
             ), plan
             assert "INDEXED BY ix_events_event_type_occurred_at" in sql
             assert "INDEXED BY" not in str(stmt.compile(dialect=pg_asyncpg.dialect()))
+
+
+@pytest.mark.asyncio
+async def test_event_pattern_alert_history_and_timeline_on_each_dialect(session: AsyncSession) -> None:
+    from sqlalchemy import event
+
+    from vcenter_event_assistant.api.routes.alerts import list_alert_history
+    from vcenter_event_assistant.settings import get_settings
+
+    v1, v2 = uuid.uuid4(), uuid.uuid4()
+    for vid, name in ((v1, "one"), (v2, "two")):
+        session.add(VCenter(id=vid, name=name, host="h", username="u", password="p"))
+    rule = AlertRule(name="pattern", rule_type="event_pattern", alert_level="error", config={})
+    session.add(rule)
+    await session.flush()
+    for vid, moid, name, at in (
+        (v1, "a", "old", FROM + timedelta(minutes=1)),
+        (v1, "a", "older ID", TO),
+        (v1, "a", "latest", TO),
+        (v1, "a:b", "other moid", TO),
+        (v2, "a", "other vCenter", TO),
+    ):
+        row = EventRecord(
+            vcenter_id=vid, vmware_key=next(_keys), occurred_at=at, event_type="E",
+            entities=[EventEntity(
+                vcenter_id=vid, entity_moid=moid, entity_name=name, entity_type="HostSystem",
+                position=0, role="host", is_primary=True,
+            )],
+        )
+        session.add(row)
+        await session.flush()
+        if (vid, moid, name) == (v1, "a", "latest"):
+            # 同じイベントの子表では、より大きな ID の空名より名前のある行を優先する。
+            row.entities.append(EventEntity(
+                vcenter_id=vid, entity_moid=moid, entity_name="", entity_type="ClusterComputeResource",
+                position=0, role="computeResource", is_primary=False,
+            ))
+            await session.flush()
+    for vid, moid, pattern in (
+        (v1, "a", "apd-timeout"), (v1, "a", "ha-failover"), (v1, "a:b", "apd-timeout"),
+        (v1, "gone", "apd-timeout"), (v2, "a", "apd-timeout"),
+    ):
+        session.add(AlertHistory(
+            rule_id=rule.id, context_key=f"{vid}:{moid}:{pattern}", channel="none",
+            state="firing", alert_level="error", occurred_at=FROM, notified_at=FROM,
+        ))
+    await session.flush()
+
+    statements = []
+    connection = (await session.connection()).sync_connection
+
+    def track(conn, cursor, statement, parameters, context, executemany):
+        if "event_entities" in statement.lower():
+            statements.append(statement)
+
+    event.listen(connection, "before_cursor_execute", track)
+    try:
+        history = await list_alert_history(limit=50, offset=0, session=session, settings=get_settings())
+    finally:
+        event.remove(connection, "before_cursor_execute", track)
+    assert len(statements) == 1
+    assert sorted((str(row.vcenter_id), row.entity_moid, row.entity_name) for row in history.items) == sorted([
+        (str(v1), "a", "latest"), (str(v1), "a", "latest"), (str(v1), "a:b", "other moid"),
+        (str(v1), "gone", None), (str(v2), "a", "other vCenter"),
+    ])
+
+    async def timeline(**filters):
+        return await build_incident_timeline_view(
+            session, IncidentTimelineViewRequest(
+                from_time=FROM, to_time=TO, sources=["alert"], vcenter_id=v1, **filters,
+            ), owner_key="dialect-test",
+        )
+
+    scoped = await timeline()
+    assert [(i.vcenter_id, i.ref.entity_moid, i.entity_name) for i in scoped.items] == [
+        (v1, "a", "latest"), (v1, "a", "latest"), (v1, "a:b", "other moid"), (v1, "gone", None),
+    ]
+    assert all(i.ref.alert_rule_type == "event_pattern" for i in scoped.items)
+    exact = await timeline(entity_moid="a")
+    assert len(exact.items) == 2
+    assert all(i.ref.entity_moid == "a" and "latest" in i.detail for i in exact.items)
+    colon = await timeline(entity_moid="a:b")
+    assert [i.ref.entity_moid for i in colon.items] == ["a:b"]
+    by_name = await timeline(entity="latest")
+    assert [i.ref.entity_moid for i in by_name.items] == ["a", "a"]
+    assert (await timeline(entity="gone")).items == []

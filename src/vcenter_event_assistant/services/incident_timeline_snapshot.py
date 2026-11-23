@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -22,7 +23,11 @@ def slug_alert_context_key(context_key: str) -> str:
 
 def format_alert_rule_trigger_id(*, rule_id: int, context_key: str) -> str:
     """AlertRule 発火スナップショット用の trigger_id を生成する。"""
-    return f"alert_rule_{rule_id}_{slug_alert_context_key(context_key)}"
+    trigger_id = f"alert_rule_{rule_id}_{slug_alert_context_key(context_key)}"
+    if len(trigger_id) <= 128:
+        return trigger_id
+    suffix = hashlib.sha256(context_key.encode("utf-8")).hexdigest()[:16]
+    return f"{trigger_id[:111]}_{suffix}"
 
 
 def build_alert_rule_snapshot_build_request(

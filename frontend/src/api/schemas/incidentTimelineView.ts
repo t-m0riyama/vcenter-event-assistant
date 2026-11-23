@@ -19,6 +19,7 @@ export const timelineItemRefSchema = z.object({
   alert_history_id: z.number().nullable().optional(),
   alert_rule_id: z.number().nullable().optional(),
   alert_rule_name: z.string().nullable().optional(),
+  alert_rule_type: z.string().nullable().optional(),
   alert_state: z.string().nullable().optional(),
   metric_key: z.string().nullable().optional(),
   entity_moid: z.string().nullable().optional(),

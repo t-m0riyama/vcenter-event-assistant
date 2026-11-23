@@ -206,6 +206,8 @@ async def test_mock_mode_alert_notify_skips_smtp(
         rows = (await session.scalars(select(AlertHistory))).all()
         assert rows and all(row.channel == 'mock' and row.delivery_status == 'succeeded' for row in rows)
         assert any(row.context_key == "vim.event.HostConnectionLostEvent" for row in rows)
+        [pattern] = [row for row in rows if row.context_key.endswith(":host-conn-flapping")]
+        assert pattern.state == "firing"
 
 
 @pytest.mark.asyncio

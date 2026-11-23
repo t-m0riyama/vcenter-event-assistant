@@ -267,6 +267,26 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(within(region).queryByRole('link', { name: 'ログで開く' })).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['event_pattern', false],
+    ['metric_threshold', true],
+  ])('アラート %s の行に対象名を出し、種別に応じて「この対象で絞る」を出す', async (ruleType, canFilter) => {
+    setup()
+    renderTimeline()
+    const response = populated()
+    const items = response.items.map((item) => item.kind === 'alert' ? {
+      ...item,
+      title: '対象ありのアラート',
+      entity_name: 'クラスタ A',
+      vcenter_id: VC,
+      ref: { ...item.ref, alert_rule_type: ruleType, entity_moid: 'domain-c1' },
+    } : item)
+    await answer(0, { ...response, items })
+    const region = await openRow(/対象ありのアラート/)
+    expect(region).toHaveTextContent('クラスタ A')
+    expect(Boolean(within(region).queryByRole('button', { name: 'この対象で絞る' }))).toBe(canFilter)
+  })
+
   it('「この対象で絞る」は名前と vCenter と moid を使い、URL から同じ条件で開き直せる', async () => {
     setup()
     const { unmount } = renderTimeline()

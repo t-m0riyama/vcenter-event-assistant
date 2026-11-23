@@ -81,13 +81,17 @@
 - `GET /api/event-patterns`
   組み込みの障害パターンの一覧。viewer 以上で参照できる。各定義は `id`、`title`、`description`、`level`、`kind`、`steps`（段ごとの `event_types`）、`within_minutes`、`min_count`（sequence は `null`）を持つ。
 - `GET/POST/PATCH/DELETE /api/alerts/rules`
+- `POST /api/alerts/rules/import`
 - `GET /api/alerts/history`
+- `POST /api/alerts/states/resolve`（イベントスコア型・障害パターン型）
 
 通知履歴の `entity_moid` は、`metric_threshold` の `context_key` が `{vcenter_id}:{entity_moid}` 形式のときに入る。対象名を解決できない場合も返す。旧形式のキーや `event_score` の通知では `null` になる。
 
+`event_pattern` の通知履歴とタイムラインのアラート行は、`context_key` から `vcenter_id` と `entity_moid` を取り出す。対象名は、組ごとに `events.occurred_at DESC, events.id DESC` で最新の `event_entities` の行からまとめて引く。保持期間などで名前を引けないときは `null` になる。
+
 アラートルールは `alert_level`（`critical` / `error` / `warning`）を持ち、メール通知の件名・本文および `alert_history` の各行に、通知時点のレベルが記録される。既存 DB はマイグレーションで `warning` を既定とする。イベント行の `severity`（VMware 由来）とは別の運用重大度である。
 
-アラートルールの一覧・作成・更新レスポンスには、不透明な UUID の `revision` が入る。`PATCH /api/alerts/rules/{id}` の JSON 本文には、編集の基準にしたルールから取得した `revision` を含める。欠落や形式違反は `422`、更新対象が削除済みなら `404` を返す。版が古い場合は `409` と `X-VEA-Error-Code: alert_rule_stale` を返すので、最新の内容を読み直して変更を確認する。名前の重複も `409` になる。`config` を送ると設定全体が置き換わる。
+アラートルールの一覧・作成・更新レスポンスには、不透明な UUID の `revision` が入る。`PATCH /api/alerts/rules/{id}` の JSON 本文には、編集の基準にしたルールから取得した `revision` を含める。欠落や形式違反は `422`、更新対象が削除済みなら `404` を返す。版が古い場合は `409` と `X-VEA-Error-Code: alert_rule_stale` を返すので、最新の内容を読み直して変更を確認する。名前の重複も `409` になる。`config` を送ると種類に応じて検証し、設定全体を置き換える。
 
 ルール保存とインポートの上書き時には新しい版を発行する。エクスポート／インポートでは従来の JSON 形式を使う。
 
@@ -109,6 +113,13 @@
   - 状態は **`event_type`（イベント種別）ごと** の `AlertState` を持ち、通知の Resource / `context_key` は **イベント種別名** である。`cooldown_minutes` は **同一種別へのメール再送の最短間隔（再通知間隔）のみ** に用いる。`last_notified_at` 等と組み合わせ、**間隔未満の再送を抑止** する。
   - **沈黙やウィンドウの切れ目だけで `resolved`（自動回復）にはしない**。`event_score` 型は当面 **自動 resolve を実装しない**（通知履歴画面の解消ボタンで手動 resolve する）。
   - ログに `Error evaluating rule` や `invalid config` が出ていないか確認する。
+
+- **`event_pattern` ルール**
+  - `config` は `{"pattern_ids": ["host-conn-flapping"], "cooldown_minutes": 10}` の形。ID の空配列は将来追加されるものを含む全パターンを選ぶ。作成・PATCH・インポートは未知の ID を 422 で拒否する。
+  - `alert_event_eval_lookback_hours` の評価期間にパターンの時間幅を足して材料を読み、評価期間内のイベントを使った検知を対象にする。状態のキーは `{vcenter_id}:{entity_moid}:{pattern_id}`。最初と最後のコロンで分ける。
+  - `fired_at` は最後に通知または吸収した検知の `last_utc`。発火中は `last_notified_at` から再通知間隔を過ぎ、検知がさらに伸びたときだけ再通知する。解消後は `fired_at` より新しい検知で発火する。
+  - 検知が評価期間から外れたときやパターンの選択を外したときは、通知せずに解消する。上限超過・未知の ID で判定を見送ったパターンには警告を記録し、状態を維持する。手動解消は回復通知を登録する。
+  - 自動スナップショットの `trigger_id` が 128 文字を超える場合は、先頭 111 文字と `_` に、元の `context_key` の SHA-256 の先頭 16 桁をつなぐ。
 
 ### 2.5 収集・ダイジェスト・チャット
 

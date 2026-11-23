@@ -28,7 +28,7 @@ interface AlertHistory {
   notified_at: string
   /** 状態が変わった時刻。古いサーバの応答には無い。 */
   occurred_at?: string | null
-  /** metric_threshold の行だけ。古いサーバの応答には無い。 */
+  /** metric_threshold と event_pattern の行に入る。古いサーバの応答には無い。 */
   vcenter_id?: string | null
   entity_moid?: string | null
   entity_name?: string | null
@@ -111,9 +111,10 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
 
   const handleResolve = async (item: AlertHistory) => {
     const label = item.rule_name || `Rule #${item.rule_id}`
+    const target = item.rule_type === 'event_pattern' ? '障害パターンの対象' : '対象'
     if (
       !confirm(
-        `「${label}」の対象「${item.context_key}」を解消しますか？\n回復通知を登録します。登録済みの発火通知は引き続き配送されます。`,
+        `「${label}」の${target}「${item.context_key}」を解消しますか？\n回復通知を登録します。登録済みの発火通知は引き続き配送されます。`,
       )
     ) {
       return
@@ -249,8 +250,8 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                       <TimelineLink
                         at={h.occurred_at ?? h.notified_at}
                         vcenterId={h.vcenter_id}
-                        entity={h.entity_name}
-                        entityMoid={h.vcenter_id ? h.entity_moid : undefined}
+                        entity={h.rule_type === 'event_pattern' ? undefined : h.entity_name}
+                        entityMoid={h.vcenter_id && h.rule_type !== 'event_pattern' ? h.entity_moid : undefined}
                         ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}・${h.entity_name || h.context_key}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
                       />
                       {canDelete && (

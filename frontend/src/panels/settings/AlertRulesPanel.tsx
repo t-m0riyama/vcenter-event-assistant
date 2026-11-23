@@ -7,6 +7,7 @@ import {
   buildAlertRulesExportPayload,
   type AlertRuleRow,
 } from '../../api/schemas'
+import { eventPatternsResponseSchema, type EventPattern } from '../../api/schemas/eventPatterns'
 import { useAuth } from '../../auth/useAuth'
 import { toErrorMessage } from '../../utils/errors'
 import {
@@ -32,8 +33,10 @@ import {
   draftValues,
   markAlertRuleDraftConflict,
   reconcileAlertRuleDrafts,
+  samePatternIds,
   type AlertLevel,
   type AlertRuleDrafts,
+  type AlertRuleDraftSource,
   type EditDraft,
 } from './alertRuleDrafts'
 
@@ -43,12 +46,39 @@ const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
   warning: '警告',
 }
 
-type AlertRule = AlertRuleRow & {
-  config: {
-    threshold?: number
-    metric_key?: string
-    cooldown_minutes?: number
-  }
+type AlertRule = AlertRuleRow & Pick<AlertRuleDraftSource, 'config'>
+type AlertRuleType = AlertRule['rule_type']
+
+const RULE_TYPE_LABELS: Record<AlertRuleType, string> = {
+  event_score: 'イベントスコア',
+  metric_threshold: 'メトリクス閾値',
+  event_pattern: '障害パターン',
+}
+
+function PatternSelection({ catalog, selected, ruleName, disabled, onChange }: {
+  catalog: ReadonlyMap<string, string>
+  selected: readonly string[]
+  ruleName?: string
+  disabled?: boolean
+  onChange: (ids: string[]) => void
+}) {
+  const options = new Set([...catalog.keys(), ...selected])
+  return (
+    <fieldset className="alert-rule-patterns" disabled={disabled}>
+      <legend>{ruleName ? `${ruleName} の対象のパターン` : '対象のパターン'}</legend>
+      <p className="hint">選択なしの場合は、今後追加されるものも含めてすべてのパターンを判定します。</p>
+      {[...options].map((id) => (
+        <label key={id} className="check">
+          <input
+            type="checkbox"
+            checked={selected.includes(id)}
+            onChange={(e) => onChange(e.target.checked ? [...selected, id] : selected.filter((value) => value !== id))}
+          />
+          {catalog.get(id) ?? id}
+        </label>
+      ))}
+    </fieldset>
+  )
 }
 
 /** レベルのバッジの色（通知履歴と同じ。クリティカルは赤、エラーは黄、警告は無彩色）。 */
@@ -80,9 +110,15 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   })
 
   const [newName, setNewName] = useState('')
-  const [newType, setNewType] = useState<'event_score' | 'metric_threshold'>('event_score')
+  const [newType, setNewType] = useState<AlertRuleType>('event_score')
   const [newAlertLevel, setNewAlertLevel] = useState<AlertLevel>('warning')
   const [newThreshold, setNewThreshold] = useState(60)
+  const [newPatternIds, setNewPatternIds] = useState<string[]>([])
+  const [newCooldown, setNewCooldown] = useState(10)
+  const [patterns, setPatterns] = useState<EventPattern[]>([])
+  const [patternLoadFailed, setPatternLoadFailed] = useState(false)
+  const needsPatterns = newType === 'event_pattern' || rules.some((rule) => rule.rule_type === 'event_pattern')
+  const patternTitles = new Map(patterns.map(({ id, title }) => [id, title]))
   const [newMetricKey, setNewMetricKey] = useState<string>(DEFAULT_ALERT_METRIC_KEY)
   /** 行ごとの編集中の値（持ち方と、読み直したときの比べ方は `alertRuleDrafts.ts`）。 */
   const [drafts, setDrafts] = useState<AlertRuleDrafts>({})
@@ -98,6 +134,23 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       })
       .catch(() => undefined)
   }, [])
+
+  useEffect(() => {
+    if (!needsPatterns) return
+    let active = true
+    void apiGet<unknown>('/api/event-patterns')
+      .then((data) => {
+        const catalog = eventPatternsResponseSchema.parse(data)
+        if (active) {
+          setPatterns(catalog)
+          setPatternLoadFailed(false)
+        }
+      })
+      .catch(() => {
+        if (active) setPatternLoadFailed(true)
+      })
+    return () => { active = false }
+  }, [needsPatterns])
 
   const {
     overwriteExisting, setOverwriteExisting,
@@ -125,10 +178,19 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const config = newType === 'event_score' 
-        ? { threshold: newThreshold, cooldown_minutes: 10 }
-        : { metric_key: newMetricKey, threshold: newThreshold }
-      
+      let config: AlertRuleDraftSource['config']
+      switch (newType) {
+        case 'event_score':
+          config = { threshold: newThreshold, cooldown_minutes: 10 }
+          break
+        case 'metric_threshold':
+          config = { metric_key: newMetricKey, threshold: newThreshold }
+          break
+        case 'event_pattern':
+          config = { pattern_ids: newPatternIds, cooldown_minutes: newCooldown }
+          break
+      }
+
       await apiPost('/api/alerts/rules', {
         name: newName,
         rule_type: newType,
@@ -191,7 +253,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
     if (draft.name.trim() !== rule.name) return true
     if (draft.alert_level !== rule.alert_level) return true
     if (draft.is_enabled !== rule.is_enabled) return true
-    if (Number(rule.config.threshold ?? 0) !== draft.threshold) return true
+    if (rule.rule_type === 'event_pattern' && !samePatternIds(rule.config.pattern_ids ?? [], draft.pattern_ids)) return true
+    if (rule.rule_type !== 'event_pattern' && Number(rule.config.threshold ?? 0) !== draft.threshold) return true
     if (rule.rule_type === 'metric_threshold') return (rule.config.metric_key ?? '') !== draft.metric_key
     return Number(rule.config.cooldown_minutes ?? 10) !== draft.cooldown_minutes
   }
@@ -207,8 +270,14 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       onError('ルール名は必須です。')
       return
     }
-    if (!Number.isFinite(draft.threshold)) {
+    if (rule.rule_type !== 'event_pattern' && !Number.isFinite(draft.threshold)) {
       onError('閾値には数値を入力してください。')
+      return
+    }
+
+    if (rule.rule_type === 'event_pattern' && edits.cooldown_minutes !== undefined
+      && (!Number.isInteger(draft.cooldown_minutes) || draft.cooldown_minutes < 1)) {
+      onError('再通知間隔は 1 以上の整数を入力してください。')
       return
     }
 
@@ -227,8 +296,12 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
       nextConfig.metric_key = edits.metric_key.trim()
       configEdited = true
     }
-    if (rule.rule_type === 'event_score' && edits.cooldown_minutes !== undefined) {
+    if (rule.rule_type !== 'metric_threshold' && edits.cooldown_minutes !== undefined) {
       nextConfig.cooldown_minutes = edits.cooldown_minutes
+      configEdited = true
+    }
+    if (rule.rule_type === 'event_pattern' && edits.pattern_ids !== undefined) {
+      nextConfig.pattern_ids = edits.pattern_ids
       configEdited = true
     }
     if (configEdited) body.config = nextConfig
@@ -258,7 +331,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
   return (
     <div className="panel alert-rules-panel">
       <p className="hint">
-        イベントのスコアやメトリクスに基づくアラートの判定ルールをサーバーに保存します。判定の対象となるのは、有効にしたルールのみです。
+        イベントのスコア・メトリクス・障害パターンに基づくアラートの判定ルールをサーバーに保存します。判定の対象となるのは、有効にしたルールのみです。
       </p>
       {canExport && (
         <>
@@ -340,9 +413,10 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
               </label>
               <label>
                 タイプ
-                <select value={newType} onChange={(e) => setNewType(e.target.value as 'event_score' | 'metric_threshold')}>
-                  <option value="event_score">イベントスコア</option>
-                  <option value="metric_threshold">メトリクス閾値</option>
+                <select value={newType} onChange={(e) => setNewType(e.target.value as AlertRuleType)}>
+                  {Object.entries(RULE_TYPE_LABELS).map(([type, label]) => (
+                    <option key={type} value={type}>{label}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -371,15 +445,31 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                 </label>
               )}
 
-              <label>
-                閾値
-                <input 
-                  type="number" 
-                  value={newThreshold} 
-                  onChange={(e) => setNewThreshold(Number(e.target.value))} 
-                  required 
-                />
-              </label>
+              {newType === 'event_pattern' ? (
+                <>
+                  <label>
+                    再通知間隔（分）
+                    <input
+                      type="number"
+                      min={1}
+                      value={newCooldown}
+                      onChange={(e) => setNewCooldown(Number(e.target.value))}
+                      required
+                    />
+                  </label>
+                  <PatternSelection catalog={patternTitles} selected={newPatternIds} onChange={setNewPatternIds} />
+                </>
+              ) : (
+                <label>
+                  閾値
+                  <input
+                    type="number"
+                    value={newThreshold}
+                    onChange={(e) => setNewThreshold(Number(e.target.value))}
+                    required
+                  />
+                </label>
+              )}
             </div>
 
             <button type="submit" className="btn btn--filled">
@@ -388,6 +478,8 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
           </form>
         </>
       )}
+
+      {needsPatterns && patternLoadFailed && <p className="hint" role="status">障害パターンの一覧を取得できませんでした。</p>}
 
       <h2>一覧</h2>
       {rules.length > 0 && (
@@ -415,11 +507,19 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
             const editable = canEdit && !busy
             const changed = isDraftChanged(r, draft)
             const level = r.alert_level as AlertLevel
-            const typeLabel = r.rule_type === 'event_score' ? 'イベントスコア' : 'メトリクス閾値'
-            const condition =
-              r.rule_type === 'event_score'
-                ? `スコア ${r.config.threshold} 以上`
-                : `${r.config.metric_key} ≥ ${r.config.threshold}`
+            const typeLabel = RULE_TYPE_LABELS[r.rule_type]
+            let condition: string
+            switch (r.rule_type) {
+              case 'event_score':
+                condition = `スコア ${r.config.threshold} 以上`
+                break
+              case 'metric_threshold':
+                condition = `${r.config.metric_key} ≥ ${r.config.threshold}`
+                break
+              case 'event_pattern':
+                condition = r.config.pattern_ids?.map((id) => patternTitles.get(id) ?? id).join('、') || 'すべてのパターン'
+                break
+            }
             return (
               <SettingsListRow
                 key={r.id}
@@ -472,16 +572,18 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                     />
                     有効（判定の対象にする）
                   </label>
-                  <label>
-                    閾値
-                    <input
-                      type="number"
-                      value={draft.threshold}
-                      readOnly={!editable}
-                      onChange={(e) => updateDraft(r, { threshold: Number(e.target.value) })}
-                      aria-label={`${r.name} の閾値`}
-                    />
-                  </label>
+                  {r.rule_type !== 'event_pattern' && (
+                    <label>
+                      閾値
+                      <input
+                        type="number"
+                        value={draft.threshold}
+                        readOnly={!editable}
+                        onChange={(e) => updateDraft(r, { threshold: Number(e.target.value) })}
+                        aria-label={`${r.name} の閾値`}
+                      />
+                    </label>
+                  )}
                   {r.rule_type === 'metric_threshold' ? (
                     <label>
                       メトリクスキー
@@ -495,7 +597,7 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                       />
                     </label>
                   ) : (
-                    <label title="同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで">
+                    <label title={r.rule_type === 'event_pattern' ? '同じパターン・対象で再通知するまでの間隔' : '同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで'}>
                       再通知間隔（分）
                       <input
                         type="number"
@@ -503,9 +605,20 @@ export function AlertRulesPanel({ onError }: { onError: (msg: string) => void })
                         value={draft.cooldown_minutes}
                         readOnly={!editable}
                         onChange={(e) => updateDraft(r, { cooldown_minutes: Number(e.target.value) })}
-                        aria-label={`${r.name} の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで`}
+                        aria-label={r.rule_type === 'event_score'
+                          ? `${r.name} の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで`
+                          : `${r.name} の再通知間隔（分）`}
                       />
                     </label>
+                  )}
+                  {r.rule_type === 'event_pattern' && (
+                    <PatternSelection
+                      catalog={patternTitles}
+                      selected={draft.pattern_ids}
+                      ruleName={r.name}
+                      disabled={!editable}
+                      onChange={(pattern_ids) => updateDraft(r, { pattern_ids })}
+                    />
                   )}
                 </div>
                 {canEdit && (

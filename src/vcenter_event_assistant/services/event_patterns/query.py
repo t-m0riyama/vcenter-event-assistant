@@ -1,5 +1,6 @@
 """障害パターンごとに判定の材料を子表から読む。"""
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -84,11 +85,12 @@ async def query_event_patterns(
     *,
     vcenter_id: UUID | None,
     entity_moid: str | None,
+    patterns: Sequence[EventPattern] = BUILTIN_PATTERNS,
 ) -> tuple[list[PatternDetection], list[str]]:
     """期間内に使ったイベントがある検知と、行数の上限で省いたパターンを返す。"""
     detections: list[PatternDetection] = []
     omitted: list[str] = []
-    for pattern in BUILTIN_PATTERNS:
+    for pattern in patterns:
         stmt = _pattern_rows_statement(pattern, from_utc, until_utc, vcenter_id, entity_moid)
         rows = (await session.execute(stmt)).all()
         if len(rows) > PATTERN_ROW_LIMIT:

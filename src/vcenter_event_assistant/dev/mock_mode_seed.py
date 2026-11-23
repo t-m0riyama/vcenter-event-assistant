@@ -179,18 +179,24 @@ async def run_mock_mode_seed_if_enabled() -> None:
                 ),
             )
 
-        existing_rule = await session.execute(
-            select(AlertRule).where(AlertRule.name == "mock-demo-event-score")
-        )
-        if existing_rule.scalar_one_or_none() is None:
-            session.add(
-                AlertRule(
-                    name="mock-demo-event-score",
-                    rule_type="event_score",
-                    is_enabled=True,
-                    alert_level="warning",
-                    config={"threshold": 40, "cooldown_minutes": 15},
-                ),
-            )
+        for rule in (
+            AlertRule(
+                name="mock-demo-event-score",
+                rule_type="event_score",
+                is_enabled=True,
+                alert_level="warning",
+                config={"threshold": 40, "cooldown_minutes": 15},
+            ),
+            AlertRule(
+                name="mock-demo-event-pattern",
+                rule_type="event_pattern",
+                is_enabled=True,
+                alert_level="error",
+                config={"pattern_ids": ["host-conn-flapping"], "cooldown_minutes": 10},
+            ),
+        ):
+            existing_id = await session.scalar(select(AlertRule.id).where(AlertRule.name == rule.name))
+            if existing_id is None:
+                session.add(rule)
 
         logger.info("MOCK_MODE seed inserted demo data for %s", _MOCK_VC_NAME)

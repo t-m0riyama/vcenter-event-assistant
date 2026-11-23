@@ -1,10 +1,10 @@
 from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator, Mapping
-from typing import Annotated
+from typing import Annotated, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, select, desc, func, update
+from sqlalchemy import case, delete, desc, func, literal, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,17 +16,28 @@ from vcenter_event_assistant.api.schemas import (
     AlertHistoryListResponse, AlertHistoryRead, AlertRulesImportRequest,
     AlertRulesImportResponse, AlertStateResolveRequest,
 )
+from vcenter_event_assistant.api.schemas.alerts import (
+    AlertRuleType,
+    ensure_alert_rule_config_json,
+    validate_alert_rule_config,
+)
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
+    EventPatternEntityKey,
     MetricProbe,
     ResolvedEntity,
     collect_metric_probes,
     metric_name_lookback,
     metric_probe,
+    resolve_event_pattern_entities,
     resolve_metric_entities_at,
 )
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.alerting.alert_eval_common import (
+    MANUALLY_RESOLVABLE_RULE_TYPES,
+    parse_event_pattern_context_key,
+)
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -52,8 +63,17 @@ async def list_alert_rules(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(AlertRule).order_by(AlertRule.name.asc()))
     return list(res.scalars().all())
 
+def _config_for_save(body: AlertRuleCreate) -> dict:
+    try:
+        ensure_alert_rule_config_json(body.config)
+        return validate_alert_rule_config(body.rule_type, body.config)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/rules", dependencies=[RequireAdmin], response_model=AlertRuleRead, status_code=status.HTTP_201_CREATED)
 async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depends(get_session)):
+    config = _config_for_save(body)
     # 同名のルールがないかチェック
     res = await session.execute(select(AlertRule.id).where(AlertRule.name == body.name))
     if res.scalar_one_or_none():
@@ -64,7 +84,7 @@ async def create_alert_rule(body: AlertRuleCreate, session: AsyncSession = Depen
         rule_type=body.rule_type,
         is_enabled=body.is_enabled,
         alert_level=body.alert_level,
-        config=body.config,
+        config=config,
     )
     session.add(rule)
     try:
@@ -90,9 +110,32 @@ async def patch_alert_rule(
     session: AsyncSession = Depends(_alert_rule_update_session, scope="function"),
 ):
     changes = body.model_dump(exclude={"revision"}, exclude_none=True)
+    criteria = [AlertRule.id == rule_id, AlertRule.revision == body.revision]
+    config_errors: dict[str, str] = {}
+    if body.config is not None:
+        try:
+            ensure_alert_rule_config_json(body.config)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        for rule_type in get_args(AlertRuleType):
+            try:
+                config = validate_alert_rule_config(rule_type, body.config)
+            except ValueError as exc:
+                config_errors[rule_type] = str(exc)
+                continue
+            if config != body.config:
+                # 対象の種類と版を更新文で確かめてから、その種類の正規化を適用する。
+                config_type = AlertRule.__table__.c.config.type
+                changes["config"] = case(
+                    (AlertRule.rule_type == rule_type, literal(config, type_=config_type)),
+                    else_=literal(body.config, type_=config_type),
+                )
+        if config_errors:
+            criteria.append(AlertRule.rule_type.not_in(list(config_errors)))
+    # 更新前に読み取ると、SQLite の同時更新で書き込み待ちと競合する。
     statement = (
         update(AlertRule)
-        .where(AlertRule.id == rule_id, AlertRule.revision == body.revision)
+        .where(*criteria)
         .values(**changes, revision=uuid.uuid4())
         .returning(AlertRule)
     )
@@ -105,9 +148,13 @@ async def patch_alert_rule(
     if rule is not None:
         return rule
 
-    existing_id = await session.scalar(select(AlertRule.id).where(AlertRule.id == rule_id))
-    if existing_id is None:
+    existing = (await session.execute(
+        select(AlertRule.revision, AlertRule.rule_type).where(AlertRule.id == rule_id)
+    )).one_or_none()
+    if existing is None:
         raise HTTPException(status_code=404, detail="Alert rule not found")
+    if existing.revision == body.revision and existing.rule_type in config_errors:
+        raise HTTPException(status_code=422, detail=config_errors[existing.rule_type])
     raise HTTPException(
         status_code=409,
         detail="Alert rule has changed since it was read",
@@ -128,6 +175,7 @@ async def import_alert_rules(
     body: AlertRulesImportRequest,
     session: AsyncSession = Depends(get_session),
 ) -> AlertRulesImportResponse:
+    configs = [_config_for_save(rule) for rule in body.rules]
     names_in_file = [rule.name for rule in body.rules]
     if len(names_in_file) != len(set(names_in_file)):
         raise HTTPException(
@@ -147,8 +195,9 @@ async def import_alert_rules(
     else:
         from sqlalchemy.dialects.sqlite import insert as dialect_insert
 
-    for imported_rule in body.rules:
-        values = imported_rule.model_dump(exclude={"name"})
+    for imported_rule, config in zip(body.rules, configs, strict=True):
+        values = imported_rule.model_dump(exclude={"name", "config"})
+        values["config"] = config
         values["revision"] = uuid.uuid4()
         statement = dialect_insert(AlertRule).values(name=imported_rule.name, **values)
         if body.overwrite_existing:
@@ -190,11 +239,12 @@ async def _resolve_history_entities(
 def _history_item_to_read(
     item: AlertHistory,
     firing_keys: set[tuple[int, str]],
-    entities: Mapping[MetricProbe, ResolvedEntity] | None = None,
+    entities: Mapping[MetricProbe, ResolvedEntity],
+    pattern_entities: Mapping[EventPatternEntityKey, ResolvedEntity],
 ) -> AlertHistoryRead:
     rule_type = item.rule.rule_type if item.rule else ""
     can_resolve = (
-        rule_type == "event_score"
+        rule_type in MANUALLY_RESOLVABLE_RULE_TYPES
         and (item.rule_id, item.context_key) in firing_keys
     )
     vcenter_id: uuid.UUID | None = None
@@ -204,7 +254,13 @@ def _history_item_to_read(
         probe = metric_probe(item.context_key, item.rule.config if item.rule else None, item.occurred_at)
         if probe is not None:
             vcenter_id, entity_moid, _, _ = probe
-            hit = (entities or {}).get(probe)
+            hit = entities.get(probe)
+            entity_name = hit.name if hit is not None else None
+    elif rule_type == "event_pattern":
+        parsed = parse_event_pattern_context_key(item.context_key)
+        if parsed is not None:
+            vcenter_id, entity_moid, _ = parsed
+            hit = pattern_entities.get((vcenter_id, entity_moid))
             entity_name = hit.name if hit is not None else None
     return AlertHistoryRead(
         id=item.id,
@@ -259,7 +315,7 @@ async def list_alert_history(
             .join(AlertRule, AlertRule.id == AlertState.rule_id)
             .where(
                 AlertState.state == "firing",
-                AlertRule.rule_type == "event_score",
+                AlertRule.rule_type.in_(MANUALLY_RESOLVABLE_RULE_TYPES),
                 AlertState.rule_id.in_(rule_ids),
             )
         )
@@ -267,8 +323,12 @@ async def list_alert_history(
 
     entities = await _resolve_history_entities(session, items, settings.perf_sample_interval_seconds)
 
+    pattern_entities = await resolve_event_pattern_entities(
+        session, (item.context_key for item in items if item.rule and item.rule.rule_type == "event_pattern"),
+    )
+
     return AlertHistoryListResponse(
-        items=[_history_item_to_read(item, firing_keys, entities) for item in items],
+        items=[_history_item_to_read(item, firing_keys, entities, pattern_entities) for item in items],
         total=total,
     )
 
@@ -280,7 +340,7 @@ async def resolve_alert_state(
 ) -> None:
     evaluator = AlertEvaluator(settings)
     try:
-        await evaluator.resolve_event_score_manually(body.rule_id, body.context_key)
+        await evaluator.resolve_event_alert_manually(body.rule_id, body.context_key)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except LookupError as exc:

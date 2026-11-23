@@ -338,7 +338,7 @@ class AlertRule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    rule_type: Mapped[str] = mapped_column(String(64), index=True)  # "event_score" or "metric_threshold"
+    rule_type: Mapped[str] = mapped_column(String(64), index=True)  # "event_score" / "metric_threshold" / "event_pattern"
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # critical / error / warning（運用上の重大度）
     alert_level: Mapped[str] = mapped_column(String(32), nullable=False, default="warning", index=True)

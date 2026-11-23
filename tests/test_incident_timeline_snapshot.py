@@ -194,3 +194,13 @@ async def test_evaluate_event_score_resolution_does_not_add_snapshot():
             )
         )
         assert len(res.scalars().all()) == 0
+
+
+def test_event_pattern_long_trigger_id_uses_stable_context_hash():
+    key = "vc:" + "a" * 256 + ":apd-timeout"
+    trigger_id = format_alert_rule_trigger_id(rule_id=3, context_key=key)
+    assert trigger_id == format_alert_rule_trigger_id(rule_id=3, context_key=key)
+    assert len(trigger_id) == 128
+    assert trigger_id.startswith("alert_rule_3_vc_aa")
+    assert trigger_id.endswith("a65003566b2bc56a")
+    assert trigger_id != format_alert_rule_trigger_id(rule_id=3, context_key=key + "2")

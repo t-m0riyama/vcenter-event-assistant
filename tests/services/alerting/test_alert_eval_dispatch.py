@@ -9,7 +9,7 @@ from vcenter_event_assistant.services.alerting.alert_eval import (
 
 
 def test_rule_evaluators_cover_supported_rule_types() -> None:
-    assert set(_RULE_EVALUATORS.keys()) == {"event_score", "metric_threshold"}
+    assert set(_RULE_EVALUATORS.keys()) == {"event_score", "metric_threshold", "event_pattern"}
 
 
 def test_rule_evaluators_values_are_callable() -> None:

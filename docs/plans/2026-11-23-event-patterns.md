@@ -1,6 +1,6 @@
 # 既知の障害パターンを検知する
 
-最終更新: 2026-11-23（PR C レビュー中）
+最終更新: 2026-11-23（PR D レビュー中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 5」にあたる。前提の「案 0a」（Issue #346）と「案 0b」（Issue #347）は済んでいる。
 
@@ -12,8 +12,8 @@
 |---|---|---|
 | A | 本書 | マージ済み [PR #360](https://github.com/t-m0riyama/vcenter-event-assistant/pull/360) |
 | B | 判定の処理と組み込みのパターン、パターンの一覧の API、タイムラインの API（`highlights.detected_patterns`） | マージ済み [PR #361](https://github.com/t-m0riyama/vcenter-event-assistant/pull/361) |
-| C | タイムラインの画面（「検知した障害パターン」） | レビュー中 |
-| D | 通知（アラートルールの種類 `event_pattern`） | 未着手 |
+| C | タイムラインの画面（「検知した障害パターン」） | マージ済み [PR #362](https://github.com/t-m0riyama/vcenter-event-assistant/pull/362) |
+| D | 通知（アラートルールの種類 `event_pattern`） | レビュー中 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
@@ -283,14 +283,14 @@ DB を読まない純関数に分け、単体テストで固める。入力は�
 
 ### つなぐ場所
 
-- **通知履歴の応答（`AlertHistoryRead`）:** `event_pattern` の `context_key` から `vcenter_id`・`entity_moid` を取り出す。`entity_name` を通知履歴に残す方法は、PR D の初めに決める（列を足す移行か、通知の本文から取るか）。
+- **通知履歴の応答（`AlertHistoryRead`）:** `event_pattern` の `context_key` から `vcenter_id`・`entity_moid` を取り出す。DB の移行は行わない。`(vcenter_id, entity_moid)` ごとに、`event_entities` の最新の行（`events.occurred_at` の降順、同時刻は `events.id` の降順）から `entity_name` を引く。一覧では組をまとめて問い合わせる。保持期間を過ぎるなどして名前を引けない場合は `None` とする。通知の本文には通知時点の名前を入れる。
 - **タイムラインのアラートの行:** `_collect_alerts` と `_alert_entry` に `event_pattern` の分岐を足す。
   - vCenter だけで絞ると、`context_key` が `{vcenter_id}:` で始まるものを含める。
   - vCenter と moid で絞ると、組み込みのすべての pattern_id で作った key（`{vcenter_id}:{entity_moid}:{pattern_id}`）の IN で含める。前方一致にしないのは、`:` を含む moid（`a` と `a:b`）を取り違えないためである。
   - 前方一致には `autoescape=True` を付ける（今の metric と同じ）。
-  - 後段の絞り込み（1100-1107 行）と名前の絞り込みにも分岐を足す。名前は通知の時点の名前を使い、名前が無ければ、`entity` を指定したときに外れる（今の metric と同じ）。
+  - 後段の絞り込み（1100-1107 行）と名前の絞り込みにも分岐を足す。名前は通知履歴と同じ最新の行から解決する。名前が無ければ、`entity` で名前を絞るときに外れる。
   - 行に `vcenter_id`・`entity_moid`・説明を入れる。
-- **自動スナップショット:** `trigger_id` は `context_key` から作られる。moid は最大 256 文字なので、`String(128)` を超え得る。PR D で、超えるときは key の後ろをハッシュにする規則を決め、テストする。自動スナップショットは、ハイライトを持たない要求で作るので、検知の結果は入らない。
+- **自動スナップショット:** `trigger_id` は `context_key` から作られる。moid は最大 256 文字なので、`String(128)` を超え得る。`format_alert_rule_trigger_id` の結果が 128 文字を超える場合は、生成した値の先頭 111 文字に `_` と、元の `context_key` の SHA-256 の先頭 16 桁（16 進）をつなぐ。128 文字以内の値は従来どおりとする。自動スナップショットは、ハイライトを持たない要求で作るので、検知の結果は入らない。
 - **画面:**
   - `api/schemas/alerts.ts` の `rule_type` の `z.enum`（2 か所）
   - `AlertRulesPanel.tsx`: 種類の選択と表示名（今は event_score 以外を「メトリクス閾値」と出す）、パターンの複数選択、クールダウンの編集（今は event_score だけ）
@@ -330,7 +330,9 @@ DB を読まない純関数に分け、単体テストで固める。入力は�
 
 ### PR D: 通知
 
-6 章のとおり。PR D の初めに、通知履歴に名前を残す方法（移行の要否）と、`trigger_id` の長さの規則を決める。移行が要るなら、移行のテストを足す。モックのモードで通知を試せるよう、発火するデータを確かめる。
+6 章のとおり。通知履歴とタイムラインの対象名は、保持されている最新のイベントの子表からまとめて引く。DB の移行は行わない。発火時の `trigger_id` が 128 文字を超える場合は、先頭を残し、末尾に元の `context_key` の SHA-256 の先頭 16 桁を使う。
+
+モックのモードに障害パターンのルールを 1 件加え、PR B で加えた切断の繰り返しで発火することをテストする。
 
 ## 8. 確認方法
 

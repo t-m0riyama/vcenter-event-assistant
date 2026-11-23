@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+MANUALLY_RESOLVABLE_RULE_TYPES = ("event_score", "event_pattern")
+
 if TYPE_CHECKING:
     from vcenter_event_assistant.db.models import AlertRule, AlertState
     from vcenter_event_assistant.settings import Settings
@@ -32,6 +34,23 @@ def is_vcenter_scoped_context_key(context_key: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def event_pattern_context_key(vcenter_id: uuid.UUID, entity_moid: str, pattern_id: str) -> str:
+    """障害パターンの vCenter・対象・パターンを 1 つの key にする。"""
+    return f"{vcenter_id}:{entity_moid}:{pattern_id}"
+
+
+def parse_event_pattern_context_key(context_key: str) -> tuple[uuid.UUID, str, str] | None:
+    """最初と最後の区切りで分ける。対象の moid はコロンを含み得る。"""
+    prefix, _, remainder = context_key.partition(":")
+    moid, _, pattern_id = remainder.rpartition(":")
+    if not moid or not pattern_id:
+        return None
+    try:
+        return uuid.UUID(prefix), moid, pattern_id
+    except ValueError:
+        return None
 
 
 def as_utc(dt: datetime) -> datetime:

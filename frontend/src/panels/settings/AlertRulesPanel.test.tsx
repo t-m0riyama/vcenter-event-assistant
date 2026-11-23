@@ -102,6 +102,9 @@ describe('AlertRulesPanel list', () => {
     expect(summary).toHaveTextContent('スコア 80 以上')
     fireEvent.click(summary)
 
+    expect(screen.getByLabelText(
+      'High score の再通知間隔（分）。同じイベント種別が続く場合でも、メールはおおよそこの間隔で1通まで',
+    )).toHaveValue(30)
     const save = screen.getByRole('button', { name: '保存' })
     expect(save).toBeDisabled()
     fireEvent.change(screen.getByLabelText('High score のアラートレベル'), { target: { value: 'warning' } })
@@ -379,4 +382,56 @@ describe('AlertRulesPanel list', () => {
     ]))
     expect(screen.queryByRole('button', { name: '編集を破棄して読み直す' })).not.toBeInTheDocument()
   })
+})
+
+it('障害パターンを複数選択して作り、一覧の行でパターンと再通知間隔を編集する', async () => {
+  const revision = '81d535f3-9d2b-4050-a276-284566833a48'
+  let rules: Record<string, unknown>[] = []
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/metrics/catalog') return jsonResponse({ metrics: [] })
+    if (url === '/api/event-patterns') {
+      return jsonResponse([
+        { id: 'apd-timeout', title: 'APD のタイムアウト' },
+        { id: 'ha-failover', title: 'HA によるフェイルオーバー' },
+      ].map((pattern) => ({
+        ...pattern, description: '', level: 'error', kind: 'sequence',
+        steps: [{ event_types: ['E'] }], within_minutes: 30, min_count: null,
+      })))
+    }
+    if (init?.method === 'POST') {
+      rules = [{
+        ...JSON.parse(String(init.body)), id: 1, is_enabled: true,
+        created_at: '2026-10-01T00:00:00Z', revision,
+      }]
+      return jsonResponse(rules[0], 201)
+    }
+    if (init?.method === 'PATCH') {
+      rules = [{ ...rules[0], ...JSON.parse(String(init.body)) }]
+      return jsonResponse(rules[0])
+    }
+    return jsonResponse(rules)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  try {
+    render(<AlertRulesPanel onError={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('ルール名'), { target: { value: 'Storage' } })
+    fireEvent.change(screen.getByLabelText('タイプ'), { target: { value: 'event_pattern' } })
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'APD のタイムアウト' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'HA によるフェイルオーバー' }))
+    fireEvent.change(screen.getByLabelText('再通知間隔（分）', { exact: true }), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
+    const row = await screen.findByLabelText('Storage、警告、障害パターン、有効')
+    expect(rules[0].config).toEqual({ pattern_ids: ['apd-timeout', 'ha-failover'], cooldown_minutes: 12 })
+    fireEvent.click(row)
+    const edit = within(row.closest('li')!)
+    const patterns = within(edit.getByRole('group', { name: 'Storage の対象のパターン' }))
+    fireEvent.click(patterns.getByRole('checkbox', { name: 'HA によるフェイルオーバー' }))
+    fireEvent.change(edit.getByLabelText(/Storage の再通知間隔/), { target: { value: '20' } })
+    fireEvent.click(edit.getByRole('button', { name: '保存' }))
+    await waitFor(() => {
+      expect(rules[0].config).toEqual({ pattern_ids: ['apd-timeout'], cooldown_minutes: 20 })
+    })
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })

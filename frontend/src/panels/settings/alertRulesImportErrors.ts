@@ -15,12 +15,11 @@ export function describeAlertRulesZodIssues(issues: readonly ZodIssue[]): string
   const first = issues[0]
   const pathStr = zodIssuePathKey(first)
   const pathArr = first.path
-  const issueCode = String(first.code)
 
   if (first.message.includes('重複')) {
     return 'ファイル内で同じルール名（name）が重複しています。ルール名ごとに 1 行だけにしてください。'
   }
-  if (pathStr.includes('format') || issueCode === 'invalid_value' || issueCode === 'invalid_literal') {
+  if (pathArr.includes('format')) {
     return '想定したアラートルールファイルではありません。format が "vea-alert-rules" である必要があります。'
   }
   if (pathStr.includes('version')) {
@@ -33,13 +32,19 @@ export function describeAlertRulesZodIssues(issues: readonly ZodIssue[]): string
     return 'ルール名（name）は 1〜255 文字の文字列として指定してください。'
   }
   if (pathStr.includes('rule_type')) {
-    return 'rule_type は "event_score" または "metric_threshold" を指定してください。'
+    return 'rule_type は "event_score" / "metric_threshold" / "event_pattern" のいずれか を指定してください。'
   }
   if (pathStr.includes('alert_level')) {
     return 'alert_level は "critical" / "error" / "warning" のいずれかを指定してください。'
   }
   if (pathStr.includes('is_enabled')) {
     return 'is_enabled は true または false で指定してください。'
+  }
+  if (pathArr.includes('pattern_ids')) {
+    return 'pattern_ids は障害パターン ID の文字列配列で指定してください。'
+  }
+  if (pathArr.includes('cooldown_minutes')) {
+    return 'cooldown_minutes は 1 以上の整数で指定してください。'
   }
   if (pathStr.includes('rules')) {
     return 'rules 配列の形式が正しくありません。各要素に name、rule_type、is_enabled、alert_level、config があるか確認してください。'
@@ -57,9 +62,10 @@ const API_DETAIL_JA: Record<string, string> = {
 export function formatAlertRulesImportApiError(err: unknown): string {
   return formatImportApiError(err, {
     apiDetailJa: API_DETAIL_JA,
-    format422Message: (detailText) =>
-      detailText
-        ? 'サーバーが送信内容を検証できませんでした。ルールの値（name、rule_type、alert_level、config）を確認してください。'
-        : 'サーバーが送信内容を検証できませんでした。ルールの値（name、rule_type、alert_level、config）を確認してください。',
+    format422Message: (detailText) => {
+      const unknown = detailText?.match(/unknown event_pattern pattern_ids: ([^/]+)/)?.[1]?.trim()
+      if (unknown) return `未定義の障害パターン ID が指定されています（${unknown}）。`
+      return 'サーバーが送信内容を検証できませんでした。ルールの値（name、rule_type、alert_level、config）を確認してください。'
+    },
   })
 }
