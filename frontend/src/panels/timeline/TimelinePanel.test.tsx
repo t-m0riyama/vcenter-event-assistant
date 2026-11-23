@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { TimelineViewItem } from '../../api/schemas'
+import type { TimelineDetectedPattern, TimelineViewItem } from '../../api/schemas'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { TIMELINE_ENTITY_DEBOUNCE_MS } from '../../hooks/useTimelineViewController'
@@ -20,6 +20,21 @@ import { TimelinePanel } from './TimelinePanel'
 
 const TEST_TIMEOUT_MS = 15_000
 const VC = '11111111-1111-4111-8111-111111111111'
+const DETECTED_PATTERN: TimelineDetectedPattern = {
+  pattern_id: 'host-conn-flapping',
+  title: 'ホストの切断の繰り返し',
+  description: 'ホストの管理ネットワークを確認してください。',
+  level: 'error',
+  vcenter_id: VC,
+  vcenter_name: 'vc-pattern',
+  entity_moid: 'host-10',
+  entity_name: 'esx-pattern',
+  entity_type: 'HostSystem',
+  first_utc: '2026-03-21T23:55:00',
+  last_utc: '2026-03-22T00:15:00Z',
+  event_count: 3,
+  event_ids: [11, 12, 13],
+}
 
 function bucket(start: string, total = 0, notable = 0, alert = 0) {
   return {
@@ -354,6 +369,148 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     fireEvent.click(screen.getByRole('button', { name: '起点を解除' }))
     await answer(3)
     expect(harness.calls[3].body.anchor).toBeUndefined()
+  })
+
+  it('検知が無いと「検知した障害パターン」の欄を出さない', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, populated({
+      highlights: { ...populated().highlights, detected_patterns: [], detected_patterns_total: 0, omitted_patterns: [] },
+    }))
+    const highlights = await screen.findByRole('region', { name: 'ハイライト' })
+    expect(within(highlights).queryByRole('heading', { name: '検知した障害パターン' })).not.toBeInTheDocument()
+  })
+
+  it('検知があると既存の 3 つのハイライトと並んで表示し、省いたパターンがなければ定義を取得しない', async () => {
+    setup()
+    const loadDefinitions = vi.fn(() => jsonResponse([]))
+    harness.extra.set('/api/event-patterns', loadDefinitions)
+    renderTimeline()
+    await answer(0, populated({ highlights: {
+      ...populated().highlights, detected_patterns: [DETECTED_PATTERN], detected_patterns_total: 1, omitted_patterns: [],
+    } }))
+    const highlights = within(await screen.findByRole('region', { name: 'ハイライト' }))
+    for (const name of ['最初の兆候', '影響の大きい対象', '初めて出たイベント種別', '検知した障害パターン']) {
+      expect(highlights.getByRole('heading', { name })).toBeInTheDocument()
+    }
+    expect(loadDefinitions).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { level: 'critical', levelLabel: 'クリティカル', entity_name: 'esx-pattern', entityLabel: 'esx-pattern' },
+    { level: 'error', levelLabel: 'エラー', entity_name: null, entityLabel: 'host-10' },
+    { level: 'warning', levelLabel: '警告', entity_name: 'esx-pattern', entityLabel: 'esx-pattern' },
+  ] as const)('検知の情報と折りたたんだ説明を出す（$level、$entityLabel）', async ({ level, levelLabel, entity_name, entityLabel }) => {
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+    setup()
+    renderTimeline()
+    await answer(0, populated({ highlights: {
+      ...populated().highlights,
+      detected_patterns: [{ ...DETECTED_PATTERN, level, entity_name }], detected_patterns_total: 1,
+    } }))
+    const patterns = await screen.findByRole('region', { name: '検知した障害パターン' })
+    const card = within(patterns)
+    expect(card.getByText(DETECTED_PATTERN.title)).toBeInTheDocument()
+    expect(card.getByText(levelLabel)).toBeInTheDocument()
+    expect(card.getByText(entityLabel)).toBeInTheDocument()
+    expect(card.getByText('vc-pattern')).toBeInTheDocument()
+    expect(card.getByText(/8:55:00.*～.*9:15:00/)).toBeInTheDocument()
+    expect(card.getByText('3 件')).toBeInTheDocument()
+    expect(card.queryByRole('button', { name: 'この対象で絞る' })).not.toBeInTheDocument()
+    const summary = card.getByText('説明')
+    const details = summary.closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    fireEvent.click(summary)
+    expect(details).toHaveAttribute('open')
+    expect(within(details).getByText(DETECTED_PATTERN.description)).toBeVisible()
+  })
+
+  it('検知から「ここを起点にする」と、検知の最初の時刻で再集計する', async () => {
+    setup()
+    window.history.replaceState(null, '', '/#/timeline?from=2026-03-22T00:00:00Z&to=2026-03-22T01:00:00Z')
+    renderTimeline()
+    await answer(0, populated({ highlights: {
+      ...populated().highlights, detected_patterns: [DETECTED_PATTERN], detected_patterns_total: 1,
+    } }))
+    const patterns = await screen.findByRole('region', { name: '検知した障害パターン' })
+    fireEvent.click(within(patterns).getByRole('button', { name: 'ここを起点にする' }))
+    await answer(1)
+    // API の anchor_time は JSON では anchor という名前で送る。
+    expect(harness.calls[1].body.anchor).toBe('2026-03-21T23:55:00.000Z')
+    expect(harness.calls[1].body).toMatchObject({ from: harness.calls[0].body.from, to: harness.calls[0].body.to })
+  })
+
+  it('起点ボタンをパターン名と対象で区別できる', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, populated({ highlights: {
+      ...populated().highlights,
+      detected_patterns: [DETECTED_PATTERN, { ...DETECTED_PATTERN, entity_moid: 'host-20', entity_name: null }],
+      detected_patterns_total: 2,
+    } }))
+    const patterns = within(await screen.findByRole('region', { name: '検知した障害パターン' }))
+    for (const target of ['esx-pattern', 'host-20']) {
+      expect(patterns.getByRole('button', {
+        name: 'ここを起点にする', description: `${DETECTED_PATTERN.title} ${target}`,
+      })).toBeInTheDocument()
+    }
+  })
+
+  it('最初と最後が同じ時刻なら 1 回だけ表示する', async () => {
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'Asia/Tokyo')
+    setup()
+    renderTimeline()
+    await answer(0, populated({ highlights: {
+      ...populated().highlights,
+      detected_patterns: [{ ...DETECTED_PATTERN, last_utc: '2026-03-21T23:55:00Z' }],
+      detected_patterns_total: 1,
+    } }))
+    const patterns = within(await screen.findByRole('region', { name: '検知した障害パターン' }))
+    expect(patterns.getByText(/8:55:00/)).not.toHaveTextContent('～')
+  })
+
+  it('表示上限を超えた件数と、判定しなかったパターンを知らせる', async () => {
+    setup()
+    renderTimeline()
+    const displayed = Array.from({ length: 20 }, (_, i) => ({ ...DETECTED_PATTERN, entity_moid: `host-${i}` }))
+    await answer(0, populated({ highlights: {
+      ...populated().highlights,
+      detected_patterns: displayed, detected_patterns_total: 23, omitted_patterns: ['apd-timeout'],
+    } }))
+    const patterns = await screen.findByRole('region', { name: '検知した障害パターン' })
+    expect(within(patterns).getByText('ほかに 3 件')).toBeInTheDocument()
+    expect(screen.getByText(/件数が多すぎるため判定しなかったパターンがあります/)).toHaveTextContent('apd-timeout')
+  })
+
+  it('検知が 0 件でも省いたパターンの名前を出し、更新しても定義を取り直さない', async () => {
+    setup()
+    const loadDefinitions = vi.fn(() => jsonResponse([{
+      id: 'apd-timeout', title: 'APD のタイムアウト', description: 'APD がタイムアウトに達しました。',
+      level: 'critical', kind: 'sequence', steps: [
+        { event_types: ['esx.problem.storage.apd.start'] }, { event_types: ['esx.problem.storage.apd.timeout'] },
+      ], within_minutes: 10, min_count: null,
+    }]))
+    harness.extra.set('/api/event-patterns', loadDefinitions)
+    renderTimeline()
+    const response = emptyViewResponse({ highlights: {
+      ...emptyViewResponse().highlights, detected_patterns: [], detected_patterns_total: 0, omitted_patterns: ['apd-timeout'],
+    } })
+    await answer(0, response)
+    expect(await screen.findByText(/件数が多すぎるため判定しなかったパターンがあります.*APD のタイムアウト/)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '検知した障害パターン' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '更新' }))
+    await answer(1, response)
+    expect(loadDefinitions).toHaveBeenCalledTimes(1)
+  })
+
+  it('定義の取得に失敗したときは省いたパターンの ID を出す', async () => {
+    setup()
+    const loadDefinitions = vi.fn(() => jsonResponse({ detail: '取得できません' }, 500))
+    harness.extra.set('/api/event-patterns', loadDefinitions)
+    renderTimeline()
+    await answer(0, populated({ highlights: { ...populated().highlights, omitted_patterns: ['apd-timeout'] } }))
+    await waitFor(() => expect(loadDefinitions).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/件数が多すぎるため判定しなかったパターンがあります.*apd-timeout/)).toBeInTheDocument()
   })
 
   it('「イベントで開く」「ログで開く」は行の時刻の前後 5 分と vCenter を渡すリンク', async () => {
@@ -775,6 +932,19 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       expect(window.location.hash).toContain('from=2026-03-10T00%3A00%3A00.000Z')
       // 再集計の要求は出ていない（最初の読み込みの 1 本だけ）
       expect(harness.calls).toHaveLength(1)
+    })
+
+    it('検知の 3 項目が無い保存済みの結果も表示する', async () => {
+      const detail = detailOf()
+      expect(detail.result.highlights).not.toHaveProperty('detected_patterns')
+      expect(detail.result.highlights).not.toHaveProperty('detected_patterns_total')
+      expect(detail.result.highlights).not.toHaveProperty('omitted_patterns')
+      await openSnapshot(listItem(), detail)
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      const highlights = await screen.findByRole('region', { name: 'ハイライト' })
+      expect(within(highlights).getByRole('heading', { name: '最初の兆候' })).toBeInTheDocument()
+      expect(within(highlights).queryByRole('heading', { name: '検知した障害パターン' })).not.toBeInTheDocument()
+      expect(await rowButton(/VmPoweredOffEvent/)).toBeInTheDocument()
     })
 
     it.each(['host-20', null, undefined])('保存済みの moid（%s）に置き換え、再集計にも使う', async (entity_moid) => {

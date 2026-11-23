@@ -1,8 +1,10 @@
 import './TimelinePanel.css'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { apiGet } from '../../api'
 import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
+import { eventPatternsResponseSchema } from '../../api/schemas/eventPatterns'
 import { validateApiRange } from '../../datetime/apiRangeLimit'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import type { ChatHandoff } from '../../hooks/chatHandoff'
@@ -58,8 +60,21 @@ export function TimelinePanel({
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [reveal, setReveal] = useState<{ id: string; nonce: number } | null>(null)
   const [guideLoader] = useState(createGuideLoader)
+  const [patternTitles, setPatternTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const requestedPatternTitles = useRef(false)
 
   const { data } = c
+  const hasOmittedPatterns = (data?.highlights.omitted_patterns.length ?? 0) > 0
+  useEffect(() => {
+    if (!hasOmittedPatterns || requestedPatternTitles.current) return
+    requestedPatternTitles.current = true
+    void apiGet<unknown>('/api/event-patterns')
+      .then((raw) => setPatternTitles(new Map(eventPatternsResponseSchema.parse(raw).map(({ id, title }) => [id, title]))))
+      .catch(() => {
+        // 定義が読めないときも、注記にはパターンの ID を出す。
+      })
+  }, [hasOmittedPatterns])
+
   const sortedItems = useMemo(() => (data ? sortTimelineItems(data.items, c.sortOrder) : []), [data, c.sortOrder])
   const listedIds = useMemo(() => new Set(data?.items.map((i) => i.id) ?? []), [data])
   // 起点は結果を取ったときのもの。条件を変えた直後に、古い結果の上へ新しい起点を描かない
@@ -174,10 +189,12 @@ export function TimelinePanel({
           />
           <TimelineHighlights
             highlights={data.highlights}
+            patternTitles={patternTitles}
             listedIds={listedIds}
             timeZone={c.timeZone}
             onRevealItem={revealItem}
             onFilterEntity={c.filterByEntity}
+            onSetAnchor={c.setAnchor}
           />
 
           <section className="timeline-items" aria-label="時系列リスト">

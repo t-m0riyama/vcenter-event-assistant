@@ -1,14 +1,17 @@
-import type { TimelineHighlights as Highlights, TimelineViewItem } from '../../api/schemas'
-import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import { useId } from 'react'
+import type { TimelineDetectedPattern, TimelineHighlights as Highlights, TimelineViewItem } from '../../api/schemas'
+import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
 import { KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS, titleStartsWithEntity } from './timelineLabels'
 
 type Props = {
   highlights: Highlights
+  patternTitles: ReadonlyMap<string, string>
   /** リストに載っている行の id。打ち切りで載っていない行は、クリックで移動できない。 */
   listedIds: ReadonlySet<string>
   timeZone: string
   onRevealItem: (id: string) => void
   onFilterEntity: (entityName: string, vcenterId: string | null | undefined, entityMoid?: string | null) => void
+  onSetAnchor: (timestampUtc: string) => void
 }
 
 function firstSignalLabel(item: TimelineViewItem): string {
@@ -17,12 +20,58 @@ function firstSignalLabel(item: TimelineViewItem): string {
   return [item.entity_name, item.title].filter(Boolean).join(' / ')
 }
 
-/** ハイライト: 最初の兆候・影響の大きい対象・初めて出たイベント種別。データが無い項目は出さない。 */
-export function TimelineHighlights({ highlights, listedIds, timeZone, onRevealItem, onFilterEntity }: Props) {
+function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
+  pattern: TimelineDetectedPattern
+  timeZone: string
+  onSetAnchor: Props['onSetAnchor']
+}) {
+  const id = useId()
+  const titleId = `${id}-title`
+  const entityId = `${id}-entity`
+  const sameTime = parseApiUtcInstantMs(pattern.first_utc) === parseApiUtcInstantMs(pattern.last_utc)
+  const descriptionIds = `${titleId} ${entityId}`
+
+  return (
+    <li>
+      <p>
+        <strong id={titleId}>{pattern.title}</strong>{' '}
+        <span className={LEVEL_BADGE_CLASS[pattern.level]}>{LEVEL_LABELS[pattern.level]}</span>
+      </p>
+      <p className="timeline-highlights__meta">
+        <span id={entityId}>{pattern.entity_name || pattern.entity_moid}</span>
+        {pattern.vcenter_name ? <>・<span>{pattern.vcenter_name}</span></> : null}
+        ・<span>{pattern.event_count} 件</span>
+      </p>
+      <p className="timeline-highlights__meta">
+        {formatIsoInTimeZone(pattern.first_utc, timeZone)}
+        {sameTime ? null : ` ～ ${formatIsoInTimeZone(pattern.last_utc, timeZone)}`}
+      </p>
+      <details>
+        <summary aria-describedby={descriptionIds}>説明</summary>
+        <p className="timeline-highlights__meta">{pattern.description}</p>
+      </details>
+      <button
+        type="button"
+        className="btn btn--gray timeline-highlights__link"
+        aria-describedby={descriptionIds}
+        onClick={() => onSetAnchor(pattern.first_utc)}
+      >
+        ここを起点にする
+      </button>
+    </li>
+  )
+}
+
+/** ハイライトはデータがある項目を出す。 */
+export function TimelineHighlights({ highlights, patternTitles, listedIds, timeZone, onRevealItem, onFilterEntity, onSetAnchor }: Props) {
+  const headingId = useId()
   const first = highlights.first_signal ?? null
   const top = highlights.top_entities
   const fresh = highlights.new_event_types
-  if (!first && top.length === 0 && fresh.length === 0) return null
+  const patterns = highlights.detected_patterns
+  const remaining = highlights.detected_patterns_total - patterns.length
+  const omitted = highlights.omitted_patterns
+  if (!first && top.length === 0 && fresh.length === 0 && patterns.length === 0 && omitted.length === 0) return null
 
   return (
     <section className="timeline-highlights" aria-label="ハイライト">
@@ -86,6 +135,30 @@ export function TimelineHighlights({ highlights, listedIds, timeZone, onRevealIt
           </div>
         ) : null}
       </div>
+      {patterns.length > 0 ? (
+        <section className="timeline-highlights__card timeline-highlights__patterns" aria-labelledby={headingId}>
+          <h4 id={headingId}>検知した障害パターン</h4>
+          <ul>
+            {patterns.map((pattern) => (
+              <DetectedPatternItem
+                key={JSON.stringify([
+                  pattern.pattern_id, pattern.vcenter_id, pattern.entity_moid, pattern.first_utc,
+                  pattern.event_ids[0] ?? pattern.last_utc,
+                ])}
+                pattern={pattern}
+                timeZone={timeZone}
+                onSetAnchor={onSetAnchor}
+              />
+            ))}
+          </ul>
+          {remaining > 0 ? <p className="hint">ほかに {remaining} 件</p> : null}
+        </section>
+      ) : null}
+      {omitted.length > 0 ? (
+        <p className="hint timeline-highlights__omitted" role="note">
+          件数が多すぎるため判定しなかったパターンがあります（{omitted.map((id) => patternTitles.get(id) ?? id).join('、')}）。
+        </p>
+      ) : null}
     </section>
   )
 }
