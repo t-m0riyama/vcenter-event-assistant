@@ -183,6 +183,62 @@ async def test_mock_mode_chat_and_search_without_external_keys(
     assert "example.com/mock" in (data.get("assistant_content") or "")
 
 
+async def test_mock_tasks_are_saved_once_and_visible_in_events_and_timeline(
+    monkeypatch: pytest.MonkeyPatch, open_client, no_external_collectors: None
+) -> None:
+    from vcenter_event_assistant.mocks import mock_collectors
+    from vcenter_event_assistant.plugins.registry import build_collector_registry
+    from vcenter_event_assistant.plugins.runtime import run_collector_for_vcenter
+
+    _enable_mock_mode(monkeypatch)
+    await run_mock_mode_seed_if_enabled()
+    settings = get_settings()
+    async with session_scope() as session:
+        vc_id = (await session.scalars(select(VCenter.id))).one()
+
+    now = datetime.now(timezone.utc)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(mock_collectors, "datetime", FrozenDateTime)
+    registration = build_collector_registry(settings).get("builtin.vcenter.tasks")
+    assert registration is not None
+    for _ in range(2):
+        result = await run_collector_for_vcenter(settings, registration, vc_id)
+        assert result.status == "ok"
+
+    async with open_client(app=create_app()) as ac:
+        events = await ac.get("/api/events", params={"event_type_contains": "task."})
+        assert events.status_code == 200
+        assert sorted(event["event_type"] for event in events.json()["items"]) == [
+            "task.canceled.VirtualMachine.migrate",
+            "task.error.VirtualMachine.powerOn",
+            "task.success.VirtualMachine.powerOn",
+        ]
+
+        timeline = await ac.post(
+            "/api/incident-timeline/view",
+            json={
+                "from": (now - timedelta(hours=1)).isoformat(),
+                "to": now.isoformat(),
+                "sources": ["event"],
+            },
+        )
+        assert timeline.status_code == 200
+        task_scores = {
+            item["ref"]["event_type"]: item["score"]
+            for item in timeline.json()["items"]
+            if item["ref"]["event_type"].startswith("task.")
+        }
+        assert task_scores == {
+            "task.canceled.VirtualMachine.migrate": 20,
+            "task.error.VirtualMachine.powerOn": 50,
+        }
+
+
 @pytest.mark.asyncio
 async def test_mock_mode_alert_notify_skips_smtp(
     monkeypatch: pytest.MonkeyPatch,

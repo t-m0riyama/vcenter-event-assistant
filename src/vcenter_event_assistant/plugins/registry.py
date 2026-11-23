@@ -346,8 +346,12 @@ def build_collector_registry(
 def _legacy_interval(
     settings: Settings, plugin_id: str, plugin: CollectorPlugin
 ) -> int:
-    if plugin_id == "builtin.vcenter.events":
+    if plugin_id in {"builtin.vcenter.events", "builtin.vcenter.tasks"}:
         return settings.event_poll_interval_seconds
-    if plugin_id.startswith("builtin.vcenter."):
+    if plugin_id in {
+        "builtin.vcenter.host_quickstats",
+        "builtin.vcenter.host_performance",
+        "builtin.vcenter.datastore_capacity",
+    }:
         return settings.perf_sample_interval_seconds
     return plugin.manifest.default_interval_seconds

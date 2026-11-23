@@ -50,7 +50,7 @@ vCenter Event Assistant のフロントエンドは、以下の **6つのタブ*
 
 ### 🔌 API エンドポイント一覧（FastAPI）
 
-vCenter Event Assistant は以下の **11個のエンドポイントグループ** と **6個の定期実行ジョブ**で構成される。
+vCenter Event Assistant は以下の **11個のエンドポイントグループ**を提供し、定期実行ジョブで収集や集計を行う。
 
 #### イベント管理 (`/api/events`)
 
@@ -130,7 +130,8 @@ vCenter Event Assistant は以下の **11個のエンドポイントグループ
 
 | Job ID | トリガー | 処理内容 | 頻度 | LLM連携 | 入力元 |
 |--------|--------|--------|------|---------|--------|
-| `poll_events` | **Interval** | vCenter からイベント定期ポーリング → DB挿入・スコア計算 | `event_poll_interval_seconds` (既定60秒) | ❌ | **pyVmomi** (vCenter API) |
+| `poll_events` | **Interval** | vCenter からイベント定期ポーリング → DB挿入・スコア計算 | `EVENT_POLL_INTERVAL_SECONDS` (既定120秒) | ❌ | **pyVmomi** (vCenter API) |
+| `collector:builtin.vcenter.tasks` | **Interval** | 完了したタスクの結果（成功・失敗・キャンセル）と所要時間をイベントとして収集 | `EVENT_POLL_INTERVAL_SECONDS` (既定120秒) | ❌ | **pyVmomi** (vCenter API) |
 | `poll_perf` | **Interval** | vCenter からホストメトリクス定期サンプリング（CPU/メモリ%） → DB挿入 | `perf_sample_interval_seconds` (既定300秒) | ❌ | **pyVmomi** (`quickStats`) |
 | `inventory_sync` | **Interval** | 有効な vCenter の管理対象と関係を収集し、変化の履歴を保存 | `inventory_sync_interval_seconds`（既定 600 秒） | ❌ | pyVmomi（PropertyCollector） |
 | `purge_metrics` | **Interval** | 期限切れイベント・メトリクス・インベントリ履歴などを削除 | 6時間ごと | ❌ | DB |

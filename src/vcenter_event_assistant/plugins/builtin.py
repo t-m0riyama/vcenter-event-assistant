@@ -90,6 +90,41 @@ class EventsCollector(EventCollector):
         return tuple(_event(row) for row in rows)
 
 
+class TasksCollector(EventCollector):
+    """vCenter の完了したタスク。"""
+
+    manifest = CollectorManifest(
+        id="builtin.vcenter.tasks",
+        display_name="vCenter Tasks",
+        version="1.0.0",
+        data_kinds=frozenset({"event"}),
+        default_interval_seconds=120,
+        description=(
+            "vCenter で完了したタスクの結果と所要時間を取り込みます。成功・失敗・"
+            "キャンセルが対象です。タスクの結果の取り込みが不要な場合は無効にできます。"
+        ),
+    )
+
+    def fetch(
+        self, si: Any, context: CollectionContext, *, since: datetime | None
+    ) -> tuple[EventInput, ...]:
+        from vcenter_event_assistant.collectors.tasks import (
+            fetch_tasks_from_connection_blocking,
+        )
+
+        rows, _ = fetch_tasks_from_connection_blocking(si, since=since)
+        return tuple(_event(row) for row in rows)
+
+    def fetch_mock(
+        self, context: CollectionContext, *, since: datetime | None
+    ) -> tuple[EventInput, ...]:
+        from vcenter_event_assistant.mocks.mock_collectors import (
+            fetch_mock_tasks_blocking,
+        )
+
+        return tuple(_event(row) for row in fetch_mock_tasks_blocking(since))
+
+
 QUICKSTATS = (
     MetricDefinition(
         "host.cpu.usage_pct", "Host CPU usage", "%", "HostSystem", category="cpu"
@@ -228,6 +263,7 @@ class DatastoreCapacityCollector(_MetricCollector):
 def builtin_collectors() -> tuple[CollectorBase, ...]:
     return (
         EventsCollector(),
+        TasksCollector(),
         HostQuickStatsCollector(),
         HostPerformanceCollector(),
         DatastoreCapacityCollector(),
