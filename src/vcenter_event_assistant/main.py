@@ -92,6 +92,7 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     # Viewer でも呼べる重い集計（Issue #301）。タイムライン画面は条件を変えるたびに読み込むので、
     # チャットとは別の枠で数える。上限はプレビューと同じ考え方でチャットの 2 倍。
     "/api/incident-timeline/view": ("incident_timeline_view", 60),
+    "/api/incident-timeline/export": ("incident_timeline_view", 60),
     # スナップショットの保存は view と同じ集計をサーバで走らせるので、同じ枠で数える。
     "/api/incident-timeline/snapshots/manual": ("incident_timeline_view", 60),
     "/api/ingest/run": ("ingest", 60),
@@ -101,7 +102,7 @@ _RATE_LIMITED_POST_PATHS: dict[str, tuple[str, int]] = {
     "/api/plugins/installed/upload": ("plugins", 60),
 }
 
-# 外へ接続して確かめる API。繰り返し呼ぶと応答時間の差でポートスキャンができる（監査 M-3）。
+# 外へ接続して確かめる API（監査 M-3）や、保存したタイムラインから調査資料を作る重い API を数える。
 # パスに ID が入るので、``/`` で区切った部品ごとに照合し、``*`` は部品 1 つに一致する。
 _RATE_LIMITED_PATTERNS: tuple[tuple[str, tuple[str, ...], str, int], ...] = tuple(
     (method, tuple(pattern.split("/")), bucket, window)
@@ -110,6 +111,12 @@ _RATE_LIMITED_PATTERNS: tuple[tuple[str, tuple[str, ...], str, int], ...] = tupl
         ("POST", "/api/plugins/collectors/*/draft/actions/*", "probe", 60),
         ("GET", "/api/plugins/vcenters/*/hosts", "probe", 60),
         ("GET", "/api/vcenters/*/test", "probe", 60),
+        (
+            "GET",
+            "/api/incident-timeline/snapshots/manual/*/export",
+            "incident_timeline_view",
+            60,
+        ),
     )
 )
 
