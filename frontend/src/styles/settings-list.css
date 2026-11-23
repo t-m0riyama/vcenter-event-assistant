@@ -154,3 +154,27 @@
   gap: var(--spacing-2);
   margin-top: var(--spacing-2);
 }
+
+/* vCenter 一覧の収集状態 */
+.vcenter-inventory-status {
+  min-inline-size: 12rem;
+  max-inline-size: 24rem;
+  display: grid;
+  gap: var(--spacing-1);
+  overflow-wrap: anywhere;
+}
+
+.vcenter-inventory-status time {
+  white-space: nowrap;
+}
+
+.vcenter-inventory-status__failing {
+  color: var(--color-warning-text);
+}
+
+.vcenter-inventory-status__error {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}

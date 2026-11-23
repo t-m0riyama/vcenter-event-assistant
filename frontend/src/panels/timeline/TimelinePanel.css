@@ -605,3 +605,89 @@
   color: var(--color-text-secondary);
   font-size: var(--font-size-footnote);
 }
+
+/* ---- 影響範囲 ---- */
+.timeline-impact {
+  margin-block: var(--spacing-4);
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-background-secondary);
+  overflow-wrap: anywhere;
+}
+
+.timeline-impact__head,
+.timeline-impact__head label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.timeline-impact__head {
+  justify-content: space-between;
+}
+
+.timeline-impact__head h3,
+.timeline-impact__group h4 {
+  margin: 0;
+}
+
+.timeline-impact__notice {
+  border-inline-start: 3px solid var(--color-warning-text);
+  padding-inline-start: var(--spacing-2);
+}
+
+.timeline-impact__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--spacing-2);
+}
+
+.timeline-impact__group {
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-background-elevated);
+}
+
+.timeline-impact summary {
+  cursor: pointer;
+}
+
+.timeline-impact__group h4,
+.timeline-impact summary {
+  font-size: var(--font-size-subhead);
+  font-weight: var(--font-weight-semibold);
+}
+
+.timeline-impact__group ul,
+.timeline-impact__changes ul {
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-impact li + li {
+  margin-top: var(--spacing-2);
+}
+
+.timeline-impact__group summary > h4 {
+  display: inline;
+}
+
+.timeline-impact__filter.btn {
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-footnote);
+  max-inline-size: 100%;
+  white-space: normal;
+  text-align: start;
+}
+
+.timeline-impact__changes {
+  margin-top: var(--spacing-3);
+}
+
+.timeline-impact__content > :last-child {
+  margin-bottom: 0;
+}

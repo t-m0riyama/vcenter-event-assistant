@@ -57,6 +57,7 @@ export type TimelineLoadError = {
 
 type Job = {
   readonly id: number
+  readonly loadKey: string
   readonly body: ReturnType<typeof buildViewRequest> | null
   /** 再試行の待ちを中断するための印。次の要求を予約すると中断する。 */
   readonly abort: AbortController
@@ -133,6 +134,10 @@ export function useTimelineViewController(
   const intentRef = useRef(0)
   const savedViewActiveRef = useRef(false)
   savedViewActiveRef.current = savedView !== null
+  const [settledLoad, setSettledLoad] = useState<{
+    key: string
+    outcome: 'ready' | 'unprocessable' | 'failed'
+  } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<TimelineLoadError | null>(null)
   const [sortOrder, setSortOrderState] = useState<TimelineSortOrder>(readSortOrder)
@@ -233,6 +238,7 @@ export function useTimelineViewController(
             setLoadedRange({ from: job.body.from, to: job.body.to })
             setLoadedRequest(job.body)
             setError(null)
+            setSettledLoad({ key: job.loadKey, outcome: 'ready' })
           }
         } catch (e) {
           if (e instanceof TimelineRequestSupersededError) continue
@@ -241,6 +247,10 @@ export function useTimelineViewController(
             setLoadedRange(null)
             setLoadedRequest(null)
             setError(toLoadError(e))
+            setSettledLoad({
+              key: job.loadKey,
+              outcome: e instanceof ApiError && e.status === 422 ? 'unprocessable' : 'failed',
+            })
           }
         }
       }
@@ -338,9 +348,10 @@ export function useTimelineViewController(
     const abort = new AbortController()
     const range = resolveTimelineRange(conditionsRef.current.range, Date.now())
     setResolvedRange(range)
+    setSettledLoad(null)
     const invalid = urlIssue ?? validateApiRange(range)
     if (invalid) {
-      desiredRef.current = { id: ++jobCounterRef.current, body: null, abort }
+      desiredRef.current = { id: ++jobCounterRef.current, loadKey, body: null, abort }
       setData(null)
       setLoadedRange(null)
       setLoadedRequest(null)
@@ -350,6 +361,7 @@ export function useTimelineViewController(
     }
     desiredRef.current = {
       id: ++jobCounterRef.current,
+      loadKey,
       body: buildViewRequest(conditionsRef.current, range),
       abort,
     }
@@ -613,6 +625,8 @@ export function useTimelineViewController(
     // 保存済みの結果の表示中は、保存できない（現在のデータの条件ではないため）
     loadedRequest: savedView ? null : loadedRequest,
     loading: showingSaved ? false : loading,
+    // 現在の条件に対する応答だけを影響範囲の時点の決定に使う。
+    impactTimelineState: showingSaved ? 'ready' : !loading && settledLoad?.key === loadKey ? settledLoad.outcome : 'pending',
     error: showingSaved ? null : error,
     sortOrder,
     setSortOrder,

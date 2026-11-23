@@ -10,6 +10,8 @@ import {
   incidentTimelineBuildRequestSchema,
   incidentTimelineManualSnapshotListItemSchema,
   incidentTimelineSchema,
+  inventoryImpactResponseSchema,
+  inventoryStatusResponseSchema,
 } from './schemas'
 
 describe('eventRowSchema', () => {
@@ -522,5 +524,44 @@ describe('incidentTimelineManualSnapshotListItemSchema', () => {
     })
     expect(parsed.snapshot_kind).toBe('auto')
     expect(parsed.trigger_id).toBe('critical_burst')
+  })
+})
+
+describe('inventory API schemas', () => {
+  const at = '2026-03-22T00:00:00Z'
+  const target = { moid: 'vm-12', entity_type: 'VirtualMachine', name: 'app' }
+  const impact = {
+    target, at, status: 'ok', recorded_since: at, last_success_at: at,
+    observed_before: at, observed_after: null,
+    groups: [{ relation: 'hosts', items: [{ ...target, removed: true }], total: 2 }],
+  }
+
+  it.each(['ok', 'stale', 'not_recorded', 'unknown_target', 'unsupported_type', 'absent_at_time'])(
+    'parses %s and allows omitted changes',
+    (status) => expect(inventoryImpactResponseSchema.parse({ ...impact, status })).toEqual({ ...impact, status }),
+  )
+
+  it('parses changes and rejects unknown statuses, actions and malformed observation times', () => {
+    const changes = { items: [{ kind: 'vm_host', other: target, at, action: 'opened' }], total: 1 }
+    expect(inventoryImpactResponseSchema.parse({ ...impact, changes }).changes).toEqual(changes)
+    expect(inventoryImpactResponseSchema.safeParse({ ...impact, changes: null }).success).toBe(true)
+    expect(inventoryImpactResponseSchema.safeParse({ ...impact, status: 'not_found' }).success).toBe(false)
+    expect(inventoryImpactResponseSchema.safeParse({ ...impact, observed_after: 'yesterday' }).success).toBe(false)
+    expect(inventoryImpactResponseSchema.safeParse({
+      ...impact, changes: { ...changes, items: [{ ...changes.items[0], action: 'moved' }] },
+    }).success).toBe(false)
+  })
+
+  it('parses an unobserved vCenter with null collection fields', () => {
+    const raw = {
+      enabled: false, interval_seconds: 300, timeout_seconds: 60,
+      vcenters: [{
+        vcenter_id: '11111111-1111-4111-8111-111111111111', vcenter_name: 'lab', is_enabled: false,
+        first_success_at: null, last_started_at: null, last_success_at: null, last_failure_at: null,
+        last_error: null, last_warning: null, last_warning_at: null, object_count: null, relation_count: null,
+      }],
+    }
+    expect(inventoryStatusResponseSchema.parse(raw)).toEqual(raw)
+    expect(inventoryStatusResponseSchema.safeParse({ ...raw, enabled: 'false' }).success).toBe(false)
   })
 })

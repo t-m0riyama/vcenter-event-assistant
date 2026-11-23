@@ -25,15 +25,22 @@ async def seed_inventory(
     screenshot = vcenter.name == SCREENSHOT_VCENTER_NAME
     # デモのイベントとメトリクスより前から関係を記録する。
     initial = now - timedelta(minutes=70)
+    # デモのホストの障害（54〜48 分前）の直後に、HA で VM が移ったことにする。
+    moved_at = now - timedelta(minutes=40)
     previous = mock_inventory(
         earlier, vcenter_name=vcenter.name, screenshot_before_move=screenshot
     )
     current = mock_inventory(now, vcenter_name=vcenter.name)
-    for observed_at, observation in (
-        (initial, previous),
-        (earlier, previous),
-        (now, current),
-    ):
+    # 既定の収集の間隔（10 分）ごとに観測を入れ、観測の間が空いた（stale）ように見せない。
+    observations = []
+    observed_at = initial
+    while observed_at < now:
+        observations.append(
+            (observed_at, previous if observed_at < moved_at else current)
+        )
+        observed_at += timedelta(minutes=10)
+    observations.append((now, current))
+    for observed_at, observation in observations:
         await persist_inventory(
             session,
             vcenter.id,

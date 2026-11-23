@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
-import { vcenterSchema, type VCenter } from '../../api/schemas'
+import { getInventoryStatus } from '../../api/inventory'
+import { vcenterSchema, type InventoryStatusResponse, type InventoryVCenterStatus, type VCenter } from '../../api/schemas'
 import { useAuth } from '../../auth/useAuth'
+import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
+import { useTimeZone } from '../../datetime/useTimeZone'
 import { toErrorMessage } from '../../utils/errors'
 
 const vcenterListSchema = z.array(vcenterSchema)
@@ -21,10 +24,19 @@ type VCenterFormState = {
 /** vCenter 接続設定パネル。 */
 export function VCentersPanel({ onError }: { onError: (e: string | null) => void }) {
   const { hasRole } = useAuth()
+  const { timeZone } = useTimeZone()
   // 登録・編集・削除は admin、接続テストは operator 以上（サーバの権限と同じ）
   const canEdit = hasRole('admin')
   const canTest = hasRole('operator')
-  const [list, setList] = useState<VCenter[]>([])
+  const [list, setList] = useState<VCenter[] | null>(null)
+  const [inventoryLoad, setInventoryLoad] = useState<{
+    list: VCenter[]
+    result: InventoryStatusResponse | 'error'
+  } | null>(null)
+  const inventory = inventoryLoad?.list === list ? inventoryLoad.result : null
+  const inventoryById = new Map(inventory && inventory !== 'error'
+    ? inventory.vcenters.map((status) => [status.vcenter_id, status])
+    : [])
   const [form, setForm] = useState<VCenterFormState>({
     name: '',
     host: '',
@@ -65,6 +77,17 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void load()
   }, [load])
+
+  useEffect(() => {
+    // 一覧の読み込みが成功したときと、登録・編集・削除などで一覧を取り直したときに収集状態も更新する。
+    if (!list) return
+    let cancelled = false
+    void getInventoryStatus().then(
+      (status) => { if (!cancelled) setInventoryLoad({ list, result: status }) },
+      () => { if (!cancelled) setInventoryLoad({ list, result: 'error' }) },
+    )
+    return () => { cancelled = true }
+  }, [list])
 
   const add = async () => {
     onError(null)
@@ -260,144 +283,210 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
       )}
 
       <h2>一覧</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>名前</th>
-            <th>ホスト</th>
-            <th>SSL 検証</th>
-            <th>有効</th>
-            <th>ユーザー</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((v) =>
-            editingId === v.id ? (
-              <tr key={v.id}>
-                <td>
-                  <input
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    aria-label="表示名"
-                  />
-                </td>
-                <td>
-                  <select
-                    value={editForm.protocol}
-                    onChange={(e) =>
-                      setEditForm({
-                        ...editForm,
-                        protocol: e.target.value === 'http' ? 'http' : 'https',
-                        verify_ssl: e.target.value === 'http' ? false : editForm.verify_ssl,
-                      })
-                    }
-                    aria-label="プロトコル"
-                    style={{ display: 'inline', width: '34%', marginRight: '4px' }}
-                  >
-                    <option value="https">HTTPS</option>
-                    <option value="http">HTTP</option>
-                  </select>
-                  <input
-                    value={editForm.host}
-                    onChange={(e) => setEditForm({ ...editForm, host: e.target.value })}
-                    aria-label="ホスト"
-                    style={{ display: 'inline', width: '40%', marginRight: '4px' }}
-                  />
-                  :
-                  <input
-                    type="number"
-                    value={editForm.port}
-                    onChange={(e) => setEditForm({ ...editForm, port: Number(e.target.value) })}
-                    aria-label="ポート"
-                    style={{ display: 'inline', width: '22%', marginLeft: '4px' }}
-                  />
-                </td>
-                <td>
-                  <label className="check">
+      {inventory === 'error' && <p className="hint" role="note">関係の収集状態を読み込めませんでした。</p>}
+      {inventory && inventory !== 'error' && !inventory.enabled && <p className="hint" role="note">関係の収集は無効です。</p>}
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>名前</th>
+              <th>ホスト</th>
+              <th>SSL 検証</th>
+              <th>有効</th>
+              <th>ユーザー</th>
+              <th>関係の収集</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {list?.map((v) =>
+              editingId === v.id ? (
+                <tr key={v.id}>
+                  <td>
                     <input
-                      type="checkbox"
-                      checked={editForm.protocol === 'https' && editForm.verify_ssl}
-                      disabled={editForm.protocol !== 'https'}
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      aria-label="表示名"
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={editForm.protocol}
                       onChange={(e) =>
-                        setEditForm({ ...editForm, verify_ssl: e.target.checked })
+                        setEditForm({
+                          ...editForm,
+                          protocol: e.target.value === 'http' ? 'http' : 'https',
+                          verify_ssl: e.target.value === 'http' ? false : editForm.verify_ssl,
+                        })
                       }
-                    />
-                  </label>
-                </td>
-                <td>
-                  <label className="check">
+                      aria-label="プロトコル"
+                      style={{ display: 'inline', width: '34%', marginRight: '4px' }}
+                    >
+                      <option value="https">HTTPS</option>
+                      <option value="http">HTTP</option>
+                    </select>
                     <input
-                      type="checkbox"
-                      checked={editForm.is_enabled}
-                      onChange={(e) => setEditForm({ ...editForm, is_enabled: e.target.checked })}
+                      value={editForm.host}
+                      onChange={(e) => setEditForm({ ...editForm, host: e.target.value })}
+                      aria-label="ホスト"
+                      style={{ display: 'inline', width: '40%', marginRight: '4px' }}
                     />
-                  </label>
-                </td>
-                <td>
-                  <input
-                    value={editForm.username}
-                    onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-                    aria-label="ユーザー"
-                    placeholder="ユーザー名"
-                    style={{ marginBottom: '4px', width: '100%', boxSizing: 'border-box' }}
-                  />
-                  <input
-                    type="password"
-                    value={editForm.password}
-                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                    aria-label="パスワード"
-                    placeholder="パスワード（変更しない場合は空欄）"
-                    style={{ width: '100%', boxSizing: 'border-box' }}
-                  />
-                </td>
-                <td className="actions">
-                  <button type="button" className="btn btn--filled" onClick={() => void saveEdit()}>
-                    保存
-                  </button>
-                  <button type="button" className="btn btn--gray" onClick={cancelEdit}>
-                    キャンセル
-                  </button>
-                </td>
-              </tr>
-            ) : (
-              <tr key={v.id}>
-                <td>{v.name}</td>
-                <td>
-                  {v.protocol}://{v.host}:{v.port}
-                </td>
-                <td>{v.protocol === 'https' && v.verify_ssl ? 'はい' : 'いいえ'}</td>
-                <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
-                <td>{v.username}</td>
-                <td className="actions">
-                  {canTest && (
-                    <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
-                      接続テスト
+                    :
+                    <input
+                      type="number"
+                      value={editForm.port}
+                      onChange={(e) => setEditForm({ ...editForm, port: Number(e.target.value) })}
+                      aria-label="ポート"
+                      style={{ display: 'inline', width: '22%', marginLeft: '4px' }}
+                    />
+                  </td>
+                  <td>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={editForm.protocol === 'https' && editForm.verify_ssl}
+                        disabled={editForm.protocol !== 'https'}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, verify_ssl: e.target.checked })
+                        }
+                      />
+                    </label>
+                  </td>
+                  <td>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={editForm.is_enabled}
+                        onChange={(e) => setEditForm({ ...editForm, is_enabled: e.target.checked })}
+                      />
+                    </label>
+                  </td>
+                  <td>
+                    <input
+                      value={editForm.username}
+                      onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                      aria-label="ユーザー"
+                      placeholder="ユーザー名"
+                      style={{ marginBottom: '4px', width: '100%', boxSizing: 'border-box' }}
+                    />
+                    <input
+                      type="password"
+                      value={editForm.password}
+                      onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                      aria-label="パスワード"
+                      placeholder="パスワード（変更しない場合は空欄）"
+                      style={{ width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </td>
+                  <td><InventoryStatusCell
+                    status={inventoryById.get(v.id)}
+                    availability={inventory === 'error' ? 'error' : inventory ? 'ready' : 'loading'}
+                    connectionEnabled={v.is_enabled}
+                    timeZone={timeZone}
+                  /></td>
+                  <td className="actions">
+                    <button type="button" className="btn btn--filled" onClick={() => void saveEdit()}>
+                      保存
                     </button>
-                  )}
-                  {canEdit && (
-                    <>
-                      <button type="button" className="btn btn--gray" onClick={() => startEdit(v)}>
-                        編集
+                    <button type="button" className="btn btn--gray" onClick={cancelEdit}>
+                      キャンセル
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={v.id}>
+                  <td>{v.name}</td>
+                  <td>
+                    {v.protocol}://{v.host}:{v.port}
+                  </td>
+                  <td>{v.protocol === 'https' && v.verify_ssl ? 'はい' : 'いいえ'}</td>
+                  <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
+                  <td>{v.username}</td>
+                  <td><InventoryStatusCell
+                    status={inventoryById.get(v.id)}
+                    availability={inventory === 'error' ? 'error' : inventory ? 'ready' : 'loading'}
+                    connectionEnabled={v.is_enabled}
+                    timeZone={timeZone}
+                  /></td>
+                  <td className="actions">
+                    {canTest && (
+                      <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
+                        接続テスト
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn--gray"
-                        onClick={() => void toggleEnabled(v)}
-                      >
-                        {v.is_enabled ? '無効' : '有効'}
-                      </button>
-                      <button type="button" className="btn btn--danger" onClick={() => void remove(v.id)}>
-                        削除
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ),
-          )}
-        </tbody>
-      </table>
+                    )}
+                    {canEdit && (
+                      <>
+                        <button type="button" className="btn btn--gray" onClick={() => startEdit(v)}>
+                          編集
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--gray"
+                          onClick={() => void toggleEnabled(v)}
+                        >
+                          {v.is_enabled ? '無効' : '有効'}
+                        </button>
+                        <button type="button" className="btn btn--danger" onClick={() => void remove(v.id)}>
+                          削除
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function isLaterObservation(at: string, previous: string): boolean {
+  const differenceMs = parseApiUtcInstantMs(at) - parseApiUtcInstantMs(previous)
+  if (differenceMs !== 0) return differenceMs > 0
+  // API の小数秒はミリ秒より細かいことがある。
+  return Number(at.match(/\.\d+/)?.[0] ?? 0) > Number(previous.match(/\.\d+/)?.[0] ?? 0)
+}
+
+function InventoryStatusCell({
+  status, availability, connectionEnabled, timeZone,
+}: {
+  status?: InventoryVCenterStatus
+  availability: 'ready' | 'loading' | 'error'
+  connectionEnabled: boolean
+  timeZone: string
+}) {
+  const disabled = !(status?.is_enabled ?? connectionEnabled)
+  if (!status) {
+    const message = { ready: '—', loading: '読み込み中…', error: '取得できません' }[availability]
+    return (
+      <div className="vcenter-inventory-status">
+        {disabled && <div>接続が無効のため収集しません</div>}
+        <div>{message}</div>
+      </div>
+    )
+  }
+
+  const showTime = (at: string | null) => at ? <time dateTime={at}>{formatIsoInTimeZone(at, timeZone)}</time> : '—'
+  const { last_success_at, last_failure_at, last_error, last_warning, last_warning_at, object_count, relation_count } = status
+  const failing = last_failure_at && (!last_success_at || isLaterObservation(last_failure_at, last_success_at))
+
+  return (
+    <div className="vcenter-inventory-status">
+      {failing && <strong className="vcenter-inventory-status__failing">失敗中</strong>}
+      {disabled && <div>接続が無効のため収集しません</div>}
+      <div>最後の成功 {last_success_at ? showTime(last_success_at) : '未収集'}</div>
+      {(last_failure_at || last_error) && (
+        <div>
+          最後の失敗 {showTime(last_failure_at)}
+          {last_error && <div className="vcenter-inventory-status__error" title={last_error}>{last_error}</div>}
+        </div>
+      )}
+      {(last_warning_at || last_warning) && (
+        <div>警告 {showTime(last_warning_at)}{last_warning && <div>{last_warning}</div>}</div>
+      )}
+      <div>管理対象 {object_count ?? '—'} 件、関係 {relation_count ?? '—'} 件</div>
     </div>
   )
 }
