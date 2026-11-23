@@ -1,6 +1,6 @@
 # 既知の障害パターンを検知する
 
-最終更新: 2026-11-23（PR D レビュー中）
+最終更新: 2026-11-23（全 PR マージ済み）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 5」にあたる。前提の「案 0a」（Issue #346）と「案 0b」（Issue #347）は済んでいる。
 
@@ -13,7 +13,7 @@
 | A | 本書 | マージ済み [PR #360](https://github.com/t-m0riyama/vcenter-event-assistant/pull/360) |
 | B | 判定の処理と組み込みのパターン、パターンの一覧の API、タイムラインの API（`highlights.detected_patterns`） | マージ済み [PR #361](https://github.com/t-m0riyama/vcenter-event-assistant/pull/361) |
 | C | タイムラインの画面（「検知した障害パターン」） | マージ済み [PR #362](https://github.com/t-m0riyama/vcenter-event-assistant/pull/362) |
-| D | 通知（アラートルールの種類 `event_pattern`） | レビュー中 |
+| D | 通知（アラートルールの種類 `event_pattern`） | マージ済み [PR #363](https://github.com/t-m0riyama/vcenter-event-assistant/pull/363) |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
