@@ -132,7 +132,8 @@ vCenter Event Assistant は以下の **11個のエンドポイントグループ
 |--------|--------|--------|------|---------|--------|
 | `poll_events` | **Interval** | vCenter からイベント定期ポーリング → DB挿入・スコア計算 | `event_poll_interval_seconds` (既定60秒) | ❌ | **pyVmomi** (vCenter API) |
 | `poll_perf` | **Interval** | vCenter からホストメトリクス定期サンプリング（CPU/メモリ%） → DB挿入 | `perf_sample_interval_seconds` (既定300秒) | ❌ | **pyVmomi** (`quickStats`) |
-| `purge_metrics` | **Interval** | 期限切れイベント・メトリクス削除 | 6時間ごと | ❌ | DB |
+| `inventory_sync` | **Interval** | 有効な vCenter の管理対象と関係を収集し、変化の履歴を保存 | `inventory_sync_interval_seconds`（既定 600 秒） | ❌ | pyVmomi（PropertyCollector） |
+| `purge_metrics` | **Interval** | 期限切れイベント・メトリクス・インベントリ履歴などを削除 | 6時間ごと | ❌ | DB |
 | `digest_daily` | **Cron** | 日次ダイジェスト生成（テンプレート + オプション: LLM要約） | `DIGEST_DAILY_CRON` (既定`0 7 * * *`) | ✅ **オプション** | DB (イベント・メトリクス) + LLM |
 | `digest_weekly` | **Cron** | 週次ダイジェスト生成 | `DIGEST_WEEKLY_CRON` (既定`0 8 * * 0`) | ✅ **オプション** | DB + LLM |
 | `digest_monthly` | **Cron** | 月次ダイジェスト生成 | `DIGEST_MONTHLY_CRON` (既定`5 0 1 * *`) | ✅ **オプション** | DB + LLM |
@@ -144,6 +145,10 @@ vCenter Event Assistant は以下の **11個のエンドポイントグループ
 | **vcenters** | vCenter接続情報 | id, name, host, port, username (暗号化), password (暗号化), is_enabled | 手動削除まで保持 |
 | **events** | イベント本体 | id, vcenter_id, occurred_at, event_type, message, severity, user_name, entity_name, entity_type, entity_moid（主な対象）, **notable_score** (計算値), user_comment, vmware_key | `EVENT_RETENTION_DAYS` (既定7日) で自動削除 |
 | **event_entities** | 主な対象を含むすべてのイベント対象 | id, event_id, vcenter_id, role, position, is_primary, entity_type, entity_moid, entity_name | 親イベントの削除に連動 |
+| **inventory_objects** | 管理対象の名前と種別 | vcenter_id, moid, entity_type, name, first_seen_at, removed_at | 見えなくなってから `EVENT_RETENTION_DAYS` |
+| **inventory_relations** | インベントリの関係の履歴 | vcenter_id, kind, child_moid, parent_moid, valid_from, valid_to | 閉じてから `EVENT_RETENTION_DAYS` |
+| **inventory_sync_runs** | 成功した観測 | vcenter_id, observed_at | 観測してから `EVENT_RETENTION_DAYS` |
+| **inventory_sync_states** | vCenter ごとの収集の状態 | vcenter_id, instance_uuid, first_success_at, last_success_at, last_failure_at, last_warning, object_count, relation_count | vCenter 削除時に削除 |
 | **metric_samples** | ホストメトリクス時系列 | id, vcenter_id, sampled_at, entity_type, entity_moid, entity_name, metric_key, value (%) | `METRIC_RETENTION_DAYS` (既定7日) で自動削除 |
 | **event_score_rules** | イベント種別スコア調整 | id, event_type, score_delta (加算値) | 手動削除まで保持（変更時は関連イベントスコア再計算） |
 | **event_type_guides** | イベント種別説明 | id, event_type, general_meaning, typical_causes, remediation, action_required | 手動削除まで保持 |

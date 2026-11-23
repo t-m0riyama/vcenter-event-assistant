@@ -22,6 +22,7 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.dev.inventory_seed import seed_inventory
 from vcenter_event_assistant.mocks.mock_collectors import MOCK_HOST_MOID, MOCK_VM_MOID
 from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.settings_binding import require_settings
@@ -45,7 +46,8 @@ async def run_mock_mode_seed_if_enabled() -> None:
 
     async with session_scope(settings=settings) as session:
         res = await session.execute(select(VCenter).where(VCenter.name == _MOCK_VC_NAME))
-        if res.scalar_one_or_none() is not None:
+        if existing := res.scalar_one_or_none():
+            await seed_inventory(session, existing, datetime.now(timezone.utc))
             logger.info("MOCK_MODE seed skipped (already present): %s", _MOCK_VC_NAME)
             return
 
@@ -92,6 +94,7 @@ async def run_mock_mode_seed_if_enabled() -> None:
             )
 
         now = datetime.now(timezone.utc)
+        await seed_inventory(session, vc, now)
         events = (
             (45, _EVENT_TYPES[0], False, "info", 10),
             (30, _EVENT_TYPES[1], False, "warning", 30),

@@ -591,3 +591,99 @@ async def test_disk_usage_metric_key_is_renamed_in_samples_rules_and_snapshots(
 
     await init_db()
     await reset_db()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_inventory_migration_round_trip(tmp_path, backend) -> None:
+    """既存の vCenter を残したまま移行でき、同じ関係を開き直せる。"""
+    import os
+    from uuid import uuid4
+
+    from alembic import command
+    from sqlalchemy import Uuid, bindparam
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from vcenter_event_assistant.db.alembic_runner import (
+        _run_with_connection,
+        alembic_config,
+    )
+
+    if backend == "postgres":
+        url = os.environ.get("VEA_TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    else:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'inventory.db'}"
+    settings = get_settings().model_copy(update={"database_url": url})
+    cfg = alembic_config(settings=settings)
+    engine = create_async_engine(url)
+    vc = uuid4()
+    tables = {
+        "inventory_objects",
+        "inventory_relations",
+        "inventory_sync_runs",
+        "inventory_sync_states",
+    }
+
+    def schema_tables(conn):
+        return set(inspect(conn).get_table_names())
+
+    def check_keys(conn):
+        for table in tables:
+            keys = inspect(conn).get_foreign_keys(table)
+            assert len(keys) == 1 and keys[0]["referred_table"] == "vcenters"
+            assert keys[0]["options"]["ondelete"] == "CASCADE"
+
+    def upgrade(conn, revision):
+        _run_with_connection(conn, cfg, lambda cc: command.upgrade(cc, revision))
+
+    relation = text("""INSERT INTO inventory_relations
+        (vcenter_id, kind, child_moid, parent_moid, valid_from, valid_to)
+        VALUES (:id, 'vm_host', 'vm-1', 'host-1', CURRENT_TIMESTAMP, NULL)""").bindparams(
+        bindparam("id", type_=Uuid())
+    )
+
+    try:
+        async with engine.connect() as conn, conn.begin() as transaction:
+            if backend == "postgres":
+                schema = f"inventory_{vc.hex}"
+                await conn.execute(text(f"CREATE SCHEMA {schema}"))
+                await conn.execute(text(f"SET LOCAL search_path TO {schema}"))
+            await conn.run_sync(upgrade, "f9a0b1c2d3e4")
+            assert not tables & await conn.run_sync(schema_tables)
+            await conn.execute(
+                text("""INSERT INTO vcenters
+                    (id, name, host, protocol, port, username, password, verify_ssl, is_enabled, created_at)
+                    VALUES (:id, 'legacy', 'vc.example', 'https', 443, 'u', 'p', true, true, CURRENT_TIMESTAMP)""").bindparams(
+                    bindparam("id", type_=Uuid())
+                ),
+                {"id": vc},
+            )
+            for _ in range(2):
+                await conn.run_sync(upgrade, "head")
+                assert tables <= await conn.run_sync(schema_tables)
+                await conn.run_sync(check_keys)
+                await conn.execute(relation, {"id": vc})
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(relation, {"id": vc})
+                await conn.execute(
+                    text("UPDATE inventory_relations SET valid_to = valid_from")
+                )
+                await conn.execute(relation, {"id": vc})
+                assert (
+                    await conn.scalar(text("SELECT count(*) FROM inventory_relations"))
+                    == 2
+                )
+                await conn.run_sync(
+                    lambda c: _run_with_connection(
+                        c, cfg, lambda cc: command.downgrade(cc, "f9a0b1c2d3e4")
+                    )
+                )
+                assert not tables & await conn.run_sync(schema_tables)
+                assert await conn.scalar(text("SELECT name FROM vcenters")) == "legacy"
+            await transaction.rollback()
+    finally:
+        await engine.dispose()

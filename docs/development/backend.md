@@ -14,7 +14,7 @@
 バックエンドは FastAPI を中心に、次を担います。
 
 - `/api` の HTTP API 提供
-- vCenter からのイベント/メトリクス収集（pyVmomi）
+- vCenter からのイベント・メトリクス・インベントリの収集（pyVmomi）
 - 永続化（SQLAlchemy async + PostgreSQL/SQLite）
 - 定期ジョブ実行（APScheduler）
 - ダイジェストと期間チャットの LLM 連携（任意）
@@ -163,6 +163,7 @@
 - 収集・保持:
   - `EVENT_POLL_INTERVAL_SECONDS`
   - `PERF_SAMPLE_INTERVAL_SECONDS`
+  - `INVENTORY_SYNC_ENABLED`, `INVENTORY_SYNC_INTERVAL_SECONDS`, `INVENTORY_SYNC_TIMEOUT_SECONDS`
   - `EVENT_RETENTION_DAYS`
   - `METRIC_RETENTION_DAYS`
 - ジョブ:
@@ -218,6 +219,19 @@ uv run vcenter-event-assistant
 - 収集処理: `src/vcenter_event_assistant/services/ingestion.py`
 - チャット処理: `src/vcenter_event_assistant/services/chat_llm.py`
 - ダイジェスト処理: `src/vcenter_event_assistant/services/digest_run.py`
+
+### 6.1 インベントリの収集と保存
+
+本体の定期ジョブ `inventory_sync` は、有効な vCenter ごとに、VM、ホスト、クラスタ、データストア、ポートグループを観測する。`collectors/inventory.py` は ContainerView と PropertyCollector を使い、DB セッションの外で属性をページ単位で読む。`services/inventory.py` は読み終えた時刻を UTC で記録し、次の表を一つのトランザクションで更新する。
+
+- `inventory_objects` は vCenter と moid ごとに、最新の名前・種別、最初に見えた時刻、見えなくなった時刻を持つ。名前は vCenter が返すエスケープ済みの値を使う。
+- `inventory_relations` は、VM → ホスト、ホスト → クラスタ、VM とホスト → データストアおよびポートグループの履歴を持つ。`valid_from` は開いた観測の時刻、`valid_to` は閉じた観測の時刻で、開いた行は `NULL` とする。
+- `inventory_sync_runs` は成功した観測の時刻を持つ。
+- `inventory_sync_states` は vCenter ごとの最初と最後の成功、最後の開始と失敗、警告、直近の成功時の件数、`instance_uuid` を持つ。
+
+観測時刻は前回の成功時刻を下限とする。接続先の `instance_uuid` が変わったら、開いている関係を閉じて記録をやり直す。通常の観測では差分だけを開閉し、管理対象も変化した行だけ更新する。テンプレートの VM は収集対象から外す。属性の読み取りに失敗した関係と、未接続の VM・ホストのデータストアおよびネットワークの関係は、両端が見える間は持ち越す。書き込みに失敗した観測はロールバックし、失敗の状態を別のトランザクションで記録する。vCenter を削除すると関連する 4 表の行も消える。
+
+関係が変わった時刻と記録の時刻には、収集間隔と読み取り時間の分だけずれがあり得る。ファイルベースの復元で `instance_uuid` も戻る場合は、同じ接続先として収集を続ける。
 
 ## 7. 関連ドキュメント
 

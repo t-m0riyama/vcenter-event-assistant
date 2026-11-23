@@ -3,7 +3,23 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vcenter_event_assistant.db.base import Base
@@ -39,6 +55,100 @@ class VCenter(Base):
         back_populates="vcenter",
         passive_deletes=True,
     )
+
+
+class InventoryObject(Base):
+    __tablename__ = "inventory_objects"
+    __table_args__ = (
+        UniqueConstraint(
+            "vcenter_id", "moid", name="uq_inventory_objects_vcenter_moid"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vcenters.id", ondelete="CASCADE")
+    )
+    moid: Mapped[str] = mapped_column(String(256))
+    entity_type: Mapped[str] = mapped_column(String(256))
+    name: Mapped[str] = mapped_column(String(1024))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InventoryRelation(Base):
+    __tablename__ = "inventory_relations"
+    __table_args__ = (
+        CheckConstraint(
+            "valid_to IS NULL OR valid_to >= valid_from",
+            name="ck_inventory_relations_valid_period",
+        ),
+        Index(
+            "ix_inventory_relations_parent",
+            "vcenter_id",
+            "parent_moid",
+            "kind",
+            "valid_from",
+        ),
+        Index(
+            "ix_inventory_relations_child",
+            "vcenter_id",
+            "child_moid",
+            "kind",
+            "valid_from",
+        ),
+        Index(
+            "uq_inventory_relations_open",
+            "vcenter_id",
+            "kind",
+            "child_moid",
+            "parent_moid",
+            unique=True,
+            sqlite_where=text("valid_to IS NULL"),
+            postgresql_where=text("valid_to IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vcenters.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(32))
+    child_moid: Mapped[str] = mapped_column(String(256))
+    parent_moid: Mapped[str] = mapped_column(String(256))
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InventorySyncRun(Base):
+    __tablename__ = "inventory_sync_runs"
+    __table_args__ = (
+        Index("ix_inventory_sync_runs_observed", "vcenter_id", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vcenters.id", ondelete="CASCADE")
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class InventorySyncState(Base):
+    __tablename__ = "inventory_sync_states"
+
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vcenters.id", ondelete="CASCADE"), primary_key=True
+    )
+    instance_uuid: Mapped[str | None] = mapped_column(String(256))
+    first_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_warning: Mapped[str | None] = mapped_column(Text)
+    last_warning_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    object_count: Mapped[int | None] = mapped_column(Integer)
+    relation_count: Mapped[int | None] = mapped_column(Integer)
 
 
 class EventRecord(Base):

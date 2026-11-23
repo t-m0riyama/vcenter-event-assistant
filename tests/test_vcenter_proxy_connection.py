@@ -97,3 +97,39 @@ class TestConnectVcenterProxy:
             connect_vcenter(host="vc", protocol="https", port=port, username="u", password="p")
         dns.assert_not_called()
         smart_connect.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "protocol, port, proxy_url",
+    [
+        ("http", 80, None),
+        ("https", 443, None),
+        ("https", 443, "http://proxy.local:3128"),
+    ],
+)
+@patch("vcenter_event_assistant.collectors.connection.build_ssl_context")
+@patch("vcenter_event_assistant.collectors.connection.SmartConnect")
+def test_inventory_connection_timeout_preserves_smart_connect_arguments(
+    smart_connect, mock_ssl_context, protocol, port, proxy_url
+):
+    params = dict(
+        host="vc",
+        protocol=protocol,
+        port=port,
+        username="u",
+        password="p",
+        proxy_url=proxy_url,
+    )
+    assert connect_vcenter(**params) is smart_connect.return_value
+    previous = smart_connect.call_args.kwargs
+    assert "httpConnectionTimeout" not in previous
+    assert previous["protocol"] == protocol
+    assert previous["port"] == port
+    if protocol == "https":
+        assert previous["sslContext"] is mock_ssl_context.return_value
+
+    assert (
+        connect_vcenter(**params, http_connection_timeout=30)
+        is smart_connect.return_value
+    )
+    assert smart_connect.call_args.kwargs == {**previous, "httpConnectionTimeout": 30}

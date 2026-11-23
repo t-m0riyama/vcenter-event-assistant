@@ -33,9 +33,15 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.dev.inventory_seed import seed_inventory
+from vcenter_event_assistant.mocks.mock_inventory import (
+    SCREENSHOT_DATASTORE,
+    SCREENSHOT_HOSTS,
+    SCREENSHOT_VCENTER_NAME,
+    SCREENSHOT_VMS,
+)
 from vcenter_event_assistant.rules.notable import final_notable_score
 
-_SCREENSHOT_VC_NAME = "screenshot-e2e-vc"
 _EVENT_TYPES = (
     "vim.event.ScreenshotDemoEvent",
     "vim.event.ScreenshotDemoEventB",
@@ -49,12 +55,15 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         return
 
     async with session_scope() as session:
-        res = await session.execute(select(VCenter).where(VCenter.name == _SCREENSHOT_VC_NAME))
-        if res.scalar_one_or_none() is not None:
+        res = await session.execute(
+            select(VCenter).where(VCenter.name == SCREENSHOT_VCENTER_NAME)
+        )
+        if existing := res.scalar_one_or_none():
+            await seed_inventory(session, existing, datetime.now(timezone.utc))
             return
 
         vc = VCenter(
-            name=_SCREENSHOT_VC_NAME,
+            name=SCREENSHOT_VCENTER_NAME,
             host="127.0.0.1",
             port=443,
             username="u",
@@ -91,6 +100,8 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
             session.add(g)
 
         now = datetime.now(timezone.utc)
+        await seed_inventory(session, vc, now)
+        vm_moid, vm_name = SCREENSHOT_VMS[2]
         session.add(
             EventRecord(
                 vcenter_id=vc.id,
@@ -98,13 +109,20 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                 event_type=_EVENT_TYPES[0],
                 message="（デモ）スクリーンショット用イベント",
                 severity="info",
-                entity_name="demo-vm-03",
+                entity_name=vm_name,
                 entity_type="VirtualMachine",
-                entity_moid="vm-9003",
-                entities=[EventEntity(
-                    vcenter_id=vc.id, role="vm", position=0, is_primary=True,
-                    entity_name="demo-vm-03", entity_type="VirtualMachine", entity_moid="vm-9003",
-                )],
+                entity_moid=vm_moid,
+                entities=[
+                    EventEntity(
+                        vcenter_id=vc.id,
+                        role="vm",
+                        position=0,
+                        is_primary=True,
+                        entity_name=vm_name,
+                        entity_type="VirtualMachine",
+                        entity_moid=vm_moid,
+                    )
+                ],
                 vmware_key=9_001_001,
                 notable_score=10,
             ),
@@ -114,7 +132,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
 
         # グラフタブはキー一覧の先頭（`datastore.space.used_bytes`）が既定選択になるため、その系列を投入する。
         _doc_metric_key = "datastore.space.used_bytes"
-        _doc_entity_moid = "datastore-1001"
+        ds_moid, ds_name = SCREENSHOT_DATASTORE
         for i in range(32):
             sampled = now - timedelta(minutes=2 * (31 - i))
             session.add(
@@ -122,8 +140,8 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                     vcenter_id=vc.id,
                     sampled_at=sampled,
                     entity_type="Datastore",
-                    entity_moid=_doc_entity_moid,
-                    entity_name="demo-datastore",
+                    entity_moid=ds_moid,
+                    entity_name=ds_name,
                     metric_key=_doc_metric_key,
                     value=float(1_000_000_000 + i * 12_500_000),
                 ),
@@ -172,16 +190,13 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         )
 
 
-# タイムライン用の行は既定の期間（直近 1 時間）に収まるよう 6〜54 分前に置く。
-_DEMO_HOSTS = (("host-9001", "demo-esxi-01"), ("host-9002", "demo-esxi-02"))
-
-
 def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datetime) -> None:
     """タイムライン用のデモ行（イベント・メトリクス・ログ）を足す。"""
 
     def ago(minutes: float) -> datetime:
         return now - timedelta(minutes=minutes)
 
+    # 既定の期間（直近 1 時間）に収まるよう 6〜54 分前に置く。
     # (何分前, 種別, 対象, スコア, 重大度, メッセージ)。同じ種別・同じ対象の連続（2 件）を 1 組含む。
     events = (
         (46, _EVENT_TYPES[1], "demo-vm-01", 60, "warning", "（デモ）仮想マシンの状態が変わりました"),
@@ -193,8 +208,8 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
         *((minutes, "vim.event.HostConnectionLostEvent", "demo-esxi-01", None, "info",
            "（デモ）ホストと vCenter の接続が切れました") for minutes in (54, 51, 48)),
     )
-    host_moids = {name: moid for moid, name in _DEMO_HOSTS}
-    vm_moids = {"demo-vm-01": "vm-9001", "demo-vm-02": "vm-9002"}
+    host_moids = {name: moid for moid, name in SCREENSHOT_HOSTS}
+    vm_moids = {name: moid for moid, name in SCREENSHOT_VMS}
     for i, (minutes, event_type, entity, score, severity, message) in enumerate(events):
         if score is None:
             score = final_notable_score(event_type=event_type, severity=severity, message=message)
@@ -225,7 +240,7 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
     cpu_breach = {30, 27, 24, 21}
     mem_breach = {36, 33, 30, 27}
     for step, minutes in enumerate(range(51, 5, -3)):
-        for host_index, (moid, name) in enumerate(_DEMO_HOSTS):
+        for host_index, (moid, name) in enumerate(SCREENSHOT_HOSTS):
             cpu = 35.0 + 3 * ((step + host_index) % 4)
             mem = 55.0 + 2 * ((step + host_index) % 3)
             if host_index == 0 and minutes in cpu_breach:

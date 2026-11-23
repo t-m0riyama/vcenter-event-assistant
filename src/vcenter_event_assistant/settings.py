@@ -53,6 +53,9 @@ class DatabaseSettingsMixin(BaseModel):
 
     event_poll_interval_seconds: int = Field(default=120, ge=10)
     perf_sample_interval_seconds: int = Field(default=300, ge=60)
+    inventory_sync_enabled: bool = True
+    inventory_sync_interval_seconds: int = Field(default=600, ge=60)
+    inventory_sync_timeout_seconds: int = Field(default=300, ge=1)
     event_rate_max_buckets: int = Field(
         default=5000,
         ge=1,
