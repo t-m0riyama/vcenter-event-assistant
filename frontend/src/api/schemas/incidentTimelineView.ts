@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { eventPatternLevelSchema } from './eventPatterns'
+
 /**
  * `POST /api/incident-timeline/view` の応答（`api/schemas/incident_timeline_view.py` に対応）。
  * 時刻は SQLite 由来で `Z` の無い文字列が返ることがあるため、検証は `z.string()` にとどめ、
@@ -80,10 +82,30 @@ export const timelineNewEventTypeSchema = z.object({
 })
 export type TimelineNewEventType = z.infer<typeof timelineNewEventTypeSchema>
 
+export const timelineDetectedPatternSchema = z.object({
+  pattern_id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  level: eventPatternLevelSchema,
+  vcenter_id: z.string(),
+  vcenter_name: z.string().nullish(),
+  entity_moid: z.string(),
+  entity_name: z.string().nullish(),
+  entity_type: z.string().nullish(),
+  first_utc: z.string(),
+  last_utc: z.string(),
+  event_count: z.number().int().min(1),
+  event_ids: z.array(z.number().int()).max(20),
+})
+export type TimelineDetectedPattern = z.infer<typeof timelineDetectedPatternSchema>
+
 export const timelineHighlightsSchema = z.object({
   first_signal: timelineViewItemSchema.nullable().optional(),
   top_entities: z.array(timelineTopEntitySchema).default([]),
   new_event_types: z.array(timelineNewEventTypeSchema).default([]),
+  detected_patterns: z.array(timelineDetectedPatternSchema).default([]),
+  detected_patterns_total: z.number().int().min(0).default(0),
+  omitted_patterns: z.array(z.string()).default([]),
 })
 export type TimelineHighlights = z.infer<typeof timelineHighlightsSchema>
 

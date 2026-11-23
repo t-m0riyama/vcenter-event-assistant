@@ -329,6 +329,10 @@ async def test_view_request_is_read_leniently(client: AsyncClient) -> None:
     detail = (await client.get(f"{URL}/{sid}")).json()
     assert detail["has_result"] is True
     assert detail["result"]["bucket_seconds"] == 60
+    highlights = detail["result"]["highlights"]
+    assert highlights["detected_patterns"] == []
+    assert highlights["detected_patterns_total"] == 0
+    assert highlights["omitted_patterns"] == []
     assert detail["view_request"]["from"] == "2026-03-22T02:00:00Z"
     assert "some_future_field" not in detail["view_request"]
     assert (await client.get(URL)).json()["items"][0]["view_request"] is not None

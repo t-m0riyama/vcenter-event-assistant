@@ -1,7 +1,7 @@
 """Issue #301 の DB 側集計を SQLite と PostgreSQL の両方で確かめる。
 
 PostgreSQL は ``VEA_TEST_POSTGRES_URL`` が専用のテスト DB を指すときだけ流す（スキーマを消す）。
-CI には PostgreSQL がないので、方言ごとに compile した SQL の確認は SQLite のときも行う。
+方言ごとに compile した SQL の確認は SQLite のときも行う。
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentT
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
+    EventEntity,
     EventRecord,
     EventScoreRule,
     LogRecord,
@@ -954,3 +955,91 @@ async def test_metrics_list_on_each_dialect(session: AsyncSession, monkeypatch: 
         for s in metric_sql:
             where = s.split("WHERE", 1)[1]
             assert ("vcenter_id" in where) is (dialect_name == "sqlite"), s
+
+
+@pytest.mark.asyncio
+async def test_event_pattern_on_each_dialect(session: AsyncSession) -> None:
+    """SQL の期間・vCenter・子表の moid の条件を両方の方言で確かめる。"""
+    v1, v2 = uuid.uuid4(), uuid.uuid4()
+    for vid, name in ((v1, "vc-a"), (v2, "vc-b")):
+        session.add(VCenter(id=vid, name=name, host="h", port=443, username="u", password="p"))
+    await session.flush()
+    expected = []
+    for vid, minute, moid in (
+        (v1, -11, "host-1"), (v1, -10, "host-1"), (v1, 0, "host-1"),
+        (v1, 1, "host-2"), (v2, -1, "host-1"), (v2, 1, "host-1"), (v1, 120, "host-1"),
+        (v1, -2, ""), (v1, 2, ""),
+    ):
+        row = EventRecord(
+            vcenter_id=vid, occurred_at=FROM + timedelta(minutes=minute),
+            event_type="esx.problem.storage.apd.start" if minute < 0 else "esx.problem.storage.apd.timeout",
+            vmware_key=next(_keys), entity_moid="vm-primary",
+            entities=[EventEntity(
+                vcenter_id=vid, role="object", position=0, is_primary=False,
+                entity_moid=moid, entity_type=None if moid else "HostSystem", entity_name="ESXi",
+            )],
+        )
+        session.add(row)
+        if minute in (-10, 0):
+            expected.append(row)
+    await session.flush()
+    out = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(
+            from_time=FROM, to_time=TO, sources=["event"], vcenter_id=v1, entity_moid="host-1",
+        ),
+        owner_key="dialect-test",
+    )
+    assert out.items == []
+    [detection] = out.highlights.detected_patterns
+    assert detection.pattern_id == "apd-timeout"
+    assert detection.vcenter_name == "vc-a"
+    assert detection.first_utc == FROM - timedelta(minutes=10)
+    assert detection.last_utc == FROM
+    assert detection.event_ids == [row.id for row in expected]
+
+    all_vcenters = await build_incident_timeline_view(
+        session,
+        IncidentTimelineViewRequest(from_time=FROM, to_time=TO, sources=["event"]),
+        owner_key="dialect-test",
+    )
+    assert [(d.pattern_id, d.vcenter_name, d.entity_moid) for d in all_vcenters.highlights.detected_patterns] == [
+        ("apd-timeout", "vc-b", "host-1"),
+        ("apd-timeout", "vc-a", "host-1"),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session", ["sqlite"], indirect=True)
+async def test_sqlite_event_patterns_use_the_event_type_time_index(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """vCenter や moid で絞っても、種別と時刻の索引でイベントを探す。"""
+    from vcenter_event_assistant.services.event_patterns.definitions import BUILTIN_PATTERNS
+    from vcenter_event_assistant.services.event_patterns.query import query_event_patterns
+
+    bind = session.get_bind()
+    vid = uuid.uuid4()
+    original = AsyncSession.execute
+    statements = []
+
+    async def spy(self, statement, *args, **kwargs):
+        statements.append(statement)
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    conn = await session.connection()
+    for vc, moid in ((None, None), (vid, None), (vid, "host-1")):
+        statements.clear()
+        await query_event_patterns(session, TO - timedelta(days=50), TO, vcenter_id=vc, entity_moid=moid)
+        assert len(statements) == len(BUILTIN_PATTERNS)
+        for stmt in statements:
+            sql = str(stmt.compile(dialect=bind.dialect, compile_kwargs={"literal_binds": True}))
+            plan = "\n".join(row[-1] for row in (await conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql)).all())
+            assert re.search(
+                r"SEARCH events USING (COVERING )?INDEX ix_events_event_type_occurred_at "
+                r"\(event_type=\? AND occurred_at>\? AND occurred_at<\?\)",
+                plan,
+            ), plan
+            assert "INDEXED BY ix_events_event_type_occurred_at" in sql
+            assert "INDEXED BY" not in str(stmt.compile(dialect=pg_asyncpg.dialect()))

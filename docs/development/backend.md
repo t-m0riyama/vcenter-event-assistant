@@ -78,6 +78,8 @@
 - `POST /api/event-score-rules/import`
 - `GET/POST/PATCH/DELETE /api/event-type-guides`
 - `POST /api/event-type-guides/import`
+- `GET /api/event-patterns`
+  組み込みの障害パターンの一覧。viewer 以上で参照できる。各定義は `id`、`title`、`description`、`level`、`kind`、`steps`（段ごとの `event_types`）、`within_minutes`、`min_count`（sequence は `null`）を持つ。
 - `GET/POST/PATCH/DELETE /api/alerts/rules`
 - `GET /api/alerts/history`
 
@@ -130,6 +132,16 @@
 - `entity` は省略でき、上限は 1024 文字。moid を指定しないときは名前の部分一致に使う。moid を指定したときは、moid の無いイベントとログの名前の完全一致に使う。いずれも大文字と小文字を区別しない。
 
 `highlights.top_entities` の各要素の `entity_moid` は、vCenter と moid で数えた対象に入る。名前だけで数えた対象では `null` になる。手動スナップショットの `view_request` にも `entity_moid` を保存できる。
+
+要求の `sources` に `event` が入ると、ハイライトに障害パターンの判定結果を返す。
+
+- `detected_patterns` は最大 20 件。各検知は `pattern_id`、`title`、`description`、`level`、`vcenter_id`、`vcenter_name`、`entity_moid`、`entity_name`、`entity_type`、`first_utc`、`last_utc`、`event_count`、`event_ids` を持つ。レベル、`last_utc` の新しい順、パターン ID、vCenter ID、moid の順で、各 `event_ids` は時刻順の先頭 20 件を返す。
+- `detected_patterns_total` は上限で切る前の件数。
+- `omitted_patterns` は対象の子表との結合が 10,000 行を超え、判定を省いたパターンの ID。
+
+保存済みの結果にこれらの項目が無ければ、件数は 0、一覧は空配列になる。
+
+判定は各パターンの時間幅だけ期間の起点より前からイベントを読み、期間内のイベントを含む検知を返す。対象の絞り込みは子表の `entity_moid` を使い、名前だけが指定された場合は判定後に `entity_name` に部分一致を当てる。`min_score` に関わらず判定する。
 
 ## 3. 設定の要点（環境変数）
 

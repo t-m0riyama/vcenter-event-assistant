@@ -10,8 +10,8 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | レビュー中 |
-| B | 判定の処理と組み込みのパターン、パターンの一覧の API、タイムラインの API（`highlights.detected_patterns`） | 未着手 |
+| A | 本書 | マージ済み [PR #360](https://github.com/t-m0riyama/vcenter-event-assistant/pull/360) |
+| B | 判定の処理と組み込みのパターン、パターンの一覧の API、タイムラインの API（`highlights.detected_patterns`） | レビュー中 |
 | C | タイムラインの画面（「検知した障害パターン」） | 未着手 |
 | D | 通知（アラートルールの種類 `event_pattern`） | 未着手 |
 
@@ -170,10 +170,12 @@ class EventPattern:
   - `event_entities.entity_moid` が NULL でも空でもない
   - vCenter を指定したときは `events.vcenter_id`。moid を指定したときは `event_entities.entity_moid`（4 章）
 - 読む列: イベントの `id`・`vcenter_id`・`occurred_at`・`event_type`、子表の `entity_moid`・`entity_name`・`entity_type`。
-- 並び: `(event_entities.vcenter_id, entity_moid, occurred_at, events.id)`。
+- 並び: `(event_entities.vcenter_id, entity_moid, occurred_at, events.id)`。同じイベントと moid の子表の行が複数あれば、名前と種別のある行を優先する。同順位では子表の ID の小さい行を使う。
 - **行数の上限:** 1 パターンあたり、子表の結合の結果を 10,000 行までにする（定数。`context_aggregation_max_rows` とは別）。超えたら、そのパターンは判定しない。タイムラインでは `omitted_patterns` に入れ、通知では警告をログに残す。
-- **索引:** 結合には一意制約 `(event_id, role, position)` の先頭の列が効く。`events` の側は、vCenter を指定すれば `(vcenter_id, occurred_at)`、しなければ `event_type` か `occurred_at` の索引で絞る。vCenter を指定すると、期間の全行を走査し得る（最大 90 日）。PR B で SQLite と PostgreSQL の実行計画を見て、`(event_type, occurred_at)` の複合索引を足すかを決める。
+- **索引:** 結合には一意制約 `(event_id, role, position)` の先頭の列が効く。`events` は `(event_type, occurred_at)` の複合索引で種別と期間を絞れる。
 - 同じ種別を使うパターン（切断、APD の開始）は、同じ行を 2 回読む。種別で絞るので行数は少ない見込みであり、最初の版ではまとめない。
+
+PR B では `(event_type, occurred_at)` の複合索引を追加する。SQLite 3.47.1 で、統計を作らず 20 万件のデータを 50 日間の範囲で調べたところ、vCenter を指定したときに `ix_events_vcenter_id_occurred_at` が選ばれ、期間内のその vCenter の全イベントを読んだ。`ha-failover` の問い合わせは約 0.2 ms から約 50 ms に延びた。moid を指定すると vCenter の指定も必須になるため、SQLite の問い合わせは `INDEXED BY ix_events_event_type_occurred_at` で複合索引に固定する。PostgreSQL の索引選択はプランナーに任せ、問い合わせと移行は CI の PostgreSQL ジョブで確認する。
 
 ### 判定の手順（純関数）
 
@@ -355,7 +357,8 @@ DB を読まない純関数に分け、単体テストで固める。入力は�
 ## 9. リスク
 
 - **実際のイベントで役割が想定と違う:** `esx.problem.*` と `com.vmware.vc.HA.*` のイベントが、実機でどの役割を持つかは確かめていない（手元の DB に該当の行が無い）。ホストでまとめるパターンは `host`・`object`・`managedObject` を見るので、どちらの形でも当たる見込みである。HA のパターンは、イベントに `computeResource`（クラスタ）が入らないと当たらない。実際のイベントで当たらないことが分かったら、コードの修正で役割の集合を直す。
-- **`object` の行の種別が NULL:** `event_entities()` は、EventEx に `objectType` が無いと `object` の行の種別を NULL にする（`vmware.py:288-294`）。ESXi の EventEx が `objectId` だけを持つと、種別の条件（`HostSystem`）で外れ、基底の `host` も無ければ、ホストのパターンが当たらない。PR B で、種別が NULL の `object` の行を moid の形（`host-` で始まる）で拾うかを決める。
+- **`object` の行の種別が NULL:** `event_entities()` は、EventEx に `objectType` が無いと `object` の行の種別を NULL にする（`vmware.py:288-294`）。ESXi の EventEx が `objectId` だけを持つと、種別の条件（`HostSystem`）で外れ、基底の `host` も無ければ、ホストのパターンが当たらない。PR B では、役割が `object` で種別が NULL の行は、moid が `host-` で始まるときに限り `HostSystem` とみなしてホストのパターンの材料にする。
+  ホストとみなすのは判定のときだけで、応答の `entity_type` は選ばれた子表の行の値を返す（その行の種別が NULL なら応答も NULL）。
 - **1 回の障害で回数を超える:** 同時に出る同じ種別のイベントは、`collapse_seconds` でまとめる。まとめの幅より間を空けて出るイベントは、別の回と数える。実機で誤って当たる例が見つかったら、幅を直す。
 - **データストアの障害が全ホストに及ぶ:** ホストごとに検知が出て、上限の 20 件を埋め得る。総数を返すので、切れたことは分かる。データストアでまとめるのは、10 案の「案 1」（影響範囲マップ）のあとにする。
 - **古いイベント:** 子表の無いイベントは判定に入らない。保持期間（既定 7 日）を過ぎれば、古い行は無くなる。

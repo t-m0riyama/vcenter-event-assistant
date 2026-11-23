@@ -32,6 +32,7 @@ from vcenter_event_assistant.api.routes.chat import router as chat_router
 from vcenter_event_assistant.api.routes.config import router as config_router
 from vcenter_event_assistant.api.routes.dashboard import router as dashboard_router
 from vcenter_event_assistant.api.routes.digests import router as digests_router
+from vcenter_event_assistant.api.routes.event_patterns import router as event_patterns_router
 from vcenter_event_assistant.api.routes.event_score_rules import router as event_score_rules_router
 from vcenter_event_assistant.api.routes.event_type_guides import router as event_type_guides_router
 from vcenter_event_assistant.api.routes.events import router as events_router
@@ -291,6 +292,7 @@ def create_app() -> FastAPI:
     # ``/api`` 配下は全 route でログインを必須にし、各 route が最低ロールを宣言する。
     api = APIRouter(prefix="/api", dependencies=[Depends(get_current_principal)])
     api.include_router(config_router)
+    api.include_router(event_patterns_router)
     api.include_router(event_score_rules_router)
     api.include_router(event_type_guides_router)
     api.include_router(vcenters_router)

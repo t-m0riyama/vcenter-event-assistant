@@ -33,6 +33,7 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.rules.notable import final_notable_score
 
 _SCREENSHOT_VC_NAME = "screenshot-e2e-vc"
 _EVENT_TYPES = (
@@ -171,7 +172,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         )
 
 
-# タイムラインの既定の期間（直近 1 時間）に収まるよう、取得が数分遅れても外れない 8〜51 分前に置く。
+# タイムライン用の行は既定の期間（直近 1 時間）に収まるよう 6〜54 分前に置く。
 _DEMO_HOSTS = (("host-9001", "demo-esxi-01"), ("host-9002", "demo-esxi-02"))
 
 
@@ -188,10 +189,15 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
         (41, _EVENT_TYPES[0], "demo-vm-02", 5, "info", "（デモ）通常の操作です"),
         (33, _EVENT_TYPES[2], "demo-esxi-01", 85, "error", "（デモ）ホストで要確認の事象が起きました"),
         (15, _EVENT_TYPES[1], "demo-vm-01", 30, "warning", "（デモ）仮想マシンの状態が再び変わりました"),
+        # 切断の行は既存のイベントより前に置き、通常の採点を使う。
+        *((minutes, "vim.event.HostConnectionLostEvent", "demo-esxi-01", None, "info",
+           "（デモ）ホストと vCenter の接続が切れました") for minutes in (54, 51, 48)),
     )
     host_moids = {name: moid for moid, name in _DEMO_HOSTS}
     vm_moids = {"demo-vm-01": "vm-9001", "demo-vm-02": "vm-9002"}
     for i, (minutes, event_type, entity, score, severity, message) in enumerate(events):
+        if score is None:
+            score = final_notable_score(event_type=event_type, severity=severity, message=message)
         is_host = entity in host_moids
         entity_type = "HostSystem" if is_host else "VirtualMachine"
         entity_moid = host_moids[entity] if is_host else vm_moids[entity]

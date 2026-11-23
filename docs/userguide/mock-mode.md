@@ -91,6 +91,9 @@ MOCK_MODE=1 DATABASE_URL=sqlite+aiosqlite:///./data/vea.dev.db \
 
 初回起動時にデモデータが自動投入される。同じ DB で再起動しても **二重投入はしない**（冪等）。
 
+起動時のシードと定期収集には、デモホストの切断イベントが入る。直近 1 時間を指定したタイムライン API の `highlights.detected_patterns` で、`host-conn-flapping`（ホストの切断の繰り返し）を確認できる。
+切断イベント（`vim.event.HostConnectionLostEvent`）はデモ用のイベントスコアルール（閾値 40）に当たり、モックの通知履歴にも出る。
+
 ---
 
 ## 4. スケジューラの有無

@@ -218,10 +218,10 @@ jobs:
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
-      - name: Verify timeline entity moid filtering
+      - name: Verify timeline entity moid filtering and event patterns
         run: >-
           uv run --no-sync pytest -q tests/services/test_aggregation_dialects.py
-          -k "postgres and entity_moid"
+          -k "postgres and (entity_moid or event_pattern)"
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 

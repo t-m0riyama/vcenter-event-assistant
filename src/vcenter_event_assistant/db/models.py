@@ -46,6 +46,7 @@ class EventRecord(Base):
     __table_args__ = (
         UniqueConstraint("vcenter_id", "collector_id", "vmware_key", name="uq_event_collector_vmware_key"),
         Index("ix_events_vcenter_id_occurred_at", "vcenter_id", "occurred_at"),
+        Index("ix_events_event_type_occurred_at", "event_type", "occurred_at"),
         Index("ix_events_vcenter_id_entity_moid", "vcenter_id", "entity_moid"),
     )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from vcenter_event_assistant_plugin_api import EventEntityInput
@@ -23,8 +23,10 @@ def fetch_mock_events_blocking(
 ) -> tuple[list[dict[str, Any]], datetime | None]:
     """取り込み経路向けの合成イベントを返す。
 
-    ``vmware_key`` は秒単位の時刻から導出し、再実行の重複は ON CONFLICT で吸収される。
-    ``since`` は実収集とのシグネチャ互換のため受け取る（モックでは常に直近 2 件を返す）。
+    ``vmware_key`` は通常の合成イベントでは秒単位の時刻、ホスト切断では 30 分枠と枠内の連番から導出する。
+    同じキーの再取り込みは ON CONFLICT で吸収される。
+    ``since`` は実収集とのシグネチャ互換のため受け取る。
+    直近の合成イベント 2 件と、30 分ごとのホスト切断 3 件を返す。
     """
     _ = since
     now = datetime.now(timezone.utc)
@@ -64,6 +66,24 @@ def fetch_mock_events_blocking(
             "chain_id": key_base + 1,
         },
     ]
+    # 同じ 30 分枠の切断は、収集を繰り返しても同じキーと時刻にする。
+    interval = key_base // (30 * 60)
+    interval_start = datetime.fromtimestamp(interval * 30 * 60, tz=timezone.utc)
+    for i, minutes in enumerate((8, 4, 1)):
+        rows.append({
+            "occurred_at": interval_start - timedelta(minutes=minutes),
+            "event_type": "vim.event.HostConnectionLostEvent",
+            "message": "（モック）ホストと vCenter の接続が切れました。",
+            "entity_name": "esxi-mock-01",
+            "entity_type": "HostSystem",
+            "entity_moid": MOCK_HOST_MOID,
+            "entities": (EventEntityInput(
+                "host", entity_moid=MOCK_HOST_MOID, entity_name="esxi-mock-01",
+                entity_type="HostSystem", is_primary=True,
+            ),),
+            "vmware_key": -(interval * 3 + i + 1),
+        })
+    rows.sort(key=lambda row: row["occurred_at"])
     return rows, now
 
 
