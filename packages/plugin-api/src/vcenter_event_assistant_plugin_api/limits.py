@@ -1,8 +1,9 @@
 """Field limits imposed by the application's database schema.
 
-これらは ``vcenter_event_assistant.db.models`` の列定義を写したものである。アプリは
-長さを検証しないため、超過は収集時に DB エラーとして初めて現れる。あらかじめ知って
-おけば避けられるので、作者向けに公開する。
+これらは ``vcenter_event_assistant.db.models`` の列定義を写したものである。
+plugin-api の ``validation.check_batch()`` は、列長を超えた値を warning として報告する。
+イベントの対象を保存するときは、本体が上限を超えた子の名前を切り詰め、子の種別と moid、
+およびイベント本体の moid を NULL にする。上限を超えた役割を持つ子の行は破棄する。
 
 ``tests/test_plugin_api_limits_match_models.py`` が models との一致を検証しており、
 片方だけ変えるとテストが落ちる。
@@ -20,9 +21,9 @@ MAX_PLUGIN_ID = 64
 MAX_METRIC_KEY = 256
 #: ``MetricSample.entity_type``。**イベント側とは値が違う**。
 MAX_METRIC_ENTITY_TYPE = 128
-#: ``MetricSample.entity_moid``。
+#: ``MetricSample.entity_moid`` / ``EventRecord.entity_moid`` / ``EventEntity.entity_moid``。
 MAX_ENTITY_MOID = 256
-#: ``MetricSample.entity_name`` / ``EventRecord.entity_name``。
+#: ``MetricSample.entity_name`` / ``EventRecord.entity_name`` / ``EventEntity.entity_name``。
 MAX_ENTITY_NAME = 1024
 
 #: ``EventRecord.event_type``。
@@ -31,8 +32,10 @@ MAX_EVENT_TYPE = 512
 MAX_SEVERITY = 64
 #: ``EventRecord.user_name``。
 MAX_USER_NAME = 512
-#: ``EventRecord.entity_type``。**メトリクス側とは値が違う**。
+#: ``EventRecord.entity_type`` / ``EventEntity.entity_type``。**メトリクス側とは値が違う**。
 MAX_EVENT_ENTITY_TYPE = 256
+#: ``EventEntity.role``。
+MAX_EVENT_ENTITY_ROLE = 64
 
 #: ``EventRecord.vmware_key`` は ``Integer`` である。PostgreSQL では範囲外で失敗する。
 VMWARE_KEY_MIN = -(2**31)

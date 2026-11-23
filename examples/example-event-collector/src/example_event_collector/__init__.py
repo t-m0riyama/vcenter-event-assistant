@@ -137,7 +137,8 @@ def _to_event_input(raw: Any) -> EventInput | None:
         logger.warning("event key out of range, skipping: %s", key)
         return None
 
-    primary = next((item for item in vmware.event_entities(raw) if item.is_primary), None)
+    entities = vmware.event_entities(raw)
+    primary = next((item for item in entities if item.is_primary), None)
     severity = getattr(raw, "severity", None)
     message = getattr(raw, "fullFormattedMessage", None) or str(raw)
     event_type = type(raw).__name__
@@ -156,6 +157,8 @@ def _to_event_input(raw: Any) -> EventInput | None:
         user_name=getattr(raw, "userName", None),
         entity_name=primary.entity_name if primary is not None else None,
         entity_type=primary.entity_type if primary is not None else None,
+        entity_moid=primary.entity_moid if primary is not None else None,
+        entities=entities,
         chain_id=int(raw.chainId) if getattr(raw, "chainId", None) else None,
     )
 

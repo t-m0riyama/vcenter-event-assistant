@@ -349,6 +349,7 @@ def _batch_warnings(batch: CollectionBatch) -> Iterator[Issue]:
             _too_long("event", index, "user_name", event.user_name, _limits.MAX_USER_NAME),
             _too_long("event", index, "entity_name", event.entity_name, _limits.MAX_ENTITY_NAME),
             _too_long("event", index, "entity_type", event.entity_type, _limits.MAX_EVENT_ENTITY_TYPE),
+            _too_long("event", index, "entity_moid", event.entity_moid, _limits.MAX_ENTITY_MOID),
         ):
             if issue is not None:
                 yield issue
@@ -374,6 +375,45 @@ def _batch_warnings(batch: CollectionBatch) -> Iterator[Issue]:
                 field="vmware_key",
             )
         event_seen.add(event.vmware_key)
+
+        seen_entities: set[tuple[str, int]] = set()
+        for position, entity in enumerate(event.entities):
+            field = f"entities[{position}]"
+            for name, value, limit in (
+                ("role", entity.role, _limits.MAX_EVENT_ENTITY_ROLE),
+                ("entity_type", entity.entity_type, _limits.MAX_EVENT_ENTITY_TYPE),
+                ("entity_moid", entity.entity_moid, _limits.MAX_ENTITY_MOID),
+                ("entity_name", entity.entity_name, _limits.MAX_ENTITY_NAME),
+            ):
+                if not isinstance(value, str):
+                    continue
+                issue = _too_long("event", index, f"{field}.{name}", value, limit)
+                if issue is not None:
+                    yield issue
+            if entity.role == "":
+                yield Issue(
+                    "empty_event_entity_role", "event entity role is empty and will be discarded",
+                    severity="warning", kind="event", index=index, field=f"{field}.role",
+                )
+            # 役割や位置の型が不正な行は、重複判定から外す。保存時に警告して破棄する。
+            if (
+                not isinstance(entity.role, str)
+                or not isinstance(entity.position, int)
+                or isinstance(entity.position, bool)
+            ):
+                continue
+            key = (entity.role, entity.position)
+            if key in seen_entities:
+                yield Issue(
+                    "duplicate_event_entity", "event entity role and position are duplicated",
+                    severity="warning", kind="event", index=index, field=field,
+                )
+            seen_entities.add(key)
+        if event.entities and sum(bool(entity.is_primary) for entity in event.entities) != 1:
+            yield Issue(
+                "invalid_event_entity_primary_count", "event entities must have exactly one primary",
+                severity="warning", kind="event", index=index, field="entities",
+            )
 
 
 def check_batch(

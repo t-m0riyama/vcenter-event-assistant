@@ -15,12 +15,14 @@ from sqlalchemy import select
 
 from vcenter_event_assistant.db.models import (
     AlertRule,
+    EventEntity,
     EventRecord,
     EventTypeGuide,
     MetricSample,
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.mocks.mock_collectors import MOCK_HOST_MOID, MOCK_VM_MOID
 from vcenter_event_assistant.settings_binding import require_settings
 
 logger = logging.getLogger(__name__)
@@ -90,6 +92,10 @@ async def run_mock_mode_seed_if_enabled() -> None:
 
         now = datetime.now(timezone.utc)
         for i, et in enumerate(_EVENT_TYPES):
+            is_host = i == 2
+            entity_name = "esxi-mock-01" if is_host else "vm-mock-web-01"
+            entity_type = "HostSystem" if is_host else "VirtualMachine"
+            entity_moid = MOCK_HOST_MOID if is_host else MOCK_VM_MOID
             session.add(
                 EventRecord(
                     vcenter_id=vc.id,
@@ -97,14 +103,23 @@ async def run_mock_mode_seed_if_enabled() -> None:
                     event_type=et,
                     message=f"（モック）シードイベント: {et}",
                     severity=("error" if i == 2 else "warning" if i == 1 else "info"),
-                    entity_name="esxi-mock-01" if i == 2 else "vm-mock-web-01",
-                    entity_type="HostSystem" if i == 2 else "VirtualMachine",
+                    entity_name=entity_name,
+                    entity_type=entity_type,
+                    entity_moid=entity_moid,
+                    entities=[EventEntity(
+                        vcenter_id=vc.id,
+                        role="host" if is_host else "vm",
+                        position=0,
+                        is_primary=True,
+                        entity_name=entity_name,
+                        entity_type=entity_type,
+                        entity_moid=entity_moid,
+                    )],
                     vmware_key=8_000_001 + i,
                     notable_score=10 + i * 20,
                 ),
             )
 
-        host_moid = "host-mock-01"
         ds_moid = "datastore-mock-01"
         for i in range(32):
             sampled = now - timedelta(minutes=2 * (31 - i))
@@ -114,7 +129,7 @@ async def run_mock_mode_seed_if_enabled() -> None:
                     vcenter_id=vc.id,
                     sampled_at=sampled,
                     entity_type="HostSystem",
-                    entity_moid=host_moid,
+                    entity_moid=MOCK_HOST_MOID,
                     entity_name="esxi-mock-01",
                     metric_key="host.cpu.usage_pct",
                     value=30.0 + wobble,
@@ -125,7 +140,7 @@ async def run_mock_mode_seed_if_enabled() -> None:
                     vcenter_id=vc.id,
                     sampled_at=sampled,
                     entity_type="HostSystem",
-                    entity_moid=host_moid,
+                    entity_moid=MOCK_HOST_MOID,
                     entity_name="esxi-mock-01",
                     metric_key="host.mem.usage_pct",
                     value=40.0 + wobble * 0.5,

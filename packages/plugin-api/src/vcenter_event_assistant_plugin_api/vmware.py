@@ -27,6 +27,7 @@ __all__ = [
     "PyVmomiUnavailableError",
     "container_view",
     "datastore_is_accessible",
+    "entity_priority",
     "event_entities",
     "host_is_connected",
     "iter_datastores",
@@ -202,7 +203,8 @@ _FALLBACK_PREFIXES = ("source", "src", "old", "prev", "conflicted", "dest", "dst
 _FALLBACK_ROLES = {"parent", "newParent", "connectee"}
 
 
-def _entity_priority(entity: EventEntityInput) -> tuple[int, int, str, int]:
+def entity_priority(entity: EventEntityInput) -> tuple[int, int, str, int]:
+    """主な対象を選ぶ順に並べ替えるためのキーを返す。"""
     role = entity.role
     if role in _PRIMARY_PRIORITIES:
         tier, order = _PRIMARY_PRIORITIES[role]
@@ -367,14 +369,14 @@ def event_entities(event: Any) -> tuple[EventEntityInput, ...]:
 
     # moid を列長に合わせる前に、別の役割で得られた名前を補う。
     names_by_moid: dict[str, str] = {}
-    for entity in sorted(entities + managed_entities, key=_entity_priority):
+    for entity in sorted(entities + managed_entities, key=entity_priority):
         if entity.entity_moid is not None and entity.entity_name is not None:
             names_by_moid.setdefault(entity.entity_moid, entity.entity_name)
     for entity in managed_entities:
         if entity.entity_name is None and entity.entity_moid in names_by_moid:
             entity = replace(entity, entity_name=names_by_moid[entity.entity_moid])
         entities.append(entity)
-    entities.sort(key=_entity_priority)
+    entities.sort(key=entity_priority)
     return tuple(
         _fit_entity_limits(entity, primary=index == 0)
         for index, entity in enumerate(entities)

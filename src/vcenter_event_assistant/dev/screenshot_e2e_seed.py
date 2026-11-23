@@ -25,6 +25,7 @@ from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
     DigestRecord,
+    EventEntity,
     EventRecord,
     EventTypeGuide,
     LogRecord,
@@ -98,6 +99,11 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
                 severity="info",
                 entity_name="demo-vm-03",
                 entity_type="VirtualMachine",
+                entity_moid="vm-9003",
+                entities=[EventEntity(
+                    vcenter_id=vc.id, role="vm", position=0, is_primary=True,
+                    entity_name="demo-vm-03", entity_type="VirtualMachine", entity_moid="vm-9003",
+                )],
                 vmware_key=9_001_001,
                 notable_score=10,
             ),
@@ -183,7 +189,12 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
         (33, _EVENT_TYPES[2], "demo-esxi-01", 85, "error", "（デモ）ホストで要確認の事象が起きました"),
         (15, _EVENT_TYPES[1], "demo-vm-01", 30, "warning", "（デモ）仮想マシンの状態が再び変わりました"),
     )
+    host_moids = {name: moid for moid, name in _DEMO_HOSTS}
+    vm_moids = {"demo-vm-01": "vm-9001", "demo-vm-02": "vm-9002"}
     for i, (minutes, event_type, entity, score, severity, message) in enumerate(events):
+        is_host = entity in host_moids
+        entity_type = "HostSystem" if is_host else "VirtualMachine"
+        entity_moid = host_moids[entity] if is_host else vm_moids[entity]
         session.add(
             EventRecord(
                 vcenter_id=vcenter_id,
@@ -192,7 +203,12 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
                 message=message,
                 severity=severity,
                 entity_name=entity,
-                entity_type="HostSystem" if entity.startswith("demo-esxi") else "VirtualMachine",
+                entity_type=entity_type,
+                entity_moid=entity_moid,
+                entities=[EventEntity(
+                    vcenter_id=vcenter_id, role="host" if is_host else "vm", position=0,
+                    is_primary=True, entity_name=entity, entity_type=entity_type, entity_moid=entity_moid,
+                )],
                 vmware_key=9_002_001 + i,
                 notable_score=score,
             ),

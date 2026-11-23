@@ -81,6 +81,12 @@ Playwright 用の最小シード（`SCREENSHOT_E2E_SEED=1`）とは別物。併�
 
 モデルを [`src/vcenter_event_assistant/db/models.py`](../../src/vcenter_event_assistant/db/models.py) で変更したら、必ず `alembic/versions/` にリビジョンを追加し、PR では **モデルとマイグレーションをセット**でレビューする。起動時は [`init_db()`](../../src/vcenter_event_assistant/db/session.py) が 排他制御・SQLite バックアップ付きで Alembic **`upgrade head`** を実行する。
 
+SQLite の起動時移行は `PRAGMA foreign_keys=ON` の接続で実行する。`event_entities` は
+`events` を参照する最初の外部キーを持つため、`batch_alter_table` で `events` を作り直すと、
+`DROP TABLE` に伴う暗黙の `DELETE` が `ON DELETE CASCADE` を起こし、子表が空になる。
+`events` を作り直す移行では、トランザクションを始める前に外部キーを無効にして移行後に戻すか、
+子表の行を退避して作り直し後に復元する。
+
 #### 起動時の `init_db()` の挙動
 
 | DB の状態 | 処理 |

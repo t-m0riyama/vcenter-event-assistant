@@ -140,7 +140,8 @@ def normalize_event(e: Any) -> dict[str, Any] | None:
     if severity is not None:
         severity = str(severity).lower()
 
-    primary = next((item for item in event_entities(e) if item.is_primary), None)
+    entities = event_entities(e)
+    primary = next((item for item in entities if item.is_primary), None)
 
     user_name = getattr(e, "userName", None)
 
@@ -152,6 +153,8 @@ def normalize_event(e: Any) -> dict[str, Any] | None:
         "user_name": user_name,
         "entity_name": primary.entity_name if primary is not None else None,
         "entity_type": primary.entity_type if primary is not None else None,
+        "entity_moid": primary.entity_moid if primary is not None else None,
+        "entities": entities,
         "vmware_key": vmware_key,
         "chain_id": chain_id,
     }

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Sample event collector plugin for vCenter Event Assistant"
 requires-python = ">=3.12"
 dependencies = [
-    "vcenter-event-assistant-plugin-api>=1.6,<2",
+    "vcenter-event-assistant-plugin-api>=1.7,<2",
 ]
 
 # entry point 名は manifest.id と一致していなければならない。

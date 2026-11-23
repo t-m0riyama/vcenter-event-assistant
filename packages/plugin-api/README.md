@@ -47,11 +47,12 @@ class TemperatureCollector(MetricCollector):
 build_collector = TemperatureCollector   # クラス自体が引数なしファクトリになる
 ```
 
-`vmware.event_entities()` を使う場合は、plugin-api 1.6 以上を指定する。
+`vmware.event_entities()` で取り出した対象は、plugin-api 1.7 以降の `EventInput` に渡せる。
+主な対象の moid は `entity_moid` に、主な対象を含む全件は `entities` に入れる。
 
 ```toml
 [project]
-dependencies = ["vcenter-event-assistant-plugin-api>=1.6,<2"]
+dependencies = ["vcenter-event-assistant-plugin-api>=1.7,<2"]
 
 # entry point の名前は CollectorManifest.id と一致させる。
 [project.entry-points."vcenter_event_assistant.collectors"]

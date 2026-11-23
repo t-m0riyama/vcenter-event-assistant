@@ -77,13 +77,13 @@ def test_normalize_event_maps_fields() -> None:
 
 
 @pytest.mark.parametrize(
-    ("event", "name", "entity_type"),
+    ("event", "name", "entity_type", "moid", "entities"),
     [
         (
             vim.event.HostConnectionLostEvent(
                 host=vim.event.HostEventArgument(host=vim.HostSystem("host-10"), name="esx01")
             ),
-            "esx01", "HostSystem",
+            "esx01", "HostSystem", "host-10", [("host", "host-10", True)],
         ),
         (
             vim.event.AlarmStatusChangedEvent(
@@ -91,28 +91,32 @@ def test_normalize_event_maps_fields() -> None:
                     entity=vim.HostSystem("host-10"), name="esx01"
                 )
             ),
-            "esx01", "HostSystem",
+            "esx01", "HostSystem", "host-10", [("entity", "host-10", True)],
         ),
         (
             vim.event.VmPoweredOnEvent(
                 vm=vim.event.VmEventArgument(vm=vim.VirtualMachine("vm-1"), name="web-01"),
                 host=vim.event.HostEventArgument(host=vim.HostSystem("host-10"), name="esx01"),
             ),
-            "web-01", "VirtualMachine",
+            "web-01", "VirtualMachine", "vm-1",
+            [("vm", "vm-1", True), ("host", "host-10", False)],
         ),
-        (vim.event.Event(), None, None),
+        (vim.event.Event(), None, None, None, []),
     ],
 )
 def test_normalize_event_uses_primary_entity(
-    event: vim.event.Event, name: str | None, entity_type: str | None,
+    event: vim.event.Event,
+    name: str | None,
+    entity_type: str | None,
+    moid: str | None,
+    entities: list[tuple[str, str, bool]],
 ) -> None:
     event.createdTime = datetime(2026, 1, 1, tzinfo=timezone.utc)
     event.fullFormattedMessage = "message"
     row = normalize_event(event)
     assert row is not None
-    assert (row["entity_name"], row["entity_type"]) == (name, entity_type)
-    assert "entity_moid" not in row
-    assert "entities" not in row
+    assert (row["entity_name"], row["entity_type"], row["entity_moid"]) == (name, entity_type, moid)
+    assert [(entity.role, entity.entity_moid, entity.is_primary) for entity in row["entities"]] == entities
 
 
 @pytest.mark.parametrize(

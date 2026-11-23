@@ -13,6 +13,7 @@ import pytest
 from vcenter_event_assistant_plugin_api import (
     CollectionBatch,
     CollectorManifest,
+    EventEntityInput,
     EventInput,
     MetricDefinition,
     MetricSampleInput,
@@ -315,3 +316,40 @@ def test_raise_for_issues_ignores_warnings() -> None:
 
 def test_raise_for_issues_accepts_an_empty_result() -> None:
     raise_for_issues(())
+
+
+@pytest.mark.parametrize("primary_count", [0, 2])
+def test_event_entity_validation_warns_without_rejecting(primary_count: int) -> None:
+    manifest = _manifest(data_kinds=frozenset({"event"}), metric_definitions=())
+    batch = CollectionBatch(events=(_event(
+        entity_moid="m" * 257,
+        entities=(
+            EventEntityInput("vm", is_primary=primary_count == 2),
+            EventEntityInput("vm"),
+            EventEntityInput("r" * 65, entity_name="n" * 1025,
+                             entity_type="t" * 257, entity_moid="m" * 257),
+            EventEntityInput("host", is_primary=primary_count == 2),
+            EventEntityInput(""),
+        ),
+    ),))
+
+    validate_batch(manifest, batch)
+    issues = check_batch(manifest, batch)
+    assert all(issue.severity == "warning" for issue in issues)
+    assert {issue.field for issue in issues if issue.code == "field_too_long"} == {
+        "entity_moid", "entities[2].role", "entities[2].entity_name",
+        "entities[2].entity_type", "entities[2].entity_moid",
+    }
+    assert set(_codes(issues)) == {
+        "field_too_long", "empty_event_entity_role", "duplicate_event_entity",
+        "invalid_event_entity_primary_count",
+    }
+
+
+def test_event_entities_with_exactly_one_primary_have_no_warnings() -> None:
+    manifest = _manifest(data_kinds=frozenset({"event"}), metric_definitions=())
+    batch = CollectionBatch(events=(_event(entities=(
+        EventEntityInput("vm", entity_moid="vm-1", is_primary=True),
+        EventEntityInput("host", entity_moid="host-1"),
+    )),))
+    assert check_batch(manifest, batch) == ()

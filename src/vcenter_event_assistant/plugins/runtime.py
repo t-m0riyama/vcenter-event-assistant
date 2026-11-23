@@ -29,7 +29,6 @@ from vcenter_event_assistant.collectors.connection import (
 )
 from vcenter_event_assistant.db.models import (
     CollectorRunState,
-    EventRecord,
     IngestionState,
     MetricSample,
     LogRecord,
@@ -42,9 +41,7 @@ from vcenter_event_assistant.plugins.remote import (
     RemoteCollectorPlugin,
 )
 from vcenter_event_assistant.plugins.wire import ConnectionParams
-from vcenter_event_assistant.rules.notable import clamp_notable_total, score_event
-from vcenter_event_assistant.services.event_scores import load_event_score_delta_map
-from vcenter_event_assistant.services.ingestion import _insert_on_conflict_do_nothing
+from vcenter_event_assistant.services.ingestion import _insert_on_conflict_do_nothing, persist_events
 from vcenter_event_assistant.services.ssh_management import LegacySSHPathError
 from vcenter_event_assistant.settings import Settings
 
@@ -233,37 +230,9 @@ async def _persist_batch(
 ) -> tuple[int, int, int]:
     assert registration.plugin is not None
     async with session_scope(settings=settings) as session:
-        deltas = await load_event_score_delta_map(session) if batch.events else {}
-        events_inserted = 0
-        for event in batch.events:
-            notable = score_event(
-                event_type=event.event_type,
-                severity=event.severity,
-                message=event.message,
-            )
-            result = await _insert_on_conflict_do_nothing(
-                session,
-                EventRecord,
-                {
-                    "collector_id": registration.plugin_id,
-                    "vcenter_id": vcenter_id,
-                    "occurred_at": event.occurred_at,
-                    "event_type": event.event_type,
-                    "message": event.message,
-                    "severity": event.severity,
-                    "user_name": event.user_name,
-                    "entity_name": event.entity_name,
-                    "entity_type": event.entity_type,
-                    "vmware_key": event.vmware_key,
-                    "chain_id": event.chain_id,
-                    "notable_score": clamp_notable_total(
-                        notable.score, deltas.get(event.event_type, 0)
-                    ),
-                    "notable_tags": notable.tags,
-                },
-                index_elements=["vcenter_id", "collector_id", "vmware_key"],
-            )
-            events_inserted += result.rowcount or 0
+        events_inserted = await persist_events(
+            session, vcenter_id, registration.plugin_id, batch.events,
+        ) if batch.events else 0
         metrics_inserted = 0
         for sample in batch.metrics:
             result = await _insert_on_conflict_do_nothing(
