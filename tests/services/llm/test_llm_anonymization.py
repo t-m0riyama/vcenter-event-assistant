@@ -52,6 +52,90 @@ def test_anonymize_dict_replaces_entity_name_and_message() -> None:
     )
 
 
+def test_anonymize_moid_fields_and_message() -> None:
+    raw = {
+        "message": "[vm-1] vm-101 myvm-1 vm-1a vm-1_backup [custom-id] mycustom-id host-45",
+        "series": [
+            {"entity_name": "vm-1", "entity_moid": "vm-1"},
+            {"entity_moid": "custom-id"},
+            {"entity_moid": None},
+            {"entity_name": "host", "entity_moid": "host-45"},
+        ],
+    }
+
+    out, reverse_map = anonymize_json_like(raw)
+
+    assert out["series"] == [
+        {"entity_name": "__LM_MOID_001__", "entity_moid": "__LM_MOID_001__"},
+        {"entity_moid": "__LM_MOID_002__"},
+        {"entity_moid": None},
+        {"entity_name": "__LM_ENTITY_001__", "entity_moid": "__LM_MOID_003__"},
+    ]
+    assert out["message"] == (
+        "[__LM_MOID_001__] __LM_MOID_004__ myvm-1 vm-1a vm-1_backup "
+        "[__LM_MOID_002__] mycustom-id __LM_MOID_003__"
+    )
+    assert deanonymize_text(out["message"], reverse_map) == raw["message"]
+
+
+def test_anonymize_plain_text_detects_moids_without_overlapping_other_replacements() -> None:
+    a = LlmAnonymizer()
+    host = a.token_for("entity", "host-45.example")
+    original = (
+        "host-45.example at 192.0.2.1: host-45, domain-c7, group-v3, group-p8, "
+        "group-9, resgroup-v12, datastore-3, network-o4, snapshot-5, alarm-6; "
+        "myvm-12 vm-12a vapp-12 group-x3"
+    )
+
+    text = anonymize_plain_text(original, a)
+
+    assert text == (
+        f"{host} at __LM_IP_001__: __LM_MOID_001__, __LM_MOID_002__, __LM_MOID_003__, "
+        "__LM_MOID_004__, __LM_MOID_005__, __LM_MOID_006__, __LM_MOID_007__, "
+        "__LM_MOID_008__, __LM_MOID_009__, __LM_MOID_010__; myvm-12 vm-12a vapp-12 group-x3"
+    )
+    assert deanonymize_text(text, a.reverse_map) == original
+
+
+@pytest.mark.parametrize("name", ["vm-01", "vm-101"])
+def test_moid_shaped_entity_name_still_allows_partial_replacement(name: str) -> None:
+    out, _ = anonymize_json_like({
+        "entity_name": name,
+        "entity_moid": "vm-42",
+        "message": f"Clone {name} to {name}-clone, {name}_old",
+    })
+
+    token = out["entity_name"]
+    assert token == "__LM_ENTITY_001__"
+    assert out["message"] == f"Clone {token} to {token}-clone, {token}_old"
+
+
+@pytest.mark.parametrize("short", ["host-01", "host-1"])
+def test_moid_shaped_short_name_still_uses_fqdn_alias(short: str) -> None:
+    out, _ = anonymize_json_like({"entity_name": f"{short}.lab.local", "message": f"{short} is down"})
+
+    assert out["message"] == f"{out['entity_name']} is down"
+
+
+def test_registered_user_takes_priority_over_moid_pattern() -> None:
+    out, _ = anonymize_json_like({"user_name": "host-1", "message": "host-1 signed in"})
+
+    assert out["message"] == "__LM_USER_001__ signed in"
+
+
+def test_unregistered_moid_detection_ignores_leading_zero() -> None:
+    a = LlmAnonymizer()
+
+    assert anonymize_plain_text("vm-01 host-01 vm-0 vm-1001", a) == "vm-01 host-01 vm-0 __LM_MOID_001__"
+
+
+def test_short_registered_moid_is_replaced_only_in_its_field() -> None:
+    out, reverse_map = anonymize_json_like({"entity_moid": "x", "message": "x, xx"})
+
+    assert deanonymize_text(out["entity_moid"], reverse_map) == "x"
+    assert out["message"] == "x, xx"
+
+
 def test_anonymize_period_metrics_entity_name() -> None:
     raw = {
         "cpu": [
@@ -171,7 +255,7 @@ def test_anonymize_chat_for_llm_extra_vcenter_strings_in_messages() -> None:
     payload = {"digest_context": {"total_events": 0}}
     contents = ["MyDisplay と vcenter02.lab.local を確認"]
     extra = ["MyDisplay", "vcenter02.lab.local", "vcenter02"]
-    _pl, out_contents, _att, rev = anonymize_chat_for_llm(
+    _pl, out_contents, _att, _filenames, rev = anonymize_chat_for_llm(
         payload,
         contents,
         extra_vcenter_strings=extra,
@@ -200,7 +284,7 @@ def test_anonymize_chat_for_llm_tokenizes_short_hostname_when_entity_name_is_fqd
         },
     }
     contents = ["mini5のCPU使用率が最も高い時間帯を教えて。"]
-    _pl, out_contents, _att, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
+    _pl, out_contents, _att, _filenames, rev = anonymize_chat_for_llm(payload, contents, extra_vcenter_strings=None)
     assert "mini5" not in out_contents[0]
     assert "mini5.moriyama.internal" not in str(_pl)
     tok_in_json = _pl["period_metrics"]["cpu"][0]["entity_name"]

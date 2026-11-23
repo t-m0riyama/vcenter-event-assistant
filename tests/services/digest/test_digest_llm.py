@@ -8,6 +8,7 @@ import httpx
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
+from vcenter_event_assistant.api.schemas.dashboard import HighCpuHostRow
 from vcenter_event_assistant.services.digest.digest_context import DigestContext, DigestNotableEventGroup
 from vcenter_event_assistant.services.digest.digest_llm import _SYSTEM_PROMPT, augment_digest_with_llm
 from vcenter_event_assistant.settings import Settings
@@ -215,18 +216,27 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
                 occurred_at_first=t0,
                 occurred_at_last=t0,
                 entity_name=host,
-                message="m",
+                message="host-45 に vm-123 が移動した",
             )
         ],
         top_event_types=[],
-        high_cpu_hosts=[],
+        high_cpu_hosts=[
+            HighCpuHostRow(
+                vcenter_id="vc",
+                vcenter_label="vCenter",
+                entity_name=host,
+                entity_moid="host-45",
+                value=90.0,
+                sampled_at=t0,
+            ),
+        ],
         high_mem_hosts=[],
     )
     captured: dict[str, object] = {}
 
     async def _spy_stream(model: object, lc_messages: object, *, config: object = None) -> tuple[str, int | None, float | None]:
         captured["human"] = lc_messages[1].content  # type: ignore[index]
-        return "## LLM 要約\n- 補足", None, None
+        return "## LLM 要約\n- __LM_MOID_001__ を確認", None, None
 
     monkeypatch.setattr(
         "vcenter_event_assistant.services.digest.digest_llm.build_chat_model",
@@ -237,11 +247,15 @@ async def test_augment_anonymizes_llm_input_but_keeps_template_body_in_output(
         _spy_stream,
     )
 
-    md = f"# タイトル\nホスト {host} のメモ\n"
+    md = f"# タイトル\nホスト {host}（host-45）のメモ。対象は datastore-5。\n"
     out, err = await augment_digest_with_llm(context=ctx, template_markdown=md)
     assert err is None
     assert host in out
-    assert host not in str(captured.get("human"))
+    human = str(captured["human"])
+    for original in (host, "host-45", "vm-123", "datastore-5"):
+        assert original not in human
+    assert human.count("__LM_MOID_001__") == 3
+    assert "- host-45 を確認" in out
 
 
 @pytest.mark.asyncio
