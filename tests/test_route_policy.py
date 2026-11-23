@@ -47,6 +47,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/auth/directories/{directory_id}/test"): ADMIN,
     # config / ルール類
     ("GET", "/api/config"): VIEWER,
+    ("GET", "/api/event-patterns"): VIEWER,
     ("GET", "/api/event-score-rules"): VIEWER,
     ("POST", "/api/event-score-rules"): ADMIN,
     ("POST", "/api/event-score-rules/import"): ADMIN,

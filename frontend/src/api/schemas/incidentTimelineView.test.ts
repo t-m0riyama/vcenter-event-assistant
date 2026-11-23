@@ -20,6 +20,9 @@ describe('incidentTimelineViewResponseSchema', () => {
     })
     expect(parsed.items[0].count).toBe(1)
     expect(parsed.highlights.top_entities).toEqual([])
+    expect(parsed.highlights.detected_patterns).toEqual([])
+    expect(parsed.highlights.detected_patterns_total).toBe(0)
+    expect(parsed.highlights.omitted_patterns).toEqual([])
   })
 
   it('未知のレベルは拒否する', () => {

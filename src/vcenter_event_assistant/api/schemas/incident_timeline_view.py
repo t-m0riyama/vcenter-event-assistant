@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from vcenter_event_assistant.api.schemas.base import UtcDateTime, to_utc_or_value_error
+from vcenter_event_assistant.services.event_patterns.definitions import PatternLevel
 
 TimelineSource = Literal["event", "alert", "metric", "log"]
 TimelineLevel = Literal["critical", "error", "warning", "info"]
@@ -205,10 +206,29 @@ class IncidentTimelineNewEventType(BaseModel):
     max_score: int
 
 
+class IncidentTimelineDetectedPattern(BaseModel):
+    pattern_id: str
+    title: str
+    description: str
+    level: PatternLevel
+    vcenter_id: uuid.UUID
+    vcenter_name: str | None = None
+    entity_moid: str
+    entity_name: str | None = None
+    entity_type: str | None = None
+    first_utc: datetime
+    last_utc: datetime
+    event_count: int
+    event_ids: list[int]
+
+
 class IncidentTimelineHighlights(BaseModel):
     first_signal: IncidentTimelineViewItem | None = None
     top_entities: list[IncidentTimelineTopEntity] = Field(default_factory=list)
     new_event_types: list[IncidentTimelineNewEventType] = Field(default_factory=list)
+    detected_patterns: list[IncidentTimelineDetectedPattern] = Field(default_factory=list)
+    detected_patterns_total: int = 0
+    omitted_patterns: list[str] = Field(default_factory=list)
 
 
 class IncidentTimelineOmittedSource(BaseModel):

@@ -41,7 +41,7 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
         n_hist = (await session.execute(select(func.count()).select_from(AlertHistory))).scalar_one()
     assert n_vc == 1
     assert n_g == 3
-    assert n_ev == 6
+    assert n_ev == 9
     assert n_m >= 1
     assert n_logs == 4
     assert n_d == 1
@@ -92,6 +92,10 @@ async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
     kinds = {i["kind"] for i in items}
     assert kinds == {"event", "alert", "metric", "log"}
     assert body["omitted_sources"] == []
+    [pattern] = body["highlights"]["detected_patterns"]
+    assert (pattern["pattern_id"], pattern["entity_name"], pattern["event_count"]) == (
+        "host-conn-flapping", "demo-esxi-01", 3,
+    )
 
     metrics = [i for i in items if i["kind"] == "metric"]
     assert sorted(m["title"] for m in metrics) == [
@@ -104,6 +108,9 @@ async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
 
     events = [i for i in items if i["kind"] == "event"]
     assert all(e["entity_name"] for e in events)
+    disconnects = [e for e in events if e["ref"]["event_type"] == "vim.event.HostConnectionLostEvent"]
+    assert sum(e["count"] for e in disconnects) == 3
+    assert {e["score"] for e in disconnects} == {40}
     # 同じ種別・同じ対象の連続は 1 行にまとまる
     assert [e["count"] for e in events].count(2) == 1
     logs = [i for i in items if i["kind"] == "log"]

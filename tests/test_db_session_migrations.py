@@ -326,6 +326,34 @@ async def test_snapshot_result_columns_are_added_without_rebuilding_the_table(
 
 
 @pytest.mark.asyncio
+async def test_event_pattern_index_migration_with_existing_index(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """複合索引を持つ DB にも移行を適用でき、戻すときは複合索引だけを消す。"""
+    from alembic import command
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.db.session import get_engine
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'event_pattern.db'}")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await reset_db()
+    await init_db()
+    cfg = alembic_config()
+    index = "ix_events_event_type_occurred_at"
+    async with get_engine().begin() as conn:
+        await conn.run_sync(
+            lambda c: _run_with_connection(c, cfg, lambda cc: command.downgrade(cc, "e8f9a0b1c2d3"))
+        )
+        indexes = await conn.run_sync(lambda c: {i["name"] for i in inspect(c).get_indexes("events")})
+        assert index not in indexes
+        assert "ix_events_event_type" in indexes
+        await conn.execute(text(f"CREATE INDEX {index} ON events (event_type, occurred_at)"))
+    await init_db()
+    assert await get_applied_alembic_revision(get_engine()) == get_alembic_head()
+    await reset_db()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["sqlite", "postgres"])
 async def test_event_entities_migration_round_trip(tmp_path, backend) -> None:
     """対象を保存する移行は既存イベントを残し、元に戻して再適用できる。"""
@@ -356,6 +384,9 @@ async def test_event_entities_migration_round_trip(tmp_path, backend) -> None:
         assert "ix_events_vcenter_id_entity_moid" not in {
             i["name"] for i in inspector.get_indexes("events")
         }
+        assert "ix_events_event_type_occurred_at" not in {
+            i["name"] for i in inspector.get_indexes("events")
+        }
 
     def check_new_schema(sync_conn) -> None:
         inspector = inspect(sync_conn)
@@ -364,6 +395,7 @@ async def test_event_entities_migration_round_trip(tmp_path, backend) -> None:
         assert columns["entity_moid"]["type"].length == 256
         indexes = {i["name"]: i["column_names"] for i in inspector.get_indexes("events")}
         assert indexes["ix_events_vcenter_id_entity_moid"] == ["vcenter_id", "entity_moid"]
+        assert indexes["ix_events_event_type_occurred_at"] == ["event_type", "occurred_at"]
         indexes = {
             i["name"]: i["column_names"] for i in inspector.get_indexes("event_entities")
             if not i.get("duplicates_constraint")

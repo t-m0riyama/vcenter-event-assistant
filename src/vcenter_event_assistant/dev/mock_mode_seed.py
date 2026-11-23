@@ -23,6 +23,7 @@ from vcenter_event_assistant.db.models import (
 )
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.mocks.mock_collectors import MOCK_HOST_MOID, MOCK_VM_MOID
+from vcenter_event_assistant.rules.notable import final_notable_score
 from vcenter_event_assistant.settings_binding import require_settings
 
 logger = logging.getLogger(__name__)
@@ -91,18 +92,27 @@ async def run_mock_mode_seed_if_enabled() -> None:
             )
 
         now = datetime.now(timezone.utc)
-        for i, et in enumerate(_EVENT_TYPES):
-            is_host = i == 2
+        events = (
+            (45, _EVENT_TYPES[0], False, "info", 10),
+            (30, _EVENT_TYPES[1], False, "warning", 30),
+            (15, _EVENT_TYPES[2], True, "error", 50),
+            *((minutes, "vim.event.HostConnectionLostEvent", True, "info", None) for minutes in (12, 8, 4)),
+        )
+        for i, (minutes, et, is_host, severity, score) in enumerate(events):
+            message = f"（モック）シードイベント: {et}"
+            if score is None:
+                message = "（モック）ホストと vCenter の接続が切れました。"
+                score = final_notable_score(event_type=et, severity=severity, message=message)
             entity_name = "esxi-mock-01" if is_host else "vm-mock-web-01"
             entity_type = "HostSystem" if is_host else "VirtualMachine"
             entity_moid = MOCK_HOST_MOID if is_host else MOCK_VM_MOID
             session.add(
                 EventRecord(
                     vcenter_id=vc.id,
-                    occurred_at=now - timedelta(minutes=15 * (len(_EVENT_TYPES) - i)),
+                    occurred_at=now - timedelta(minutes=minutes),
                     event_type=et,
-                    message=f"（モック）シードイベント: {et}",
-                    severity=("error" if i == 2 else "warning" if i == 1 else "info"),
+                    message=message,
+                    severity=severity,
                     entity_name=entity_name,
                     entity_type=entity_type,
                     entity_moid=entity_moid,
@@ -116,7 +126,7 @@ async def run_mock_mode_seed_if_enabled() -> None:
                         entity_moid=entity_moid,
                     )],
                     vmware_key=8_000_001 + i,
-                    notable_score=10 + i * 20,
+                    notable_score=score,
                 ),
             )
 

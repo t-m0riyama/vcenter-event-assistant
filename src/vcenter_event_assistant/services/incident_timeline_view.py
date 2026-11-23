@@ -28,6 +28,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineDetectedPattern,
     IncidentTimelineHighlights,
     IncidentTimelineItemRef,
     IncidentTimelineNewEventType,
@@ -66,6 +67,7 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
     aggregation_slot,
 )
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
+from vcenter_event_assistant.services.event_patterns.query import query_event_patterns
 from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive, equals_case_insensitive
 from vcenter_event_assistant.services.sql_time import (
@@ -92,6 +94,8 @@ _MAX_OVERVIEW_BUCKETS = 120
 _MIN_MERGE_GAP_SECONDS = 300
 _TOP_ENTITIES_LIMIT = 5
 _NEW_EVENT_TYPES_LIMIT = 10
+_DETECTED_PATTERNS_LIMIT = 20
+_DETECTED_PATTERN_EVENT_IDS_LIMIT = 20
 # アラート側で行数の上限を超えたことを示す AggregationLimitExceeded.what
 _ALERTS_LIMIT = "incident_timeline_view.alerts"
 
@@ -859,6 +863,17 @@ async def _build_in_slot(
     if signal is not None:
         signal = _with_log_detail(_with_event_detail(signal, event_details), log_details)
 
+    highlights = IncidentTimelineHighlights(
+        first_signal=signal.to_item() if signal is not None else None,
+        top_entities=top_entities(merged),
+        new_event_types=new_types,
+    )
+    if "event" in requested:
+        patterns, total, omitted_patterns = await _collect_detected_patterns(session, scope)
+        highlights.detected_patterns = patterns
+        highlights.detected_patterns_total = total
+        highlights.omitted_patterns = omitted_patterns
+
     return IncidentTimelineViewResponse(
         from_utc=ft,
         to_utc=tt,
@@ -868,16 +883,47 @@ async def _build_in_slot(
         items=[e.to_item() for e in kept],
         truncated=truncated,
         total_items=len(merged),
-        highlights=IncidentTimelineHighlights(
-            first_signal=signal.to_item() if signal is not None else None,
-            top_entities=top_entities(merged),
-            new_event_types=new_types,
-        ),
+        highlights=highlights,
         omitted_sources=omitted,
     )
 
 
 # --- 収集: イベント ---------------------------------------------------------------------
+
+
+async def _collect_detected_patterns(
+    session: AsyncSession, scope: _Scope,
+) -> tuple[list[IncidentTimelineDetectedPattern], int, list[str]]:
+    detections, omitted = await query_event_patterns(
+        session, scope.from_utc, scope.to_utc, vcenter_id=scope.vcenter_id, entity_moid=scope.entity_moid
+    )
+    if scope.entity_moid is None and scope.entity:
+        detections = [d for d in detections if entity_matches(d.entity_name, scope.entity)]
+    # 同順位の並びを保ちながら、時刻とレベルを降順にする。
+    detections.sort(key=lambda d: (d.pattern.id, d.vcenter_id, d.entity_moid))
+    detections.sort(key=lambda d: d.last_utc, reverse=True)
+    detections.sort(key=lambda d: _LEVEL_RANK[d.pattern.level], reverse=True)
+    kept = detections[:_DETECTED_PATTERNS_LIMIT]
+    names = await _vcenter_names(session, {d.vcenter_id for d in kept})
+    patterns = [
+        IncidentTimelineDetectedPattern(
+            pattern_id=d.pattern.id,
+            title=d.pattern.title,
+            description=d.pattern.description,
+            level=d.pattern.level,
+            vcenter_id=d.vcenter_id,
+            vcenter_name=names.get(d.vcenter_id),
+            entity_moid=d.entity_moid,
+            entity_name=d.entity_name,
+            entity_type=d.entity_type,
+            first_utc=d.first_utc,
+            last_utc=d.last_utc,
+            event_count=len(d.event_ids),
+            event_ids=list(d.event_ids[:_DETECTED_PATTERN_EVENT_IDS_LIMIT]),
+        )
+        for d in kept
+    ]
+    return patterns, len(detections), omitted
 
 
 def _event_filters(
@@ -1610,14 +1656,19 @@ async def _attach_vcenter_names(
     ids = {e.vcenter_id for e in entries if e.vcenter_id is not None}
     if not ids:
         return entries
-    names: dict[uuid.UUID, str] = {}
-    for chunk in chunks(sorted(ids, key=str), IN_CHUNK_SIZE):
-        rows = (await session.execute(select(VCenter.id, VCenter.name).where(VCenter.id.in_(chunk)))).all()
-        names.update({vid: name for vid, name in rows})
+    names = await _vcenter_names(session, ids)
     return [
         replace(e, vcenter_name=names.get(e.vcenter_id)) if e.vcenter_id is not None else e
         for e in entries
     ]
+
+
+async def _vcenter_names(session: AsyncSession, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+    names: dict[uuid.UUID, str] = {}
+    for chunk in chunks(sorted(ids, key=str), IN_CHUNK_SIZE):
+        rows = (await session.execute(select(VCenter.id, VCenter.name).where(VCenter.id.in_(chunk)))).all()
+        names.update({vid: name for vid, name in rows})
+    return names
 
 
 _Collector = Callable[[AsyncSession, _Scope], Awaitable[_Collected]]

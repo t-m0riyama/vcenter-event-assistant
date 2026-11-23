@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
 from sqlalchemy import func, select
 
+from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
 from vcenter_event_assistant.db.models import EventRecord, MetricSample, VCenter
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.dev.mock_mode_seed import run_mock_mode_seed_if_enabled
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
+from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
 from vcenter_event_assistant.services.ingestion import (
     ingest_events_for_vcenter,
     ingest_metrics_for_vcenter,
@@ -62,6 +64,19 @@ async def test_mock_mode_seed_and_config_api(monkeypatch: pytest.MonkeyPatch, op
         events = await ac.get("/api/events?limit=20")
         assert events.status_code == 200
         assert len(events.json()["items"]) >= 1
+        now = datetime.now(timezone.utc)
+        view = await ac.post("/api/incident-timeline/view", json={
+            "from": (now - timedelta(hours=1)).isoformat(),
+            "to": now.isoformat(),
+            "sources": ["event"],
+        })
+        assert view.status_code == 200
+        timeline = view.json()
+        [pattern] = timeline["highlights"]["detected_patterns"]
+        assert (pattern["pattern_id"], pattern["event_count"]) == ("host-conn-flapping", 3)
+        disconnects = [e for e in timeline["items"] if e["ref"]["event_type"] == "vim.event.HostConnectionLostEvent"]
+        assert sum(e["count"] for e in disconnects) == 3
+        assert {e["score"] for e in disconnects} == {40}
 
         vcs = await ac.get("/api/vcenters")
         assert vcs.status_code == 200
@@ -113,6 +128,16 @@ async def test_mock_mode_ingestion_skips_pyvmomi(monkeypatch: pytest.MonkeyPatch
         )).all()
         assert len(vm_moids) == 3
         assert set(vm_moids) == {"vm-mock-01"}
+        now = datetime.now(timezone.utc)
+        view = await build_incident_timeline_view(
+            session,
+            IncidentTimelineViewRequest(
+                from_time=now - timedelta(hours=1), to_time=now, vcenter_id=vc.id, sources=["event"],
+            ),
+            owner_key="mock-ingestion-test",
+        )
+        [pattern] = view.highlights.detected_patterns
+        assert (pattern.pattern_id, pattern.event_count) == ("host-conn-flapping", 6)
 
     assert n_ev >= 1
     assert n_m >= 1
@@ -180,6 +205,7 @@ async def test_mock_mode_alert_notify_skips_smtp(
         from vcenter_event_assistant.db.models import AlertHistory
         rows = (await session.scalars(select(AlertHistory))).all()
         assert rows and all(row.channel == 'mock' and row.delivery_status == 'succeeded' for row in rows)
+        assert any(row.context_key == "vim.event.HostConnectionLostEvent" for row in rows)
 
 
 @pytest.mark.asyncio
