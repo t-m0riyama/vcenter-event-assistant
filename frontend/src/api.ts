@@ -182,8 +182,8 @@ async function apiError(r: Response): Promise<ApiError> {
 }
 
 /** JSON GET（``cache: 'no-store'``）。 */
-export async function apiGet<T>(path: string): Promise<T> {
-  const r = await send(path, { ...fetchNoStore, headers: headers() })
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const r = await send(path, { ...fetchNoStore, headers: headers(), ...(signal && { signal }) })
   if (!r.ok) throw await apiError(r)
   return r.json() as Promise<T>
 }

@@ -15,10 +15,12 @@ import { useTimelineViewController } from '../../hooks/useTimelineViewController
 import { TimelineConditionBar } from './TimelineConditionBar'
 import { createGuideLoader } from './eventTypeGuideLoader'
 import { TimelineHighlights } from './TimelineHighlights'
+import { TimelineImpactSection } from './TimelineImpactSection'
 import { TimelineItemList } from './TimelineItemList'
 import { TimelineOverviewChart } from './TimelineOverviewChart'
 import { TimelineSnapshotSection } from './TimelineSnapshotSection'
 import {
+  defaultImpactTime,
   isMetricOmitted,
   omittedKindLabels,
   nearestItemIdToAnchor,
@@ -28,7 +30,7 @@ import {
 
 /**
  * タイムライン: 開くと自動で読み込み、期間・対象・種別の条件を URL に持つ。
- * 条件バー → 件数の俯瞰 → ハイライト → 時系列リスト → スナップショット（折りたたみ）の順に並ぶ。
+ * 条件バー → 件数の俯瞰 → ハイライト → 影響範囲（対象を moid で絞ったとき） → 時系列リスト → スナップショット（折りたたみ）の順に並ぶ。
  */
 export function TimelinePanel({
   onError,
@@ -64,6 +66,18 @@ export function TimelinePanel({
   const requestedPatternTitles = useRef(false)
 
   const { data } = c
+  const { entityMoid, vcenterId } = c.conditions
+  const showImpact = !c.urlIssue && validateApiRange(c.resolvedRange) === null && entityMoid && vcenterId
+  const impactRange = c.loadedRange ?? c.resolvedRange
+  const impactPeriod = c.impactTimelineState === 'ready' || c.impactTimelineState === 'unprocessable' ? {
+    ...impactRange,
+    anchor: c.conditions.anchor,
+    defaultAt: defaultImpactTime(
+      impactRange.from,
+      data?.anchor_utc ?? c.conditions.anchor,
+      data?.highlights.first_signal?.timestamp_utc,
+    ),
+  } : null
   const hasOmittedPatterns = (data?.highlights.omitted_patterns.length ?? 0) > 0
   useEffect(() => {
     if (!hasOmittedPatterns || requestedPatternTitles.current) return
@@ -167,36 +181,49 @@ export function TimelinePanel({
         </div>
       ) : null}
 
-      {data ? (
-        <div className={c.loading ? 'timeline-results timeline-results--loading' : 'timeline-results'} aria-busy={c.loading}>
-          {c.canUndoZoom ? (
-            <p>
-              <button type="button" className="btn btn--gray" onClick={c.undoZoom}>
-                絞り込み前の期間に戻す
-              </button>
-            </p>
-          ) : null}
-          <TimelineOverviewChart
-            buckets={data.overview}
-            bucketSeconds={data.bucket_seconds}
-            toUtc={data.to_utc}
-            anchorUtc={dataAnchor}
+      <div className={c.loading ? 'timeline-results timeline-results--loading' : 'timeline-results'} aria-busy={c.loading}>
+        {data && (
+          <>
+            {c.canUndoZoom ? (
+              <p>
+                <button type="button" className="btn btn--gray" onClick={c.undoZoom}>
+                  絞り込み前の期間に戻す
+                </button>
+              </p>
+            ) : null}
+            <TimelineOverviewChart
+              buckets={data.overview}
+              bucketSeconds={data.bucket_seconds}
+              toUtc={data.to_utc}
+              anchorUtc={dataAnchor}
+              timeZone={c.timeZone}
+              metricOmitted={metricOmitted}
+              onSelectRange={(range) => {
+                if (validateApiRange(range) === null) c.zoomTo(range)
+              }}
+            />
+            <TimelineHighlights
+              highlights={data.highlights}
+              patternTitles={patternTitles}
+              listedIds={listedIds}
+              timeZone={c.timeZone}
+              onRevealItem={revealItem}
+              onFilterEntity={c.filterByEntity}
+              onSetAnchor={c.setAnchor}
+            />
+          </>
+        )}
+        {showImpact && (
+          <TimelineImpactSection
+            vcenterId={vcenterId}
+            entityMoid={entityMoid}
+            period={impactPeriod}
+            timelineFailed={c.impactTimelineState === 'failed'}
             timeZone={c.timeZone}
-            metricOmitted={metricOmitted}
-            onSelectRange={(range) => {
-              if (validateApiRange(range) === null) c.zoomTo(range)
-            }}
-          />
-          <TimelineHighlights
-            highlights={data.highlights}
-            patternTitles={patternTitles}
-            listedIds={listedIds}
-            timeZone={c.timeZone}
-            onRevealItem={revealItem}
             onFilterEntity={c.filterByEntity}
-            onSetAnchor={c.setAnchor}
           />
-
+        )}
+        {data && (
           <section className="timeline-items" aria-label="時系列リスト">
             <div className="timeline-items__head">
               <h3 className="timeline-section-title">時系列リスト</h3>
@@ -251,8 +278,8 @@ export function TimelinePanel({
               />
             )}
           </section>
-        </div>
-      ) : null}
+        )}
+      </div>
 
       <TimelineSnapshotSection
         snapshots={snapshots}
