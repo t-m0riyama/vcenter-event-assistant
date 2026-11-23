@@ -1,6 +1,6 @@
 # 影響範囲マップ（インベントリの関係を集める）
 
-最終更新: 2026-11-24（PR D レビュー中）
+最終更新: 2026-11-24（全 PR マージ済み）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 1」にあたる。前提の「案 0b」（Issue #347）は済んでいる。「案 5」（[既知の障害パターン](2026-11-23-event-patterns.md)）は、本書の関係を使うと、クラスタやデータストアでまとめられるようになる（後続）。
 
@@ -13,7 +13,7 @@
 | A | 本書 | マージ済み [PR #364](https://github.com/t-m0riyama/vcenter-event-assistant/pull/364) |
 | B | 関係の収集と保存（表、移行、定期ジョブ、保持期間の削除、モック） | マージ済み [PR #365](https://github.com/t-m0riyama/vcenter-event-assistant/pull/365) |
 | C | 影響範囲と収集の状態の API | マージ済み [PR #367](https://github.com/t-m0riyama/vcenter-event-assistant/pull/367) |
-| D | 画面（タイムラインの「影響範囲」の欄、設定の収集の状態） | レビュー中 |
+| D | 画面（タイムラインの「影響範囲」の欄、設定の収集の状態） | マージ済み [PR #369](https://github.com/t-m0riyama/vcenter-event-assistant/pull/369) |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
