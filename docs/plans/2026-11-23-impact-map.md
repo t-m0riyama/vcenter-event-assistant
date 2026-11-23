@@ -1,6 +1,6 @@
 # 影響範囲マップ（インベントリの関係を集める）
 
-最終更新: 2026-11-24（PR B レビュー中）
+最終更新: 2026-11-24（PR C レビュー中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 1」にあたる。前提の「案 0b」（Issue #347）は済んでいる。「案 5」（[既知の障害パターン](2026-11-23-event-patterns.md)）は、本書の関係を使うと、クラスタやデータストアでまとめられるようになる（後続）。
 
@@ -11,8 +11,8 @@
 | PR | 内容 | 状態 |
 |---|---|---|
 | A | 本書 | マージ済み [PR #364](https://github.com/t-m0riyama/vcenter-event-assistant/pull/364) |
-| B | 関係の収集と保存（表、移行、定期ジョブ、保持期間の削除、モック） | レビュー中 |
-| C | 影響範囲と収集の状態の API | 未着手 |
+| B | 関係の収集と保存（表、移行、定期ジョブ、保持期間の削除、モック） | マージ済み [PR #365](https://github.com/t-m0riyama/vcenter-event-assistant/pull/365) |
+| C | 影響範囲と収集の状態の API | レビュー中 |
 | D | 画面（タイムラインの「影響範囲」の欄、設定の収集の状態） | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
@@ -184,7 +184,7 @@ VM 5,000 台、1 台あたりデータストア 2・ネットワーク 2 なら�
 
 `GET /api/inventory/impact?vcenter_id=…&entity_moid=…&at=…&from=…&to=…`（viewer 以上）。
 
-- `at`・`from`・`to` は `UtcDateTime` で受ける。`at` を省いたら今の時刻にし、`max(今の時刻, last_success_at)` より後なら、その値に丸める（本体の時計が戻って `t` が張り付いた間の行も見えるように）。`from` と `to`（省略可）は、期間中の変化を返すときに使う。
+- `at`・`from`・`to` は `UtcDateTime` で受ける。上限を `max(今の時刻, last_success_at)` とし、`at` を省いたら上限の値にする。`at` が上限より後なら、上限に丸める（本体の時計が戻って `t` が張り付いた間の行も見えるように）。`from` と `to`（省略可）は、期間中の変化を返すときに使う。片方だけを渡したときと、`from > to` のときは 422 にする。
 - 時刻 `at` の関係は、`valid_from <= at` かつ（`valid_to IS NULL` または `valid_to > at`）の行である。
 - 対象の種別は、`inventory_objects.entity_type` で決める。無ければ、`event_entities` の同じ `(vcenter_id, moid)` の最新の種別で補う。どちらにも無ければ、`unknown_target` にする。
 - 「ネットワーク」は、種別が `Network`・`DistributedVirtualPortgroup`・`OpaqueNetwork` のものとする。
@@ -194,7 +194,7 @@ VM 5,000 台、1 台あたりデータストア 2・ネットワーク 2 なら�
 |---|---|---|
 | 1 | （404） | `vcenter_id` の vCenter が無い |
 | 2 | `unsupported_type` | 種別が、集める 5 つ（ホスト・VM・クラスタ・データストア・ネットワーク）のどれでもない（Datacenter・ResourcePool・DVS・Folder など） |
-| 3 | `not_recorded` | `at` が `recorded_since` より前。`recorded_since = max(first_success_at, now - event_retention_days)`。`inventory_sync_states` の行が無い（一度も成功していない）ときも、これにする |
+| 3 | `not_recorded` | `at` が `recorded_since` より前。`recorded_since = max(first_success_at, now - event_retention_days)`。`inventory_sync_states` の行が無いとき、または行があっても `first_success_at` が NULL（失敗の記録だけ）のときも、これにする |
 | 4 | `unknown_target` | 対象が `inventory_objects` に無い（アカウントから見えない、まだ観測していない） |
 | 5 | `absent_at_time` | `first_seen_at > at`、または `removed_at <= at`（その時点の観測で、対象が見えていない） |
 | 6 | `stale` | `at` 以前の最後の成功した観測 `prev` が無い（保持期間の削除で消えた直後など）、または `at - prev > 2 × inventory_sync_interval_seconds` |
@@ -214,14 +214,18 @@ VM 5,000 台、1 台あたりデータストア 2・ネットワーク 2 なら�
 - 応答:
   - `target`（moid・種別・名前）、`at`、`status`
   - `recorded_since`、`last_success_at`、`observed_before`（`prev`）、`observed_after`（`next`）
-  - `groups`: 種類ごとの一覧（`relation`・`items`・`total`）。`items` は moid・種別・名前・`removed`（今は見えない対象か）。名前、moid の順に並べ、1 つの種類につき 200 件までにして、`total` に総数を入れる。
-  - `changes`（`from` と `to` を渡したときだけ）: 期間中に開いた関係と閉じた関係（種類・相手・時刻・開いたか閉じたか）。最大 200 件と総数。`from` は `recorded_since` で切り詰める（記録のやり直しで一斉に閉じて開いた行を、変化として出さないため）。
+  - `groups`: 種類ごとの一覧（`relation`・`items`・`total`）。`relation` は対象から見た相手で、`cluster`・`hosts`・`vms`・`datastores`・`networks` のどれかにする。`items` は moid・種別・名前・`removed`（今は見えない対象か）。名前を小文字にした値、名前、moid の順に並べる（SQLite と PostgreSQL で照合順序が違っても、同じ順になるように）。1 つの種類につき 200 件までにして、`total` に総数を入れる。
+  - `changes`（`from` と `to` を渡したときだけ）: 期間中に開いた関係と閉じた関係（種類・相手・時刻・開いたか閉じたか）。最大 200 件と総数。`from` は `recorded_since` で切り詰める（記録のやり直しで一斉に閉じて開いた行を、変化として出さないため）。範囲は `(max(from, recorded_since), to]` で、起点を含まず、終点を含む（記録を始めた時点に一斉に開いた行を除くため。隣り合う期間をすき間も重なりもなくつなげられる）。
 - 名前は `inventory_objects` の今の名前を使う。名前が無ければ moid を出す。
 - 影響範囲の情報は LLM に渡さない（チャットとダイジェストには入れない）。
 
 ### 収集の状態
 
-`GET /api/inventory/status`（viewer 以上）で、vCenter ごとの `inventory_sync_states`（`last_error` を含む）と、設定の間隔を返す。画面の設定（PR D）で使う。
+`GET /api/inventory/status`（viewer 以上）で、vCenter ごとの `inventory_sync_states` と、設定を返す。画面の設定（PR D）で使う。
+
+- `last_error`・`last_warning` も viewer に返す（プラグインの状態の API `GET /api/plugins/collectors` が `error` を viewer に返すのに合わせる。`last_error` は整えた文言だけを持つ）。`instance_uuid` は返さない。
+- 状態の行が無い vCenter も、空の状態として並べる。
+- 設定の `enabled` は、実際に収集が動くかどうか（`scheduler_enabled` と `inventory_sync_enabled` の両方が真）を返す。
 
 ## 5. 画面（PR D）
 
