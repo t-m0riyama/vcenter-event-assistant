@@ -252,7 +252,7 @@ export function TimelinePanel({
 function narrowedConditions(c: TimelineConditions): string[] {
   const d = DEFAULT_TIMELINE_CONDITIONS
   const out: string[] = []
-  if (c.entity.trim() !== '') out.push('対象')
+  if (c.entity.trim() !== '' || c.entityMoid) out.push('対象')
   if (c.anchor !== null) out.push('起点')
   if (c.sources.length !== d.sources.length || !d.sources.every((k) => c.sources.includes(k))) out.push('種別')
   if (c.minScore !== d.minScore) out.push('最小スコア')

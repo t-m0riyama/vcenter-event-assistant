@@ -63,6 +63,19 @@
   box-sizing: border-box;
 }
 
+.timeline-bar__entity-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.timeline-bar__entity-moid {
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .timeline-bar__sources {
   display: flex;
   flex-wrap: wrap;

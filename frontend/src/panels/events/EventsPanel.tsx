@@ -219,6 +219,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
                   at={e.occurred_at}
                   vcenterId={e.vcenter_id}
                   entity={e.entity_name}
+                  entityMoid={e.vcenter_id ? e.entity_moid : undefined}
                   ariaLabel={`${e.entity_name || e.event_type}（${formatIsoInTimeZone(e.occurred_at, c.timeZone)}）をタイムラインで見る`}
                 /></p></td>
               <td className="event-comment-cell">

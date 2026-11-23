@@ -180,6 +180,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                     at={e.occurred_at}
                     vcenterId={e.vcenter_id}
                     entity={e.entity_name}
+                    entityMoid={e.vcenter_id ? e.entity_moid : undefined}
                     ariaLabel={`${e.entity_name || e.event_type}（${formatIsoInTimeZone(e.occurred_at, timeZone)}）をタイムラインで見る`}
                   />
                 </td>
@@ -286,6 +287,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                     at={h.sampled_at}
                     vcenterId={h.vcenter_id}
                     entity={h.entity_name}
+                    entityMoid={h.vcenter_id ? h.entity_moid : undefined}
                     ariaLabel={`${h.entity_name}・CPU（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
                   />
                 </td>
@@ -332,6 +334,7 @@ export function SummaryPanel({ onError }: { onError: (e: string | null) => void 
                     at={h.sampled_at}
                     vcenterId={h.vcenter_id}
                     entity={h.entity_name}
+                    entityMoid={h.vcenter_id ? h.entity_moid : undefined}
                     ariaLabel={`${h.entity_name}・メモリ（${formatIsoInTimeZone(h.sampled_at, timeZone)}）をタイムラインで見る`}
                   />
                 </td>

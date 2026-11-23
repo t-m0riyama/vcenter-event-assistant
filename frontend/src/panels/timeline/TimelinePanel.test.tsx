@@ -1,8 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { TimelineViewItem } from '../../api/schemas'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
+import { TIMELINE_ENTITY_DEBOUNCE_MS } from '../../hooks/useTimelineViewController'
+import { timelineEntryHash } from '../../routing/timelineHash'
 import { ThemeProvider } from '../../theme/ThemeProvider'
 import {
   emptyViewResponse,
@@ -30,7 +33,10 @@ function bucket(start: string, total = 0, notable = 0, alert = 0) {
 }
 
 /** 3 本の棒と 3 行（2 行はイベント、1 行は VM 無しのアラート）を持つ応答。 */
-function populated(overrides: Record<string, unknown> = {}) {
+function populated(
+  overrides: Record<string, unknown> = {},
+  firstItem: Partial<Pick<TimelineViewItem, 'vcenter_id' | 'ref'>> = {},
+) {
   const items = [
     {
       id: 'event:1',
@@ -46,7 +52,8 @@ function populated(overrides: Record<string, unknown> = {}) {
       vcenter_name: 'vc-main',
       score: 55,
       count: 3,
-      ref: { event_id: 1, event_type: 'VmPoweredOffEvent' },
+      ref: { event_id: 1, event_type: 'VmPoweredOffEvent', entity_moid: 'vm-10' },
+      ...firstItem,
     },
     {
       id: 'alert:2',
@@ -89,7 +96,7 @@ function populated(overrides: Record<string, unknown> = {}) {
     highlights: {
       first_signal: items[0],
       top_entities: [
-        { entity_name: 'vm-a', vcenter_id: VC, vcenter_name: 'vc-main', item_count: 3, first_seen_utc: '2026-03-22T00:10:00Z' },
+        { entity_name: 'vm-a', entity_moid: 'vm-10', vcenter_id: VC, vcenter_name: 'vc-main', item_count: 3, first_seen_utc: '2026-03-22T00:10:00Z' },
       ],
       new_event_types: [
         { event_type: 'VmPoweredOffEvent', count: 3, first_seen_utc: '2026-03-22T00:10:00Z', max_score: 55 },
@@ -245,17 +252,86 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(within(region).queryByRole('link', { name: 'ログで開く' })).not.toBeInTheDocument()
   })
 
-  it('「この対象で絞る」は待たずに対象と vCenter を条件へ入れて読み直し、URL に出る', async () => {
+  it('「この対象で絞る」は名前と vCenter と moid を使い、URL から同じ条件で開き直せる', async () => {
     setup()
-    renderTimeline()
+    const { unmount } = renderTimeline()
     await answer(0)
     await openFirstRow()
     fireEvent.click(screen.getByRole('button', { name: 'この対象で絞る' }))
     await answer(1, populated({ items: [] }))
-    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC })
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC, entity_moid: 'vm-10' })
     expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('vm-a')
     expect(window.location.hash).toContain('entity=vm-a')
     expect(window.location.hash).toContain(`vcenter_id=${VC}`)
+    expect(window.location.hash).toContain('entity_moid=vm-10')
+    expect(screen.getByText('moid で一致（vm-10）')).toBeInTheDocument()
+
+    unmount()
+    renderTimeline()
+    await answer(2)
+    expect(harness.calls[2].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC, entity_moid: 'vm-10' })
+    expect(screen.getByLabelText('対象（ホスト・VM 名）')).toHaveValue('vm-a')
+  })
+
+  it('名前の無い対象のリンクで開き、解除ボタンで moid を外して読み直せる', async () => {
+    setup()
+    const hash = timelineEntryHash({ at: '2026-03-22T00:30:00Z', vcenterId: VC, entity: null, entityMoid: 'vm-10' })
+    window.history.replaceState(null, '', `/${hash}`)
+    renderTimeline()
+    await answer(0)
+    expect(harness.calls[0].body).toMatchObject({ vcenter_id: VC, entity_moid: 'vm-10' })
+    expect(harness.calls[0].body).not.toHaveProperty('entity')
+    expect(screen.getByRole('searchbox', { name: '対象（ホスト・VM 名）' })).toHaveValue('')
+    expect(screen.getByText('moid で一致（vm-10）')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'moid の指定を外す' }))
+    await answer(1)
+    expect(harness.calls[1].body.vcenter_id).toBe(VC)
+    expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+    expect(harness.calls[1].body).not.toHaveProperty('entity')
+    expect(window.location.hash).not.toContain('entity_moid')
+    expect(screen.queryByText('moid で一致（vm-10）')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'moid の指定を外す' })).not.toBeInTheDocument()
+  })
+
+  it('対象欄を編集すると、要求を出す待ち時間の前に moid の印と解除ボタンを隠す', async () => {
+    setup()
+    window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity=vm-a&entity_moid=vm-10`)
+    renderTimeline()
+    await answer(0)
+    const input = screen.getByRole('searchbox', { name: '対象（ホスト・VM 名）' })
+    expect(input).toHaveAccessibleDescription('moid で一致（vm-10）')
+    expect(screen.getByRole('button', { name: 'moid の指定を外す' })).toBeInTheDocument()
+    fireEvent.change(input, { target: { value: 'vm-b' } })
+    expect(screen.queryByText('moid で一致（vm-10）')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'moid の指定を外す' })).not.toBeInTheDocument()
+    expect(input).not.toHaveAttribute('aria-describedby')
+    expect(harness.calls).toHaveLength(1)
+    expect(window.location.hash).toContain('entity_moid=vm-10')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TIMELINE_ENTITY_DEBOUNCE_MS)
+    })
+    await answer(1)
+    expect(harness.calls[1].body.entity).toBe('vm-b')
+    expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+  })
+
+  it.each([
+    { label: 'vCenter の無い行', vcenter_id: null, entity_moid: 'vm-10' },
+    { label: 'moid の無い行', vcenter_id: VC, entity_moid: null },
+  ])('$label は名前で絞る', async ({ vcenter_id, entity_moid }) => {
+    setup()
+    window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity=old&entity_moid=vm-99`)
+    renderTimeline()
+    await answer(0, populated({}, { vcenter_id, ref: { event_id: 1, event_type: 'VmPoweredOffEvent', entity_moid } }))
+    await openFirstRow()
+    fireEvent.click(screen.getByRole('button', { name: 'この対象で絞る' }))
+    await answer(1)
+    expect(harness.calls[0].body.entity_moid).toBe('vm-99')
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC })
+    expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+    expect(window.location.hash).not.toContain('entity_moid')
   })
 
   it('「ここを起点にする」で起点が付き、前後のプリセットと「起点を解除」が出る。起点に最も近い行に目印が付く', async () => {
@@ -355,7 +431,8 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(within(highlights).getByText(/初めて出たイベント種別/)).toBeInTheDocument()
     fireEvent.click(within(highlights).getByRole('button', { name: 'vm-a' }))
     await answer(1)
-    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC })
+    expect(harness.calls[1].body).toMatchObject({ entity: 'vm-a', vcenter_id: VC, entity_moid: 'vm-10' })
+    expect(window.location.hash).toContain('entity_moid=vm-10')
   })
 
   it('一覧に含まれない最初の兆候はクリックできない旨を出し、データの無い項目は出さない', async () => {
@@ -547,6 +624,16 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(Date.parse(String(focus.to))).toBeGreaterThan(Date.parse(String(focus.from)))
   })
 
+  it('名前が空でも moid で絞っているとチャットへの引き継ぎに「対象」と出す', async () => {
+    setup()
+    window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity_moid=vm-10`)
+    const onOpen = vi.fn()
+    renderTimeline({ onOpenInChat: onOpen })
+    await answer(0)
+    fireEvent.click(screen.getByRole('button', { name: 'この範囲をチャットで分析' }))
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ narrowedBy: ['対象'] }))
+  })
+
   it('チャットへ渡す vCenter は、表示中の結果の要求のもの（条件を変えた直後の読み込み前の値ではない）', async () => {
     const onOpen = vi.fn()
     setup({ vcenters: [{ id: VC, name: 'vc-main' }] })
@@ -690,6 +777,19 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       expect(harness.calls).toHaveLength(1)
     })
 
+    it.each(['host-20', null, undefined])('保存済みの moid（%s）に置き換え、再集計にも使う', async (entity_moid) => {
+      window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity=vm-a&entity_moid=vm-10`)
+      const savedRequest = { ...viewRequest, entity_moid }
+      await openSnapshot(listItem({ view_request: savedRequest }), detailOf({ view_request: savedRequest }))
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      expect(harness.calls[0].body.entity_moid).toBe('vm-10')
+      expect(new URLSearchParams(window.location.hash.split('?')[1]).get('entity_moid')).toBe(entity_moid ?? null)
+      fireEvent.click(screen.getByRole('button', { name: '現在のデータで再集計' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[1].body).toMatchObject({ entity: 'esx01', vcenter_id: VC })
+      expect(harness.calls[1].body.entity_moid).toBe(entity_moid ?? undefined)
+    })
+
     it('「現在のデータで再集計」を押すと、その条件で通常の表示に戻って読み直す', async () => {
       await openSnapshot(listItem(), detailOf())
       await screen.findByRole('note', { name: '保存時点の内容' })
@@ -765,6 +865,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
 
     it('has_result が false の旧データは、view_request が無ければ from/to/vcenter_id だけを条件に写して再集計する', async () => {
       setup({ snapshots: [listItem({ has_result: false, view_request: null })] })
+      window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity=vm-a&entity_moid=vm-10`)
       renderTimeline()
       await answer(0, emptyViewResponse())
       fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
@@ -775,7 +876,25 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
         to: '2026-03-10T03:00:00.000Z',
         vcenter_id: VC,
       })
+      expect(harness.calls[0].body.entity_moid).toBe('vm-10')
+      expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+      expect(harness.calls[1].body).not.toHaveProperty('entity')
+      expect(window.location.hash).not.toContain('entity_moid')
       expect(screen.queryByRole('note', { name: '保存時点の内容' })).not.toBeInTheDocument()
+    })
+
+    it.each(['host-20', undefined])('結果の無い旧データは保存済みの moid（%s）を使って再集計する', async (entity_moid) => {
+      window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity=vm-a&entity_moid=vm-10`)
+      setup({ snapshots: [listItem({ has_result: false, view_request: { ...viewRequest, entity_moid } })] })
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: /スナップショット/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
+      await answer(1, emptyViewResponse())
+      expect(harness.calls[0].body.entity_moid).toBe('vm-10')
+      expect(harness.calls[1].body).toMatchObject({ entity: 'esx01', vcenter_id: VC })
+      expect(harness.calls[1].body.entity_moid).toBe(entity_moid)
+      expect(new URLSearchParams(window.location.hash.split('?')[1]).get('entity_moid')).toBe(entity_moid ?? null)
     })
 
     it('詳細が結果なし（保存時のスキーマと合わない）で返ったら、view_request の条件で再集計に落ちる', async () => {
@@ -879,10 +998,18 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       expect(harness.calls[1].body).toMatchObject({ from: '2026-03-10T00:00:00.000Z', to: '2026-03-10T03:00:00.000Z', vcenter_id: VC })
     })
 
-    it('保存済みの結果がフロントのスキーマで読めないときは、黙らず「いまの形式で読めない」と注記して再集計する', async () => {
-      const bad = detailOf({ result: { ...populated(), items: [{ ...populated().items[0], kind: 'k8s' }] } })
-      await openSnapshot(listItem(), bad)
+    it.each(['host-20', undefined])('保存済みの結果が読めないときは注記し、保存済みの moid（%s）で再集計する', async (entity_moid) => {
+      window.history.replaceState(null, '', `/#/timeline?range=1h&vcenter_id=${VC}&entity=vm-a&entity_moid=vm-10`)
+      const bad = detailOf({
+        view_request: { ...viewRequest, entity_moid },
+        result: { ...populated(), items: [{ ...populated().items[0], kind: 'k8s' }] },
+      })
+      await openSnapshot(listItem({ view_request: { ...viewRequest, entity_moid: 'host-99' } }), bad)
       await answer(1, emptyViewResponse())
+      expect(harness.calls[0].body.entity_moid).toBe('vm-10')
+      expect(harness.calls[1].body).toMatchObject({ entity: 'esx01', vcenter_id: VC })
+      expect(harness.calls[1].body.entity_moid).toBe(entity_moid)
+      expect(new URLSearchParams(window.location.hash.split('?')[1]).get('entity_moid')).toBe(entity_moid ?? null)
       expect(await screen.findByRole('note', { name: '読み込みの注記' })).toHaveTextContent(
         '保存時点の結果はいまの形式で読めないため、現在のデータで再集計しました',
       )
@@ -1850,6 +1977,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       fireEvent.click(within(highlights).getByRole('button', { name: '192.168.100.200' }))
       await answer(1, emptyViewResponse())
       expect(harness.calls[1].body).toMatchObject({ entity: '192.168.100.200', vcenter_id: VC })
+      expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
     })
   })
 })

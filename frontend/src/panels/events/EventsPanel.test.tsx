@@ -36,8 +36,8 @@ beforeEach(() => {
     return {
       total: 2,
       items: [
-        { ...base, id: 1, event_type: 'HostConnectionLostEvent', occurred_at: '2026-10-03T01:00:00Z', entity_name: 'esx01' },
-        { ...base, id: 2, vcenter_id: VC2, event_type: 'VmPoweredOffEvent', occurred_at: '2026-10-03T02:00:00Z', entity_name: null },
+        { ...base, id: 1, event_type: 'HostConnectionLostEvent', occurred_at: '2026-10-03T01:00:00Z', entity_name: 'esx01', entity_moid: 'host-10' },
+        { ...base, id: 2, vcenter_id: VC2, event_type: 'VmPoweredOffEvent', occurred_at: '2026-10-03T02:00:00Z', entity_name: null, entity_moid: 'vm-20' },
       ],
     }
   })
@@ -53,15 +53,17 @@ describe('タイムラインで見る', () => {
     expect(p.get('to')).toBe('2026-10-03T01:30:00.000Z')
     expect(p.get('vcenter_id')).toBe(VC)
     expect(p.get('entity')).toBe('esx01')
+    expect(p.get('entity_moid')).toBe('host-10')
   })
 
-  it('entity_name が無い行は対象を渡さず、名前に event_type を使う', async () => {
+  it('名前が無い行は moid を渡し、リンクの名前には event_type を使う', async () => {
     show()
     const link = await screen.findByRole('link', { name: /^VmPoweredOffEvent（.*2:00:00.*）をタイムラインで見る$/ })
     const p = linkParams(link)
     expect(p.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
     expect(p.get('from')).toBe('2026-10-03T01:30:00.000Z')
     expect(p.get('vcenter_id')).toBe(VC2)
+    expect(p.get('entity_moid')).toBe('vm-20')
     expect(p.has('entity')).toBe(false)
   })
 

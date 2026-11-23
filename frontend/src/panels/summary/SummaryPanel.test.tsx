@@ -24,11 +24,11 @@ const summary = {
   top_notable_events: [
     {
       id: 1, vcenter_id: VC, occurred_at: '2026-10-03T01:00:00Z', event_type: 'HostConnectionLostEvent',
-      message: 'ホストが切断', severity: 'warning', notable_score: 50, entity_name: 'esx01', user_comment: null,
+      message: 'ホストが切断', severity: 'warning', notable_score: 50, entity_name: 'esx01', entity_moid: 'host-10', user_comment: null,
     },
     {
       id: 2, vcenter_id: VC2, occurred_at: '2026-10-03T02:00:00Z', event_type: 'VmPoweredOffEvent',
-      message: 'VM 停止', severity: 'info', notable_score: 45, entity_name: null, user_comment: null,
+      message: 'VM 停止', severity: 'info', notable_score: 45, entity_name: null, entity_moid: 'vm-20', user_comment: null,
     },
   ],
   top_event_types_24h: [],
@@ -36,7 +36,7 @@ const summary = {
     { vcenter_id: VC3, vcenter_label: 'vc-3', entity_name: 'esxi-cpu', entity_moid: 'host-1', value: 91.2, sampled_at: '2026-10-03T03:00:00Z' },
   ],
   high_mem_hosts: [
-    { vcenter_id: VC4, vcenter_label: 'vc-4', entity_name: 'esxi-mem', entity_moid: 'host-1', value: 88.4, sampled_at: '2026-10-03T03:05:00Z' },
+    { vcenter_id: VC4, vcenter_label: 'vc-4', entity_name: 'esxi-mem', entity_moid: 'host-2', value: 88.4, sampled_at: '2026-10-03T03:05:00Z' },
   ],
 }
 
@@ -67,14 +67,16 @@ describe('タイムラインで見る', () => {
     expect(p.get('to')).toBe('2026-10-03T01:30:00.000Z')
     expect(p.get('vcenter_id')).toBe(VC)
     expect(p.get('entity')).toBe('esx01')
+    expect(p.get('entity_moid')).toBe('host-10')
   })
 
-  it('要注意イベントで entity_name が無い行は対象を渡さず、名前に event_type を使い、その行の vCenter を持つ', async () => {
+  it('名前が無い要注意イベントは vCenter と moid を渡し、リンクの名前には event_type を使う', async () => {
     show()
     const link = await screen.findByRole('link', { name: /^VmPoweredOffEvent（.*2:00:00.*）をタイムラインで見る$/ })
     const p = linkParams(link)
     expect(p.get('anchor')).toBe('2026-10-03T02:00:00.000Z')
     expect(p.get('vcenter_id')).toBe(VC2)
+    expect(p.get('entity_moid')).toBe('vm-20')
     expect(p.has('entity')).toBe(false)
   })
 
@@ -87,6 +89,7 @@ describe('タイムラインで見る', () => {
     expect(cp.get('to')).toBe('2026-10-03T03:30:00.000Z')
     expect(cp.get('vcenter_id')).toBe(VC3)
     expect(cp.get('entity')).toBe('esxi-cpu')
+    expect(cp.get('entity_moid')).toBe('host-1')
 
     const mem = screen.getAllByRole('link', { name: /^esxi-mem・メモリ（.*3:05:00.*）をタイムラインで見る$/ })
     expect(mem).toHaveLength(1)
@@ -96,6 +99,7 @@ describe('タイムラインで見る', () => {
     expect(mp.get('to')).toBe('2026-10-03T03:35:00.000Z')
     expect(mp.get('vcenter_id')).toBe(VC4)
     expect(mp.get('entity')).toBe('esxi-mem')
+    expect(mp.get('entity_moid')).toBe('host-2')
   })
 
   it('3 つの表は横スクロールの入れ物に入っている', async () => {

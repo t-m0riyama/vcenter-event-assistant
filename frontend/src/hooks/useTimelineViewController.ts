@@ -114,7 +114,7 @@ export function useTimelineViewController(
   )
   /** URL の条件が読めなかった理由。あるあいだは読み込まず、URL も書き換えない（条件を変えると消える）。 */
   const [urlIssue, setUrlIssue] = useState<string | null>(() => initial?.issue ?? null)
-  const [entityInput, setEntityInput] = useState(conditions.entity)
+  const [entityDraft, setEntityDraft] = useState({ value: conditions.entity, edited: false })
   const [rangeHistory, setRangeHistory] = useState<readonly TimelineRange[]>([])
   const [reloadNonce, setReloadNonce] = useState(0)
   const [resolvedRange, setResolvedRange] = useState<ResolvedRange>(() =>
@@ -184,14 +184,23 @@ export function useTimelineViewController(
   }, [onError])
 
   // ---- 対象の検索欄: 入力が止まってから条件に反映する ---------------------------
+  const setEntityInput = useCallback((value: string) => {
+    setEntityDraft({ value, edited: true })
+  }, [])
+
   useEffect(() => {
-    const next = entityInput.trim()
-    if (next === conditions.entity) return
+    if (!entityDraft.edited) return
     const timer = setTimeout(() => {
-      setConditions((c) => ({ ...c, entity: next }))
+      const entity = entityDraft.value.trim()
+      const current = conditionsRef.current
+      // 元の名前に書き戻した場合も、手入力に切り替えて moid を外す
+      if (entity !== current.entity || current.entityMoid) {
+        setConditions((c) => ({ ...c, entity, entityMoid: null }))
+      }
+      setEntityDraft({ value: entityDraft.value, edited: false })
     }, TIMELINE_ENTITY_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [entityInput, conditions.entity, setConditions])
+  }, [entityDraft, setConditions])
 
   // ---- 読み込み（1 本ずつ・最新の条件だけ） ------------------------------------
   const jobCounterRef = useRef(0)
@@ -269,7 +278,7 @@ export function useTimelineViewController(
     setNotice(null)
     setConditionsRaw(incoming.conditions)
     setUrlIssue(incoming.issue)
-    setEntityInput(incoming.conditions.entity)
+    setEntityDraft({ value: incoming.conditions.entity, edited: false })
     setRangeHistory([])
     setRangeInputError(null)
     return true
@@ -437,7 +446,9 @@ export function useTimelineViewController(
     if (next.ok) setFixedRange({ from: next.from, to: next.to })
   }, [rangeParts, derivedParts, resolvedRange, timeZone, setFixedRange])
 
-  const setVcenterId = useCallback((vcenterId: string) => patch({ vcenterId }), [patch])
+  const setVcenterId = useCallback((vcenterId: string) => {
+    setConditions((c) => ({ ...c, vcenterId, entityMoid: vcenterId === c.vcenterId ? c.entityMoid : null }))
+  }, [setConditions])
   const setMinScore = useCallback((minScore: number) => patch({ minScore }), [patch])
   const setCpuThreshold = useCallback((cpuThresholdPct: number) => patch({ cpuThresholdPct }), [patch])
   const setMemoryThreshold = useCallback((memoryThresholdPct: number) => patch({ memoryThresholdPct }), [patch])
@@ -460,15 +471,21 @@ export function useTimelineViewController(
     })
   }, [setConditions])
 
-  /** 対象で絞る（検索欄の待ち時間を待たずに反映する）。vCenter が分かるときはそれも絞る。 */
-  const filterByEntity = useCallback((entityName: string, vcenterId?: string | null) => {
-    setEntityInput(entityName)
-    setConditions((c) => ({ ...c, entity: entityName, ...(vcenterId ? { vcenterId } : {}) }))
+  /** 対象で絞る（検索欄の待ち時間を待たずに反映する）。moid は vCenter が分かるときだけ使う。 */
+  const filterByEntity = useCallback((entityName: string, vcenterId?: string | null, entityMoid?: string | null) => {
+    const entity = entityName.trim()
+    setEntityDraft({ value: entity, edited: false })
+    setConditions((c) => ({
+      ...c,
+      vcenterId: vcenterId || c.vcenterId,
+      entity,
+      entityMoid: vcenterId ? entityMoid?.trim() || null : null,
+    }))
   }, [setConditions])
 
   const clearEntity = useCallback(() => {
-    setEntityInput('')
-    patch({ entity: '' })
+    setEntityDraft({ value: '', edited: false })
+    patch({ entity: '', entityMoid: null })
   }, [patch])
 
   const refresh = useCallback(() => {
@@ -480,7 +497,7 @@ export function useTimelineViewController(
   /** 保存済みスナップショットの期間と vCenter を条件に反映する（対象・起点は外す）。 */
   const applySnapshotConditions = useCallback(
     (range: ResolvedRange, vcenterId: string) => {
-      setEntityInput('')
+      setEntityDraft({ value: '', edited: false })
       setRangeHistory([])
       setRangeInputError(null)
       setConditions((c) => ({
@@ -488,6 +505,7 @@ export function useTimelineViewController(
         range: { mode: 'fixed', from: range.from, to: range.to },
         vcenterId,
         entity: '',
+        entityMoid: null,
         anchor: null,
       }))
     },
@@ -510,7 +528,7 @@ export function useTimelineViewController(
       setLoadedRange(null)
       setLoadedRequest(null)
       setNotice(null)
-      setEntityInput(conditions.entity)
+      setEntityDraft({ value: conditions.entity, edited: false })
       setRangeHistory([])
       setRangeInputError(null)
       setUrlIssue(null)
@@ -531,7 +549,7 @@ export function useTimelineViewController(
   const applyViewRequest = useCallback(
     (request: SavedIncidentTimelineViewRequest, options: { notice?: string } = {}) => {
       const conditions = conditionsFromViewRequest(request)
-      setEntityInput(conditions.entity)
+      setEntityDraft({ value: conditions.entity, edited: false })
       setRangeHistory([])
       setRangeInputError(null)
       setConditions(() => conditions)
@@ -564,7 +582,8 @@ export function useTimelineViewController(
     reaggregate,
     timeZone,
     conditions,
-    entityInput,
+    entityInput: entityDraft.value,
+    entityInputEdited: entityDraft.edited,
     setEntityInput,
     rangeParts,
     setRangeParts,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { ZonedRangeDetails } from '../../datetime/ZonedRangeDetails'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
@@ -84,7 +84,10 @@ function ThresholdField({
 /** 条件バー: 期間・起点・vCenter・対象・種別・更新。条件を変えると自動で読み込む。 */
 export function TimelineConditionBar({ c }: { c: Controller }) {
   const { conditions, timeZone } = c
-  const { range, anchor } = conditions
+  const { range, anchor, entityMoid } = conditions
+  const visibleEntityMoid = c.entityInputEdited ? null : entityMoid
+  const entityInputId = useId()
+  const entityMoidId = `${entityInputId}-moid`
   // 入力中の文字列。Enter・フォーカスを外したときに確定する（途中の値で API を呼ばないため）
   const [minScoreDraft, setMinScoreDraft] = useState<string | null>(null)
   const minScoreInput = minScoreDraft ?? String(conditions.minScore)
@@ -195,14 +198,16 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
             ))}
           </select>
         </label>
-        <label className="timeline-bar__entity">
+        <label className="timeline-bar__entity" htmlFor={entityInputId}>
           対象（ホスト・VM 名）
           <input
+            id={entityInputId}
             type="search"
             value={c.entityInput}
             onChange={(e) => c.setEntityInput(e.target.value)}
-            placeholder="部分一致"
+            placeholder={visibleEntityMoid ? undefined : '部分一致'}
             autoComplete="off"
+            aria-describedby={visibleEntityMoid ? entityMoidId : undefined}
           />
         </label>
         <fieldset className="timeline-bar__sources">
@@ -220,6 +225,16 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
           ))}
         </fieldset>
       </div>
+      {visibleEntityMoid ? (
+        <div className="timeline-bar__entity-match">
+          <small id={entityMoidId} className="timeline-bar__entity-moid">
+            moid で一致（{visibleEntityMoid}）
+          </small>
+          <button type="button" className="btn btn--gray" aria-label="moid の指定を外す" onClick={c.clearEntity}>
+            指定を外す
+          </button>
+        </div>
+      ) : null}
 
       <details className="toolbar__filters-details">
         <summary className="toolbar__filters-summary">

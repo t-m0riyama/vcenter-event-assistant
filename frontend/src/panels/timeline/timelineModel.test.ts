@@ -8,6 +8,7 @@ import {
   bucketRange,
   bucketStartContaining,
   buildViewRequest,
+  conditionsFromViewRequest,
   correlationHashForItem,
   metricsFocusForItem,
   dragRange,
@@ -127,6 +128,24 @@ describe('timelineModel', () => {
         range,
       ),
     ).toMatchObject({ anchor: '2026-03-22T00:30:00.000Z', vcenter_id: 'vc', entity: 'esx', sources: ['alert'] })
+  })
+
+  it('moid は vCenter があるときだけ API 本文に載せる', () => {
+    const range = { from: '2026-03-22T00:00:00Z', to: '2026-03-22T01:00:00Z' }
+    const conditions = { ...DEFAULT_TIMELINE_CONDITIONS, entity: 'esx01', entityMoid: 'host-10' }
+    expect(buildViewRequest(conditions, range)).not.toHaveProperty('entity_moid')
+    expect(buildViewRequest({ ...conditions, vcenterId: 'vc' }, range)).toMatchObject({
+      entity: 'esx01', entity_moid: 'host-10', vcenter_id: 'vc',
+    })
+  })
+
+  it('保存済みの moid は前後の空白を除き、vCenter が null なら捨てる', () => {
+    const request = { from: '2026-03-22T00:00:00Z', to: '2026-03-22T01:00:00Z', entity_moid: ' \thost-10  ' }
+    const vcenterId = '11111111-1111-4111-8111-111111111111'
+    expect(conditionsFromViewRequest({ ...request, vcenter_id: vcenterId }))
+      .toMatchObject({ vcenterId, entityMoid: 'host-10' })
+    expect(conditionsFromViewRequest({ ...request, vcenter_id: null }))
+      .toMatchObject({ vcenterId: '', entityMoid: null })
   })
 
   it('イベント・ログで開くリンクは行の時刻の前後 5 分と vCenter。vCenter が無ければ null', () => {
