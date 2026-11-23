@@ -53,7 +53,7 @@ export function TimelineHighlights({ highlights, listedIds, timeZone, onRevealIt
             <h4>影響の大きい対象</h4>
             <ul>
               {top.map((e) => (
-                <li key={`${e.vcenter_id ?? ''}|${e.entity_name}`}>
+                <li key={JSON.stringify([e.vcenter_id, e.entity_name, e.entity_moid])}>
                   <button
                     type="button"
                     className="btn btn--gray timeline-highlights__link"

@@ -1,4 +1,4 @@
-"""LIKE による部分一致の条件（SQLite / PostgreSQL 共通）。"""
+"""名前の部分一致と完全一致の条件（SQLite / PostgreSQL 共通）。"""
 
 from __future__ import annotations
 
@@ -15,3 +15,8 @@ def contains_case_insensitive(column: ColumnElement[str | None], needle: str) ->
     """Substring match, case-insensitive; works on SQLite and PostgreSQL via ``ilike`` + escape."""
     hay = func.coalesce(column, literal(""))
     return hay.ilike(f"%{escape_like_metachars(needle)}%", escape="\\")
+
+
+def equals_case_insensitive(column: ColumnElement[str | None], needle: str) -> ColumnElement[bool]:
+    """大文字小文字を区別しない完全一致。両辺に同じ DB の lower を当てる。"""
+    return func.lower(column) == func.lower(needle)

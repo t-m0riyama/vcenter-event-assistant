@@ -218,6 +218,13 @@ jobs:
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
+      - name: Verify timeline entity moid filtering
+        run: >-
+          uv run --no-sync pytest -q tests/services/test_aggregation_dialects.py
+          -k "postgres and entity_moid"
+        env:
+          VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
+
   plugin-compose:
     needs: changes
     if: needs.changes.outputs.code == 'true'

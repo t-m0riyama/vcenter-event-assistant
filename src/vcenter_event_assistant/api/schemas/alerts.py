@@ -89,6 +89,7 @@ class AlertHistoryRead(BaseModel):
     # metric_threshold ルールで、context_key（{vcenter_id}:{entity_moid}）から取り出せたときだけ。
     vcenter_id: uuid.UUID | None = None
     # metric_threshold ルールの対象名。解決できないときは None。
+    entity_moid: str | None = None
     entity_name: str | None = None
     channel: str
     success: bool | None

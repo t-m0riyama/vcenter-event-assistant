@@ -30,6 +30,7 @@ interface AlertHistory {
   occurred_at?: string | null
   /** metric_threshold の行だけ。古いサーバの応答には無い。 */
   vcenter_id?: string | null
+  entity_moid?: string | null
   entity_name?: string | null
   channel: string
   success: boolean | null

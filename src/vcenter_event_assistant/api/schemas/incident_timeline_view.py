@@ -52,7 +52,12 @@ class IncidentTimelineViewRequest(BaseModel):
     from_time: datetime = Field(alias="from")
     to_time: datetime = Field(alias="to")
     vcenter_id: uuid.UUID | None = None
-    entity: str | None = Field(default=None, max_length=256, description="対象名の部分一致（大文字小文字を区別しない）")
+    entity: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="対象名の部分一致（大文字小文字を区別しない）。moid 指定時は moid の無い行の対象名（完全一致）",
+    )
+    entity_moid: str | None = Field(default=None, max_length=256, description="対象の moid（vcenter_id が必要）")
     anchor_time: UtcDateTime | None = Field(default=None, alias="anchor")
     min_score: int = Field(default=1, ge=0, le=100)
     sources: list[TimelineSource] = Field(default_factory=_default_sources, min_length=1)
@@ -77,7 +82,7 @@ class IncidentTimelineViewRequest(BaseModel):
     )
     item_limit: int = Field(default=500, ge=1, le=1000)
 
-    @field_validator("entity", mode="before")
+    @field_validator("entity", "entity_moid", mode="before")
     @classmethod
     def _normalize_entity(cls, value: object) -> object:
         if isinstance(value, str):
@@ -92,6 +97,8 @@ class IncidentTimelineViewRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_span(self) -> IncidentTimelineViewRequest:
+        if self.entity_moid is not None and self.vcenter_id is None:
+            raise ValueError("vcenter_id is required when entity_moid is specified")
         self.from_time, self.to_time = normalize_time_span(self.from_time, self.to_time)
         return self
 
@@ -109,6 +116,7 @@ class IncidentTimelineSavedViewRequest(BaseModel):
     to_time: datetime = Field(alias="to")
     vcenter_id: uuid.UUID | None = None
     entity: str | None = None
+    entity_moid: str | None = None
     anchor_time: datetime | None = Field(default=None, alias="anchor")
     min_score: int | None = None
     sources: list[str] | None = None
@@ -179,9 +187,10 @@ class IncidentTimelineOverviewBucket(BaseModel):
 
 
 class IncidentTimelineTopEntity(BaseModel):
-    """出来事の多い対象。同じ名前でも vCenter が違えば別の対象として数える。"""
+    """出来事の多い対象。vCenter ごとに moid または名前で数える。"""
 
     entity_name: str
+    entity_moid: str | None = None
     entity_type: str | None = None
     vcenter_id: uuid.UUID | None = None
     vcenter_name: str | None = None

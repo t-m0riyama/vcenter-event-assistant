@@ -10,8 +10,8 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | レビュー中 |
-| B | API（要求の `entity_moid`、moid での絞り込み、「影響の大きい対象」の数え方、通知履歴の `entity_moid`） | 未着手 |
+| A | 本書 | マージ済み [PR #357](https://github.com/t-m0riyama/vcenter-event-assistant/pull/357) |
+| B | API（要求の `entity_moid`、moid での絞り込み、「影響の大きい対象」の数え方、通知履歴の `entity_moid`） | レビュー中 |
 | C | 画面（URL、クリックでの絞り込み、他のタブからのリンク） | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。

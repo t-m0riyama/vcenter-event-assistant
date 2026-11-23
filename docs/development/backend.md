@@ -81,6 +81,8 @@
 - `GET/POST/PATCH/DELETE /api/alerts/rules`
 - `GET /api/alerts/history`
 
+通知履歴の `entity_moid` は、`metric_threshold` の `context_key` が `{vcenter_id}:{entity_moid}` 形式のときに入る。対象名を解決できない場合も返す。旧形式のキーや `event_score` の通知では `null` になる。
+
 アラートルールは `alert_level`（`critical` / `error` / `warning`）を持ち、メール通知の件名・本文および `alert_history` の各行に、通知時点のレベルが記録される。既存 DB はマイグレーションで `warning` を既定とする。イベント行の `severity`（VMware 由来）とは別の運用重大度である。
 
 アラートルールの一覧・作成・更新レスポンスには、不透明な UUID の `revision` が入る。`PATCH /api/alerts/rules/{id}` の JSON 本文には、編集の基準にしたルールから取得した `revision` を含める。欠落や形式違反は `422`、更新対象が削除済みなら `404` を返す。版が古い場合は `409` と `X-VEA-Error-Code: alert_rule_stale` を返すので、最新の内容を読み直して変更を確認する。名前の重複も `409` になる。`config` を送ると設定全体が置き換わる。
@@ -119,6 +121,15 @@
 - `POST /api/chat`
 - `POST /api/chat/preview`  
   期間コンテキスト付きチャットとプレビュー。利用者向けの説明は [chat.md](../userguide/chat.md) を参照する。
+
+### 2.6 タイムライン
+
+`POST /api/incident-timeline/view` は、期間内の出来事とハイライトを返す。対象の絞り込みに使う要求の項目は次のとおり。
+
+- `entity_moid` は省略できる。前後の空白を除いたあとの上限は 256 文字で、空なら未指定として扱う。指定する場合は `vcenter_id` が必要で、無ければ `422` を返す。
+- `entity` は省略でき、上限は 1024 文字。moid を指定しないときは名前の部分一致に使う。moid を指定したときは、moid の無いイベントとログの名前の完全一致に使う。いずれも大文字と小文字を区別しない。
+
+`highlights.top_entities` の各要素の `entity_moid` は、vCenter と moid で数えた対象に入る。名前だけで数えた対象では `null` になる。手動スナップショットの `view_request` にも `entity_moid` を保存できる。
 
 ## 3. 設定の要点（環境変数）
 
