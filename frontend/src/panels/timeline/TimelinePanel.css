@@ -238,6 +238,30 @@
   font-size: var(--font-size-footnote);
 }
 
+.timeline-highlights__grid:not(:empty) + .timeline-highlights__patterns,
+.timeline-highlights__patterns > .hint,
+.timeline-highlights__omitted {
+  margin-top: var(--spacing-3);
+}
+
+.timeline-highlights__patterns li + li {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.timeline-highlights__patterns details {
+  margin-bottom: var(--spacing-2);
+}
+
+.timeline-highlights__patterns summary {
+  cursor: pointer;
+  font-size: var(--font-size-footnote);
+}
+
+.timeline-highlights__omitted {
+  overflow-wrap: anywhere;
+}
+
 /* ---- 時系列リスト ---- */
 .timeline-items__head {
   display: flex;
