@@ -16,6 +16,7 @@ export const eventRowSchema = z
     user_name: z.string().nullable().optional(),
     entity_name: z.string().nullable().optional(),
     entity_type: z.string().nullable().optional(),
+    entity_moid: z.string().nullable().optional(),
     user_comment: z.string().nullable().optional(),
     type_guide: eventTypeGuideSnippetSchema.nullable().optional(),
   })

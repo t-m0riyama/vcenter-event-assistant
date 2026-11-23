@@ -36,6 +36,7 @@ async def test_patch_event_comment_then_list_returns_it(client: AsyncClient) -> 
                 occurred_at=base,
                 event_type="t",
                 message="m0",
+                entity_moid="vm-101",
                 vmware_key=1,
                 notable_score=10,
             )
@@ -52,6 +53,7 @@ async def test_patch_event_comment_then_list_returns_it(client: AsyncClient) -> 
     )
     assert patch_r.status_code == 200
     assert patch_r.json()["user_comment"] == "調査済み"
+    assert patch_r.json()["entity_moid"] == "vm-101"
 
     list2 = await client.get("/api/events?limit=10")
     assert list2.status_code == 200

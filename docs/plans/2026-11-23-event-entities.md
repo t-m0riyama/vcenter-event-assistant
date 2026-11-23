@@ -12,8 +12,8 @@ Issue #347 の計画書。[障害調査を楽にする機能 10 案](2026-11-22-
 |---|---|---|
 | A | 本書 | マージ済み [PR #352](https://github.com/t-m0riyama/vcenter-event-assistant/pull/352) |
 | B | 対象の取り出しと、主な対象の名前・種別（DB の変更なし。plugin-api 1.6.0） | マージ済み [PR #353](https://github.com/t-m0riyama/vcenter-event-assistant/pull/353) |
-| C1 | moid と子表の保存（移行、plugin-api 1.7.0、取り込みの経路） | レビュー中 |
-| C2 | API と画面（`EventRead.entity_moid`、フロントの zod と CSV） | 未着手 |
+| C1 | moid と子表の保存（移行、plugin-api 1.7.0、取り込みの経路） | マージ済み [PR #354](https://github.com/t-m0riyama/vcenter-event-assistant/pull/354) |
+| C2 | API と画面（`EventRead.entity_moid`、フロントの zod と CSV） | レビュー中 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 

@@ -54,6 +54,7 @@
   フィルタ付きイベント一覧（`total` を含む）。利用者向けの説明は [events.md](../userguide/events.md)。
 - `PATCH /api/events/{event_id}`  
   イベントへのユーザーコメント（運用メモ）更新（利用者向けは上記 events.md）。
+  イベント一覧の `items`、コメント更新の応答、ダッシュボードの `top_notable_events` はいずれも、主な対象の `entity_name`、`entity_type`、`entity_moid` を含む。moid が保存されていない場合、`entity_moid` は `null` になる。
 - `GET /api/events/event-types`  
   イベント種別一覧。
 - `GET /api/events/rate-series`  

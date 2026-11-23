@@ -37,6 +37,7 @@ async def test_list_events_returns_total_and_pages(client: AsyncClient) -> None:
                     occurred_at=base - timedelta(minutes=i),
                     event_type="t",
                     message=f"m{i}",
+                    entity_moid="vm-101" if i == 0 else None,
                     vmware_key=i + 1,
                     notable_score=10,
                 )
@@ -48,6 +49,7 @@ async def test_list_events_returns_total_and_pages(client: AsyncClient) -> None:
     assert d0["total"] == 5
     assert len(d0["items"]) == 2
     assert [x["message"] for x in d0["items"]] == ["m0", "m1"]
+    assert [x["entity_moid"] for x in d0["items"]] == ["vm-101", None]
     # UTC instant explicit in JSON so browsers parse consistently (not as local time).
     assert d0["items"][0]["occurred_at"].endswith("Z")
 
