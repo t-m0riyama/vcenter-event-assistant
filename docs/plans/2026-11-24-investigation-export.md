@@ -1,6 +1,6 @@
 # 調査資料の出力（タイムラインとスナップショット）
 
-最終更新: 2026-11-24（PR C レビュー中）
+最終更新: 2026-11-25（全 PR マージ済み）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 10」にあたる。タイムラインの結果を、障害報告や引き継ぎに添えられる資料として出力する。10 案の計画書は、土台（案 0a・0b）の次にこの案を勧めている。Issue は起票していない。
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | A | 本書 | マージ済み [PR #371](https://github.com/t-m0riyama/vcenter-event-assistant/pull/371) |
 | B | 出力の生成と API（Markdown・ZIP） | マージ済み [PR #372](https://github.com/t-m0riyama/vcenter-event-assistant/pull/372) |
-| C | 画面（出力の操作）と文書 | レビュー中 |
+| C | 画面（出力の操作）と文書 | マージ済み [PR #373](https://github.com/t-m0riyama/vcenter-event-assistant/pull/373) |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
