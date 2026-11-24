@@ -110,6 +110,9 @@ function ItemRow({
         <span className="timeline-row__chips">
           <span className="timeline-row__kind">{KIND_LABELS[item.kind]}</span>
           <span className={LEVEL_BADGE_CLASS[item.level]}>{LEVEL_LABELS[item.level]}</span>
+          {item.config_change_kind ? (
+            <span className="timeline-row__kind timeline-row__config-change">構成変更</span>
+          ) : null}
           {merged ? (
             <span className="timeline-row__count">
               ×{item.count}

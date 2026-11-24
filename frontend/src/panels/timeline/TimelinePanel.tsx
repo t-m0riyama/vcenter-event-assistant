@@ -227,6 +227,8 @@ export function TimelinePanel({
               highlights={data.highlights}
               patternTitles={patternTitles}
               listedIds={listedIds}
+              includesEvents={(c.loadedRequest?.sources ?? c.conditions.sources).includes('event')}
+              anchorUtc={dataAnchor}
               timeZone={c.timeZone}
               onRevealItem={revealItem}
               onFilterEntity={c.filterByEntity}
@@ -256,11 +258,16 @@ export function TimelinePanel({
                 </select>
               </label>
             </div>
-            {data.truncated || omittedMessages.length > 0 ? (
+            {data.truncated || data.config_change_items_truncated || omittedMessages.length > 0 ? (
               <div className="timeline-notices">
                 {data.truncated ? (
                   <p className="timeline-truncated" role="note">
                     {data.total_items} 件中 {shownItemCount} 件を表示しています。期間や対象を絞ってください
+                  </p>
+                ) : null}
+                {data.config_change_items_truncated ? (
+                  <p className="timeline-truncated" role="note">
+                    構成変更の行は、{dataAnchor ? '起点' : '期間の終わり'}に近い {data.config_change_items_shown} 件だけを一覧に出しています
                   </p>
                 ) : null}
                 {omittedMessages.map((message) => (

@@ -22,6 +22,21 @@ export const KIND_LABELS: Record<TimelineSource, string> = {
   log: 'ログ',
 }
 
+export const CONFIG_CHANGE_LABELS: ReadonlyMap<string, string> = new Map([
+  ['vm_reconfigure', 'VM の構成変更'],
+  ['maintenance_enter', 'メンテナンスモードに入った'],
+  ['maintenance_exit', 'メンテナンスモードを出た'],
+  ['cluster_config', 'クラスタの設定の変更'],
+  ['network_config', 'ネットワークの設定の変更'],
+  ['storage_config', 'ストレージの設定の変更'],
+  ['resource_config', 'リソースの割り当ての変更'],
+  ['host_config', 'ホストの設定の変更'],
+  ['host_access', 'ホストのアクセスの設定の変更'],
+  ['permission', '権限とロールの変更'],
+  ['inventory', 'インベントリの変更'],
+  ['upgrade', 'アップグレード'],
+])
+
 /** 一覧の行に出すメッセージの抜粋。長いときは省略記号を付ける。 */
 export function excerpt(text: string | null | undefined, max = 90): string {
   const flat = (text ?? '').replace(/\s+/g, ' ').trim()

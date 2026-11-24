@@ -8,7 +8,7 @@ import {
   incidentTimelineManualSnapshotDetailSchema,
   incidentTimelineManualSnapshotListItemSchema,
 } from '.'
-import { emptyViewResponse } from '../../test/timelineViewFixtures'
+import { emptyViewResponse, VIEW_RESPONSE_EXAMPLE } from '../../test/timelineViewFixtures'
 
 const base = {
   snapshot_id: 's1',
@@ -36,6 +36,20 @@ describe('スナップショットの結果保存のスキーマ', () => {
     expect(ok.result?.total_items).toBe(0)
     const drifted = incidentTimelineManualSnapshotDetailSchema.parse({ ...base, has_result: true, result: { legacy: 1 } })
     expect(drifted.result).toBeNull()
+  })
+
+  it('構成変更の項目が無い保存済みの結果を既定値で読む', () => {
+    const detail = incidentTimelineManualSnapshotDetailSchema.parse({
+      ...base, has_result: true, result: VIEW_RESPONSE_EXAMPLE,
+    })
+    expect(detail.result).toMatchObject({
+      config_change_items_total: 0,
+      config_change_items_shown: 0,
+      config_change_items_truncated: false,
+      highlights: { config_changes_total: 0, config_change_counts: {}, config_changes_truncated: false },
+    })
+    expect(detail.result?.highlights).not.toHaveProperty('config_changes')
+    expect(detail.result?.items[0]).not.toHaveProperty('config_change_kind')
   })
 
   it('保存のリクエストは view_request を持てるが、結果は送れない', () => {
