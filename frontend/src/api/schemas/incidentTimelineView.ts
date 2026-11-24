@@ -126,6 +126,7 @@ export const incidentTimelineViewResponseSchema = z.object({
   items: z.array(timelineViewItemSchema),
   truncated: z.boolean(),
   total_items: z.number().int().min(0),
+  config_change_items_shown: z.number().int().min(0).default(0),
   highlights: timelineHighlightsSchema,
   omitted_sources: z.array(timelineOmittedSourceSchema).default([]),
 })

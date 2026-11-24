@@ -15,6 +15,14 @@ _MOCK_EVENT_TYPES = (
     "vim.event.MockDemoAlarmStatusChangedEvent",
     "vim.event.MockDemoHostConnectionLostEvent",
 )
+_MOCK_INTERVAL_SECONDS = 30 * 60
+_MOCK_RECONFIGURE = "VirtualMachine.reconfigure"
+_MOCK_RECONFIGURE_OFFSET = timedelta(seconds=30)
+
+
+def _reconfigure_key(interval: int) -> int:
+    """切断とタスクの既存キーから離れた範囲で、30 分枠につき 1 つのキーを使う。"""
+    return -(1_000_000_000 + interval)
 
 
 def fetch_mock_events_blocking(
@@ -26,7 +34,7 @@ def fetch_mock_events_blocking(
     ``vmware_key`` は通常の合成イベントでは秒単位の時刻、ホスト切断では 30 分枠と枠内の連番から導出する。
     同じキーの再取り込みは ON CONFLICT で吸収される。
     ``since`` は実収集とのシグネチャ互換のため受け取る。
-    直近の合成イベント 2 件と、30 分ごとのホスト切断 3 件を返す。
+    直近の合成イベント 2 件と、30 分ごとのホスト切断 3 件・VM の再構成 1 件を返す。
     """
     _ = since
     now = datetime.now(timezone.utc)
@@ -67,8 +75,8 @@ def fetch_mock_events_blocking(
         },
     ]
     # 同じ 30 分枠の切断は、収集を繰り返しても同じキーと時刻にする。
-    interval = key_base // (30 * 60)
-    interval_start = datetime.fromtimestamp(interval * 30 * 60, tz=timezone.utc)
+    interval = key_base // _MOCK_INTERVAL_SECONDS
+    interval_start = datetime.fromtimestamp(interval * _MOCK_INTERVAL_SECONDS, tz=timezone.utc)
     for i, minutes in enumerate((8, 4, 1)):
         rows.append({
             "occurred_at": interval_start - timedelta(minutes=minutes),
@@ -83,6 +91,18 @@ def fetch_mock_events_blocking(
             ),),
             "vmware_key": -(interval * 3 + i + 1),
         })
+    rows.append({
+        "occurred_at": interval_start - _MOCK_RECONFIGURE_OFFSET - timedelta(seconds=1),
+        "event_type": "vim.event.VmReconfiguredEvent",
+        "message": "（モック）仮想マシンを再構成しました。",
+        "user_name": "mock-user",
+        "entity_name": "vm-mock-web-01",
+        "entity_type": "VirtualMachine",
+        "entity_moid": MOCK_VM_MOID,
+        "entities": rows[1]["entities"],
+        "vmware_key": _reconfigure_key(interval),
+        "chain_id": interval,
+    })
     rows.sort(key=lambda row: row["occurred_at"])
     return rows, now
 
@@ -94,8 +114,8 @@ def fetch_mock_tasks_blocking(since: datetime | None) -> list[dict[str, Any]]:
     """
     _ = since
     now = datetime.now(timezone.utc)
-    interval = int(now.timestamp()) // (30 * 60)
-    interval_start = datetime.fromtimestamp(interval * 30 * 60, tz=timezone.utc)
+    interval = int(now.timestamp()) // _MOCK_INTERVAL_SECONDS
+    interval_start = datetime.fromtimestamp(interval * _MOCK_INTERVAL_SECONDS, tz=timezone.utc)
     entity = EventEntityInput(
         "entity",
         entity_moid=MOCK_VM_MOID,
@@ -112,10 +132,14 @@ def fetch_mock_tasks_blocking(since: datetime | None) -> list[dict[str, Any]]:
             "failed: Invalid power state [InvalidPowerState]",
         ),
         ("canceled", "VirtualMachine.migrate", "warning", "was canceled"),
+        ("success", _MOCK_RECONFIGURE, "info", "succeeded"),
     )
     rows = []
     for i, (result, operation, severity, outcome) in enumerate(examples):
-        completed = interval_start - timedelta(minutes=3 - i)
+        config_change = operation == _MOCK_RECONFIGURE
+        completed = interval_start - (
+            _MOCK_RECONFIGURE_OFFSET if config_change else timedelta(minutes=3 - i)
+        )
         started = completed - timedelta(seconds=12.3)
         rows.append(
             {
@@ -131,7 +155,8 @@ def fetch_mock_tasks_blocking(since: datetime | None) -> list[dict[str, Any]]:
                 "entity_type": entity.entity_type,
                 "entity_moid": entity.entity_moid,
                 "entities": (entity,),
-                "vmware_key": -(interval * 3 + i + 1),
+                "vmware_key": _reconfigure_key(interval) if config_change else -(interval * 3 + i + 1),
+                "chain_id": interval if config_change else None,
             }
         )
     return rows

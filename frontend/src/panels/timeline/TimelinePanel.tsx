@@ -135,12 +135,13 @@ export function TimelinePanel({
 
   // 種別を省いたときは、「N 件の出来事」が省いた種別を含まないことを添える（ライブ領域でも読み上げる）
   const omittedNote = data && data.omitted_sources.length > 0 ? `（${omittedKindLabels(data.omitted_sources).join('・')}は省いています）` : ''
+  const shownItemCount = data ? data.items.length - data.config_change_items_shown : 0
   const statusText = c.loading
     ? '読み込み中…'
     : data
       ? data.truncated
-        ? `${data.total_items} 件中 ${data.items.length} 件の出来事を表示しています${omittedNote}。`
-        : `${data.total_items} 件の出来事を表示しています${omittedNote}。`
+        ? `${data.total_items} 件中 ${shownItemCount} 件の出来事を表示しています${omittedNote}。`
+        : `${shownItemCount} 件の出来事を表示しています${omittedNote}。`
       : ''
 
   return (
@@ -259,7 +260,7 @@ export function TimelinePanel({
               <div className="timeline-notices">
                 {data.truncated ? (
                   <p className="timeline-truncated" role="note">
-                    {data.total_items} 件中 {data.items.length} 件を表示しています。期間や対象を絞ってください
+                    {data.total_items} 件中 {shownItemCount} 件を表示しています。期間や対象を絞ってください
                   </p>
                 ) : null}
                 {omittedMessages.map((message) => (

@@ -175,6 +175,7 @@ class IncidentTimelineViewItem(BaseModel):
     score: int | None = None
     count: int = Field(default=1, ge=1)
     ref: IncidentTimelineItemRef = Field(default_factory=IncidentTimelineItemRef)
+    config_change_kind: str | None = None
 
 
 class IncidentTimelineOverviewBucket(BaseModel):
@@ -223,6 +224,24 @@ class IncidentTimelineDetectedPattern(BaseModel):
     event_ids: list[int]
 
 
+class IncidentTimelineConfigChange(BaseModel):
+    """関連するイベントとタスクをまとめた構成変更。"""
+
+    kind: str
+    label: str
+    first_utc: datetime
+    last_utc: datetime
+    vcenter_id: uuid.UUID | None = None
+    vcenter_name: str | None = None
+    entity_name: str | None = None
+    entity_moid: str | None = None
+    entity_type: str | None = None
+    user_names: list[str] = Field(default_factory=list)
+    event_types: list[str] = Field(default_factory=list)
+    event_count: int = 0
+    event_ids: list[int] = Field(default_factory=list)
+
+
 class IncidentTimelineHighlights(BaseModel):
     first_signal: IncidentTimelineViewItem | None = None
     top_entities: list[IncidentTimelineTopEntity] = Field(default_factory=list)
@@ -230,6 +249,10 @@ class IncidentTimelineHighlights(BaseModel):
     detected_patterns: list[IncidentTimelineDetectedPattern] = Field(default_factory=list)
     detected_patterns_total: int = 0
     omitted_patterns: list[str] = Field(default_factory=list)
+    config_changes: list[IncidentTimelineConfigChange] | None = None
+    config_changes_total: int = 0
+    config_change_counts: dict[str, int] = Field(default_factory=dict)
+    config_changes_truncated: bool = False
 
 
 class IncidentTimelineOmittedSource(BaseModel):
@@ -250,6 +273,9 @@ class IncidentTimelineViewResponse(BaseModel):
     items: list[IncidentTimelineViewItem]
     truncated: bool
     total_items: int = Field(description="打ち切り前の件数")
+    config_change_items_total: int = 0
+    config_change_items_shown: int = 0
+    config_change_items_truncated: bool = False
     highlights: IncidentTimelineHighlights
     omitted_sources: list[IncidentTimelineOmittedSource] = Field(
         default_factory=list,

@@ -41,7 +41,7 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
         n_hist = (await session.execute(select(func.count()).select_from(AlertHistory))).scalar_one()
     assert n_vc == 1
     assert n_g == 3
-    assert n_ev == 9
+    assert n_ev == 13
     assert n_m >= 1
     assert n_logs == 4
     assert n_d == 1
@@ -76,7 +76,8 @@ async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
     monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
     await run_screenshot_e2e_seed_if_enabled()
 
-    now = datetime.now(timezone.utc)
+    # 起動から 5 分経って開いても、直近 1 時間にデモ行が残る。
+    now = datetime.now(timezone.utc) + timedelta(minutes=5)
     app = create_app()
     async with open_client(app=app) as ac:
         resp = await ac.post(
@@ -111,6 +112,28 @@ async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
     disconnects = [e for e in events if e["ref"]["event_type"] == "vim.event.HostConnectionLostEvent"]
     assert sum(e["count"] for e in disconnects) == 3
     assert {e["score"] for e in disconnects} == {40}
+    changes = body["highlights"]["config_changes"]
+    assert [(c["kind"], c["entity_name"], c["event_count"]) for c in changes] == [
+        ("vm_reconfigure", "demo-vm-01", 2),
+        ("maintenance_exit", "demo-esxi-01", 1),
+        ("maintenance_enter", "demo-esxi-01", 1),
+    ]
+    assert changes[0]["user_names"] == ["demo-operator"]
+    assert changes[0]["event_types"] == [
+        "vim.event.VmReconfiguredEvent", "task.success.VirtualMachine.reconfigure"
+    ]
+    [incident] = [e for e in events if e["ref"]["event_type"] == "vim.event.ScreenshotDemoEventC"]
+    assert changes[0]["last_utc"] < incident["timestamp_utc"]
+    change_times = {e["timestamp_utc"] for e in events if e["config_change_kind"]}
+    assert change_times.isdisjoint(
+        e["timestamp_utc"] for e in events if not e["config_change_kind"]
+    )
+    async with session_scope() as session:
+        rows = list(await session.scalars(
+            select(EventRecord).where(EventRecord.id.in_(changes[0]["event_ids"]))
+        ))
+    assert {row.collector_id for row in rows} == {"builtin.vcenter.events", "builtin.vcenter.tasks"}
+    assert rows[0].chain_id is not None and rows[0].chain_id == rows[1].chain_id
     # 同じ種別・同じ対象の連続は 1 行にまとまる
     assert [e["count"] for e in events].count(2) == 1
     logs = [i for i in items if i["kind"] == "log"]

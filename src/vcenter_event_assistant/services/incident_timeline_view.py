@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -22,13 +23,14 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
 
 from fastapi import HTTPException
-from sqlalchemy import DateTime, Integer, String, and_, case, func, literal, or_, select, text, tuple_
+from sqlalchemy import DateTime, Integer, Row, String, and_, case, func, literal, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineConfigChange,
     IncidentTimelineDetectedPattern,
     IncidentTimelineHighlights,
     IncidentTimelineItemRef,
@@ -49,6 +51,13 @@ from vcenter_event_assistant.db.models import (
     LogRecord,
     MetricSample,
     VCenter,
+)
+from vcenter_event_assistant.plugins.builtin import EventsCollector, TasksCollector
+from vcenter_event_assistant.rules.config_changes import (
+    CONFIG_CHANGE_DEFINITIONS,
+    CONFIG_CHANGE_EVENT_TYPES,
+    CONFIG_CHANGE_LABELS,
+    config_change_kind,
 )
 from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
     IN_CHUNK_SIZE,
@@ -104,6 +113,11 @@ _TOP_ENTITIES_LIMIT = 5
 _NEW_EVENT_TYPES_LIMIT = 10
 _DETECTED_PATTERNS_LIMIT = 20
 _DETECTED_PATTERN_EVENT_IDS_LIMIT = 20
+CONFIG_CHANGE_MAX_ROWS = 2_000
+CONFIG_CHANGE_ITEM_LIMIT = 50
+_CONFIG_CHANGE_CARD_LIMIT = 20
+_CONFIG_CHANGE_GROUP_GAP = timedelta(minutes=5)
+_CONFIG_CHANGE_CHAIN_COLLECTORS = frozenset({EventsCollector.manifest.id, TasksCollector.manifest.id})
 # アラート側で行数の上限を超えたことを示す AggregationLimitExceeded.what
 _ALERTS_LIMIT = "incident_timeline_view.alerts"
 
@@ -198,6 +212,11 @@ class TimelineEntry:
     ref: Mapping[str, Any] = field(default_factory=dict)
     # メトリクスの名前が無く、表示用に moid を入れたか。
     entity_name_is_fallback: bool = False
+    config_change_kind: str | None = None
+    added_config_change: bool = False
+    user_name: str | None = None
+    chain_id: int | None = None
+    collector_id: str | None = None
 
     @property
     def item_id(self) -> str:
@@ -219,6 +238,7 @@ class TimelineEntry:
             score=self.score,
             count=self.count,
             ref=IncidentTimelineItemRef(**dict(self.ref)),
+            config_change_kind=self.config_change_kind,
         )
 
 
@@ -869,6 +889,12 @@ async def _build_in_slot(
     overview_counts: dict[str, list[int]] = {}
     omitted: list[IncidentTimelineOmittedSource] = []
     requested = set(body.sources)
+    anchor = to_utc(body.anchor_time) if body.anchor_time is not None else None
+    config_to = tt
+    if anchor is not None and anchor < tt:
+        config_to = ft if anchor < ft else min(tt, anchor + timedelta(milliseconds=1))
+    added: list[TimelineEntry] = []
+    config_truncated_from: datetime | None = None
     for source, collector in _COLLECTORS.items():
         if source not in requested:
             continue
@@ -877,6 +903,10 @@ async def _build_in_slot(
         overview_counts.update(collected.overview)
         if collected.omitted:
             omitted.append(IncidentTimelineOmittedSource(source=source, reason="too_many_rows"))
+        if source == "event" and ft < config_to:
+            added, config_truncated_from = await _collect_config_change_events(
+                session, scope, config_to, {e.source_id for e in collected.entries}
+            )
 
     new_types: list[IncidentTimelineNewEventType] = []
     stats = summarize_event_types(entries)
@@ -884,11 +914,18 @@ async def _build_in_slot(
         seen = await _event_types_seen_in_previous_period(session, scope, stats.keys())
         new_types = pick_new_event_types(stats, seen)
 
-    entries = await _attach_vcenter_names(session, entries)
-    merged = merge_consecutive(sort_entries(entries), max_gap=merge_max_gap(bucket_sec))
-    anchor = to_utc(body.anchor_time) if body.anchor_time is not None else None
+    named = await _attach_vcenter_names(session, [*entries, *added])
+    entries = [e for e in named if not e.added_config_change]
+    added = [e for e in named if e.added_config_change]
+    max_gap = merge_max_gap(bucket_sec)
+    merged = merge_consecutive(sort_entries(entries), max_gap=max_gap)
     kept, truncated = select_within_limit(merged, body.item_limit, anchor)
     signal = first_signal(merged)
+    added_merged = merge_consecutive(sort_entries(added), max_gap=max_gap)
+    added_limit = min(CONFIG_CHANGE_ITEM_LIMIT, body.item_limit)
+    added_merged.sort(key=lambda e: (config_to - (e.end_utc or e.timestamp_utc), e.source_id))
+    added_kept = added_merged[:added_limit]
+    kept = sort_entries([*kept, *added_kept])
     # 一覧の SELECT では message を読まないので、返す項目の分だけ後から引く。
     shown = (*kept, *([signal] if signal is not None else []))
     event_details = await _event_messages(session, [e.source_id for e in shown if e.kind == "event"])
@@ -903,6 +940,14 @@ async def _build_in_slot(
         new_event_types=new_types,
     )
     if "event" in requested:
+        card_from = config_truncated_from or ft
+        cards, counts = _summarize_config_changes(
+            e for e in named if e.config_change_kind is not None and card_from <= e.timestamp_utc < config_to
+        )
+        highlights.config_changes = cards
+        highlights.config_changes_total = sum(counts.values())
+        highlights.config_change_counts = counts
+        highlights.config_changes_truncated = config_truncated_from is not None
         patterns, total, omitted_patterns = await _collect_detected_patterns(session, scope)
         highlights.detected_patterns = patterns
         highlights.detected_patterns_total = total
@@ -917,9 +962,146 @@ async def _build_in_slot(
         items=[e.to_item() for e in kept],
         truncated=truncated,
         total_items=len(merged),
+        config_change_items_total=len(added_merged),
+        config_change_items_shown=len(added_kept),
+        config_change_items_truncated=len(added_merged) > added_limit,
         highlights=highlights,
         omitted_sources=omitted,
     )
+
+
+# --- 構成変更のまとめ -------------------------------------------------------------------
+
+
+_ChangeMatchKey = tuple[str, str]
+
+
+@dataclass(slots=True)
+class _ConfigChangeGroup:
+    index: int
+    kind: str
+    first: TimelineEntry
+    last: TimelineEntry
+    target: TimelineEntry | None = None
+    event_count: int = 0
+    event_ids: list[int] = field(default_factory=list)
+    event_types: list[str] = field(default_factory=list)
+    user_names: list[str] = field(default_factory=list)
+    match_keys: set[_ChangeMatchKey] = field(default_factory=set)
+
+    def add(self, entry: TimelineEntry) -> None:
+        self.last = entry
+        self.event_count += 1
+        if len(self.event_ids) < 20:
+            self.event_ids.append(entry.source_id)
+        if len(self.event_types) < 5 and entry.title not in self.event_types:
+            self.event_types.append(entry.title)
+        if entry.user_name is not None and len(self.user_names) < 3 and entry.user_name not in self.user_names:
+            self.user_names.append(entry.user_name)
+
+    def to_card(self) -> IncidentTimelineConfigChange:
+        target = self.target
+        return IncidentTimelineConfigChange(
+            kind=self.kind,
+            label=CONFIG_CHANGE_LABELS[self.kind],
+            first_utc=self.first.timestamp_utc,
+            last_utc=self.last.timestamp_utc,
+            vcenter_id=self.first.vcenter_id,
+            vcenter_name=self.first.vcenter_name,
+            entity_name=target.entity_name if target else None,
+            entity_moid=target.ref.get("entity_moid") if target else None,
+            entity_type=target.entity_type if target else None,
+            user_names=self.user_names,
+            event_types=self.event_types,
+            event_count=self.event_count,
+            event_ids=self.event_ids,
+        )
+
+
+@dataclass(slots=True)
+class _ConfigChangeGroups:
+    """種類と vCenter が同じ組を、chain と照合に使う対象・利用者で引けるようにする。"""
+
+    chains: dict[int, _ConfigChangeGroup] = field(default_factory=dict)
+    recent: defaultdict[_ChangeMatchKey, OrderedDict[int, _ConfigChangeGroup]] = field(
+        default_factory=lambda: defaultdict(OrderedDict)
+    )
+
+    def match_target_or_user(self, entry: TimelineEntry) -> _ConfigChangeGroup | None:
+        moid = entry.ref.get("entity_moid")
+        name = entry.entity_name
+        keys: list[_ChangeMatchKey] = []
+        if moid:
+            keys.append(("moid", moid))
+        if name:
+            keys.append(("name_without_moid" if moid else "name", name))
+        if not moid and not name and entry.user_name is not None:
+            keys.append(("user", entry.user_name))
+        for key in keys:
+            groups = self.recent.get(key)
+            if groups:
+                group = groups[next(reversed(groups))]
+                if entry.timestamp_utc - group.last.timestamp_utc <= _CONFIG_CHANGE_GROUP_GAP:
+                    return group
+        return None
+
+    def add(self, group: _ConfigChangeGroup, entry: TimelineEntry) -> None:
+        moid = entry.ref.get("entity_moid")
+        name = entry.entity_name
+        if moid or name:
+            if group.target is None:
+                group.target = entry
+                # 対象を持つようになった組は、以後は利用者で照合しない。
+                for key in group.match_keys:
+                    del self.recent[key][group.index]
+                group.match_keys.clear()
+            if moid:
+                group.match_keys.add(("moid", moid))
+            if name:
+                group.match_keys.add(("name", name))
+                if not moid:
+                    group.match_keys.add(("name_without_moid", name))
+        elif group.target is None and entry.user_name is not None:
+            group.match_keys.add(("user", entry.user_name))
+
+        group.add(entry)
+        for key in group.match_keys:
+            groups = self.recent[key]
+            groups[group.index] = group
+            groups.move_to_end(group.index)
+
+
+def _summarize_config_changes(
+    entries: Iterable[TimelineEntry],
+) -> tuple[list[IncidentTimelineConfigChange], dict[str, int]]:
+    groups: list[_ConfigChangeGroup] = []
+    by_kind_and_vcenter: defaultdict[tuple[str, uuid.UUID | None], _ConfigChangeGroups] = defaultdict(
+        _ConfigChangeGroups
+    )
+    for entry in sort_entries(entries):
+        kind = entry.config_change_kind
+        if kind is None:
+            continue
+        candidates = by_kind_and_vcenter[kind, entry.vcenter_id]
+        chain = entry.chain_id if entry.collector_id in _CONFIG_CHANGE_CHAIN_COLLECTORS else None
+        group = candidates.chains.get(chain) if chain is not None else None
+        if group is None:
+            group = candidates.match_target_or_user(entry)
+        if group is None:
+            group = _ConfigChangeGroup(index=len(groups), kind=kind, first=entry, last=entry)
+            groups.append(group)
+        if chain is not None:
+            candidates.chains[chain] = group
+        candidates.add(group, entry)
+
+    counts = Counter(group.kind for group in groups)
+    ordered_counts = {
+        definition.kind: counts[definition.kind]
+        for definition in CONFIG_CHANGE_DEFINITIONS
+        if definition.kind in counts
+    }
+    groups.sort(key=lambda group: entry_sort_key(group.last), reverse=True)
+    return [group.to_card() for group in groups[:_CONFIG_CHANGE_CARD_LIMIT]], ordered_counts
 
 
 # --- 収集: イベント ---------------------------------------------------------------------
@@ -1024,17 +1206,7 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
     # 超えたら、黙って切らずに 422 にする（total_items と truncated が嘘にならないように）。
     # message（Text）は読まない。返す項目の分だけ _event_messages で後から引く。
     list_stmt = (
-        select(
-            EventRecord.id,
-            EventRecord.occurred_at,
-            EventRecord.event_type,
-            EventRecord.severity,
-            EventRecord.entity_name,
-            EventRecord.entity_moid,
-            EventRecord.entity_type,
-            EventRecord.vcenter_id,
-            EventRecord.notable_score,
-        )
+        select(*_EVENT_LIST_COLUMNS)
         .where(*filters, EventRecord.notable_score >= scope.min_score)
         .order_by(EventRecord.occurred_at, EventRecord.id)
         .limit(scope.max_rows + 1)
@@ -1043,30 +1215,80 @@ async def _collect_events(session: AsyncSession, scope: _Scope) -> _Collected:
     if len(rows) > scope.max_rows:
         raise AggregationLimitExceeded("incident_timeline_view.events", scope.max_rows)
 
-    entries: list[TimelineEntry] = []
-    for row in rows:
-        level = event_level(row.notable_score, row.severity)
-        ref = {"event_id": int(row.id), "event_type": row.event_type}
-        if row.entity_moid:
-            ref["entity_moid"] = row.entity_moid
-        merge_moid = (row.entity_moid or None) if row.vcenter_id is not None else None
-        entries.append(
-            TimelineEntry(
-                kind="event",
-                source_id=int(row.id),
-                timestamp_utc=to_utc(row.occurred_at),
-                level=level,
-                title=row.event_type,
-                entity_name=row.entity_name,
-                entity_type=row.entity_type,
-                vcenter_id=row.vcenter_id,
-                score=int(row.notable_score),
-                # level が違うものはまとめない（悪化した時点を別の行として残す）
-                merge_key=("event", row.event_type, row.entity_name, row.vcenter_id, merge_moid, level),
-                ref=ref,
-            )
+    return _Collected(
+        entries=[_event_entry(row) for row in rows],
+        overview={"event_total": totals, "event_notable": notables},
+    )
+
+
+_EVENT_LIST_COLUMNS = (
+    EventRecord.id,
+    EventRecord.occurred_at,
+    EventRecord.event_type,
+    EventRecord.severity,
+    EventRecord.entity_name,
+    EventRecord.entity_moid,
+    EventRecord.entity_type,
+    EventRecord.vcenter_id,
+    EventRecord.notable_score,
+    EventRecord.user_name,
+    EventRecord.chain_id,
+    EventRecord.collector_id,
+)
+
+
+def _event_entry(row: Row[Any], *, added_config_change: bool = False) -> TimelineEntry:
+    level = event_level(row.notable_score, row.severity)
+    ref = {"event_id": int(row.id), "event_type": row.event_type}
+    if row.entity_moid:
+        ref["entity_moid"] = row.entity_moid
+    merge_moid = (row.entity_moid or None) if row.vcenter_id is not None else None
+    return TimelineEntry(
+        kind="event",
+        source_id=int(row.id),
+        timestamp_utc=to_utc(row.occurred_at),
+        level=level,
+        title=row.event_type,
+        entity_name=row.entity_name,
+        entity_type=row.entity_type,
+        vcenter_id=row.vcenter_id,
+        score=int(row.notable_score),
+        # level が違うものはまとめない（悪化した時点を別の行として残す）
+        merge_key=("event", row.event_type, row.entity_name, row.vcenter_id, merge_moid, level),
+        ref=ref,
+        config_change_kind=config_change_kind(row.event_type),
+        added_config_change=added_config_change,
+        user_name=row.user_name or None,
+        chain_id=row.chain_id,
+        collector_id=row.collector_id,
+    )
+
+
+async def _collect_config_change_events(
+    session: AsyncSession, scope: _Scope, window_end: datetime, ordinary_ids: set[int]
+) -> tuple[list[TimelineEntry], datetime | None]:
+    stmt = (
+        select(*_EVENT_LIST_COLUMNS)
+        .where(
+            *_event_filters(scope, scope.from_utc, window_end),
+            EventRecord.event_type.in_(sorted(CONFIG_CHANGE_EVENT_TYPES)),
+            EventRecord.notable_score < scope.min_score,
         )
-    return _Collected(entries=entries, overview={"event_total": totals, "event_notable": notables})
+        .order_by(EventRecord.occurred_at.desc(), EventRecord.id.desc())
+        .limit(CONFIG_CHANGE_MAX_ROWS + 1)
+    )
+    rows = (await session.execute(stmt)).all()
+    # SELECT の間にスコアが再計算され、両方で読んだ id は通常の一覧にだけ残す。
+    entries = [
+        _event_entry(row, added_config_change=True)
+        for row in rows[:CONFIG_CHANGE_MAX_ROWS]
+        if row.id not in ordinary_ids
+    ]
+    if len(rows) <= CONFIG_CHANGE_MAX_ROWS:
+        return entries, None
+    # 打ち切り時は、カードの材料を足した行と同じ期間に揃える。
+    oldest = entries[-1].timestamp_utc if entries else to_utc(rows[CONFIG_CHANGE_MAX_ROWS - 1].occurred_at)
+    return entries, oldest
 
 
 async def _event_messages(session: AsyncSession, event_ids: Iterable[int]) -> dict[int, str]:

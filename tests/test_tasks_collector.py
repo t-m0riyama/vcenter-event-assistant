@@ -346,14 +346,15 @@ async def test_tasks_collector_mock_results_and_stable_keys(monkeypatch):
         "task.success.VirtualMachine.powerOn",
         "task.error.VirtualMachine.powerOn",
         "task.canceled.VirtualMachine.migrate",
+        "task.success.VirtualMachine.reconfigure",
     ]
     assert [
         score_event(
             event_type=event.event_type, message=event.message, severity=event.severity
         ).score
         for event in batch.events
-    ] == [0, 50, 20]
-    assert len({event.vmware_key for event in batch.events}) == 3
+    ] == [0, 50, 20, 0]
+    assert len({event.vmware_key for event in batch.events}) == 4
 
     now += timedelta(minutes=10)
     repeated = await run_collect(
@@ -365,7 +366,7 @@ async def test_tasks_collector_mock_results_and_stable_keys(monkeypatch):
     later = await run_collect(
         TasksCollector(), previous_cursor=batch.next_cursor, **kwargs
     )
-    assert len(later.events) == 3
+    assert len(later.events) == 4
     assert {event.vmware_key for event in later.events}.isdisjoint(
         event.vmware_key for event in batch.events
     )

@@ -126,7 +126,7 @@ async def test_mock_mode_ingestion_skips_pyvmomi(monkeypatch: pytest.MonkeyPatch
                 EventRecord.entity_type == "VirtualMachine",
             )
         )).all()
-        assert len(vm_moids) == 3
+        assert len(vm_moids) == 4
         assert set(vm_moids) == {"vm-mock-01"}
         now = datetime.now(timezone.utc)
         view = await build_incident_timeline_view(
@@ -209,6 +209,9 @@ async def test_mock_tasks_are_saved_once_and_visible_in_events_and_timeline(
     for _ in range(2):
         result = await run_collector_for_vcenter(settings, registration, vc_id)
         assert result.status == "ok"
+    event_registration = build_collector_registry(settings).get("builtin.vcenter.events")
+    assert event_registration is not None
+    assert (await run_collector_for_vcenter(settings, event_registration, vc_id)).status == "ok"
 
     async with open_client(app=create_app()) as ac:
         events = await ac.get("/api/events", params={"event_type_contains": "task."})
@@ -217,6 +220,7 @@ async def test_mock_tasks_are_saved_once_and_visible_in_events_and_timeline(
             "task.canceled.VirtualMachine.migrate",
             "task.error.VirtualMachine.powerOn",
             "task.success.VirtualMachine.powerOn",
+            "task.success.VirtualMachine.reconfigure",
         ]
 
         timeline = await ac.post(
@@ -236,7 +240,12 @@ async def test_mock_tasks_are_saved_once_and_visible_in_events_and_timeline(
         assert task_scores == {
             "task.canceled.VirtualMachine.migrate": 20,
             "task.error.VirtualMachine.powerOn": 50,
+            "task.success.VirtualMachine.reconfigure": 0,
         }
+        [change] = timeline.json()["highlights"]["config_changes"]
+        assert change["kind"] == "vm_reconfigure"
+        assert change["event_count"] == 2
+        assert change["user_names"] == ["mock-user"]
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 # 構成変更を目立たせる（タイムライン）
 
-最終更新: 2026-11-24（PR A レビュー中）
+最終更新: 2026-11-24（PR B レビュー中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 2a」（構成変更の追跡の第 1 段）にあたる。すでに集めている構成変更のイベントとタスクを、タイムラインで目立たせる。[AI活用アイデア20案](2026-05-07-ai-idea-backlog-20.md) の 9 番「変更イベント相関分析」と同じ方向である。Issue は起票していない。
 
@@ -10,8 +10,8 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | レビュー中 |
-| B | 構成変更の定義と API（ハイライト・行の印・出力） | 未着手 |
+| A | 本書 | マージ済み [PR #374](https://github.com/t-m0riyama/vcenter-event-assistant/pull/374) |
+| B | 構成変更の定義と API（ハイライト・行の印・出力） | レビュー中 |
 | C | 画面（ハイライトのカードと行の印）と文書 | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
@@ -130,7 +130,7 @@
 2. **足した行:** 足した行どうしだけで `merge_consecutive` をかける。そのうえで、窓の終わりに近い順に `min(CONFIG_CHANGE_ITEM_LIMIT, item_limit)` 件まで残す（`CONFIG_CHANGE_ITEM_LIMIT` は 50）。近さは、まとめた行の `end_utc`（無ければ `timestamp_utc`）と窓の終わりの差で測る。この枠は `item_limit` の外にある。`item_limit` を小さくした利用者に、それより多い構成変更の行を見せないため、`item_limit` でも抑える。
 3. **合わせる:** 1 と 2 を時刻順に並べて `items` にする。
    - `total_items` と `truncated` は、今の行だけで決める（意味を変えない）。足した行の打ち切りで「期間や対象を絞ってください」の注記（`TimelinePanel.tsx:142,262`）や報告書の「打ち切り: あり」が出ると、最小スコアでは絞れない行のために絞り込みを促すことになるためである。
-   - 足した行は、結果に別の項目で返す。`config_change_items_total: int = 0`（まとめた後の足した行の数）と `config_change_items_truncated: bool = False`（枠で打ち切ったか）。画面は打ち切ったとき、「構成変更の行は、起点（または期間の終わり）に近い N 件だけを一覧に出しています」と別の注記を出す。
+   - 足した行は、結果に別の項目で返す。`config_change_items_total: int = 0`（まとめた後の足した行の数）、`config_change_items_shown: int = 0`（一覧に入れた足した行の数）、`config_change_items_truncated: bool = False`（枠で打ち切ったか）。画面と報告書は、今の行の数を `len(items) - config_change_items_shown` で求める（PR B で決めた）。画面は打ち切ったとき、「構成変更の行は、起点（または期間の終わり）に近い N 件だけを一覧に出しています」と別の注記を出す。
    - 一覧は最大で `item_limit` の 2 倍（`item_limit` が 50 を超えれば `item_limit` + 50）件になる。
 
 足した行は、構成変更のカードの材料にもなる。カードは打ち切りの前の行から作るので、一覧から落ちてもカードには残る。
@@ -169,6 +169,8 @@
   2. **対象:** 種類・vCenter・対象が同じで、その組の最後の行との間隔が 5 分以内の組がある。組の対象は、組の行のどれかが持つ対象とする（chain で作った組は、クラスタとホストのように対象を複数持つことがある）。対象は、両方に moid があれば moid で、無ければ名前で比べる。ホストが出す `esx.audit.maintenancemode.entered`（chain に入らない）と、vCenter が出す `EnteredMaintenanceModeEvent` がこれで 1 件になる。
   3. **対象なし:** 行も組も対象を持たないときは、種類・vCenter・利用者が同じで、その組の最後の行との間隔が 5 分以内の組に入れる。利用者が無い（None）行は、この規則ではまとめない。ロールの変更（`RoleAddedEvent` と `AuthorizationManager.addRole`）は、対象を持たないことがあるためである。
 - 「組の最後の行との間隔」は、同じ組の行どうしで見る。間に別の対象の行が挟まっても、組は分かれない。
+- 対象の規則で候補の組が複数あるときは、moid が一致する組を先に選ぶ。無ければ、名前で一致する組のうち最後の行が最も新しい組を選ぶ（PR B で決めた）。
+- 2,000 行の上限で足した行を打ち切ったときは、カードの材料（最小スコア以上の行も含む）を、足した行の最も古い時刻以降に揃える。カードが一様な期間を表すようにするためである（PR B で決めた）。
 - 長いタスク（メンテナンスモードに入るのに 30 分かかるなど）では、開始のイベント（`EnteringMaintenanceModeEvent`）がタスクと同じ chain なら 1 件に、違えば 2 件になる。どちらでも最初と最後の時刻が見える。
 
 並べ方と上限:
@@ -216,6 +218,7 @@
     - 一覧の行へ移動する: `event_ids` のうち、一覧の行の id（`event:<id>`）として `listedIds` に最初に見つかるものへ移動する。見つからなければ出さない。
   - 上限を超えたら、総数と「新しい 20 件を表示しています」を出す。`config_changes_truncated` が真なら、「古い構成変更は省きました」を出す。
   - 空の配列なら、「この期間に構成変更はありません」（起点があれば「起点までに」）と出す。None なら「判定していません」と出す（パターンのカードと同じ考え方）。種別に `event` が無ければ、カードを出さない。
+- **足した行の注記:** `config_change_items_truncated` が真なら、「構成変更の行は、起点（または期間の終わり）に近い N 件だけを一覧に出しています」と出す（N は `config_change_items_shown`）。
 - **行の印:** 時系列の一覧の行に、「構成変更」の印（バッジ）を付ける。色はトークンを使い、ダークモードで確かめる。印の名前（`aria-label` など）でも、スクリーンリーダーに伝わるようにする。
 - **スキーマ:** zod に、足した項目を既定値付きで足す。
   - `config_change_kind`: `.nullable().optional()`
@@ -262,6 +265,7 @@
 - モックとシード。
 - ユーザーガイドの「外部に渡すときの確認」に利用者名を足すこと。CHANGELOG。
 - `docs/features/config-change-detection.md` を実装に合わせて直す。タスクの操作名の確認（8 章）の結果も反映する。
+- 画面の件数の文言（`TimelinePanel.tsx` の「N 件中 M 件」「N 件の出来事」）を、今の行の数（`len(items) - config_change_items_shown`）で出す。PR B だけをマージしても、件数が合わなくならないようにするための最小限の変更である。足した行の注記・カード・行の印は PR C で作る。
 - テスト（`tests/test_incident_timeline_config_changes.py`。PostgreSQL でも流すテストは、名前に `postgres` と `config_change` を含め、`.github/workflows/ci.yml` の `-k` の条件に `config_change` を足す）:
   - 0 点の構成変更が、一覧とカードに出ること。最小スコア以上の構成変更にも印が付くこと。
   - 起点より後の、最小スコアに届かない構成変更は出ないこと。起点ちょうど（マイクロ秒の端数あり）の行は出ること。
@@ -319,6 +323,16 @@
     1. vCenter に触れずに、タスクのコレクタが動いている環境の DB で `SELECT DISTINCT event_type FROM events WHERE event_type LIKE 'task.success.%'` を流す。
     2. 足りなければ、実機の vCenter の最近のタスクの `descriptionId` を、読み取りだけで一覧にする。
     3. 結果を 2 章の表に反映する（出ない操作は外すか、注記する）。
+  - **確かめた結果（2026-11-24、利用者の許可を得て読み取りだけで実施）:**
+    - 開発環境の DB（`main` の PR #367 の時点のもの）は、タスクのコレクタ（PR #370）より前なので、`task.*` の行が無かった。
+    - 実機の vCenter のタスクの履歴は 10 件だけだった（期間を指定しなくても同じ）。構成変更の操作は無かった。現れた `descriptionId` は次の 4 種類で、どれもタスクの説明の一覧の形と完全に一致した。
+      - `com.vmware.vcIntegrity.lifecycle.ScheduledHclValidationTask`
+      - `com.vmware.vcIntegrity.SigUpdateTask`
+      - `Datacenter.ExecuteVmPowerOnLRO`
+      - `Datacenter.powerOnVm`
+      - vcsim の形（Go の関数名から作る）とは違い、本書の前提を支える。
+    - DB の構成変更のイベントは、`VmReconfiguredEvent` の 3 件だけだった（約 3 万 2 千件のうち）。3 件とも `chain_id` と利用者を持ち、同じ `chain_id` のタスクの開始イベント（`vim.event.TaskEvent`）があった。開始イベントのメッセージは 3 件とも、説明の一覧の `VirtualMachine.reconfigure` の表示名（Reconfigure virtual machine）を含んでいた。タスクの `eventChainId` は開始イベントの `chainId` と同じなので、VM の再構成のイベントとタスクは chain で 1 件にまとまる。
+    - 確かめられなかったこと: `VirtualMachine.reconfigure` 以外の操作の名前と、同期のメソッドがタスクの履歴に残るか。表は変えず、このリスクを残す。
 - **件数:** VM の再構成を頻繁に行う製品（バックアップや監視のツールなど）がある環境では、構成変更の行が多くなる。
   - 2,000 行を超えたら、新しいものだけを使う。ビューは 422 にならない。
   - 一覧に入る足した行は 50 件までで、今の行の枠は使わない。
