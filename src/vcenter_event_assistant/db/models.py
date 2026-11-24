@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -211,6 +212,7 @@ class LogRecord(Base):
         UniqueConstraint("vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset", name="uq_log_source_position"),
         Index("ix_log_vcenter_effective_time", "vcenter_id", "effective_at", "id"),
         Index("ix_log_effective_time_id", "effective_at", "id"),
+        Index("ix_log_vcenter_pattern_effective", "vcenter_id", "pattern_key", "effective_at"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vcenters.id", ondelete="CASCADE"))
@@ -225,6 +227,53 @@ class LogRecord(Base):
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     severity: Mapped[str | None] = mapped_column(String(64), nullable=True)
     message: Mapped[str] = mapped_column(Text)
+    pattern_key: Mapped[str | None] = mapped_column(String(32))
+    pattern_version: Mapped[int | None] = mapped_column(SmallInteger)
+
+
+class LogPattern(Base):
+    __tablename__ = "log_patterns"
+    __table_args__ = (
+        UniqueConstraint("vcenter_id", "pattern_key", name="uq_log_patterns_vcenter_key"),
+        Index("ix_log_patterns_vcenter_first", "vcenter_id", "first_seen_at"),
+        Index("ix_log_patterns_vcenter_warning_first", "vcenter_id", "warning_first_seen_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vcenters.id", ondelete="CASCADE"))
+    log_kind: Mapped[str] = mapped_column(String(64))
+    pattern_key: Mapped[str] = mapped_column(String(32))
+    pattern_version: Mapped[int] = mapped_column(SmallInteger)
+    template: Mapped[str] = mapped_column(String(500))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    total_count: Mapped[int] = mapped_column(BigInteger)
+    max_severity_rank: Mapped[int] = mapped_column(Integer)
+    warning_first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    warning_first_source_id: Mapped[str | None] = mapped_column(String(128))
+
+
+class LogPatternBaseline(Base):
+    __tablename__ = "log_pattern_baselines"
+
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vcenters.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    log_kind: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pattern_version: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LogPatternBackfillState(Base):
+    __tablename__ = "log_pattern_backfill_state"
+
+    pattern_version: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    upper_id: Mapped[int | None] = mapped_column(BigInteger)
+    last_id: Mapped[int] = mapped_column(BigInteger)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pending_upper_id: Mapped[int | None] = mapped_column(BigInteger)
+    pending_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # タイムライン表示（incident_timeline_view._collect_logs）の、error 以上のログを期間で絞る問い合わせ用。

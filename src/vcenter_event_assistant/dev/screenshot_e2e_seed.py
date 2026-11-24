@@ -28,6 +28,7 @@ from vcenter_event_assistant.db.models import (
     EventEntity,
     EventRecord,
     EventTypeGuide,
+    LogPatternBackfillState,
     LogRecord,
     MetricSample,
     VCenter,
@@ -42,6 +43,9 @@ from vcenter_event_assistant.mocks.mock_inventory import (
 )
 from vcenter_event_assistant.plugins.builtin import EventsCollector, TasksCollector
 from vcenter_event_assistant.rules.notable import final_notable_score
+from vcenter_event_assistant.services.log_patterns.ledger import update_ledger
+from vcenter_event_assistant.services.log_patterns.masking import MASK_VERSION, mask_message, pattern_key
+from vcenter_event_assistant.settings_binding import require_settings
 
 _EVENT_TYPES = (
     "vim.event.ScreenshotDemoEvent",
@@ -129,7 +133,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
             ),
         )
 
-        _seed_timeline_demo(session, vc.id, now)
+        await _seed_timeline_demo(session, vc.id, now)
 
         # グラフタブはキー一覧の先頭（`datastore.space.used_bytes`）が既定選択になるため、その系列を投入する。
         _doc_metric_key = "datastore.space.used_bytes"
@@ -191,7 +195,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         )
 
 
-def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datetime) -> None:
+async def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datetime) -> None:
     """タイムライン用のデモ行（イベント・メトリクス・ログ）を足す。"""
 
     def ago(minutes: float) -> datetime:
@@ -284,21 +288,45 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
         (39, "demo-esxi-01", "vmkernel", "error", "（デモ）ストレージへの応答が遅れています"),
         (38, "demo-esxi-01", "vmkernel", "error", "（デモ）ストレージへの応答が遅れています"),
         (28, "demo-esxi-02", "hostd", "critical", "（デモ）管理サービスが応答しません"),
+        # ホストのエラー（33 分前）に先立ち、同じ型が info から初めて warning になる。
+        (49, "demo-esxi-01", "vmkernel", "info", "（デモ）ストレージの再試行に 110ms かかりました"),
+        (47, "demo-esxi-01", "vmkernel", "warning", "（デモ）ストレージの再試行に 523ms かかりました"),
+        (44, "demo-esxi-01", "vmkernel", "warning", "（デモ）ストレージの再試行に 785ms かかりました"),
     )
+    # デモだけの DB では埋め戻し済みとして始める。
+    has_existing_logs = await session.scalar(select(LogRecord.id).limit(1)) is not None
+    templates = {}
+    records = []
     for i, (minutes, host, kind, severity, message) in enumerate(logs):
-        session.add(
-            LogRecord(
-                vcenter_id=vcenter_id,
-                collector_id="demo.logs",
-                source_id=f"demo-source-{host}",
-                host=host,
-                log_kind=kind,
-                file_generation="demo",
-                byte_offset=i * 200,
-                occurred_at=ago(minutes),
-                collected_at=ago(minutes),
-                effective_at=ago(minutes),
-                severity=severity,
-                message=message,
-            ),
-        )
+        at = ago(minutes)
+        template = mask_message(message)
+        key = pattern_key(kind, template)
+        templates[key] = template
+        records.append(LogRecord(
+            vcenter_id=vcenter_id,
+            collector_id="demo.logs",
+            source_id=f"demo-source-{host}",
+            host=host,
+            log_kind=kind,
+            file_generation="demo",
+            byte_offset=i * 200,
+            occurred_at=at,
+            collected_at=at,
+            effective_at=at,
+            severity=severity,
+            message=message,
+            pattern_key=key,
+            pattern_version=MASK_VERSION,
+        ))
+    session.add_all(records)
+    await session.flush()
+    started_at = now - timedelta(days=require_settings().log_pattern_warmup_days + 1)
+    await update_ledger(session, records, templates, started_at=started_at)
+
+    if not has_existing_logs:
+        state = await session.get(LogPatternBackfillState, MASK_VERSION)
+        if state is not None and state.pending_upper_id is None:
+            max_id = max(record.id for record in records)
+            state.upper_id = state.last_id = state.pending_upper_id = max_id
+            state.pending_recorded_at = now
+            state.completed_at = now

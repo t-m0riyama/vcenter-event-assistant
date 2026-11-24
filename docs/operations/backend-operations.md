@@ -40,7 +40,8 @@
 - `poll_perf`（メトリクス収集）
 - `inventory_sync`（インベントリの関係を収集。`INVENTORY_SYNC_ENABLED=true` のときに登録）
 - `evaluate_alerts`（アラート評価）
-- `purge_metrics`（古いデータ削除、6時間ごと）
+- `log_pattern_backfill`（ログの型の埋め戻しと追いつき、5 分ごと。1 回で最大 50,000 行）
+- `purge_metrics`（古いログ・型の台帳など、保持期限を超えたデータの削除。既定は 6 時間ごと）
 - `digest_daily` / `digest_weekly` / `digest_monthly`（有効化時のみ）
 
 正常サイン:
@@ -52,6 +53,12 @@
 
 - `event poll failed` / `perf poll failed` / `alert evaluation job failed` が連続発生
 - 想定時刻に `digest created` が出ない
+- `log pattern backfill failed` が連続発生
+
+型の埋め戻しは、初回の実行でログの最大 id とその観測時刻を記録する。
+記録から 270 秒以上たった実行で境界を確定し、処理を始める。進捗は
+`log_pattern_backfill_state` の `last_id` と `upper_id` で見られる。完了すると
+`completed_at` が入り、その後も旧コードで取り込まれた行があれば追いつきで型を付ける。
 
 ### 2.4 設定依存の監視ポイント
 
@@ -178,6 +185,18 @@
 - アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
 
 - インベントリは `EVENT_RETENTION_DAYS`（既定 7 日）を使う。週次の容量点検では、期限を超えた閉じた関係、見えなくなった管理対象、成功した観測の記録が削除されているかも確認する。開いている関係と見えている管理対象は、収集を停止しても残る。
+
+**ログと型の台帳の保持:**
+
+- `LOG_RETENTION_DAYS`（既定 7 日）でログ本文の保持期間を設定する。
+- `LOG_PATTERN_RETENTION_DAYS`（既定 90 日）で、型を最後に見てから台帳に残す日数を設定する。
+  `LOG_RETENTION_DAYS` 以上か `0` を指定する。`0` の場合は、期間による削除を行わない。
+- `LOG_PATTERN_MAX_PER_VCENTER`（既定 20,000）を超えた場合は、最終観測が古い型から削除する。
+  ログの保持期間内の型と、ログにキーが残る型は削除の対象外なので、台帳が上限を超えることがある。
+- `LOG_PATTERN_WARMUP_DAYS`（既定 3 日）は、出どころごとの慣らしの期間を設定する。
+  埋め戻しの完了後、出どころの台帳を開始した時刻からこの日数が過ぎて初めて警告以上で出た型を判定できる。
+
+台帳には伏せ方を適用した型を保存する。ホスト名や VM 名など、型に残ったログの語は本文の保持期間を過ぎても台帳に残る。
 
 **スナップショットの保存結果の保持期間:**
 
@@ -627,6 +646,21 @@ docker compose run --rm app vcenter-event-assistant-admin create-user admin --ro
   - `log_records` の vCenter 付きの式の索引: PostgreSQL 16 で 605 万行 5.9 秒、SQLite で 30 万行 2.9 秒
   - `metric_samples` の vCenter・指標・時刻・値・moid・名前の索引（SQLite だけ）: SQLite で 243 万行 25〜34 秒
 
+`b1c2d3e4f5a6`（ログの型の列・索引と台帳）を開発機で計測した。SQLite は 100 の出どころを持つログを使用した。PostgreSQL 16 は Docker 上で、605 万行（`log_records` 4.2 GB）を使用した。
+
+| 処理 | SQLite（30 万行） | PostgreSQL 16（605 万行） |
+| --- | ---: | --- |
+| 索引 `(vcenter_id, pattern_key, effective_at)` の作成 | 0.32 秒 | 9.5 秒 |
+| 出どころの集計（`DISTINCT`） | 0.11 秒（開始行の作成を含む） | 2.8 秒 |
+| 移行全体 | 0.46 秒 | 15.1 秒 |
+
+移行全体の時間にバックアップは含まない。
+
+SQLite での埋め戻しは 50,000 行で 14.53 秒、キーが付いた 5,000 行の追いつきは 0.08 秒だった。
+伏せ方だけを 1 万行に適用する時間は 0.56 秒だった。
+PostgreSQL 16 での埋め戻しは 1 回 50,000 行で 20.9〜21.8 秒だった。605 万行では 121 回、5 分おきの実行で約 10 時間かかる。
+追いつきは、キーが付いた 5,000 行で 0.03 秒、新しい行が無い場合は 0.01 秒だった。
+
 データを書き換えるマイグレーションも、終わるまでアプリは起動しない:
 
 - `b5c6d7e8f9a0`（指標名 `host.disk.usage_pct` を `host.disk.usage_kbps` に付け替える）: `metric_samples` のうち、この指標の行だけを UPDATE する。所要時間は計測していない。行数は `SELECT count(*) FROM metric_samples WHERE metric_key = 'host.disk.usage_pct'` で確かめられる
@@ -637,6 +671,12 @@ docker compose run --rm app vcenter-event-assistant-admin create-user admin --ro
 2. アプリケーションプロセスを再起動する
 3. `GET /health` を再確認する
 4. ジョブログの異常が収束したことを確認する
+
+ログの型を付ける前のコードが稼働を続けている間に取り込んだログには、型のキーが入らない。
+移行済みの DB で新しいコードを稼働させると、定期ジョブが追いついて型を付ける。
+旧版のプロセスを起動し直す場合、そのコードが移行後のリビジョンを認識できなければ起動時の確認で止まる。
+型の移行を直前の版（`a0b1c2d3e4f5`）までダウングレードすると、ログ本文は残り、型のキーと台帳は消える。
+再度アップグレードしたときは、保持されているログから台帳を作り直す。
 
 ## 6. 関連ドキュメント
 
