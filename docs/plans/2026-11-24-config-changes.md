@@ -1,6 +1,6 @@
 # 構成変更を目立たせる（タイムライン）
 
-最終更新: 2026-11-24（PR C レビュー中）
+最終更新: 2026-11-25（全 PR マージ済み）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 2a」（構成変更の追跡の第 1 段）にあたる。すでに集めている構成変更のイベントとタスクを、タイムラインで目立たせる。[AI活用アイデア20案](2026-05-07-ai-idea-backlog-20.md) の 9 番「変更イベント相関分析」と同じ方向である。Issue は起票していない。
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | A | 本書 | マージ済み [PR #374](https://github.com/t-m0riyama/vcenter-event-assistant/pull/374) |
 | B | 構成変更の定義と API（ハイライト・行の印・出力） | マージ済み [PR #375](https://github.com/t-m0riyama/vcenter-event-assistant/pull/375) |
-| C | 画面（ハイライトのカードと行の印）と文書 | レビュー中 |
+| C | 画面（ハイライトのカードと行の印）と文書 | マージ済み [PR #376](https://github.com/t-m0riyama/vcenter-event-assistant/pull/376) |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
