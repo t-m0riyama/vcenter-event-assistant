@@ -40,6 +40,7 @@ from vcenter_event_assistant.mocks.mock_inventory import (
     SCREENSHOT_VCENTER_NAME,
     SCREENSHOT_VMS,
 )
+from vcenter_event_assistant.plugins.builtin import EventsCollector, TasksCollector
 from vcenter_event_assistant.rules.notable import final_notable_score
 
 _EVENT_TYPES = (
@@ -196,7 +197,7 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
     def ago(minutes: float) -> datetime:
         return now - timedelta(minutes=minutes)
 
-    # 既定の期間（直近 1 時間）に収まるよう 6〜54 分前に置く。
+    # 既定の期間（直近 1 時間）に収まるよう、タイムライン用の行を 6〜54 分前に置く。
     # (何分前, 種別, 対象, スコア, 重大度, メッセージ)。同じ種別・同じ対象の連続（2 件）を 1 組含む。
     events = (
         (46, _EVENT_TYPES[1], "demo-vm-01", 60, "warning", "（デモ）仮想マシンの状態が変わりました"),
@@ -207,6 +208,18 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
         # 切断の行は既存のイベントより前に置き、通常の採点を使う。
         *((minutes, "vim.event.HostConnectionLostEvent", "demo-esxi-01", None, "info",
            "（デモ）ホストと vCenter の接続が切れました") for minutes in (54, 51, 48)),
+    )
+    # ホストのエラー（33 分前）より前に構成変更を入れる。
+    config_changes = (
+        (53, "vim.event.EnteredMaintenanceModeEvent", "demo-esxi-01", "メンテナンスモードに入りました", None),
+        (50, "vim.event.ExitMaintenanceModeEvent", "demo-esxi-01", "メンテナンスモードを出ました", None),
+        (45, "vim.event.VmReconfiguredEvent", "demo-vm-01", "仮想マシンを再構成しました", 9_003_001),
+        (44, "task.success.VirtualMachine.reconfigure", "demo-vm-01", "再構成のタスクが完了しました", 9_003_001),
+    )
+    config_metadata = {event_type: chain_id for _, event_type, _, _, chain_id in config_changes}
+    events += tuple(
+        (minutes, event_type, entity, 0, "info", f"（デモ）{message}")
+        for minutes, event_type, entity, message, _ in config_changes
     )
     host_moids = {name: moid for moid, name in SCREENSHOT_HOSTS}
     vm_moids = {name: moid for moid, name in SCREENSHOT_VMS}
@@ -219,10 +232,15 @@ def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datet
         session.add(
             EventRecord(
                 vcenter_id=vcenter_id,
+                collector_id=(
+                    TasksCollector.manifest.id if event_type.startswith("task.") else EventsCollector.manifest.id
+                ),
                 occurred_at=ago(minutes),
                 event_type=event_type,
                 message=message,
                 severity=severity,
+                user_name="demo-operator" if event_type in config_metadata else None,
+                chain_id=config_metadata.get(event_type),
                 entity_name=entity,
                 entity_type=entity_type,
                 entity_moid=entity_moid,

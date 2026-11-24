@@ -25,6 +25,7 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineViewResponse,
     TimelineSource,
 )
+from vcenter_event_assistant.rules.config_changes import CONFIG_CHANGE_LABELS
 from vcenter_event_assistant.services.incident_timeline_view import (
     OVERVIEW_FIELDS,
     select_without_anchor,
@@ -85,6 +86,7 @@ _ITEM_COLUMNS = (
     "continues_from_before",
     "continues_after",
     "time_zone",
+    "config_change_kind",
 )
 _TEXT_COLUMNS = frozenset(
     (
@@ -99,6 +101,7 @@ _TEXT_COLUMNS = frozenset(
         "alert_state",
         "metric_key",
         "entity_moid",
+        "config_change_kind",
     )
 )
 
@@ -234,9 +237,11 @@ def _overview(result: IncidentTimelineViewResponse) -> list[str]:
         for item in result.omitted_sources
     )
     counts = Counter(item.kind for item in result.items)
-    count_label = "（表示した範囲の件数）" if result.truncated else ""
-    return [
-        f"- 出来事: {len(result.items)} 件 / 総数 {result.total_items} 件",
+    count_label = "（表示した範囲の件数）" if result.truncated or result.config_change_items_truncated else ""
+    added_count = result.config_change_items_shown
+    shown = len(result.items) - added_count
+    lines = [
+        f"- 出来事: {shown} 件 / 総数 {result.total_items} 件",
         f"- 打ち切り: {'あり' if result.truncated else 'なし'}",
         f"- 省いた種別: {omitted or '-'}",
         f"- 種類ごとの件数{count_label}: "
@@ -244,6 +249,13 @@ def _overview(result: IncidentTimelineViewResponse) -> list[str]:
             f"{label} {counts[source]} 件" for source, label in _SOURCES.items()
         ),
     ]
+    if added_count:
+        lines.append(f"- 追加した構成変更の行: {added_count} 件")
+    if result.config_change_items_truncated:
+        lines.append(
+            f"- 構成変更の行は起点（または期間の終わり）に近い {added_count} 件だけを一覧に表示"
+        )
+    return lines
 
 
 def _highlights(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[str]:
@@ -289,6 +301,39 @@ def _highlights(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[st
         lines.append(f"- 総数: {highlights.detected_patterns_total} 件")
     omitted = "、".join(_code(pattern) for pattern in highlights.omitted_patterns)
     lines.append(f"- 判定を省いたパターン: {omitted or '-'}")
+    lines.extend(("", "### 構成変更", ""))
+    lines.extend(_config_changes_highlight(result, zone))
+    return lines
+
+
+def _config_changes_highlight(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[str]:
+    highlights = result.highlights
+    changes = highlights.config_changes
+    if changes is None:
+        return ["判定していません（この機能の前に保存した結果、または種別にイベントが無い）"]
+
+    lines = []
+    for change in changes:
+        time = _time(change.first_utc, zone)
+        if change.first_utc != change.last_utc:
+            time += f" ～ {_time(change.last_utc, zone)}"
+        users = "、".join(_code(name) for name in change.user_names) or "-"
+        lines.append(
+            f"- {time} / {_code(change.label)} / {_code(change.entity_name or change.entity_moid)}"
+            f" / {_code(change.vcenter_name)} / {users} / {change.event_count} 件"
+        )
+    if not changes:
+        lines.append("なし")
+    counts = "、".join(
+        f"{_code(CONFIG_CHANGE_LABELS.get(kind, kind))} {count} 件"
+        for kind, count in highlights.config_change_counts.items()
+    )
+    lines.extend((
+        "",
+        f"- 種類ごとの件数: {counts or '-'}",
+        f"- 表示の上限を超えた件数: {max(0, highlights.config_changes_total - len(changes))} 件",
+        f"- 読み込み上限による打ち切り: {'あり' if highlights.config_changes_truncated else 'なし'}",
+    ))
     return lines
 
 
@@ -316,20 +361,29 @@ def _notable_table(
     items = _notable_items(result.items)
     count = len(result.items)
     if result.truncated:
+        added_count = result.config_change_items_shown
+        displayed = f"表示した {count - added_count} 件"
+        if added_count:
+            displayed += f"と構成変更の追加 {added_count} 件"
         included = (
             "を ZIP の items.csv に入れた"
             if export_format == "zip"
             else "は ZIP の出力にある"
         )
         summary = (
-            f"総数 {result.total_items} 件のうち、表示した {count} 件{included}。"
+            f"総数 {result.total_items} 件のうち、{displayed}{included}。"
             f"報告書の表はそのうち {len(items)} 件"
         )
     else:
         included = (
             "ZIP の items.csv にある" if export_format == "zip" else "ZIP の出力にある"
         )
-        summary = f"全 {count} 件のうち {len(items)} 件。全件は {included}"
+        if result.config_change_items_truncated:
+            summary = f"一覧の {count} 件のうち {len(items)} 件。一覧に表示した行は {included}"
+        else:
+            summary = f"全 {count} 件のうち {len(items)} 件。全件は {included}"
+    if result.config_change_items_truncated:
+        summary += "。打ち切った構成変更の行は CSV に含まれません"
     rows = [
         summary,
         "",

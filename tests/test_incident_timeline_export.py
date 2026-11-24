@@ -257,6 +257,7 @@ async def test_saved_report_and_archive(viewer_client: AsyncClient) -> None:
         "continues_from_before": "",
         "continues_after": "",
         "time_zone": ZONE,
+        "config_change_kind": "",
     }
     (overview,) = list(
         csv.DictReader(io.StringIO(files["overview.csv"].decode("utf-8-sig")))

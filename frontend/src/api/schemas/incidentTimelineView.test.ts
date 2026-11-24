@@ -19,6 +19,7 @@ describe('incidentTimelineViewResponseSchema', () => {
       highlights: {},
     })
     expect(parsed.items[0].count).toBe(1)
+    expect(parsed.config_change_items_shown).toBe(0)
     expect(parsed.highlights.top_entities).toEqual([])
     expect(parsed.highlights.detected_patterns).toEqual([])
     expect(parsed.highlights.detected_patterns_total).toBe(0)

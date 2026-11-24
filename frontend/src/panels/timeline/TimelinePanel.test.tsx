@@ -960,6 +960,28 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(await screen.findByRole('note')).toHaveTextContent('1500 件中 3 件を表示しています。期間や対象を絞ってください')
   })
 
+  it.each([false, true])('追加した構成変更の行を表示件数から除く（truncated=%s）', async (truncated) => {
+    setup()
+    renderTimeline()
+    const base = populated()
+    const configChange = { ...base.items[0], id: 'event:50', title: 'vim.event.VmReconfiguredEvent', score: 0 }
+    await answer(0, {
+      ...base,
+      items: [...base.items, configChange],
+      total_items: truncated ? 500 : 3,
+      truncated,
+      config_change_items_shown: 1,
+    })
+
+    await screen.findByText(configChange.title)
+    expect(screen.getByRole('status', { name: 'タイムラインの読み込み' })).toHaveTextContent(
+      truncated ? '500 件中 3 件の出来事を表示しています。' : '3 件の出来事を表示しています。',
+    )
+    if (truncated) {
+      expect(screen.getByRole('note')).toHaveTextContent('500 件中 3 件を表示しています。')
+    }
+  })
+
   it('期間内に出来事が無いときは空の状態と「期間を広げる」を出し、押すと期間が広がる', async () => {
     setup()
     renderTimeline()
