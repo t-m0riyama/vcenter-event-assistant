@@ -31,6 +31,7 @@ from vcenter_event_assistant.services.incident_timeline_view import (
     select_without_anchor,
 )
 from vcenter_event_assistant.services.log_export import neutralize_csv_formula
+from vcenter_event_assistant.services.log_patterns.severity import severity_name
 
 ExportFormat = Literal["md", "zip"]
 ViewRequest = IncidentTimelineViewRequest | IncidentTimelineSavedViewRequest
@@ -287,6 +288,8 @@ def _highlights(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[st
         ]
         or ["なし"]
     )
+    lines.extend(("", "### 初めて警告以上で出たログの型", ""))
+    lines.extend(_new_log_patterns_highlight(result, zone))
     lines.extend(("", "### 検知した障害パターン", ""))
     lines.extend(
         f"- {_code(pattern.title)} / {_code(pattern.entity_name or pattern.entity_moid)} / "
@@ -303,6 +306,39 @@ def _highlights(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[st
     lines.append(f"- 判定を省いたパターン: {omitted or '-'}")
     lines.extend(("", "### 構成変更", ""))
     lines.extend(_config_changes_highlight(result, zone))
+    return lines
+
+
+def _new_log_patterns_highlight(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[str]:
+    highlights = result.highlights
+    if highlights.log_patterns_backfill_pending:
+        return ["台帳の埋め戻し中のため、判定していません。"]
+    patterns = highlights.new_log_patterns
+    if patterns is None:
+        return ["判定していません（この機能の前に保存した結果、または種別にログが無い）"]
+
+    lines = [
+        f"- {_time(pattern.first_utc, zone)} / {_code(pattern.template)} / {_code(pattern.log_kind)}"
+        f" / {_code(pattern.vcenter_name)} / {'、'.join(_code(host) for host in pattern.hosts)}"
+        f" / {pattern.count} 件 / 最大重大度 {severity_name(pattern.max_severity_rank)}"
+        for pattern in patterns
+    ] or ["なし"]
+    if highlights.new_log_patterns_total > len(patterns):
+        lines.append(f"- 総数 {highlights.new_log_patterns_total} 件")
+    warmups = highlights.log_patterns_warming_up
+    if warmups:
+        lines.extend(("", "慣らしの期間にあるため判定から除いた出どころ（最大 20 件）"))
+        for source in warmups:
+            end = _time(source.warmup_ends_at, zone) if source.warmup_ends_at else "開始時刻の記録なし"
+            lines.append(
+                f"- {_code(source.vcenter_name)} / {_code(source.host or source.source_id)}"
+                f" / {_code(source.log_kind)} / {end}"
+            )
+        remaining = highlights.log_patterns_warming_up_total - len(warmups)
+        if remaining > 0:
+            lines.append(f"- ほかに {remaining} 件")
+    if highlights.new_log_patterns_out_of_retention:
+        lines.extend(("", "ログの保持期間で行が削除された型は、一覧に出ないことがあります。"))
     return lines
 
 

@@ -80,6 +80,7 @@ class DatabaseSettingsMixin(BaseModel):
     log_pattern_retention_days: int = Field(default=90, ge=0)
     log_pattern_max_per_vcenter: int = Field(default=20000, ge=1)
     log_pattern_warmup_days: int = Field(default=3, ge=0)
+    log_pattern_scan_max_rows: int = Field(default=500000, ge=1)
     metric_retention_days: int = Field(
         default=7,
         ge=1,

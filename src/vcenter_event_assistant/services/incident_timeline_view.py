@@ -23,7 +23,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
 
 from fastapi import HTTPException
-from sqlalchemy import DateTime, Integer, Row, String, and_, case, func, literal, or_, select, text, tuple_
+from sqlalchemy import DateTime, Integer, Row, String, and_, case, false, func, literal, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -85,6 +85,7 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
 from vcenter_event_assistant.services.event_patterns.definitions import BUILTIN_PATTERNS
 from vcenter_event_assistant.services.event_patterns.query import query_event_patterns
+from vcenter_event_assistant.services.log_patterns.timeline import collect_new_log_patterns
 from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive, equals_case_insensitive
 from vcenter_event_assistant.services.sql_time import (
@@ -939,6 +940,10 @@ async def _build_in_slot(
         top_entities=top_entities(merged),
         new_event_types=new_types,
     )
+    if "log" in requested:
+        await collect_new_log_patterns(
+            session, highlights, _log_filters(scope), from_utc=ft, to_utc=tt, vcenter_id=scope.vcenter_id,
+        )
     if "event" in requested:
         card_from = config_truncated_from or ft
         cards, counts = _summarize_config_changes(
@@ -1818,7 +1823,6 @@ def _log_filters(scope: _Scope) -> list[ColumnElement[bool]]:
         # 期間はイベントと同じ半開区間 [from, to)（ログの検索 API は to を含むが、俯瞰のバケットに揃える）。
         LogRecord.effective_at >= scope.from_utc,
         LogRecord.effective_at < scope.to_utc,
-        func.lower(func.trim(LogRecord.severity)).in_(_LOG_ERROR_SEVERITIES),
     ]
     if scope.vcenter_id is not None:
         clauses.append(LogRecord.vcenter_id == scope.vcenter_id)
@@ -1826,6 +1830,8 @@ def _log_filters(scope: _Scope) -> list[ColumnElement[bool]]:
         # ログには entity_name が無いので、対象の絞り込みは host に当てる。
         match_name = equals_case_insensitive if scope.entity_moid is not None else contains_case_insensitive
         clauses.append(match_name(LogRecord.host, scope.entity))
+    elif scope.entity_moid is not None:
+        clauses.append(false())
     return clauses
 
 
@@ -1845,7 +1851,10 @@ async def _collect_logs(session: AsyncSession, scope: _Scope) -> _Collected:
     """
     if scope.entity_moid is not None and scope.entity is None:
         return _Collected()
-    filters = _log_filters(scope)
+    filters = [
+        *_log_filters(scope),
+        func.lower(func.trim(LogRecord.severity)).in_(_LOG_ERROR_SEVERITIES),
+    ]
     base = (
         select(
             bucket_index_expr(

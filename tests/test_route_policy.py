@@ -71,6 +71,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("GET", "/api/events"): VIEWER,
     ("PATCH", "/api/events/{event_id}"): OPERATOR,
     ("GET", "/api/logs"): VIEWER,
+    ("GET", "/api/logs/patterns"): VIEWER,
     ("GET", "/api/logs/export.csv"): VIEWER,
     ("GET", "/api/metrics/catalog"): VIEWER,
     ("GET", "/api/metrics/keys"): VIEWER,

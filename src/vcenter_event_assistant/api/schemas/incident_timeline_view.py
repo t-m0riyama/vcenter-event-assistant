@@ -242,10 +242,42 @@ class IncidentTimelineConfigChange(BaseModel):
     event_ids: list[int] = Field(default_factory=list)
 
 
+class IncidentTimelineNewLogPattern(BaseModel):
+    vcenter_id: uuid.UUID
+    vcenter_name: str
+    pattern_key: str
+    log_kind: str
+    template: str
+    count: int
+    first_utc: UtcDateTime
+    max_severity_rank: int
+    hosts: list[str]
+    first_seen_at: UtcDateTime
+    warning_first_seen_at: UtcDateTime
+
+
+class IncidentTimelineLogPatternWarmup(BaseModel):
+    vcenter_id: uuid.UUID
+    vcenter_name: str
+    source_id: str | None
+    host: str | None
+    log_kind: str
+    warmup_ends_at: UtcDateTime | None
+
+
 class IncidentTimelineHighlights(BaseModel):
     first_signal: IncidentTimelineViewItem | None = None
     top_entities: list[IncidentTimelineTopEntity] = Field(default_factory=list)
     new_event_types: list[IncidentTimelineNewEventType] = Field(default_factory=list)
+    new_log_patterns: list[IncidentTimelineNewLogPattern] | None = None
+    new_log_patterns_total: int = 0
+    log_patterns_backfill_pending: bool = False
+    log_patterns_warming_up: list[IncidentTimelineLogPatternWarmup] = Field(default_factory=list)
+    log_patterns_warming_up_total: int = 0
+    new_log_patterns_out_of_retention: bool = Field(
+        default=False,
+        description="期間の始まりがログの保持期間より前で、行が削除された型は一覧に出ないことがある",
+    )
     detected_patterns: list[IncidentTimelineDetectedPattern] = Field(default_factory=list)
     detected_patterns_total: int = 0
     omitted_patterns: list[str] = Field(default_factory=list)
