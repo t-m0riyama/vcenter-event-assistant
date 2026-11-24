@@ -50,7 +50,7 @@ vCenter Event Assistant のフロントエンドは、以下の **6つのタブ*
 
 ### 🔌 API エンドポイント一覧（FastAPI）
 
-vCenter Event Assistant は以下の **11個のエンドポイントグループ**を提供し、定期実行ジョブで収集や集計を行う。
+以下に主な **10 個の API グループ**を示す。定期実行ジョブではデータの収集や集計を行う。
 
 #### イベント管理 (`/api/events`)
 
@@ -119,6 +119,19 @@ vCenter Event Assistant は以下の **11個のエンドポイントグループ
 | `DELETE` | `/event-score-rules/{rule_id}` | ルール削除 | 削除 → 関連イベントスコア再計算 | ❌ | DELETE + スコア更新 |
 | `POST` | `/event-score-rules/import` | JSON一括インポート | JSON解析・DB全置換 → 全イベントスコア再計算 | ❌ | DELETE/INSERT + 全スコア更新 |
 
+#### インシデント記録 (`/api/incidents`)
+
+| メソッド | エンドポイント | 説明 | 必要なロール |
+|--------|------------|------|----------|
+| `GET` | `/incidents`, `/incidents/{id}` | 一覧と詳細の取得 | viewer |
+| `POST` | `/incidents` | 作成と初回の紐付け | operator |
+| `PATCH` | `/incidents/{id}` | 件名・状態・担当・要約などの更新 | operator |
+| `DELETE` | `/incidents/{id}` | インシデントの削除 | admin |
+| `POST` | `/incidents/{id}/entries` | 経過のメモの追加 | operator |
+| `DELETE` | `/incidents/{id}/entries/{entry_id}` | 経過の本文の削除 | admin |
+| `POST` | `/incidents/{id}/{events,alerts,snapshots}` | イベント・通知・スナップショットの紐付け | operator |
+| `DELETE` | `/incidents/{id}/{events,alerts,snapshots}/{link_id}` | 紐付けの解除 | operator |
+
 #### システム (`/api/config`, `/api/health`)
 
 | メソッド | エンドポイント | 説明 | 返却内容 | LLM連携 | DB操作 |
@@ -154,6 +167,11 @@ vCenter Event Assistant は以下の **11個のエンドポイントグループ
 | **event_score_rules** | イベント種別スコア調整 | id, event_type, score_delta (加算値) | 手動削除まで保持（変更時は関連イベントスコア再計算） |
 | **event_type_guides** | イベント種別説明 | id, event_type, general_meaning, typical_causes, remediation, action_required | 手動削除まで保持 |
 | **digest_records** | 生成済みダイジェスト | id, period_start/end, kind (daily/weekly/monthly), body_markdown, status, error_message, llm_model | 手動削除まで保持 |
+| **incidents** | 障害ごとの対応状況と要約 | id, title, status, level, assignee, summary, resolved_at, revision | 解決から `INCIDENT_RETENTION_DAYS`（既定 90 日）。未解決は自動削除しない |
+| **incident_entries** | 経過のメモと操作の記録 | id, incident_id, kind, body, author, deleted_at | インシデントの削除に連動。個別削除では本文を空にする |
+| **incident_events** | 紐付けたイベントの写し | id, incident_id, event_id, vcenter_id, collector_id, vmware_key, occurred_at | 解除またはインシデントの削除まで保持 |
+| **incident_alerts** | 紐付けた通知履歴の写し | id, incident_id, alert_history_id, rule_id, occurred_at, context_key | 解除またはインシデントの削除まで保持 |
+| **incident_snapshots** | 保存済みスナップショットとの紐付け | id, incident_id, snapshot_id, added_by, added_at | 解除または参照先の削除まで保持。紐付けがある間はスナップショットの行と保存結果を自動削除しない |
 | **ingestion_state** | 取得進捗カーソル | id, vcenter_id, kind (event/metric), cursor_value | イベント・メトリクス再ポーリング時に更新 |
 
 ---

@@ -24,6 +24,8 @@ from vcenter_event_assistant.db.models import (
     DigestRecord,
     EventEntity,
     EventRecord,
+    Incident,
+    IncidentSnapshot,
     IncidentTimelineManualSnapshot,
     IngestionState,
     MetricSample,
@@ -310,6 +312,21 @@ async def purge_old_digest_records(session: AsyncSession, *, settings: Settings)
     return res.rowcount or 0
 
 
+async def purge_old_incidents(session: AsyncSession, *, settings: Settings) -> int:
+    """解決から保持期間を超えたインシデントを削除する。"""
+    days = settings.incident_retention_days
+    if days == 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    res = await session.execute(delete(Incident).where(Incident.resolved_at < cutoff))
+    return res.rowcount or 0
+
+
+_SNAPSHOT_IS_UNLINKED = ~select(IncidentSnapshot.id).where(
+    IncidentSnapshot.snapshot_id == IncidentTimelineManualSnapshot.id,
+).exists()
+
+
 async def purge_old_incident_timeline_snapshots(session: AsyncSession, *, settings: Settings) -> int:
     """保持期間を超えたインシデントタイムラインスナップショット行を削除する。"""
     days = settings.incident_timeline_snapshot_retention_days
@@ -319,6 +336,7 @@ async def purge_old_incident_timeline_snapshots(session: AsyncSession, *, settin
     res = await session.execute(
         delete(IncidentTimelineManualSnapshot).where(
             IncidentTimelineManualSnapshot.created_at < cutoff,
+            _SNAPSHOT_IS_UNLINKED,
         )
     )
     return res.rowcount or 0
@@ -327,7 +345,7 @@ async def purge_old_incident_timeline_snapshots(session: AsyncSession, *, settin
 async def purge_old_incident_timeline_snapshot_results(session: AsyncSession, *, settings: Settings) -> int:
     """保持期間を超えたスナップショットの保存結果（``result_payload``）だけを SQL の NULL にする。
 
-    行・``view_request_payload``・運用メモは残す。消したあとは ``has_result`` が false になり、
+    インシデントに紐付いたものは対象外。行・``view_request_payload``・運用メモは残す。消したあとは ``has_result`` が false になり、
     画面は保存した条件で再集計する。1 回の UPDATE で済ませ、結果の本体は読まない。
     ``None`` を値にすると JSON の null が入るので、``null()`` で SQL の NULL にする。
     """
@@ -339,6 +357,7 @@ async def purge_old_incident_timeline_snapshot_results(session: AsyncSession, *,
         update(IncidentTimelineManualSnapshot)
         .where(
             IncidentTimelineManualSnapshot.created_at < cutoff,
+            _SNAPSHOT_IS_UNLINKED,
             IncidentTimelineManualSnapshot.result_payload.is_not(None),
         )
         .values(result_payload=null())

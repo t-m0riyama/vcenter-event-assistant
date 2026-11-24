@@ -96,6 +96,11 @@ class DatabaseSettingsMixin(BaseModel):
         ge=0,
         description="Delete digest records older than this many days (created_at). 0 disables purge.",
     )
+    incident_retention_days: int = Field(
+        default=90,
+        ge=0,
+        description="解決からこの日数を過ぎたインシデントを削除する。0 で削除を無効にする。",
+    )
     incident_timeline_snapshot_retention_days: int = Field(
         default=90,
         ge=0,

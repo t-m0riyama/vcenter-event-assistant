@@ -38,6 +38,7 @@ from vcenter_event_assistant.services.ingestion import (
     purge_old_logs,
     purge_old_incident_timeline_snapshot_results,
     purge_old_incident_timeline_snapshots,
+    purge_old_incidents,
     purge_old_metrics,
 )
 from vcenter_event_assistant.services.inventory import (
@@ -135,6 +136,9 @@ async def purge_retention(settings: Settings) -> None:
             n_dg = await purge_old_digest_records(session, settings=settings)
             if n_dg:
                 logger.info("purged old digest records count=%s", n_dg)
+            n_inc = await purge_old_incidents(session, settings=settings)
+            if n_inc:
+                logger.info("purged old incidents count=%s", n_inc)
             n_sn = await purge_old_incident_timeline_snapshots(
                 session, settings=settings
             )

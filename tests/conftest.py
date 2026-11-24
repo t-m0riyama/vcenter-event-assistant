@@ -7,12 +7,14 @@ import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import uuid4
 
 import aiosqlite
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 # Settings の `.env` 読み込みを無効化（`src/.../settings.py` の `_settings_env_file` 参照）
 os.environ["VEA_PYTEST"] = "1"
@@ -37,7 +39,8 @@ from vcenter_event_assistant.api.auth_deps import session_cookie_name
 from vcenter_event_assistant.auth.service import session_policy
 from vcenter_event_assistant.auth.sessions import create_session
 from vcenter_event_assistant.auth.timeutil import utcnow
-from vcenter_event_assistant.db.models import User
+from vcenter_event_assistant.db import session as db
+from vcenter_event_assistant.db.models import Base, User
 from vcenter_event_assistant.db.session import get_engine, init_db, reset_db, session_scope
 from vcenter_event_assistant.db.startup_migration import run_startup_migration
 from vcenter_event_assistant.main import create_app
@@ -244,3 +247,29 @@ async def viewer_client(open_client) -> AsyncIterator[AsyncClient]:
 async def operator_client(open_client) -> AsyncIterator[AsyncClient]:
     async with open_client("operator") as ac:
         yield ac
+
+
+@pytest.fixture
+async def incident_db(request, monkeypatch):
+    if getattr(request, "param", "sqlite") == "sqlite":
+        yield
+        return
+    url = os.environ.get("VEA_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    schema = f"incident_{uuid4().hex}"
+    admin = create_async_engine(url)
+    async with admin.begin() as conn:
+        await conn.execute(text(f"CREATE SCHEMA {schema}"))
+    engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
+    monkeypatch.setattr(db, "_session_factory", async_sessionmaker(engine, expire_on_commit=False))
+    monkeypatch.setattr(db, "_isolated_memory_engine", None)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield
+    finally:
+        await engine.dispose()
+        async with admin.begin() as conn:
+            await conn.execute(text(f"DROP SCHEMA {schema} CASCADE"))
+        await admin.dispose()

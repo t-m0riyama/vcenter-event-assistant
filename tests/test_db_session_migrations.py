@@ -864,3 +864,89 @@ async def test_log_pattern_sqlite_migration_preserves_orphans(tmp_path, monkeypa
             assert await conn.scalar(text("SELECT count(*) FROM log_records")) == 2
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_incident_migration_round_trip(tmp_path, backend) -> None:
+    """直前の版から 5 表を作り、ダウングレード後に再移行できる。"""
+    import os
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from alembic import command
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.db.models import Incident
+
+    if backend == "postgres":
+        url = os.environ.get("VEA_TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    else:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'incident.db'}"
+    engine = create_async_engine(url)
+    cfg = alembic_config(settings=get_settings().model_copy(update={"database_url": url}))
+    previous = "b1c2d3e4f5a6"
+    tables = {"incidents", "incident_entries", "incident_events", "incident_alerts", "incident_snapshots"}
+
+    def migrate(conn, operation, revision):
+        _run_with_connection(conn, cfg, lambda cc: operation(cc, revision))
+
+    try:
+        async with engine.connect() as conn, conn.begin() as transaction:
+            if backend == "postgres":
+                schema = f"incident_migration_{uuid4().hex}"
+                await conn.execute(text(f"CREATE SCHEMA {schema}"))
+                await conn.execute(text(f"SET LOCAL search_path TO {schema}"))
+            await conn.run_sync(migrate, command.upgrade, previous)
+            for _ in range(2):
+                await conn.run_sync(migrate, command.upgrade, "head")
+
+                def schema_info(connection):
+                    inspector = inspect(connection)
+                    assert tables <= set(inspector.get_table_names())
+                    assert len(inspector.get_check_constraints("incidents")) == 2
+                    assert {tuple(i["column_names"]) for i in inspector.get_indexes("incidents")} == {
+                        ("status", "updated_at"), ("resolved_at",),
+                    }
+                    unique_columns = {
+                        "incident_events": ("incident_id", "vcenter_id", "collector_id", "vmware_key"),
+                        "incident_alerts": ("incident_id", "alert_history_id", "occurred_at"),
+                        "incident_snapshots": ("incident_id", "snapshot_id"),
+                    }
+                    for table in tables - {"incidents"}:
+                        indexes = {tuple(i["column_names"]) for i in inspector.get_indexes(table)}
+                        assert ("incident_id",) in indexes
+                        if table == "incident_snapshots":
+                            assert ("snapshot_id",) in indexes
+                        if table in unique_columns:
+                            assert unique_columns[table] in {
+                                tuple(u["column_names"]) for u in inspector.get_unique_constraints(table)
+                            }
+                        fks = inspector.get_foreign_keys(table)
+                        assert {fk["referred_table"] for fk in fks} == (
+                            {"incidents", "incident_timeline_manual_snapshots"}
+                            if table == "incident_snapshots" else {"incidents"}
+                        )
+                        assert all(fk["options"]["ondelete"] == "CASCADE" for fk in fks)
+
+                await conn.run_sync(schema_info)
+                if backend == "sqlite":
+                    ddl = await conn.scalars(text("SELECT sql FROM sqlite_master WHERE name IN "
+                                                  "('incident_entries','incident_events','incident_alerts','incident_snapshots')"))
+                    assert all("AUTOINCREMENT" in sql for sql in ddl)
+                now = datetime.now(timezone.utc)
+                await conn.execute(Incident.__table__.insert().values(
+                    title="再実行で残す", status="open", summary="", created_by="tester", updated_by="tester",
+                    created_at=now, updated_at=now,
+                ))
+                await conn.run_sync(migrate, command.stamp, previous)
+                await conn.run_sync(migrate, command.upgrade, "head")
+                assert await conn.scalar(text("SELECT title FROM incidents")) == "再実行で残す"
+                await conn.run_sync(migrate, command.downgrade, previous)
+                assert not tables & await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
+            await transaction.rollback()
+    finally:
+        await engine.dispose()

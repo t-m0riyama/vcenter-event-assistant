@@ -11,7 +11,7 @@
 | PR | 内容 | 状態 |
 |---|---|---|
 | A | 本書 | レビュー中 |
-| B | 表・移行・API・保持期間の削除 | 未着手 |
+| B | 表・移行・API・保持期間の削除 | レビュー中 |
 | C | 画面（インシデントのタブと、各画面からの追加）と文書 | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
@@ -141,7 +141,7 @@ CHECK 制約を 2 つ付ける。`status` が 3 つの語のどれかである�
 
 一意制約は `(incident_id, alert_history_id, occurred_at)`。id の再利用で別の通知を同じものと見なさないよう、発生時刻も含める。
 
-通知の対象の解決は、`api/routes/alerts.py` の `_resolve_history_entities` と `_history_item_to_read` の処理を、サービス（`services/alert_history_read.py`）に切り出して共用する。通知履歴の API の応答は変えない。vCenter の名前は、`vcenter_id` から `VCenter.name` を別に引く。`event_score` の通知と、7 日より古い通知では、対象名は NULL になる。
+通知の対象の解決は、`api/routes/alerts.py` の `_resolve_history_entities` と `_history_item_to_read` にあった対象解決の処理を、サービス（`services/alert_history_read.py`）に切り出して共用する。紐付けでは要求ごとにまとめて解決する。通知履歴の API の応答形式はルーターで組み立てる。vCenter の名前は、`vcenter_id` から `VCenter.name` を別に引く。`event_score` の通知と、7 日より古い通知では、対象名は NULL になる。
 
 **`incident_snapshots`**（紐付けたスナップショット）
 
@@ -204,6 +204,8 @@ CHECK 制約を 2 つ付ける。`status` が 3 つの語のどれかである�
 
 ### 要求と応答
 
+本文に未知の項目が含まれる場合、またはメモの本文が空白だけの場合は 422 を返す。
+
 スキーマは `api/schemas/incidents.py` に置く。時刻は UTC の ISO 8601 で返す。
 
 - **一覧 `GET`:** 引数は `status`（複数指定でき、既定は `open` と `monitoring`）、`q`（件名の部分一致、`contains_case_insensitive`）、`limit`（既定 50、最大 200）、`offset`。`updated_at` の新しい順。
@@ -229,7 +231,7 @@ CHECK 制約を 2 つ付ける。`status` が 3 つの語のどれかである�
 - **紐付けの共通の規則:**
   - 1 回に 101 件以上を送ると 422。
   - 同じ ID が 2 回以上あれば、最初の 1 回だけを扱う。
-  - 送られた順に処理し、上限に達した後の ID は `limit_exceeded` にする。
+  - 送られた順に処理する。元の行と紐付けの有無を確認した上で、未紐付けの ID に対しては紐付け数が上限に達していれば `limit_exceeded` にする。紐付け済みの ID は上限に達していても `already_linked` を返す。
   - 応答は `{"results": [{"id": ..., "result": "...", "link_id": ...}], "added": n}`。`link_id` は `added` と `already_linked` のときだけ入る。
 - **紐付けを外す `DELETE`:** `link_id` が、パスのインシデントの紐付けでなければ 404。
 - **メモの上限:** メモが 1,000 件に達したインシデントへのメモの追加は、409 と `X-VEA-Error-Code: incident_entry_limit` で断る。画面は「メモが上限に達しました。新しいインシデントを作ってください」と出す。自動の記録は上限に数えず、PATCH・紐付け・解除はいつでもできる。上限に達しても、解決にしたり紐付けを外したりできなくならないためである。
@@ -250,10 +252,10 @@ ID ごとの挿入は、それぞれ SAVEPOINT（`session.begin_nested()`）の�
 
 ### 書き込みの順序とロック
 
-インシデントへの書き込みの要求（PATCH、メモの追加と削除、紐付けと解除）は、最初の文で、インシデントの行を更新する。
+インシデントへの書き込みの要求（PATCH、メモの追加と削除、紐付けと解除、インシデントの削除）は、最初の文で値を据え置く UPDATE を流し、インシデントの行をロックする。
 
 ```sql
-UPDATE incidents SET updated_at = :now, updated_by = :name
+UPDATE incidents SET revision = revision
 WHERE id = :id [AND revision = :revision]   -- revision は PATCH のときだけ
 RETURNING id
 ```
@@ -264,7 +266,7 @@ RETURNING id
 
 最初に書き込むことで、同じインシデントへの書き込みの要求は、トランザクションの終わりまで順番に並ぶ。SQLite では最初の文で書き込みのロックを取るので、読んでから書くときの待ちの競合が起きない（1 章の楽観ロックの注意）。PostgreSQL では行のロックで並ぶ。このロックを取った後で、上限の件数を数え、PATCH の変更前の値を読み、経過の件数を確かめる。こうすると、同時の要求で上限を超えたり、変更前の値を取り違えたりしない。
 
-`revision` を変えるのは PATCH で項目を変えたときだけにする。紐付けとメモの追加では `updated_at` だけを変えるので、一覧の並びには反映されるが、ほかの人が開いている編集の画面は 409 にならない。
+`updated_at` と `updated_by` は、項目・紐付け・経過が実際に変わったときに更新する。値が同じ PATCH や、1 件も追加できなかった紐付けでは、どちらも据え置く。`revision` は PATCH で項目が変わったときだけ更新するため、紐付けやメモの変更は一覧の並びに反映され、開いている編集画面の保存も続けられる。
 
 ### 経過の自動の記録
 
