@@ -42,14 +42,10 @@
   color: var(--color-error);
 }
 
-/* 明暗どちらでも、赤い塗りには暗い文字色を使う。 */
+/* error より強く見せるため塗りつぶす。色は明暗どちらのテーマでも同じ。 */
 .badge--critical {
-  background: var(--color-error);
-  color: var(--color-text-primary);
-}
-
-html[data-theme='dark'] .badge--critical {
-  color: var(--color-background);
+  background: var(--color-critical);
+  color: var(--color-on-critical);
 }
 
 .score-badge {

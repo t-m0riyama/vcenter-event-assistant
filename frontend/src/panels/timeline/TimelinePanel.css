@@ -426,8 +426,8 @@
 }
 
 .timeline-badge--critical {
-  background: var(--color-error);
-  color: var(--color-on-primary);
+  background: var(--color-critical);
+  color: var(--color-on-critical);
 }
 
 .timeline-row__config-change {
