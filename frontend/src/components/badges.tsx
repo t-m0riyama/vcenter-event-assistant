@@ -3,7 +3,15 @@
 const SEVERITY_BADGE_CLASS: Record<string, string> = {
   info: 'badge--info',
   warning: 'badge--warning',
+  warn: 'badge--warning',
   error: 'badge--error',
+  err: 'badge--error',
+  critical: 'badge--critical',
+  panic: 'badge--critical',
+  fatal: 'badge--critical',
+  crit: 'badge--critical',
+  alert: 'badge--critical',
+  emerg: 'badge--critical',
 }
 
 /** 重大度バッジ。未知の値はニュートラル配色、未設定は「—」を表示する。 */

@@ -14,6 +14,7 @@ import {
   LOG_ITEM_EXAMPLE,
   METRIC_ITEM_EXAMPLE,
   METRIC_ITEM_LEGACY_EXAMPLE,
+  NEW_LOG_PATTERN_EXAMPLE,
   VIEW_RESPONSE_EXAMPLE,
 } from '../../test/timelineViewFixtures'
 import { TimelinePanel } from './TimelinePanel'
@@ -822,6 +823,85 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(await screen.findByText(/件数が多すぎるため判定しなかったパターンがあります.*apd-timeout/)).toBeInTheDocument()
   })
 
+  describe('初めて警告以上で出たログの型', () => {
+    const card = async () => within(await screen.findByRole('region', { name: '初めて警告以上で出たログの型' }))
+    const utcFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium', timeZone: 'UTC' })
+
+    it.each([
+      { highlights: { new_log_patterns: null }, message: '判定していません' },
+      {
+        highlights: { new_log_patterns: [], log_patterns_backfill_pending: true },
+        message: 'ログの型を埋め戻し中のため判定していません',
+      },
+      { highlights: { new_log_patterns: [] }, message: 'この期間に該当する型はありません' },
+    ])('判定の状態を表示する（$message）', async ({ highlights, message }) => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse({ highlights }))
+      expect((await card()).getByText(message)).toBeInTheDocument()
+    })
+
+    it('ログを選んでいない空の結果ではハイライトを表示しない', async () => {
+      window.history.replaceState(null, '', '/#/timeline?range=1h&sources=metric')
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      await screen.findByText('この期間に出来事はありません。')
+      expect(screen.queryByRole('region', { name: 'ハイライト' })).not.toBeInTheDocument()
+    })
+
+    it('慣らし中の出どころと保持期間の注記を表示する', async () => {
+      setup()
+      renderTimeline()
+      const warmingUp = Array.from({ length: 20 }, (_, i) => ({
+        vcenter_id: VC,
+        vcenter_name: 'vc-warmup',
+        source_id: `source-${i}`,
+        host: `esx-warmup-${i}`,
+        log_kind: 'hostd',
+        warmup_ends_at: '2026-03-23T10:00:00Z',
+      }))
+      await answer(0, emptyViewResponse({ highlights: {
+        new_log_patterns: [],
+        log_patterns_warming_up: warmingUp,
+        log_patterns_warming_up_total: 23,
+        new_log_patterns_out_of_retention: true,
+      } }))
+      const content = await card()
+      expect(content.getByText(/慣らし期間中/)).toBeInTheDocument()
+      expect(content.getByText(/esx-warmup-0.*vc-warmup.*hostd/)).toHaveTextContent(
+        utcFormat.format(new Date('2026-03-23T10:00:00Z')),
+      )
+      expect(content.getByText('ほかに 3 件')).toBeInTheDocument()
+      expect(content.getByText(/ログの保持期間/)).toBeInTheDocument()
+      expect(content.getByText('判定できた範囲に該当する型はありません')).toBeInTheDocument()
+    })
+
+    it('型を表示し、表示中の結果の期間でログを開き、最初の時刻を起点にできる', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse({ highlights: {
+        new_log_patterns: [NEW_LOG_PATTERN_EXAMPLE],
+        new_log_patterns_total: 4,
+      } }))
+      const content = await card()
+      expect(content.getByText('ほかに 3 件')).toBeInTheDocument()
+      const item = content.getByText('Storage retry took <DURATION>').closest('li')
+      expect(item).toHaveTextContent(/vmkernel.*esx01.example.com.*esx02.example.com.*vc-pattern.*3 件/)
+      expect(item).toHaveTextContent(utcFormat.format(new Date('2026-03-22T00:10:00Z')))
+      expect(item).toHaveTextContent('warning')
+      const href = content.getByRole('link', { name: /ログで開く/ }).getAttribute('href')!
+      expect(href.split('?')[0]).toBe('#/logs')
+      expect(Object.fromEntries(new URLSearchParams(href.split('?')[1]))).toEqual({
+        vcenter_id: VC, pattern_key: 'v1:retry',
+        from: '2026-03-22T00:00:00Z', to: '2026-03-22T01:00:00Z',
+      })
+      fireEvent.click(content.getByRole('button', { name: /ここを起点にする/ }))
+      await answer(1)
+      expect(harness.calls[1].body.anchor).toBe('2026-03-22T00:10:00.000Z')
+    })
+  })
+
   describe('構成変更のハイライトと一覧', () => {
     const card = async () => within(await screen.findByRole('region', { name: '構成変更' }))
     const highlights = (overrides: Record<string, unknown> = {}) => ({
@@ -1561,8 +1641,20 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       const highlights = await screen.findByRole('region', { name: 'ハイライト' })
       expect(within(highlights).getByRole('heading', { name: '最初の兆候' })).toBeInTheDocument()
       expect(within(highlights).queryByRole('heading', { name: '検知した障害パターン' })).not.toBeInTheDocument()
-      expect(within(highlights).getByText('判定していません')).toBeInTheDocument()
+      expect(within(within(highlights).getByRole('region', { name: '構成変更' })).getByText('判定していません')).toBeInTheDocument()
+      expect(within(highlights).queryByRole('region', { name: '初めて警告以上で出たログの型' })).not.toBeInTheDocument()
       expect(await rowButton(/VmPoweredOffEvent/)).toBeInTheDocument()
+    })
+
+    it.each([
+      { log_patterns_backfill_pending: true, new_log_patterns: null },
+      { log_patterns_backfill_pending: false, new_log_patterns: [] },
+    ])('保存結果にログの判定状態があれば種別の選択にかかわらず表示する（%j）', async (highlights) => {
+      const detail = detailOf({ result: emptyViewResponse({ highlights }) })
+      await openSnapshot(listItem(), detail)
+      await screen.findByRole('note', { name: '保存時点の内容' })
+      const card = await screen.findByRole('region', { name: '初めて警告以上で出たログの型' })
+      expect(card).toHaveTextContent(highlights.log_patterns_backfill_pending ? '埋め戻し中' : 'この期間に該当する型はありません')
     })
 
     it.each(['host-20', null, undefined])('保存済みの moid（%s）に置き換え、再集計にも使う', async (entity_moid) => {

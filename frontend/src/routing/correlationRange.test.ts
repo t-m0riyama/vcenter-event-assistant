@@ -14,6 +14,11 @@ import { parseAppHash } from './appHashRouting'
     expect(parseAppHash(window.location.hash).tab).toBe('events')
     expect(readCorrelationRange('events')).toEqual(range)
   })
+  it('ignores patternKey in event correlation links', () => {
+    const range = { vcenterId: 'vc-1', from: '2026-10-02T10:00:00Z', to: '2026-10-02T10:05:00Z' }
+    expect(correlationHash('events', { ...range, patternKey: 'v1:retry' })).toBe(correlationHash('events', range))
+  })
+
   it('rejects invalid or reversed ranges', () => {
     window.history.replaceState(null, '', '#/logs?vcenter_id=vc-1&from=bad&to=bad')
     expect(readCorrelationRange('logs')).toBeNull()

@@ -2,7 +2,9 @@
 import { Profiler } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { GENERIC_API_ERROR } from '../../api'
 import { LogsPanel } from './LogsPanel'
+import { NEW_LOG_PATTERN_EXAMPLE } from '../../test/timelineViewFixtures'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 
 /** 上のページ切り替え。下にも同じボタンと件数があるので、上に絞って探す。 */
@@ -30,6 +32,256 @@ function collectorResponse(status: 'failed' | 'ok') {
 }
 
 describe('LogsPanel', () => {
+  describe('型ごとの集計', () => {
+    const pattern = {
+      ...NEW_LOG_PATTERN_EXAMPLE,
+      last_utc: '2026-03-22T00:15:00Z',
+    }
+
+    const patternPage = (items = [pattern]) => response({ items, total: items.length, truncated: false, pending_count: 0 })
+    const busy = () => Promise.resolve(new Response('{}', { status: 503, headers: { 'Retry-After': '1' } }))
+    const linkedHash = '#/logs?vcenter_id=vc-1&from=2026-03-22T00:00:00Z&to=2026-03-22T01:00:00Z'
+
+    function renderPatterns({
+      linked = true,
+      patternKey,
+      timeZone = 'UTC',
+      patterns = () => response({ items: [pattern], total: 201, truncated: true, pending_count: 4 }),
+    }: { linked?: boolean; patternKey?: string; timeZone?: string; patterns?: (params: URLSearchParams) => Promise<Response> } = {}) {
+      localStorage.setItem('vea.displayTimeZone', timeZone)
+      if (linked) {
+        window.history.replaceState(null, '', linkedHash + (patternKey ? `&pattern_key=${encodeURIComponent(patternKey)}` : ''))
+      }
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        const { pathname, searchParams } = new URL(String(input), 'http://test')
+        if (pathname === '/api/vcenters') return response([{ id: 'vc-1', name: 'Lab' }, { id: pattern.vcenter_id, name: pattern.vcenter_name }])
+        if (pathname === '/api/plugins/collectors') return collectorResponse('ok')
+        if (pathname === '/api/logs/patterns') return patterns(searchParams)
+        return response({ items: [row], total: 1 })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const onError = vi.fn()
+      render(<TimeZoneProvider><LogsPanel onError={onError} /></TimeZoneProvider>)
+      const requests = (path: string) => fetchMock.mock.calls
+        .map(([input]) => new URL(String(input), 'http://test'))
+        .filter(({ pathname }) => pathname === path)
+      return { requests, patternRequests: () => requests('/api/logs/patterns'), onError }
+    }
+
+    const openPatterns = () => fireEvent.click(screen.getByRole('button', { name: '型ごと' }))
+    const advance = async (ms: number) => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+    }
+
+    it('一覧から集計に切り替え、型の行を押すと vCenter と型で絞った一覧を開く', async () => {
+      const { requests } = renderPatterns()
+      await screen.findByText('Storage error')
+      expect(screen.getByRole('button', { name: '一覧' })).toHaveAttribute('aria-pressed', 'true')
+      fireEvent.change(screen.getByLabelText('vCenter'), { target: { value: '' } })
+      fireEvent.click(screen.getByRole('button', { name: '型ごと' }))
+      const template = await screen.findByRole('button', { name: pattern.template })
+      const tr = template.closest('tr')
+      const utcFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium', timeZone: 'UTC' })
+      const timestamps = ['2026-03-22T00:10:00Z', '2026-03-22T00:15:00Z', '2026-03-21T00:00:00Z']
+      for (const value of ['vmkernel', 'vc-pattern', '3', 'warning', ...timestamps.map((at) => utcFormat.format(new Date(at)))]) {
+        expect(tr).toHaveTextContent(value)
+      }
+      expect(screen.getByText(/全 201 個の型のうち.*1 個/)).toBeInTheDocument()
+      expect(screen.getByText(/型の計算待ち.*4 件/)).toBeInTheDocument()
+      expect(screen.queryByText('Storage error')).not.toBeInTheDocument()
+      expect(Object.fromEntries(requests('/api/logs/patterns')[0].searchParams)).toEqual({
+        from: '2026-03-22T00:00:00Z', to: '2026-03-22T01:00:00Z',
+      })
+      fireEvent.click(tr!)
+      await screen.findByText('Storage error')
+      expect(screen.getByRole('button', { name: '一覧' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByText(/型で絞り込み中/)).toHaveTextContent(pattern.template)
+      // 型ごとの表は型で絞らないので、型ごとに戻ったら絞り込み中の表示を出さない
+      fireEvent.click(screen.getByRole('button', { name: '型ごと' }))
+      expect(screen.queryByText(/型で絞り込み中/)).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '一覧' }))
+      expect(screen.getByText(/型で絞り込み中/)).toHaveTextContent(pattern.template)
+      expect(Object.fromEntries(requests('/api/logs').at(-1)!.searchParams)).toMatchObject({
+        vcenter_id: pattern.vcenter_id, pattern_key: pattern.pattern_key, offset: '0',
+      })
+      expect(screen.getByText('絞り込み条件').closest('summary')).toHaveTextContent('型「Storage retry')
+      openPatterns()
+      await screen.findByRole('table', { name: 'ログの型ごとの集計' })
+      expect(requests('/api/logs/patterns').at(-1)!.searchParams.has('pattern_key')).toBe(false)
+
+      fireEvent.click(screen.getByRole('button', { name: '一覧' }))
+      fireEvent.click(screen.getByRole('button', { name: '型の絞り込みを解除' }))
+      await waitFor(() => {
+        const params = requests('/api/logs').at(-1)!.searchParams
+        expect(params.has('pattern_key')).toBe(false)
+        expect(params.has('vcenter_id')).toBe(false)
+      })
+      expect(screen.getByLabelText('vCenter')).toHaveValue('')
+    })
+
+    it('ログタブが開いた後に受け取った型のリンクを、夏時間の切り替えをまたいでも適用する', async () => {
+      const { requests } = renderPatterns({ linked: false, timeZone: 'America/New_York' })
+      await screen.findByText('Storage error')
+      fireEvent.click(screen.getByRole('button', { name: '型ごと' }))
+      const params = new URLSearchParams({
+        vcenter_id: pattern.vcenter_id,
+        pattern_key: pattern.pattern_key,
+        from: '2026-11-01T05:50:00Z',
+        to: '2026-11-01T06:10:00Z',
+      })
+      window.location.hash = `#/logs?${params}`
+      await waitFor(() => expect(Object.fromEntries(requests('/api/logs').at(-1)!.searchParams)).toMatchObject(
+        Object.fromEntries(params),
+      ))
+      expect(screen.getByRole('button', { name: '一覧' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByText(/型で絞り込み中/)).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'CSVをダウンロード' })).toBeEnabled())
+    })
+
+    it('期間を指定していないときは集計を要求しない', async () => {
+      const { requests } = renderPatterns({ linked: false })
+      await screen.findByText('Storage error')
+      fireEvent.click(screen.getByRole('button', { name: '型ごと' }))
+      expect(screen.getByText(/開始と終了を指定/)).toBeInTheDocument()
+      expect(requests('/api/logs/patterns')).toHaveLength(0)
+    })
+
+    it.each([
+      { detail: { code: 'log_pattern_scan_limit' }, limit: true },
+      { detail: [{ loc: ['query', 'from'], msg: 'Invalid datetime' }], limit: false },
+    ])('422 の理由に合った案内を出す（上限超過 $limit）', async ({ detail, limit }) => {
+      const { onError } = renderPatterns({
+        patterns: () => Promise.resolve(new Response(JSON.stringify({ detail }), { status: 422 })),
+      })
+      await screen.findByText('Storage error')
+      fireEvent.click(screen.getByRole('button', { name: '型ごと' }))
+      if (limit) {
+        expect(await screen.findByText(/期間を短くするか、条件を追加して絞り込んでください/)).toBeInTheDocument()
+      } else {
+        await waitFor(() => expect(onError).toHaveBeenCalledWith('query.from: Invalid datetime'))
+        expect(screen.queryByText(/期間を短くするか、条件を追加して絞り込んでください/)).not.toBeInTheDocument()
+      }
+    })
+    it.each([true, false])('503 の Retry-After を待って 1 回だけ再試行する（回復 %s）', async (recovers) => {
+      const fetchPatterns = vi.fn()
+        .mockImplementationOnce(busy)
+        .mockImplementationOnce(recovers ? () => patternPage() : busy)
+      const { patternRequests } = renderPatterns({ patterns: fetchPatterns })
+      await screen.findByText('Storage error')
+      vi.useFakeTimers()
+      openPatterns()
+      await advance(400)
+      expect(patternRequests()).toHaveLength(1)
+      expect(screen.getByRole('status')).toHaveTextContent('読み込み中')
+      await advance(999)
+      expect(patternRequests()).toHaveLength(1)
+      await advance(1)
+      expect(patternRequests()).toHaveLength(2)
+      if (recovers) expect(screen.getByRole('button', { name: pattern.template })).toBeInTheDocument()
+      else expect(screen.getByText('集計が混み合っています。しばらくしてから再度お試しください。')).toBeInTheDocument()
+      await advance(2_000)
+      expect(patternRequests()).toHaveLength(2)
+    })
+
+    it('本文と接続先IDを続けて入力しても最後の条件だけで集計する', async () => {
+      const { patternRequests } = renderPatterns()
+      await screen.findByText('Storage error')
+      openPatterns()
+      await screen.findByRole('button', { name: pattern.template })
+      fireEvent.click(screen.getByText('絞り込み条件'))
+      const field = screen.getByLabelText('本文（含む）')
+      const source = screen.getByLabelText('接続先ID')
+      vi.useFakeTimers()
+      fireEvent.change(field, { target: { value: 'st' } })
+      await advance(100)
+      fireEvent.change(field, { target: { value: 'storage' } })
+      await advance(100)
+      fireEvent.change(source, { target: { value: 'esxi-1' } })
+      await advance(399)
+      expect(patternRequests()).toHaveLength(1)
+      await advance(1)
+      expect(patternRequests()).toHaveLength(2)
+      expect(Object.fromEntries(patternRequests()[1].searchParams)).toMatchObject({
+        source_id: 'esxi-1', message_contains: 'storage',
+      })
+    })
+
+    it('読み込み中と空の結果を表示し、条件変更後に到着した結果を表示しない', async () => {
+      const pending: Array<(result: Response) => void> = []
+      const { patternRequests } = renderPatterns({
+        patterns: () => new Promise((resolve) => { pending.push(resolve) }),
+      })
+      await screen.findByText('Storage error')
+      openPatterns()
+      expect(screen.getByRole('status')).toHaveTextContent('読み込み中')
+      await waitFor(() => expect(patternRequests()).toHaveLength(1))
+      await act(async () => { pending[0](await patternPage()) })
+      expect(screen.getByRole('button', { name: pattern.template })).toBeInTheDocument()
+
+      const field = screen.getByLabelText('本文（含む）')
+      fireEvent.change(field, { target: { value: 'older' } })
+      expect(screen.queryByRole('button', { name: pattern.template })).not.toBeInTheDocument()
+      await waitFor(() => expect(patternRequests()).toHaveLength(2))
+      fireEvent.change(field, { target: { value: 'newer' } })
+      await act(async () => { pending[1](await patternPage()) })
+      expect(screen.queryByRole('button', { name: pattern.template })).not.toBeInTheDocument()
+      await waitFor(() => expect(patternRequests()).toHaveLength(3))
+      await act(async () => { pending[2](await patternPage([])) })
+      expect(screen.getByText('条件に一致する集計済みの型はありません')).toBeInTheDocument()
+    })
+
+    it('集計の一般エラーを表示する', async () => {
+      const { onError, patternRequests } = renderPatterns({
+        patterns: () => Promise.resolve(new Response('{}', { status: 500 })),
+      })
+      await screen.findByText('Storage error')
+      openPatterns()
+      await waitFor(() => expect(onError).toHaveBeenCalledWith(GENERIC_API_ERROR))
+      expect(patternRequests()).toHaveLength(1)
+      expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument()
+    })
+
+    it('リンク先の型名の取得を 503 後に再試行し、通常の集計から型キーを外す', async () => {
+      const lookup = vi.fn().mockImplementationOnce(busy).mockImplementationOnce(() => patternPage())
+      const { patternRequests } = renderPatterns({
+        patternKey: pattern.pattern_key,
+        patterns: (params) => params.has('pattern_key') ? lookup() : patternPage([]),
+      })
+      expect(await screen.findByText(pattern.template, { selector: 'code' }, { timeout: 2_500 })).toBeInTheDocument()
+      expect(lookup).toHaveBeenCalledTimes(2)
+      expect(Object.fromEntries(patternRequests()[0].searchParams)).toEqual({
+        vcenter_id: 'vc-1', pattern_key: pattern.pattern_key, from: '2026-03-22T00:00:00Z', to: '2026-03-22T01:00:00Z',
+      })
+      openPatterns()
+      await screen.findByText('条件に一致する集計済みの型はありません')
+      expect(patternRequests()).toHaveLength(3)
+      expect(patternRequests().at(-1)!.searchParams.has('pattern_key')).toBe(false)
+    })
+
+    it.each(['解除', 'vCenter を変更'])('型名を取得できないリンクでキーを表示し、型の指定を外す（%s）', async (action) => {
+      const { requests, patternRequests, onError } = renderPatterns({
+        patternKey: '0123456789abcdef',
+        patterns: () => patternPage([]),
+      })
+      await screen.findByText('Storage error')
+      expect(screen.getByText('型で絞り込み中（キー 01234567…）')).toBeInTheDocument()
+      await waitFor(() => expect(patternRequests()).toHaveLength(1))
+      if (action === '解除') fireEvent.click(screen.getByRole('button', { name: '型の絞り込みを解除' }))
+      else fireEvent.change(screen.getByLabelText('vCenter'), { target: { value: pattern.vcenter_id } })
+      const expectedVCenter = action === '解除' ? 'vc-1' : pattern.vcenter_id
+      await waitFor(() => {
+        const params = requests('/api/logs').at(-1)!.searchParams
+        expect(params.has('pattern_key')).toBe(false)
+        expect(params.get('vcenter_id')).toBe(expectedVCenter)
+      })
+      expect(screen.queryByText(/型で絞り込み中/)).not.toBeInTheDocument()
+      expect(window.location.hash).not.toContain('pattern_key=')
+      expect(window.location.hash).toContain('from=')
+      expect(onError).not.toHaveBeenCalledWith(expect.any(String))
+    })
+
+  })
+
   it('clears recovered collection errors on polling without reloading log pages and stops on unmount', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let status: 'failed' | 'ok' = 'failed'

@@ -48,7 +48,7 @@ describe('LogsPanel CSV', () => {
   it('starts a native download with captured filters and zone, without JSON export requests', async () => {
     setExpectedPrincipal('id-alice:s1')
     localStorage.setItem('vea.displayTimeZone', 'Asia/Tokyo')
-    window.history.replaceState(null, '', linkedUrl)
+    window.history.replaceState(null, '', linkedUrl + '&pattern_key=v1%3Aretry')
     const fetchMock = mockFetch(() => response({ items: [row], total: 201 }))
     render(<TimeZoneProvider><TimeZoneSelect /><LogsPanel onError={vi.fn()} /></TimeZoneProvider>)
     const button = screen.getByRole('button', { name: 'CSVをダウンロード' })
@@ -70,7 +70,7 @@ describe('LogsPanel CSV', () => {
     expect(url.pathname).toBe('/api/logs/export.csv')
     expect(Object.fromEntries(url.searchParams)).toEqual({
       time_zone: 'Asia/Tokyo', vcenter_id: 'vc-1', source_id: 'esxi-1', log_kind: 'vmkernel',
-      severity: 'error', message_contains: 'Storage', from: '2026-10-02T09:55:25Z', to: '2026-10-02T10:05:25Z',
+      severity: 'error', message_contains: 'Storage', pattern_key: 'v1:retry', from: '2026-10-02T09:55:25Z', to: '2026-10-02T10:05:25Z',
       vea_expected_principal: 'id-alice:s1',
     })
     expect(screen.getByText(/ダウンロードを開始しました/)).toBeInTheDocument()

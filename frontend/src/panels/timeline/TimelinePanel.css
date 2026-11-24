@@ -286,6 +286,12 @@
   gap: var(--spacing-2);
 }
 
+.timeline-highlights__actions a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .timeline-highlights__omitted {
   overflow-wrap: anywhere;
 }

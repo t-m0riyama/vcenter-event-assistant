@@ -1,5 +1,9 @@
 import { useId } from 'react'
 import type { TimelineConfigChange, TimelineDetectedPattern, TimelineHighlights as Highlights, TimelineViewItem } from '../../api/schemas'
+import type { TimelineNewLogPattern } from '../../api/schemas/logPatterns'
+import { SeverityBadge } from '../../components/badges'
+import { correlationHash } from '../../routing/correlationRange'
+import { logSeverityForRank } from '../logs/logSeverity'
 import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
 import { CONFIG_CHANGE_LABELS, KIND_LABELS, LEVEL_BADGE_CLASS, LEVEL_LABELS, titleStartsWithEntity } from './timelineLabels'
 
@@ -9,7 +13,9 @@ type Props = {
   /** リストに載っている行の id。打ち切りで載っていない行は、クリックで移動できない。 */
   listedIds: ReadonlySet<string>
   includesEvents: boolean
+  includesLogs: boolean
   anchorUtc: string | null
+  period: { from: string; to: string }
   timeZone: string
   onRevealItem: (id: string) => void
   onFilterEntity: (entityName: string, vcenterId: string | null | undefined, entityMoid?: string | null) => void
@@ -162,8 +168,99 @@ function ConfigChangesCard({ highlights, anchorUtc, ...actions }: Pick<Props,
   )
 }
 
+function NewLogPatternItem({ pattern, period, timeZone, onSetAnchor }: {
+  pattern: TimelineNewLogPattern
+} & Pick<Props, 'period' | 'timeZone' | 'onSetAnchor'>) {
+  const descriptionId = useId()
+  const href = correlationHash('logs', { ...period, vcenterId: pattern.vcenter_id, patternKey: pattern.pattern_key })
+  return (
+    <li>
+      <p><strong id={descriptionId}>{pattern.template}</strong>{' '}
+        <SeverityBadge severity={logSeverityForRank(pattern.max_severity_rank)} />
+      </p>
+      <p className="timeline-highlights__meta">
+        {[pattern.log_kind, pattern.hosts.join('、'), pattern.vcenter_name || pattern.vcenter_id, `${pattern.count} 件`]
+          .filter(Boolean).join('・')}
+      </p>
+      <p className="timeline-highlights__meta">最初 {formatIsoInTimeZone(pattern.first_utc, timeZone)}</p>
+      <div className="timeline-highlights__actions">
+        <button
+          type="button"
+          className="btn btn--gray timeline-highlights__link"
+          aria-describedby={descriptionId}
+          onClick={() => onSetAnchor(pattern.first_utc)}
+        >
+          ここを起点にする
+        </button>
+        <a className="btn btn--gray timeline-highlights__link" href={href} aria-describedby={descriptionId}>ログで開く</a>
+      </div>
+    </li>
+  )
+}
+
+function NewLogPatternsCard({ highlights, period, timeZone, onSetAnchor }: Pick<Props,
+  'highlights' | 'period' | 'timeZone' | 'onSetAnchor'
+>) {
+  const headingId = useId()
+  const patterns = highlights.new_log_patterns
+  const warmingUp = highlights.log_patterns_warming_up
+  const warmingUpTotal = highlights.log_patterns_warming_up_total
+  const remainingPatterns = highlights.new_log_patterns_total - (patterns?.length ?? 0)
+  const remainingWarmups = warmingUpTotal - warmingUp.length
+  return (
+    <section className="timeline-highlights__card timeline-highlights__grouped" aria-labelledby={headingId}>
+      <h4 id={headingId}>初めて警告以上で出たログの型</h4>
+      {highlights.log_patterns_backfill_pending ? (
+        <p>ログの型を埋め戻し中のため判定していません</p>
+      ) : patterns === null ? (
+        <p>判定していません</p>
+      ) : patterns.length === 0 ? (
+        <p>{warmingUpTotal > 0 || highlights.new_log_patterns_out_of_retention
+          ? '判定できた範囲に該当する型はありません'
+          : 'この期間に該当する型はありません'}</p>
+      ) : (
+        <>
+          <ul>
+            {patterns.map((pattern) => (
+              <NewLogPatternItem
+                key={JSON.stringify([pattern.vcenter_id, pattern.pattern_key])}
+                pattern={pattern}
+                period={period}
+                timeZone={timeZone}
+                onSetAnchor={onSetAnchor}
+              />
+            ))}
+          </ul>
+          {remainingPatterns > 0 && <p className="hint">ほかに {remainingPatterns} 件</p>}
+        </>
+      )}
+      {warmingUpTotal > 0 && (
+        <>
+          <p className="hint">慣らし期間中のため判定していない出どころが {warmingUpTotal} 件あります。</p>
+          <ul className="timeline-highlights__meta">
+            {warmingUp.map((entry) => (
+              <li key={JSON.stringify([entry.vcenter_id, entry.source_id, entry.host, entry.log_kind])}>
+                {[
+                  entry.host || entry.source_id,
+                  entry.vcenter_name || entry.vcenter_id,
+                  entry.log_kind,
+                  entry.warmup_ends_at ? `終了 ${formatIsoInTimeZone(entry.warmup_ends_at, timeZone)}` : '慣らしの開始時刻の記録なし',
+                ].filter(Boolean).join('・')}
+              </li>
+            ))}
+          </ul>
+          {remainingWarmups > 0 && <p className="hint">ほかに {remainingWarmups} 件</p>}
+        </>
+      )}
+      {highlights.new_log_patterns_out_of_retention && (
+        <p className="hint">期間の開始がログの保持期間より前のため、削除済みのログの型は表示されないことがあります。</p>
+      )}
+    </section>
+  )
+}
+
 export function TimelineHighlights({
-  highlights, patternTitles, listedIds, includesEvents, anchorUtc, timeZone, onRevealItem, onFilterEntity, onSetAnchor,
+  highlights, patternTitles, listedIds, includesEvents, includesLogs, anchorUtc, period, timeZone, onRevealItem, onFilterEntity, onSetAnchor,
 }: Props) {
   const headingId = useId()
   const first = highlights.first_signal ?? null
@@ -172,7 +269,9 @@ export function TimelineHighlights({
   const patterns = highlights.detected_patterns
   const remaining = highlights.detected_patterns_total - patterns.length
   const omitted = highlights.omitted_patterns
-  if (!includesEvents && !first && top.length === 0 && fresh.length === 0 && patterns.length === 0 && omitted.length === 0) return null
+  const showLogPatterns = includesLogs || highlights.log_patterns_backfill_pending || highlights.new_log_patterns !== null
+  const showGrouped = patterns.length > 0 || includesEvents || showLogPatterns
+  if (!showGrouped && !first && top.length === 0 && fresh.length === 0 && omitted.length === 0) return null
 
   return (
     <section className="timeline-highlights" aria-label="ハイライト">
@@ -236,7 +335,7 @@ export function TimelineHighlights({
           </div>
         ) : null}
       </div>
-      {patterns.length > 0 || includesEvents ? (
+      {showGrouped && (
         <div className="timeline-highlights__grid">
           {patterns.length > 0 ? (
             <section className="timeline-highlights__card timeline-highlights__grouped" aria-labelledby={headingId}>
@@ -268,8 +367,11 @@ export function TimelineHighlights({
               onSetAnchor={onSetAnchor}
             />
           ) : null}
+          {showLogPatterns && (
+            <NewLogPatternsCard highlights={highlights} period={period} timeZone={timeZone} onSetAnchor={onSetAnchor} />
+          )}
         </div>
-      ) : null}
+      )}
       {omitted.length > 0 ? (
         <p className="hint timeline-highlights__omitted" role="note">
           件数が多すぎるため判定しなかったパターンがあります（{omitted.map((id) => patternTitles.get(id) ?? id).join('、')}）。

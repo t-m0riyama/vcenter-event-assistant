@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { eventPatternLevelSchema } from './eventPatterns'
+import { timelineNewLogPatternSchema } from './logPatterns'
 
 /**
  * `POST /api/incident-timeline/view` の応答（`api/schemas/incident_timeline_view.py` に対応）。
@@ -118,10 +119,25 @@ export const timelineConfigChangeSchema = z.object({
 })
 export type TimelineConfigChange = z.infer<typeof timelineConfigChangeSchema>
 
+const timelineLogPatternWarmupSchema = z.object({
+  vcenter_id: z.string(),
+  vcenter_name: z.string(),
+  source_id: z.string().nullable(),
+  host: z.string().nullable(),
+  log_kind: z.string(),
+  warmup_ends_at: z.string().nullable(),
+})
+
 export const timelineHighlightsSchema = z.object({
   first_signal: timelineViewItemSchema.nullable().optional(),
   top_entities: z.array(timelineTopEntitySchema).default([]),
   new_event_types: z.array(timelineNewEventTypeSchema).default([]),
+  new_log_patterns: z.array(timelineNewLogPatternSchema).nullable().default(null),
+  new_log_patterns_total: z.number().int().min(0).default(0),
+  log_patterns_backfill_pending: z.boolean().default(false),
+  log_patterns_warming_up: z.array(timelineLogPatternWarmupSchema).default([]),
+  log_patterns_warming_up_total: z.number().int().min(0).default(0),
+  new_log_patterns_out_of_retention: z.boolean().default(false),
   detected_patterns: z.array(timelineDetectedPatternSchema).default([]),
   detected_patterns_total: z.number().int().min(0).default(0),
   omitted_patterns: z.array(z.string()).default([]),

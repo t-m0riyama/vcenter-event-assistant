@@ -33,16 +33,16 @@
   table-layout: fixed;
 }
 
-.logs-panel th:first-child {
+.logs-panel .table:not(.logs-panel__patterns-table) th:first-child {
   width: 22%;
 }
 
-.logs-panel th:nth-child(2) {
+.logs-panel .table:not(.logs-panel__patterns-table) th:nth-child(2) {
   width: 18%;
 }
 
-.logs-panel th:nth-child(3),
-.logs-panel th:nth-child(4) {
+.logs-panel .table:not(.logs-panel__patterns-table) th:nth-child(3),
+.logs-panel .table:not(.logs-panel__patterns-table) th:nth-child(4) {
   width: 10%;
 }
 
@@ -71,4 +71,38 @@
 .logs-panel td summary {
   cursor: pointer;
   overflow-wrap: anywhere;
+}
+
+.logs-panel__view,
+.logs-panel__pattern-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.logs-panel__pattern-filter {
+  margin-bottom: var(--spacing-3);
+  overflow-wrap: anywhere;
+}
+
+.logs-panel .logs-panel__patterns-table {
+  min-width: 60rem;
+}
+
+.logs-panel__patterns-table th:first-child {
+  width: 28%;
+}
+
+.logs-panel__patterns-table th:nth-child(4) {
+  width: 6%;
+}
+
+.logs-panel__patterns-table tbody tr {
+  cursor: pointer;
+}
+
+.logs-panel__patterns-table td .btn {
+  text-align: left;
+  white-space: normal;
 }

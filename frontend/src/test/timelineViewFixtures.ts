@@ -113,6 +113,20 @@ export const LOG_ITEM_EXAMPLE = {
   ref: { log_id: 789 },
 }
 
+export const NEW_LOG_PATTERN_EXAMPLE = {
+  vcenter_id: LOG_ITEM_EXAMPLE.vcenter_id,
+  vcenter_name: 'vc-pattern',
+  pattern_key: 'v1:retry',
+  log_kind: 'vmkernel',
+  template: 'Storage retry took <DURATION>',
+  count: 3,
+  first_utc: '2026-03-22T00:10:00Z',
+  max_severity_rank: 2,
+  hosts: ['esx01.example.com', 'esx02.example.com'],
+  first_seen_at: '2026-03-21T00:00:00Z',
+  warning_first_seen_at: '2026-03-22T00:10:00Z',
+}
+
 export function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
