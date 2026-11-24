@@ -37,6 +37,22 @@ const DETECTED_PATTERN: TimelineDetectedPattern = {
   event_ids: [11, 12, 13],
 }
 
+const CONFIG_CHANGE = {
+  kind: 'vm_reconfigure',
+  label: 'VM の構成変更',
+  first_utc: '2026-03-22T00:08:00Z',
+  last_utc: '2026-03-22T00:10:00Z',
+  vcenter_id: VC,
+  vcenter_name: 'vc-change',
+  entity_moid: 'vm-20',
+  entity_name: 'vm-change',
+  entity_type: 'VirtualMachine',
+  user_names: ['operator-a', 'operator-b'],
+  event_types: ['vim.event.VmReconfiguredEvent', 'task.success.VirtualMachine.reconfigure'],
+  event_count: 3,
+  event_ids: [99, 3, 1],
+}
+
 function bucket(start: string, total = 0, notable = 0, alert = 0) {
   return {
     bucket_start_utc: start,
@@ -806,6 +822,210 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(await screen.findByText(/件数が多すぎるため判定しなかったパターンがあります.*apd-timeout/)).toBeInTheDocument()
   })
 
+  describe('構成変更のハイライトと一覧', () => {
+    const card = async () => within(await screen.findByRole('region', { name: '構成変更' }))
+    const highlights = (overrides: Record<string, unknown> = {}) => ({
+      ...populated().highlights,
+      config_changes: [CONFIG_CHANGE],
+      config_changes_total: 1,
+      config_change_counts: { vm_reconfigure: 1 },
+      ...overrides,
+    })
+
+    it('種類ごとの集計と変更の詳細を障害パターンの隣に表示する', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights({
+        detected_patterns: [DETECTED_PATTERN],
+        detected_patterns_total: 1,
+      }) }))
+      const region = await screen.findByRole('region', { name: '構成変更' })
+      expect(region.previousElementSibling).toBe(screen.getByRole('region', { name: '検知した障害パターン' }))
+      const content = within(region)
+      expect(content.getByText(/VM の構成変更.*1 件/)).toBeInTheDocument()
+      const change = content.getByText('VM の構成変更').closest('li')
+      expect(change).toHaveTextContent('vm-change')
+      expect(change).toHaveTextContent('vc-change')
+      expect(change).toHaveTextContent('operator-a、operator-b')
+      expect(change).toHaveTextContent(/12:08:00.*～.*12:10:00/)
+      expect(change).toHaveTextContent('3 件')
+      expect(content.queryByText(/全 .* 件のうち/)).not.toBeInTheDocument()
+      expect(content.queryByText('古い構成変更は省きました')).not.toBeInTheDocument()
+    })
+
+    it('新しい 20 件の対象外も種類別に数え、古い構成変更の省略を別に伝える', async () => {
+      setup()
+      renderTimeline()
+      const changes = Array.from({ length: 20 }, (_, index) => ({
+        ...CONFIG_CHANGE, entity_moid: `vm-${index}`, event_ids: [100 + index],
+      }))
+      await answer(0, populated({ highlights: highlights({
+        config_changes: changes,
+        config_changes_total: 27,
+        config_change_counts: { future_kind: 2, permission: 1, vm_reconfigure: 24 },
+        config_changes_truncated: true,
+      }) }))
+      const content = await card()
+      expect(content.getByText(/24 件/)).toHaveTextContent(
+        /^VM の構成変更 24 件・権限とロールの変更 1 件・future_kind 2 件$/,
+      )
+      expect(content.getByText('全 27 件のうち、新しい 20 件を表示しています')).toBeInTheDocument()
+      expect(content.getByText('古い構成変更は省きました')).toBeInTheDocument()
+    })
+
+    it('項目にはサーバの表示名を使い、省略の案内には実際の表示件数を出す', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights({
+        config_changes: [{ ...CONFIG_CHANGE, label: '仮想マシンの再構成' }],
+        config_changes_total: 2,
+        config_change_counts: { vm_reconfigure: 2 },
+      }) }))
+      const content = await card()
+      expect(content.getByText('仮想マシンの再構成')).toBeInTheDocument()
+      expect(content.getByText('VM の構成変更 2 件')).toBeInTheDocument()
+      expect(content.getByText('全 2 件のうち、新しい 1 件を表示しています')).toBeInTheDocument()
+    })
+
+    it.each([
+      [[], null, 'この期間に構成変更はありません'],
+      [[], CONFIG_CHANGE.last_utc, '起点までに構成変更はありません'],
+      [null, null, '判定していません'],
+    ])('変更の詳細が無いときに状態を表示する（%j、起点 %s）', async (config_changes, anchor, message) => {
+      setup()
+      renderTimeline()
+      await answer(0, emptyViewResponse({
+        anchor_utc: anchor,
+        highlights: { config_changes },
+      }))
+      expect((await card()).getByText(message)).toBeInTheDocument()
+    })
+
+    it('イベントを種別から外した結果にはカードを表示しない', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights() }))
+      await card()
+      fireEvent.click(screen.getByLabelText('イベント'))
+      await answer(1, emptyViewResponse({ highlights: { config_changes: null } }))
+      expect(harness.calls[1].body.sources).not.toContain('event')
+      expect(screen.queryByRole('region', { name: '構成変更' })).not.toBeInTheDocument()
+    })
+
+    it('変更を指定して最後の時刻を起点にする', async () => {
+      setup()
+      window.history.replaceState(null, '', '/#/timeline?from=2026-03-22T00:00:00Z&to=2026-03-22T01:00:00Z')
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights() }))
+      fireEvent.click((await card()).getByRole('button', { name: /ここを起点にする.*VM の構成変更.*vm-change.*12:10:00/ }))
+      await answer(1)
+      expect(harness.calls[1].body.anchor).toBe('2026-03-22T00:10:00.000Z')
+    })
+
+    it.each(['vm-20', null])('変更の対象と vCenter で絞る（moid %s）', async (entity_moid) => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights({ config_changes: [{ ...CONFIG_CHANGE, entity_moid }] }) }))
+      fireEvent.click((await card()).getByRole('button', { name: /この対象で絞る.*VM の構成変更.*vm-change/ }))
+      await answer(1)
+      expect(harness.calls[1].body).toMatchObject({ entity: 'vm-change', vcenter_id: VC })
+      if (entity_moid) expect(harness.calls[1].body.entity_moid).toBe(entity_moid)
+      else expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+    })
+
+    it('終了時刻と対象が同じ変更のボタンを開始時刻と利用者で区別できる', async () => {
+      setup()
+      renderTimeline()
+      const changes = [
+        CONFIG_CHANGE,
+        { ...CONFIG_CHANGE, first_utc: '2026-03-22T00:09:00Z', user_names: ['operator-c'], event_ids: [1] },
+      ]
+      await answer(0, populated({ highlights: highlights({ config_changes: changes }) }))
+      const content = await card()
+      for (const action of ['ここを起点にする', 'この対象で絞る', '一覧の行へ移動']) {
+        expect(content.getByRole('button', { name: new RegExp(`^${action}.*operator-a.*12:08:00.*12:10:00`) })).toBeInTheDocument()
+        expect(content.getByRole('button', { name: new RegExp(`^${action}.*operator-c.*12:09:00.*12:10:00`) })).toBeInTheDocument()
+      }
+    })
+
+    it('vCenter が無い変更は対象名で絞り、moid だけの変更には絞り込みを出さない', async () => {
+      setup()
+      renderTimeline()
+      const changes = [
+        { ...CONFIG_CHANGE, vcenter_id: null, vcenter_name: null },
+        { ...CONFIG_CHANGE, vcenter_id: null, vcenter_name: null, entity_name: null, event_ids: [1] },
+      ]
+      await answer(0, populated({ highlights: highlights({ config_changes: changes }) }))
+      const content = await card()
+      expect(content.getByText('vm-20・3 件')).toBeInTheDocument()
+      const filter = content.getByRole('button', { name: /この対象で絞る.*vm-change/ })
+      expect(content.getAllByRole('button', { name: /^この対象で絞る/ })).toHaveLength(1)
+      fireEvent.click(filter)
+      await answer(1)
+      expect(harness.calls[1].body.entity).toBe('vm-change')
+      expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+      expect(harness.calls[1].body).not.toHaveProperty('vcenter_id')
+    })
+
+    it('変更に対応する最初の掲載行を開く', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights() }))
+      fireEvent.click((await card()).getByRole('button', { name: /一覧の行へ移動.*VM の構成変更.*vm-change/ }))
+      expect(await rowButton(/UserLoginSessionEvent/)).toHaveAttribute('aria-expanded', 'true')
+      expect(await rowButton(/VmPoweredOffEvent/)).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('対象も掲載行も無い変更には該当する操作を表示せず、同じ時刻は一度だけ表示する', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({ highlights: highlights({ config_changes: [{
+        ...CONFIG_CHANGE, first_utc: CONFIG_CHANGE.last_utc, entity_moid: null, entity_name: null, event_ids: [99],
+      }] }) }))
+      const content = await card()
+      expect(content.queryByRole('button', { name: /この対象で絞る/ })).not.toBeInTheDocument()
+      expect(content.queryByRole('button', { name: /一覧の行へ移動/ })).not.toBeInTheDocument()
+      expect(content.getByText(/12:10:00/)).not.toHaveTextContent('～')
+    })
+
+    it('構成変更の行のバッジを表示し、一覧の上限を注記する', async () => {
+      const items = populated().items
+      setup()
+      renderTimeline()
+      await answer(0, populated({
+        items: [{ ...items[0], config_change_kind: 'vm_reconfigure' }, ...items.slice(1)],
+        total_items: 2,
+        config_change_items_total: 3,
+        config_change_items_shown: 1,
+        config_change_items_truncated: true,
+      }))
+      const marked = await rowButton(/VmPoweredOffEvent/)
+      expect(within(marked).getByText('構成変更')).toBeVisible()
+      expect(marked).toHaveAccessibleName(/構成変更/)
+      expect(await rowButton(/UserLoginSessionEvent/)).not.toHaveAccessibleName(/構成変更/)
+      const list = within(screen.getByRole('region', { name: '時系列リスト' }))
+      expect(list.getByRole('note')).toHaveTextContent('構成変更の行は、期間の終わりに近い 1 件だけを一覧に出しています')
+    })
+
+    it('通常枠と構成変更枠の両方が上限を超えた場合は、別々の件数で注記を出す', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, populated({
+        anchor_utc: CONFIG_CHANGE.last_utc,
+        truncated: true,
+        total_items: 500,
+        config_change_items_total: 3,
+        config_change_items_shown: 1,
+        config_change_items_truncated: true,
+      }))
+      const list = within(screen.getByRole('region', { name: '時系列リスト' }))
+      const notes = list.getAllByRole('note')
+      expect(notes).toHaveLength(2)
+      expect(notes[0]).toHaveTextContent('500 件中 2 件を表示しています。期間や対象を絞ってください')
+      expect(notes[1]).toHaveTextContent('構成変更の行は、起点に近い 1 件だけを一覧に出しています')
+    })
+  })
+
   it('「イベントで開く」「ログで開く」は行の時刻の前後 5 分と vCenter を渡すリンク', async () => {
     setup()
     renderTimeline()
@@ -1068,6 +1288,14 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(harness.calls[4].body.min_score).toBe(40)
   })
 
+  it('詳細設定で構成変更は最小スコアに関係なく表示することを案内する', async () => {
+    setup()
+    renderTimeline()
+    await answer(0, emptyViewResponse())
+    fireEvent.click(screen.getByText('詳細設定'))
+    expect(screen.getByText(/構成変更は最小スコアに関係なく表示します。/)).toBeVisible()
+  })
+
   it('「この範囲をチャットで分析」は開く先があるときだけ出し、押すと読み込んだ期間と vCenter だけを渡す', async () => {
     setup()
     const { unmount } = renderTimeline()
@@ -1323,7 +1551,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       })
     })
 
-    it('検知の 3 項目が無い保存済みの結果も表示する', async () => {
+    it('検知や構成変更の項目が無い保存済みの結果も表示する', async () => {
       const detail = detailOf()
       expect(detail.result.highlights).not.toHaveProperty('detected_patterns')
       expect(detail.result.highlights).not.toHaveProperty('detected_patterns_total')
@@ -1333,6 +1561,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       const highlights = await screen.findByRole('region', { name: 'ハイライト' })
       expect(within(highlights).getByRole('heading', { name: '最初の兆候' })).toBeInTheDocument()
       expect(within(highlights).queryByRole('heading', { name: '検知した障害パターン' })).not.toBeInTheDocument()
+      expect(within(highlights).getByText('判定していません')).toBeInTheDocument()
       expect(await rowButton(/VmPoweredOffEvent/)).toBeInTheDocument()
     })
 

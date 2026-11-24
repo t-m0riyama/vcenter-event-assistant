@@ -72,7 +72,7 @@ describe('tabHelpContent', () => {
 
   it('timeline help covers the redesigned screen (selection rule, snapshots, chat handoff)', () => {
     const { summary } = MAIN_TAB_HELP.timeline
-    for (const word of ['起点', 'ハイライト', '最初の兆候', '最小スコア', 'イベント種別ガイド', 'ユーザーガイド', 'スナップショット', '保持期間', 'この範囲をチャットで分析', '現在のデータで集計']) {
+    for (const word of ['起点', 'ハイライト', '最初の兆候', '構成変更', '最小スコア', 'イベント種別ガイド', 'ユーザーガイド', 'スナップショット', '保持期間', 'この範囲をチャットで分析', '現在のデータで集計']) {
       expect(summary, word).toContain(word)
     }
   })

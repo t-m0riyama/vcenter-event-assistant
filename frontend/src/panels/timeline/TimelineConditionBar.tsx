@@ -244,7 +244,7 @@ export function TimelineConditionBar({ c }: { c: Controller }) {
           </span>
         </summary>
         <p className="hint toolbar__filters-hint">
-          イベントはスコアがこの値以上のものだけを一覧に出します（俯瞰グラフの「その他のイベント」には含まれます）。
+          イベントはスコアがこの値以上のものを一覧に出します。構成変更は最小スコアに関係なく表示します。俯瞰グラフの「その他のイベント」には、この値に満たないイベントも含まれます。
         </p>
         <label className="timeline-bar__min-score">
           最小スコア

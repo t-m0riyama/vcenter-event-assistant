@@ -49,6 +49,7 @@ export const timelineViewItemSchema = z.object({
   vcenter_id: z.string().nullable().optional(),
   vcenter_name: z.string().nullable().optional(),
   score: z.number().nullable().optional(),
+  config_change_kind: z.string().nullable().optional(),
   count: z.number().int().min(1).default(1),
   ref: timelineItemRefSchema.default({}),
 })
@@ -100,6 +101,23 @@ export const timelineDetectedPatternSchema = z.object({
 })
 export type TimelineDetectedPattern = z.infer<typeof timelineDetectedPatternSchema>
 
+export const timelineConfigChangeSchema = z.object({
+  kind: z.string(),
+  label: z.string(),
+  first_utc: z.string(),
+  last_utc: z.string(),
+  vcenter_id: z.string().nullish(),
+  vcenter_name: z.string().nullish(),
+  entity_name: z.string().nullish(),
+  entity_moid: z.string().nullish(),
+  entity_type: z.string().nullish(),
+  user_names: z.array(z.string()).default([]),
+  event_types: z.array(z.string()).default([]),
+  event_count: z.number().int().min(0).default(0),
+  event_ids: z.array(z.number().int()).default([]),
+})
+export type TimelineConfigChange = z.infer<typeof timelineConfigChangeSchema>
+
 export const timelineHighlightsSchema = z.object({
   first_signal: timelineViewItemSchema.nullable().optional(),
   top_entities: z.array(timelineTopEntitySchema).default([]),
@@ -107,6 +125,10 @@ export const timelineHighlightsSchema = z.object({
   detected_patterns: z.array(timelineDetectedPatternSchema).default([]),
   detected_patterns_total: z.number().int().min(0).default(0),
   omitted_patterns: z.array(z.string()).default([]),
+  config_changes: z.array(timelineConfigChangeSchema).nullable().optional(),
+  config_changes_total: z.number().int().min(0).default(0),
+  config_change_counts: z.record(z.string(), z.number().int().min(0)).default({}),
+  config_changes_truncated: z.boolean().default(false),
 })
 export type TimelineHighlights = z.infer<typeof timelineHighlightsSchema>
 
@@ -126,7 +148,9 @@ export const incidentTimelineViewResponseSchema = z.object({
   items: z.array(timelineViewItemSchema),
   truncated: z.boolean(),
   total_items: z.number().int().min(0),
+  config_change_items_total: z.number().int().min(0).default(0),
   config_change_items_shown: z.number().int().min(0).default(0),
+  config_change_items_truncated: z.boolean().default(false),
   highlights: timelineHighlightsSchema,
   omitted_sources: z.array(timelineOmittedSourceSchema).default([]),
 })
