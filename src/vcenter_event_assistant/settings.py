@@ -77,6 +77,9 @@ class DatabaseSettingsMixin(BaseModel):
         description="Delete events older than this many days (occurred_at).",
     )
     log_retention_days: int = Field(default=7, ge=1)
+    log_pattern_retention_days: int = Field(default=90, ge=0)
+    log_pattern_max_per_vcenter: int = Field(default=20000, ge=1)
+    log_pattern_warmup_days: int = Field(default=3, ge=0)
     metric_retention_days: int = Field(
         default=7,
         ge=1,
@@ -109,6 +112,12 @@ class DatabaseSettingsMixin(BaseModel):
             "0 keeps results as long as the snapshot itself."
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_log_pattern_retention(self) -> "DatabaseSettingsMixin":
+        if 0 < self.log_pattern_retention_days < self.log_retention_days:
+            raise ValueError("LOG_PATTERN_RETENTION_DAYS は 0 か LOG_RETENTION_DAYS 以上にしてください")
+        return self
 
 
 class AppLogSettingsMixin(BaseModel):

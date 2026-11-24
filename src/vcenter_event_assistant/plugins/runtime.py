@@ -21,6 +21,7 @@ from vcenter_event_assistant_plugin_api.validation import (
     raise_for_issues,
 )
 
+from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.collectors.connection import (
     VCENTER_HTTPS_REQUIRED,
     VCenterProtocolPolicyError,
@@ -42,6 +43,10 @@ from vcenter_event_assistant.plugins.remote import (
 )
 from vcenter_event_assistant.plugins.wire import ConnectionParams
 from vcenter_event_assistant.services.ingestion import _insert_on_conflict_do_nothing, persist_events
+from vcenter_event_assistant.services.log_patterns.ledger import LOG_PATTERN_RETURNING, update_ledger
+from vcenter_event_assistant.services.log_patterns.masking import (
+    MASK_VERSION, UNPARSED, mask_message, pattern_key,
+)
 from vcenter_event_assistant.services.ssh_management import LegacySSHPathError
 from vcenter_event_assistant.settings import Settings
 
@@ -229,6 +234,11 @@ async def _persist_batch(
     batch: CollectionBatch,
 ) -> tuple[int, int, int]:
     assert registration.plugin is not None
+    log_patterns = []
+    for record in batch.logs:
+        template = mask_message(record.message)
+        log_patterns.append((record, pattern_key(record.log_kind, template), template))
+
     async with session_scope(settings=settings) as session:
         events_inserted = await persist_events(
             session, vcenter_id, registration.plugin_id, batch.events,
@@ -256,19 +266,40 @@ async def _persist_batch(
                 ],
             )
             metrics_inserted += result.rowcount or 0
-        logs_inserted = 0
-        for record in batch.logs:
+        inserted_logs = []
+        templates: dict[str, str] = {}
+        unparsed = 0
+        started_at = utcnow()
+        for record, key, template in log_patterns:
+            occurred_at = as_utc(record.occurred_at) if record.occurred_at is not None else None
+            collected_at = as_utc(record.collected_at)
             result = await _insert_on_conflict_do_nothing(
                 session, LogRecord,
-                {"vcenter_id": vcenter_id, "collector_id": registration.plugin_id,
-                 "source_id": record.source_id, "host": record.host, "log_kind": record.log_kind,
-                 "file_generation": record.file_generation, "byte_offset": record.byte_offset,
-                 "occurred_at": record.occurred_at, "collected_at": record.collected_at,
-                 "effective_at": record.occurred_at or record.collected_at,
-                 "severity": record.severity, "message": record.message},
-                index_elements=["vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset"],
+                {
+                    "vcenter_id": vcenter_id, "collector_id": registration.plugin_id,
+                    "source_id": record.source_id, "host": record.host, "log_kind": record.log_kind,
+                    "file_generation": record.file_generation, "byte_offset": record.byte_offset,
+                    "occurred_at": occurred_at, "collected_at": collected_at,
+                    "effective_at": occurred_at or collected_at,
+                    "severity": record.severity, "message": record.message,
+                    "pattern_key": key, "pattern_version": MASK_VERSION,
+                },
+                index_elements=[
+                    "vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset",
+                ],
+                returning=LOG_PATTERN_RETURNING,
             )
-            logs_inserted += result.rowcount or 0
+            row = result.one_or_none()
+            if row is not None:
+                inserted_logs.append(row)
+                templates[key] = template
+                unparsed += template == UNPARSED
+        logs_inserted = len(inserted_logs)
+        if unparsed:
+            logger.warning(
+                "log pattern masking failed count=%d plugin_id=%s vcenter_id=%s",
+                unparsed, registration.plugin_id, vcenter_id,
+            )
         if batch.next_cursor is not None:
             state_result = await session.execute(
                 select(IngestionState).where(
@@ -290,6 +321,7 @@ async def _persist_batch(
         run_state.metrics_inserted = metrics_inserted
         run_state.logs_inserted = logs_inserted
         run_state.error_message = None
+        await update_ledger(session, inserted_logs, templates, started_at=started_at)
         return events_inserted, metrics_inserted, logs_inserted
 
 

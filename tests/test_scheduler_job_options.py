@@ -170,3 +170,15 @@ async def test_setup_scheduler_omits_inventory_when_disabled(disabled) -> None:
         assert scheduler.get_job("inventory_sync") is None
     finally:
         scheduler.shutdown(wait=False)
+
+
+
+async def test_log_pattern_backfill_runs_every_five_minutes() -> None:
+    scheduler = setup_scheduler(MagicMock(), Settings(scheduler_enabled=True))
+    try:
+        job = scheduler.get_job("log_pattern_backfill")
+        assert job.trigger.interval.total_seconds() == 300
+        assert job.max_instances == 1
+        assert job.coalesce is True
+    finally:
+        scheduler.shutdown(wait=False)

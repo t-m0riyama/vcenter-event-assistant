@@ -48,6 +48,7 @@ async def _insert_on_conflict_do_nothing(
     values: dict[str, Any],
     *,
     index_elements: list[str],
+    returning: tuple[Any, ...] = (),
 ):
     """PostgreSQL / SQLite 向け INSERT ... ON CONFLICT DO NOTHING を実行する。"""
     if session.get_bind().dialect.name == "postgresql":
@@ -58,6 +59,8 @@ async def _insert_on_conflict_do_nothing(
     stmt = dialect_insert(model).values(**values).on_conflict_do_nothing(
         index_elements=index_elements
     )
+    if returning:
+        stmt = stmt.returning(*returning)
     return await session.execute(stmt)
 
 

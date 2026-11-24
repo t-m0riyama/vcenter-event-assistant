@@ -687,3 +687,180 @@ async def test_inventory_migration_round_trip(tmp_path, backend) -> None:
             await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_log_pattern_migration_round_trip(tmp_path, backend) -> None:
+    """既存のログと出どころから版 1 を開始し、旧版へ戻してから再移行できる。"""
+    import os
+    from uuid import uuid4
+
+    from alembic import command
+    from sqlalchemy import Uuid, bindparam
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.services.log_patterns.masking import MASK_VERSION
+
+    if backend == "postgres":
+        url = os.environ.get("VEA_TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    else:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'patterns.db'}"
+    engine = create_async_engine(url)
+    cfg = alembic_config(settings=get_settings().model_copy(update={"database_url": url}))
+    vc = uuid4()
+    previous = "a0b1c2d3e4f5"
+
+    def migrate(conn, operation, revision):
+        _run_with_connection(conn, cfg, lambda cc: operation(cc, revision))
+
+    try:
+        async with engine.connect() as conn, conn.begin() as transaction:
+            if backend == "postgres":
+                schema = f"log_pattern_migration_{vc.hex}"
+                await conn.execute(text(f"CREATE SCHEMA {schema}"))
+                await conn.execute(text(f"SET LOCAL search_path TO {schema}"))
+            await conn.run_sync(migrate, command.upgrade, previous)
+            await conn.execute(
+                text("""INSERT INTO vcenters
+                    (id, name, host, protocol, port, username, password, verify_ssl, is_enabled, created_at)
+                    VALUES (:id, 'legacy', 'vc.example', 'https', 443, 'u', 'p', true, true, CURRENT_TIMESTAMP)"""
+                     ).bindparams(bindparam("id", type_=Uuid())), {"id": vc},
+            )
+            await conn.execute(
+                text("""INSERT INTO log_records
+                    (vcenter_id, collector_id, source_id, host, log_kind, file_generation, byte_offset,
+                     collected_at, effective_at, message)
+                    VALUES (:id, 'old', :source, 'host', :kind, 'gen', :offset,
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'legacy')"""
+                     ).bindparams(bindparam("id", type_=Uuid())),
+                [{"id": vc, "source": source, "kind": kind, "offset": i}
+                 for i, (source, kind) in enumerate([("esx1", " Hostd "), ("esx1", "hostd"), ("esx2", " ÄHOSTD\t ")])],
+            )
+            for _ in range(2):
+                await conn.run_sync(migrate, command.upgrade, "head")
+                if backend == "sqlite":
+                    index_names = set((await conn.execute(text(
+                        "SELECT name FROM pragma_index_list('log_records')"
+                    ))).scalars())
+                    assert {
+                        "ix_log_records_severity_norm_effective",
+                        "ix_log_records_vcenter_severity_norm_effective",
+                    } <= index_names
+                    index_columns = [(await conn.execute(text(
+                        "SELECT name FROM pragma_index_info('ix_log_vcenter_pattern_effective') ORDER BY seqno"
+                    ))).scalars().all()]
+                else:
+                    indexes = await conn.run_sync(lambda c: inspect(c).get_indexes("log_records"))
+                    index_columns = [index["column_names"] for index in indexes]
+                assert ["vcenter_id", "pattern_key", "effective_at"] in index_columns
+                unique = await conn.run_sync(lambda c: inspect(c).get_unique_constraints("log_records"))
+                assert next(item["column_names"] for item in unique if item["name"] == "uq_log_source_position") == [
+                    "vcenter_id", "collector_id", "source_id", "log_kind", "file_generation", "byte_offset",
+                ]
+                fks = await conn.run_sync(lambda c: inspect(c).get_foreign_keys("log_records"))
+                assert any(
+                    fk["constrained_columns"] == ["vcenter_id"]
+                    and fk["referred_table"] == "vcenters"
+                    and fk["referred_columns"] == ["id"]
+                    and fk["options"].get("ondelete") == "CASCADE"
+                    for fk in fks
+                )
+                baselines = (await conn.execute(text(
+                    "SELECT source_id, log_kind, pattern_version, started_at FROM log_pattern_baselines ORDER BY source_id"
+                ))).all()
+                assert [row[:3] for row in baselines] == [("esx1", "hostd", MASK_VERSION), ("esx2", "Ähostd\t", MASK_VERSION)]
+                assert baselines[0].started_at == baselines[1].started_at is not None
+                state = (await conn.execute(text(
+                    "SELECT pattern_version, upper_id, last_id, pending_upper_id, pending_recorded_at, completed_at FROM log_pattern_backfill_state"
+                ))).one()
+                assert tuple(state) == (MASK_VERSION, None, 0, None, None, None)
+                assert await conn.scalar(text("SELECT count(*) FROM log_patterns")) == 0
+                assert await conn.scalar(text(
+                    "SELECT count(*) FROM log_records WHERE pattern_key IS NULL AND pattern_version IS NULL"
+                )) == 3
+                if backend == "sqlite":
+                    assert "AUTOINCREMENT" not in await conn.scalar(text(
+                        "SELECT sql FROM sqlite_master WHERE name = 'log_records'"
+                    ))
+                await conn.execute(text("UPDATE log_pattern_backfill_state SET pending_upper_id = 3"))
+                await conn.run_sync(migrate, command.stamp, previous)
+                await conn.run_sync(migrate, command.upgrade, "head")
+                assert await conn.scalar(text("SELECT pending_upper_id FROM log_pattern_backfill_state")) == 3
+                assert (await conn.execute(text(
+                    "SELECT started_at FROM log_pattern_baselines ORDER BY source_id"
+                ))).scalars().all() == [row.started_at for row in baselines]
+                await conn.run_sync(migrate, command.downgrade, previous)
+                assert await conn.scalar(text("SELECT count(*) FROM log_records")) == 3
+                assert not any(name.startswith("log_pattern") for name in
+                               await conn.run_sync(lambda c: inspect(c).get_table_names()))
+            await transaction.rollback()
+    finally:
+        await engine.dispose()
+
+
+async def test_log_pattern_sqlite_migration_preserves_orphans(tmp_path, monkeypatch):
+    """外部キーが有効でも、過去の孤児ログを残して移行と埋め戻しができる。"""
+    from datetime import datetime, timedelta, timezone
+
+    from alembic import command
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from vcenter_event_assistant.db import session as db
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.services.log_patterns import backfill
+
+    url = f"sqlite+aiosqlite:///{tmp_path / 'orphans.db'}"
+    settings = get_settings().model_copy(update={"database_url": url})
+    engine = create_async_engine(url)
+    cfg = alembic_config(settings=settings)
+
+    def migrate(conn, operation, revision):
+        _run_with_connection(conn, cfg, lambda cc: operation(cc, revision))
+
+    try:
+        async with engine.connect() as conn:
+            await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            await conn.run_sync(migrate, command.upgrade, "a0b1c2d3e4f5")
+            await conn.execute(text("""
+                INSERT INTO vcenters
+                    (id, name, host, protocol, port, username, password, verify_ssl, is_enabled, created_at)
+                VALUES ('00000000000000000000000000000001', 'vc', 'vc.example',
+                        'https', 443, 'u', 'p', true, true, CURRENT_TIMESTAMP)
+            """))
+            await conn.execute(text("""
+                INSERT INTO log_records
+                    (vcenter_id, collector_id, source_id, host, log_kind, file_generation, byte_offset,
+                     collected_at, effective_at, message)
+                VALUES (:vc, 'old', :source, 'host', 'hostd', 'gen', 0,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'old log')
+            """), [
+                {"vc": "00000000000000000000000000000001", "source": "valid"},
+                {"vc": "00000000000000000000000000000002", "source": "orphan"},
+            ])
+            await conn.commit()
+            await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            assert await conn.scalar(text("PRAGMA foreign_keys")) == 1
+            await conn.run_sync(migrate, command.upgrade, "head")
+            assert await conn.scalar(text("SELECT count(*) FROM log_records")) == 2
+            assert await conn.scalar(text("SELECT source_id FROM log_pattern_baselines")) == "valid"
+            await conn.commit()
+
+        monkeypatch.setattr(db, "_session_factory", async_sessionmaker(engine, expire_on_commit=False))
+        now = datetime.now(timezone.utc)
+        monkeypatch.setattr(backfill, "utcnow", lambda: now)
+        await backfill.log_pattern_backfill(settings)
+        now += timedelta(seconds=270)
+        await backfill.log_pattern_backfill(settings)
+        async with engine.connect() as conn:
+            assert await conn.scalar(text("SELECT last_id FROM log_pattern_backfill_state")) == 2
+            assert await conn.scalar(text("SELECT completed_at FROM log_pattern_backfill_state")) is not None
+            assert await conn.scalar(text("SELECT count(*) FROM log_patterns")) == 1
+            assert await conn.scalar(text("SELECT source_id FROM log_records WHERE pattern_key IS NULL")) == "orphan"
+            await conn.run_sync(migrate, command.downgrade, "a0b1c2d3e4f5")
+            assert await conn.scalar(text("SELECT count(*) FROM log_records")) == 2
+    finally:
+        await engine.dispose()

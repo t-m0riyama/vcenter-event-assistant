@@ -44,6 +44,8 @@ from vcenter_event_assistant.services.inventory import (
     purge_old_inventory,
     sync_inventory,
 )
+from vcenter_event_assistant.services.log_patterns.backfill import log_pattern_backfill
+from vcenter_event_assistant.services.log_patterns.retention import purge_old_log_patterns
 from vcenter_event_assistant.services.research.research_job import run_research_cycle
 from vcenter_event_assistant.services.research.search_provider import (
     build_search_provider,
@@ -119,6 +121,7 @@ async def purge_retention(settings: Settings) -> None:
     try:
         async with session_scope(settings=settings) as session:
             await purge_old_logs(session, settings=settings)
+            await purge_old_log_patterns(session, settings=settings)
             await purge_old_inventory(session, settings=settings)
             n_ev = await purge_old_events(session, settings=settings)
             if n_ev:
@@ -335,6 +338,14 @@ def setup_scheduler(app: "FastAPI", settings: Settings, *, registry=None) -> Asy
         id="purge_metrics",
         kwargs={"settings": settings},
         **_job_options_for_interval(purge_interval_seconds),
+    )
+    scheduler.add_job(
+        log_pattern_backfill,
+        "interval",
+        seconds=300,
+        id="log_pattern_backfill",
+        kwargs={"settings": settings},
+        **_job_options_for_interval(300),
     )
     if build_search_provider(settings) is not None:
         scheduler.add_job(

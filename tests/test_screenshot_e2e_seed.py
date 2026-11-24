@@ -13,6 +13,9 @@ from vcenter_event_assistant.db.models import (
     DigestRecord,
     EventRecord,
     EventTypeGuide,
+    LogPattern,
+    LogPatternBackfillState,
+    LogPatternBaseline,
     LogRecord,
     MetricSample,
     VCenter,
@@ -20,6 +23,9 @@ from vcenter_event_assistant.db.models import (
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_seed_if_enabled
 from vcenter_event_assistant.main import create_app
+from vcenter_event_assistant.services.log_patterns.ledger import is_past_warmup
+from vcenter_event_assistant.services.log_patterns.masking import MASK_VERSION
+from vcenter_event_assistant.settings import Settings
 
 
 @pytest.mark.asyncio
@@ -43,7 +49,7 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
     assert n_g == 3
     assert n_ev == 13
     assert n_m >= 1
-    assert n_logs == 4
+    assert n_logs == 7
     assert n_d == 1
     assert n_rules == 1
     assert n_hist == 1
@@ -204,3 +210,27 @@ async def test_screenshot_e2e_seed_inventory_history(monkeypatch) -> None:
         } == current.relations
         runs = (await session.scalars(select(InventorySyncRun.observed_at))).all()
         assert state.last_success_at in runs
+
+
+
+async def test_screenshot_seed_log_patterns(monkeypatch) -> None:
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    await run_screenshot_e2e_seed_if_enabled()
+    await run_screenshot_e2e_seed_if_enabled()
+    async with session_scope() as session:
+        state = await session.get(LogPatternBackfillState, MASK_VERSION)
+        logs = (await session.scalars(select(LogRecord))).all()
+        ledger = (await session.scalars(select(LogPattern))).all()
+        assert state.last_id == state.upper_id == state.pending_upper_id == max(log.id for log in logs)
+        assert sum(pattern.total_count for pattern in ledger) == len(logs)
+        assert {log.pattern_key for log in logs} == {pattern.pattern_key for pattern in ledger}
+        [new_warning] = [pattern for pattern in ledger if pattern.max_severity_rank == 2]
+        assert new_warning.total_count == 3
+        assert new_warning.first_seen_at < new_warning.warning_first_seen_at
+        incident = await session.scalar(select(EventRecord).where(EventRecord.notable_score == 85))
+        assert new_warning.warning_first_seen_at < incident.occurred_at
+        baseline = await session.get(LogPatternBaseline, (
+            new_warning.vcenter_id, new_warning.warning_first_source_id, new_warning.log_kind, MASK_VERSION,
+        ))
+        assert is_past_warmup(new_warning.warning_first_seen_at, baseline.started_at,
+                              state.completed_at, Settings().log_pattern_warmup_days)
