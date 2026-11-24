@@ -84,17 +84,28 @@ async def test_screenshot_e2e_seed_fills_timeline_with_all_four_kinds(
 
     # 起動から 5 分経って開いても、直近 1 時間にデモ行が残る。
     now = datetime.now(timezone.utc) + timedelta(minutes=5)
+    period = {
+        "from": (now - timedelta(hours=1)).isoformat(),
+        "to": (now + timedelta(minutes=1)).isoformat(),
+    }
     app = create_app()
     async with open_client(app=app) as ac:
-        resp = await ac.post(
-            "/api/incident-timeline/view",
-            json={
-                "from": (now - timedelta(hours=1)).isoformat(),
-                "to": (now + timedelta(minutes=1)).isoformat(),
-            },
-        )
+        resp = await ac.post("/api/incident-timeline/view", json=period)
+        logs_resp = await ac.get("/api/logs/patterns", params=period)
+    assert logs_resp.status_code == 200
+    groups = logs_resp.json()
+    assert len(groups["items"]) >= 2
+    assert groups["pending_count"] == 0
     assert resp.status_code == 200
     body = resp.json()
+    highlights = body["highlights"]
+    assert not highlights["log_patterns_backfill_pending"]
+    first_warnings = highlights["new_log_patterns"]
+    assert first_warnings
+    [retry] = [item for item in first_warnings if item["max_severity_rank"] == 2]
+    assert retry["count"] == 2
+    [retry_group] = [item for item in groups["items"] if item["pattern_key"] == retry["pattern_key"]]
+    assert retry_group["count"] == 3
     items = body["items"]
     kinds = {i["kind"] for i in items}
     assert kinds == {"event", "alert", "metric", "log"}

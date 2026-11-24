@@ -49,6 +49,9 @@
   );
   --color-focus-ring-surface: #ffffff;
   --color-on-primary: #ffffff;
+  /** クリティカルの塗り。原色の赤を避け、暗い灰色を混ぜて彩度を落とす（白い文字で約 6.7:1） */
+  --color-critical: color-mix(in srgb, var(--color-error) 62%, #1a1f29);
+  --color-on-critical: #ffffff;
 
   --color-chart-grid: var(--color-gray-200);
   --color-chart-primary: var(--color-primary);

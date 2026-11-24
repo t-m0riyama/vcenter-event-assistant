@@ -146,7 +146,7 @@ function formatValidationDetail(detail: unknown): string | null {
   return lines.length > 0 ? lines.join(' / ') : null
 }
 
-function responseErrorMessage(status: number, text: string, download: boolean): string {
+function responseErrorMessage(status: number, text: string, detail: unknown, download: boolean): string {
   if (status >= 500) {
     return GENERIC_API_ERROR
   }
@@ -158,7 +158,6 @@ function responseErrorMessage(status: number, text: string, download: boolean): 
     return FORBIDDEN_MESSAGE
   }
   if ([422, 409, 413].includes(status) || (download && status === 400)) {
-    const detail = responseDetail(text)
     if (download && status === 422) {
       const message = typeof detail === 'string' ? detail : formatValidationDetail(detail)
       return message?.trim() ? message : GENERIC_API_ERROR
@@ -178,28 +177,35 @@ export class ApiError extends Error {
   readonly errorCode: string | null
   /** ``Retry-After``（秒）。ヘッダが無い・秒数として読めないときは null。 */
   readonly retryAfterSeconds: number | null
+  /** サーバーの JSON 応答に含まれる detail。 */
+  readonly detail: unknown
 
   constructor(
     message: string,
     status: number,
     errorCode: string | null,
     retryAfterSeconds: number | null = null,
+    detail: unknown = null,
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.errorCode = errorCode
     this.retryAfterSeconds = retryAfterSeconds
+    this.detail = detail
   }
 }
 
 async function apiError(r: Response, { download = false } = {}): Promise<ApiError> {
   const retryAfter = Number(r.headers.get('Retry-After'))
+  const body = await r.text()
+  const detail = responseDetail(body)
   return new ApiError(
-    responseErrorMessage(r.status, await r.text(), download),
+    responseErrorMessage(r.status, body, detail, download),
     r.status,
     r.headers.get('X-VEA-Error-Code'),
     Number.isFinite(retryAfter) && retryAfter >= 0 && r.headers.get('Retry-After') !== null ? retryAfter : null,
+    detail,
   )
 }
 

@@ -24,6 +24,14 @@ describe('incidentTimelineViewResponseSchema', () => {
     expect(parsed.highlights.detected_patterns).toEqual([])
     expect(parsed.highlights.detected_patterns_total).toBe(0)
     expect(parsed.highlights.omitted_patterns).toEqual([])
+    expect(parsed.highlights).toMatchObject({
+      new_log_patterns: null,
+      new_log_patterns_total: 0,
+      log_patterns_backfill_pending: false,
+      log_patterns_warming_up: [],
+      log_patterns_warming_up_total: 0,
+      new_log_patterns_out_of_retention: false,
+    })
   })
 
   it('未知のレベルは拒否する', () => {

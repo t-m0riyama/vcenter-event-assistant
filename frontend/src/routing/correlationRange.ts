@@ -1,4 +1,4 @@
-export type CorrelationRange = { vcenterId: string; from: string; to: string }
+export type CorrelationRange = { vcenterId: string; from: string; to: string; patternKey?: string }
 
 export function readCorrelationRange(tab: 'logs' | 'events'): CorrelationRange | null {
   const [path, query] = window.location.hash.split('?', 2)
@@ -8,11 +8,14 @@ export function readCorrelationRange(tab: 'logs' | 'events'): CorrelationRange |
   const from = params.get('from') ?? ''
   const to = params.get('to') ?? ''
   if (!vcenterId || !Number.isFinite(Date.parse(from)) || !Number.isFinite(Date.parse(to)) || Date.parse(from) > Date.parse(to)) return null
-  return { vcenterId, from, to }
+  const patternKey = tab === 'logs' ? params.get('pattern_key') : null
+  return patternKey ? { vcenterId, from, to, patternKey } : { vcenterId, from, to }
 }
 
 export function correlationHash(tab: 'logs' | 'events', range: CorrelationRange): string {
-  return `#/${tab}?${new URLSearchParams({ vcenter_id: range.vcenterId, from: range.from, to: range.to })}`
+  const params = new URLSearchParams({ vcenter_id: range.vcenterId, from: range.from, to: range.to })
+  if (tab === 'logs' && range.patternKey) params.set('pattern_key', range.patternKey)
+  return `#/${tab}?${params}`
 }
 
 export function logsAroundEvent(vcenterId: string, occurredAt: string): string {

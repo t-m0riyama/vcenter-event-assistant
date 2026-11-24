@@ -111,6 +111,7 @@ export function TimelinePanel({
   const sortedItems = useMemo(() => (data ? sortTimelineItems(data.items, c.sortOrder) : []), [data, c.sortOrder])
   const listedIds = useMemo(() => new Set(data?.items.map((i) => i.id) ?? []), [data])
   // 起点は結果を取ったときのもの。条件を変えた直後に、古い結果の上へ新しい起点を描かない
+  const resultSources = c.loadedRequest?.sources ?? c.conditions.sources
   const dataAnchor = data?.anchor_utc ?? null
   const nearestAnchorId = useMemo(
     () => (data ? nearestItemIdToAnchor(data.items, dataAnchor) : null),
@@ -227,8 +228,10 @@ export function TimelinePanel({
               highlights={data.highlights}
               patternTitles={patternTitles}
               listedIds={listedIds}
-              includesEvents={(c.loadedRequest?.sources ?? c.conditions.sources).includes('event')}
+              includesEvents={resultSources.includes('event')}
+              includesLogs={resultSources.includes('log')}
               anchorUtc={dataAnchor}
+              period={{ from: data.from_utc, to: data.to_utc }}
               timeZone={c.timeZone}
               onRevealItem={revealItem}
               onFilterEntity={c.filterByEntity}

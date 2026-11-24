@@ -1,26 +1,85 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
-import { apiGet, prepareBrowserRequest } from '../../api'
+import { ApiError, apiGet, formatValidationMessage, prepareBrowserRequest, waitForRetryAfter } from '../../api'
 import { SeverityBadge } from '../../components/badges'
 import { Pagination } from '../../components/Pagination'
 import { EVENT_PAGE_SIZES } from '../../events/constants'
+import { logPatternsResponseSchema, type LogPattern, type LogPatternsResponse } from '../../api/schemas/logPatterns'
 import { collectorStatusListSchema } from '../../api/schemas/plugins'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { ZonedRangeFields } from '../../datetime/ZonedRangeFields'
 import { EMPTY_ZONED_RANGE_PARTS, zonedRangePartsFromUtcIsoEndpoints, zonedRangePartsToCombinedInputs } from '../../datetime/zonedRangeParts'
 import { resolveEventApiRange } from '../../datetime/graphRange'
-import { correlationHash, readCorrelationRange } from '../../routing/correlationRange'
+import { correlationHash, readCorrelationRange, type CorrelationRange } from '../../routing/correlationRange'
 import { toErrorMessage } from '../../utils/errors'
-import { buildLogExportUrl, buildLogListSearchParams, downloadLogCsv, logPageSchema as pageSchema } from './logExport'
+import { LogPatternsTable } from './LogPatternsTable'
+import { buildLogExportUrl, buildLogFilterSearchParams, buildLogListSearchParams, downloadLogCsv, logPageSchema as pageSchema } from './logExport'
 import './LogsPanel.css'
 
 const vcentersSchema = z.array(z.object({ id: z.string(), name: z.string() }))
+const PATTERN_DEBOUNCE_MS = 400
+
+type SelectedPattern = {
+  key: string
+  vcenterId: string
+  template?: string
+  lookupPeriod?: Pick<CorrelationRange, 'from' | 'to'>
+}
+type PatternResult = {
+  condition: string
+  result: LogPatternsResponse | 'scan-limit' | 'busy' | 'error'
+}
+
+function patternFromLink(link: CorrelationRange | null): SelectedPattern | null {
+  if (!link?.patternKey) return null
+  return { key: link.patternKey, vcenterId: link.vcenterId, lookupPeriod: { from: link.from, to: link.to } }
+}
+
+function linkedPatternCondition(pattern: SelectedPattern | null): string | null {
+  if (!pattern?.lookupPeriod) return null
+  return new URLSearchParams({
+    vcenter_id: pattern.vcenterId, pattern_key: pattern.key, ...pattern.lookupPeriod,
+  }).toString()
+}
+
+async function fetchLogPatterns(condition: string, signal: AbortSignal): Promise<LogPatternsResponse> {
+  const call = async () => logPatternsResponseSchema.parse(await apiGet<unknown>(`/api/logs/patterns?${condition}`, signal))
+  try {
+    return await call()
+  } catch (first) {
+    if (!(first instanceof ApiError) || first.status !== 503) throw first
+    await waitForRetryAfter(first.retryAfterSeconds, signal)
+    signal.throwIfAborted()
+    return call()
+  }
+}
+
+function removeLinkedPattern(vcenterId?: string) {
+  const url = new URL(window.location.href)
+  const [path, query] = url.hash.split('?', 2)
+  if (path !== '#/logs') return
+  const params = new URLSearchParams(query)
+  if (!params.has('pattern_key')) return
+  params.delete('pattern_key')
+  if (vcenterId !== undefined) {
+    if (vcenterId) params.set('vcenter_id', vcenterId)
+    else params.delete('vcenter_id')
+  }
+  url.hash = params.size > 0 ? `${path}?${params}` : path
+  window.history.replaceState(window.history.state, '', url)
+}
 
 export function LogsPanel({ onError, active = true }: { onError: (message: string | null) => void; active?: boolean }) {
   const { timeZone } = useTimeZone()
   const initial = readCorrelationRange('logs')
-  const [vcenter, setVcenter] = useState(initial?.vcenterId ?? '')
+  const [view, setView] = useState<'list' | 'patterns'>('list')
+  const [selectedPattern, setSelectedPattern] = useState(() => patternFromLink(initial))
+  const [patterns, setPatterns] = useState<PatternResult | null>(null)
+  const [vcenterSelection, setVcenterSelection] = useState(initial?.vcenterId ?? '')
+  const vcenter = selectedPattern?.vcenterId ?? vcenterSelection
+  const patternKeyLabel = selectedPattern ? `キー ${selectedPattern.key.slice(0, 8)}…` : ''
+  const lookupCondition = linkedPatternCondition(selectedPattern)
   const [range, setRange] = useState(() => initial ? zonedRangePartsFromUtcIsoEndpoints(initial.from, initial.to, timeZone) : EMPTY_ZONED_RANGE_PARTS)
   const [linkedRange, setLinkedRange] = useState(initial)
   const [source, setSource] = useState('')
@@ -36,11 +95,15 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
   const [loading, setLoading] = useState(false)
   const [downloadStarted, setDownloadStarted] = useState(false)
   const inputs = zonedRangePartsToCombinedInputs(range)
-  const resolvedRange = resolveEventApiRange(inputs.rangeFromInput, inputs.rangeToInput, timeZone)
-  const eventRange = resolvedRange.ok ? { vcenterId: vcenter, from: linkedRange?.from ?? resolvedRange.from, to: linkedRange?.to ?? resolvedRange.to } : null
+  const resolvedRange = linkedRange
+    ? { ok: true as const, from: linkedRange.from, to: linkedRange.to }
+    : resolveEventApiRange(inputs.rangeFromInput, inputs.rangeToInput, timeZone)
+  const rangeError = resolvedRange.ok ? null : resolvedRange.message
+  const from = resolvedRange.ok ? resolvedRange.from : undefined
+  const to = resolvedRange.ok ? resolvedRange.to : undefined
 
   const rangeSummary = resolvedRange.ok
-    ? `${eventRange?.from ? formatIsoInTimeZone(eventRange.from, timeZone) : '開始指定なし'} ～ ${eventRange?.to ? formatIsoInTimeZone(eventRange.to, timeZone) : '終了指定なし'}（${timeZone}）`
+    ? `${from ? formatIsoInTimeZone(from, timeZone) : '開始指定なし'} ～ ${to ? formatIsoInTimeZone(to, timeZone) : '終了指定なし'}（${timeZone}）`
     : `期間: ${inputs.rangeFromInput || '開始指定なし'} ～ ${inputs.rangeToInput || '終了指定なし'}（入力を確認）`
   const pagination = {
     total: data.total,
@@ -54,6 +117,7 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
   }
   const filterSummary = [
     ['接続先ID', source], ['種別', kind], ['重大度', severity], ['本文', message],
+    ['型', selectedPattern?.template || patternKeyLabel],
   ].filter(([, value]) => value.trim()).map(([label, value]) => {
     const text = value.trim()
     return `${label}「${text.length > 18 ? `${text.slice(0, 17)}…` : text}」`
@@ -63,7 +127,9 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
     const sync = () => {
       const next = readCorrelationRange('logs')
       if (!next) return
-      setVcenter(next.vcenterId)
+      setVcenterSelection(next.vcenterId)
+      setSelectedPattern(patternFromLink(next))
+      setView('list')
       setLinkedRange(next)
       setRange(zonedRangePartsFromUtcIsoEndpoints(next.from, next.to, timeZone))
       setSource(''); setKind(''); setSeverity(''); setMessage(''); setPage(0)
@@ -80,14 +146,79 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
     return () => { cancelled = true }
   }, [onError])
 
+  const filters = useMemo(() => ({
+    vcenter_id: vcenter, source_id: source, log_kind: kind, severity, message_contains: message, from, to,
+  }), [vcenter, source, kind, severity, message, from, to])
+  const patternKey = selectedPattern?.key
   const getFilters = useCallback(() => {
-    const inputs = zonedRangePartsToCombinedInputs(range)
-    const resolved = resolveEventApiRange(inputs.rangeFromInput, inputs.rangeToInput, timeZone)
-    if (!resolved.ok) { onError(resolved.message); return }
-    const from = linkedRange?.from ?? resolved.from
-    const to = linkedRange?.to ?? resolved.to
-    return { vcenter_id: vcenter, source_id: source, log_kind: kind, severity, message_contains: message, from, to }
-  }, [range, timeZone, linkedRange, vcenter, source, kind, severity, message, onError])
+    if (rangeError) { onError(rangeError); return }
+    return { ...filters, pattern_key: patternKey }
+  }, [rangeError, filters, patternKey, onError])
+
+  const openPattern = (pattern: LogPattern) => {
+    setSelectedPattern({ key: pattern.pattern_key, vcenterId: pattern.vcenter_id, template: pattern.template })
+    setPage(0)
+    setData({ items: [], total: 0 })
+    setView('list')
+  }
+
+  const clearPattern = (nextVCenter?: string) => {
+    setSelectedPattern(null)
+    setPage(0)
+    setData({ items: [], total: 0 })
+    removeLinkedPattern(nextVCenter)
+  }
+
+  useEffect(() => {
+    if (!lookupCondition) return
+    const request = new AbortController()
+    void fetchLogPatterns(lookupCondition, request.signal).then(({ items }) => {
+      const template = items[0]?.template
+      if (template && !request.signal.aborted) {
+        setSelectedPattern((current) => current && linkedPatternCondition(current) === lookupCondition
+          ? { ...current, template }
+          : current)
+      }
+    }).catch(() => {
+      // 型名を取得できなければ、キーを表示したままログを検索できる。
+    })
+    return () => request.abort()
+  }, [lookupCondition])
+
+  const patternCondition = view === 'patterns' && from && to ? buildLogFilterSearchParams(filters).toString() : null
+  const patternResult = patterns?.condition === patternCondition ? patterns.result : null
+  useEffect(() => {
+    if (view !== 'patterns') return
+    setPatterns(null)
+    onError(rangeError)
+    if (!patternCondition) return
+
+    const request = new AbortController()
+    const timer = window.setTimeout(() => {
+      void fetchLogPatterns(patternCondition, request.signal).then((result) => {
+        if (!request.signal.aborted) setPatterns({ condition: patternCondition, result })
+      }).catch((e: unknown) => {
+        if (request.signal.aborted) return
+        let result: PatternResult['result'] = 'error'
+        if (e instanceof ApiError && e.status === 503) {
+          result = 'busy'
+        } else if (e instanceof ApiError && e.status === 422) {
+          if (e.detail && typeof e.detail === 'object' && 'code' in e.detail && e.detail.code === 'log_pattern_scan_limit') {
+            result = 'scan-limit'
+          } else {
+            onError(formatValidationMessage(e.message) ?? toErrorMessage(e))
+          }
+        } else {
+          onError(toErrorMessage(e))
+        }
+        setPatterns({ condition: patternCondition, result })
+      })
+    }, PATTERN_DEBOUNCE_MS)
+    return () => {
+      window.clearTimeout(timer)
+      request.abort()
+    }
+  }, [view, rangeError, patternCondition, onError])
 
   const downloadCsv = async () => {
     if (loading || data.total === 0) return
@@ -141,6 +272,7 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
   }, [vcenter, active])
 
   useEffect(() => {
+    if (view !== 'list') return
     let cancelled = false
     void (async () => {
       const filters = getFilters()
@@ -167,26 +299,36 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
       }
     })()
     return () => { cancelled = true }
-  }, [getFilters, onError, page, pageSize])
+  }, [view, getFilters, onError, page, pageSize])
 
   return <div className="panel logs-panel">
     <div className="toolbar" aria-label="ログの操作">
-      <label>vCenter<select value={vcenter} onChange={(e) => { setVcenter(e.target.value); setPage(0) }}><option value="">全て</option>{vcenters.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
-      <label>
-        表示件数
-        <select value={pageSize} onChange={(e) => {
-          setPageSize(Number(e.target.value) as (typeof EVENT_PAGE_SIZES)[number])
-          setPage(0)
-        }}>
-          {EVENT_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-      </label>
-      <Pagination position="top" {...pagination} />
-      <button type="button" className="btn btn--gray" disabled={loading || !resolvedRange.ok || data.total === 0} onClick={() => void downloadCsv()}>
-        CSVをダウンロード
-      </button>
-      {downloadStarted && <span role="status" className="toolbar__meta">ダウンロードを開始しました。進捗・完了はブラウザで確認してください。</span>}
-      {eventRange?.vcenterId && eventRange.from && eventRange.to && <a className="btn btn--gray logs-panel__event-link" href={correlationHash('events', { vcenterId: eventRange.vcenterId, from: eventRange.from, to: eventRange.to })}>同じ期間のイベント</a>}
+      <div className="logs-panel__view" role="group" aria-label="ログの表示">
+        <button type="button" className={view === 'list' ? 'btn btn--filled' : 'btn btn--gray'} aria-pressed={view === 'list'} onClick={() => setView('list')}>一覧</button>
+        <button type="button" className={view === 'patterns' ? 'btn btn--filled' : 'btn btn--gray'} aria-pressed={view === 'patterns'} onClick={() => setView('patterns')}>型ごと</button>
+      </div>
+      <label>vCenter<select value={vcenter} onChange={(e) => {
+        setVcenterSelection(e.target.value)
+        if (selectedPattern) clearPattern(e.target.value)
+        else setPage(0)
+      }}><option value="">全て</option>{vcenters.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+      {view === 'list' && <>
+        <label>
+          表示件数
+          <select value={pageSize} onChange={(e) => {
+            setPageSize(Number(e.target.value) as (typeof EVENT_PAGE_SIZES)[number])
+            setPage(0)
+          }}>
+            {EVENT_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <Pagination position="top" {...pagination} />
+        <button type="button" className="btn btn--gray" disabled={loading || !resolvedRange.ok || data.total === 0} onClick={() => void downloadCsv()}>
+          CSVをダウンロード
+        </button>
+        {downloadStarted && <span role="status" className="toolbar__meta">ダウンロードを開始しました。進捗・完了はブラウザで確認してください。</span>}
+      </>}
+      {vcenter && from && to && <a className="btn btn--gray logs-panel__event-link" href={correlationHash('events', { vcenterId: vcenter, from, to })}>同じ期間のイベント</a>}
       <details className="toolbar__filters-details">
         <summary className="toolbar__filters-summary">
           <span className="toolbar__filters-summary__title">絞り込み条件</span>
@@ -212,13 +354,27 @@ export function LogsPanel({ onError, active = true }: { onError: (message: strin
       {collectorStatusError && <p role="status" className="error-banner">{collectorStatusError}</p>}
       {problems.map((problem) => <p role="status" className="error-banner" key={problem}>{problem}</p>)}
     </aside>}
-    {data.items.length === 0 ? <p className="table-empty">条件に一致するログはありません</p> : <div className="logs-panel__table-scroll"><table className="table"><thead><tr><th>時刻</th><th>接続先</th><th>種別</th><th>重大度</th><th>本文</th></tr></thead><tbody>
-      {data.items.map((r) => <tr key={r.id}>
-        <td>{formatIsoInTimeZone(r.effective_at, timeZone)}{!r.occurred_at && <small>発生時刻未解析（取得時刻）</small>}</td>
-        <td>{r.host}<small>{r.source_id}</small></td><td>{r.log_kind}</td><td><SeverityBadge severity={r.severity} /></td>
-        <td><details><summary>{r.message.split('\n')[0].slice(0, 160)}</summary><pre>{r.message}</pre><small>世代: {r.file_generation} / バイト位置: {r.byte_offset}</small><p><a href={correlationHash('events', { vcenterId: r.vcenter_id, from: new Date(Date.parse(r.effective_at) - 300_000).toISOString(), to: new Date(Date.parse(r.effective_at) + 300_000).toISOString() })}>前後5分のイベント</a></p></details></td>
-      </tr>)}
-    </tbody></table></div>}
-    {data.total > 0 && <Pagination position="bottom" {...pagination} />}
+    {selectedPattern && view === 'list' && <div className="logs-panel__pattern-filter">
+      <span className="hint">型で絞り込み中（{selectedPattern.template ? <code>{selectedPattern.template}</code> : patternKeyLabel}）</span>
+      <button type="button" className="btn btn--gray" onClick={() => clearPattern()}>型の絞り込みを解除</button>
+    </div>}
+    {view === 'patterns' ? (
+      !resolvedRange.ok ? null
+        : !from || !to ? <p className="table-empty">型ごとの集計には、絞り込み条件で期間の開始と終了を指定してください。</p>
+        : patternResult === 'scan-limit' ? <p className="hint" role="note">対象のログが多すぎて集計できません。期間を短くするか、条件を追加して絞り込んでください。</p>
+        : patternResult === 'busy' ? <p className="hint" role="status">集計が混み合っています。しばらくしてから再度お試しください。</p>
+        : patternResult === 'error' ? null
+        : patternResult === null ? <p role="status" className="table-empty">読み込み中…</p>
+        : <LogPatternsTable data={patternResult} timeZone={timeZone} onSelect={openPattern} />
+    ) : <>
+      {data.items.length === 0 ? <p className="table-empty">条件に一致するログはありません</p> : <div className="logs-panel__table-scroll"><table className="table"><thead><tr><th>時刻</th><th>接続先</th><th>種別</th><th>重大度</th><th>本文</th></tr></thead><tbody>
+        {data.items.map((r) => <tr key={r.id}>
+          <td>{formatIsoInTimeZone(r.effective_at, timeZone)}{!r.occurred_at && <small>発生時刻未解析（取得時刻）</small>}</td>
+          <td>{r.host}<small>{r.source_id}</small></td><td>{r.log_kind}</td><td><SeverityBadge severity={r.severity} /></td>
+          <td><details><summary>{r.message.split('\n')[0].slice(0, 160)}</summary><pre>{r.message}</pre><small>世代: {r.file_generation} / バイト位置: {r.byte_offset}</small><p><a href={correlationHash('events', { vcenterId: r.vcenter_id, from: new Date(Date.parse(r.effective_at) - 300_000).toISOString(), to: new Date(Date.parse(r.effective_at) + 300_000).toISOString() })}>前後5分のイベント</a></p></details></td>
+        </tr>)}
+      </tbody></table></div>}
+      {data.total > 0 && <Pagination position="bottom" {...pagination} />}
+    </>}
   </div>
 }

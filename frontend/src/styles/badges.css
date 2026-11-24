@@ -42,6 +42,12 @@
   color: var(--color-error);
 }
 
+/* error より強く見せるため塗りつぶす。色は明暗どちらのテーマでも同じ。 */
+.badge--critical {
+  background: var(--color-critical);
+  color: var(--color-on-critical);
+}
+
 .score-badge {
   display: inline-block;
   min-width: 2.4em;

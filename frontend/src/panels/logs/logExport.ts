@@ -12,12 +12,20 @@ export type LogFilters = {
   log_kind: string
   severity: string
   message_contains: string
+  pattern_key?: string
   from: string | undefined
   to: string | undefined
 }
 
 export function buildLogListSearchParams(filters: LogFilters, limit: number, offset: number): URLSearchParams {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const params = buildLogFilterSearchParams(filters)
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
+  return params
+}
+
+export function buildLogFilterSearchParams(filters: LogFilters): URLSearchParams {
+  const params = new URLSearchParams()
   for (const [key, value] of Object.entries(filters)) {
     if (value) params.set(key, value)
   }
@@ -26,10 +34,8 @@ export function buildLogListSearchParams(filters: LogFilters, limit: number, off
 
 /** Capture only search conditions and the selected zone, without list pagination. */
 export function buildLogExportUrl(filters: LogFilters, timeZone: string): string {
-  const params = new URLSearchParams({ time_zone: timeZone })
-  for (const [key, value] of Object.entries(filters)) {
-    if (value) params.set(key, value)
-  }
+  const params = buildLogFilterSearchParams(filters)
+  params.set('time_zone', timeZone)
   return `/api/logs/export.csv?${params}`
 }
 
