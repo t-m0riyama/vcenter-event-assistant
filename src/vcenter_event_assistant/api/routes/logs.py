@@ -8,63 +8,107 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
-from vcenter_event_assistant.api.auth_deps import RequireViewer
+from vcenter_event_assistant.api.auth_deps import (
+    Principal,
+    RequireViewer,
+    get_current_principal,
+    principal_owner_key,
+)
 from vcenter_event_assistant.api.datetime_utils import to_utc
-from vcenter_event_assistant.api.schemas.base import UtcDateTime
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.services.sql_like import contains_case_insensitive as _contains_case_insensitive
+from vcenter_event_assistant.api.schemas.base import UtcDateTime
+from vcenter_event_assistant.api.schemas.log_patterns import LogPatternsResponse
 from vcenter_event_assistant.api.schemas.logs import LogListResponse, LogRead
 from vcenter_event_assistant.db.models import LogRecord
 from vcenter_event_assistant.db.session import get_session_factory
-from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.services.incident_timeline_view import timeline_aggregation_slot
 from vcenter_event_assistant.services.log_export import (
     prepare_log_export,
     stream_log_csv,
 )
+from vcenter_event_assistant.services.log_patterns.query import (
+    LogPatternScanLimitExceeded,
+    aggregate_log_patterns,
+)
+from vcenter_event_assistant.services.sql_like import contains_case_insensitive
+from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 
-def log_conditions(
+def _log_field_conditions(
     vcenter_id: UUID | None = None,
     source_id: str | None = Query(default=None, max_length=128),
     log_kind: str | None = Query(default=None, max_length=64),
     severity: str | None = Query(default=None, max_length=64),
     message_contains: str | None = Query(default=None, max_length=1000),
-    from_time: UtcDateTime | None = Query(default=None, alias="from"),
-    to_time: UtcDateTime | None = Query(default=None, alias="to"),
-) -> list:
-    if (
-        from_time is not None
-        and to_time is not None
-        and to_utc(from_time) > to_utc(to_time)
-    ):
-        raise HTTPException(status_code=400, detail="from must be before to")
-    conditions = []
+    pattern_key: str | None = Query(default=None, max_length=32),
+) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = []
     for column, value in (
         (LogRecord.vcenter_id, vcenter_id),
         (LogRecord.source_id, source_id),
         (LogRecord.log_kind, log_kind),
         (LogRecord.severity, severity),
+        (LogRecord.pattern_key, pattern_key),
     ):
         if value is not None:
             conditions.append(column == value)
+    if message_contains and message_contains.strip():
+        conditions.append(
+            contains_case_insensitive(LogRecord.message, message_contains.strip())
+        )
+    return conditions
+
+
+def _log_time_conditions(from_time: datetime | None, to_time: datetime | None) -> list[ColumnElement[bool]]:
+    if from_time is not None and to_time is not None and to_utc(from_time) > to_utc(to_time):
+        raise HTTPException(status_code=400, detail="from must be before to")
+    conditions: list[ColumnElement[bool]] = []
     if from_time is not None:
         conditions.append(LogRecord.effective_at >= to_utc(from_time))
     if to_time is not None:
         conditions.append(LogRecord.effective_at <= to_utc(to_time))
-    if message_contains and message_contains.strip():
-        conditions.append(
-            _contains_case_insensitive(LogRecord.message, message_contains.strip())
-        )
     return conditions
+
+
+def log_conditions(
+    fields: list[ColumnElement[bool]] = Depends(_log_field_conditions),
+    from_time: UtcDateTime | None = Query(default=None, alias="from"),
+    to_time: UtcDateTime | None = Query(default=None, alias="to"),
+) -> list[ColumnElement[bool]]:
+    return [*fields, *_log_time_conditions(from_time, to_time)]
+
+
+@router.get("/patterns", dependencies=[RequireViewer], response_model=LogPatternsResponse)
+async def list_log_patterns(
+    from_time: UtcDateTime = Query(alias="from"),
+    to_time: UtcDateTime = Query(alias="to"),
+    fields: list[ColumnElement[bool]] = Depends(_log_field_conditions),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_app_settings),
+    principal: Principal = Depends(get_current_principal),
+) -> LogPatternsResponse:
+    conditions = [*fields, *_log_time_conditions(from_time, to_time)]
+    try:
+        with timeline_aggregation_slot(principal_owner_key(principal)):
+            return await aggregate_log_patterns(session, conditions, max_rows=settings.log_pattern_scan_max_rows)
+    except LogPatternScanLimitExceeded:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "log_pattern_scan_limit",
+                "message": "対象のログが多すぎて集計できません。期間を短くするか、条件を追加して絞り込んでください。",
+            },
+        ) from None
 
 
 @router.get("", dependencies=[RequireViewer], response_model=LogListResponse)
 async def list_logs(
     session: AsyncSession = Depends(get_session),
-    conditions: list = Depends(log_conditions),
+    conditions: list[ColumnElement[bool]] = Depends(log_conditions),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> LogListResponse:
@@ -88,7 +132,7 @@ async def list_logs(
 @router.get("/export.csv", dependencies=[RequireViewer], response_class=StreamingResponse)
 async def export_logs(
     request: Request,
-    conditions: list = Depends(log_conditions),
+    conditions: list[ColumnElement[bool]] = Depends(log_conditions),
     settings: Settings = Depends(get_app_settings),
     time_zone: str = Query(default="UTC", max_length=128),
 ) -> StreamingResponse:
