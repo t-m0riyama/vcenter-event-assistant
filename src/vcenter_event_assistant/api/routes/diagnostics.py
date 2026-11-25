@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from sqlite3 import SQLITE_CONSTRAINT_FOREIGNKEY, SQLITE_CONSTRAINT_UNIQUE
 from typing import Annotated, TypeVar
 from uuid import UUID, uuid4
 
@@ -39,9 +40,11 @@ from vcenter_event_assistant.api.schemas.diagnostics import (
     TargetUpdate,
 )
 from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.db.constraints import is_constraint
 from vcenter_event_assistant.db.models import (
     DiagnosticCommand,
     DiagnosticTarget,
+    SSHConnection,
     VCenter,
 )
 from vcenter_event_assistant.services.diagnostics.catalog import (
@@ -99,7 +102,9 @@ async def _write_setting(
     if await session.scalar(select(model.id).where(model.id == identifier)) is None:
         raise HTTPException(404, "診断設定が見つかりません。")
     raise HTTPException(
-        409, "診断設定が変更されました。最新の設定を読み直してください。"
+        409,
+        "診断設定が変更されました。最新の設定を読み直してください。",
+        headers={"X-VEA-Error-Code": "diagnostic_setting_stale"},
     )
 
 
@@ -149,20 +154,31 @@ def _validate_command(body: CommandInput) -> None:
         ) from None
 
 
-async def _validate_target(session: AsyncSession, body: TargetInput) -> None:
+async def _validate_target(
+    session: AsyncSession, body: TargetInput, current_vcenter_id: UUID | None = None
+) -> None:
+    """対象の参照先を確かめる。
+
+    無効な vCenter は新しく選べないが、変更では今の vCenter のままなら認める。
+    作ったあとで vCenter を無効にしても、SSH 接続先などを変えられるようにするためである。
+    """
     if (body.product == "vcenter") != (body.host_moid is None):
         raise HTTPException(
             422, "ESXi にはホストの moid を指定し、vCenter では空にしてください。"
         )
-    if (
-        await session.scalar(select(VCenter.id).where(VCenter.id == body.vcenter_id))
-        is None
-    ):
-        raise HTTPException(422, "vCenter を選択してください。")
-    if (
-        await read_ssh_connection(session, body.ssh_connection_id, "diagnostics")
-        is None
-    ):
+    is_enabled = await session.scalar(
+        select(VCenter.is_enabled).where(VCenter.id == body.vcenter_id)
+    )
+    if is_enabled is None:
+        raise _target_reference_missing()
+    if not is_enabled and body.vcenter_id != current_vcenter_id:
+        raise HTTPException(422, "有効なvCenterを選択してください。")
+    if await read_ssh_connection(session, body.ssh_connection_id, "diagnostics") is None:
+        connection_id = await session.scalar(
+            select(SSHConnection.id).where(SSHConnection.id == body.ssh_connection_id)
+        )
+        if connection_id is None:
+            raise _target_reference_missing()
         raise HTTPException(422, "診断用の SSH 接続先を選択してください。")
 
 
@@ -252,6 +268,26 @@ async def list_targets(session: Session) -> list[TargetRead]:
     return [TargetRead.model_validate(row) for row in rows]
 
 
+def _target_integrity_error(exc: IntegrityError) -> HTTPException | None:
+    if is_constraint(exc, "23505", SQLITE_CONSTRAINT_UNIQUE):
+        return HTTPException(
+            409,
+            "この vCenter・ESXi には実行の対象がすでにあります。",
+            headers={"X-VEA-Error-Code": "diagnostic_target_duplicate"},
+        )
+    if is_constraint(exc, "23503", SQLITE_CONSTRAINT_FOREIGNKEY):
+        return _target_reference_missing()
+    return None
+
+
+def _target_reference_missing() -> HTTPException:
+    return HTTPException(
+        409,
+        "選んだ vCenter または SSH 接続先が削除されました。一覧を読み直して選び直してください。",
+        headers={"X-VEA-Error-Code": "diagnostic_reference_missing"},
+    )
+
+
 @router.post("/targets", status_code=201)
 async def create_target(
     body: TargetInput, request: Request, session: Session, actor: Actor
@@ -268,10 +304,11 @@ async def create_target(
     session.add(row)
     try:
         await session.flush()
-    except IntegrityError:
-        raise HTTPException(
-            409, "対象が登録済みか、接続設定が変更されました。"
-        ) from None
+    except IntegrityError as exc:
+        error = _target_integrity_error(exc)
+        if error is None:
+            raise
+        raise error from None
     result = TargetRead.model_validate(row)
     await _audit_target(session, request, actor, "created", row)
     return result
@@ -285,7 +322,10 @@ async def update_target(
     session: Session,
     actor: Actor,
 ) -> TargetRead:
-    await _validate_target(session, body)
+    current_vcenter_id = await session.scalar(
+        select(DiagnosticTarget.vcenter_id).where(DiagnosticTarget.id == identifier)
+    )
+    await _validate_target(session, body, current_vcenter_id)
     try:
         row = await _write_setting(
             session,
@@ -299,10 +339,11 @@ async def update_target(
                 updated_at=utcnow(),
             ),
         )
-    except IntegrityError:
-        raise HTTPException(
-            409, "対象が登録済みか、接続設定が変更されました。"
-        ) from None
+    except IntegrityError as exc:
+        error = _target_integrity_error(exc)
+        if error is None:
+            raise
+        raise error from None
     result = TargetRead.model_validate(row)
     await _audit_target(session, request, actor, "updated", row)
     return result

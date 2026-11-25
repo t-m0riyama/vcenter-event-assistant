@@ -1,6 +1,6 @@
 # 対応手順と読み取り専用の診断コマンド
 
-最終更新: 2026-11-26（PR C マージ済み、PR D 実装中）
+最終更新: 2026-11-26（PR D マージ済み、PR E 実装中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 9」にあたる。案 5 の障害パターンごとに対応手順を見せ、手順の中の診断コマンドを、インシデントの詳細から ESXi と vCenter に SSH で実行して、結果をインシデントに残す。Issue は起票していない。
 
@@ -13,8 +13,8 @@
 | A | 本書 | マージ済み（[PR #386](https://github.com/t-m0riyama/vcenter-event-assistant/pull/386)） |
 | B | SSH の鍵と接続先の用途の分離、診断の設定（実行の対象・追加のコマンド）の表と API | マージ済み（[PR #387](https://github.com/t-m0riyama/vcenter-event-assistant/pull/387)） |
 | C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | マージ済み（[PR #388](https://github.com/t-m0riyama/vcenter-event-assistant/pull/388)） |
-| D | 対応手順（障害パターンへの同梱と、インシデントへの候補の提示） | 実装中 |
-| E | 画面: 診断の設定 | 未着手 |
+| D | 対応手順（障害パターンへの同梱と、インシデントへの候補の提示） | マージ済み（[PR #389](https://github.com/t-m0riyama/vcenter-event-assistant/pull/389)） |
+| E | 画面: 診断の設定 | 実装中 |
 | F | 画面: インシデントの手順・実行・結果と、文書 | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
@@ -389,8 +389,8 @@ ESXi のコマンドを vCenter に送ると、`esxcli` などが無いので終
 | `GET /api/incidents/{id}/procedures` | 通常 | viewer | そのインシデントの候補の手順 |
 | `GET /api/incidents/{id}/diagnostic-runs/{run_id}` | 通常 | viewer | 1 件の結果の出力。`run_id` は `fits_integer_id` で確かめる |
 | `GET /api/diagnostics/commands` | ゲート付き | admin | 組み込みと追加のコマンドの一覧（引数の定義つき）と、引数の種類の一覧 |
-| `POST`・`PUT`・`DELETE /api/diagnostics/commands[/{id}]` | ゲート付き | admin | 追加のコマンド。更新と削除は `revision`。雛形の誤りは 422 で、理由の区分と引数の名前を返す（4 章） |
-| `GET`・`POST`・`PUT`・`DELETE /api/diagnostics/targets[/{id}]` | ゲート付き | admin | 実行の対象 |
+| `POST`・`PUT`・`DELETE /api/diagnostics/commands[/{id}]` | ゲート付き | admin | 追加のコマンド。更新と削除は `revision` で、ほかの人が先に変えていれば 409（`X-VEA-Error-Code: diagnostic_setting_stale`）を返す。雛形の誤りは 422 で、理由の区分と引数の名前を返す（4 章） |
+| `GET`・`POST`・`PUT`・`DELETE /api/diagnostics/targets[/{id}]` | ゲート付き | admin | 実行の対象。無効な vCenter と、用途が診断でない SSH 接続先は 422 で断る。ただし変更では、今の vCenter のままなら無効でも認める（作ったあとで vCenter を無効にしても、接続先を変えられるように）。409 は理由ごとに区分を分ける: 同じ vCenter・ホストの対象が既にある（`diagnostic_target_duplicate`）、`revision` が古い（`diagnostic_setting_stale`）、選んだ vCenter か接続先が削除されている（`diagnostic_reference_missing`。保存の前の確認でも、保存の途中の外部キー違反でも同じ）。画面は、どの区分でも入力を残す。古い `revision` では最新を読み直すまで保存させず、削除された参照先では一覧を読み直す操作を出し、消えた参照先の選択だけを外す（PR E で追加） |
 | `GET /api/diagnostics/vcenters/{id}/hosts` | ゲート付き | admin | ESXi の一覧（`plugin_setup.py:642` の処理を切り出して使う） |
 | `/api/diagnostics/ssh/credentials`・`/connections`（今の SSH の API と同じ形） | ゲート付き | admin | 用途 `diagnostics` の鍵と接続先 |
 | `POST /api/diagnostics/incidents/{id}/runs/preview` | ゲート付き | admin | 送る文字列・接続先・指紋を返す。SSH はしない（4 章） |

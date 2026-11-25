@@ -13,6 +13,7 @@ import { ChatWebSearchPrefsPanel } from './panels/settings/ChatWebSearchPrefsPan
 import { GeneralSettingsPanel } from './panels/settings/GeneralSettingsPanel'
 import { EventTypeGuidesPanel } from './panels/settings/EventTypeGuidesPanel'
 import { ScoreRulesPanel } from './panels/settings/ScoreRulesPanel'
+import { DiagnosticsPanel } from './panels/settings/DiagnosticsPanel'
 import { DirectoriesPanel } from './panels/settings/DirectoriesPanel'
 import { UsersPanel } from './panels/settings/UsersPanel'
 import { VCentersPanel } from './panels/settings/VCentersPanel'
@@ -98,10 +99,11 @@ export default function App() {
   const [chatHandoffNonce, setChatHandoffNonce] = useState(0)
   const [appErr, setAppErr] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
-  const { retention } = useAppConfig(setAppErr)
+  const { retention, configLoading } = useAppConfig(setAppErr)
   const { me, hasRole } = useAuth()
   const canChat = hasRole('operator')
   const isAdmin = hasRole('admin')
+  const canManageDiagnostics = isAdmin && retention?.diagnostics_enabled === true
   // ユーザー管理と認証ディレクトリは admin のみ。認証が無効なサーバではログインがないので出さない
   const canManageUsers = isAdmin && me.auth_enabled
   const attention = useAttentionStatus()
@@ -124,6 +126,13 @@ export default function App() {
       setSettingsSubTab('general')
     }
   }, [canManageUsers, setSettingsSubTab, settingsSubTab, tab])
+
+  useEffect(() => {
+    if (tab === 'settings' && settingsSubTab === 'diagnostics'
+      && (!isAdmin || (!configLoading && !canManageDiagnostics))) {
+      setSettingsSubTab('general')
+    }
+  }, [canManageDiagnostics, configLoading, isAdmin, setSettingsSubTab, settingsSubTab, tab])
 
   useEffect(() => {
     if (tab !== 'metrics') {
@@ -338,6 +347,12 @@ export default function App() {
         render: (onError) => <PluginsPanel onError={onError} />,
       },
       {
+        id: 'diagnostics',
+        label: '診断',
+        panelLabel: '診断の設定',
+        render: () => <DiagnosticsPanel />,
+      },
+      {
         id: 'users',
         label: 'ユーザー',
         panelLabel: 'ユーザー管理',
@@ -365,7 +380,8 @@ export default function App() {
   )
 
   const visibleSettingsSubTabs = settingsSubTabs.filter(
-    (sub) => !AUTH_ADMIN_SUB_TABS.has(sub.id) || canManageUsers,
+    (sub) => (sub.id !== 'diagnostics' || canManageDiagnostics)
+      && (!AUTH_ADMIN_SUB_TABS.has(sub.id) || canManageUsers),
   )
 
   const helpEntry = resolveTabHelp(tab, settingsSubTab)

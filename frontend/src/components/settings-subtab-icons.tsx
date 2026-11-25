@@ -13,6 +13,7 @@ export type SettingsSubTabId =
   | 'chat_samples'
   | 'alerts'
   | 'plugins'
+  | 'diagnostics'
   | 'users'
   | 'directories'
 
@@ -91,6 +92,13 @@ export function SettingsSubTabIcon({ tabId }: { readonly tabId: SettingsSubTabId
           <rect x="2" y="10.8" width="5" height="3.2" rx="0.5" />
           <rect x="9" y="10.8" width="5" height="3.2" rx="0.5" />
           <path d="M8 5.2v2.8M4.5 10.8V8h7v2.8" />
+        </TabButtonSvgIcon>
+      )
+    case 'diagnostics':
+      return (
+        <TabButtonSvgIcon>
+          <circle cx="6.5" cy="6.5" r="4" />
+          <path d="m9.5 9.5 4 4M4.5 6.5h1l1-1.5 1 3 1-1.5h1" />
         </TabButtonSvgIcon>
       )
     case 'plugins':

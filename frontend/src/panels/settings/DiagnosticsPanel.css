@@ -1,0 +1,78 @@
+.diagnostics-panel {
+  display: grid;
+  gap: var(--spacing-4);
+}
+
+.diagnostics-panel > .panel {
+  min-width: 0;
+}
+
+.diagnostics-panel > .panel > h2:first-child {
+  margin-block-start: 0;
+}
+
+.diagnostics-panel form,
+.diagnostics-panel .settings-list,
+.diagnostic-builtin {
+  margin-block-start: var(--spacing-3);
+}
+
+.diagnostics-panel fieldset {
+  min-width: 0;
+  margin: var(--spacing-3) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.diagnostics-panel .form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.diagnostics-panel .form-grid label {
+  min-width: 0;
+}
+
+.diagnostics-panel input,
+.diagnostics-panel select,
+.diagnostics-panel textarea {
+  max-width: 100%;
+}
+
+.diagnostic-wide {
+  grid-column: 1 / -1;
+}
+
+.diagnostic-grid-action {
+  align-self: end;
+  justify-self: start;
+}
+
+.diagnostics-panel summary {
+  cursor: pointer;
+}
+
+.diagnostics-panel .plugin-ssh-field .btn {
+  margin: var(--spacing-1);
+}
+
+.diagnostics-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.diagnostics-panel code {
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-panel pre {
+  padding: var(--spacing-2);
+  border-radius: var(--radius-control);
+  background: var(--color-background-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 20rem;
+  overflow: auto;
+}

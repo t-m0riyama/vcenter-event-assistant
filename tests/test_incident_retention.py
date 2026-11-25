@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
-from sqlalchemy import event, func, select, text, update
+from sqlalchemy import delete, event, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db import session as db
@@ -104,6 +104,28 @@ async def _link_snapshot(session: AsyncSession, incident_id: UUID, snapshot_id: 
         session, incident_id, IncidentSnapshot, [snapshot_id], reference_snapshot,
         "tester", datetime.now(timezone.utc),
     )
+
+
+async def test_sqlite_snapshot_removed_between_lookup_and_link():
+    snapshot_id, *_ = await seed_snapshots()
+    async with db.session_scope() as session:
+        assert session.get_bind().dialect.name == "sqlite"
+        incident_id = await _create_incident(session)
+
+        async def load_then_remove(conn, source):
+            link = await reference_snapshot(conn, source)
+            assert isinstance(link, IncidentSnapshot)
+            await conn.execute(delete(IncidentTimelineManualSnapshot).where(
+                IncidentTimelineManualSnapshot.id == snapshot_id,
+            ))
+            return link
+
+        links = await add_links(
+            session, incident_id, IncidentSnapshot, [snapshot_id], load_then_remove,
+            "tester", datetime.now(timezone.utc),
+        )
+        assert links.added == 0
+        assert [entry.result for entry in links.results] == ["not_found"]
 
 
 async def _wait_for_snapshot_table_lock(task: asyncio.Task, mode: str, *, granted: bool) -> None:

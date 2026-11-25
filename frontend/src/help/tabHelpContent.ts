@@ -107,6 +107,10 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
     userGuideDoc: 'docs/userguide/plugins.md',
     markerId: 'plugins',
   },
+  diagnostics: {
+    summary:
+      '【診断の設定】\n診断が有効なときに管理者だけが開けます。\n- 診断用の SSH 鍵と接続先を登録し、ホスト鍵の指紋を照合して承認します。\n- vCenter または配下の ESXi と、診断用の SSH 接続先を結び付けます。\n- 追加のコマンドは製品、名前、説明、雛形、引数の種類を登録します。診断用のアカウントは強い権限を持ちます。ログ収集とは別のアカウントと鍵を使用してください。追加のコマンドが読み取り専用かどうかは本体では確かめません。',
+  },
   users: {
     summary:
       '【ユーザー】\nログインできるユーザーを管理します（管理者のみ）。\n- ローカルユーザーの作成、表示名・ロール・有効状態の変更、パスワード再設定、ロック解除、ログイン解除、削除ができます。\n- ロールの変更・無効化・パスワード再設定をすると、そのユーザーのログインは解除されます。',
