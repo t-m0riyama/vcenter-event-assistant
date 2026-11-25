@@ -172,7 +172,8 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 | `command_kind` | 文字列 | `builtin` か `custom` |
 | `command_ref` | 文字列 | 組み込みならコマンドの ID、追加なら `diagnostic_commands.id` の文字列（外部キーにしない） |
 | `command_title` | 文字列 | 実行した時点の名前の写し |
-| `command_line` | 文字列 | 送ったコマンドの文字列の写し。vCenter で前に付けるシェルの呼び出しと `export PATH=...` は含めない |
+| `command_line` | 文字列 | 本体が組み立てた、送るコマンドの文字列の写し（4 章）。vCenter で前に付けるシェルの呼び出しと `export PATH=...` は含めない |
+| `executed` | 真偽（NULL 可） | ホストでコマンドの実行を要求できたか。NULL は分からない（4 章） |
 | `params` | JSON | コマンドに渡した引数（正規化した値）。組み込みと追加の両方 |
 | `target_id` | UUID（NULL 可） | 外部キーにしない。対象を消しても結果は残す |
 | `product`・`host_name`・`ssh_host`・`ssh_port`・`ssh_username` | | 実行した時点の写し |
@@ -285,7 +286,9 @@ admin が追加するコマンドの表である。組み込みのコマンド�
    - 保存が 10 秒の上限を超えたとき、または DB の書き込みか commit が例外で失敗したときは、巻き戻してから、監査ログに `discarded` を書いて 503（`X-VEA-Error-Code: diagnostic_save_failed`）を返す。理由は `save_timeout` か `save_failed` とし、実行の状態・終了コード・`error_code`・所要時間・出力のバイト数も入れる。ホストではコマンドが動いたのに結果を保存できなかったことを、監査ログから分かるようにするためである。例外の文言は監査ログに入れず、アプリのログに出す。
 7. 監査ログに `finished` を書く。
 
-7 の `finished` には、ワーカーが実際に組み立てて応答で返した文字列を入れる。結果の `command_line` にも同じものを書く。
+`started`・`finished` と結果の `command_line` には、手順 2 で本体が組み立てた文字列（プレビューで見せたものと同じ）を入れる。ワーカーを起動できないとき、`harden` で終えたとき、本体の期限でワーカーを kill したときは、ワーカーの応答が無いためである。ワーカーも同じ関数と同じ入力から組み立てるので、文字列は一致する。一致することはテストで確かめ、ワーカーの応答から文字列を受け取ることはしない。
+
+送った文字列が実際に実行されたかどうかは、`command_line` とは別に、結果の `executed` で表す。ワーカーは、SSH でコマンドの実行を要求できたら `executed: true`、その前に終えたら（`invalid_command`・`connect_failed`・`host_key_mismatch`・`auth_failed`・`shell_unavailable`）`executed: false` を返す。ワーカーの応答が無いとき（`worker_unavailable`、本体の期限で kill したときの `timeout`）は NULL（分からない）にする。
 
 ### 切り離したタスク
 
@@ -304,8 +307,9 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 - 接続先 1 件を、用途を確かめて直接読む関数を新しく書く。`materialize_ssh` は収集の設定のスキーマを前提にするので使わない。
 - 分離モードかどうかにかかわらず、鍵と承認したホスト鍵は、ファイルにせず、要求の項目にそのまま入れる。
 - 要求は 2 つ送る。先に鍵を含まない `{"op": "harden"}` を送り、ワーカーが自分を dumpable でなくしたことを応答で確かめる。応答は `{"applied": 真偽}` とする。本体は、自分が Linux（`sys.platform.startswith("linux")`）なら `applied` が真であることを必須にし、偽なら `diagnose` を送らずに `worker_unavailable` として終える。Linux 以外では偽を許す。ワーカーには `VEA_PROCESS_NON_DUMPABLE` が渡らないので、この処理は設定によらず常に行う。
+- `diagnose` は、`harden` を確かめたのと同じワーカーに送る。今の `CollectorWorker.request()` は要求のたびに `ensure_started()` を呼び（`plugins/remote.py:162-163`）、ワーカーが止まっていれば新しく起動する（同 121-124 行）。新しいプロセスは dumpable が元に戻っているので、前の `applied: true` は当てにならない。そこで `request()` に、止まっていても起動し直さない指定（`auto_start=False`）を足す。止まっていたら要求を送らずに `CollectorWorkerError` を上げる。`diagnose` はこの指定で送り、ワーカーが止まっていたら `worker_unavailable` として終える。今の呼び出し元の挙動は変えない。
 - `diagnose` の要求の形: `{"op": "diagnose", "ssh": {"host", "port", "username", "private_key", "host_key"}, "product": "esxi" | "vcenter", "command": {"builtin": ID, "params": {...}} | {"custom": {"template": 雛形, "param_definitions": [{"name", "type"}]}, "params": {...}}, "deadline_seconds": 残りの秒数}`。`params` は、どこでも引数の値（名前から値への対応）を指し、引数の定義は `param_definitions` と呼ぶ。
-- モックモードかどうかは本体で決める。モックモードではワーカーを起動せず、組み込みのコマンドにはコマンドごとの固定の出力を、追加のコマンドには「モックモードのため実行していません」の 1 行を返す。どちらも状態は `succeeded`、終了コードは 0 にする（ワーカーにはモックモードの値が渡らない）。`command_line` は、本体が同じ関数で組み立てる。シードとスクリーンショットに使う。
+- モックモードかどうかは本体で決める。モックモードではワーカーを起動せず、組み込みのコマンドにはコマンドごとの固定の出力を、追加のコマンドには「モックモードのため実行していません」の 1 行を返す。どちらも状態は `succeeded`、終了コードは 0 にし、ホストでは実行していないので `executed` は偽にする（ワーカーにはモックモードの値が渡らない）。`command_line` は、本体が同じ関数で組み立てる。シードとスクリーンショットに使う。
 
 ### ワーカーの中の処理（`op="diagnose"`）
 
@@ -396,7 +400,7 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 | `event` | 主な項目 |
 |---|---|
 | `diagnostics.run.started` | インシデント、対象、接続先（ホスト・ポート・ユーザー名）、コマンドの区分と ID、引数、送るコマンドの文字列 |
-| `diagnostics.run.finished` | 上に加えて、状態、終了コード、`error_code`、所要時間、出力のバイト数、切ったか |
+| `diagnostics.run.finished` | 上に加えて、状態、`executed`、終了コード、`error_code`、所要時間、出力のバイト数、切ったか |
 | `diagnostics.run.rejected` | 断った理由（引数や雛形の誤り、対象と製品の不一致、プレビューのあとの変更、件数の上限、空きが無い、ホスト鍵が未承認など） |
 | `diagnostics.run.discarded` | 実行のあとで結果を捨てた理由（インシデントが消えた、件数の上限、保存の時間切れ `save_timeout`、保存の失敗 `save_failed`）。保存の時間切れと失敗では、実行の状態・終了コード・`error_code`・所要時間・出力のバイト数も入れる |
 | `diagnostics.run.aborted` | アプリの終了で実行を取り消した |
@@ -463,6 +467,8 @@ admin が追加するコマンドの表である。組み込みのコマンド�
   - ワーカーの側での確かめ直し（組み込みと追加の両方で、本体の確認を通っていない要求を断り、`invalid_command` を返して接続しない）。
   - プレビューと実行で同じ文字列と指紋になること。プレビューのあとでコマンド・対象・接続先を変えたときの 409（`diagnostic_changed`）と、監査の `rejected`。プレビューでは監査ログを書かないこと。
   - 鍵を一時ファイルに書かないこと。`harden` の応答の前に `diagnose` を送らないこと、`prctl` に失敗したら `diagnose` を送らないこと。
+  - `harden` の応答のあとでワーカーが止まったら、新しいワーカーを起動せず、`diagnose` も送らずに `worker_unavailable` になること（分離するモードとしないモードの両方）。`auto_start` を指定しない今の呼び出しでは、これまでどおり起動し直すこと。
+  - ワーカーと本体の組み立てた文字列が、組み込みの全件と追加のコマンドの例で一致すること。ワーカーの応答が無い失敗（起動できない、`harden` で終えた、本体の期限で kill した）でも、結果と監査ログに本体の組み立てた文字列が入り、`executed` が NULL になること。接続や認証の失敗では `executed` が偽になること。
   - ポートが 22 以外の接続先で、ホスト鍵の照合が通ること。
   - 出力の切り詰め（上限を超えても終了コードが返ること）、時間切れで途中までの出力が残ること、失敗の区分、文言を出さないこと。
   - 件数の上限（手順 2 と手順 6 の両方）、空きが無いときの 409、インシデントが途中で消えたとき。
