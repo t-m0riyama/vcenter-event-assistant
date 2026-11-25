@@ -103,10 +103,32 @@ def _docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["docker", *args], check=check, capture_output=True, text=True)
 
 
+def published_ports(docker_port_output: str) -> set[int]:
+    """``docker port <名前> 5432/tcp`` の出力（``0.0.0.0:55432`` や ``[::]:55432`` の行）からホストのポートを返す。"""
+    ports: set[int] = set()
+    for line in docker_port_output.splitlines():
+        _, separator, port = line.strip().rpartition(":")
+        if separator and port.isdigit():
+            ports.add(int(port))
+    return ports
+
+
 def ensure_container(service: PostgresService, port: int) -> None:
-    """コンテナが動いていなければ立て、接続を受け付けるまで待つ。"""
+    """コンテナが動いていなければ立て、接続を受け付けるまで待つ。
+
+    動いているコンテナは、指定のポートで公開しているときだけ使う。接続の確認はコンテナの中で
+    行うので、ポートが違っても通ってしまい、テストだけが別のポートにつなぐことになるためである。
+    """
     running = _docker("ps", "--filter", f"name=^{CONTAINER}$", "--format", "{{.Names}}").stdout.strip()
-    if running != CONTAINER:
+    if running == CONTAINER:
+        ports = published_ports(_docker("port", CONTAINER, "5432/tcp", check=False).stdout)
+        if port not in ports:
+            shown = ", ".join(str(item) for item in sorted(ports)) or "なし"
+            raise RuntimeError(
+                f"{CONTAINER} はポート {shown} で動いていて、指定のポート {port} では公開していません。"
+                f"`--port` を合わせるか、`docker stop {CONTAINER}` で止めてから流し直してください。"
+            )
+    else:
         print(f"PostgreSQL のコンテナ {CONTAINER} を {service.image} で起動します（ポート {port}）。")
         _docker(
             "run", "-d", "--rm", "--name", CONTAINER,
@@ -144,7 +166,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"# {step.name}\n{step.run}\n")
         return 0
 
-    ensure_container(postgres_service(workflow), args.port)
+    try:
+        ensure_container(postgres_service(workflow), args.port)
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     failed: list[str] = []
     try:
         for step in steps:
