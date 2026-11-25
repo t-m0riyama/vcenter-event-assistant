@@ -112,6 +112,7 @@ _RATE_LIMITED_PATTERNS: tuple[tuple[str, tuple[str, ...], str, int], ...] = tupl
         ("GET", "/api/plugins/vcenters/*/hosts", "probe", 60),
         ("POST", "/api/diagnostics/ssh/connections/*/host-key", "probe", 60),
         ("GET", "/api/diagnostics/vcenters/*/hosts", "probe", 60),
+        ("POST", "/api/diagnostics/incidents/*/runs", "diagnostics", 60),
         ("GET", "/api/vcenters/*/test", "probe", 60),
         (
             "GET",
@@ -185,6 +186,7 @@ async def lifespan(app: FastAPI):
             setup_scheduler(app, settings, registry=registry)
         yield
     finally:
+        await app.state.diagnostic_runs.shutdown()
         shutdown_inventory_reads()
         shutdown_scheduler(app)
         # ホットリロード後は起動時のローカル変数が旧世代を指すため、現行スナップショットを引き直す。
@@ -210,6 +212,9 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
+    from vcenter_event_assistant.services.diagnostics.runs import DiagnosticRuns
+
+    app.state.diagnostic_runs = DiagnosticRuns()
     app.add_exception_handler(StarletteHTTPException, body_limit_http_exception_handler)
     # add_middleware は後から登録したものが外側になる。
     app.add_middleware(
@@ -264,6 +269,8 @@ def create_app() -> FastAPI:
             spec = _rate_limit_spec(request.method, request.url.path)
             if spec is not None:
                 bucket, window = spec
+                if bucket == "diagnostics" and not settings.diagnostics_enabled:
+                    return await call_next(request)
                 client_host = request.client.host if request.client else "unknown"
                 key = f"{bucket}:{client_host}"
                 limit = {
@@ -275,6 +282,7 @@ def create_app() -> FastAPI:
                     "plugins": settings.rate_limit_plugins_per_minute,
                     "login": settings.rate_limit_login_per_minute,
                     "probe": settings.rate_limit_probe_per_minute,
+                    "diagnostics": settings.rate_limit_diagnostics_per_minute,
                 }[bucket]
                 if not check_rate_limit(key, limit=limit, window_seconds=window):
                     return JSONResponse(

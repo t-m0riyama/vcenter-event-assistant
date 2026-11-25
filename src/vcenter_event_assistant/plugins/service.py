@@ -351,6 +351,10 @@ async def _serve(role: str) -> None:
     root = os.environ["VEA_PLUGIN_SERVICE_SOCKET_DIR"]
     path = socket_path(root, role)
     verify_local_uid(role)
+    if role == "worker":
+        from vcenter_event_assistant.process_hardening import make_process_non_dumpable
+
+        make_process_non_dumpable()
     install_lock = asyncio.Lock()
     tasks: set[asyncio.Task[Any]] = set()
 

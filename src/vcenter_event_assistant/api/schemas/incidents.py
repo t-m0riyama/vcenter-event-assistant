@@ -9,10 +9,11 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from vcenter_event_assistant.api.schemas.base import UtcDateTime
+from vcenter_event_assistant.api.schemas.diagnostics import DiagnosticRunRead
 from vcenter_event_assistant.services.incidents import IncidentDetails, IncidentPage, IncidentStatus, LinkOutcome
 
 IncidentLevel = Literal["critical", "error", "warning"]
-EntryKind = Literal["note", "change", "link"]
+EntryKind = Literal["note", "change", "link", "diagnostic"]
 MAX_LINK_REQUEST = 100
 
 
@@ -226,6 +227,7 @@ class SnapshotLinkRead(BaseModel):
 class IncidentDetail(IncidentRead):
     summary: str
     entries: list[EntryRead]
+    diagnostic_runs: list[DiagnosticRunRead]
     events: list[EventLinkRead]
     alerts: list[AlertLinkRead]
     snapshots: list[SnapshotLinkRead]
@@ -236,6 +238,7 @@ class IncidentDetail(IncidentRead):
             **IncidentRead.model_validate(details.incident).model_dump(),
             summary=details.incident.summary,
             entries=[EntryRead.model_validate(entry) for entry in details.entries],
+            diagnostic_runs=[DiagnosticRunRead.model_validate(row) for row in details.diagnostic_runs],
             events=[
                 EventLinkRead.model_validate({**vars(row), "source_exists": exists})
                 for row, exists in details.events

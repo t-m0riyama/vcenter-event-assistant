@@ -183,6 +183,7 @@ class AppLogSettingsMixin(BaseModel):
     rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=1000)
     rate_limit_ingest_per_minute: int = Field(default=5, ge=1, le=1000)
     rate_limit_digests_per_minute: int = Field(default=5, ge=1, le=1000)
+    rate_limit_diagnostics_per_minute: int = Field(default=10, ge=1, le=1000)
     rate_limit_plugins_per_minute: int = Field(default=10, ge=1, le=1000)
     rate_limit_probe_per_minute: int = Field(
         default=20,

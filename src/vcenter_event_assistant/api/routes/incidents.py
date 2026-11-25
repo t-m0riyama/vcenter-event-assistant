@@ -20,6 +20,7 @@ from vcenter_event_assistant.api.auth_deps import (
     get_current_principal,
 )
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
+from vcenter_event_assistant.api.schemas.diagnostics import DiagnosticRunOutput
 from vcenter_event_assistant.api.schemas.incidents import (
     CreateLinkResults,
     EntryCreate,
@@ -36,7 +37,14 @@ from vcenter_event_assistant.api.schemas.incidents import (
     TimedLinksRequest,
 )
 from vcenter_event_assistant.auth.timeutil import utcnow
-from vcenter_event_assistant.db.models import Incident, IncidentAlert, IncidentEntry, IncidentEvent, IncidentSnapshot
+from vcenter_event_assistant.db.models import (
+    Incident,
+    IncidentAlert,
+    IncidentDiagnosticRun,
+    IncidentEntry,
+    IncidentEvent,
+    IncidentSnapshot,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.incidents import (
     LINK_NAMES,
@@ -80,7 +88,7 @@ def _parse_incident_id(id: str) -> UUID:
 
 IncidentId = Annotated[UUID, Depends(_parse_incident_id)]
 
-def _actor_name(principal: Principal) -> str:
+def incident_actor_name(principal: Principal) -> str:
     username = principal.username
     display_name = principal.display_name
     if display_name and display_name != username:
@@ -110,7 +118,7 @@ async def _lock_incident(
             detail="Incident has changed since it was read",
             headers={"X-VEA-Error-Code": "incident_stale"},
         )
-    return IncidentWrite(incident_id, session, utcnow(), _actor_name(principal))
+    return IncidentWrite(incident_id, session, utcnow(), incident_actor_name(principal))
 
 
 async def _locked_incident(incident_id: IncidentId, session: WriteSession, principal: CurrentPrincipal) -> IncidentWrite:
@@ -139,6 +147,20 @@ async def get_incidents(
     return IncidentListResponse.from_page(page)
 
 
+@router.get("/{id}/diagnostic-runs/{run_id}", dependencies=[RequireViewer])
+async def get_diagnostic_run(incident_id: IncidentId, run_id: int, session: ReadSession) -> DiagnosticRunOutput:
+    row = None
+    if fits_integer_id(session, run_id):
+        row = await session.scalar(
+            select(IncidentDiagnosticRun).where(
+                IncidentDiagnosticRun.incident_id == incident_id, IncidentDiagnosticRun.id == run_id,
+            )
+        )
+    if row is None:
+        raise HTTPException(404, "診断の結果が見つかりません。")
+    return DiagnosticRunOutput.model_validate(row)
+
+
 @router.get("/{id}", dependencies=[RequireViewer])
 async def get_incident(incident_id: IncidentId, session: ReadSession) -> IncidentDetail:
     incident = await _get_incident(session, incident_id)
@@ -150,7 +172,7 @@ async def create_incident(
     body: IncidentCreate, session: WriteSession, principal: CurrentPrincipal, settings: AppSettings,
 ) -> IncidentCreateResponse:
     now = utcnow()
-    actor = _actor_name(principal)
+    actor = incident_actor_name(principal)
     incident = Incident(
         title=body.title, status=body.status, level=body.level, assignee=body.assignee,
         summary=body.summary, started_at=body.started_at, resolved_at=now if body.status == "resolved" else None,

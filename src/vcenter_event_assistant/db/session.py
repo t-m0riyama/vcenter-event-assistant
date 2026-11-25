@@ -141,6 +141,20 @@ async def session_scope(
     Yields:
         非同期 SQLAlchemy セッション。
     """
+    async with open_session(settings, isolate_memory=isolate_memory) as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def open_session(
+    settings: Settings | None = None, *, isolate_memory: bool = False,
+) -> AsyncIterator[AsyncSession]:
+    """commit の時点を呼び出し元で管理するセッション。"""
     factory = get_session_factory(settings=settings)
     session = (
         factory(bind=_isolated_memory_engine)
@@ -148,12 +162,7 @@ async def session_scope(
         else factory()
     )
     async with session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+        yield session
 
 
 async def init_db(settings: Settings | None = None) -> None:

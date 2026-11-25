@@ -1,6 +1,6 @@
 # 対応手順と読み取り専用の診断コマンド
 
-最終更新: 2026-11-25（PR A マージ済み、PR B 実装中）
+最終更新: 2026-11-26（PR B マージ済み、組み込みのコマンドを実機で確認）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 9」にあたる。案 5 の障害パターンごとに対応手順を見せ、手順の中の診断コマンドを、インシデントの詳細から ESXi と vCenter に SSH で実行して、結果をインシデントに残す。Issue は起票していない。
 
@@ -11,8 +11,8 @@
 | PR | 内容 | 状態 |
 |---|---|---|
 | A | 本書 | マージ済み（[PR #386](https://github.com/t-m0riyama/vcenter-event-assistant/pull/386)） |
-| B | SSH の鍵と接続先の用途の分離、診断の設定（実行の対象・追加のコマンド）の表と API | 実装中 |
-| C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | 未着手 |
+| B | SSH の鍵と接続先の用途の分離、診断の設定（実行の対象・追加のコマンド）の表と API | マージ済み（[PR #387](https://github.com/t-m0riyama/vcenter-event-assistant/pull/387)） |
+| C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | 実装中 |
 | D | 対応手順（障害パターンへの同梱と、インシデントへの候補の提示） | 未着手 |
 | E | 画面: 診断の設定 | 未着手 |
 | F | 画面: インシデントの手順・実行・結果と、文書 | 未着手 |
@@ -216,31 +216,38 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 | `ipv4` | `ipaddress.IPv4Address` で読め、`str()` で正規化した値を使う。IPv6（`vmkping -6` が要る）とスコープ ID（`%`）は、最初の版では扱わない |
 | `device` | `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`（`naa.` などのデバイス ID）。先頭の `-` を断り、オプションを差し込ませない |
 
-最初の一覧の案は次のとおり。どれも ESXi 8.0 と vCenter 8.0 の実機で、コマンドがあること、出力の形、所要時間を確かめてから入れる（12 章）。
+最初の一覧は次のとおり。2026-11-26 に、利用者が実機で実行した結果で確かめた（Claude は実機に接続していない）。
 
-| ID | 製品 | コマンド | 用途 |
-|---|---|---|---|
-| `esxi.hostname` | ESXi | `esxcli system hostname get` | 接続したホストの名前（取り違えの確認） |
-| `esxi.version` | ESXi | `esxcli system version get` | 版とビルド |
-| `esxi.uptime` | ESXi | `esxcli system stats uptime get` | 再起動したか |
-| `esxi.maintenance` | ESXi | `esxcli system maintenanceMode get` | メンテナンスモード |
-| `esxi.hostd` | ESXi | `/etc/init.d/hostd status` | 管理エージェント（hostd） |
-| `esxi.vpxa` | ESXi | `/etc/init.d/vpxa status` | vCenter のエージェント（vpxa） |
-| `esxi.fdm` | ESXi | `/etc/init.d/vmware-fdm status` | HA のエージェント |
-| `esxi.vmk` | ESXi | `esxcli network ip interface ipv4 get` | VMkernel のアドレス |
-| `esxi.ping` | ESXi | `vmkping -c 3 -I {{vmk}} {{ipv4}}` | VMkernel からの疎通 |
-| `esxi.nic` | ESXi | `esxcli network nic list` | 物理 NIC のリンク |
-| `esxi.nic-stats` | ESXi | `esxcli network nic stats get -n {{vmnic}}` | 物理 NIC の統計 |
-| `esxi.paths` | ESXi | `esxcli storage core path list` | ストレージのパス |
-| `esxi.device` | ESXi | `esxcli storage core device list -d {{device}}` | ストレージのデバイス |
-| `esxi.adapters` | ESXi | `esxcli storage core adapter list` | ストレージのアダプタ |
-| `vcenter.hostname` | vCenter | `hostname -f` | 接続したホストの名前 |
-| `vcenter.services` | vCenter | `service-control --status --all` | vCenter のサービス |
-| `vcenter.disk` | vCenter | `df -h` | ディスクの空き |
-| `vcenter.memory` | vCenter | `free -m` | メモリ |
-| `vcenter.uptime` | vCenter | `uptime` | 稼働時間と負荷 |
+- **ESXi:** ESXi 8.0.3（build-24262298）。root ではなく、Administrator ロールと Shell Access を付けたローカルユーザーで実行し、全件が権限のエラーなく動いた。診断用のアカウントはこの権限で足りる。HA が無効のホストである。
+- **vCenter:** vCenter 8.0 のアプライアンス。root で、ログインシェルを事前に bash に変えた状態で実行した。そのため、ログインした直後の appliance shell を経由する経路（前置きの判定）は、実機では確かめていない。この判定は、ログ収集のプラグインの今の処理と同じ方法で行う（4 章「ワーカーの中の処理」）。
+- **所要時間:** `service-control --status --all` が 2 秒、`vmkping` が約 3 秒で、ほかは 1 秒以内だった。ESXi の秒数は貼り付けた手順の崩れで正確には測れていないが、全件で数秒だった。45 秒の期限に十分収まる。
+- **出力の大きさ:** どれも 3 KiB 未満で、64 KiB の上限に収まる。`esxi.paths` だけは、パスの数に比例して増える（1 本でおよそ 800 バイト）。
+
+| ID | 製品 | コマンド | 用途 | 実機での確認 |
+|---|---|---|---|---|
+| `esxi.hostname` | ESXi | `esxcli system hostname get` | 接続したホストの名前（取り違えの確認） | 確認済み。`Domain Name`・`Fully Qualified Domain Name`・`Host Name` の 3 行 |
+| `esxi.version` | ESXi | `esxcli system version get` | 版とビルド | 確認済み。`Product`・`Version`・`Build`・`Update`・`Patch` の 5 行 |
+| `esxi.uptime` | ESXi | `esxcli system stats uptime get` | 再起動したか | 確認済み。マイクロ秒の数字 1 つだけを出す（例: `1643109302446` で約 19 日）。説明に単位を書く |
+| `esxi.maintenance` | ESXi | `esxcli system maintenanceMode get` | メンテナンスモード | 確認済み。`Disabled` か `Enabled` の 1 語 |
+| `esxi.hostd` | ESXi | `/etc/init.d/hostd status` | 管理エージェント（hostd） | 確認済み。`hostd is running.` |
+| `esxi.vpxa` | ESXi | `/etc/init.d/vpxa status` | vCenter のエージェント（vpxa） | 確認済み。`vpxa is running` |
+| `esxi.fdm` | ESXi | `/etc/init.d/vmware-fdm status` | HA のエージェント | 一部だけ確認。HA が無効のホストでは、スクリプトが無く `not found`（終了コード 127）になる。HA が有効なときの出力は、試せるホストが無く確かめていない。`ha-failover` の手順で最も知りたい情報なので、利用者の判断で一覧に入れる。説明に「HA が無効のホストでは not found になる」と書く |
+| `esxi.vmk` | ESXi | `esxcli network ip interface ipv4 get` | VMkernel のアドレス | 確認済み。vmk ごとに 1 行の表（名前・アドレス・ネットマスク・ブロードキャスト・種類・ゲートウェイ・DHCP DNS） |
+| `esxi.ping` | ESXi | `vmkping -c 3 -I {{vmk}} {{ipv4}}` | VMkernel からの疎通 | 確認済み。約 3 秒。応答 3 行と統計 |
+| `esxi.nic` | ESXi | `esxcli network nic list` | 物理 NIC のリンク | 確認済み。NIC ごとに 1 行の表（リンクの状態・速度・MTU など） |
+| `esxi.nic-stats` | ESXi | `esxcli network nic stats get -n {{vmnic}}` | 物理 NIC の統計 | 確認済み。送受信のパケット数・バイト数と、エラーの種類ごとの数（約 700 バイト） |
+| `esxi.paths` | ESXi | `esxcli storage core path list` | ストレージのパス | 確認済み。パスごとに 18 行ほど（1 本でおよそ 800 バイト）。パスが 80 本を超える環境では 64 KiB で切れるので、説明にそう書く |
+| `esxi.device` | ESXi | `esxcli storage core device list -d {{device}}` | ストレージのデバイス | 一部だけ確認。コマンドがあることと、無いデバイスを指定したときの出力（`Unable to find device with name ...`、終了コード 1）は確かめた。成功したときの出力は確かめていないので、PR F の撮影の前に確かめる。デバイス名は `t10.NVMe____…` の形もあり、`device` の種類に合う |
+| `esxi.adapters` | ESXi | `esxcli storage core adapter list` | ストレージのアダプタ | 確認済み。HBA ごとに 1 行の表 |
+| `vcenter.hostname` | vCenter | `hostname -f` | 接続したホストの名前 | 確認済み。FQDN の 1 行 |
+| `vcenter.services` | vCenter | `service-control --status --all` | vCenter のサービス | 確認済み。2 秒。先頭に空行が 1 行あり、`Running:` と `Stopped:` の下にサービス名が空白区切りで並ぶ。vCenter HA を構成していなければ `vmware-vcha` が `Stopped:` に出るのはふつうだと説明に書く |
+| `vcenter.disk` | vCenter | `df -h` | ディスクの空き | 確認済み。約 2 KiB。ファイルシステムとコンテナの数だけ行が増える |
+| `vcenter.memory` | vCenter | `free -m` | メモリ | 確認済み |
+| `vcenter.uptime` | vCenter | `uptime` | 稼働時間と負荷 | 確認済み |
 
 `vmkping` は状態を読むコマンドではないが、ICMP を 3 回送るだけで設定は変えない。疎通の確認は障害パターンの手順の中心なので入れる。
+
+ESXi のコマンドを vCenter に送ると、`esxcli` などが無いので終了コード 127 になることも、実機で確かめた。手順 2 で、コマンドの製品と対象の製品の一致を確かめる理由である。
 
 ### 追加のコマンド
 
@@ -283,7 +290,8 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 4. 空きを取ったら、`await` を挟まずに、要求から切り離したタスクを作る（下の「切り離したタスク」）。手順 5〜7 はこのタスクの中で動く。
 5. 監査ログに `started` を書く（本体が組み立てた文字列を入れる）。45 秒の期限の中で、プラグインのパスを持たない `CollectorWorker([], label="diagnostics")` を起動し、鍵を含まない `op="harden"` を送って応答を待ってから、`op="diagnose"` を送る。ワーカーを止めるところまでを、この期限で包む。時間は次のように割り振る。ワーカーの中の打ち切り（要求の `deadline_seconds`）は期限の残りから 7 秒を引いた値、本体の `request(timeout=...)` は残りから 5 秒を引いた値にし、最後の 5 秒をワーカーの停止に使う。ワーカーの中の打ち切りを先に来させて、途中までの出力を本体に返させるためである。本体の期限が先に切れるとワーカーは kill され（`plugins/remote.py:181-190・199-201`）、途中までの出力は失われる。
 6. 期限の外で、別の短い上限（10 秒）を付けて、新しいセッションで `lock_incident` してから、結果の件数を数え直す。100 件に達していれば、結果を捨てて 409 を返す。インシデントが消えていれば 404 を返す。どちらも監査ログに `discarded` を書く。そうでなければ、結果と経過の行を書き、`mark_incident_updated` を呼ぶ。
-   - 保存が 10 秒の上限を超えたとき、または DB の書き込みか commit が例外で失敗したときは、巻き戻してから、監査ログに `discarded` を書いて 503（`X-VEA-Error-Code: diagnostic_save_failed`）を返す。理由は `save_timeout` か `save_failed` とし、実行の状態・終了コード・`error_code`・所要時間・出力のバイト数も入れる。ホストではコマンドが動いたのに結果を保存できなかったことを、監査ログから分かるようにするためである。例外の文言は監査ログに入れず、アプリのログに出す。
+   - 保存が 10 秒の上限を超えたとき、または DB の書き込みか commit が例外で失敗したときは、巻き戻してから、監査ログに `discarded` を書いて 503（`X-VEA-Error-Code: diagnostic_save_failed`）を返す。理由は `save_timeout` か `save_failed` とし、実行の状態・終了コード・`error_code`・所要時間・出力のバイト数も入れる。ホストではコマンドが動いたのに結果を保存できなかったことを、監査ログから分かるようにするためである。例外の文言は、監査ログにもアプリのログにも出さない。SQLAlchemy の例外の文字列には束縛した引数（つまり診断の出力）が入るためである。アプリのログには、失敗の区分、例外の型、元の DB の例外（`exc.orig`）の型と SQLSTATE を出し、原因を追えるようにする。
+   - 保存の上限は、例外のあとの巻き戻しとセッションを閉じる処理にも掛ける。DB が固まっても、タスク・空き・要求が止まらないようにするためである。
 7. 監査ログに `finished` を書く。
 
 `started`・`finished` と結果の `command_line` には、手順 2 で本体が組み立てた文字列（プレビューで見せたものと同じ）を入れる。ワーカーを起動できないとき、`harden` で終えたとき、本体の期限でワーカーを kill したときは、ワーカーの応答が無いためである。ワーカーも同じ関数と同じ入力から組み立てるので、文字列は一致する。一致することはテストで確かめ、ワーカーの応答から文字列を受け取ることはしない。
@@ -318,9 +326,9 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 - known_hosts の行は、ホスト鍵の別名と同じ名前で作る。ポートが 22 なら `host`、それ以外は `[host]:port` とする（`services/ssh_management.py:157` と同じ）。
 - 組み込みのコマンドは、ワーカーの側でも同じ一覧（本体のパッケージの `catalog.py`）から引き、引数を確かめ直してから文字列を組み立てる。本体は、組み込みのコマンドについては組み立てた文字列を送らない。ワーカーには `VEA_SSH_ALLOWED_PORTS` が渡らないので、ポートは本体だけが確かめる。追加のコマンドは、本体が雛形・引数の定義・値を送り、ワーカーは同じ関数で雛形と値を確かめ直してから組み立てる。本体は、追加のコマンドについても組み立てた文字列を送らない。ワーカーが確かめ直しで断ったときは、接続せずに `error_code: invalid_command` を返す。本体の確認を通った要求では起きないはずなので、ほかのワーカーの失敗と同じく `error` の結果として保存し、監査ログには `finished` を書く。
 - 鍵は `asyncssh.import_private_key`、ホスト鍵は `asyncssh.import_known_hosts` で読み、メモリのまま `asyncssh.connect` に渡す（`known_hosts` に文字列を渡すとファイル名と見なされるので、`SSHKnownHosts` を渡す）。
-- 接続は `open_reader` と同じ設定で開く。検証した IP に接続し、ホスト鍵は承認したものだけを受け入れ、パスワード認証・キーボード対話認証・エージェント・SSH の設定ファイルを使わない。接続と認証は 8 秒まで。
+- 接続は `open_reader` と同じ設定で開く。検証した IP に接続し、ホスト鍵は承認したものだけを受け入れ、パスワード認証・キーボード対話認証・エージェント・SSH の設定ファイルを使わない。接続と認証は 8 秒まで。この 8 秒を超えたときは、`timeout` ではなく `connect_failed`（`executed` は偽）にする。止まったホストや SYN を落とすホストは、接続できないものとして記録するためである。
 - vCenter の前置きは、`_vcenter_shell` と同じ確かめ方で決める。処理はプラグインのパッケージから読まず、本体の `services/diagnostics/ssh.py` に書く。プラグインは本体を import しない約束であり、逆向きに本体がプラグインの内部に頼るのも避けるためである。本体の `pyproject.toml` の依存に asyncssh を直接書く。
-- 出力は、標準出力 64 KiB、標準エラー 16 KiB（どちらも UTF-8 に読む前のバイト数）まで保存する。上限を超えたら、超えた分を捨てながら EOF まで読み続ける。読むのをやめると、相手が受信のウィンドウで止まり、終了コードが返らないためである。UTF-8 として読めないバイトは置き換える。
+- 出力は、標準出力 64 KiB、標準エラー 16 KiB（どちらも UTF-8 に読む前のバイト数）まで保存する。上限を超えたら、超えた分を捨てながら EOF まで読み続ける。読むのをやめると、相手が受信のウィンドウで止まり、終了コードが返らないためである。UTF-8 として読めないバイトは置き換える。NUL（0x00）も U+FFFD に置き換える。PostgreSQL の `Text` は NUL を保存できず、置き換えないとその出力は毎回保存に失敗するためである。
 - 時間切れのときも、そこまでの出力と「切った」を返す。
 - 失敗の区分は、ワーカーの中で asyncssh の例外から決め、`ok=true` の応答に `error_code` を入れて返す。例外の文言は返さず、ワーカーの stderr にだけ出す（今の扱いと同じ）。
 
@@ -329,12 +337,12 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 | `error_code` | 決める場所 | 意味 |
 |---|---|---|
 | `invalid_command` | ワーカー | コマンドの雛形か引数が、ワーカーでの確かめ直しを通らない（接続しない） |
-| `connect_failed` | ワーカー | 名前解決・TCP・SSH の接続ができない |
+| `connect_failed` | ワーカー | 名前解決・TCP・SSH の接続ができない。接続と認証の 8 秒の時間切れも含む |
 | `host_key_mismatch` | ワーカー | ホスト鍵が承認したものと違う |
 | `auth_failed` | ワーカー | 鍵で認証できない（Shell Access が無効なときも含む） |
 | `shell_unavailable` | ワーカー | vCenter で Bash を使えない |
 | `no_exit_status` | ワーカー | 終了コードが返らない、またはシグナルで終わった |
-| `timeout` | ワーカー・本体 | ワーカーの中の期限を超えた。または本体の期限が切れてワーカーを kill した |
+| `timeout` | ワーカー・本体 | コマンドの実行が始まってから、ワーカーの中の期限を超えた。または本体の期限が切れてワーカーを kill した |
 | `worker_unavailable` | 本体 | ワーカーを起動できない（`CollectorWorkerServiceError`）、応答が壊れている、ワーカーが落ちた |
 
 ## 5. 対応手順
@@ -401,8 +409,8 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 |---|---|
 | `diagnostics.run.started` | インシデント、対象、接続先（ホスト・ポート・ユーザー名）、コマンドの区分と ID、引数、送るコマンドの文字列 |
 | `diagnostics.run.finished` | 上に加えて、状態、`executed`、終了コード、`error_code`、所要時間、出力のバイト数、切ったか |
-| `diagnostics.run.rejected` | 断った理由（引数や雛形の誤り、対象と製品の不一致、プレビューのあとの変更、件数の上限、空きが無い、ホスト鍵が未承認など） |
-| `diagnostics.run.discarded` | 実行のあとで結果を捨てた理由（インシデントが消えた、件数の上限、保存の時間切れ `save_timeout`、保存の失敗 `save_failed`）。保存の時間切れと失敗では、実行の状態・終了コード・`error_code`・所要時間・出力のバイト数も入れる |
+| `diagnostics.run.rejected` | 断った理由（引数や雛形の誤り、対象と製品の不一致、プレビューのあとの変更、件数の上限、空きが無い、ホスト鍵が未承認、予期しない例外 `internal_error` など） |
+| `diagnostics.run.discarded` | 実行のあとで結果を捨てた理由（インシデントが消えた、件数の上限、保存の時間切れ `save_timeout`、保存の失敗 `save_failed`、`started` のあとの予期しない例外 `internal_error`）。保存の時間切れと失敗では、実行の状態・終了コード・`error_code`・所要時間・出力のバイト数も入れる。どの理由でも、例外の文言は入れない |
 | `diagnostics.run.aborted` | アプリの終了で実行を取り消した |
 | `diagnostics.command.created`・`updated`・`deleted` | 名前、製品、雛形、引数の定義 |
 | `diagnostics.target.created`・`updated`・`deleted` | vCenter、製品、moid、接続先 |
@@ -522,7 +530,7 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 
 ## 12. リスク
 
-- **コマンドの確認:** 組み込みのコマンドの名前・引数・出力・所要時間は、実機（ESXi 8.0、vCenter 8.0）で確かめるまで決まらない。実機に入るには利用者の許可が要るので、PR C の前に確かめ方を相談する。確かめられなかったコマンドは一覧に入れない。
+- **コマンドの確認:** 組み込みのコマンドは、2026-11-26 に利用者が実機（ESXi 8.0.3、vCenter 8.0）で実行した結果で確かめた（4 章）。確かめていないのは、`esxi.fdm` の HA が有効なときの出力、`esxi.device` の成功したときの出力、vCenter の appliance shell を経由する経路の 3 つである。`esxi.fdm` は利用者の判断で一覧に入れる。`esxi.device` は PR F の撮影の前に確かめ、形が想定と違えば説明を直す。
 - **admin の乗っ取り:** admin のアカウントが乗っ取られると、Administrator ロールのアカウントでホストにコマンドを送られる。追加のコマンドがあるので、実質的にホストを操作できる。既定で無効にし、監査ログを残し、運用側の対策（2 章）を文書に書く。
 - **プラグインのワーカー:** 同じ UID で動く悪意のあるプラグインは、診断のワーカーと、要求を中継するワーカーのサービスに干渉できる。鍵をファイルにせず、`PR_SET_DUMPABLE` を 0 にしても、なくせない（2 章）。
 - **待ち時間:** 実行の要求は最大でおよそ 55 秒（SSH の 45 秒と保存の 10 秒）かかる。前に置いたプロキシの時間切れがそれより短いと、画面には失敗と出る。結果は切り離したタスクで保存するので、画面は詳細を読み直して出す。

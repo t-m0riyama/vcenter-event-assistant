@@ -70,3 +70,67 @@ class CommandCatalog(BaseModel):
     builtin: list[BuiltinCommandRead]
     custom: list[CommandRead]
     parameter_types: tuple[str, ...]
+
+
+class BuiltinCommandRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    builtin: str
+
+
+class CustomCommandRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    custom: UUID
+
+
+class DiagnosticPreviewInput(BaseModel):
+    target_id: UUID
+    command: BuiltinCommandRef | CustomCommandRef
+    params: dict[str, str]
+
+
+class DiagnosticRunInput(DiagnosticPreviewInput):
+    fingerprint: str
+
+
+class DiagnosticPreview(BaseModel):
+    command_line: str
+    host_name: str
+    ssh_host: str
+    ssh_port: int
+    ssh_username: str
+    fingerprint: str
+
+
+class DiagnosticRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    incident_id: UUID
+    command_kind: Literal["builtin", "custom"]
+    command_ref: str
+    command_title: str
+    command_line: str
+    executed: bool | None
+    params: dict[str, str]
+    target_id: UUID | None
+    product: Product
+    host_name: str
+    ssh_host: str
+    ssh_port: int
+    ssh_username: str
+    status: Literal["succeeded", "failed", "error"]
+    exit_status: int | None
+    error_code: str | None
+    stdout_truncated: bool
+    stderr_truncated: bool
+    elapsed_ms: int
+    started_at: Annotated[datetime, AfterValidator(as_utc)]
+    finished_at: Annotated[datetime, AfterValidator(as_utc)]
+    run_by: str
+
+
+class DiagnosticRunOutput(DiagnosticRunRead):
+    stdout: str
+    stderr: str
