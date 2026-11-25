@@ -10,6 +10,7 @@ Playwright ドキュメント用スクリーンショット向けの最小 DB �
 タイムライン（既定は直近 1 時間）が 4 種類の出来事と俯瞰グラフを示すよう、対象名つきのイベント、
 デモ用ホストの CPU・メモリのサンプル（期間内で始まって終わる超過区間を 1 つずつ）、重大度 error 以上のログも入れる。
 インシデントには、未解決と解決済みの記録、経過、イベントと通知の写し、保存したタイムラインを入れる。
+モックモードで診断が有効で、暗号化の鍵がある場合は、診断の手順と結果の例も入れる。
 名前はすべてデモと分かるもの（実在のホスト・アカウントに見えるものは使わない）。
 """
 
@@ -44,6 +45,7 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.dev.diagnostics_seed import seed_screenshot_diagnostics
 from vcenter_event_assistant.dev.inventory_seed import seed_inventory
 from vcenter_event_assistant.mocks.mock_inventory import (
     SCREENSHOT_DATASTORE,
@@ -82,7 +84,9 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
             select(VCenter).where(VCenter.name == SCREENSHOT_VCENTER_NAME)
         )
         if existing := res.scalar_one_or_none():
-            await seed_inventory(session, existing, datetime.now(timezone.utc))
+            now = datetime.now(timezone.utc)
+            await seed_inventory(session, existing, now)
+            await seed_screenshot_diagnostics(session, existing, now)
             return
 
         vc = VCenter(
@@ -212,6 +216,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         session.add(alert)
         await session.flush()
         await _seed_incidents(session, vc, now, alert)
+        await seed_screenshot_diagnostics(session, vc, now)
 
 
 async def _seed_incidents(session: AsyncSession, vcenter: VCenter, now: datetime, alert: AlertHistory) -> None:

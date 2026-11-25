@@ -30,7 +30,7 @@ from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.main import _rate_limit_spec, create_app
 from vcenter_event_assistant.services.diagnostics import runs
 from vcenter_event_assistant.services.diagnostics.ssh import DiagnosticResult, Output
-from vcenter_event_assistant.settings import get_settings
+from vcenter_event_assistant.settings import Settings, get_settings
 from vcenter_event_assistant.settings_binding import bind_settings
 
 pytestmark = pytest.mark.asyncio
@@ -141,6 +141,24 @@ async def request_payload(client, fixture):
         **fixture.payload,
         "fingerprint": (await preview(client, fixture))["fingerprint"],
     }
+
+
+@pytest.mark.parametrize("suffix", ["", "/preview"])
+async def test_diagnostics_run_gate_precedes_auth_and_requires_admin(app, open_client, monkeypatch, suffix):
+    async with open_client(app=app) as admin:
+        fixture = await setup_run(admin)
+        payload = fixture.payload if suffix else await request_payload(admin, fixture)
+    path = fixture.path + suffix
+    for role, status in ((None, 401), ("viewer", 403), ("operator", 403)):
+        async with open_client(role, app=app) as client:
+            assert (await client.post(path, json=payload)).status_code == status
+
+    monkeypatch.setenv("VEA_DIAGNOSTICS_ENABLED", "false")
+    get_settings.cache_clear()
+    for role in (None, "viewer", "operator", "admin"):
+        async with open_client(role, app=app, username=f"disabled-{role}") as client:
+            # JSON の検証や認証より先に、経路を隠す。
+            assert (await client.post(path, json={})).status_code == 404
 
 
 @pytest.mark.parametrize("incident_db", ["sqlite", "postgres"], indirect=True)
@@ -601,7 +619,7 @@ async def test_diagnostics_detached_run_releases_db_and_survives_request_cancell
         http = asyncio.create_task(client.post(fixture.path, json=payload))
         try:
             await asyncio.wait_for(ready.wait(), 5)
-            busy = await client.post(fixture.path, json=payload)
+            busy = await asyncio.wait_for(client.post(fixture.path, json=payload), 2)
             assert busy.status_code == 409
             assert busy.headers["X-VEA-Error-Code"] == "diagnostic_busy"
             assert "diagnostics.run.rejected" in audit_log.text
@@ -747,6 +765,7 @@ async def test_diagnostics_only_execution_counts_against_rate_limit(
 ):
     from vcenter_event_assistant.rate_limit import _rate_limiter
 
+    assert Settings.model_fields["rate_limit_diagnostics_per_minute"].default == 10
     monkeypatch.setenv("RATE_LIMIT_DIAGNOSTICS_PER_MINUTE", "1")
     monkeypatch.delenv("VEA_PYTEST")
     get_settings.cache_clear()

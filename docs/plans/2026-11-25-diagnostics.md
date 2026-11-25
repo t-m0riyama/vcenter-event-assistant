@@ -1,6 +1,6 @@
 # 対応手順と読み取り専用の診断コマンド
 
-最終更新: 2026-11-26（PR D マージ済み、PR E 実装中）
+最終更新: 2026-11-26（PR E マージ済み、PR F 実装中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 9」にあたる。案 5 の障害パターンごとに対応手順を見せ、手順の中の診断コマンドを、インシデントの詳細から ESXi と vCenter に SSH で実行して、結果をインシデントに残す。Issue は起票していない。
 
@@ -14,8 +14,8 @@
 | B | SSH の鍵と接続先の用途の分離、診断の設定（実行の対象・追加のコマンド）の表と API | マージ済み（[PR #387](https://github.com/t-m0riyama/vcenter-event-assistant/pull/387)） |
 | C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | マージ済み（[PR #388](https://github.com/t-m0riyama/vcenter-event-assistant/pull/388)） |
 | D | 対応手順（障害パターンへの同梱と、インシデントへの候補の提示） | マージ済み（[PR #389](https://github.com/t-m0riyama/vcenter-event-assistant/pull/389)） |
-| E | 画面: 診断の設定 | 実装中 |
-| F | 画面: インシデントの手順・実行・結果と、文書 | 未着手 |
+| E | 画面: 診断の設定 | マージ済み（[PR #391](https://github.com/t-m0riyama/vcenter-event-assistant/pull/391)） |
+| F | 画面: インシデントの手順・実行・結果と、文書 | 実装中 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
@@ -237,7 +237,7 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 | `esxi.nic` | ESXi | `esxcli network nic list` | 物理 NIC のリンク | 確認済み。NIC ごとに 1 行の表（リンクの状態・速度・MTU など） |
 | `esxi.nic-stats` | ESXi | `esxcli network nic stats get -n {{vmnic}}` | 物理 NIC の統計 | 確認済み。送受信のパケット数・バイト数と、エラーの種類ごとの数（約 700 バイト） |
 | `esxi.paths` | ESXi | `esxcli storage core path list` | ストレージのパス | 確認済み。パスごとに 18 行ほど（1 本でおよそ 800 バイト）。パスが 80 本を超える環境では 64 KiB で切れるので、説明にそう書く |
-| `esxi.device` | ESXi | `esxcli storage core device list -d {{device}}` | ストレージのデバイス | 一部だけ確認。コマンドがあることと、無いデバイスを指定したときの出力（`Unable to find device with name ...`、終了コード 1）は確かめた。成功したときの出力は確かめていないので、PR F の撮影の前に確かめる。デバイス名は `t10.NVMe____…` の形もあり、`device` の種類に合う |
+| `esxi.device` | ESXi | `esxcli storage core device list -d {{device}}` | ストレージのデバイス | 確認済み（2026-11-26）。成功したときは、デバイス名の行に続いて `Display Name`・`Size`・`Status: on`・`Is Offline: false`・`Is Local`・`Is SSD`・`Multipath Plugin` などの項目が字下げで並ぶ。手順の「デバイスの状態」は `Status` と `Is Offline` で確かめられる。無いデバイスを指定したときは `Unable to find device with name ...`、終了コード 1。デバイス名は `t10.NVMe____…` の形もあり、`device` の種類に合う |
 | `esxi.adapters` | ESXi | `esxcli storage core adapter list` | ストレージのアダプタ | 確認済み。HBA ごとに 1 行の表 |
 | `vcenter.hostname` | vCenter | `hostname -f` | 接続したホストの名前 | 確認済み。FQDN の 1 行 |
 | `vcenter.services` | vCenter | `service-control --status --all` | vCenter のサービス | 確認済み。2 秒。先頭に空行が 1 行あり、`Running:` と `Stopped:` の下にサービス名が空白区切りで並ぶ。vCenter HA を構成していなければ `vmware-vcha` が `Stopped:` に出るのはふつうだと説明に書く |
@@ -532,7 +532,7 @@ ESXi のコマンドを vCenter に送ると、`esxcli` などが無いので終
 
 ## 12. リスク
 
-- **コマンドの確認:** 組み込みのコマンドは、2026-11-26 に利用者が実機（ESXi 8.0.3、vCenter 8.0）で実行した結果で確かめた（4 章）。確かめていないのは、`esxi.fdm` の HA が有効なときの出力、`esxi.device` の成功したときの出力、vCenter の appliance shell を経由する経路の 3 つである。`esxi.fdm` は利用者の判断で一覧に入れる。`esxi.device` は PR F の撮影の前に確かめ、形が想定と違えば説明を直す。
+- **コマンドの確認:** 組み込みのコマンドは、2026-11-26 に利用者が実機（ESXi 8.0.3、vCenter 8.0）で実行した結果で確かめた（4 章）。確かめていないのは、`esxi.fdm` の HA が有効なときの出力と、vCenter の appliance shell を経由する経路の 2 つである。`esxi.fdm` は利用者の判断で一覧に入れる。`esxi.device` の成功したときの出力は、PR F の撮影の前（2026-11-26）に確かめ、手順の説明と合っていた。
 - **admin の乗っ取り:** admin のアカウントが乗っ取られると、Administrator ロールのアカウントでホストにコマンドを送られる。追加のコマンドがあるので、実質的にホストを操作できる。既定で無効にし、監査ログを残し、運用側の対策（2 章）を文書に書く。
 - **プラグインのワーカー:** 同じ UID で動く悪意のあるプラグインは、診断のワーカーと、要求を中継するワーカーのサービスに干渉できる。鍵をファイルにせず、`PR_SET_DUMPABLE` を 0 にしても、なくせない（2 章）。
 - **待ち時間:** 実行の要求は最大でおよそ 55 秒（SSH の 45 秒と保存の 10 秒）かかる。前に置いたプロキシの時間切れがそれより短いと、画面には失敗と出る。結果は切り離したタスクで保存するので、画面は詳細を読み直して出す。

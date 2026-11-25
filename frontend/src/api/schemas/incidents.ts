@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { diagnosticRunSchema } from './diagnostics'
 
 const uuid = z.guid()
 const timestamp = z.iso.datetime({ offset: true, local: true })
@@ -124,6 +125,7 @@ const snapshotLinkSchema = z.object({
 export const incidentDetailSchema = incidentReadSchema.extend({
   summary: z.string(),
   entries: incidentEntrySchema.array(),
+  diagnostic_runs: diagnosticRunSchema.array().default([]),
   events: eventLinkSchema.array(),
   alerts: alertLinkSchema.array(),
   snapshots: snapshotLinkSchema.array(),

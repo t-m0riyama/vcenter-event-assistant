@@ -283,11 +283,12 @@ export default function App() {
         id: 'incidents',
         label: 'インシデント',
         panelLabel: 'インシデント',
-        render: (_onError, active) => <IncidentsPanel active={active} ref={incidentsRef} onOpenSnapshot={openIncidentSnapshot} />,
+        render: (_onError, active) => <IncidentsPanel active={active} canRunDiagnostics={canManageDiagnostics} ref={incidentsRef} onOpenSnapshot={openIncidentSnapshot} />,
       },
     ],
     [
       canChat,
+      canManageDiagnostics,
       clearSnapshotToOpen,
       chatHandoff,
       clearChatHandoff,

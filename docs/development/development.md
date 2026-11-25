@@ -421,4 +421,13 @@ PR の説明に載せる画像は、`docs/images` を更新せずに `uv run pyt
 | `settings-plugins.png` | 設定 → プラグイン |
 | `settings-chat.png` | 設定 → チャット |
 
+診断の画像（`diagnostics-*.png`）は、モックモードと診断の機能を有効にしたサーバーが要るため、`screenshots.spec.ts` ではなく「PR のレビュー用の画像」の `scripts/pr_screenshots/run.py` で撮る。画面の一部だけを撮るので大きさは 1280×720 ではない。明るいテーマの画像（`light-<名前>.png`）を次の名前で置く。
+
+| ファイル名 | 場面と元の画像 |
+|-----------|------|
+| `diagnostics-settings-ssh.png` | `diagnostics-settings` の `light-ssh.png`（設定 → 診断の SSH の鍵と接続先） |
+| `diagnostics-procedures.png` | `incident-diagnostics` の `light-procedures.png`（インシデントの対応手順） |
+| `diagnostics-run-dialog.png` | `incident-diagnostics` の `light-run-dialog.png`（実行のダイアログのプレビュー） |
+| `diagnostics-results.png` | `incident-diagnostics` の `light-results.png`（診断の結果） |
+
 エージェント向けの再取得手順はプロジェクト Skill [capture-ui-screenshots](../../skills/capture-ui-screenshots/SKILL.md)（正本は `skills/`。公開は `uv run python scripts/link_skills.py`）を参照する。

@@ -62,12 +62,12 @@ def payload():
 async def test_diagnostics_worker_revalidates_before_connect(
     monkeypatch, payload, command
 ):
-    connect = AsyncMock()
+    connect = AsyncMock(return_value=ssh.DiagnosticResult(executed=True, exit_status=0))
     monkeypatch.setattr(ssh, "run_ssh", connect)
     result = await worker._handle(Mock(), {**payload, "command": command})
+    connect.assert_not_awaited()
     assert result["error_code"] == "invalid_command"
     assert result["executed"] is False
-    connect.assert_not_called()
 
 
 @pytest.mark.parametrize("command_id", [*BUILTIN_COMMANDS, "custom"])
@@ -216,8 +216,8 @@ async def test_diagnostics_ssh_keys_stay_in_memory_and_output_is_drained(
     ):
         monkeypatch.setattr(tempfile, name, reject_temp_file)
     process = fake_process(
-        [b"\xff" + b"a" * (ssh.STDOUT_LIMIT - 1), b"discard"],
-        [b"b" * ssh.STDERR_LIMIT, b"discard"],
+        [b"\xff" + b"a" * 65_535, b"discard"],
+        [b"b" * 16_384, b"discard"],
         status=3,
     )
     remote = SimpleNamespace(
@@ -228,6 +228,8 @@ async def test_diagnostics_ssh_keys_stay_in_memory_and_output_is_drained(
     (address,) = connection.call_args.args
     options = connection.call_args.kwargs
     assert address == "192.0.2.1"
+    assert options["host_key_alias"] == "esx.example.net"
+    assert options["port"] == 2222
     assert (
         options["client_keys"][0].export_public_key() == private_key.export_public_key()
     )
@@ -237,8 +239,8 @@ async def test_diagnostics_ssh_keys_stay_in_memory_and_output_is_drained(
     assert options["known_hosts"].match("esx.example.net", address, 22)[0] == []
     assert options["config"] is None and options["agent_path"] is None
     assert not options["password_auth"] and not options["kbdint_auth"]
-    assert result.stdout == "\ufffd" + "a" * (ssh.STDOUT_LIMIT - 1)
-    assert result.stderr == "b" * ssh.STDERR_LIMIT
+    assert result.stdout == "\ufffd" + "a" * 65_535
+    assert result.stderr == "b" * 16_384
     assert result.stdout_truncated and result.stderr_truncated
     assert result.executed and result.exit_status == 3 and result.status == "failed"
     assert process.stdout.eof and process.stderr.eof

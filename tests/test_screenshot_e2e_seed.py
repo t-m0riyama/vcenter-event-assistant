@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import asyncssh
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
+    DiagnosticTarget,
     DigestRecord,
     EventRecord,
     EventTypeGuide,
@@ -18,6 +20,7 @@ from vcenter_event_assistant.db.models import (
     LogPatternBaseline,
     LogRecord,
     MetricSample,
+    SSHConnection,
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
@@ -25,7 +28,8 @@ from vcenter_event_assistant.dev.screenshot_e2e_seed import run_screenshot_e2e_s
 from vcenter_event_assistant.main import create_app
 from vcenter_event_assistant.services.log_patterns.ledger import is_past_warmup
 from vcenter_event_assistant.services.log_patterns.masking import MASK_VERSION
-from vcenter_event_assistant.settings import Settings
+from vcenter_event_assistant.settings import Settings, get_settings
+from vcenter_event_assistant.settings_binding import bind_settings
 
 
 @pytest.mark.asyncio
@@ -268,3 +272,154 @@ async def test_screenshot_seed_log_patterns(monkeypatch) -> None:
         ))
         assert is_past_warmup(new_warning.warning_first_seen_at, baseline.started_at,
                               state.completed_at, Settings().log_pattern_warmup_days)
+
+
+async def test_screenshot_diagnostic_demo_uses_mock_target_and_saved_outputs(monkeypatch, open_client) -> None:
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    await run_screenshot_e2e_seed_if_enabled()
+
+    # 診断を有効にしても、モックモードでなければ撮影用の接続先を入れない。
+    monkeypatch.setenv("VEA_DIAGNOSTICS_ENABLED", "true")
+    monkeypatch.setenv("VEA_SECRET_KEY", "screenshot-test")
+    monkeypatch.setenv("MOCK_MODE", "0")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await run_screenshot_e2e_seed_if_enabled()
+    async with open_client() as client:
+        assert (await client.get("/api/diagnostics/targets")).json() == []
+
+    # 撮影用 DB が既にある場合にも、診断の例を一度だけ追加する。
+    monkeypatch.setenv("MOCK_MODE", "1")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await run_screenshot_e2e_seed_if_enabled()
+    await run_screenshot_e2e_seed_if_enabled()
+
+    async with open_client(username="demo-admin") as client, open_client("viewer") as viewer:
+        incidents = (await viewer.get("/api/incidents", params={"q": "デモ: 診断コマンド"})).json()
+        [incident] = incidents["items"]
+        path = f"/api/incidents/{incident['id']}"
+        [candidate] = (await viewer.get(f"{path}/procedures")).json()
+        assert candidate["procedure"]["pattern_id"] == "nic-link-flapping"
+        assert candidate["reasons"][0]["kind"] == "event"
+
+        [target] = (await client.get("/api/diagnostics/targets")).json()
+        assert target["host_moid"] == "mock-esxi"
+        assert candidate["target"] == {"id": target["id"], "host_name": "mock-esxi.local"}
+        hosts = await client.get(f"/api/diagnostics/vcenters/{target['vcenter_id']}/hosts")
+        assert target["host_moid"] in {host["id"] for host in hosts.json()}
+
+        detail = (await viewer.get(path)).json()
+        assert [entry["kind"] for entry in detail["entries"]].count("diagnostic") == 2
+        runs = detail["diagnostic_runs"]
+        assert {(run["status"], run["exit_status"]) for run in runs} == {("succeeded", 0), ("failed", 1)}
+        [truncated] = [run for run in runs if run["stdout_truncated"]]
+        assert "stdout" not in truncated
+        output = (await viewer.get(f"{path}/diagnostic-runs/{truncated['id']}")).json()
+        assert len(output["stdout"].encode("utf-8")) == 65_536
+        assert output["stdout_truncated"] and output["executed"] is True
+        assert {entry["body"] for entry in detail["entries"] if entry["kind"] == "diagnostic"} == {
+            "診断「ホスト名」を mock-esxi.local で実行した（終了コード 0）",
+            "診断「NIC の統計」を mock-esxi.local で実行した（終了コード 1）",
+        }
+
+        run_path = f"/api/diagnostics/incidents/{incident['id']}/runs"
+        payload = {"target_id": target["id"], "params": {"vmnic": "vmnic0"}, "command": {"builtin": "esxi.nic-stats"}}
+        response = await client.post(f"{run_path}/preview", json=payload)
+        assert response.status_code == 200, response.text
+        preview = response.json()
+        assert preview["ssh_host"] == "mock-esxi.local"
+        assert preview["ssh_username"] == "demo-diagnostics"
+        assert len(preview["fingerprint"]) == 64
+
+        response = await client.post(run_path, json={**payload, "fingerprint": preview["fingerprint"]})
+        assert response.status_code == 200, response.text
+        run = response.json()
+        assert run["status"] == "succeeded"
+        assert run["executed"] is False
+        assert run["command_line"] == preview["command_line"]
+
+
+@pytest.mark.parametrize("existing", [
+    "対象の手動登録", "インシデント削除", "対象も削除", "接続先も削除", "対象だけ削除", "未承認の接続先",
+])
+async def test_screenshot_diagnostics_seed_reuses_existing_rows(monkeypatch, open_client, existing):
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    monkeypatch.setenv("MOCK_MODE", "1")
+    monkeypatch.setenv("VEA_DIAGNOSTICS_ENABLED", "false")
+    monkeypatch.setenv("VEA_SECRET_KEY", "screenshot-test")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    await run_screenshot_e2e_seed_if_enabled()
+    monkeypatch.setenv("VEA_DIAGNOSTICS_ENABLED", "true")
+    get_settings.cache_clear()
+    bind_settings(get_settings())
+    base = "/api/diagnostics"
+
+    async with open_client() as client:
+        if existing == "対象の手動登録":
+            [vc] = (await client.get("/api/vcenters")).json()
+            key = asyncssh.generate_private_key("ssh-ed25519").export_private_key("openssh").decode()
+            credential = (await client.post(f"{base}/ssh/credentials", json={
+                "name": "デモ手動登録の鍵", "private_key": key,
+            })).json()
+            connection = (await client.post(f"{base}/ssh/connections", json={
+                "name": "デモ手動登録の接続先", "host": "manual.demo.invalid", "username": "demo-manual",
+                "credential_id": credential["id"],
+            })).json()
+            response = await client.post(f"{base}/targets", json={
+                "vcenter_id": vc["id"], "product": "esxi", "host_moid": "mock-esxi",
+                "host_name": "デモ手動登録の対象", "ssh_connection_id": connection["id"],
+            })
+            assert response.status_code in (200, 201), response.text
+            target = response.json()
+        else:
+            await run_screenshot_e2e_seed_if_enabled()
+            [target] = (await client.get(f"{base}/targets")).json()
+            [connection] = (await client.get(f"{base}/ssh/connections")).json()
+            [credential] = (await client.get(f"{base}/ssh/credentials")).json()
+            [incident] = (await client.get("/api/incidents", params={"q": "デモ: 診断コマンド"})).json()["items"]
+            if existing != "対象だけ削除":
+                assert (await client.delete(f"/api/incidents/{incident['id']}")).status_code == 204
+            async with session_scope() as session:
+                if existing in {"対象も削除", "接続先も削除", "対象だけ削除", "未承認の接続先"}:
+                    await session.execute(delete(DiagnosticTarget))
+                if existing == "接続先も削除":
+                    await session.execute(delete(SSHConnection))
+                if existing == "未承認の接続先":
+                    await session.execute(update(SSHConnection).values(approved_key=None))
+                if existing == "インシデント削除":
+                    await session.execute(update(EventRecord).where(
+                        EventRecord.vmware_key == 9_004_001,
+                    ).values(occurred_at=datetime(2026, 1, 1, tzinfo=timezone.utc)))
+            if existing == "未承認の接続先":
+                [connection] = (await client.get(f"{base}/ssh/connections")).json()
+
+        await run_screenshot_e2e_seed_if_enabled()
+        await run_screenshot_e2e_seed_if_enabled()
+        [seeded_target] = (await client.get(f"{base}/targets")).json()
+        [seeded_connection] = (await client.get(f"{base}/ssh/connections")).json()
+        [seeded_credential] = (await client.get(f"{base}/ssh/credentials")).json()
+        assert seeded_credential["id"] == credential["id"]
+        if existing != "接続先も削除":
+            assert seeded_connection == connection
+        if existing in {"対象の手動登録", "インシデント削除"}:
+            assert seeded_target == target
+
+        [seeded_incident] = (await client.get("/api/incidents", params={"q": "デモ: 診断コマンド"})).json()["items"]
+        detail = (await client.get(f"/api/incidents/{seeded_incident['id']}")).json()
+        assert len(detail["diagnostic_runs"]) == 2
+        assert {run["ssh_host"] for run in detail["diagnostic_runs"]} == {"mock-esxi.local"}
+        if existing == "対象だけ削除":
+            assert seeded_incident["id"] == incident["id"]
+            [candidate] = (await client.get(f"/api/incidents/{incident['id']}/procedures")).json()
+            assert candidate["target"]["id"] == seeded_target["id"]
+        if existing == "インシデント削除":
+            [event] = detail["events"]
+            assert detail["started_at"] == event["occurred_at"]
+        if existing == "未承認の接続先":
+            preview = await client.post(f"/api/diagnostics/incidents/{seeded_incident['id']}/runs/preview", json={
+                "target_id": seeded_target["id"], "params": {}, "command": {"builtin": "esxi.hostname"},
+            })
+            assert preview.status_code == 409
+            assert preview.headers["X-VEA-Error-Code"] == "diagnostic_host_key_unapproved"

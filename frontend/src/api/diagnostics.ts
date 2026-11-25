@@ -1,6 +1,12 @@
 import { apiDelete, apiGet, apiPost, apiPut } from '../api'
 import {
   diagnosticCatalogSchema,
+  diagnosticCandidateSchema,
+  diagnosticOutputSchema,
+  diagnosticPreviewSchema,
+  diagnosticProcedureSchema,
+  diagnosticRunSchema,
+  type DiagnosticPreviewInput,
   diagnosticCommandSchema,
   diagnosticHostsSchema,
   diagnosticTargetSchema,
@@ -15,12 +21,16 @@ export const diagnosticSSHPath = `${base}/ssh`
 
 type Revisioned = { id: string; revision: string }
 
+export async function listDiagnosticTargets(signal?: AbortSignal) {
+  return diagnosticTargetsSchema.parse(await apiGet<unknown>(`${base}/targets`, signal))
+}
+
 export async function fetchDiagnosticTargets(signal?: AbortSignal) {
   const [targets, vcenters] = await Promise.all([
-    apiGet<unknown>(`${base}/targets`, signal),
+    listDiagnosticTargets(signal),
     apiGet<unknown>('/api/vcenters', signal),
   ])
-  return { items: diagnosticTargetsSchema.parse(targets), vcenters: vcenterSchema.array().parse(vcenters) }
+  return { items: targets, vcenters: vcenterSchema.array().parse(vcenters) }
 }
 
 export async function fetchDiagnosticHosts(vcenterId: string, signal?: AbortSignal) {
@@ -58,4 +68,32 @@ export const diagnosticCommandApi = {
   save: async (input: DiagnosticCommandInput, row: Revisioned | null) =>
     diagnosticCommandSchema.parse(await save(`${base}/commands`, input, row)),
   remove: (row: Revisioned) => remove(`${base}/commands`, row),
+}
+
+export async function fetchDiagnosticProcedures(signal?: AbortSignal) {
+  return diagnosticProcedureSchema.array().parse(await apiGet<unknown>('/api/event-patterns/procedures', signal))
+}
+
+export async function fetchIncidentProcedures(id: string, signal?: AbortSignal) {
+  return diagnosticCandidateSchema.array().parse(
+    await apiGet<unknown>(`/api/incidents/${encodeURIComponent(id)}/procedures`, signal),
+  )
+}
+
+export async function fetchDiagnosticOutput(id: string, runId: number, signal?: AbortSignal) {
+  return diagnosticOutputSchema.parse(
+    await apiGet<unknown>(`/api/incidents/${encodeURIComponent(id)}/diagnostic-runs/${runId}`, signal),
+  )
+}
+
+function runsPath(id: string) {
+  return `${base}/incidents/${encodeURIComponent(id)}/runs`
+}
+
+export async function previewDiagnosticRun(id: string, input: DiagnosticPreviewInput) {
+  return diagnosticPreviewSchema.parse(await apiPost<unknown>(`${runsPath(id)}/preview`, input))
+}
+
+export async function executeDiagnosticRun(id: string, input: DiagnosticPreviewInput, fingerprint: string, signal: AbortSignal) {
+  return diagnosticRunSchema.parse(await apiPost<unknown>(runsPath(id), { ...input, fingerprint }, undefined, signal))
 }

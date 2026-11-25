@@ -291,12 +291,13 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
 }
 
 /** JSON POST。204 の場合は body なしとして ``undefined`` を返す。 */
-export async function apiPost<T>(path: string, body: unknown, principalId?: string): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, principalId?: string, signal?: AbortSignal): Promise<T> {
   const r = await send(path, {
     ...fetchNoStore,
     method: 'POST',
     headers: mutationHeaders(),
     body: JSON.stringify(body),
+    ...(signal && { signal }),
   }, principalId)
   if (!r.ok) throw await apiError(r)
   if (r.status === 204) return undefined as T

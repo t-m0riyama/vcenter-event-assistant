@@ -4,8 +4,10 @@
 書き込まない。撮るたびに一時の SQLite でモックモードのサーバーを立て、場面のデモデータを入れ、
 Playwright（Chromium）で撮ってからサーバーを止める。外部のサービスには接続しない。
 
-場面は ``scenarios/<名前>.py``（``seed(client, db_path)`` でデモデータを入れる）と
-``scenarios/<名前>.mjs``（``shots(page, ctx)`` で撮る）の組で足す。
+場面は ``scenarios/<名前>.py`` と ``scenarios/<名前>.mjs``（``shots(page, ctx)`` で撮る）の組で足す。
+``.py`` には、サーバーの起動前に足す環境変数 ``SERVER_ENV``（例: 起動時のシード
+``SCREENSHOT_E2E_SEED``）と、起動後に API でデモデータを入れる ``seed(client, db_path)`` の、
+どちらか一方または両方を置く。
 
 使い方::
 
@@ -55,7 +57,7 @@ def load_seed(name: str) -> ModuleType | None:
     return module
 
 
-def server_env(db_path: Path) -> dict[str, str]:
+def server_env(db_path: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
     return {
         **os.environ,
         "DATABASE_URL": f"sqlite+aiosqlite:///{db_path}",
@@ -66,6 +68,7 @@ def server_env(db_path: Path) -> dict[str, str]:
         "VEA_SECRET_KEY": DEMO_SECRET_KEY,
         "VEA_BOOTSTRAP_ADMIN_USERNAME": ADMIN_USERNAME,
         "VEA_BOOTSTRAP_ADMIN_PASSWORD": ADMIN_PASSWORD,
+        **(extra or {}),
     }
 
 
@@ -115,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     base = f"http://127.0.0.1:{args.port}"
+    scenario = load_seed(args.scenario)
     with tempfile.TemporaryDirectory(prefix="vea-pr-shots-") as work:
         db_path, log = Path(work) / "demo.db", Path(work) / "server.log"
         with log.open("wb") as log_file:
@@ -123,15 +127,16 @@ def main(argv: list[str] | None = None) -> int:
                     "uv", "run", "--no-sync", "uvicorn", "vcenter_event_assistant.main:create_app",
                     "--factory", "--host", "127.0.0.1", "--port", str(args.port),
                 ],
-                cwd=REPOSITORY_ROOT, env=server_env(db_path), stdout=log_file, stderr=subprocess.STDOUT,
+                cwd=REPOSITORY_ROOT,
+                env=server_env(db_path, getattr(scenario, "SERVER_ENV", None)),
+                stdout=log_file, stderr=subprocess.STDOUT,
             )
             try:
                 wait_for_health(base, server, log)
-                seed = load_seed(args.scenario)
-                if seed is not None:
+                if scenario is not None and hasattr(scenario, "seed"):
                     client = login(base)
                     try:
-                        seed.seed(client, db_path)
+                        scenario.seed(client, db_path)
                     finally:
                         client.close()
                 result = subprocess.run(
