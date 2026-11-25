@@ -292,6 +292,62 @@ describe('App のインシデント画面', () => {
     expect(JSON.parse(String(patchInit?.body))).toMatchObject({ revision: INCIDENT_DETAIL.revision, title: '編集中の件名' })
   })
 
+  it('メモを追加したあとの読み直しでも、編集の下書きがあれば revision を元のまま保つ', async () => {
+    updateStatus = 200
+    const newEntry = { ...INCIDENT_DETAIL.entries[0], id: 3, body: '追加したメモ' }
+    const originalFetch = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(`${detailPath}/entries`) && init?.method === 'POST') return Promise.resolve(jsonResponse(newEntry, 201))
+      return originalFetch(input, init)
+    })
+    renderApp()
+    fireEvent.click(await screen.findByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '件名' }), { target: { value: '編集中の件名' } })
+    latest = {
+      ...INCIDENT_DETAIL,
+      title: 'ほかの人が変えた件名',
+      revision: '44444444-4444-4444-8444-444444444444',
+      entries: [...INCIDENT_DETAIL.entries, newEntry],
+    }
+    fireEvent.change(screen.getByRole('textbox', { name: 'メモ' }), { target: { value: '追加したメモ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'メモを追加' }))
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith(detailPath) && !init?.method)).toHaveLength(2))
+    expect(await screen.findByText('追加したメモ')).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '件名' })).toHaveValue('編集中の件名')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(true))
+    const [, patchInit] = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    expect(JSON.parse(String(patchInit?.body))).toMatchObject({ revision: INCIDENT_DETAIL.revision, title: '編集中の件名' })
+  })
+
+  it('タブに戻ったときの読み直しが書き込みより遅れて届いても、書き込みの結果を古い内容で上書きしない', async () => {
+    const newEntry = { ...INCIDENT_DETAIL.entries[0], id: 3, body: '追加したメモ' }
+    let deferNext = false
+    let finishStale: (response: Response) => void = () => {}
+    const originalFetch = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(`${detailPath}/entries`) && init?.method === 'POST') return Promise.resolve(jsonResponse(newEntry, 201))
+      if (String(input).endsWith(detailPath) && !init?.method && deferNext) {
+        deferNext = false
+        return new Promise<Response>((resolve) => { finishStale = resolve })
+      }
+      return originalFetch(input, init)
+    })
+    renderApp()
+    expect(await screen.findByRole('heading', { name: INCIDENT_TITLE })).toBeVisible()
+    fireEvent.click(tab('イベント'))
+    deferNext = true
+    fireEvent.click(tab('インシデント'))
+    await waitFor(() => expect(deferNext).toBe(false))
+    latest = { ...INCIDENT_DETAIL, entries: [...INCIDENT_DETAIL.entries, newEntry] }
+    fireEvent.change(screen.getByRole('textbox', { name: 'メモ' }), { target: { value: '追加したメモ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'メモを追加' }))
+    expect(await screen.findByText('追加したメモ')).toBeVisible()
+    // 書き込みの前に始めた読み直しの応答（メモが無い古い内容）を、あとから届ける
+    await act(async () => { finishStale(jsonResponse(INCIDENT_DETAIL)) })
+    expect(screen.getByText('追加したメモ')).toBeVisible()
+  })
+
   it('下書きが無ければ、ほかのタブから戻ったときに詳細をすべて最新にする', async () => {
     renderApp()
     expect(await screen.findByRole('heading', { name: INCIDENT_TITLE })).toBeVisible()

@@ -13,6 +13,7 @@ import { toErrorMessage } from '../../utils/errors'
 import { TimelineExportControls } from '../timeline/TimelineExportControls'
 import { useTimelineExportActivity } from '../timeline/useTimelineExportActivity'
 import { INCIDENT_STATUS_BADGES, INCIDENT_STATUS_LABELS } from './incidentLabels'
+import { keepEditedFields } from './incidentDetailRefresh'
 
 const STALE_MESSAGE = 'ほかの人が更新しました。読み直してください'
 const ENTRY_KIND_LABELS: Record<IncidentDetail['entries'][number]['kind'], string> = {
@@ -25,10 +26,12 @@ const ENTRY_LIMIT_MESSAGE = 'メモが上限に達しました。新しいイン
 
 export type IncidentDraftHandle = { hasDraft: () => boolean }
 
-export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing, onOpenSnapshot }: {
+export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing, onOpenSnapshot, onWrite }: {
   ref?: Ref<IncidentDraftHandle>
   incident: IncidentDetail
   onChange: (detail: IncidentDetail) => void
+  /** 書き込みの始めと終わりに呼ぶ。親は、これより前に始めた読み直しの応答を捨てる。 */
+  onWrite?: () => void
   onDeleted: () => void
   onMissing: () => void
   onOpenSnapshot: (id: string) => void
@@ -51,12 +54,20 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
     hasDraft: () => note.trim() !== '' || (editorRef.current?.hasDraft() ?? false),
   }), [note])
 
-  const reload = async () => onChange(await getIncident(incident.id))
+  /**
+   * 詳細を読み直す。編集の下書きがあるときは、紐付けと経過だけを最新にする（keepEditedFields）。
+   * 409 のあとに利用者が押す「読み直す」だけは `full` で全部を最新にし、下書きと見比べられるようにする。
+   */
+  const reload = async (full = false) => {
+    const fresh = await getIncident(incident.id)
+    onChange(!full && editorRef.current?.hasDraft() ? keepEditedFields(incident, fresh) : fresh)
+  }
   const run = async (action: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
     setError(null)
     setFeedback(null)
+    onWrite?.()
     try {
       await action()
     } catch (err) {
@@ -71,6 +82,7 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
         setError(toErrorMessage(err))
       }
     } finally {
+      onWrite?.()
       setBusy(false)
     }
   }
@@ -111,7 +123,7 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
       {feedback && <p className="hint" role="status">{feedback}</p>}
       {stale && (
         <button type="button" className="btn" disabled={busy} onClick={() => void run(async () => {
-          await reload()
+          await reload(true)
           setStale(false)
           setShowLatest(true)
         })}>読み直す</button>

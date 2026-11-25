@@ -11,6 +11,7 @@ import { incidentHash, incidentIdFromHash, replaceIncidentHash } from '../../rou
 import { parseAppHash } from '../../routing/appHashRouting'
 import { toErrorMessage } from '../../utils/errors'
 import { IncidentDetails, type IncidentDraftHandle } from './IncidentDetails'
+import { keepEditedFields } from './incidentDetailRefresh'
 import { IncidentLinkButton, IncidentLinkDialogProvider } from './IncidentLinkDialog'
 import { INCIDENT_STATUS_BADGES, INCIDENT_STATUS_LABELS } from './incidentLabels'
 import './IncidentsPanel.css'
@@ -212,6 +213,8 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
   const [error, setError] = useState<string | null>(null)
   const [exit, setExit] = useState<DetailExit | null>(null)
   const draftRef = useRef<IncidentDraftHandle>(null)
+  /** 書き込みの始めと終わりに進める。タブに戻ったときの読み直しは、始めたときと違えば応答を捨てる。 */
+  const writeGeneration = useRef(0)
   const wasActive = useRef(active)
   const hasDetail = detail !== null
   useImperativeHandle(ref, () => ({ hasDraft: () => draftRef.current?.hasDraft() ?? false }), [])
@@ -222,14 +225,12 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
     wasActive.current = active
     if (!returned || !hasDetail) return
     const controller = new AbortController()
+    const generation = writeGeneration.current
     void getIncident(id, controller.signal).then(
       (data) => {
-        if (controller.signal.aborted) return
-        // 編集の下書きがあるときは、項目と revision を読み直さない。最新の revision を黙って使うと、
-        // ほかの人の変更を 409 なしで上書きしてしまうため。紐付けと経過だけを最新にする。
-        setDetail((current) => current && draftRef.current?.hasDraft()
-          ? { ...current, entries: data.entries, events: data.events, alerts: data.alerts, snapshots: data.snapshots }
-          : data)
+        // 読み直しのあいだに保存・メモ・解除が始まったか終わったなら、この応答は書き込みより古いかもしれないので捨てる。
+        if (controller.signal.aborted || writeGeneration.current !== generation) return
+        setDetail((current) => current && draftRef.current?.hasDraft() ? keepEditedFields(current, data) : data)
       },
       (err: unknown) => {
         if (controller.signal.aborted) return
@@ -266,6 +267,7 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
           ref={draftRef}
           incident={detail}
           onChange={setDetail}
+          onWrite={() => { writeGeneration.current += 1 }}
           onDeleted={() => setExit('deleted')}
           onMissing={() => setExit('missing')}
           onOpenSnapshot={onOpenSnapshot}
