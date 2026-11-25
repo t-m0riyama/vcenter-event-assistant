@@ -12,8 +12,9 @@ import { timelineEntryHash } from '../../routing/timelineHash'
 import { toErrorMessage } from '../../utils/errors'
 import { TimelineExportControls } from '../timeline/TimelineExportControls'
 import { useTimelineExportActivity } from '../timeline/useTimelineExportActivity'
-import { INCIDENT_STATUS_BADGES, INCIDENT_STATUS_LABELS } from './incidentLabels'
+import { incidentActorName, INCIDENT_STATUS_BADGES, INCIDENT_STATUS_LABELS } from './incidentLabels'
 import { keepEditedFields } from './incidentDetailRefresh'
+import { IncidentDiagnostics } from './IncidentDiagnostics'
 
 const STALE_MESSAGE = 'ほかの人が更新しました。読み直してください'
 const ENTRY_KIND_LABELS: Record<IncidentDetail['entries'][number]['kind'], string> = {
@@ -27,9 +28,12 @@ const ENTRY_LIMIT_MESSAGE = 'メモが上限に達しました。新しいイン
 
 export type IncidentDraftHandle = { hasDraft: () => boolean }
 
-export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing, onOpenSnapshot, onWrite }: {
+export function IncidentDetails({ ref, incident, active, canRunDiagnostics, onDiagnosticDialog, onChange, onDeleted, onMissing, onOpenSnapshot, onWrite }: {
   ref?: Ref<IncidentDraftHandle>
   incident: IncidentDetail
+  active: boolean
+  canRunDiagnostics: boolean
+  onDiagnosticDialog: (open: boolean) => void
   onChange: (detail: IncidentDetail) => void
   /** 書き込みの始めと終わりに呼ぶ。親は、これより前に始めた読み直しの応答を捨てる。 */
   onWrite?: () => void
@@ -56,12 +60,14 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
   }), [note])
 
   /**
-   * 詳細を読み直す。編集の下書きがあるときは、紐付けと経過だけを最新にする（keepEditedFields）。
+   * 詳細を読み直す。編集の下書きがあるときは、紐付け・経過・診断の結果だけを最新にする（keepEditedFields）。
    * 409 のあとに利用者が押す「読み直す」だけは `full` で全部を最新にし、下書きと見比べられるようにする。
    */
-  const reload = async (full = false) => {
-    const fresh = await getIncident(incident.id)
+  const reload = async (full = false, signal?: AbortSignal) => {
+    const fresh = await getIncident(incident.id, signal)
+    signal?.throwIfAborted()
     onChange(!full && editorRef.current?.hasDraft() ? keepEditedFields(incident, fresh) : fresh)
+    return fresh
   }
   const run = async (action: () => Promise<void>) => {
     if (busy) return
@@ -155,6 +161,10 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
         </>
       )}
 
+      <IncidentDiagnostics incident={incident} active={active} canRun={canRunDiagnostics} writeBusy={busy}
+        format={format} refresh={(signal) => reload(false, signal)} onWrite={onWrite}
+        onMissing={onMissing} onDialogOpenChange={onDiagnosticDialog} />
+
       <h3>経過</h3>
       <Records empty="経過の記録はありません。">
         {incident.entries.map((entry) => (
@@ -195,7 +205,7 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
       <h3>紐付けたイベント</h3>
       <Records empty="紐付けたイベントはありません。">
         {incident.events.map((event) => (
-          <li key={event.id}>
+          <li key={event.id} id={`incident-${incident.id}-event-${event.id}`} tabIndex={-1}>
             <strong>{event.event_type}</strong>
             <div className="hint">{[format(event.occurred_at), event.vcenter_name, event.entity_name || event.entity_moid, event.user_name].filter(Boolean).join(' ・ ')}</div>
             <div className="incident-actions"><SeverityBadge severity={event.severity} /><ScoreBadge score={event.notable_score} /></div>
@@ -212,7 +222,7 @@ export function IncidentDetails({ ref, incident, onChange, onDeleted, onMissing,
       <h3>紐付けた通知</h3>
       <Records empty="紐付けた通知はありません。">
         {incident.alerts.map((alert) => (
-          <li key={alert.id}>
+          <li key={alert.id} id={`incident-${incident.id}-alert-${alert.id}`} tabIndex={-1}>
             <strong>{alert.rule_name || `ルール #${alert.rule_id}`}</strong>
             <div className="hint">{[format(alert.occurred_at), alert.vcenter_name, alert.entity_name || alert.context_key].filter(Boolean).join(' ・ ')}</div>
             <div className="incident-actions">
@@ -337,12 +347,7 @@ function IncidentEditor({ ref, incident, disabled, stale, onCancel, onSave }: {
   }
 
   const assignSelf = () => {
-    const { display_name: displayName, username } = me
-    const available = 256 - Array.from(username).length - 2
-    const name = displayName && displayName !== username && available > 0
-      ? `${Array.from(displayName).slice(0, available).join('')}（${username}）`
-      : username
-    edit('assignee', name)
+    edit('assignee', incidentActorName(me))
   }
 
   const submit = (event: FormEvent) => {

@@ -18,6 +18,7 @@ export const INCIDENT_DETAIL: IncidentDetail = {
   updated_at: AT,
   revision: '33333333-3333-4333-8333-333333333333',
   summary: '管理ネットワークを調査中',
+  diagnostic_runs: [],
   entries: [
     { id: 1, incident_id: INCIDENT_ID, kind: 'note', body: '再発の有無を確認', author: '担当者', created_at: AT, deleted_by: null, deleted_at: null },
     { id: 2, incident_id: INCIDENT_ID, kind: 'note', body: '', author: '担当者', created_at: AT, deleted_by: '管理者', deleted_at: AT },

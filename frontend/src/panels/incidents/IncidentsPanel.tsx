@@ -23,12 +23,16 @@ type StatusFilter = IncidentStatus | 'unresolved' | 'all'
 
 export type IncidentsPanelHandle = { showList: () => void }
 
-export function IncidentsPanel({ active, ref, onOpenSnapshot }: {
+export function IncidentsPanel({ active, canRunDiagnostics, ref, onOpenSnapshot }: {
   active: boolean
+  canRunDiagnostics: boolean
   ref?: Ref<IncidentsPanelHandle>
   onOpenSnapshot: (id: string) => void
 }) {
   const [id, setId] = useState(() => incidentIdFromHash(window.location.hash))
+  // 履歴で表示する詳細が変わっても、診断のダイアログを開いている詳細は保持する。
+  const [diagnosticIds, setDiagnosticIds] = useState<string[]>([])
+  const detailIds = [...new Set([id, ...diagnosticIds])].filter((value) => value !== null)
   const [missing, setMissing] = useState(false)
   const draftRef = useRef<IncidentDraftHandle>(null)
   const [wasActive, setWasActive] = useState(active)
@@ -63,8 +67,10 @@ export function IncidentsPanel({ active, ref, onOpenSnapshot }: {
     if (!exit && draftRef.current?.hasDraft() && !window.confirm('保存していない入力を破棄して一覧に戻りますか？')) return
     setMissing(exit === 'missing')
     setId(null)
-    if (exit) replaceIncidentHash(null)
-    else window.location.hash = incidentHash(null)
+    if (exit) {
+      setDiagnosticIds((current) => current.filter((detailId) => detailId !== id))
+      replaceIncidentHash(null)
+    } else window.location.hash = incidentHash(null)
   }, [active, id])
 
   useImperativeHandle(ref, () => ({ showList: () => back() }), [back])
@@ -81,11 +87,15 @@ export function IncidentsPanel({ active, ref, onOpenSnapshot }: {
       <IncidentLinkDialogProvider active={active && id === null} hidden={id !== null}>
         <IncidentListView active={active && id === null} onOpen={open} onFilter={() => setMissing(false)} />
       </IncidentLinkDialogProvider>
-      {id !== null && (
-        <div hidden={!active}>
-          <IncidentDetailView key={id} ref={draftRef} id={id} active={active} onBack={back} onOpenSnapshot={onOpenSnapshot} />
+      {detailIds.map((detailId) => (
+        <div key={detailId} hidden={!active || detailId !== id}>
+          <IncidentDetailView ref={detailId === id ? draftRef : null} id={detailId} active={active && detailId === id}
+            canRunDiagnostics={canRunDiagnostics} onBack={back} onOpenSnapshot={onOpenSnapshot}
+            onDiagnosticDialog={(open) => setDiagnosticIds((ids) =>
+              open ? [...ids, detailId] : ids.filter((openedId) => openedId !== detailId)
+            )} />
         </div>
-      )}
+      ))}
     </section>
   )
 }
@@ -202,12 +212,14 @@ function IncidentListView({ active, onOpen, onFilter }: {
   )
 }
 
-function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
+function IncidentDetailView({ ref, id, active, canRunDiagnostics, onBack, onOpenSnapshot, onDiagnosticDialog }: {
   ref: Ref<IncidentDraftHandle>
   id: string
   active: boolean
+  canRunDiagnostics: boolean
   onBack: (exit?: DetailExit) => void
   onOpenSnapshot: (id: string) => void
+  onDiagnosticDialog: (open: boolean) => void
 }) {
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -233,7 +245,7 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
         setDetail((current) => current && draftRef.current?.hasDraft() ? keepEditedFields(current, data) : data)
       },
       (err: unknown) => {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || writeGeneration.current !== generation) return
         if (err instanceof ApiError && err.status === 404) setExit('missing')
         // そのほかの失敗では、表示中の内容をそのまま残す。
       },
@@ -266,6 +278,9 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
         <IncidentDetails
           ref={draftRef}
           incident={detail}
+          active={active}
+          canRunDiagnostics={canRunDiagnostics}
+          onDiagnosticDialog={onDiagnosticDialog}
           onChange={setDetail}
           onWrite={() => { writeGeneration.current += 1 }}
           onDeleted={() => setExit('deleted')}

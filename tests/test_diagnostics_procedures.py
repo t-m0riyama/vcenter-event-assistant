@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import delete
 
 from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.db.models import (
@@ -137,8 +138,7 @@ async def test_diagnostic_candidates_from_copies_on_sqlite_and_postgres(incident
         host = register_target(vc.id, "host:42", "ESXi 42")
         register_target(other_vc.id, "host:42", "別の vCenter の ESXi 42")
         register_target(other_vc.id, "host-absent", "別の vCenter の ESXi")
-        # 複数のホストが当たるときの確認用。どちらを先に選んでも対象が見つかるよう、両方を登録する。
-        register_target(vc.id, "host:43", "ESXi 43")
+        other_host = register_target(vc.id, "host:43", "ESXi 43")
 
         def alert(source_id, key, *, rule_type="event_pattern", incident=incident_id):
             row = IncidentAlert(
@@ -209,3 +209,10 @@ async def test_diagnostic_candidates_from_copies_on_sqlite_and_postgres(incident
         assert candidates["host-conn-flapping"]["target"] is None
         assert len(candidates["host-conn-flapping"]["reasons"]) == 2
         assert candidates["apd-timeout"]["target"] == expected_target
+
+        async with session_scope() as session:
+            await session.execute(delete(DiagnosticTarget).where(DiagnosticTarget.id == other_host.id))
+        response = await viewer.get(f"{INCIDENTS}/{incident_id}/procedures")
+        assert response.status_code == 200
+        candidates = {item["procedure"]["pattern_id"]: item for item in response.json()}
+        assert candidates["host-conn-flapping"]["target"] is None
