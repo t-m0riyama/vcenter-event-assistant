@@ -393,6 +393,10 @@ PLAYWRIGHT_USE_EXISTING_SERVER=1 E2E_PORT=9000 E2E_USERNAME=admin E2E_PASSWORD='
 
 Windows のコマンドプロンプトでは環境変数の付け方が異なるため、**`uv run scripts/capture_ui_screenshots.py`** の利用を推奨します。
 
+### PR のレビュー用の画像
+
+PR の説明に載せる画像は、`docs/images` を更新せずに `uv run python scripts/pr_screenshots/run.py <場面> --out <ディレクトリ>` で撮る（`--list` で場面の一覧、`--build` で先に `npm run build`）。撮るたびに一時の SQLite でモックモードのサーバー（認証と診断を有効にしたもの）を立て、場面のデモデータを入れ、明暗の両テーマで撮ってから止める。場面は `scripts/pr_screenshots/scenarios/` に、デモデータを入れる `<名前>.py`（`seed(client, db_path)`）と撮る `<名前>.mjs`（`shots(page, ctx)`）の組で足す。
+
 ### 出力ファイル
 
 すべて **1280×720 ピクセル**（固定ビューポート・ページ全体ではない）です。**既定で既起動の API に向ける場合**、DB の内容は手元環境に依存します（ガイド列・グラフ・イベント種別一覧など、画面にデータが無いと見え方が変わります）。**`--spawn-server`** で Playwright が API を起動するときだけ `SCREENSHOT_E2E_SEED=1` によりガイド付きイベント・メトリクス時系列などがメモリ DB に挿入されます（タイムライン用に、対象名つきのイベント、デモ用ホストの CPU・メモリの超過区間、重大度 error 以上のログも入ります。名前はすべてデモと分かるものです）。
