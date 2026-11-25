@@ -1,6 +1,6 @@
 # インシデント記録
 
-最終更新: 2026-11-25（計画）
+最終更新: 2026-11-25（全 PR マージ済み）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 7」にあたる。障害ごとに「インシデント」を作り、状態・担当・経過のメモと、関係するイベント・通知・スナップショットをまとめて残す。Issue は起票していない。
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | A | 本書 | マージ済み [PR #382](https://github.com/t-m0riyama/vcenter-event-assistant/pull/382) |
 | B | 表・移行・API・保持期間の削除 | マージ済み [PR #383](https://github.com/t-m0riyama/vcenter-event-assistant/pull/383) |
-| C | 画面（インシデントのタブと、各画面からの追加）と文書 | レビュー中 |
+| C | 画面（インシデントのタブと、各画面からの追加）と文書 | マージ済み [PR #384](https://github.com/t-m0riyama/vcenter-event-assistant/pull/384) |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
