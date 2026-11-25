@@ -83,6 +83,13 @@ def _allow_origin(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
 
 
+@pytest.fixture
+def _enable_plugin_management(monkeypatch: pytest.MonkeyPatch) -> None:
+    # アップロードの本文制限は、管理を有効にして解析が行われる状態で確かめる。
+    monkeypatch.setenv("VEA_PLUGIN_MANAGEMENT_ENABLED", "true")
+    get_settings.cache_clear()
+
+
 @pytest.mark.parametrize("root_path", ["", "/vea"])
 @pytest.mark.parametrize(
     ("chunks", "declared", "read_count"),
@@ -182,6 +189,7 @@ async def test_rejection_that_does_not_read_body_keeps_its_status() -> None:
     assert sent[0]["status"] == 403
 
 
+@pytest.mark.usefixtures("_enable_plugin_management")
 @pytest.mark.parametrize("authenticated", [False, True])
 @pytest.mark.parametrize("root_path", ["", "/vea"])
 async def test_multipart_overflow_closes_partial_file(
@@ -220,6 +228,7 @@ async def test_multipart_overflow_closes_partial_file(
     _assert_413(sent)
 
 
+@pytest.mark.usefixtures("_enable_plugin_management")
 async def test_malformed_multipart_stays_400() -> None:
     _, sent = await _post(
         "/api/plugins/installed/upload",
@@ -229,6 +238,7 @@ async def test_malformed_multipart_stays_400() -> None:
     assert sent[0]["status"] == 400
 
 
+@pytest.mark.usefixtures("_enable_plugin_management")
 async def test_urlencoded_overflow_returns_413(monkeypatch) -> None:
     monkeypatch.setattr(request_body_limit, "UPLOAD_BODY_LIMIT", 16)
     received, sent = await _post(

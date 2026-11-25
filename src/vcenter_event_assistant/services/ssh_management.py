@@ -11,7 +11,11 @@ import re
 import shutil
 import tempfile
 from contextlib import asynccontextmanager
+from typing import Literal
 from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.db.models import SSHConnection, SSHCredential
 from vcenter_event_assistant.db.session import session_scope
@@ -84,12 +88,30 @@ def ssh_objects(value, schema, *, require_connections=False, allow_legacy=True):
             )
 
 
+SSHPurpose = Literal["logs", "diagnostics"]
+
+
+async def read_ssh_connection(
+    session: AsyncSession, identifier: UUID, purpose: SSHPurpose,
+) -> SSHConnection | None:
+    """接続先と鍵の用途が両方一致する場合だけ接続先を取得する。"""
+    return await session.scalar(
+        select(SSHConnection)
+        .join(SSHCredential)
+        .where(
+            SSHConnection.id == identifier,
+            SSHConnection.purpose == purpose,
+            SSHCredential.purpose == purpose,
+        )
+    )
+
+
 async def reference_digest(session, config, schema, *, allow_legacy=True):
     references = []
     for _, identifier in ssh_objects(
         config, schema, require_connections=True, allow_legacy=allow_legacy,
     ):
-        c = await session.get(SSHConnection, UUID(identifier))
+        c = await read_ssh_connection(session, UUID(identifier), "logs")
         if c is None or not c.approved_key:
             raise ValueError("SSH接続先が未登録、またはホスト鍵が未承認です。")
         references.append([str(c.id), c.revision, c.approved_key, str(c.credential_id)])
@@ -144,12 +166,16 @@ async def materialize_ssh(
                     and obj["vcenter_id"] != str(target_id)
                 ):
                     continue
-                c = await session.get(SSHConnection, UUID(identifier))
+                c = await read_ssh_connection(session, UUID(identifier), "logs")
                 if not c or not c.approved_key:
                     raise ValueError("SSH接続先のホスト鍵を承認してください。")
                 # 設定を後から絞ったときも、登録済みの接続先をワーカーに渡さない。
                 check_ssh_port(settings, c.port)
-                credential = await session.get(SSHCredential, c.credential_id)
+                credential = await session.scalar(
+                    select(SSHCredential).where(
+                        SSHCredential.id == c.credential_id, SSHCredential.purpose == "logs",
+                    )
+                )
                 if not credential:
                     raise ValueError("SSH鍵が見つかりません。")
                 key_path = directory / f"{index}.key"

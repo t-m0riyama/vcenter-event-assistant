@@ -50,6 +50,7 @@ def build_logging_dict(settings: Settings) -> dict[str, Any]:
             "level": level,
             "propagate": True,
         },
+        "vcenter_event_assistant.audit": {"level": "INFO", "propagate": True},
         "uvicorn": {
             "handlers": ["console"],
             "level": level,

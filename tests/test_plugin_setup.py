@@ -148,7 +148,7 @@ async def prepare(client, monkeypatch):
         return host_key
 
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.plugin_setup.resolve_ssh_address", resolve
+        "vcenter_event_assistant.api.routes.ssh_setup.resolve_ssh_address", resolve
     )
     monkeypatch.setattr(asyncssh, "get_server_host_key", probe)
     return vc.json()["id"], key.json(), c
@@ -452,7 +452,7 @@ async def test_empty_draft_replaces_toml_instead_of_restoring_old_fields(setup_e
 
 async def test_ssh_ip_validation_accepts_appliance_networks_but_not_metadata():
     from fastapi import HTTPException
-    from vcenter_event_assistant.api.routes.plugin_setup import validate_host
+    from vcenter_event_assistant.api.routes.ssh_setup import validate_host
 
     assert validate_host("192.168.10.20", get_settings()) == "192.168.10.20"
     for host in ["127.0.0.1", "169.254.169.254", "::1", "0.0.0.0", "::ffff:127.0.0.1", "fd00:ec2::254"]:
@@ -469,7 +469,7 @@ async def test_probe_rejects_a_name_that_resolves_to_loopback(client, setup_enab
     vc, key, c = await prepare(client, monkeypatch)
     # prepare が差し替えた名前解決を本物に戻し、その下の getaddrinfo だけを差し替える。
     monkeypatch.setattr(
-        "vcenter_event_assistant.api.routes.plugin_setup.resolve_ssh_address",
+        "vcenter_event_assistant.api.routes.ssh_setup.resolve_ssh_address",
         network.resolve_ssh_address,
     )
     probed = []
@@ -673,3 +673,53 @@ def test_startup_cleans_abandoned_files_without_touching_other_processes(
     cleanup_stale_ssh_files()
     assert not current.exists() and not abandoned.exists()
     assert (live / "secret.key").exists()
+
+
+@pytest.mark.parametrize("purpose_mismatch", ["connection", "credential"])
+async def test_diagnostic_ssh_rejected_by_collector_entry_points(
+    client, setup_enabled, monkeypatch, purpose_mismatch, caplog,
+):
+    """用途の相違は承認済みの SSH 接続先でも、収集と設定の各入口で拒否する。"""
+    from vcenter_event_assistant.db.models import PluginConfigurationDraft, SSHConnection
+    from vcenter_event_assistant.plugins.runtime import run_collector_for_vcenter
+    from vcenter_event_assistant.services.plugin_configuration import run_setup
+
+    vc_id, key, connection = await prepare(client, monkeypatch)
+    connection = await approve(client, connection)
+    base = "/api/plugins/collectors/example.setup/draft"
+    saved = await draft(client, vc_id, connection)
+    revision = {"revision": saved["revision"]}
+    config = saved["config_values"]
+
+    # 同じログ収集設定で、先に接続テストと適用、有効化を通す。
+    assert (await client.post(base + "/validate")).status_code == 200
+    assert (await client.post(base + "/actions/test", json=revision)).json()["ok"]
+    assert (await client.post(base + "/apply", json=revision)).status_code == 200
+    collector = "/api/plugins/collectors/example.setup"
+    assert (await client.patch(collector, json={"enabled": True})).status_code == 200
+    current = get_collector_registry().get("example.setup")
+    assert (await run_collector_for_vcenter(get_settings(), current, UUID(vc_id))).status == "ok"
+    assert (await client.patch(collector, json={"enabled": False})).status_code == 200
+
+    async with session_scope() as session:
+        setting = await session.get(PluginConfigurationDraft, "example.setup")
+        assert setting.tests["test"]["ok"]
+        ssh = await session.get(SSHConnection, UUID(connection["id"]))
+        if purpose_mismatch == "connection":
+            ssh.purpose = "diagnostics"
+        else:
+            credential = await session.get(SSHCredential, UUID(key["id"]))
+            credential.purpose = "diagnostics"
+
+    for action, payload in (
+        ("/validate", None), ("/actions/test", revision), ("/apply", revision),
+    ):
+        error = await client.post(base + action, json=payload)
+        assert error.status_code == 422, error.text
+        assert "SSH接続先" in error.text
+    enabled = await client.patch(collector, json={"enabled": True})
+    assert enabled.status_code == 422 and "SSH接続先" in enabled.text
+    with pytest.raises(ValueError, match="SSH接続先"):
+        await run_setup(get_settings(), current, config, "test")
+    collected = await run_collector_for_vcenter(get_settings(), current, UUID(vc_id))
+    assert collected.status == "failed" and "SSH接続先" in caplog.text

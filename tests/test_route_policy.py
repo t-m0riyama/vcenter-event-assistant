@@ -139,6 +139,25 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/plugins/ssh/connections/{identifier}/host-key"): ADMIN,
     ("POST", "/api/plugins/ssh/connections/{identifier}/approve"): ADMIN,
     ("GET", "/api/plugins/vcenters/{identifier}/hosts"): ADMIN,
+    # 診断の設定
+    ("GET", "/api/diagnostics/ssh/credentials"): ADMIN,
+    ("POST", "/api/diagnostics/ssh/credentials"): ADMIN,
+    ("GET", "/api/diagnostics/ssh/credentials/{identifier}/public-key"): ADMIN,
+    ("DELETE", "/api/diagnostics/ssh/credentials/{identifier}"): ADMIN,
+    ("GET", "/api/diagnostics/ssh/connections"): ADMIN,
+    ("POST", "/api/diagnostics/ssh/connections"): ADMIN,
+    ("PUT", "/api/diagnostics/ssh/connections/{identifier}"): ADMIN,
+    ("POST", "/api/diagnostics/ssh/connections/{identifier}/host-key"): ADMIN,
+    ("POST", "/api/diagnostics/ssh/connections/{identifier}/approve"): ADMIN,
+    ("GET", "/api/diagnostics/vcenters/{identifier}/hosts"): ADMIN,
+    ("GET", "/api/diagnostics/commands"): ADMIN,
+    ("POST", "/api/diagnostics/commands"): ADMIN,
+    ("PUT", "/api/diagnostics/commands/{identifier}"): ADMIN,
+    ("DELETE", "/api/diagnostics/commands/{identifier}"): ADMIN,
+    ("GET", "/api/diagnostics/targets"): ADMIN,
+    ("POST", "/api/diagnostics/targets"): ADMIN,
+    ("PUT", "/api/diagnostics/targets/{identifier}"): ADMIN,
+    ("DELETE", "/api/diagnostics/targets/{identifier}"): ADMIN,
 }
 
 
@@ -216,6 +235,7 @@ _PROTECTED = sorted((k, v) for k, v in EXPECTED.items() if v != PUBLIC)
 def _plugin_management_enabled(monkeypatch: pytest.MonkeyPatch, no_external_collectors):
     # 無効時は存在を伏せる 404 になり、ロール判定を確認できないため有効にする
     monkeypatch.setenv("VEA_PLUGIN_MANAGEMENT_ENABLED", "1")
+    monkeypatch.setenv("VEA_DIAGNOSTICS_ENABLED", "1")
     get_settings.cache_clear()
     # lifespan を走らせないので、コレクタのレジストリを自前で用意する
     set_collector_registry(build_collector_registry(Settings()))
@@ -262,3 +282,39 @@ async def test_disabled_plugin_management_is_hidden_before_auth(
     async with open_client(role, username=f"hidden-{role}") as c:
         resp = await _call(c, method, path)
     assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.parametrize("key", sorted(k for k in EXPECTED if k[1].startswith("/api/diagnostics/")))
+async def test_disabled_diagnostic_routes_are_hidden_before_auth(anon_client, key):
+    assert (await _call(anon_client, *key)).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", "/api/diagnostics/ssh/credentials"),
+        ("POST", "/api/diagnostics/commands"),
+        ("POST", "/api/plugins/ssh/credentials"),
+        ("PATCH", "/api/plugins/collectors/{plugin_id}"),
+        ("POST", "/api/plugins/installed"),
+    ],
+)
+async def test_disabled_diagnostic_and_plugin_routes_hide_malformed_json(anon_client, method, path):
+    response = await anon_client.request(
+        method, _concrete(path), content="{", headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.usefixtures("_plugin_management_enabled")
+@pytest.mark.parametrize("prefix", ["/api/diagnostics", "/api/plugins"])
+@pytest.mark.parametrize("malformed", [False, True])
+async def test_enabled_diagnostic_and_plugin_ssh_validation_hides_private_key(client, prefix, malformed):
+    marker = "PRIVATE-INPUT-MARKER"
+    content = '{"private_key": "' + marker + '"' + ("" if malformed else "}")
+    response = await client.post(
+        f"{prefix}/ssh/credentials", content=content, headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "入力の形式を確認してください。"}
+    assert marker not in response.text

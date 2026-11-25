@@ -49,7 +49,6 @@ from vcenter_event_assistant.api.routes.incident_timeline import (
 )
 from vcenter_event_assistant.api.routes.plugins import (
     installed_router as plugins_installed_router,
-    management_gate as plugins_management_gate,
     management_router as plugins_management_router,
     router as plugins_router,
 )
@@ -111,6 +110,8 @@ _RATE_LIMITED_PATTERNS: tuple[tuple[str, tuple[str, ...], str, int], ...] = tupl
         ("POST", "/api/plugins/ssh/connections/*/host-key", "probe", 60),
         ("POST", "/api/plugins/collectors/*/draft/actions/*", "probe", 60),
         ("GET", "/api/plugins/vcenters/*/hosts", "probe", 60),
+        ("POST", "/api/diagnostics/ssh/connections/*/host-key", "probe", 60),
+        ("GET", "/api/diagnostics/vcenters/*/hosts", "probe", 60),
         ("GET", "/api/vcenters/*/test", "probe", 60),
         (
             "GET",
@@ -328,15 +329,15 @@ def create_app() -> FastAPI:
 
     app.include_router(api)
 
-    # プラグイン管理の変更系は、無効時に存在を伏せる 404 gate をログイン確認より先に評価する。
-    # 親 router の依存は子より先に走るため、``api`` には入れずにここで順序を指定してマウントする。
+    # 機能別のルートクラスで、本文の解析やログイン確認より先に有効・無効を判定する。
+    from vcenter_event_assistant.api.routes.diagnostics import router as diagnostics_router
     from vcenter_event_assistant.api.routes.plugin_setup import router as plugin_setup_router
 
-    for gated in (plugins_management_router, plugins_installed_router, plugin_setup_router):
+    for gated in (plugins_management_router, plugins_installed_router, plugin_setup_router, diagnostics_router):
         app.include_router(
             gated,
             prefix="/api",
-            dependencies=[Depends(plugins_management_gate), Depends(get_current_principal)],
+            dependencies=[Depends(get_current_principal)],
         )
 
     if FRONTEND_DIST.is_dir() and (FRONTEND_DIST / "index.html").is_file():

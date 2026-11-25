@@ -829,6 +829,18 @@ class AuthSettingsMixin(BaseModel):
             "無効時は全リクエストを admin として扱う（従来の動作）。本番（APP_ENV=production）では無効にできない。"
         ),
     )
+    diagnostics_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("diagnostics_enabled", "VEA_DIAGNOSTICS_ENABLED"),
+        description="admin 向けの診断設定 API を有効にする。認証が必須。",
+    )
+
+    @model_validator(mode="after")
+    def validate_diagnostics_auth(self) -> "AuthSettingsMixin":
+        if self.diagnostics_enabled and not self.auth_enabled:
+            raise ValueError("VEA_DIAGNOSTICS_ENABLED=true には VEA_AUTH_ENABLED=true が必要です。")
+        return self
+
     session_idle_timeout_minutes: int = Field(
         default=60,
         ge=1,

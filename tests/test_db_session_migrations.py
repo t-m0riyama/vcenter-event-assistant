@@ -950,3 +950,148 @@ async def test_incident_migration_round_trip(tmp_path, backend) -> None:
             await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_diagnostic_migration_preserves_ssh_rows_and_adds_constraints(tmp_path, backend):
+    """外部キーの検証を有効にしたまま、既存の鍵と接続先を移行する。"""
+    import os
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from alembic import command
+    from sqlalchemy import Uuid, bindparam
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+    from vcenter_event_assistant.db.models import DiagnosticTarget, SSHConnection, SSHCredential, VCenter
+
+    if backend == "postgres":
+        url = os.environ.get("VEA_TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    else:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'diagnostic.db'}"
+    engine = create_async_engine(url)
+    cfg = alembic_config(settings=get_settings().model_copy(update={"database_url": url}))
+    previous = "c2d3e4f5a6b7"
+    revision = "d3e4f5a6b7c8"
+    key_id, conn_id = uuid4(), uuid4()
+
+    def migrate(conn, operation, target):
+        _run_with_connection(conn, cfg, lambda cc: operation(cc, target))
+
+    try:
+        async with engine.connect() as conn:
+            if backend == "sqlite":
+                await conn.execute(text("PRAGMA foreign_keys=ON"))
+                assert await conn.scalar(text("PRAGMA foreign_keys")) == 1
+                await conn.commit()
+
+            async with conn.begin() as transaction:
+                if backend == "postgres":
+                    schema = f"diagnostic_migration_{uuid4().hex}"
+                    await conn.execute(text(f"CREATE SCHEMA {schema}"))
+                    await conn.execute(text(f"SET LOCAL search_path TO {schema}"))
+
+                await conn.run_sync(migrate, command.upgrade, previous)
+                await conn.execute(
+                    text("INSERT INTO ssh_credentials (id, name, private_key, public_key) "
+                         "VALUES (:id, 'key', 'stored-private', 'stored-public')")
+                    .bindparams(bindparam("id", type_=Uuid)),
+                    {"id": key_id},
+                )
+                await conn.execute(
+                    text("INSERT INTO ssh_connections (id, name, host, port, username, credential_id, approved_key, revision) "
+                         "VALUES (:id, 'connection', 'esxi.example.net', 22, 'reader', :key, 'approved', 7)")
+                    .bindparams(bindparam("id", type_=Uuid), bindparam("key", type_=Uuid)),
+                    {"id": conn_id, "key": key_id},
+                )
+                await conn.run_sync(migrate, command.upgrade, revision)
+
+                assert (await conn.execute(text("SELECT name, private_key, public_key, purpose FROM ssh_credentials"))).one() == (
+                    "key", "stored-private", "stored-public", "logs",
+                )
+                assert (await conn.execute(text(
+                    "SELECT c.name, c.approved_key, c.revision, c.purpose, k.name "
+                    "FROM ssh_connections c JOIN ssh_credentials k ON k.id = c.credential_id"
+                ))).one() == ("connection", "approved", 7, "logs", "key")
+                for table in ("ssh_credentials", "ssh_connections"):
+                    if backend == "postgres":
+                        assert await conn.scalar(text(
+                            "SELECT conname FROM pg_constraint WHERE conrelid = to_regclass(:table) AND conname = :name"
+                        ), {"table": table, "name": f"ck_{table}_purpose"}) == f"ck_{table}_purpose"
+                invalid_credentials = SSHCredential.__table__.insert().values(
+                    name="invalid-key", purpose="bogus", private_key="test", public_key="test",
+                )
+                invalid_connection = SSHConnection.__table__.insert().values(
+                    name="invalid-connection", purpose="bogus", host="esxi.example.net",
+                    username="reader", credential_id=key_id,
+                )
+                for statement, constraint in [
+                    (invalid_credentials, "ck_ssh_credentials_purpose"),
+                    (invalid_connection, "ck_ssh_connections_purpose"),
+                ]:
+                    with pytest.raises(IntegrityError, match=constraint):
+                        async with conn.begin_nested():
+                            await conn.execute(statement)
+
+                def check_tables(sync_conn):
+                    inspector = inspect(sync_conn)
+                    assert {"diagnostic_targets", "diagnostic_commands"} <= set(inspector.get_table_names())
+                    assert {c["name"] for c in inspector.get_check_constraints("diagnostic_targets")} == {
+                        "ck_diagnostic_targets_product", "ck_diagnostic_targets_host_moid",
+                    }
+                    assert any(
+                        c["column_names"] == ["vcenter_id", "host_moid"]
+                        for c in inspector.get_unique_constraints("diagnostic_targets")
+                    )
+                    index = next(i for i in inspector.get_indexes("diagnostic_targets")
+                                 if i["name"] == "uq_diagnostic_targets_vcenter")
+                    assert index["unique"] and index["column_names"] == ["vcenter_id"]
+                    predicate = str(index["dialect_options"][f"{sync_conn.dialect.name}_where"])
+                    assert "product" in predicate and "'vcenter'" in predicate
+
+                await conn.run_sync(check_tables)
+                diagnostic_key_id, diagnostic_conn_id = uuid4(), uuid4()
+                await conn.execute(
+                    text("INSERT INTO ssh_credentials (id, name, private_key, public_key, purpose) "
+                         "VALUES (:id, 'diagnostic-key', 'new-private', 'new-public', 'diagnostics')")
+                    .bindparams(bindparam("id", type_=Uuid)),
+                    {"id": diagnostic_key_id},
+                )
+                await conn.execute(
+                    text("INSERT INTO ssh_connections (id, name, host, port, username, credential_id, revision, purpose) "
+                         "VALUES (:id, 'diagnostic-connection', 'esxi.example.net', 22, 'admin', :key, 1, 'diagnostics')")
+                    .bindparams(bindparam("id", type_=Uuid), bindparam("key", type_=Uuid)),
+                    {"id": diagnostic_conn_id, "key": diagnostic_key_id},
+                )
+                vcenter_id = uuid4()
+                await conn.execute(VCenter.__table__.insert().values(
+                    id=vcenter_id, name="vc", host="vc.example.net", username="tester", password="test",
+                ))
+                now = datetime.now(timezone.utc)
+                target = DiagnosticTarget.__table__.insert().values(
+                    vcenter_id=vcenter_id, ssh_connection_id=diagnostic_conn_id,
+                    host_name="host", created_by="tester", updated_by="tester",
+                    created_at=now, updated_at=now,
+                )
+                await conn.execute(target.values(product="esxi", host_moid="host-1"))
+                await conn.execute(target.values(product="vcenter", host_moid=None))
+                for product, moid in [
+                    ("esxi", None), ("vcenter", "host-2"), ("bogus", "host-2"),
+                    ("esxi", "host-1"), ("vcenter", None),
+                ]:
+                    with pytest.raises(IntegrityError):
+                        async with conn.begin_nested():
+                            await conn.execute(target.values(product=product, host_moid=moid))
+                await conn.run_sync(migrate, command.downgrade, previous)
+                assert (await conn.scalars(text("SELECT name FROM ssh_credentials"))).all() == ["key"]
+                assert (await conn.scalars(text("SELECT revision FROM ssh_connections"))).all() == [7]
+                await conn.run_sync(migrate, command.upgrade, revision)
+                assert await conn.scalar(text("SELECT purpose FROM ssh_connections")) == "logs"
+                await transaction.rollback()
+    finally:
+        await engine.dispose()

@@ -33,4 +33,5 @@ async def get_app_config(
         chat_attachment_max_file_bytes=settings.chat_attachment_max_file_bytes,
         chat_attachment_max_text_chars=settings.chat_attachment_max_text_chars,
         mock_mode=settings.mock_mode,
+        diagnostics_enabled=settings.diagnostics_enabled,
     )
