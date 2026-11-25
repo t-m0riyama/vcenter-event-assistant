@@ -121,6 +121,15 @@ vCenter Event Assistant のフロントエンドは、以下のタブなどで�
 | `DELETE` | `/event-score-rules/{rule_id}` | ルール削除 | 削除 → 関連イベントスコア再計算 | ❌ | DELETE + スコア更新 |
 | `POST` | `/event-score-rules/import` | JSON一括インポート | JSON解析・DB全置換 → 全イベントスコア再計算 | ❌ | DELETE/INSERT + 全スコア更新 |
 
+#### 対応手順 (`/api/event-patterns`, `/api/incidents`)
+
+診断機能が無効でも参照できます。
+
+| メソッド | エンドポイント | 説明 | 必要なロール |
+|--------|------------|------|----------|
+| `GET` | `/event-patterns/procedures` | 障害パターンの同梱手順と、段ごとの診断コマンドの ID・名前 | viewer |
+| `GET` | `/incidents/{id}/procedures` | 手順の候補、紐付いた通知・イベントの写しを示す理由、照合した診断対象の ID と表示名 | viewer |
+
 #### インシデント記録 (`/api/incidents`)
 
 | メソッド | エンドポイント | 説明 | 必要なロール |

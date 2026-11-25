@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from vcenter_event_assistant.api.auth_deps import RequireViewer
+from vcenter_event_assistant.api.schemas.diagnostics import ProcedureRead
 from vcenter_event_assistant.api.schemas.event_patterns import EventPatternRead, EventPatternStepRead
 from vcenter_event_assistant.services.event_patterns.definitions import BUILTIN_PATTERNS
 
@@ -24,3 +25,8 @@ async def list_event_patterns() -> list[EventPatternRead]:
         )
         for pattern in BUILTIN_PATTERNS
     ]
+
+
+@router.get("/procedures", dependencies=[RequireViewer])
+async def list_event_pattern_procedures() -> list[ProcedureRead]:
+    return [ProcedureRead.from_pattern(pattern) for pattern in BUILTIN_PATTERNS]
