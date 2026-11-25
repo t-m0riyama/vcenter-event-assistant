@@ -348,6 +348,29 @@ describe('App のインシデント画面', () => {
     expect(screen.getByText('追加したメモ')).toBeVisible()
   })
 
+  it('409 のあとの読み直しで最新と同じになった項目は下書きから外し、その後の変更を古い下書きで上書きしない', async () => {
+    renderApp()
+    fireEvent.click(await screen.findByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '件名' }), { target: { value: '同じ件名' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('ほかの人が更新しました。読み直してください')).toBeVisible()
+    // ほかの人も同じ件名に変えていた
+    latest = { ...INCIDENT_DETAIL, title: '同じ件名', revision: '44444444-4444-4444-8444-444444444444' }
+    fireEvent.click(screen.getByRole('button', { name: '読み直す' }))
+    expect(await screen.findByText('読み直した最新の内容')).toBeVisible()
+    // そのあと、さらにほかの人が件名を変えた
+    const thirdRevision = '55555555-5555-4555-8555-555555555555'
+    latest = { ...INCIDENT_DETAIL, title: '三人目の件名', revision: thirdRevision }
+    fireEvent.click(tab('イベント'))
+    fireEvent.click(tab('インシデント'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '件名' })).toHaveValue('三人目の件名'))
+    updateStatus = 200
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByRole('button', { name: '編集' })).toBeVisible()
+    const patches = fetchMock.mock.calls.filter(([url, options]) => String(url).endsWith(detailPath) && options?.method === 'PATCH')
+    expect(JSON.parse(String(patches[1][1]?.body))).toEqual({ revision: thirdRevision })
+  })
+
   it('下書きが無ければ、ほかのタブから戻ったときに詳細をすべて最新にする', async () => {
     renderApp()
     expect(await screen.findByRole('heading', { name: INCIDENT_TITLE })).toBeVisible()
