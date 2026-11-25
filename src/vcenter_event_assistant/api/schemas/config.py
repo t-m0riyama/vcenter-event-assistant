@@ -18,3 +18,4 @@ class AppConfigResponse(BaseModel):
     chat_attachment_max_file_bytes: int = 0
     chat_attachment_max_text_chars: int = 0
     mock_mode: bool = False
+    diagnostics_enabled: bool = False

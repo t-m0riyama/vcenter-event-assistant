@@ -747,6 +747,12 @@ class PluginConfigurationDraft(Base):
 
 class SSHCredential(Base):
     __tablename__ = "ssh_credentials"
+    purpose: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint("purpose IN ('logs', 'diagnostics')", name="ck_ssh_credentials_purpose"),
+        default="logs",
+        server_default="logs",
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
     private_key: Mapped[str] = mapped_column(EncryptedString(65536))
@@ -755,6 +761,12 @@ class SSHCredential(Base):
 
 class SSHConnection(Base):
     __tablename__ = "ssh_connections"
+    purpose: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint("purpose IN ('logs', 'diagnostics')", name="ck_ssh_connections_purpose"),
+        default="logs",
+        server_default="logs",
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
     host: Mapped[str] = mapped_column(String(512))
@@ -764,6 +776,58 @@ class SSHConnection(Base):
     candidate_key: Mapped[str | None] = mapped_column(Text)
     approved_key: Mapped[str | None] = mapped_column(Text)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class DiagnosticSetting:
+    """診断設定の変更者、変更時刻、リビジョン。"""
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    created_by: Mapped[str] = mapped_column(String(256))
+    updated_by: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[uuid.UUID] = mapped_column(Uuid, default=uuid.uuid4)
+
+
+class DiagnosticTarget(DiagnosticSetting, Base):
+    """vCenter または ESXi と診断用 SSH 接続先の紐付け。"""
+
+    __tablename__ = "diagnostic_targets"
+    __table_args__ = (
+        CheckConstraint("product IN ('esxi', 'vcenter')", name="ck_diagnostic_targets_product"),
+        CheckConstraint("(product = 'vcenter') = (host_moid IS NULL)", name="ck_diagnostic_targets_host_moid"),
+        UniqueConstraint("vcenter_id", "host_moid", name="uq_diagnostic_targets_host"),
+        Index(
+            "uq_diagnostic_targets_vcenter",
+            "vcenter_id",
+            unique=True,
+            sqlite_where=text("product = 'vcenter'"),
+            postgresql_where=text("product = 'vcenter'"),
+        ),
+    )
+
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("vcenters.id", ondelete="CASCADE"))
+    product: Mapped[str] = mapped_column(String(16))
+    host_moid: Mapped[str | None] = mapped_column(String(256))
+    host_name: Mapped[str] = mapped_column(String(512))
+    ssh_connection_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("ssh_connections.id", ondelete="RESTRICT")
+    )
+
+
+class DiagnosticCommand(DiagnosticSetting, Base):
+    """管理者が登録した診断コマンドの雛形。"""
+
+    __tablename__ = "diagnostic_commands"
+    __table_args__ = (
+        CheckConstraint("product IN ('esxi', 'vcenter')", name="ck_diagnostic_commands_product"),
+    )
+
+    product: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(String(1000))
+    template: Mapped[str] = mapped_column(String(1000))
+    param_definitions: Mapped[list[dict[str, str]]] = mapped_column(JSON)
 
 
 class User(Base):

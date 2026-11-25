@@ -134,11 +134,24 @@ vCenter Event Assistant のフロントエンドは、以下のタブなどで�
 | `POST` | `/incidents/{id}/{events,alerts,snapshots}` | イベント・通知・スナップショットの紐付け | operator |
 | `DELETE` | `/incidents/{id}/{events,alerts,snapshots}/{link_id}` | 紐付けの解除 | operator |
 
+#### 診断の設定 (`/api/diagnostics`)
+
+`VEA_DIAGNOSTICS_ENABLED=true` で有効になります。すべて admin 専用です。
+
+| メソッド | エンドポイント | 説明 |
+|--------|------------|------|
+| `GET` | `/diagnostics/commands` | 追加のコマンドと引数の種類の一覧（組み込みの一覧は空） |
+| `POST`, `PUT`, `DELETE` | `/diagnostics/commands[/{id}]` | 追加コマンドの管理。更新と削除はリビジョンを照合 |
+| `GET`, `POST`, `PUT`, `DELETE` | `/diagnostics/targets[/{id}]` | vCenter・ESXi と診断用 SSH 接続先の紐付け |
+| `GET` | `/diagnostics/vcenters/{id}/hosts` | ESXi の一覧 |
+| `GET`, `POST`, `DELETE` | `/diagnostics/ssh/credentials` と配下 | 診断用 SSH 鍵の登録、公開鍵の取得、削除 |
+| `GET`, `POST`, `PUT` | `/diagnostics/ssh/connections` と配下 | 診断用 SSH 接続先の登録・更新、ホスト鍵の取得・承認 |
+
 #### システム (`/api/config`, `/api/health`)
 
 | メソッド | エンドポイント | 説明 | 返却内容 | LLM連携 | DB操作 |
 |--------|------------|------|--------|---------|--------|
-| `GET` | `/config` | アプリ設定情報 | `event_retention_days`, `metric_retention_days` | ❌ | 設定読み込み |
+| `GET` | `/config` | アプリ設定情報 | `event_retention_days`, `metric_retention_days`, `diagnostics_enabled` | ❌ | 設定読み込み |
 | `GET` | `/health` | ヘルスチェック | `{"status": "ok"}` | ❌ | 接続確認 |
 
 ### 🔄 ジョブ・スケジューリング（定期実行、APScheduler）
@@ -174,6 +187,9 @@ vCenter Event Assistant のフロントエンドは、以下のタブなどで�
 | **incident_events** | 紐付けたイベントの写し | id, incident_id, event_id, vcenter_id, collector_id, vmware_key, occurred_at | 解除またはインシデントの削除まで保持 |
 | **incident_alerts** | 紐付けた通知履歴の写し | id, incident_id, alert_history_id, rule_id, occurred_at, context_key | 解除またはインシデントの削除まで保持 |
 | **incident_snapshots** | 保存済みスナップショットとの紐付け | id, incident_id, snapshot_id, added_by, added_at | 解除または参照先の削除まで保持。紐付けがある間はスナップショットの行と保存結果を自動削除しない |
+| **ssh_credentials**, **ssh_connections** | SSH の鍵と接続先 | id, purpose（`logs` または `diagnostics`）, credential_id, revision | 接続先で使用中の鍵は削除不可 |
+| **diagnostic_targets** | 診断対象と接続先の紐付け | vcenter_id, product, host_moid, host_name, ssh_connection_id, revision | 手動削除または vCenter 削除まで保持 |
+| **diagnostic_commands** | 追加の診断コマンド | product, title, description, template, param_definitions, revision | 手動削除まで保持 |
 | **ingestion_state** | 取得進捗カーソル | id, vcenter_id, kind (event/metric), cursor_value | イベント・メトリクス再ポーリング時に更新 |
 
 ---

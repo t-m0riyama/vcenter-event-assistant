@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import RequireAdmin, RequireViewer
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
+from vcenter_event_assistant.api.routes.setup_common import PluginManagementRoute
 from vcenter_event_assistant.api.schemas.plugins import (
     CollectorReloadResponse,
     CollectorRunStatusRead,
@@ -50,33 +51,17 @@ from vcenter_event_assistant.settings import Settings
 
 
 
-def _require_management_enabled(settings: Settings) -> None:
-    """変更系エンドポイントのゲート。
-
-    プラグイン管理は実質的に任意コード実行を許すため、既定では無効であり、
-    無効時はエンドポイントの存在自体を伏せて 404 を返す。
-    """
-    if not settings.plugin_management_enabled:
-        raise HTTPException(status_code=404, detail="Not Found")
-
-
-async def management_gate(settings: Settings = Depends(get_app_settings)) -> None:
-    _require_management_enabled(settings)
-
-
-# 参照系（一覧）は常に公開し、変更系は管理が無効なら存在を伏せる。
-# 変更系の router は ``main.create_app`` で、ログイン確認より先に ``management_gate`` を
-# 評価するようにマウントする（未ログインでも 401 ではなく 404 になる）。
+# 参照系（一覧）は常に使え、管理の経路は本文を読む前に機能の有効・無効を調べる。
 router = APIRouter(prefix="/plugins/collectors", tags=["plugins"])
 management_router = APIRouter(
     prefix="/plugins/collectors",
     tags=["plugins"],
-    dependencies=[Depends(management_gate)],
+    route_class=PluginManagementRoute,
 )
 installed_router = APIRouter(
     prefix="/plugins/installed",
     tags=["plugins"],
-    dependencies=[Depends(management_gate)],
+    route_class=PluginManagementRoute,
 )
 
 

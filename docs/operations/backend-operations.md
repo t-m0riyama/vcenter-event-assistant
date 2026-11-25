@@ -491,9 +491,10 @@ vCenter を順に収集するため、1 回のジョブの読み取り待ち時�
 - ログ出力: `LOG_LEVEL`, `APP_LOG_FILE`, `UVICORN_LOG_FILE`
 - 認証: `VEA_AUTH_ENABLED`（既定 `true`、本番では無効にできない）、`VEA_SESSION_*`、`VEA_LOGIN_*`、`VEA_BOOTSTRAP_ADMIN_PASSWORD` が残っていないこと（起動時に警告）
 - プラグイン管理: `VEA_PLUGIN_MANAGEMENT_ENABLED`（既定 `false`）、`VEA_PLUGIN_ALLOW_INDEX_INSTALL`（既定 `false`）、`VEA_PLUGIN_DIR`
+- 診断の設定: `VEA_DIAGNOSTICS_ENABLED`（既定 `false`、`VEA_AUTH_ENABLED=true` が必須）
 - コレクタワーカーのログ: `VEA_COLLECTOR_WORKER_LOG_LEVEL`（未設定時は `LOG_LEVEL` を継承）
 - SSH の接続先: `VEA_SSH_ALLOWED_PORTS`（許可するポートのカンマ区切り。既定は空で制限しない）。接続先の名前は、ホスト鍵の取得と収集の直前に名前解決し、ループバック・リンクローカル（メタデータ）・マルチキャスト・予約済み・未指定のアドレスに解決されると接続しない（RFC1918 は許可）
-- 外へ接続して確かめる API の rate limit: `RATE_LIMIT_PROBE_PER_MINUTE`（既定 20 回/分、クライアントの IP ごと）。SSH のホスト鍵の取得・セットアップのアクション・ESXi の一覧・vCenter の接続テストが対象
+- 外へ接続して確かめる API の rate limit: `RATE_LIMIT_PROBE_PER_MINUTE`（既定 20 回/分、クライアントの IP ごと）。SSH のホスト鍵の取得・セットアップのアクション・ESXi の一覧・vCenter の接続テストが対象。診断のホスト鍵の取得と ESXi の一覧も同じ枠で数える
 - チャット・プレビュー・インシデントタイムラインの集計と、調査資料の生成の上限
   - rate limit: `/api/chat` は `RATE_LIMIT_CHAT_PER_MINUTE`（既定 10 回/分）。`/api/chat/preview` と、タイムライン画面の `/api/incident-timeline/view` は、どちらもその 2 倍（既定 20 回/分）。いずれもクライアントの IP ごとで、超えると 429。3 つは別々に数える。スナップショットの手動保存（`POST /api/incident-timeline/snapshots/manual`）と、今の表示や保存した結果の出力（`POST /api/incident-timeline/export`、`GET /api/incident-timeline/snapshots/manual/{id}/export`）は `/view` と同じ枠で数える
   - 同時実行数: `CONTEXT_AGGREGATION_CONCURRENCY`（全体、既定 4）と `CONTEXT_AGGREGATION_CONCURRENCY_PER_USER`（利用者ごと、既定 1）。空きがなければ待たずに 503（`Retry-After` 付き）を返す。画面には「時間をおいて再度お試しください」と出る
@@ -632,6 +633,14 @@ docker compose run --rm app vcenter-event-assistant-admin create-user admin --ro
 **パスワードを忘れたとき**
 
 `vcenter-event-assistant-admin reset-password <ユーザー名>` で再設定します（ロックも解除されます）。`VEA_BOOTSTRAP_ADMIN_PASSWORD` を変えても既存ユーザーのパスワードは変わりません。
+
+## 4.3 診断の設定を有効化する場合
+
+`VEA_DIAGNOSTICS_ENABLED=true` にすると、admin が `/api/diagnostics` で診断用の SSH 鍵と接続先、ESXi・vCenter の対象、追加コマンドの雛形を管理できます。認証を無効にする設定と併用すると、アプリは起動を拒否します。機能が無効のとき、診断設定の API は 404 を返します。
+
+診断とログ収集には別々の SSH アカウントと鍵を用意してください。移行前の SSH 鍵と接続先はログ収集用として引き継ぎます。診断用の SSH 鍵と接続先は、用途の列を持たない版へダウングレードすると削除されます。診断用の秘密鍵の保存にも `VEA_SECRET_KEY` が必要です。追加コマンドが読み取り専用かどうかは本体では確かめません。
+
+設定の変更は `diagnostics.command.*`、`diagnostics.target.*`、`diagnostics.ssh.*` の監査ログに残ります。監査ロガーは `LOG_LEVEL` にかかわらず INFO で記録し、SSH 秘密鍵は記録しません。
 
 ## 5. 変更管理（実務向け最小）
 

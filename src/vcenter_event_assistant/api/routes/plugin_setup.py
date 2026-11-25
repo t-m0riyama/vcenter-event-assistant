@@ -6,25 +6,19 @@ import asyncio
 import copy
 import json
 import time
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
-from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import select, delete
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vcenter_event_assistant.api.auth_deps import RequireAdmin
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.api.routes.plugins import management_gate
+from vcenter_event_assistant.api.routes.setup_common import PluginSetupRoute, list_hosts
+from vcenter_event_assistant.api.routes.ssh_setup import ssh_setup_router
 from vcenter_event_assistant.db.models import (
     CollectorPluginSetting,
     PluginConfigurationDraft,
-    SSHConnection,
-    SSHCredential,
-    VCenter,
 )
 from vcenter_event_assistant.plugins.registry import (
     get_collector_registry,
@@ -43,13 +37,9 @@ from vcenter_event_assistant.services.plugin_configuration import (
 from vcenter_event_assistant.services.plugin_installs import prune_retired_plugin_generations
 from vcenter_event_assistant.services.plugin_settings import load_collector_db_overrides
 from vcenter_event_assistant.services.ssh_management import (
-    check_ssh_port,
-    connection_read,
-    fingerprint,
     reference_digest,
 )
 from vcenter_event_assistant.settings import Settings
-from vcenter_event_assistant_plugin_api.network import check_ssh_address, resolve_ssh_address
 
 
 async def mutation_gate():
@@ -57,31 +47,11 @@ async def mutation_gate():
         yield
 
 
-class SafeSetupRoute(APIRoute):
-    """Validation errors must never echo uploaded private material."""
-
-    def get_route_handler(self):
-        handler = super().get_route_handler()
-
-        async def safe_handler(request: Request):
-            try:
-                return await handler(request)
-            except RequestValidationError:
-                return JSONResponse(
-                    status_code=422,
-                    content={"detail": "入力の形式を確認してください。"},
-                )
-
-        return safe_handler
-
-
 router = APIRouter(
     prefix="/plugins",
     tags=["plugin setup"],
-    # 無効時に存在を伏せる 404 gate を先に評価し、そのうえで admin を要求する
-    # （ログイン確認より先に gate を評価するマウントは main.create_app を参照）。
-    dependencies=[Depends(management_gate), RequireAdmin],
-    route_class=SafeSetupRoute,
+    dependencies=[RequireAdmin],
+    route_class=PluginSetupRoute,
 )
 
 
@@ -117,24 +87,6 @@ class DraftInput(BaseModel):
 
 
 class RevisionInput(BaseModel):
-    revision: int
-
-
-class KeyInput(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    private_key: SecretStr | None = None
-
-
-class ConnectionInput(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    host: str = Field(min_length=1, max_length=512)
-    port: int = Field(default=22, ge=1, le=65535)
-    username: str = Field(min_length=1, max_length=512)
-    credential_id: UUID
-
-
-class ApprovalInput(BaseModel):
-    fingerprint: str
     revision: int
 
 
@@ -390,148 +342,6 @@ async def apply_configuration(
     return {"ok": True, "generation": candidate.generation}
 
 
-@router.get("/ssh/credentials")
-async def list_credentials(session: AsyncSession = Depends(get_session)):
-    # Selecting only public metadata avoids decrypting private keys for a list.
-    rows = (
-        await session.execute(
-            select(SSHCredential.id, SSHCredential.name, SSHCredential.public_key)
-        )
-    ).all()
-    return [{"id": str(i), "name": name, "public_key": pub} for i, name, pub in rows]
-
-
-@router.post("/ssh/credentials", dependencies=[Depends(mutation_gate)])
-async def create_credential(
-    body: KeyInput,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_app_settings),
-):
-    import asyncssh
-
-    if not settings.vea_secret_key:
-        raise HTTPException(422, "管理者にVEA_SECRET_KEYの設定を依頼してください。")
-    try:
-        if body.private_key is None:
-            key = await asyncio.to_thread(
-                asyncssh.generate_private_key, "ssh-rsa", key_size=3072
-            )
-        else:
-            value = body.private_key.get_secret_value()
-            if len(value.encode()) > 32768:
-                raise ValueError()
-            key = asyncssh.import_private_key(value)
-        private = key.export_private_key("openssh").decode()
-        public = key.export_public_key("openssh").decode()
-    except Exception:
-        raise HTTPException(
-            422, "秘密鍵を読み込めません。パスフレーズ不要のSSH秘密鍵を選んでください。"
-        ) from None
-    row = SSHCredential(name=body.name, private_key=private, public_key=public)
-    session.add(row)
-    await session.flush()
-    return {"id": str(row.id), "name": row.name, "public_key": row.public_key}
-
-
-@router.get("/ssh/credentials/{identifier}/public-key")
-async def public_key(identifier: UUID, session: AsyncSession = Depends(get_session)):
-    row = await session.execute(
-        select(SSHCredential.public_key).where(SSHCredential.id == identifier)
-    )
-    value = row.scalar_one_or_none()
-    if value is None:
-        raise HTTPException(404, "SSH鍵が見つかりません。")
-    return {"public_key": value}
-
-
-@router.delete("/ssh/credentials/{identifier}", dependencies=[Depends(mutation_gate)])
-async def delete_credential(
-    identifier: UUID, session: AsyncSession = Depends(get_session)
-):
-    if await session.scalar(
-        select(SSHConnection.id)
-        .where(SSHConnection.credential_id == identifier)
-        .limit(1)
-    ):
-        raise HTTPException(409, "接続先で使用中の鍵は削除できません。")
-    if not await session.scalar(
-        select(SSHCredential.id).where(SSHCredential.id == identifier)
-    ):
-        raise HTTPException(404, "SSH鍵が見つかりません。")
-    await session.execute(delete(SSHCredential).where(SSHCredential.id == identifier))
-    return {"ok": True}
-
-
-@router.get("/ssh/connections")
-async def list_connections(session: AsyncSession = Depends(get_session)):
-    return [
-        connection_read(row)
-        for row in (await session.scalars(select(SSHConnection))).all()
-    ]
-
-
-def validate_host(host, settings):
-    import ipaddress
-    from vcenter_event_assistant.services.vcenter_host_validation import (
-        validate_vcenter_host,
-    )
-
-    # Explicit operator-managed SSH endpoints may be RFC1918 appliance IPs.
-    # Loopback, metadata/link-local, multicast and unspecified addresses remain blocked.
-    # Names are resolved and checked again right before each connection (resolve_ssh_address).
-    normalized = host.strip()
-    try:
-        address = ipaddress.ip_address(normalized)
-    except ValueError:
-        try:
-            return validate_vcenter_host(
-                normalized,
-                resolve_dns=False,
-                allowed_suffixes=settings.vcenter_allowed_host_suffix_list or None,
-            )
-        except ValueError:
-            raise HTTPException(
-                422, "ホスト名またはIPアドレスを確認してください。"
-            ) from None
-    try:
-        check_ssh_address(str(address))
-    except ValueError:
-        raise HTTPException(422, "このIPアドレスにはSSH接続できません。") from None
-    return str(address)
-
-
-def validate_port(port, settings):
-    try:
-        check_ssh_port(settings, port)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
-
-
-@router.post("/ssh/connections", dependencies=[Depends(mutation_gate)])
-async def create_connection(
-    body: ConnectionInput,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_app_settings),
-):
-    if not await session.scalar(
-        select(SSHCredential.id).where(SSHCredential.id == body.credential_id)
-    ):
-        raise HTTPException(422, "SSH鍵を選択してください。")
-    row = SSHConnection(**body.model_dump(), revision=1)
-    row.host = validate_host(body.host, settings)
-    validate_port(body.port, settings)
-    session.add(row)
-    await session.flush()
-    return connection_read(row)
-
-
-async def get_connection(session, identifier):
-    row = await session.get(SSHConnection, identifier)
-    if not row:
-        raise HTTPException(404, "接続先が見つかりません。")
-    return row
-
-
 async def ensure_not_active(session, identifier):
     from vcenter_event_assistant.services.ssh_management import ssh_objects
 
@@ -560,132 +370,12 @@ async def ensure_not_active(session, identifier):
             )
 
 
-@router.put("/ssh/connections/{identifier}", dependencies=[Depends(mutation_gate)])
-async def update_connection(
-    identifier: UUID,
-    body: ConnectionInput,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_app_settings),
-):
-    await ensure_not_active(session, identifier)
-    row = await get_connection(session, identifier)
-    if not await session.scalar(
-        select(SSHCredential.id).where(SSHCredential.id == body.credential_id)
-    ):
-        raise HTTPException(422, "SSH鍵が見つかりません。")
-    host = validate_host(body.host, settings)
-    validate_port(body.port, settings)
-    if (row.host, row.port) != (host, body.port):
-        row.candidate_key = row.approved_key = None
-    for key, value in body.model_dump().items():
-        setattr(row, key, host if key == "host" else value)
-    row.revision += 1
-    return connection_read(row)
-
-
-@router.post(
-    "/ssh/connections/{identifier}/host-key", dependencies=[Depends(mutation_gate)]
-)
-async def probe_host_key(
-    identifier: UUID,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_app_settings),
-):
-    import asyncssh
-
-    row = await get_connection(session, identifier)
-    validate_port(row.port, settings)
-    # 名前のまま接続すると、もう一度名前解決が起き、検証していない IP（ループバックや
-    # メタデータ）に接続し得る（DNS rebinding、監査 M-3）。解決して検証した IP に接続する。
-    try:
-        async with asyncio.timeout(10):
-            address = await resolve_ssh_address(row.host, row.port)
-    except (ValueError, TimeoutError):
-        raise HTTPException(
-            422, "この接続先には接続できません。ホスト名の名前解決の結果を確認してください。"
-        ) from None
-    try:
-        async with asyncio.timeout(10):
-            key = await asyncssh.get_server_host_key(address, row.port, config=None)
-        if key is None:
-            raise ValueError()
-    except Exception:
-        raise HTTPException(
-            422,
-            "ホスト鍵を取得できません。SSHの有効化・接続先・ポートを確認してください。",
-        ) from None
-    row.candidate_key = key.export_public_key("openssh").decode()
-    row.revision += 1
-    return connection_read(row)
-
-
-@router.post(
-    "/ssh/connections/{identifier}/approve", dependencies=[Depends(mutation_gate)]
-)
-async def approve_host_key(
-    identifier: UUID, body: ApprovalInput, session: AsyncSession = Depends(get_session)
-):
-    row = await get_connection(session, identifier)
-    if (
-        row.revision != body.revision
-        or not row.candidate_key
-        or fingerprint(row.candidate_key) != body.fingerprint
-    ):
-        raise HTTPException(409, "ホスト鍵の取得をやり直してください。")
-    if row.approved_key != row.candidate_key:
-        await ensure_not_active(session, identifier)
-    row.approved_key = row.candidate_key
-    row.revision += 1
-    return connection_read(row)
-
-
-@router.get("/vcenters/{identifier}/hosts")
-async def list_hosts(
-    identifier: UUID,
-    session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_app_settings),
-):
-    from vcenter_event_assistant.collectors.connection import (
-        VCenterProtocolPolicyError,
-        connect_vcenter,
-        disconnect,
+router.include_router(
+    ssh_setup_router(
+        "logs",
+        route_class=PluginSetupRoute,
+        mutation_dependencies=[Depends(mutation_gate)],
+        ensure_not_active=ensure_not_active,
     )
-    from vcenter_event_assistant_plugin_api.vmware import container_view
-
-    vc = await session.get(VCenter, identifier)
-    if not vc or not vc.is_enabled:
-        raise HTTPException(422, "有効なvCenterを選択してください。")
-    if settings.mock_mode:
-        return [
-            {"id": "mock-esxi", "name": "mock-esxi.local", "host": "mock-esxi.local"}
-        ]
-
-    def fetch():
-        si = connect_vcenter(
-            host=vc.host,
-            protocol=vc.protocol,
-            port=vc.port,
-            username=vc.username,
-            password=vc.password,
-            proxy_url=settings.vcenter_http_proxy,
-            verify_ssl=vc.verify_ssl,
-            ca_bundle_path=settings.vcenter_ca_bundle,
-        )
-        try:
-            with container_view(si, ["HostSystem"]) as hosts:
-                return [
-                    {"id": str(h._moId), "name": str(h.name), "host": str(h.name)}
-                    for h in hosts
-                ]
-        finally:
-            disconnect(si)
-
-    try:
-        return await asyncio.to_thread(fetch)
-    except VCenterProtocolPolicyError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    except Exception:
-        raise HTTPException(
-            422,
-            "ESXi一覧を取得できません。vCenterの接続設定・参照権限を確認するか、ホスト名を手入力してください。",
-        ) from None
+)
+router.add_api_route("/vcenters/{identifier}/hosts", list_hosts, methods=["GET"])
