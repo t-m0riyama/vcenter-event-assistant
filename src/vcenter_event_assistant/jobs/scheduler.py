@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import text
 
 from vcenter_event_assistant.auth.service import session_policy
 from vcenter_event_assistant.auth.sessions import purge_expired_sessions
@@ -32,6 +34,7 @@ from vcenter_event_assistant.services.ingest_runner import (
     run_ingest_metrics,
 )
 from vcenter_event_assistant.services.ingestion import (
+    lock_incident_snapshot_links_for_purge,
     purge_old_alert_history,
     purge_old_digest_records,
     purge_old_events,
@@ -62,6 +65,9 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
+PURGE_RETENTION_LOCK_KEY = int.from_bytes(
+    hashlib.sha256(b"VEA retention purge").digest()[:8], "big", signed=True
+)
 
 # 全スケジュールジョブに共通の APScheduler オプション（misfire_grace_time はジョブ種別ごとに付与）
 _BASE_JOB_OPTIONS = {"coalesce": True, "max_instances": 1}
@@ -121,6 +127,14 @@ async def purge_retention(settings: Settings) -> None:
     """保持期間を超えたイベント・メトリクス・履歴系データを削除する。"""
     try:
         async with session_scope(settings=settings) as session:
+            if session.get_bind().dialect.name == "postgresql":
+                # 複数の保持期間ジョブが SHARE を持ったまま CASCADE を始めると、互いのロックを待つ。
+                acquired = await session.scalar(
+                    text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": PURGE_RETENTION_LOCK_KEY}
+                )
+                if not acquired:
+                    logger.info("skipping retention purge: another transaction holds the retention lock")
+                    return
             await purge_old_logs(session, settings=settings)
             await purge_old_log_patterns(session, settings=settings)
             await purge_old_inventory(session, settings=settings)
@@ -139,6 +153,15 @@ async def purge_retention(settings: Settings) -> None:
             n_inc = await purge_old_incidents(session, settings=settings)
             if n_inc:
                 logger.info("purged old incidents count=%s", n_inc)
+            n_ss = await purge_expired_sessions(session, session_policy(settings))
+            if n_ss:
+                logger.info("purged expired login sessions count=%s", n_ss)
+            if (
+                settings.incident_timeline_snapshot_retention_days > 0
+                or settings.incident_timeline_snapshot_result_retention_days > 0
+            ):
+                # インシデントの行を先に処理し、紐付けとロック順をそろえてデッドロックを避ける。
+                await lock_incident_snapshot_links_for_purge(session)
             n_sn = await purge_old_incident_timeline_snapshots(
                 session, settings=settings
             )
@@ -149,9 +172,6 @@ async def purge_retention(settings: Settings) -> None:
             )
             if n_sr:
                 logger.info("cleared old incident timeline snapshot results count=%s", n_sr)
-            n_ss = await purge_expired_sessions(session, session_policy(settings))
-            if n_ss:
-                logger.info("purged expired login sessions count=%s", n_ss)
     except Exception:
         logger.exception("purge failed")
 

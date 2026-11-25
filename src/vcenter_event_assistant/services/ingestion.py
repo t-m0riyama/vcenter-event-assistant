@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, null, select, update
+from sqlalchemy import delete, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -320,6 +320,12 @@ async def purge_old_incidents(session: AsyncSession, *, settings: Settings) -> i
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     res = await session.execute(delete(Incident).where(Incident.resolved_at < cutoff))
     return res.rowcount or 0
+
+
+async def lock_incident_snapshot_links_for_purge(session: AsyncSession) -> None:
+    if session.get_bind().dialect.name == "postgresql":
+        # インシデントの削除後に取る。別の文で待つと、後続の削除から確定済みの紐付けが見える。
+        await session.execute(text("LOCK TABLE incident_snapshots IN SHARE MODE"))
 
 
 _SNAPSHOT_IS_UNLINKED = ~select(IncidentSnapshot.id).where(

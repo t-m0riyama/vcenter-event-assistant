@@ -10,7 +10,7 @@ from sqlite3 import SQLITE_CONSTRAINT_FOREIGNKEY, SQLITE_CONSTRAINT_UNIQUE
 from typing import Literal, Protocol, TypeVar
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, joinedload
@@ -345,6 +345,10 @@ async def add_links(
     results: list[LinkDecision] = []
     if not sources:
         return LinkBatch(results=results, added=0)
+    if model is IncidentSnapshot and session.get_bind().dialect.name == "postgresql":
+        # 保持期間の削除と順序をそろえ、インシデントの行を確保してから表をロックする。
+        # 表のロックを取るまで、スナップショットの結果の有無は読まない。
+        await session.execute(text("LOCK TABLE incident_snapshots IN ROW EXCLUSIVE MODE"))
     fields = LINK_KEY_FIELDS[model]
     columns = [getattr(model, field) for field in fields]
     rows = await session.execute(select(model.id, *columns).where(model.incident_id == incident_id))
