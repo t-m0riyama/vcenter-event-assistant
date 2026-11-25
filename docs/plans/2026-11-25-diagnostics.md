@@ -1,6 +1,6 @@
 # 対応手順と読み取り専用の診断コマンド
 
-最終更新: 2026-11-25（PR A マージ済み、PR B 実装中）
+最終更新: 2026-11-26（PR B マージ済み、組み込みのコマンドを実機で確認）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 9」にあたる。案 5 の障害パターンごとに対応手順を見せ、手順の中の診断コマンドを、インシデントの詳細から ESXi と vCenter に SSH で実行して、結果をインシデントに残す。Issue は起票していない。
 
@@ -11,8 +11,8 @@
 | PR | 内容 | 状態 |
 |---|---|---|
 | A | 本書 | マージ済み（[PR #386](https://github.com/t-m0riyama/vcenter-event-assistant/pull/386)） |
-| B | SSH の鍵と接続先の用途の分離、診断の設定（実行の対象・追加のコマンド）の表と API | 実装中 |
-| C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | 未着手 |
+| B | SSH の鍵と接続先の用途の分離、診断の設定（実行の対象・追加のコマンド）の表と API | マージ済み（[PR #387](https://github.com/t-m0riyama/vcenter-event-assistant/pull/387)） |
+| C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | 実装中 |
 | D | 対応手順（障害パターンへの同梱と、インシデントへの候補の提示） | 未着手 |
 | E | 画面: 診断の設定 | 未着手 |
 | F | 画面: インシデントの手順・実行・結果と、文書 | 未着手 |
@@ -216,31 +216,38 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 | `ipv4` | `ipaddress.IPv4Address` で読め、`str()` で正規化した値を使う。IPv6（`vmkping -6` が要る）とスコープ ID（`%`）は、最初の版では扱わない |
 | `device` | `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`（`naa.` などのデバイス ID）。先頭の `-` を断り、オプションを差し込ませない |
 
-最初の一覧の案は次のとおり。どれも ESXi 8.0 と vCenter 8.0 の実機で、コマンドがあること、出力の形、所要時間を確かめてから入れる（12 章）。
+最初の一覧は次のとおり。2026-11-26 に、利用者が実機で実行した結果で確かめた（Claude は実機に接続していない）。
 
-| ID | 製品 | コマンド | 用途 |
-|---|---|---|---|
-| `esxi.hostname` | ESXi | `esxcli system hostname get` | 接続したホストの名前（取り違えの確認） |
-| `esxi.version` | ESXi | `esxcli system version get` | 版とビルド |
-| `esxi.uptime` | ESXi | `esxcli system stats uptime get` | 再起動したか |
-| `esxi.maintenance` | ESXi | `esxcli system maintenanceMode get` | メンテナンスモード |
-| `esxi.hostd` | ESXi | `/etc/init.d/hostd status` | 管理エージェント（hostd） |
-| `esxi.vpxa` | ESXi | `/etc/init.d/vpxa status` | vCenter のエージェント（vpxa） |
-| `esxi.fdm` | ESXi | `/etc/init.d/vmware-fdm status` | HA のエージェント |
-| `esxi.vmk` | ESXi | `esxcli network ip interface ipv4 get` | VMkernel のアドレス |
-| `esxi.ping` | ESXi | `vmkping -c 3 -I {{vmk}} {{ipv4}}` | VMkernel からの疎通 |
-| `esxi.nic` | ESXi | `esxcli network nic list` | 物理 NIC のリンク |
-| `esxi.nic-stats` | ESXi | `esxcli network nic stats get -n {{vmnic}}` | 物理 NIC の統計 |
-| `esxi.paths` | ESXi | `esxcli storage core path list` | ストレージのパス |
-| `esxi.device` | ESXi | `esxcli storage core device list -d {{device}}` | ストレージのデバイス |
-| `esxi.adapters` | ESXi | `esxcli storage core adapter list` | ストレージのアダプタ |
-| `vcenter.hostname` | vCenter | `hostname -f` | 接続したホストの名前 |
-| `vcenter.services` | vCenter | `service-control --status --all` | vCenter のサービス |
-| `vcenter.disk` | vCenter | `df -h` | ディスクの空き |
-| `vcenter.memory` | vCenter | `free -m` | メモリ |
-| `vcenter.uptime` | vCenter | `uptime` | 稼働時間と負荷 |
+- **ESXi:** ESXi 8.0.3（build-24262298）。root ではなく、Administrator ロールと Shell Access を付けたローカルユーザーで実行し、全件が権限のエラーなく動いた。診断用のアカウントはこの権限で足りる。HA が無効のホストである。
+- **vCenter:** vCenter 8.0 のアプライアンス。root で、ログインシェルを事前に bash に変えた状態で実行した。そのため、ログインした直後の appliance shell を経由する経路（前置きの判定）は、実機では確かめていない。この判定は、ログ収集のプラグインの今の処理と同じ方法で行う（4 章「ワーカーの中の処理」）。
+- **所要時間:** `service-control --status --all` が 2 秒、`vmkping` が約 3 秒で、ほかは 1 秒以内だった。ESXi の秒数は貼り付けた手順の崩れで正確には測れていないが、全件で数秒だった。45 秒の期限に十分収まる。
+- **出力の大きさ:** どれも 3 KiB 未満で、64 KiB の上限に収まる。`esxi.paths` だけは、パスの数に比例して増える（1 本でおよそ 800 バイト）。
+
+| ID | 製品 | コマンド | 用途 | 実機での確認 |
+|---|---|---|---|---|
+| `esxi.hostname` | ESXi | `esxcli system hostname get` | 接続したホストの名前（取り違えの確認） | 確認済み。`Domain Name`・`Fully Qualified Domain Name`・`Host Name` の 3 行 |
+| `esxi.version` | ESXi | `esxcli system version get` | 版とビルド | 確認済み。`Product`・`Version`・`Build`・`Update`・`Patch` の 5 行 |
+| `esxi.uptime` | ESXi | `esxcli system stats uptime get` | 再起動したか | 確認済み。マイクロ秒の数字 1 つだけを出す（例: `1643109302446` で約 19 日）。説明に単位を書く |
+| `esxi.maintenance` | ESXi | `esxcli system maintenanceMode get` | メンテナンスモード | 確認済み。`Disabled` か `Enabled` の 1 語 |
+| `esxi.hostd` | ESXi | `/etc/init.d/hostd status` | 管理エージェント（hostd） | 確認済み。`hostd is running.` |
+| `esxi.vpxa` | ESXi | `/etc/init.d/vpxa status` | vCenter のエージェント（vpxa） | 確認済み。`vpxa is running` |
+| `esxi.fdm` | ESXi | `/etc/init.d/vmware-fdm status` | HA のエージェント | 一部だけ確認。HA が無効のホストでは、スクリプトが無く `not found`（終了コード 127）になる。HA が有効なときの出力は、試せるホストが無く確かめていない。`ha-failover` の手順で最も知りたい情報なので、利用者の判断で一覧に入れる。説明に「HA が無効のホストでは not found になる」と書く |
+| `esxi.vmk` | ESXi | `esxcli network ip interface ipv4 get` | VMkernel のアドレス | 確認済み。vmk ごとに 1 行の表（名前・アドレス・ネットマスク・ブロードキャスト・種類・ゲートウェイ・DHCP DNS） |
+| `esxi.ping` | ESXi | `vmkping -c 3 -I {{vmk}} {{ipv4}}` | VMkernel からの疎通 | 確認済み。約 3 秒。応答 3 行と統計 |
+| `esxi.nic` | ESXi | `esxcli network nic list` | 物理 NIC のリンク | 確認済み。NIC ごとに 1 行の表（リンクの状態・速度・MTU など） |
+| `esxi.nic-stats` | ESXi | `esxcli network nic stats get -n {{vmnic}}` | 物理 NIC の統計 | 確認済み。送受信のパケット数・バイト数と、エラーの種類ごとの数（約 700 バイト） |
+| `esxi.paths` | ESXi | `esxcli storage core path list` | ストレージのパス | 確認済み。パスごとに 18 行ほど（1 本でおよそ 800 バイト）。パスが 80 本を超える環境では 64 KiB で切れるので、説明にそう書く |
+| `esxi.device` | ESXi | `esxcli storage core device list -d {{device}}` | ストレージのデバイス | 一部だけ確認。コマンドがあることと、無いデバイスを指定したときの出力（`Unable to find device with name ...`、終了コード 1）は確かめた。成功したときの出力は確かめていないので、PR F の撮影の前に確かめる。デバイス名は `t10.NVMe____…` の形もあり、`device` の種類に合う |
+| `esxi.adapters` | ESXi | `esxcli storage core adapter list` | ストレージのアダプタ | 確認済み。HBA ごとに 1 行の表 |
+| `vcenter.hostname` | vCenter | `hostname -f` | 接続したホストの名前 | 確認済み。FQDN の 1 行 |
+| `vcenter.services` | vCenter | `service-control --status --all` | vCenter のサービス | 確認済み。2 秒。先頭に空行が 1 行あり、`Running:` と `Stopped:` の下にサービス名が空白区切りで並ぶ。vCenter HA を構成していなければ `vmware-vcha` が `Stopped:` に出るのはふつうだと説明に書く |
+| `vcenter.disk` | vCenter | `df -h` | ディスクの空き | 確認済み。約 2 KiB。ファイルシステムとコンテナの数だけ行が増える |
+| `vcenter.memory` | vCenter | `free -m` | メモリ | 確認済み |
+| `vcenter.uptime` | vCenter | `uptime` | 稼働時間と負荷 | 確認済み |
 
 `vmkping` は状態を読むコマンドではないが、ICMP を 3 回送るだけで設定は変えない。疎通の確認は障害パターンの手順の中心なので入れる。
+
+ESXi のコマンドを vCenter に送ると、`esxcli` などが無いので終了コード 127 になることも、実機で確かめた。手順 2 で、コマンドの製品と対象の製品の一致を確かめる理由である。
 
 ### 追加のコマンド
 
@@ -522,7 +529,7 @@ admin が追加するコマンドの表である。組み込みのコマンド�
 
 ## 12. リスク
 
-- **コマンドの確認:** 組み込みのコマンドの名前・引数・出力・所要時間は、実機（ESXi 8.0、vCenter 8.0）で確かめるまで決まらない。実機に入るには利用者の許可が要るので、PR C の前に確かめ方を相談する。確かめられなかったコマンドは一覧に入れない。
+- **コマンドの確認:** 組み込みのコマンドは、2026-11-26 に利用者が実機（ESXi 8.0.3、vCenter 8.0）で実行した結果で確かめた（4 章）。確かめていないのは、`esxi.fdm` の HA が有効なときの出力、`esxi.device` の成功したときの出力、vCenter の appliance shell を経由する経路の 3 つである。`esxi.fdm` は利用者の判断で一覧に入れる。`esxi.device` は PR F の撮影の前に確かめ、形が想定と違えば説明を直す。
 - **admin の乗っ取り:** admin のアカウントが乗っ取られると、Administrator ロールのアカウントでホストにコマンドを送られる。追加のコマンドがあるので、実質的にホストを操作できる。既定で無効にし、監査ログを残し、運用側の対策（2 章）を文書に書く。
 - **プラグインのワーカー:** 同じ UID で動く悪意のあるプラグインは、診断のワーカーと、要求を中継するワーカーのサービスに干渉できる。鍵をファイルにせず、`PR_SET_DUMPABLE` を 0 にしても、なくせない（2 章）。
 - **待ち時間:** 実行の要求は最大でおよそ 55 秒（SSH の 45 秒と保存の 10 秒）かかる。前に置いたプロキシの時間切れがそれより短いと、画面には失敗と出る。結果は切り離したタスクで保存するので、画面は詳細を読み直して出す。
