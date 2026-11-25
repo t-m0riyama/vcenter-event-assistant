@@ -263,7 +263,42 @@ describe('App のインシデント画面', () => {
     expect(screen.getByRole('button', { name: /調査資料を Markdown で出力/ })).toHaveTextContent('出力中…')
     await act(async () => { finishExport(respond404()) })
     expect(await screen.findByText(/スナップショットが見つかりません/)).toBeVisible()
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith(detailPath))).toHaveLength(1)
+    // タブに戻ると詳細を 1 回だけ読み直し、読み直したあとも下書きを保つ
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith(detailPath))).toHaveLength(2))
+    expect(screen.getByRole('textbox', { name: '件名' })).toHaveValue('編集中の件名')
+    expect(screen.getByRole('textbox', { name: 'メモ' })).toHaveValue('書きかけのメモ')
+  })
+
+  it('ほかのタブから戻ると紐付けを読み直し、編集の下書きがあれば項目と revision は元のまま保つ', async () => {
+    updateStatus = 200
+    renderApp()
+    fireEvent.click(await screen.findByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '件名' }), { target: { value: '編集中の件名' } })
+    const newRevision = '44444444-4444-4444-8444-444444444444'
+    latest = {
+      ...INCIDENT_DETAIL,
+      title: 'ほかの人が変えた件名',
+      revision: newRevision,
+      events: [...INCIDENT_DETAIL.events, { ...INCIDENT_DETAIL.events[0], id: 2, event_id: 124, vmware_key: 1235, event_type: 'DatastoreRemovedOnHostEvent' }],
+    }
+    fireEvent.click(tab('イベント'))
+    fireEvent.click(tab('インシデント'))
+    expect(await screen.findByText('DatastoreRemovedOnHostEvent')).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '件名' })).toHaveValue('編集中の件名')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(true))
+    const [, patchInit] = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    // 読み直す前の revision で送るので、ほかの人の変更とぶつかれば 409 になる
+    expect(JSON.parse(String(patchInit?.body))).toMatchObject({ revision: INCIDENT_DETAIL.revision, title: '編集中の件名' })
+  })
+
+  it('下書きが無ければ、ほかのタブから戻ったときに詳細をすべて最新にする', async () => {
+    renderApp()
+    expect(await screen.findByRole('heading', { name: INCIDENT_TITLE })).toBeVisible()
+    latest = { ...INCIDENT_DETAIL, title: 'ほかの人が変えた件名', revision: '44444444-4444-4444-8444-444444444444' }
+    fireEvent.click(tab('イベント'))
+    fireEvent.click(tab('インシデント'))
+    expect(await screen.findByRole('heading', { name: 'ほかの人が変えた件名' })).toBeVisible()
   })
 
   it.each(['一覧に戻る', 'インシデント'] as const)('%s で一覧への履歴を追加する', async (operation) => {

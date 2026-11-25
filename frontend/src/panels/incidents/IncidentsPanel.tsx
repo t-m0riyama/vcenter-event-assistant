@@ -211,6 +211,34 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exit, setExit] = useState<DetailExit | null>(null)
+  const draftRef = useRef<IncidentDraftHandle>(null)
+  const wasActive = useRef(active)
+  const hasDetail = detail !== null
+  useImperativeHandle(ref, () => ({ hasDraft: () => draftRef.current?.hasDraft() ?? false }), [])
+
+  // 詳細はタブを離れても残すので、ほかのタブで紐付けを足しても古いままになる。タブに戻ったら読み直す。
+  useEffect(() => {
+    const returned = active && !wasActive.current
+    wasActive.current = active
+    if (!returned || !hasDetail) return
+    const controller = new AbortController()
+    void getIncident(id, controller.signal).then(
+      (data) => {
+        if (controller.signal.aborted) return
+        // 編集の下書きがあるときは、項目と revision を読み直さない。最新の revision を黙って使うと、
+        // ほかの人の変更を 409 なしで上書きしてしまうため。紐付けと経過だけを最新にする。
+        setDetail((current) => current && draftRef.current?.hasDraft()
+          ? { ...current, entries: data.entries, events: data.events, alerts: data.alerts, snapshots: data.snapshots }
+          : data)
+      },
+      (err: unknown) => {
+        if (controller.signal.aborted) return
+        if (err instanceof ApiError && err.status === 404) setExit('missing')
+        // そのほかの失敗では、表示中の内容をそのまま残す。
+      },
+    )
+    return () => controller.abort()
+  }, [active, hasDetail, id])
 
   useEffect(() => {
     if (!active || detail || error || exit) return
@@ -235,7 +263,7 @@ function IncidentDetailView({ ref, id, active, onBack, onOpenSnapshot }: {
       <button type="button" className="btn" onClick={() => onBack()}>一覧に戻る</button>
       {detail ? (
         <IncidentDetails
-          ref={ref}
+          ref={draftRef}
           incident={detail}
           onChange={setDetail}
           onDeleted={() => setExit('deleted')}
