@@ -1,6 +1,6 @@
 # 対応手順と読み取り専用の診断コマンド
 
-最終更新: 2026-11-26（PR E マージ済み、PR F 実装中）
+最終更新: 2026-11-26（PR F マージ済み。すべての PR がマージ済み）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 9」にあたる。案 5 の障害パターンごとに対応手順を見せ、手順の中の診断コマンドを、インシデントの詳細から ESXi と vCenter に SSH で実行して、結果をインシデントに残す。Issue は起票していない。
 
@@ -15,7 +15,7 @@
 | C | 診断コマンドの実行（組み込みの一覧、ワーカーでの実行、結果の保存、監査記録） | マージ済み（[PR #388](https://github.com/t-m0riyama/vcenter-event-assistant/pull/388)） |
 | D | 対応手順（障害パターンへの同梱と、インシデントへの候補の提示） | マージ済み（[PR #389](https://github.com/t-m0riyama/vcenter-event-assistant/pull/389)） |
 | E | 画面: 診断の設定 | マージ済み（[PR #391](https://github.com/t-m0riyama/vcenter-event-assistant/pull/391)） |
-| F | 画面: インシデントの手順・実行・結果と、文書 | 実装中 |
+| F | 画面: インシデントの手順・実行・結果と、文書 | マージ済み（[PR #392](https://github.com/t-m0riyama/vcenter-event-assistant/pull/392)） |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
