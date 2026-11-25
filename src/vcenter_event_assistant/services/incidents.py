@@ -21,6 +21,7 @@ from vcenter_event_assistant.db.models import (
     EventRecord,
     Incident,
     IncidentAlert,
+    IncidentDiagnosticRun,
     IncidentEntry,
     IncidentEvent,
     IncidentSnapshot,
@@ -79,6 +80,7 @@ class IncidentPage:
 class IncidentDetails:
     incident: Incident
     entries: Sequence[IncidentEntry]
+    diagnostic_runs: Sequence[IncidentDiagnosticRun]
     events: Sequence[tuple[IncidentEvent, bool]]
     alerts: Sequence[tuple[IncidentAlert, bool]]
     snapshots: Sequence[tuple[int, IncidentTimelineManualSnapshot, bool]]
@@ -177,9 +179,19 @@ async def read_incident_detail(session: AsyncSession, incident: Incident) -> Inc
         .where(IncidentSnapshot.incident_id == incident.id)
         .order_by(IncidentSnapshot.id)
     )
+    diagnostic_runs = await session.scalars(
+        select(IncidentDiagnosticRun)
+        .options(
+            defer(IncidentDiagnosticRun.stdout, raiseload=True),
+            defer(IncidentDiagnosticRun.stderr, raiseload=True),
+        )
+        .where(IncidentDiagnosticRun.incident_id == incident.id)
+        .order_by(IncidentDiagnosticRun.id)
+    )
     return IncidentDetails(
         incident=incident,
         entries=entries.all(),
+        diagnostic_runs=diagnostic_runs.all(),
         events=events.tuples().all(),
         alerts=[
             (row, (row.alert_history_id, row.rule_id, as_utc(row.occurred_at)) in existing_alerts)

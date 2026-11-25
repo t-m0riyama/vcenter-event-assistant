@@ -153,14 +153,17 @@ class CollectorWorker:
         )
 
     async def request(
-        self, payload: dict[str, Any], *, timeout: float
+        self, payload: dict[str, Any], *, timeout: float, auto_start: bool = True
     ) -> dict[str, Any]:
         """1 要求を送って応答を待つ。タイムアウト時はワーカーを kill する。
 
         ハングしたプラグインを確実に打ち切れることが、プロセス分離を採用した主目的である。
         """
         async with self._lock:
-            await self.ensure_started()
+            if auto_start:
+                await self.ensure_started()
+            elif not self.is_running:
+                raise CollectorWorkerError("worker is not running")
             separated = self._streams is not None
             if self._streams is not None:
                 reader, writer = self._streams
@@ -234,7 +237,8 @@ class CollectorWorker:
         process, self._process = self._process, None
         if process is None or process.returncode is not None:
             return
-        process.kill()
+        with contextlib.suppress(ProcessLookupError):
+            process.kill()
         try:
             await asyncio.wait_for(process.wait(), timeout=_SHUTDOWN_GRACE_SECONDS)
         except asyncio.TimeoutError:  # pragma: no cover - kill 後も残る異常系

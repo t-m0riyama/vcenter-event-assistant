@@ -662,6 +662,39 @@ class IncidentEntry(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class IncidentDiagnosticRun(Base):
+    """実行時点のコマンド、接続先と結果の写し。"""
+
+    __tablename__ = "incident_diagnostic_runs"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    command_kind: Mapped[str] = mapped_column(String(16))
+    command_ref: Mapped[str] = mapped_column(String(100))
+    command_title: Mapped[str] = mapped_column(String(100))
+    command_line: Mapped[str] = mapped_column(Text)
+    executed: Mapped[bool | None] = mapped_column(Boolean)
+    params: Mapped[dict[str, str]] = mapped_column(JSON)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    product: Mapped[str] = mapped_column(String(16))
+    host_name: Mapped[str] = mapped_column(String(512))
+    ssh_host: Mapped[str] = mapped_column(String(512))
+    ssh_port: Mapped[int] = mapped_column(Integer)
+    ssh_username: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(16))
+    exit_status: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(32))
+    stdout: Mapped[str] = mapped_column(Text)
+    stderr: Mapped[str] = mapped_column(Text)
+    stdout_truncated: Mapped[bool] = mapped_column(Boolean)
+    stderr_truncated: Mapped[bool] = mapped_column(Boolean)
+    elapsed_ms: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    run_by: Mapped[str] = mapped_column(String(256))
+
+
 class IncidentEvent(Base):
     """紐付け時点のイベントの写し。"""
 

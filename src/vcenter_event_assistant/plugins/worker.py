@@ -196,6 +196,15 @@ async def _handle(host: _PluginHost, request: dict[str, Any]) -> Any:
     if op == "discover":
         return {"plugins": _discover(request.get("paths"))}
 
+    if op == "harden":
+        from vcenter_event_assistant.process_hardening import make_process_non_dumpable
+
+        return {"applied": make_process_non_dumpable()}
+    if op == "diagnose":
+        from vcenter_event_assistant.services.diagnostics.ssh import diagnose
+
+        return (await diagnose(request)).model_dump()
+
     entry_point_name = str(request["entry_point"])
     plugin = host.load(entry_point_name)
 

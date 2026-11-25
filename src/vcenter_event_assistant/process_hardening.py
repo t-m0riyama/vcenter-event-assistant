@@ -52,7 +52,12 @@ def _secret_env_names(environ: bytes) -> list[str]:
 
 def harden_process(settings: Settings) -> bool:
     """有効で Linux なら本体のプロセスを dumpable でなくする。適用したら True。"""
-    if not settings.process_non_dumpable or not sys.platform.startswith("linux"):
+    return settings.process_non_dumpable and make_process_non_dumpable()
+
+
+def make_process_non_dumpable() -> bool:
+    """Linux でプロセスを dumpable でなくする。失敗した場合は警告を出す。"""
+    if not sys.platform.startswith("linux"):
         return False
     try:
         libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
@@ -60,7 +65,7 @@ def harden_process(settings: Settings) -> bool:
             raise OSError(ctypes.get_errno(), "prctl(PR_SET_DUMPABLE) failed")
     except (OSError, AttributeError):
         logger.warning(
-            "could not make the process non-dumpable; plugin workers may read its environment",
+            "could not make the process non-dumpable; same-UID processes may read its memory",
             exc_info=True,
         )
         return False

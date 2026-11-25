@@ -966,7 +966,14 @@ async def test_diagnostic_migration_preserves_ssh_rows_and_adds_constraints(tmp_
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
-    from vcenter_event_assistant.db.models import DiagnosticTarget, SSHConnection, SSHCredential, VCenter
+    from vcenter_event_assistant.db.models import (
+        DiagnosticTarget,
+        Incident,
+        IncidentDiagnosticRun,
+        SSHConnection,
+        SSHCredential,
+        VCenter,
+    )
 
     if backend == "postgres":
         url = os.environ.get("VEA_TEST_POSTGRES_URL")
@@ -1087,6 +1094,32 @@ async def test_diagnostic_migration_preserves_ssh_rows_and_adds_constraints(tmp_
                     with pytest.raises(IntegrityError):
                         async with conn.begin_nested():
                             await conn.execute(target.values(product=product, host_moid=moid))
+                # 診断結果への移行と、インシデントを消したときの CASCADE を確かめる。
+                incident_id = uuid4()
+                await conn.execute(Incident.__table__.insert().values(
+                    id=incident_id, title="diagnosis", status="open", summary="",
+                    created_at=now, updated_at=now, created_by="tester", updated_by="tester",
+                ))
+                await conn.run_sync(migrate, command.upgrade, "e4f5a6b7c8d9")
+                run_table = IncidentDiagnosticRun.__table__
+                run = run_table.insert().values(
+                    incident_id=incident_id, command_kind="builtin", command_ref="esxi.hostname",
+                    command_title="ホスト名", command_line="esxcli system hostname get",
+                    executed=True, params={}, product="esxi", host_name="host",
+                    ssh_host="esxi.example.net", ssh_port=22, ssh_username="reader",
+                    status="succeeded", exit_status=0, stdout="host", stderr="",
+                    stdout_truncated=False, stderr_truncated=False, elapsed_ms=1,
+                    started_at=now, finished_at=now, run_by="tester",
+                )
+                first = await conn.scalar(run.returning(run_table.c.id))
+                assert await conn.scalar(text("SELECT stdout FROM incident_diagnostic_runs")) == "host"
+                await conn.execute(run_table.delete())
+                second = await conn.scalar(run.returning(run_table.c.id))
+                assert second > first
+                await conn.execute(Incident.__table__.delete().where(Incident.id == incident_id))
+                assert await conn.scalar(text("SELECT count(*) FROM incident_diagnostic_runs")) == 0
+                await conn.run_sync(migrate, command.downgrade, revision)
+                assert not await conn.run_sync(lambda sync_conn: inspect(sync_conn).has_table(run_table.name))
                 await conn.run_sync(migrate, command.downgrade, previous)
                 assert (await conn.scalars(text("SELECT name FROM ssh_credentials"))).all() == ["key"]
                 assert (await conn.scalars(text("SELECT revision FROM ssh_connections"))).all() == [7]

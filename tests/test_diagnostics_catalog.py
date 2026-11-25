@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 from vcenter_event_assistant.services.diagnostics.catalog import (
+    BUILTIN_COMMANDS,
     PARAMETER_TYPES,
     ParameterError,
     TemplateError,
@@ -167,3 +168,59 @@ def test_diagnostic_parameters_survive_shell_quoting(shell, kind):
             assert (
                 run(render_command(template, definitions, {"x": example})) == expected
             )
+
+
+BUILTIN_LINES = {
+    "esxi.hostname": "esxcli system hostname get",
+    "esxi.version": "esxcli system version get",
+    "esxi.uptime": "esxcli system stats uptime get",
+    "esxi.maintenance": "esxcli system maintenanceMode get",
+    "esxi.hostd": "/etc/init.d/hostd status",
+    "esxi.vpxa": "/etc/init.d/vpxa status",
+    "esxi.fdm": "/etc/init.d/vmware-fdm status",
+    "esxi.vmk": "esxcli network ip interface ipv4 get",
+    "esxi.ping": "vmkping -c 3 -I vmk0 192.0.2.1",
+    "esxi.nic": "esxcli network nic list",
+    "esxi.nic-stats": "esxcli network nic stats get -n vmnic0",
+    "esxi.paths": "esxcli storage core path list",
+    "esxi.device": "esxcli storage core device list -d naa.123",
+    "esxi.adapters": "esxcli storage core adapter list",
+    "vcenter.hostname": "hostname -f",
+    "vcenter.services": "service-control --status --all",
+    "vcenter.disk": "df -h",
+    "vcenter.memory": "free -m",
+    "vcenter.uptime": "uptime",
+}
+VALID_PARAMS = {"vmnic": "vmnic0", "vmk": "vmk0", "ipv4": "192.0.2.1", "device": "naa.123"}
+
+
+def test_diagnostic_builtin_catalog_exact_ids():
+    assert BUILTIN_COMMANDS.keys() == BUILTIN_LINES.keys()
+
+
+@pytest.mark.parametrize("command_id", BUILTIN_LINES)
+def test_diagnostic_builtin_rendered_line(command_id):
+    command = BUILTIN_COMMANDS[command_id]
+    validate_template(command.template, command.param_definitions)
+    assert all(p["name"] == p["type"] for p in command.param_definitions)
+    params = {item["name"]: VALID_PARAMS[item["type"]] for item in command.param_definitions}
+    assert render_command(command.template, command.param_definitions, params) == BUILTIN_LINES[command_id]
+
+
+@pytest.mark.parametrize("bad_value", ["vmk0;", "vmk0 vmk1", "vmk0\n", "-vmk0", "::1", "192.0.2.1%vmk0"])
+@pytest.mark.parametrize("builtin_id, kind", [
+    ("esxi.ping", "vmk"), ("esxi.ping", "ipv4"),
+    ("esxi.nic-stats", "vmnic"), ("esxi.device", "device"),
+])
+@pytest.mark.parametrize("custom", [False, True])
+def test_diagnostic_render_rejects_unsafe_values(builtin_id, kind, bad_value, custom):
+    builtin = BUILTIN_COMMANDS[builtin_id]
+    definitions = [{"name": "value", "type": kind}] if custom else builtin.param_definitions
+    template = "printf %s --option={{value}}" if custom else builtin.template
+    good = {item["name"]: VALID_PARAMS[item["type"]] for item in definitions}
+    if custom:
+        assert render_command(template, definitions, good) == f"printf %s --option={VALID_PARAMS[kind]}"
+    name = "value" if custom else kind
+    with pytest.raises(ParameterError) as error:
+        render_command(template, definitions, {**good, name: bad_value})
+    assert error.value.errors == {name: "invalid_value"}

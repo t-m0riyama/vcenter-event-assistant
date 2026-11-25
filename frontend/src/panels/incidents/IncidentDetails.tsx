@@ -20,6 +20,7 @@ const ENTRY_KIND_LABELS: Record<IncidentDetail['entries'][number]['kind'], strin
   note: 'メモ',
   change: '項目の変更',
   link: '紐付けの変更',
+  diagnostic: '診断',
 }
 
 const ENTRY_LIMIT_MESSAGE = 'メモが上限に達しました。新しいインシデントを作ってください'

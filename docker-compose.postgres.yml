@@ -24,6 +24,7 @@ services:
       - pg_data:/var/lib/postgresql/data
 
   app:
+    stop_grace_period: 75s
     <<: *plugin-service
     ports:
       - "127.0.0.1:${UVICORN_PORT:-8000}:${UVICORN_PORT:-8000}"

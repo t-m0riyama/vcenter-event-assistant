@@ -294,11 +294,10 @@ async def test_diagnostics_command_catalog_and_revision(
 ):
     path = ROOT + "/commands"
     caplog.set_level("INFO", logger="vcenter_event_assistant.audit")
-    assert (await client.get(path)).json() == {
-        "builtin": [],
-        "custom": [],
-        "parameter_types": ["vmnic", "vmk", "ipv4", "device"],
-    }
+    catalog = (await client.get(path)).json()
+    assert len(catalog["builtin"]) == 19
+    assert catalog["custom"] == []
+    assert catalog["parameter_types"] == ["vmnic", "vmk", "ipv4", "device"]
     response = await client.post(path, json={**COMMAND, "template": "hostname {{Vmk}}"})
     assert response.status_code == 422
     assert response.headers["X-VEA-Error-Code"] == "diagnostic_template_invalid"

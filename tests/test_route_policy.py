@@ -94,6 +94,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     # インシデント
     ("GET", "/api/incidents"): VIEWER,
     ("GET", "/api/incidents/{id}"): VIEWER,
+    ("GET", "/api/incidents/{id}/diagnostic-runs/{run_id}"): VIEWER,
     ("POST", "/api/incidents"): OPERATOR,
     ("PATCH", "/api/incidents/{id}"): OPERATOR,
     ("DELETE", "/api/incidents/{id}"): ADMIN,
@@ -139,7 +140,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/plugins/ssh/connections/{identifier}/host-key"): ADMIN,
     ("POST", "/api/plugins/ssh/connections/{identifier}/approve"): ADMIN,
     ("GET", "/api/plugins/vcenters/{identifier}/hosts"): ADMIN,
-    # 診断の設定
+    # 診断の設定と実行
     ("GET", "/api/diagnostics/ssh/credentials"): ADMIN,
     ("POST", "/api/diagnostics/ssh/credentials"): ADMIN,
     ("GET", "/api/diagnostics/ssh/credentials/{identifier}/public-key"): ADMIN,
@@ -158,6 +159,8 @@ EXPECTED: dict[tuple[str, str], str] = {
     ("POST", "/api/diagnostics/targets"): ADMIN,
     ("PUT", "/api/diagnostics/targets/{identifier}"): ADMIN,
     ("DELETE", "/api/diagnostics/targets/{identifier}"): ADMIN,
+    ("POST", "/api/diagnostics/incidents/{id}/runs/preview"): ADMIN,
+    ("POST", "/api/diagnostics/incidents/{id}/runs"): ADMIN,
 }
 
 

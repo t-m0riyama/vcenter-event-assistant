@@ -225,6 +225,8 @@ jobs:
           tests/test_log_pattern_ledger.py tests/test_log_patterns_api.py
           tests/test_incidents_api.py tests/test_incident_retention.py
           tests/test_diagnostics_api.py tests/test_diagnostics_catalog.py
+          tests/test_diagnostics_worker.py tests/test_diagnostics_runs_api.py
+          tests/test_diagnostics_ssh_integration.py
           -k "postgres and (entity_moid or event_pattern or config_change or inventory or log_pattern or incident or diagnostic)"
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci

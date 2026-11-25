@@ -68,7 +68,7 @@ export const incidentListSchema = z.object({ items: incidentListItemSchema.array
 export const incidentEntrySchema = z.object({
   id: integer,
   incident_id: uuid,
-  kind: z.enum(['note', 'change', 'link']),
+  kind: z.enum(['note', 'change', 'link', 'diagnostic']),
   body: z.string(),
   author: z.string(),
   created_at: timestamp,

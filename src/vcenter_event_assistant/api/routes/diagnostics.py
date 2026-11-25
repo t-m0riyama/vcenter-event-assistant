@@ -1,5 +1,7 @@
 """管理者向けの診断設定 API。"""
 
+import asyncio
+import logging
 from typing import Annotated, TypeVar
 from uuid import UUID, uuid4
 
@@ -14,7 +16,8 @@ from vcenter_event_assistant.api.auth_deps import (
     RequireAdmin,
     get_current_principal,
 )
-from vcenter_event_assistant.api.deps import get_session
+from vcenter_event_assistant.api.deps import get_app_settings, get_session
+from vcenter_event_assistant.api.routes.incidents import IncidentId, incident_actor_name
 from vcenter_event_assistant.api.diagnostics_audit import commit_audit
 from vcenter_event_assistant.api.routes.setup_common import (
     DiagnosticsSetupRoute,
@@ -22,10 +25,15 @@ from vcenter_event_assistant.api.routes.setup_common import (
 )
 from vcenter_event_assistant.api.routes.ssh_setup import ssh_setup_router
 from vcenter_event_assistant.api.schemas.diagnostics import (
+    BuiltinCommandRead,
     CommandCatalog,
     CommandInput,
     CommandRead,
     CommandUpdate,
+    DiagnosticPreview,
+    DiagnosticPreviewInput,
+    DiagnosticRunInput,
+    DiagnosticRunRead,
     TargetInput,
     TargetRead,
     TargetUpdate,
@@ -37,11 +45,23 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.services.diagnostics.catalog import (
+    BUILTIN_COMMANDS,
     PARAMETER_TYPES,
     TemplateError,
     validate_template,
 )
+from vcenter_event_assistant.services.diagnostics.runs import (
+    DiagnosticRuns,
+    RunActor,
+    log_diagnostic_exception,
+    prepare_run,
+    rejection_reason,
+    run_error,
+)
 from vcenter_event_assistant.services.ssh_management import read_ssh_connection
+from vcenter_event_assistant.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/diagnostics",
@@ -56,6 +76,7 @@ router.add_api_route("/vcenters/{identifier}/hosts", list_hosts, methods=["GET"]
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Actor = Annotated[Principal, Depends(get_current_principal)]
+AppSettings = Annotated[Settings, Depends(get_app_settings)]
 Setting = TypeVar("Setting", DiagnosticCommand, DiagnosticTarget)
 
 
@@ -153,7 +174,8 @@ async def list_commands(session: Session) -> CommandCatalog:
         )
     )
     return CommandCatalog(
-        builtin=[],
+        builtin=[BuiltinCommandRead.model_validate(command, from_attributes=True)
+                 for command in BUILTIN_COMMANDS.values()],
         custom=[CommandRead.model_validate(row) for row in rows],
         parameter_types=PARAMETER_TYPES,
     )
@@ -299,3 +321,37 @@ async def delete_target(
     )
     await _audit_target(session, request, actor, "deleted", row)
     return {"ok": True}
+
+
+@router.post("/incidents/{id}/runs/preview")
+async def preview_run(
+    incident_id: IncidentId, body: DiagnosticPreviewInput, session: Session, settings: AppSettings,
+) -> DiagnosticPreview:
+    await session.commit()
+    return (await prepare_run(settings, incident_id, body)).preview()
+
+
+@router.post("/incidents/{id}/runs")
+async def execute_run(
+    incident_id: IncidentId, body: DiagnosticRunInput, request: Request, session: Session,
+    settings: AppSettings, actor: Actor,
+) -> DiagnosticRunRead:
+    run_actor = RunActor(
+        actor.username, actor.user_id, request.client.host if request.client else None, incident_actor_name(actor),
+    )
+    runs: DiagnosticRuns = request.app.state.diagnostic_runs
+    fields = {"incident_id": incident_id, "target_id": body.target_id, **body.command.model_dump()}
+    try:
+        await session.commit()
+        run = await prepare_run(settings, incident_id, body)
+        if run.preview().fingerprint != body.fingerprint:
+            raise run_error(409, "diagnostic_changed", "診断の設定が変わりました。プレビューを取り直してください。")
+        task = runs.start(settings, run, run_actor)
+    except HTTPException as exc:
+        run_actor.audit("rejected", **fields, reason=rejection_reason(exc))
+        raise
+    except Exception as exc:
+        run_actor.audit("rejected", **fields, reason="internal_error")
+        log_diagnostic_exception(logger, "診断の準備中に予期しないエラーが発生しました。", exc)
+        raise run_error(500, "diagnostic_internal_error", "診断を実行できませんでした。") from None
+    return await asyncio.shield(task)
