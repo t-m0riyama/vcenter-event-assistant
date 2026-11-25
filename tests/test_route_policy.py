@@ -48,6 +48,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     # config / ルール類
     ("GET", "/api/config"): VIEWER,
     ("GET", "/api/event-patterns"): VIEWER,
+    ("GET", "/api/event-patterns/procedures"): VIEWER,
     ("GET", "/api/event-score-rules"): VIEWER,
     ("POST", "/api/event-score-rules"): ADMIN,
     ("POST", "/api/event-score-rules/import"): ADMIN,
@@ -94,6 +95,7 @@ EXPECTED: dict[tuple[str, str], str] = {
     # インシデント
     ("GET", "/api/incidents"): VIEWER,
     ("GET", "/api/incidents/{id}"): VIEWER,
+    ("GET", "/api/incidents/{id}/procedures"): VIEWER,
     ("GET", "/api/incidents/{id}/diagnostic-runs/{run_id}"): VIEWER,
     ("POST", "/api/incidents"): OPERATOR,
     ("PATCH", "/api/incidents/{id}"): OPERATOR,

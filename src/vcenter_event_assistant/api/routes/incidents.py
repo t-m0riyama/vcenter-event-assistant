@@ -20,7 +20,13 @@ from vcenter_event_assistant.api.auth_deps import (
     get_current_principal,
 )
 from vcenter_event_assistant.api.deps import get_app_settings, get_session
-from vcenter_event_assistant.api.schemas.diagnostics import DiagnosticRunOutput
+from vcenter_event_assistant.api.schemas.diagnostics import (
+    DiagnosticRunOutput,
+    ProcedureCandidateRead,
+    ProcedureRead,
+    ProcedureReasonRead,
+    ProcedureTargetRead,
+)
 from vcenter_event_assistant.api.schemas.incidents import (
     CreateLinkResults,
     EntryCreate,
@@ -46,6 +52,7 @@ from vcenter_event_assistant.db.models import (
     IncidentSnapshot,
 )
 from vcenter_event_assistant.db.session import session_scope
+from vcenter_event_assistant.services.diagnostics.procedures import read_procedure_candidates
 from vcenter_event_assistant.services.incidents import (
     LINK_NAMES,
     MAX_NOTES,
@@ -159,6 +166,19 @@ async def get_diagnostic_run(incident_id: IncidentId, run_id: int, session: Read
     if row is None:
         raise HTTPException(404, "診断の結果が見つかりません。")
     return DiagnosticRunOutput.model_validate(row)
+
+
+@router.get("/{id}/procedures", dependencies=[RequireViewer])
+async def get_incident_procedures(incident_id: IncidentId, session: ReadSession) -> list[ProcedureCandidateRead]:
+    incident = await _get_incident(session, incident_id)
+    return [
+        ProcedureCandidateRead(
+            procedure=ProcedureRead.from_pattern(candidate.pattern),
+            reasons=[ProcedureReasonRead.model_validate(reason) for reason in candidate.reasons],
+            target=ProcedureTargetRead.model_validate(candidate.target) if candidate.target is not None else None,
+        )
+        for candidate in await read_procedure_candidates(session, incident.id)
+    ]
 
 
 @router.get("/{id}", dependencies=[RequireViewer])

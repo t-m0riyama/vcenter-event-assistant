@@ -7,6 +7,9 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from vcenter_event_assistant.auth.timeutil import as_utc
+from vcenter_event_assistant.services.diagnostics.catalog import BUILTIN_COMMANDS
+from vcenter_event_assistant.services.diagnostics.procedures import BUILTIN_PROCEDURES
+from vcenter_event_assistant.services.event_patterns.definitions import EventPattern
 
 Product = Literal["esxi", "vcenter"]
 
@@ -134,3 +137,56 @@ class DiagnosticRunRead(BaseModel):
 class DiagnosticRunOutput(DiagnosticRunRead):
     stdout: str
     stderr: str
+
+
+class ProcedureCommandRead(BaseModel):
+    id: str
+    title: str
+
+
+class ProcedureStepRead(BaseModel):
+    text: str
+    commands: list[ProcedureCommandRead]
+
+
+class ProcedureRead(BaseModel):
+    pattern_id: str
+    title: str
+    steps: list[ProcedureStepRead]
+
+    @classmethod
+    def from_pattern(cls, pattern: EventPattern) -> "ProcedureRead":
+        return cls(
+            pattern_id=pattern.id,
+            title=pattern.title,
+            steps=[
+                ProcedureStepRead(
+                    text=step.text,
+                    commands=[
+                        ProcedureCommandRead(id=command_id, title=BUILTIN_COMMANDS[command_id].title)
+                        for command_id in step.command_ids
+                    ],
+                )
+                for step in BUILTIN_PROCEDURES[pattern.id]
+            ],
+        )
+
+
+class ProcedureReasonRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: Literal["alert", "event"]
+    link_id: int
+
+
+class ProcedureTargetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    host_name: str
+
+
+class ProcedureCandidateRead(BaseModel):
+    procedure: ProcedureRead
+    reasons: list[ProcedureReasonRead]
+    target: ProcedureTargetRead | None
