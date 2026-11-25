@@ -211,19 +211,20 @@ jobs:
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
-      - name: Verify event entity and log pattern migrations
+      - name: Verify event entity, log pattern, and incident migrations
         run: >-
           uv run --no-sync pytest -q tests/test_event_entity_ingestion.py
-          tests/test_db_session_migrations.py -k "postgres and (event_entity or event_entities or inventory or log_pattern)"
+          tests/test_db_session_migrations.py -k "postgres and (event_entity or event_entities or inventory or log_pattern or incident)"
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 
-      - name: Verify timeline filtering, event and log patterns, config changes, and inventory
+      - name: Verify timeline filtering, patterns, config changes, inventory, and incidents
         run: >-
           uv run --no-sync pytest -q tests/services/test_aggregation_dialects.py tests/services/test_inventory.py
           tests/test_inventory_api.py tests/test_incident_timeline_config_changes.py
           tests/test_log_pattern_ledger.py tests/test_log_patterns_api.py
-          -k "postgres and (entity_moid or event_pattern or config_change or inventory or log_pattern)"
+          tests/test_incidents_api.py tests/test_incident_retention.py
+          -k "postgres and (entity_moid or event_pattern or config_change or inventory or log_pattern or incident)"
         env:
           VEA_TEST_POSTGRES_URL: postgresql+asyncpg://vea_ci:vea_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/vea_ci
 

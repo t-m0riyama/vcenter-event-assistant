@@ -621,6 +621,122 @@ class IncidentTimelineManualSnapshot(Base):
     )
 
 
+class Incident(Base):
+    """障害ごとの対応状況と要約。"""
+
+    __tablename__ = "incidents"
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'monitoring', 'resolved')", name="ck_incidents_status"),
+        CheckConstraint("(status = 'resolved') = (resolved_at IS NOT NULL)", name="ck_incidents_resolved_at"),
+        Index("ix_incidents_status_updated_at", "status", "updated_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16))
+    level: Mapped[str | None] = mapped_column(String(16))
+    assignee: Mapped[str | None] = mapped_column(String(256))
+    summary: Mapped[str] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_by: Mapped[str] = mapped_column(String(256))
+    updated_by: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[uuid.UUID] = mapped_column(Uuid, default=uuid.uuid4)
+
+
+class IncidentEntry(Base):
+    """インシデントのメモと操作の記録。"""
+
+    __tablename__ = "incident_entries"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    body: Mapped[str] = mapped_column(Text)
+    author: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[str | None] = mapped_column(String(256))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class IncidentEvent(Base):
+    """紐付け時点のイベントの写し。"""
+
+    __tablename__ = "incident_events"
+    __table_args__ = (
+        UniqueConstraint("incident_id", "vcenter_id", "collector_id", "vmware_key", name="uq_incident_events_source"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    event_id: Mapped[int] = mapped_column(Integer)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    collector_id: Mapped[str] = mapped_column(String(64))
+    vmware_key: Mapped[int] = mapped_column(Integer)
+    vcenter_name: Mapped[str] = mapped_column(String(255))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    event_type: Mapped[str] = mapped_column(String(512))
+    severity: Mapped[str | None] = mapped_column(String(64))
+    notable_score: Mapped[int] = mapped_column(Integer)
+    entity_type: Mapped[str | None] = mapped_column(String(256))
+    entity_name: Mapped[str | None] = mapped_column(String(1024))
+    entity_moid: Mapped[str | None] = mapped_column(String(256))
+    user_name: Mapped[str | None] = mapped_column(String(512))
+    message: Mapped[str] = mapped_column(Text)
+    user_comment: Mapped[str | None] = mapped_column(Text)
+    added_by: Mapped[str] = mapped_column(String(256))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IncidentAlert(Base):
+    """紐付け時点の通知履歴の写し。"""
+
+    __tablename__ = "incident_alerts"
+    __table_args__ = (
+        UniqueConstraint("incident_id", "alert_history_id", "occurred_at", name="uq_incident_alerts_source"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    alert_history_id: Mapped[int] = mapped_column(Integer)
+    rule_id: Mapped[int] = mapped_column(Integer)
+    rule_name: Mapped[str | None] = mapped_column(String(255))
+    rule_type: Mapped[str] = mapped_column(String(64))
+    alert_level: Mapped[str] = mapped_column(String(32))
+    state: Mapped[str] = mapped_column(String(32))
+    context_key: Mapped[str] = mapped_column(String(512))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    vcenter_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    vcenter_name: Mapped[str | None] = mapped_column(String(255))
+    entity_moid: Mapped[str | None] = mapped_column(String(256))
+    entity_name: Mapped[str | None] = mapped_column(String(1024))
+    added_by: Mapped[str] = mapped_column(String(256))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IncidentSnapshot(Base):
+    """インシデントと保存済みスナップショットの紐付け。"""
+
+    __tablename__ = "incident_snapshots"
+    __table_args__ = (
+        UniqueConstraint("incident_id", "snapshot_id", name="uq_incident_snapshots_source"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("incident_timeline_manual_snapshots.id", ondelete="CASCADE"), index=True,
+    )
+    added_by: Mapped[str] = mapped_column(String(256))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class PluginConfigurationDraft(Base):
     __tablename__ = "plugin_configuration_drafts"
     plugin_id: Mapped[str] = mapped_column(String(64), primary_key=True)

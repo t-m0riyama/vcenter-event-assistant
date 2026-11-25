@@ -182,7 +182,7 @@
 
 整合確認:
 
-- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
+- アプリの保持設定（`EVENT_RETENTION_DAYS`, `METRIC_RETENTION_DAYS`, `ALERT_HISTORY_RETENTION_DAYS`, `DIGEST_RETENTION_DAYS`, `INCIDENT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`, `INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS`）と、DBディスクの増加傾向が矛盾していないかを週次で確認する
 
 - インベントリは `EVENT_RETENTION_DAYS`（既定 7 日）を使う。週次の容量点検では、期限を超えた閉じた関係、見えなくなった管理対象、成功した観測の記録が削除されているかも確認する。開いている関係と見えている管理対象は、収集を停止しても残る。
 
@@ -199,6 +199,12 @@
 台帳には伏せ方を適用した型を保存する。ホスト名や VM 名など、型に残ったログの語は本文の保持期間を過ぎても台帳に残る。
 タイムラインの結果に含まれる型は、保存結果の保持期間に従って残り、調査資料にも入る。
 
+**インシデントの保持期間**
+
+`INCIDENT_RETENTION_DAYS`（既定 90 日）は、解決したインシデントの `resolved_at` から数える。未解決のインシデントは自動削除の対象外。解決後に紐付けやメモを足しても期限は延びない。0 で自動削除を無効にする。インシデントの削除に伴い、経過と紐付けも消える。
+
+インシデント 1 件あたり、イベントの写し 500 件で約 10 MB、通知の写し 200 件で約 0.4 MB、メモ 1,000 件で約 12 MB、要約で約 60 KB が上限の目安になる。日本語を UTF-8 で 1 文字 3 バイトとして、合計は約 23 MB。操作の自動記録は 1 行約 2 KB で、件数の上限はない。紐付けたスナップショットの保存結果は 1 件最大 8 MiB、10 件で最大 80 MiB。インシデントの件数に上限はない。
+
 **スナップショットの保存結果の保持期間:**
 
 タイムラインのスナップショットは、保存時に集計した結果（イベント・ログの本文を含む）を持つ。結果の保持は次の 2 つで決まる。
@@ -208,12 +214,16 @@
 
 結果だけを消したとき、行・保存した条件・運用メモは残る。画面は「結果なし」として、保存した条件で現在のデータから再集計する（元のイベント・ログ・メトリクスが保持期間を過ぎていれば、再集計の結果は空になる）。パージの周期は `PURGE_INTERVAL_HOURS` で、他の保持設定と同じジョブで実行する。行の保持期間より長い値を設定しても害はない（行が先に消える）。
 
-イベント・ログの本文を、元データの保持期間より長く残したくないときは、イベント・ログの保持期間に合わせた値（例: `7`）にする。
+インシデントに紐付いたスナップショットは、行の削除と結果だけの削除の両方から外れる。紐付けがすべて外れた後は、スナップショットの作成時刻を基準に通常の保持期間を適用する。ジョブはインシデントを先に削除するので、期限を過ぎたスナップショットは同じ実行で削除できる。`INCIDENT_RETENTION_DAYS=0` でインシデントを残し続ける場合、その紐付けがある間はスナップショットも残り続ける。
+
+インシデントに紐付いていないスナップショットで、イベント・ログの本文を元データの保持期間より長く残したくないときは、イベント・ログの保持期間に合わせた値（例: `7`）にする。
 
 **SQLite と PostgreSQL の選び方:**
 
-- **SQLite**（`sqlite+aiosqlite://...`）: 開発・試用・単一ノードの小規模向け。ファイル DB ではセッションごとに接続を借り、SQLite が書き込みを DB 単位で直列化する。インメモリ DB では通常のセッションが接続を共有し、アラートルールの更新は専用の接続で独立したトランザクションを使う。vCenter を多数登録する本番では **PostgreSQL を推奨**する。
+- **SQLite**（`sqlite+aiosqlite://...`）: 開発・試用・単一ノードの小規模向け。ファイル DB ではセッションごとに接続を借り、SQLite が書き込みを DB 単位で直列化する。インメモリ DB では通常のセッションが接続を共有し、アラートルールの更新とインシデントの書き込みは専用の接続で独立したトランザクションを使う。vCenter を多数登録する本番では **PostgreSQL を推奨**する。
 - **PostgreSQL**: 本番・複数 vCenter・同時負荷向け。接続プールと書き込み性能に余裕がある。
+- 保持期間の削除は 1 つのトランザクションで行う。SQLite で書き込みが 30 秒を超えて待つと、`database is locked` で API が 500 を返す。
+- PostgreSQL では、保持期間の処理が `incident_snapshots` を表ロックしている間、スナップショットの紐付けと解除、インシデントの削除（CASCADE）、スナップショットを同時に紐付けるインシデントの作成は、保持期間の処理のトランザクション全体が終わるまで待つ。
 - 取り込みトランザクションが長大になると SQLite では API が待たされる。緩和策としてイベント挿入の途中 commit 分割は将来検討（現状は vCenter 単位で 1 トランザクション）。
 
 **パスワード・秘密鍵の暗号化（`VEA_SECRET_KEY`）:**
@@ -394,7 +404,7 @@ vCenter を順に収集するため、1 回のジョブの読み取り待ち時�
 - `DATABASE_URL` が正しいか（ホスト/ポート/ユーザー/DB名）
 - SQLite ファイル運用なら、ディスク空きとファイル権限を確認する
 - PostgreSQL 運用なら、接続数・ディスク・インデックス肥大の兆候を確認する
-- 保持期間設定（イベント・メトリクス・通知履歴・ダイジェスト・スナップショット）と実データ増加が整合しているか
+- 保持期間設定（イベント・メトリクス・通知履歴・ダイジェスト・インシデント・スナップショット）と実データ増加が整合しているか
 
 対処の例:
 
@@ -473,8 +483,8 @@ vCenter を順に収集するため、1 回のジョブの読み取り待ち時�
 - スケジューラ有効化: `SCHEDULER_ENABLED`
 - インベントリ収集は `INVENTORY_SYNC_ENABLED`（既定 `true`）で切り替える。`INVENTORY_SYNC_INTERVAL_SECONDS`（既定 600 秒、下限 60 秒）で収集間隔を、`INVENTORY_SYNC_TIMEOUT_SECONDS`（既定 300 秒）で vCenter ごとの読み取りを待つ上限を設定する。
 - APScheduler の `misfire_grace_time`: interval ジョブは各間隔の半分、cron ダイジェストは 3600 秒（`jobs/scheduler.py`）。イベントループ停止後の取りこぼし軽減用
-- イベントとインベントリの保持期間は `EVENT_RETENTION_DAYS`（既定 7 日、下限 1 日）で設定する。メトリクスは `METRIC_RETENTION_DAYS` で設定する。`ALERT_HISTORY_RETENTION_DAYS`、`DIGEST_RETENTION_DAYS`、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS` は `0` でそれぞれの削除を無効にする。`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` は保存結果だけの保持期間を設定し、`0` で保存結果の削除を無効にする。詳細は「スナップショットの保存結果の保持期間」を参照する。
-  - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。先に結果だけを消したいときは、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` を設定する。保存する結果は 1 件あたり最大 8 MB で、超えると保存せず 413 を返す。
+- イベントとインベントリの保持期間は `EVENT_RETENTION_DAYS`（既定 7 日、下限 1 日）で設定する。メトリクスは `METRIC_RETENTION_DAYS` で設定する。`ALERT_HISTORY_RETENTION_DAYS`、`DIGEST_RETENTION_DAYS`、`INCIDENT_RETENTION_DAYS`、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS` は `0` でそれぞれの削除を無効にする。`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` は保存結果だけの保持期間を設定し、`0` で保存結果の削除を無効にする。詳細は「インシデントの保持期間」と「スナップショットの保存結果の保持期間」を参照する。
+  - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。先に結果だけを消したいときは、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` を設定する。紐付いたスナップショットは行と保存結果の両方が削除の対象外になる。保存する結果は 1 件あたり最大 8 MiB で、超えると保存せず 413 を返す。
   - SQLite は、削除した行の領域をファイルサイズへ戻さない（空いた領域は次の書き込みで再利用される）。ファイルを縮めるには `VACUUM` が要る。
 - ダイジェスト: `DIGEST_*`
 - LLM とトレース: `LLM_*`, `LANGSMITH_*`

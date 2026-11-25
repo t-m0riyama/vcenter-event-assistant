@@ -41,6 +41,7 @@ from vcenter_event_assistant.api.routes.health import router as health_router
 from vcenter_event_assistant.api.routes.metrics import router as metrics_router
 from vcenter_event_assistant.api.routes.vcenters import router as vcenters_router
 from vcenter_event_assistant.api.routes.alerts import router as alerts_router
+from vcenter_event_assistant.api.routes.incidents import router as incidents_router
 from vcenter_event_assistant.api.routes.ingest import router as ingest_router
 from vcenter_event_assistant.api.routes.inventory import router as inventory_router
 from vcenter_event_assistant.api.routes.incident_timeline import (
@@ -318,6 +319,7 @@ def create_app() -> FastAPI:
     api.include_router(dashboard_router)
     api.include_router(digests_router)
     api.include_router(chat_router)
+    api.include_router(incidents_router)
     api.include_router(incident_timeline_router)
     api.include_router(alerts_router)
     api.include_router(ingest_router)

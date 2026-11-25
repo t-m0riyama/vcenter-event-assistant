@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from typing import Annotated, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,21 +23,9 @@ from vcenter_event_assistant.api.schemas.alerts import (
 )
 from vcenter_event_assistant.db.models import AlertRule, AlertHistory, AlertState
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.services.alerting.alert_entity_resolution import (
-    EventPatternEntityKey,
-    MetricProbe,
-    ResolvedEntity,
-    collect_metric_probes,
-    metric_name_lookback,
-    metric_probe,
-    resolve_event_pattern_entities,
-    resolve_metric_entities_at,
-)
+from vcenter_event_assistant.services.alert_history_read import AlertHistoryTarget, resolve_alert_history_targets
 from vcenter_event_assistant.services.alerting.alert_eval import AlertEvaluator
-from vcenter_event_assistant.services.alerting.alert_eval_common import (
-    MANUALLY_RESOLVABLE_RULE_TYPES,
-    parse_event_pattern_context_key,
-)
+from vcenter_event_assistant.services.alerting.alert_eval_common import MANUALLY_RESOLVABLE_RULE_TYPES
 from vcenter_event_assistant.settings import Settings
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -212,56 +200,10 @@ async def import_alert_rules(
     rules_count = (await session.execute(select(func.count()).select_from(AlertRule))).scalar_one()
     return AlertRulesImportResponse(rules_count=rules_count)
 
-async def _resolve_history_entities(
-    session: AsyncSession, items: list[AlertHistory], perf_sample_interval_seconds: int
-) -> dict[MetricProbe, ResolvedEntity]:
-    """ページ内の metric_threshold 行の対象名を、タイムラインと同じ関数でまとめて引く（N+1 にしない）。
-
-    名前は行ごとに「その行のルールの指標の、``occurred_at`` の時点の名前」。ページの区切りや同じページに
-    居合わせるほかの行に依存しないので、行の「タイムラインで見る」リンク（``occurred_at`` の前後・
-    ``entity_name`` で絞る）で開いたタイムラインにも同じ名前で出る。1 ページ（最大 200 件）は 1 本の問い合わせで
-    引ける（ルールに ``metric_key`` が無い古い行が混じるときだけ 2 本）。
-    """
-    probes = collect_metric_probes(
-        (
-            item.rule.rule_type if item.rule else "",
-            item.context_key,
-            item.rule.config if item.rule else None,
-            item.occurred_at,
-        )
-        for item in items
-    )
-    return await resolve_metric_entities_at(
-        session, probes, lookback=metric_name_lookback(perf_sample_interval_seconds)
-    )
-
-
 def _history_item_to_read(
-    item: AlertHistory,
-    firing_keys: set[tuple[int, str]],
-    entities: Mapping[MetricProbe, ResolvedEntity],
-    pattern_entities: Mapping[EventPatternEntityKey, ResolvedEntity],
+    item: AlertHistory, target: AlertHistoryTarget, firing_keys: set[tuple[int, str]],
 ) -> AlertHistoryRead:
     rule_type = item.rule.rule_type if item.rule else ""
-    can_resolve = (
-        rule_type in MANUALLY_RESOLVABLE_RULE_TYPES
-        and (item.rule_id, item.context_key) in firing_keys
-    )
-    vcenter_id: uuid.UUID | None = None
-    entity_moid: str | None = None
-    entity_name: str | None = None
-    if rule_type == "metric_threshold":
-        probe = metric_probe(item.context_key, item.rule.config if item.rule else None, item.occurred_at)
-        if probe is not None:
-            vcenter_id, entity_moid, _, _ = probe
-            hit = entities.get(probe)
-            entity_name = hit.name if hit is not None else None
-    elif rule_type == "event_pattern":
-        parsed = parse_event_pattern_context_key(item.context_key)
-        if parsed is not None:
-            vcenter_id, entity_moid, _ = parsed
-            hit = pattern_entities.get((vcenter_id, entity_moid))
-            entity_name = hit.name if hit is not None else None
     return AlertHistoryRead(
         id=item.id,
         rule_id=item.rule_id,
@@ -272,9 +214,9 @@ def _history_item_to_read(
         context_key=item.context_key,
         notified_at=item.notified_at,
         occurred_at=item.occurred_at,
-        vcenter_id=vcenter_id,
-        entity_moid=entity_moid,
-        entity_name=entity_name,
+        vcenter_id=target.vcenter_id,
+        entity_moid=target.entity_moid,
+        entity_name=target.entity_name,
         channel=item.channel,
         success=item.success,
         error_message=item.error_message,
@@ -282,7 +224,9 @@ def _history_item_to_read(
         attempt_count=item.attempt_count,
         last_attempt_at=item.last_attempt_at,
         next_attempt_at=item.next_attempt_at,
-        can_resolve=can_resolve,
+        can_resolve=(
+            rule_type in MANUALLY_RESOLVABLE_RULE_TYPES and (item.rule_id, item.context_key) in firing_keys
+        ),
     )
 
 
@@ -321,14 +265,9 @@ async def list_alert_history(
         )
         firing_keys = {(row.rule_id, row.context_key) for row in firing_res.all()}
 
-    entities = await _resolve_history_entities(session, items, settings.perf_sample_interval_seconds)
-
-    pattern_entities = await resolve_event_pattern_entities(
-        session, (item.context_key for item in items if item.rule and item.rule.rule_type == "event_pattern"),
-    )
-
+    targets = await resolve_alert_history_targets(session, items, settings.perf_sample_interval_seconds)
     return AlertHistoryListResponse(
-        items=[_history_item_to_read(item, firing_keys, entities, pattern_entities) for item in items],
+        items=[_history_item_to_read(item, targets[item.id], firing_keys) for item in items],
         total=total,
     )
 
