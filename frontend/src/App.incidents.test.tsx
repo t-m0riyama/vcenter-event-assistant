@@ -371,6 +371,31 @@ describe('App のインシデント画面', () => {
     expect(JSON.parse(String(patches[1][1]?.body))).toEqual({ revision: thirdRevision })
   })
 
+  it('表示のタイムゾーンを変えて最新と同じになった開始時刻は下書きから外し、その後の変更を古い下書きで上書きしない', async () => {
+    localStorage.setItem('vea.displayTimeZone', 'Asia/Tokyo')
+    try {
+      renderApp()
+      fireEvent.click(await screen.findByRole('button', { name: '編集' }))
+      // 開始時刻は 00:10Z（東京では 09:10）。東京の 00:10 に書き換える
+      fireEvent.change(screen.getByLabelText('開始時刻（Asia/Tokyo）'), { target: { value: '2026-03-22T00:10' } })
+      fireEvent.click(tab('設定'))
+      fireEvent.click(await screen.findByRole('button', { name: '一般' }))
+      fireEvent.change(await screen.findByRole('combobox', { name: '表示タイムゾーン' }), { target: { value: 'UTC' } })
+      // UTC で見ると、下書きの 00:10 は最新の開始時刻と同じになる。そのあと、ほかの人が開始時刻を変えた
+      const newRevision = '44444444-4444-4444-8444-444444444444'
+      latest = { ...INCIDENT_DETAIL, started_at: '2026-03-22T01:10:00Z', revision: newRevision }
+      fireEvent.click(tab('インシデント'))
+      await waitFor(() => expect(screen.getByLabelText('開始時刻（UTC）')).toHaveValue('2026-03-22T01:10'))
+      updateStatus = 200
+      fireEvent.click(screen.getByRole('button', { name: '保存' }))
+      expect(await screen.findByRole('button', { name: '編集' })).toBeVisible()
+      const [, patchInit] = fetchMock.mock.calls.find(([url, options]) => String(url).endsWith(detailPath) && options?.method === 'PATCH')!
+      expect(JSON.parse(String(patchInit?.body))).toEqual({ revision: newRevision })
+    } finally {
+      localStorage.removeItem('vea.displayTimeZone')
+    }
+  })
+
   it('下書きが無ければ、ほかのタブから戻ったときに詳細をすべて最新にする', async () => {
     renderApp()
     expect(await screen.findByRole('heading', { name: INCIDENT_TITLE })).toBeVisible()

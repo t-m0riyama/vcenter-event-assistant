@@ -310,11 +310,13 @@ function IncidentEditor({ ref, incident, disabled, stale, onCancel, onSave }: {
     summary: incident.summary,
   }
   const [draft, setDraft] = useState<Partial<typeof latest>>({})
-  const [draftRevision, setDraftRevision] = useState(incident.revision)
-  if (draftRevision !== incident.revision) {
-    // 最新の内容が入ったら、それと同じになった項目を下書きから外す。残すと下書きなしと判定されたまま、
-    // あとで最新の値が変わったときに古い下書きの値が表示に戻り、最新の revision で上書きしてしまう。
-    setDraftRevision(incident.revision)
+  const latestKey = JSON.stringify(latest)
+  const [draftBase, setDraftBase] = useState(latestKey)
+  if (draftBase !== latestKey) {
+    // 比較の基準（読み直しや保存で入った最新の内容、表示のタイムゾーンで変わる開始時刻）が変わったら、
+    // それと同じになった項目を下書きから外す。残すと下書きなしと判定されたまま、あとで最新の値が
+    // 変わったときに古い下書きの値が表示に戻り、最新の revision で上書きしてしまう。
+    setDraftBase(latestKey)
     setDraft((previous) => Object.fromEntries(
       Object.entries(previous).filter(([key, value]) => value !== latest[key as keyof typeof latest]),
     ))
