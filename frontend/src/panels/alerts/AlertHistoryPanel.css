@@ -40,6 +40,11 @@
   border-bottom: none;
 }
 
+.alert-history-table .state-badge,
+.alert-history-table .level-badge {
+  white-space: nowrap;
+}
+
 /** badges.css のピルと同じ色言語（トークン由来・ダークテーマ追従） */
 .state-badge {
   display: inline-block;
@@ -136,9 +141,10 @@
   min-width: 7rem;
 }
 
-/* 解消・タイムラインで見る・削除 を並べ、表の幅に収まらないときは折り返す */
+/* 操作はまとまりごとに折り返し、レベルと状態の印の幅を確保する。 */
 .alert-history-actions {
   display: flex;
+  max-width: 14rem;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-2);

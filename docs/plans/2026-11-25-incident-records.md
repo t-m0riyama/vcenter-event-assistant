@@ -10,9 +10,9 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | レビュー中 |
-| B | 表・移行・API・保持期間の削除 | レビュー中 |
-| C | 画面（インシデントのタブと、各画面からの追加）と文書 | 未着手 |
+| A | 本書 | マージ済み [PR #382](https://github.com/t-m0riyama/vcenter-event-assistant/pull/382) |
+| B | 表・移行・API・保持期間の削除 | マージ済み [PR #383](https://github.com/t-m0riyama/vcenter-event-assistant/pull/383) |
+| C | 画面（インシデントのタブと、各画面からの追加）と文書 | レビュー中 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 

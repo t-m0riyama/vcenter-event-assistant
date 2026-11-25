@@ -156,12 +156,24 @@ html[data-theme='dark'] .header__logo--dark {
   top: 0;
   z-index: 30;
   display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
   gap: var(--spacing-1);
-  border-bottom: 1px solid var(--color-border);
+  box-shadow: inset 0 -1px var(--color-border);
   margin-bottom: var(--spacing-4);
   background: color-mix(in srgb, var(--color-page-background) 82%, transparent);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
+}
+
+.tabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tabs::-webkit-scrollbar-thumb {
+  background: var(--color-gray-400);
+  border-radius: var(--radius-sm);
 }
 
 .tabs button {
@@ -173,7 +185,7 @@ html[data-theme='dark'] .header__logo--dark {
   padding: 0 var(--spacing-4);
   border: none;
   background: transparent;
-  margin-bottom: -1px;
+  flex-shrink: 0;
   color: var(--color-text-secondary);
   border-radius: var(--radius-control) var(--radius-control) 0 0;
   transition: color 0.15s ease, background-color 0.15s ease;
@@ -188,7 +200,7 @@ html[data-theme='dark'] .header__logo--dark {
   bottom: 0;
   height: 2px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--color-primary), #7b5cff);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-tab-underline-end));
   transform: scaleX(0);
   transition: transform 0.2s ease;
 }
@@ -241,8 +253,8 @@ html[data-theme='dark'] .header__logo--dark {
 .tabs button:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 3px var(--color-focus-ring-surface),
-    0 0 0 6px var(--color-primary-focus-ring);
+    inset 0 0 0 2px var(--color-focus-ring-surface),
+    inset 0 0 0 4px var(--color-primary-focus-ring);
 }
 
 .tabs button.active {
@@ -293,7 +305,7 @@ html[data-theme='dark'] .header__logo--dark {
   bottom: 0;
   height: 2px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--color-primary), #7b5cff);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-tab-underline-end));
   transform: scaleX(0);
   transition: transform 0.2s ease;
 }

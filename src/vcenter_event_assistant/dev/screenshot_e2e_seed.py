@@ -9,6 +9,7 @@ Playwright ドキュメント用スクリーンショット向けの最小 DB �
 
 タイムライン（既定は直近 1 時間）が 4 種類の出来事と俯瞰グラフを示すよう、対象名つきのイベント、
 デモ用ホストの CPU・メモリのサンプル（期間内で始まって終わる超過区間を 1 つずつ）、重大度 error 以上のログも入れる。
+インシデントには、未解決と解決済みの記録、経過、イベントと通知の写し、保存したタイムラインを入れる。
 名前はすべてデモと分かるもの（実在のホスト・アカウントに見えるものは使わない）。
 """
 
@@ -21,6 +22,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
+from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
+from vcenter_event_assistant.api.schemas.incidents import TimedSource
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
@@ -28,6 +32,12 @@ from vcenter_event_assistant.db.models import (
     EventEntity,
     EventRecord,
     EventTypeGuide,
+    Incident,
+    IncidentAlert,
+    IncidentEntry,
+    IncidentEvent,
+    IncidentSnapshot,
+    IncidentTimelineManualSnapshot,
     LogPatternBackfillState,
     LogRecord,
     MetricSample,
@@ -43,6 +53,14 @@ from vcenter_event_assistant.mocks.mock_inventory import (
 )
 from vcenter_event_assistant.plugins.builtin import EventsCollector, TasksCollector
 from vcenter_event_assistant.rules.notable import final_notable_score
+from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
+from vcenter_event_assistant.services.incidents import (
+    add_alert_links,
+    add_links,
+    copy_event,
+    record_link_additions,
+    reference_snapshot,
+)
 from vcenter_event_assistant.services.log_patterns.ledger import update_ledger
 from vcenter_event_assistant.services.log_patterns.masking import MASK_VERSION, mask_message, pattern_key
 from vcenter_event_assistant.settings_binding import require_settings
@@ -178,21 +196,106 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         )
         session.add(rule)
         await session.flush()
-        session.add(
-            AlertHistory(
-                rule_id=rule.id,
-                alert_level="warning",
-                state="firing",
-                context_key=_EVENT_TYPES[0],
-                occurred_at=now,
-                notified_at=now,
-                channel="email",
-                success=True,
-                delivery_status="succeeded",
-                attempt_count=1,
-                last_attempt_at=now,
-            ),
+        alert = AlertHistory(
+            rule_id=rule.id,
+            alert_level="warning",
+            state="firing",
+            context_key=_EVENT_TYPES[0],
+            occurred_at=now,
+            notified_at=now,
+            channel="email",
+            success=True,
+            delivery_status="succeeded",
+            attempt_count=1,
+            last_attempt_at=now,
         )
+        session.add(alert)
+        await session.flush()
+        await _seed_incidents(session, vc, now, alert)
+
+
+async def _seed_incidents(session: AsyncSession, vcenter: VCenter, now: datetime, alert: AlertHistory) -> None:
+    actor = "demo-operator"
+    start = now - timedelta(hours=1)
+    request = IncidentTimelineViewRequest(from_time=start, to_time=now, vcenter_id=vcenter.id)
+    build_request = IncidentTimelineBuildRequest(from_time=start, to_time=now, vcenter_id=vcenter.id)
+    result = await build_incident_timeline_view(session, request, owner_key="screenshot-seed")
+    snapshot = IncidentTimelineManualSnapshot(
+        from_time=start,
+        to_time=now,
+        timestamp_utc=now,
+        operator_note="デモ: ホスト切断を調べたときのタイムライン",
+        build_request_payload=build_request.model_dump(mode="json", by_alias=True, exclude_none=True),
+        view_request_payload=request.model_dump(mode="json", by_alias=True),
+        result_payload=result.model_dump(mode="json"),
+        created_at=now,
+    )
+    unresolved = Incident(
+        title="デモ: ホスト接続が断続的に切断",
+        status="monitoring",
+        level="error",
+        assignee=actor,
+        summary="ホストの切断が繰り返されたため、管理ネットワークを確認しました。再発がないか監視しています。",
+        started_at=now - timedelta(minutes=54),
+        created_at=now - timedelta(minutes=32),
+        updated_at=now,
+        created_by=actor,
+        updated_by=actor,
+    )
+    resolved = Incident(
+        title="デモ: 仮想マシンの構成変更を確認",
+        status="resolved",
+        level="warning",
+        assignee=actor,
+        summary="予定していた仮想マシンの再構成であることを確認し、対応を完了しました。",
+        started_at=now - timedelta(minutes=45),
+        resolved_at=now - timedelta(minutes=5),
+        created_at=now - timedelta(minutes=40),
+        updated_at=now - timedelta(minutes=5),
+        created_by=actor,
+        updated_by=actor,
+    )
+    session.add_all([snapshot, unresolved, resolved])
+    await session.flush()
+    events = list(await session.scalars(select(EventRecord).where(
+        EventRecord.vcenter_id == vcenter.id,
+        EventRecord.event_type.in_(("vim.event.HostConnectionLostEvent", "vim.event.VmReconfiguredEvent")),
+    ).order_by(EventRecord.occurred_at)))
+    for incident, sources in (
+        (unresolved, [event for event in events if event.event_type == "vim.event.HostConnectionLostEvent"]),
+        (resolved, [event for event in events if event.event_type == "vim.event.VmReconfiguredEvent"]),
+    ):
+        event_batch = await add_links(session, incident.id, IncidentEvent, [
+            TimedSource(id=event.id, occurred_at=event.occurred_at) for event in sources
+        ], copy_event, actor, incident.updated_at)
+        if incident is resolved:
+            record_link_additions(session, incident.id, actor, incident.updated_at, (IncidentEvent, event_batch))
+            continue
+        alert_batch = await add_alert_links(
+            session, incident.id, [TimedSource(id=alert.id, occurred_at=alert.occurred_at)],
+            require_settings().perf_sample_interval_seconds, actor, now,
+        )
+        snapshot_batch = await add_links(
+            session, incident.id, IncidentSnapshot, [snapshot.id], reference_snapshot, actor, now,
+        )
+        record_link_additions(
+            session, incident.id, actor, now,
+            (IncidentEvent, event_batch), (IncidentAlert, alert_batch), (IncidentSnapshot, snapshot_batch),
+        )
+    session.add_all([
+        IncidentEntry(
+            incident_id=unresolved.id, kind="note", body="切断が発生した時刻と対象ホストを確認しました。",
+            author=actor, created_at=now - timedelta(minutes=25),
+        ),
+        IncidentEntry(
+            incident_id=unresolved.id, kind="change", body="状態を「対応中」から「様子見」に変えました。",
+            author=actor, created_at=now - timedelta(minutes=8),
+        ),
+        IncidentEntry(
+            incident_id=resolved.id, kind="note", body="変更の予定とイベントの時刻が一致しました。",
+            author=actor, created_at=now - timedelta(minutes=6),
+        ),
+    ])
 
 
 async def _seed_timeline_demo(session: AsyncSession, vcenter_id: uuid.UUID, now: datetime) -> None:

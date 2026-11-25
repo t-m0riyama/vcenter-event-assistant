@@ -12,9 +12,11 @@ import type { MetricsFocus } from '../../hooks/metricsReplay'
 import { DEFAULT_TIMELINE_CONDITIONS, type TimelineConditions } from '../../routing/timelineHash'
 import { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
 import { useTimelineViewController } from '../../hooks/useTimelineViewController'
+import { IncidentLinkDialogProvider } from '../incidents/IncidentLinkDialog'
 import { TimelineConditionBar } from './TimelineConditionBar'
 import { createGuideLoader } from './eventTypeGuideLoader'
-import { TimelineExportControls, type TimelineExportActivity } from './TimelineExportControls'
+import { TimelineExportControls } from './TimelineExportControls'
+import { useTimelineExportActivity } from './useTimelineExportActivity'
 import { TimelineHighlights } from './TimelineHighlights'
 import { TimelineImpactSection } from './TimelineImpactSection'
 import { TimelineItemList } from './TimelineItemList'
@@ -36,11 +38,15 @@ import {
 export function TimelinePanel({
   onError,
   onOpenSnapshotInMetrics,
+  snapshotToOpen,
+  onSnapshotOpenRequested,
   onOpenInMetrics,
   onOpenInChat,
   active = true,
 }: {
   onError: (e: string | null) => void
+  snapshotToOpen?: { id: string; nonce: number } | null
+  onSnapshotOpenRequested?: () => void
   onOpenSnapshotInMetrics?: (item: IncidentTimelineManualSnapshotListItem) => void
   /** 行から「グラフで開く」。期間・vCenter・起点の目印を渡す。 */
   onOpenInMetrics?: (focus: MetricsFocus) => void
@@ -60,26 +66,20 @@ export function TimelinePanel({
     showSavedResult: c.showSavedResult,
     getIntent: c.getIntent,
   })
+  const requestedSnapshot = useRef<number | null>(null)
+  const { select: selectSnapshot } = snapshots
+  useEffect(() => {
+    if (!active || !snapshotToOpen || requestedSnapshot.current === snapshotToOpen.nonce) return
+    requestedSnapshot.current = snapshotToOpen.nonce
+    void selectSnapshot(snapshotToOpen.id)
+    onSnapshotOpenRequested?.()
+  }, [active, snapshotToOpen, selectSnapshot, onSnapshotOpenRequested])
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [reveal, setReveal] = useState<{ id: string; nonce: number } | null>(null)
   const [guideLoader] = useState(createGuideLoader)
   const [patternTitles, setPatternTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
   const requestedPatternTitles = useRef(false)
-  const [activeExport, setActiveExport] = useState<TimelineExportActivity['active']>(null)
-  const exportInProgress = useRef(false)
-  const exportActivity: TimelineExportActivity = {
-    active: activeExport,
-    claim(ownerId, format) {
-      if (exportInProgress.current) return false
-      exportInProgress.current = true
-      setActiveExport({ ownerId, format })
-      return true
-    },
-    release() {
-      exportInProgress.current = false
-      setActiveExport(null)
-    },
-  }
+  const exportActivity = useTimelineExportActivity()
 
   const { data } = c
   const exportSource = c.savedView
@@ -146,7 +146,7 @@ export function TimelinePanel({
       : ''
 
   return (
-    <div className="panel timeline-panel">
+    <IncidentLinkDialogProvider active={active} className="panel timeline-panel">
       <TimelineConditionBar c={c} />
 
       <p className="timeline-status" role="status" aria-label="タイムラインの読み込み" aria-live="polite">
@@ -320,7 +320,7 @@ export function TimelinePanel({
         timeZone={c.timeZone}
         onOpenSnapshotInMetrics={onOpenSnapshotInMetrics}
       />
-    </div>
+    </IncidentLinkDialogProvider>
   )
 }
 

@@ -14,6 +14,7 @@ export type MainTabId =
   | 'alerts'
   | 'chat'
   | 'timeline'
+  | 'incidents'
   | 'settings'
 
 /**
@@ -76,6 +77,13 @@ export function MainTabIcon({ tabId }: { readonly tabId: MainTabId }): ReactElem
           <circle cx="4.5" cy="8" r="1.25" />
           <circle cx="8" cy="8" r="1.25" />
           <circle cx="11.5" cy="8" r="1.25" />
+        </TabButtonSvgIcon>
+      )
+    case 'incidents':
+      return (
+        <TabButtonSvgIcon>
+          <rect x="3" y="3" width="10" height="11" rx="1.25" />
+          <path d="M6 3V2h4v1M8 6v3M8 11h.01" />
         </TabButtonSvgIcon>
       )
     case 'settings':

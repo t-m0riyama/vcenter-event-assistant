@@ -99,37 +99,44 @@ export function useTimelineSnapshots(params: {
   const selectSeqRef = useRef(0)
 
   const select = useCallback(
-    async (item: IncidentTimelineManualSnapshotListItem) => {
+    async (source: IncidentTimelineManualSnapshotListItem | string) => {
+      const handoff = typeof source === 'string'
+      const snapshotId = handoff ? source : source.snapshot_id
+      if (handoff) onError(null)
       const seq = ++selectSeqRef.current
       const previousId = selectedIdRef.current
-      setSelectedId(item.snapshot_id)
-      selectedIdRef.current = item.snapshot_id
+      setSelectedId(snapshotId)
+      selectedIdRef.current = snapshotId
       const restoreSelection = () => {
         setSelectedId(previousId)
         selectedIdRef.current = previousId
       }
-      const { range, vcenterId: id } = snapshotConditions(item)
-      if (!item.has_result) {
+      if (!handoff && !source.has_result) {
         // 結果の無い旧データ: 保存した条件（view_request か、期間と vCenter）で再集計する
-        if (item.view_request) applyViewRequest(item.view_request)
+        const { range, vcenterId: id } = snapshotConditions(source)
+        if (source.view_request) applyViewRequest(source.view_request)
         else applyConditions(range, id)
         return
       }
       const intent = getIntent()
-      // view_request が読めなかった結果つきスナップショットは、期間と vCenter だけの条件にする
-      const request: SavedIncidentTimelineViewRequest = item.view_request ?? {
-        from: range.from,
-        to: range.to,
-        ...(id ? { vcenter_id: id } : {}),
-      }
       try {
-        const detail = await getManualSnapshotDetail(item.snapshot_id)
+        const detail = await getManualSnapshotDetail(snapshotId)
         // 続けて別のものを選んだ・取得中に条件を変えたなら、この結果は使わない
         if (seq !== selectSeqRef.current || getIntent() !== intent) {
           if (seq === selectSeqRef.current) restoreSelection()
           return
         }
-        if (detail.has_result && detail.result) {
+        const { range, vcenterId: id } = snapshotConditions(handoff ? detail : source)
+        const request: SavedIncidentTimelineViewRequest = detail.view_request ?? (handoff ? undefined : source.view_request) ?? {
+          from: range.from,
+          to: range.to,
+          ...(id ? { vcenter_id: id } : {}),
+        }
+        if (handoff && !detail.has_result) {
+          // 一覧で結果の無いスナップショットを選んだときと同じ条件を使う。
+          if (detail.view_request) applyViewRequest(detail.view_request)
+          else applyConditions(range, id)
+        } else if (detail.has_result && detail.result) {
           showSavedResult(
             {
               snapshotId: detail.snapshot_id,
@@ -137,16 +144,20 @@ export function useTimelineSnapshots(params: {
               savedAt: detail.created_at ?? detail.timestamp_utc,
               result: detail.result,
             },
-            detail.view_request ?? request,
+            request,
           )
         } else {
           // 保存時のスキーマと合わず読めない結果。黙らず注記して、保存した条件で再集計する
-          applyViewRequest(detail.view_request ?? request, { notice: SAVED_RESULT_UNREADABLE_NOTICE })
+          applyViewRequest(request, { notice: SAVED_RESULT_UNREADABLE_NOTICE })
         }
       } catch (e) {
         if (seq === selectSeqRef.current) {
           restoreSelection()
-          onError(snapshotErrorMessage(e, 'スナップショットの詳細'))
+          if (getIntent() === intent) {
+            onError(handoff && e instanceof ApiError && e.status === 404
+              ? 'スナップショットを開けませんでした'
+              : snapshotErrorMessage(e, 'スナップショットの詳細'))
+          }
         }
       }
     },

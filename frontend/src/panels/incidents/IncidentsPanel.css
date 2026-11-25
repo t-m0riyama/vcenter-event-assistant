@@ -1,0 +1,107 @@
+.incidents-panel .table td {
+  overflow-wrap: anywhere;
+}
+
+.incident-dialog {
+  width: min(480px, calc(100vw - 2 * var(--spacing-6)));
+}
+
+.incident-dialog__fields,
+.incident-editor,
+.incident-note-form {
+  display: grid;
+  gap: var(--spacing-3);
+}
+
+.incident-dialog__fields label,
+.incident-editor label,
+.incident-note-form label {
+  display: grid;
+  gap: var(--spacing-1);
+}
+
+/* ダイアログは body の直下に描画するので、パネルの文字の大きさを受け継がない。既存のフォーム（.form-grid label）にそろえる */
+.incident-dialog__fields label {
+  font-size: var(--font-size-footnote);
+}
+
+.incident-dialog__fields input,
+.incident-dialog__fields select,
+.incident-editor input,
+.incident-editor select {
+  width: 100%;
+  min-width: 0;
+}
+
+.incident-editor {
+  max-width: 48rem;
+}
+
+.incident-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--spacing-3);
+}
+
+.incident-fields dt {
+  color: var(--color-text-secondary);
+}
+
+.incident-fields dd {
+  margin: 0;
+}
+
+.incident-records {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.incident-records > li {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--spacing-3);
+  overflow-wrap: anywhere;
+}
+
+.incident-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.incident-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.incident-link-button {
+  white-space: nowrap;
+}
+
+.incident-list-title,
+.incident-list-title:visited {
+  color: var(--color-primary);
+}
+
+.incident-list-title:hover {
+  color: var(--color-primary-dark);
+}
+
+.incident-link-button--compact {
+  font: inherit;
+  color: var(--color-primary);
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  padding-inline: 0;
+}
+
+.incident-latest {
+  margin-top: var(--spacing-3);
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}

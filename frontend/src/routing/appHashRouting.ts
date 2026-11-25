@@ -10,6 +10,7 @@ export const MAIN_TAB_IDS: readonly MainTabId[] = [
   'alerts',
   'chat',
   'timeline',
+  'incidents',
   'settings',
 ] as const
 

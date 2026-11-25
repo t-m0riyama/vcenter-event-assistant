@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import type { IncidentLinkSource } from '../../api/incidents'
+import { IncidentLinkButton, IncidentLinkDialogProvider } from '../incidents/IncidentLinkDialog'
 import { useAuth } from '../../auth/useAuth'
 import { alertStateLabel } from '../../alerts/alertStateLabel'
 import { Pagination } from '../../components/Pagination'
@@ -50,7 +52,7 @@ interface HistoryResponse {
 /**
  * メール通知の履歴一覧（ルール名・レベル・発火/回復・結果）を表示するパネル。
  */
-export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void }) {
+export function AlertHistoryPanel({ onError, active = true }: { onError: (msg: string) => void; active?: boolean }) {
   const { hasRole } = useAuth()
   const canResolve = hasRole('operator')
   const canDelete = hasRole('admin')
@@ -149,7 +151,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
   }
 
   return (
-    <div className="panel alert-history-panel">
+    <IncidentLinkDialogProvider active={active} className="panel alert-history-panel">
       {/* 表示件数・ページ切り替えと「一覧を更新」を同じ行に置き、縦方向の中心を揃える。 */}
       <div className="toolbar alert-history-toolbar">
         <label>
@@ -254,6 +256,7 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
                         entityMoid={h.vcenter_id && h.rule_type !== 'event_pattern' ? h.entity_moid : undefined}
                         ariaLabel={`${h.rule_name || `Rule #${h.rule_id}`}・${h.entity_name || h.context_key}（${formatIsoInTimeZone(h.occurred_at ?? h.notified_at, timeZone)}）をタイムラインで見る`}
                       />
+                      {canResolve && <AlertIncidentActions item={h} />}
                       {canDelete && (
                         <button
                           type="button"
@@ -272,6 +275,19 @@ export function AlertHistoryPanel({ onError }: { onError: (msg: string) => void 
         </div>
       )}
       {total > 0 && <Pagination position="bottom" {...pagination} />}
-    </div>
+    </IncidentLinkDialogProvider>
+  )
+}
+
+function AlertIncidentActions({ item }: { item: AlertHistory }) {
+  if (!item.occurred_at) return null
+  const source: IncidentLinkSource = { kind: 'alerts', items: [{ id: item.id, occurred_at: item.occurred_at }] }
+  const ruleName = item.rule_name || `ルール #${item.rule_id}`
+  const draftTitle = `${ruleName} — ${item.entity_name || item.context_key}`.slice(0, 200)
+  return (
+    <>
+      <IncidentLinkButton compact source={source} draftTitle={draftTitle} />
+      <IncidentLinkButton compact source={source} draftTitle={draftTitle} createOnly />
+    </>
   )
 }
