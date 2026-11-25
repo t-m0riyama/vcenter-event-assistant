@@ -9,6 +9,8 @@ import { toErrorMessage } from '../utils/errors'
 export function useAppConfig(reportError: (message: string | null) => void) {
   const [retention, setRetention] = useState<AppConfig | null>(null)
 
+  const [configLoading, setConfigLoading] = useState(true)
+
   const loadConfig = useCallback(async () => {
     try {
       const raw = await apiGet<unknown>('/api/config')
@@ -16,13 +18,14 @@ export function useAppConfig(reportError: (message: string | null) => void) {
     } catch (e) {
       setRetention(null)
       reportError(toErrorMessage(e))
+    } finally {
+      setConfigLoading(false)
     }
   }, [reportError])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch
     void loadConfig()
   }, [loadConfig])
 
-  return { retention, reloadConfig: loadConfig }
+  return { retention, configLoading, reloadConfig: loadConfig }
 }

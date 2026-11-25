@@ -62,6 +62,13 @@ describe('tabHelpContent', () => {
     }
   })
 
+  it('診断のヘルプでアカウントの強い権限と用途の分離、コマンドの注意を説明する', () => {
+    const { summary } = resolveTabHelp('settings', 'diagnostics')
+    expect(summary).toContain('診断用のアカウントは強い権限を持ちます。')
+    expect(summary).toContain('ログ収集とは別のアカウントと鍵を使用してください。')
+    expect(summary).toContain('追加のコマンドが読み取り専用かどうかは本体では確かめません。')
+  })
+
   it('timeline help mentions metric breach intervals and error logs', () => {
     const { summary } = MAIN_TAB_HELP.timeline
     expect(summary).toContain('メトリクス')

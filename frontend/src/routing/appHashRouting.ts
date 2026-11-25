@@ -21,6 +21,7 @@ export const SETTINGS_SUB_TAB_IDS: readonly SettingsSubTabId[] = [
   'event_type_guides',
   'alerts',
   'plugins',
+  'diagnostics',
   'users',
   'directories',
   'chat_samples',

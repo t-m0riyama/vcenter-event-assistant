@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, joinedload
 
 from vcenter_event_assistant.auth.timeutil import as_utc
+from vcenter_event_assistant.db.constraints import is_constraint
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     EventRecord,
@@ -397,14 +398,14 @@ async def add_links(
                 session.add(link)
                 await session.flush()
         except IntegrityError as exc:
-            if _is_constraint(exc, "23505", SQLITE_CONSTRAINT_UNIQUE):
+            if is_constraint(exc, "23505", SQLITE_CONSTRAINT_UNIQUE):
                 existing_id = await session.scalar(select(model.id).where(
                     model.incident_id == incident_id, *(column == value for column, value in zip(columns, key, strict=True)),
                 ))
                 if existing_id is not None:
                     results.append(LinkDecision(id=source_id, result="already_linked", link_id=existing_id))
                     continue
-            if model is IncidentSnapshot and _is_constraint(exc, "23503", SQLITE_CONSTRAINT_FOREIGNKEY):
+            if model is IncidentSnapshot and is_constraint(exc, "23503", SQLITE_CONSTRAINT_FOREIGNKEY):
                 results.append(LinkDecision(id=source_id, result="not_found"))
                 continue
             raise
@@ -412,13 +413,6 @@ async def add_links(
         existing[key] = link.id
         added += 1
     return LinkBatch(results=results, added=added)
-
-
-def _is_constraint(exc: IntegrityError, sqlstate: str, sqlite_code: int) -> bool:
-    return (
-        getattr(exc.orig, "sqlstate", None) == sqlstate
-        or getattr(exc.orig, "sqlite_errorcode", None) == sqlite_code
-    )
 
 
 def _link_key(values: Iterable[object]) -> tuple[object, ...]:

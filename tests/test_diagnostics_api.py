@@ -3,15 +3,16 @@
 import subprocess
 import sys
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import asyncssh
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
-from vcenter_event_assistant.api.routes import ssh_setup
+from vcenter_event_assistant.api.routes import diagnostics, ssh_setup
 from vcenter_event_assistant.api.schemas.diagnostics import CommandCatalog
 from vcenter_event_assistant.db.models import (
     DiagnosticTarget,
@@ -27,6 +28,7 @@ from vcenter_event_assistant.settings_binding import bind_settings
 
 ROOT = "/api/diagnostics"
 PLUGIN = "/api/plugins"
+REFERENCE_MISSING = "選んだ vCenter または SSH 接続先が削除されました。一覧を読み直して選び直してください。"
 COMMAND = {
     "product": "esxi",
     "title": "NIC の統計",
@@ -75,10 +77,10 @@ async def create_connection(client, prefix, credential_id):
     return response.json()
 
 
-async def create_vcenter():
+async def create_vcenter(name="診断 vCenter"):
     async with session_scope() as session:
         row = VCenter(
-            name="診断 vCenter",
+            name=name,
             host="vc.example.net",
             username="reader",
             password="test-password",
@@ -324,10 +326,12 @@ async def test_diagnostics_command_catalog_and_revision(
     assert updated.status_code == 200, updated.text
     new = updated.json()
     assert new["revision"] != row["revision"] and new["title"] == "NIC"
-    assert (await client.put(path, json=changed)).status_code == 409
-    assert (
-        await client.delete(path, params={"revision": row["revision"]})
-    ).status_code == 409
+    stale_update = await client.put(path, json=changed)
+    assert stale_update.status_code == 409
+    assert stale_update.headers["X-VEA-Error-Code"] == "diagnostic_setting_stale"
+    stale_delete = await client.delete(path, params={"revision": row["revision"]})
+    assert stale_delete.status_code == 409
+    assert stale_delete.headers["X-VEA-Error-Code"] == "diagnostic_setting_stale"
     assert (
         await client.delete(path, params={"revision": new["revision"]})
     ).status_code == 200
@@ -383,7 +387,9 @@ async def test_diagnostics_target_validation_and_revision(
     assert created.status_code == 201, created.text
     row = created.json()
     assert (await client.get(path)).json() == [row]
-    assert (await client.post(path, json=body)).status_code == 409
+    duplicate = await client.post(path, json=body)
+    assert duplicate.status_code == 409
+    assert duplicate.headers["X-VEA-Error-Code"] == "diagnostic_target_duplicate"
     path += f"/{row['id']}"
     changed = {**body, "revision": row["revision"], "host_name": "更新済み"}
     assert (
@@ -391,10 +397,12 @@ async def test_diagnostics_target_validation_and_revision(
     ).status_code == 422
     updated = await client.put(path, json=changed)
     assert updated.status_code == 200, updated.text
-    assert (await client.put(path, json=changed)).status_code == 409
-    assert (
-        await client.delete(path, params={"revision": row["revision"]})
-    ).status_code == 409
+    stale_update = await client.put(path, json=changed)
+    assert stale_update.status_code == 409
+    assert stale_update.headers["X-VEA-Error-Code"] == "diagnostic_setting_stale"
+    stale_delete = await client.delete(path, params={"revision": row["revision"]})
+    assert stale_delete.status_code == 409
+    assert stale_delete.headers["X-VEA-Error-Code"] == "diagnostic_setting_stale"
     assert (
         await client.delete(path, params={"revision": updated.json()["revision"]})
     ).status_code == 200
@@ -405,6 +413,153 @@ async def test_diagnostics_target_validation_and_revision(
         and connection["id"] in caplog.text
         and "host_moid=host-11" in caplog.text
     )
+
+
+@pytest.mark.parametrize("incident_db", ["sqlite", "postgres"], indirect=True)
+async def test_diagnostics_target_update_duplicate(incident_db, diagnostics_enabled, client):
+    key, _ = await create_key(client, ROOT)
+    connection = await create_connection(client, ROOT, key["id"])
+    body = {
+        "product": "vcenter",
+        "vcenter_id": str(await create_vcenter()),
+        "host_moid": None,
+        "host_name": "診断 vCenter",
+        "ssh_connection_id": connection["id"],
+    }
+    path = ROOT + "/targets"
+    assert (await client.post(path, json=body)).status_code == 201
+    created = await client.post(
+        path, json={**body, "product": "esxi", "host_moid": "host-11"}
+    )
+    assert created.status_code == 201
+    row = created.json()
+    target_path = f"{path}/{row['id']}"
+    response = await client.put(target_path, json={**body, "revision": row["revision"]})
+    assert response.status_code == 409
+    assert response.headers["X-VEA-Error-Code"] == "diagnostic_target_duplicate"
+    # 修正して送れば、重複した更新の前と同じ revision で保存できる。
+    corrected = await client.put(
+        target_path,
+        json={
+            **body,
+            "product": "esxi",
+            "host_moid": "host-12",
+            "revision": row["revision"],
+        },
+    )
+    assert corrected.status_code == 200
+
+
+@pytest.mark.parametrize("missing", ["vcenter_id", "ssh_connection_id"])
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+async def test_diagnostics_target_missing_reference(diagnostics_enabled, client, method, missing):
+    key, _ = await create_key(client, ROOT)
+    connection = await create_connection(client, ROOT, key["id"])
+    body = {
+        "product": "vcenter",
+        "vcenter_id": str(await create_vcenter()),
+        "host_moid": None,
+        "host_name": "診断 vCenter",
+        "ssh_connection_id": connection["id"],
+    }
+    path = ROOT + "/targets"
+    if method == "PUT":
+        row = (await client.post(path, json={**body, "product": "esxi", "host_moid": "host-1"})).json()
+        path += f"/{row['id']}"
+        body["revision"] = row["revision"]
+
+    response = await client.request(method, path, json={**body, missing: str(uuid4())})
+    assert response.status_code == 409
+    assert response.headers["X-VEA-Error-Code"] == "diagnostic_reference_missing"
+    assert response.json()["detail"] == REFERENCE_MISSING
+
+
+async def test_diagnostics_target_disabled_vcenter(diagnostics_enabled, client):
+    key, _ = await create_key(client, ROOT)
+    connection = await create_connection(client, ROOT, key["id"])
+    vcenter_id = await create_vcenter()
+    async with session_scope() as session:
+        await session.execute(update(VCenter).where(VCenter.id == vcenter_id).values(is_enabled=False))
+    response = await client.post(ROOT + "/targets", json={
+        "product": "vcenter",
+        "vcenter_id": str(vcenter_id),
+        "host_name": "無効な vCenter",
+        "ssh_connection_id": connection["id"],
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"] == "有効なvCenterを選択してください。"
+
+
+async def test_diagnostics_target_keeps_disabled_vcenter_on_update(diagnostics_enabled, client):
+    """作ったあとで vCenter を無効にしても、同じ vCenter のまま接続先を変えられ、無効な vCenter へは移せない。"""
+    key, _ = await create_key(client, ROOT)
+    connection = await create_connection(client, ROOT, key["id"])
+    other = await create_connection(client, ROOT, key["id"])
+    vcenter_id, disabled_id = await create_vcenter(), await create_vcenter("移し先の vCenter")
+    body = {
+        "product": "vcenter",
+        "vcenter_id": str(vcenter_id),
+        "host_name": "診断 vCenter",
+        "ssh_connection_id": connection["id"],
+    }
+    row = (await client.post(ROOT + "/targets", json=body)).json()
+    async with session_scope() as session:
+        await session.execute(
+            update(VCenter).where(VCenter.id.in_([vcenter_id, disabled_id])).values(is_enabled=False)
+        )
+
+    path = f"{ROOT}/targets/{row['id']}"
+    response = await client.put(path, json={**body, "ssh_connection_id": other["id"], "revision": row["revision"]})
+    assert response.status_code == 200, response.text
+    assert response.json()["ssh_connection_id"] == other["id"]
+
+    moved = {**body, "vcenter_id": str(disabled_id), "revision": response.json()["revision"]}
+    response = await client.put(path, json=moved)
+    assert response.status_code == 422
+    assert response.json()["detail"] == "有効なvCenterを選択してください。"
+
+
+@pytest.mark.parametrize("missing", ["vcenter_id", "ssh_connection_id"])
+async def test_diagnostics_target_reference_deleted_after_validation(
+    diagnostics_enabled, client, monkeypatch, missing
+):
+    key, _ = await create_key(client, ROOT)
+    connection = await create_connection(client, ROOT, key["id"])
+    body = {
+        "product": "vcenter",
+        "vcenter_id": str(await create_vcenter()),
+        "host_moid": None,
+        "host_name": "診断 vCenter",
+        "ssh_connection_id": connection["id"],
+    }
+    # 検証と書き込みの間に参照先が消えた場合と同じ制約違反を起こす。
+    monkeypatch.setattr(diagnostics, "_validate_target", AsyncMock())
+    response = await client.post(ROOT + "/targets", json={**body, missing: str(uuid4())})
+    assert response.status_code == 409
+    assert response.headers["X-VEA-Error-Code"] == "diagnostic_reference_missing"
+    assert response.json()["detail"] == REFERENCE_MISSING
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+async def test_diagnostics_target_unexpected_integrity_error_is_raised(
+    diagnostics_enabled, client, monkeypatch, method
+):
+    key, _ = await create_key(client, ROOT)
+    connection = await create_connection(client, ROOT, key["id"])
+    body = {
+        "product": "vcenter",
+        "vcenter_id": str(await create_vcenter()),
+        "host_name": "診断 vCenter",
+        "ssh_connection_id": connection["id"],
+    }
+    path = ROOT + "/targets"
+    if method == "PUT":
+        row = (await client.post(path, json=body)).json()
+        path += f"/{row['id']}"
+        body["revision"] = row["revision"]
+    monkeypatch.setattr(diagnostics, "_validate_target", AsyncMock())
+    with pytest.raises(IntegrityError, match="ck_diagnostic_targets_host_moid"):
+        await client.request(method, path, json={**body, "host_moid": "host-1"})
 
 
 @pytest.mark.parametrize("incident_db", ["sqlite", "postgres"], indirect=True)

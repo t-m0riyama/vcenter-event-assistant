@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Me, Role } from './api/schemas'
 import { AuthContext } from './auth/authContext'
@@ -37,6 +37,20 @@ const ALERT_RULE = {
   config: { threshold: 60, cooldown_minutes: 45 },
   created_at: '2026-01-01T00:00:00Z',
   revision: '81d535f3-9d2b-4050-a276-284566833a48',
+}
+
+function mockDiagnosticsConfig(enabled: boolean | undefined) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/config') return jsonResponse({
+      event_retention_days: 7, metric_retention_days: 7, perf_sample_interval_seconds: 300,
+      diagnostics_enabled: enabled,
+    })
+    if (path === '/api/diagnostics/commands') return jsonResponse({ builtin: [], custom: [], parameter_types: [] })
+    return jsonResponse([])
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 const refresh = async () => {}
@@ -239,6 +253,46 @@ describe('App のロールによる出し分け', () => {
     renderAs('admin')
     expect(await screen.findByRole('button', { name: 'ディレクトリを追加' })).toBeInTheDocument()
     expect(window.location.hash).toBe('#/settings/directories')
+  })
+
+  it.each([
+    ['viewer', true],
+    ['operator', true],
+    ['admin', false],
+    ['admin', undefined],
+  ] as const)('診断の設定を出さない（%s、機能フラグ %s）', async (role, enabled) => {
+    window.history.replaceState(null, '', '/#/settings/diagnostics')
+    const fetchMock = mockDiagnosticsConfig(enabled)
+    renderAs(role)
+
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/general'))
+    // 設定の取得・反映が終わってから、ナビゲーションと API 呼び出しを確認する。
+    await act(async () => {})
+    const subNav = await screen.findByRole('navigation', { name: '設定' })
+    expect(within(subNav).queryByRole('button', { name: '診断' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/diagnostics/'))).toBe(false)
+  })
+
+  it('admin 以外が診断の URL を開くと設定の取得を待たずに一般に戻る', async () => {
+    window.history.replaceState(null, '', '/#/settings/diagnostics')
+    const fetchMock = vi.fn((input: RequestInfo | URL) => String(input) === '/api/config'
+      ? new Promise<Response>(() => {})
+      : Promise.resolve(jsonResponse([])))
+    vi.stubGlobal('fetch', fetchMock)
+    renderAs('operator')
+
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/general'))
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/diagnostics/'))).toBe(false)
+  })
+
+  it('機能が有効なら admin は診断の設定を URL で直接開ける', async () => {
+    window.history.replaceState(null, '', '/#/settings/diagnostics')
+    mockDiagnosticsConfig(true)
+    renderAs('admin')
+
+    expect(await screen.findByRole('heading', { name: '実行の対象' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '診断' })).toHaveAttribute('aria-selected', 'true')
+    expect(window.location.hash).toBe('#/settings/diagnostics')
   })
 
   it('認証が無効なサーバではユーザー管理と認証ディレクトリを出さない', async () => {

@@ -25,6 +25,7 @@ export const appConfigSchema = z.object({
   chat_web_search_available: z.boolean().optional(),
   /** デモ・開発用モックモード（外部サービス非接続）。旧サーバ互換で optional */
   mock_mode: z.boolean().optional(),
+  diagnostics_enabled: z.boolean().optional(),
 })
 
 export type AppConfig = z.infer<typeof appConfigSchema>
