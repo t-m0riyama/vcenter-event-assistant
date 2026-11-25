@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { TimelineDetectedPattern, TimelineViewItem } from '../../api/schemas'
+import { AUTH_DISABLED_ME, AuthContext } from '../../auth/authContext'
+import { INCIDENT_ID, INCIDENT_LIST, INCIDENT_TITLE } from '../../test/incidentFixtures'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { TIMELINE_ENTITY_DEBOUNCE_MS } from '../../hooks/useTimelineViewController'
@@ -68,7 +70,7 @@ function bucket(start: string, total = 0, notable = 0, alert = 0) {
 /** 3 本の棒と 3 行（2 行はイベント、1 行は VM 無しのアラート）を持つ応答。 */
 function populated(
   overrides: Record<string, unknown> = {},
-  firstItem: Partial<Pick<TimelineViewItem, 'vcenter_id' | 'ref'>> = {},
+  firstItem: Partial<Pick<TimelineViewItem, 'vcenter_id' | 'ref' | 'timestamp_utc'>> = {},
 ) {
   const items = [
     {
@@ -1544,6 +1546,17 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       fireEvent.click(await screen.findByRole('button', { name: '結果つきメモ' }))
     }
 
+    it('保存した結果を持つスナップショットだけ追加できる', async () => {
+      setup({ snapshots: [listItem(), listItem({ snapshot_id: VC, operator_note: '条件のみ', has_result: false })] })
+      renderTimeline()
+      await answer(0, emptyViewResponse())
+      fireEvent.click(screen.getByRole('button', { name: 'スナップショット' }))
+      const saved = (await screen.findByRole('button', { name: '結果つきメモ' })).closest('li')!
+      const conditionsOnly = screen.getByRole('button', { name: '条件のみ' }).closest('li')!
+      expect(within(saved).getByRole('button', { name: 'インシデントに追加' })).toBeVisible()
+      expect(within(conditionsOnly).queryByRole('button', { name: 'インシデントに追加' })).toBeNull()
+    })
+
     it('保存した結果を表示中は、表示タイムゾーンを付けて保存結果の ZIP を GET する', async () => {
       localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, 'America/New_York')
       await openSnapshot(listItem(), detailOf())
@@ -2858,6 +2871,82 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       await answer(1, emptyViewResponse())
       expect(harness.calls[1].body).toMatchObject({ entity: '192.168.100.200', vcenter_id: VC })
       expect(harness.calls[1].body).not.toHaveProperty('entity_moid')
+    })
+  })
+
+  describe('インシデントへの紐付け', () => {
+    const time = '2026-03-22T00:10:00.123456Z'
+    const config = { ...CONFIG_CHANGE, event_count: 22, event_ids: Array.from({ length: 20 }, (_, i) => i + 1) }
+    const result = () => {
+      const data = populated({}, { timestamp_utc: time })
+      return {
+        ...data,
+        highlights: {
+          ...data.highlights,
+          config_changes: [config],
+          config_changes_total: 1,
+          detected_patterns: [DETECTED_PATTERN],
+          detected_patterns_total: 1,
+        },
+      }
+    }
+
+    const expectLinkRequest = async (region: HTMLElement, items: unknown[], notice?: string) => {
+      const sent = vi.fn()
+      harness.extra.set(`/api/incidents/${INCIDENT_ID}/events`, (_url, init) => {
+        sent(JSON.parse(String(init?.body)))
+        return jsonResponse({
+          added: 2,
+          results: [{ id: 1, result: 'added', link_id: 1 }, { id: 2, result: 'added', link_id: 2 }, { id: 3, result: 'not_found' }],
+        })
+      })
+      harness.extra.set('/api/incidents?', () => jsonResponse(INCIDENT_LIST))
+      fireEvent.click(within(region).getByRole('button', { name: 'インシデントに追加' }))
+      const dialog = screen.getByRole('dialog', { name: 'インシデントに追加' })
+      const picker = within(dialog)
+      if (notice) expect(picker.getByText(notice)).toBeVisible()
+      await picker.findByRole('option', { name: INCIDENT_TITLE })
+      fireEvent.change(picker.getByRole('combobox', { name: '未解決のインシデント' }), { target: { value: INCIDENT_ID } })
+      fireEvent.click(picker.getByRole('button', { name: '追加' }))
+      expect(await picker.findByText('2 件を追加しました。1 件は見つかりませんでした')).toBeVisible()
+      expect(sent).toHaveBeenCalledWith({ items })
+    }
+
+    it.each([
+      ['構成変更', config, '22 件のうち、先頭の 20 件を追加します'],
+      ['検知した障害パターン', DETECTED_PATTERN, undefined],
+    ] as const)('%s はイベント ID と期間を送る', async (name, card, notice) => {
+      setup()
+      renderTimeline()
+      await answer(0, result())
+      const region = await screen.findByRole('region', { name })
+      await expectLinkRequest(region, card.event_ids.map((id) => ({
+        id, occurred_from: card.first_utc, occurred_to: card.last_utc,
+      })), notice)
+    })
+
+    it('まとめた行は先頭の 1 件とその発生時刻を送る', async () => {
+      setup()
+      renderTimeline()
+      await answer(0, result())
+      await openFirstRow()
+      const region = screen.getByRole('region', { name: /VmPoweredOffEvent の詳細/ })
+      await expectLinkRequest(region, [{ id: 1, occurred_at: time }], 'まとめた 3 件のうち、先頭の 1 件を追加します')
+    })
+
+    it('viewer に紐付けの操作を表示しない', async () => {
+      setup()
+      render(
+        <AuthContext.Provider value={{
+          me: { ...AUTH_DISABLED_ME, auth_enabled: true, role: 'viewer' },
+          hasRole: (role) => role === 'viewer', logout: vi.fn(), refresh: vi.fn(),
+        }}>
+          <ThemeProvider><TimeZoneProvider><TimelinePanel onError={onError} /></TimeZoneProvider></ThemeProvider>
+        </AuthContext.Provider>,
+      )
+      await answer(0, result())
+      await openFirstRow()
+      expect(screen.queryByRole('button', { name: 'インシデントに追加' })).toBeNull()
     })
   })
 })

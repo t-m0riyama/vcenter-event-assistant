@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AlertHistoryPanel } from './AlertHistoryPanel'
 import { TimeZoneContext } from '../../datetime/timeZoneContext'
+import { AT, INCIDENT_DETAIL } from '../../test/incidentFixtures'
 import { apiDelete, apiGet, apiPost } from '../../api'
 
 vi.mock('../../api', () => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn() }))
@@ -272,4 +273,85 @@ it('障害パターンは vCenter と発生時刻で開き、対象のアラー�
   } finally {
     confirm.mockRestore()
   }
+})
+
+it('通知から作るときに件名を下書きし、通知の発生時刻をそのまま送る', async () => {
+  vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [
+    { ...base, id: 42, occurred_at: AT, entity_name: 'demo-esxi', delivery_status: 'succeeded', attempt_count: 1 },
+  ] })
+  vi.mocked(apiPost).mockResolvedValue({
+    incident: INCIDENT_DETAIL, link_results: { events: [], alerts: [{ id: 42, result: 'added', link_id: 1 }], snapshots: [] },
+  })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'インシデントを作る' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'インシデントを作る' }))
+  expect(dialog.getByRole('textbox', { name: '件名' })).toHaveValue('CPU — demo-esxi')
+  fireEvent.click(dialog.getByRole('button', { name: '作成' }))
+  expect(await dialog.findByText('インシデントを作成しました。1 件を追加しました')).toBeVisible()
+  expect(apiPost).toHaveBeenCalledWith('/api/incidents', { title: 'CPU — demo-esxi', alerts: [{ id: 42, occurred_at: AT }] })
+})
+
+
+it('定期更新で送信元の行が消えても、ダイアログと送信結果が残る', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [
+      { ...base, id: 42, occurred_at: AT, entity_name: 'demo-esxi', delivery_status: 'succeeded', attempt_count: 1 },
+    ] })
+    let finish: (value: unknown) => void = () => {}
+    vi.mocked(apiPost).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    show()
+    fireEvent.click(await screen.findByRole('button', { name: 'インシデントを作る' }))
+    const dialog = screen.getByRole('dialog', { name: 'インシデントを作る' })
+    expect(dialog.parentElement).toBe(document.body)
+    fireEvent.click(within(dialog).getByRole('button', { name: '作成' }))
+    vi.mocked(apiGet).mockResolvedValue({ total: 0, items: [] })
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(screen.getByText('通知履歴はありません。')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'インシデントを作る' })).toBe(dialog)
+    expect(within(dialog).getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+    await act(async () => { finish({
+      incident: INCIDENT_DETAIL, link_results: { events: [], alerts: [{ id: 42, result: 'added', link_id: 1 }], snapshots: [] },
+    }) })
+    expect(within(dialog).getByText('インシデントを作成しました。1 件を追加しました')).toBeVisible()
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(within(dialog).getByRole('link', { name: 'インシデントを開く' })).toBeVisible()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+
+it('タブを離れたら送信中だけ操作を保ち、別タブにはダイアログを出さない', async () => {
+  vi.mocked(apiGet).mockResolvedValue({ total: 1, items: [
+    { ...base, id: 42, occurred_at: AT, entity_name: 'demo-esxi', delivery_status: 'succeeded', attempt_count: 1 },
+  ] })
+  let finish: (value: unknown) => void = () => {}
+  vi.mocked(apiPost).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+  const onError = vi.fn()
+  const zone = { timeZone: 'UTC', setTimeZone: vi.fn() }
+  const panel = (active: boolean) => (
+    <TimeZoneContext.Provider value={zone}>
+      <AlertHistoryPanel onError={onError} active={active} />
+    </TimeZoneContext.Provider>
+  )
+  const { rerender } = render(panel(true))
+  fireEvent.click(await screen.findByRole('button', { name: 'インシデントを作る' }))
+  rerender(panel(false))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  rerender(panel(true))
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: 'インシデントを作る' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '作成' }))
+  rerender(panel(false))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  await act(async () => { finish({
+    incident: INCIDENT_DETAIL, link_results: { events: [], alerts: [{ id: 42, result: 'added', link_id: 1 }], snapshots: [] },
+  }) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  rerender(panel(true))
+  const link = await screen.findByRole('link', { name: 'インシデントを開く' })
+  expect(link).toHaveClass('timeline-link')
+  expect(link).toHaveAttribute('href', `#/incidents/${INCIDENT_DETAIL.id}`)
 })

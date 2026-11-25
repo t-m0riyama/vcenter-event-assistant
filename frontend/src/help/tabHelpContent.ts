@@ -58,6 +58,12 @@ export const MAIN_TAB_HELP: Record<MainTabId, TabHelpEntry> = {
     userGuideDoc: 'docs/userguide/timeline.md',
     markerId: 'timeline',
   },
+  incidents: {
+    summary:
+      '【インシデント】\n障害の状態・担当・経過と、関係するイベント・通知・スナップショットをまとめて記録します。\n- 一覧の既定は未解決です。状態と件名で絞り込めます。\n- イベント・通知履歴・タイムラインの「インシデントに追加」から、既存の記録に紐付けるか、新しく作れます。\n- 紐付けたイベントと通知は写しが残ります。スナップショットは保存した結果をタイムラインで開いたり、調査資料を出力したりできます。\n- 作成・編集・紐付け・メモの追加は operator 以上、インシデントと経過の削除は admin のみです。',
+    userGuideDoc: 'docs/userguide/incidents.md',
+    markerId: 'incidents',
+  },
   settings: {
     summary:
       '【設定】\nアプリケーションの動作環境を構成します。\n- 一般: リフレッシュ間隔やタイムゾーンの設定\n- vCenter: 接続先サーバーの管理\n- スコアルール: イベントの重要度判定ロジックの定義\n- プラグイン: コレクタの構成と実行状態の確認',

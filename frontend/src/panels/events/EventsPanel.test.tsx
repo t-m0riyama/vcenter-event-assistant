@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventsPanel } from './EventsPanel'
 import { TimeZoneContext } from '../../datetime/timeZoneContext'
-import { apiGet } from '../../api'
+import { AT, INCIDENT_ID, INCIDENT_LIST, INCIDENT_TITLE } from '../../test/incidentFixtures'
+import { apiGet, apiPost } from '../../api'
 
 vi.mock('../../api', () => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiPut: vi.fn(), apiDelete: vi.fn() }))
 vi.mock('../../preferences/useAutoRefreshPreferences', () => ({
@@ -73,4 +74,21 @@ describe('タイムラインで見る', () => {
     expect(within(row).getByRole('link', { name: /をタイムラインで見る$/ })).toBeInTheDocument()
     expect(within(row).getByRole('link', { name: '前後5分のログ' })).toBeInTheDocument()
   })
+})
+
+it('イベントの追加に元の発生時刻を使う', async () => {
+  vi.mocked(apiGet).mockImplementation(async (path: string) => {
+    if (path.startsWith('/api/vcenters')) return []
+    if (path.startsWith('/api/incidents')) return INCIDENT_LIST
+    return { total: 1, items: [{ ...base, id: 42, event_type: 'HostConnectionLostEvent', occurred_at: AT }] }
+  })
+  vi.mocked(apiPost).mockResolvedValue({ results: [{ id: 42, result: 'added', link_id: 1 }], added: 1 })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'インシデントに追加' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'インシデントに追加' }))
+  await dialog.findByRole('option', { name: INCIDENT_TITLE })
+  fireEvent.change(dialog.getByRole('combobox', { name: '未解決のインシデント' }), { target: { value: INCIDENT_ID } })
+  fireEvent.click(dialog.getByRole('button', { name: '追加' }))
+  expect(await dialog.findByText('1 件を追加しました')).toBeVisible()
+  expect(apiPost).toHaveBeenCalledWith(`/api/incidents/${INCIDENT_ID}/events`, { items: [{ id: 42, occurred_at: AT }] })
 })

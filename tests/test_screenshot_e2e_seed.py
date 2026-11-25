@@ -57,6 +57,29 @@ async def test_screenshot_e2e_seed_inserts_rows_and_api_exposes_guide(
     app = create_app()
     async with open_client(app=app) as ac:
         resp = await ac.get("/api/events?limit=20")
+        unresolved = await ac.get("/api/incidents")
+        resolved = await ac.get("/api/incidents?status=resolved")
+        assert unresolved.status_code == resolved.status_code == 200
+        [unresolved_row] = unresolved.json()["items"]
+        [resolved_row] = resolved.json()["items"]
+        assert unresolved.json()["total"] == resolved.json()["total"] == 1
+        assert unresolved_row["status"] == "monitoring"
+        assert resolved_row["status"] == "resolved"
+        for row in (unresolved_row, resolved_row):
+            response = await ac.get(f"/api/incidents/{row['id']}")
+            assert response.status_code == 200
+            detail = response.json()
+            assert detail["events"]
+            assert any(entry["kind"] == "note" for entry in detail["entries"])
+            [link] = [entry for entry in detail["entries"] if entry["kind"] == "link"]
+            assert f"イベント {len(detail['events'])} 件を追加しました。" in link["body"]
+            if row["status"] == "monitoring":
+                [change] = [entry for entry in detail["entries"] if entry["kind"] == "change"]
+                assert change["body"] == "状態を「対応中」から「様子見」に変えました。"
+                assert detail["alerts"] and "通知 1 件を追加しました。" in link["body"]
+                [snapshot] = detail["snapshots"]
+                assert snapshot["has_result"]
+                assert "スナップショット 1 件を追加しました。" in link["body"]
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert len(items) >= 1

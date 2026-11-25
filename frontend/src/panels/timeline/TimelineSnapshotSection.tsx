@@ -2,6 +2,7 @@ import type { IncidentTimelineManualSnapshotListItem } from '../../api/schemas'
 import { useAuth } from '../../auth/useAuth'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import type { useTimelineSnapshots } from '../../hooks/useTimelineSnapshots'
+import { IncidentLinkButton } from '../incidents/IncidentLinkDialog'
 import { TimelineExportControls, type TimelineExportActivity } from './TimelineExportControls'
 
 type Props = {
@@ -88,6 +89,9 @@ export function TimelineSnapshotSection({ snapshots: s, exportActivity, canSaveN
                         グラフで開く
                       </button>
                     ) : null}{' '}
+                    {canSave && item.has_result && (
+                      <IncidentLinkButton source={{ kind: 'snapshots', ids: [item.snapshot_id] }} />
+                    )}{' '}
                     <span className="timeline-snapshots__time">({savedAt})</span>
                     <TimelineExportControls
                       activity={exportActivity}

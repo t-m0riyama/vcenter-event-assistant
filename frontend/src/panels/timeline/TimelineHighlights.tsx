@@ -1,6 +1,8 @@
 import { useId } from 'react'
 import type { TimelineConfigChange, TimelineDetectedPattern, TimelineHighlights as Highlights, TimelineViewItem } from '../../api/schemas'
 import type { TimelineNewLogPattern } from '../../api/schemas/logPatterns'
+import { useAuth } from '../../auth/useAuth'
+import { TimelineCardIncidentButton } from './TimelineIncidentButtons'
 import { SeverityBadge } from '../../components/badges'
 import { correlationHash } from '../../routing/correlationRange'
 import { logSeverityForRank } from '../logs/logSeverity'
@@ -37,6 +39,7 @@ function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
   const titleId = `${id}-title`
   const entityId = `${id}-entity`
   const sameTime = parseApiUtcInstantMs(pattern.first_utc) === parseApiUtcInstantMs(pattern.last_utc)
+  const canLink = useAuth().hasRole('operator')
   const descriptionIds = `${titleId} ${entityId}`
 
   return (
@@ -66,6 +69,7 @@ function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
       >
         ここを起点にする
       </button>
+      {canLink && <TimelineCardIncidentButton card={pattern} />}
     </li>
   )
 }
@@ -73,6 +77,7 @@ function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
 function ConfigChangeItem({ change, listedIds, timeZone, onRevealItem, onFilterEntity, onSetAnchor }: {
   change: TimelineConfigChange
 } & Pick<Props, 'listedIds' | 'timeZone' | 'onRevealItem' | 'onFilterEntity' | 'onSetAnchor'>) {
+  const canLink = useAuth().hasRole('operator')
   const target = change.entity_name || change.entity_moid
   const vcenter = change.vcenter_name || change.vcenter_id
   const sameTime = parseApiUtcInstantMs(change.first_utc) === parseApiUtcInstantMs(change.last_utc)
@@ -94,6 +99,7 @@ function ConfigChangeItem({ change, listedIds, timeZone, onRevealItem, onFilterE
       ) : null}
       <p className="timeline-highlights__meta">{time}</p>
       <div className="timeline-highlights__actions">
+        {canLink && <TimelineCardIncidentButton card={change} />}
         <button
           type="button"
           className="btn btn--gray timeline-highlights__link"

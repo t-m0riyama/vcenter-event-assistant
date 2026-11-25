@@ -32,12 +32,9 @@ export function useAppTabHashSync() {
   }, [])
 
   const setTab = useCallback((next: MainTabId) => {
+    replaceAppHash(next, settingsSubTab)
     setTabState(next)
-    setSettingsSubTabState((sub) => {
-      replaceAppHash(next, next === 'settings' ? sub : 'general')
-      return sub
-    })
-  }, [])
+  }, [settingsSubTab])
 
   const setSettingsSubTab = useCallback((next: SettingsSubTabId) => {
     setSettingsSubTabState(next)

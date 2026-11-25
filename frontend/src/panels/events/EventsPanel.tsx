@@ -18,10 +18,11 @@ import { useEventsPanelController } from '../../hooks/useEventsPanelController'
 import { useIntervalWhenEnabled } from '../../hooks/useIntervalWhenEnabled'
 import { useAutoRefreshPreferences } from '../../preferences/useAutoRefreshPreferences'
 import { asArray } from '../../utils/asArray'
+import { IncidentLinkButton, IncidentLinkDialogProvider } from '../incidents/IncidentLinkDialog'
 import { useAuth } from '../../auth/useAuth'
 
 /** イベント一覧パネル（フィルタ・ページング・詳細・CSV export）。 */
-export function EventsPanel({ onError }: { onError: (e: string | null) => void }) {
+export function EventsPanel({ onError, active = true }: { onError: (e: string | null) => void; active?: boolean }) {
   const canEditComment = useAuth().hasRole('operator')
   const c = useEventsPanelController(onError)
   const { load: reloadEvents } = c
@@ -36,7 +37,7 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
   useIntervalWhenEnabled(autoRefreshEnabled, intervalMs, onAutoRefresh)
 
   return (
-    <div className="panel">
+    <IncidentLinkDialogProvider active={active} className="panel">
       <div className="toolbar">
         <label>vCenter<select value={c.vcenterId} onChange={(e) => { c.setVcenterId(e.target.value); c.setPage(1) }}><option value="">全て</option>{c.vcenters.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
         <label>
@@ -215,13 +216,22 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
               <td>
                 <ScoreBadge score={e.notable_score} />
               </td>
-              <td className="msg">{e.message}<p className="event-correlation-links"><a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a><TimelineLink
-                  at={e.occurred_at}
-                  vcenterId={e.vcenter_id}
-                  entity={e.entity_name}
-                  entityMoid={e.vcenter_id ? e.entity_moid : undefined}
-                  ariaLabel={`${e.entity_name || e.event_type}（${formatIsoInTimeZone(e.occurred_at, c.timeZone)}）をタイムラインで見る`}
-                /></p></td>
+              <td className="msg">
+                {e.message}
+                <p className="event-correlation-links">
+                  <a href={logsAroundEvent(e.vcenter_id, e.occurred_at)}>前後5分のログ</a>
+                  <TimelineLink
+                    at={e.occurred_at}
+                    vcenterId={e.vcenter_id}
+                    entity={e.entity_name}
+                    entityMoid={e.vcenter_id ? e.entity_moid : undefined}
+                    ariaLabel={`${e.entity_name || e.event_type}（${formatIsoInTimeZone(e.occurred_at, c.timeZone)}）をタイムラインで見る`}
+                  />
+                  {canEditComment && (
+                    <IncidentLinkButton compact source={{ kind: 'events', items: [{ id: e.id, occurred_at: e.occurred_at }] }} />
+                  )}
+                </p>
+              </td>
               <td className="event-comment-cell">
                 {c.editingCommentId === e.id ? (
                   <div className="event-comment-edit">
@@ -280,6 +290,6 @@ export function EventsPanel({ onError }: { onError: (e: string | null) => void }
           onNext={() => c.setPage((p) => p + 1)}
         />
       )}
-    </div>
+    </IncidentLinkDialogProvider>
   )
 }

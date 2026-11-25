@@ -3,6 +3,8 @@ import { useEffect, useRef } from 'react'
 import type { MetricsFocus } from '../../hooks/metricsReplay'
 import type { TimelineViewItem } from '../../api/schemas'
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
+import { useAuth } from '../../auth/useAuth'
+import { TimelineRowIncidentButton } from './TimelineIncidentButtons'
 import { ScoreBadge } from '../../components/badges'
 import type { GuideLoader } from './eventTypeGuideLoader'
 import { TimelineEventGuide } from './TimelineEventGuide'
@@ -80,6 +82,7 @@ function ItemRow({
   onSetAnchor: Props['onSetAnchor']
   onOpenInMetrics: Props['onOpenInMetrics']
 }) {
+  const canLink = useAuth().hasRole('operator')
   const metricsFocus = onOpenInMetrics ? metricsFocusForItem(item) : null
   const domId = rowDomId(item.id)
   const eventsHref = correlationHashForItem('events', item)
@@ -229,6 +232,7 @@ function ItemRow({
           </dl>
           {item.kind === 'event' ? <TimelineEventGuide item={item} loader={guideLoader} /> : null}
           <div className="timeline-row__actions">
+            {canLink && <TimelineRowIncidentButton item={item} />}
             {item.entity_name && item.ref.alert_rule_type !== 'event_pattern' ? (
               <button
                 type="button"

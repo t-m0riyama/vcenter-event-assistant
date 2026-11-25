@@ -268,13 +268,21 @@ export function useTimelineViewController(
   const urlIssueRef = useRef(urlIssue)
   urlIssueRef.current = urlIssue
 
+  const lastHashWrite = useRef<{ oldURL: string; newURL: string } | null>(null)
+  const writeHash = useCallback((next: TimelineConditions) => {
+    const oldURL = window.location.href
+    replaceTimelineHash(next)
+    const newURL = window.location.href
+    if (oldURL !== newURL) lastHashWrite.current = { oldURL, newURL }
+  }, [])
+
   /** URL の条件を取り込む。条件が変わったら true。 */
   const adoptFromLocation = useCallback((): boolean => {
     if (!isTimelineHash()) return false
     const incoming = readTimelineHash()
     if (!incoming) {
       // タブ切り替えで `#/timeline` に戻った。持っている条件を URL に書き直す
-      if (!urlIssueRef.current) replaceTimelineHash(conditionsRef.current)
+      if (!urlIssueRef.current) writeHash(conditionsRef.current)
       return false
     }
     if (
@@ -292,14 +300,31 @@ export function useTimelineViewController(
     setRangeHistory([])
     setRangeInputError(null)
     return true
-  }, [])
+  }, [writeHash])
 
   useEffect(() => {
-    const onHashChange = () => {
+    const onHashChange = (event: HashChangeEvent) => {
+      const currentURL = window.location.href
+      const previousWrite = lastHashWrite.current
+      if (event.newURL && event.newURL !== currentURL) {
+        // 古い通知を捨てる際、現 URL の書き戻し通知がまだ待機中なら記録を残す。
+        if (previousWrite?.newURL !== currentURL) lastHashWrite.current = null
+        return
+      }
+      lastHashWrite.current = null
+      // happy-dom は replaceState でも hashchange を送るので、書き戻しの通知は取り込まない。
+      if (previousWrite && previousWrite.oldURL === event.oldURL && previousWrite.newURL === event.newURL) return
       adoptFromLocation()
     }
+    // ブラウザの履歴移動では hashchange より先に popstate が届く。
+    // 記録を消して、利用者が移動した先を自分の書き戻しと誤認しない。
+    const onPopState = () => { lastHashWrite.current = null }
     window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
+    window.addEventListener('popstate', onPopState)
+    return () => {
+      window.removeEventListener('hashchange', onHashChange)
+      window.removeEventListener('popstate', onPopState)
+    }
   }, [adoptFromLocation])
 
   // 別のタブから戻ったとき（読み込みの effect より先に評価して、戻る前に予約済みだったかを見分ける）: URL（他タブからの入口リンク）を取り込む。条件が変わったなら、それで 1 回読み込む。
@@ -327,8 +352,8 @@ export function useTimelineViewController(
       return
     }
     // URL が読めなかったあいだは書き換えない（共有リンクの条件を消さない）
-    if (active && !urlIssue && isTimelineHash()) replaceTimelineHash(conditions)
-  }, [active, conditions, urlIssue])
+    if (active && !urlIssue && isTimelineHash()) writeHash(conditions)
+  }, [active, conditions, urlIssue, writeHash])
 
   const loadKey = useMemo(
     () => JSON.stringify({ conditions, urlIssue, reloadNonce }),

@@ -1,11 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { IncidentTimelineManualSnapshotListItem } from './api/schemas'
 import type { ChatHandoff, ChatHandoffInput } from './hooks/chatHandoff'
 import type { MetricsFocus } from './hooks/metricsReplay'
 import { useAppConfig } from './hooks/useAppConfig'
 import { useAttentionStatus } from './hooks/useAttentionStatus'
 import { useAppTabHashSync } from './hooks/useAppTabHashSync'
-import { parseAppHash } from './routing/appHashRouting'
+import { buildAppHash, parseAppHash } from './routing/appHashRouting'
 import { LogsPanel } from './panels/logs/LogsPanel'
 import { EventsPanel } from './panels/events/EventsPanel'
 import { ChatSamplePromptsPanel } from './panels/settings/ChatSamplePromptsPanel'
@@ -22,6 +22,7 @@ import { ChatPanel } from './panels/chat/ChatPanel'
 import { DigestsPanel } from './panels/digests/DigestsPanel'
 import { AlertHistoryPanel } from './panels/alerts/AlertHistoryPanel'
 import { SummaryPanel } from './panels/summary/SummaryPanel'
+import { IncidentsPanel, type IncidentsPanelHandle } from './panels/incidents/IncidentsPanel'
 import { TimelinePanel } from './panels/timeline/TimelinePanel'
 import { MainTabIcon, type MainTabId } from './components/main-tab-icons'
 import { SettingsSubTabIcon, type SettingsSubTabId } from './components/settings-subtab-icons'
@@ -83,6 +84,15 @@ export default function App() {
     { item: IncidentTimelineManualSnapshotListItem } | { focus: MetricsFocus } | null
   >(null)
   const [metricsReplayNonce, setMetricsReplayNonce] = useState(0)
+  const mainTabsRef = useRef<HTMLElement>(null)
+  const incidentsRef = useRef<IncidentsPanelHandle>(null)
+  useEffect(() => {
+    mainTabsRef.current?.querySelector('button.active')?.scrollIntoView?.({
+      block: 'nearest', inline: 'nearest', behavior: 'instant',
+    })
+  }, [tab])
+  const [snapshotToOpen, setSnapshotToOpen] = useState<{ id: string; nonce: number } | null>(null)
+  const snapshotNonce = useRef(0)
   /** チャットのタブへ渡す期間・vCenter。`nonce` が変わるたびにチャット側で差し替える。 */
   const [chatHandoff, setChatHandoff] = useState<ChatHandoffInput | null>(null)
   const [chatHandoffNonce, setChatHandoffNonce] = useState(0)
@@ -150,6 +160,16 @@ export default function App() {
     [setTab],
   )
 
+  const openIncidentSnapshot = useCallback((id: string) => {
+    setSnapshotToOpen({ id, nonce: ++snapshotNonce.current })
+    setMountedMainTabs((prev) => (prev.has('timeline') ? prev : new Set(prev).add('timeline')))
+    window.location.hash = buildAppHash('timeline')
+    setTab('timeline')
+    setShowHelp(false)
+  }, [setTab])
+
+  const clearSnapshotToOpen = useCallback(() => setSnapshotToOpen(null), [])
+
   const openChatWithRange = useCallback(
     (focus: ChatHandoff) => {
       const nonce = chatHandoffNonce + 1
@@ -166,7 +186,11 @@ export default function App() {
 
   const selectMainTab = (next: MainTabId) => {
     ensureMainTabMounted(next)
-    setTab(next)
+    if (next === 'incidents' && tab === next) {
+      incidentsRef.current?.showList()
+    } else {
+      setTab(next)
+    }
     setShowHelp(false)
   }
 
@@ -188,7 +212,7 @@ export default function App() {
         id: 'events',
         label: 'イベント',
         panelLabel: 'イベント一覧',
-        render: (onError) => <EventsPanel onError={onError} />,
+        render: (onError, active) => <EventsPanel onError={onError} active={active} />,
       },
       {
         id: 'logs',
@@ -222,7 +246,7 @@ export default function App() {
         id: 'alerts',
         label: '通知履歴',
         panelLabel: '通知履歴',
-        render: (onError) => <AlertHistoryPanel onError={onError} />,
+        render: (onError, active) => <AlertHistoryPanel onError={onError} active={active} />,
       },
       {
         id: 'chat',
@@ -238,22 +262,33 @@ export default function App() {
           <TimelinePanel
             onError={onError}
             active={active}
+            snapshotToOpen={snapshotToOpen}
+            onSnapshotOpenRequested={clearSnapshotToOpen}
             onOpenSnapshotInMetrics={(item) => openMetricsReplay({ item })}
             onOpenInMetrics={(focus) => openMetricsReplay({ focus })}
             onOpenInChat={canChat ? openChatWithRange : undefined}
           />
         ),
       },
+      {
+        id: 'incidents',
+        label: 'インシデント',
+        panelLabel: 'インシデント',
+        render: (_onError, active) => <IncidentsPanel active={active} ref={incidentsRef} onOpenSnapshot={openIncidentSnapshot} />,
+      },
     ],
     [
       canChat,
+      clearSnapshotToOpen,
       chatHandoff,
       clearChatHandoff,
       metricsReplayNonce,
       metricsReplaySource,
       openChatWithRange,
+      openIncidentSnapshot,
       openMetricsReplay,
       retention?.perf_sample_interval_seconds,
+      snapshotToOpen,
     ],
   )
   // チャットは operator 以上（LLM の呼び出しを伴うため）
@@ -377,7 +412,7 @@ export default function App() {
 
         {showHelp && <TabHelpSection entry={helpEntry} />}
 
-        <nav className="tabs">
+        <nav className="tabs" ref={mainTabsRef}>
           {visibleMainTabs.map((t) => (
             <button
               key={t.id}
