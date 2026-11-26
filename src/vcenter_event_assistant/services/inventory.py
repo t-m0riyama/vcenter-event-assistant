@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from concurrent.futures import Future
 from datetime import datetime, timedelta
 from threading import Thread
+from time import monotonic
 from uuid import UUID
 from weakref import WeakValueDictionary
 
@@ -20,7 +22,14 @@ from vcenter_event_assistant.collectors.inventory import (
     InventoryObservation,
     read_inventory,
 )
+from vcenter_event_assistant.collectors.inventory_config import (
+    ConfigBaseline,
+    ConfigObservation,
+    ConfigReadTimeout,
+    read_inventory_config,
+)
 from vcenter_event_assistant.db.models import (
+    InventoryConfigDiff,
     InventoryObject,
     InventoryRelation,
     InventorySyncRun,
@@ -28,8 +37,15 @@ from vcenter_event_assistant.db.models import (
     VCenter,
 )
 from vcenter_event_assistant.db.session import session_scope
-from vcenter_event_assistant.mocks.mock_inventory import mock_inventory
+from vcenter_event_assistant.mocks.mock_inventory import (
+    mock_inventory,
+    mock_inventory_config,
+)
 from vcenter_event_assistant.plugins.runtime import _safe_error
+from vcenter_event_assistant.services.inventory_config import (
+    config_baselines,
+    persist_inventory_config,
+)
 from vcenter_event_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -37,7 +53,15 @@ logger = logging.getLogger(__name__)
 _locks: WeakValueDictionary[UUID, asyncio.Lock] = WeakValueDictionary()
 _WORKER_COUNT = 2
 _reads_closed = False
-_reads: dict[UUID, Future[InventoryObservation]] = {}
+_CONFIG_DEADLINE_FRACTION = 0.8
+
+
+class _ConfigFuture(Future[ConfigObservation | None]):
+    # 構成の結果を受け取った後も、切断中はスレッド枠を空けない。
+    thread: Thread
+
+
+_reads: dict[UUID, _ConfigFuture] = {}
 
 
 class InventoryReadTimeout(TimeoutError):
@@ -56,11 +80,17 @@ class InventoryReadsClosed(Exception):
     """アプリの終了中で新しい読み取りを開始できない。"""
 
 
+class ConfigReadMissing(Exception):
+    """有効な構成読み取りから結果が返らなかった。"""
+
+
 _READ_ERRORS = {
     InventoryReadTimeout: "読み取りがタイムアウトしました。",
+    ConfigReadTimeout: "構成の読み取りがタイムアウトしました。",
     InventoryReadStillRunning: "前回の読み取りがまだ実行中です。",
     InventoryWorkerUnavailable: "専用スレッドに空きがありません。",
     InventoryReadsClosed: "インベントリの読み取り受付は終了しました。",
+    ConfigReadMissing: "構成の読み取り結果を受け取れませんでした。",
 }
 
 
@@ -81,7 +111,11 @@ def shutdown_inventory_reads() -> None:
 
 
 def read_vcenter_inventory(
-    vcenter: VCenter, settings: Settings
+    vcenter: VCenter,
+    settings: Settings,
+    *,
+    after_relations: Callable[[InventoryObservation, datetime, object], None]
+    | None = None,
 ) -> InventoryObservation:
     """接続から切断までを専用スレッドで実行する。"""
     si = connect_vcenter(
@@ -96,7 +130,12 @@ def read_vcenter_inventory(
         http_connection_timeout=settings.inventory_sync_timeout_seconds,
     )
     try:
-        return read_inventory(si.RetrieveContent())
+        content = si.RetrieveContent()
+        observation = read_inventory(content)
+        observed_at = utcnow()
+        if after_relations is not None:
+            after_relations(observation, observed_at, content)
+        return observation
     finally:
         try:
             disconnect(si)
@@ -241,7 +280,12 @@ async def persist_inventory(
 
 
 async def _record_failure(
-    settings: Settings, vcenter_id: UUID, started_at: datetime, exc: Exception
+    settings: Settings,
+    vcenter_id: UUID,
+    started_at: datetime,
+    exc: Exception,
+    *,
+    relations: bool = True,
 ) -> None:
     detail = _READ_ERRORS.get(type(exc))
     error = f"{type(exc).__name__}: {detail}" if detail else _safe_error(exc)
@@ -256,9 +300,14 @@ async def _record_failure(
             if state is None:
                 state = InventorySyncState(vcenter_id=vcenter_id)
                 session.add(state)
-            state.last_started_at = started_at
-            state.last_failure_at = utcnow()
-            state.last_error = error
+            failed_at = utcnow()
+            if relations:
+                state.last_started_at = started_at
+                state.last_failure_at = failed_at
+                state.last_error = error
+            if settings.inventory_config_enabled:
+                state.config_last_failure_at = failed_at
+                state.config_last_error = error
     except Exception as record_error:
         # 削除が失敗記録と重なった場合も外部キーが状態の再作成を防ぐ。
         logger.warning(
@@ -268,39 +317,88 @@ async def _record_failure(
             error,
         )
         return
-    logger.warning("inventory sync failed vcenter_id=%s: %s", vcenter_id, error)
+    logger.warning(
+        "%s vcenter_id=%s: %s",
+        "inventory sync failed" if relations else "inventory config sync failed",
+        vcenter_id,
+        error,
+    )
 
 
 async def _read_with_timeout(
-    vcenter: VCenter, settings: Settings
-) -> InventoryObservation:
+    vcenter: VCenter,
+    settings: Settings,
+    baseline_uuid: str | None = None,
+    baselines: dict[str, ConfigBaseline] | None = None,
+) -> tuple[InventoryObservation, datetime, _ConfigFuture, float]:
     if _reads_closed:
         raise InventoryReadsClosed
     for vcenter_id, pending in tuple(_reads.items()):
-        if pending.done():
+        if not pending.thread.is_alive():
             _reads.pop(vcenter_id, None)
     if vcenter.id in _reads:
         raise InventoryReadStillRunning
     if len(_reads) >= _WORKER_COUNT:
         raise InventoryWorkerUnavailable
 
-    future: Future[InventoryObservation] = Future()
-    # 非同期側のタイムアウトでも実行中の読み取りは追跡し続ける。
-    future.set_running_or_notify_cancel()
+    relation_future: Future[tuple[InventoryObservation, datetime]] = Future()
+    config_future = _ConfigFuture()
+    # 非同期側のタイムアウトで、実行中の読み取り結果は取り消さない。
+    relation_future.set_running_or_notify_cancel()
+    config_future.set_running_or_notify_cancel()
+    started = monotonic()
+    expires = started + settings.inventory_sync_timeout_seconds
 
     def read() -> None:
-        try:
-            result = read_vcenter_inventory(vcenter, settings)
-        except BaseException as exc:
-            future.set_exception(exc)
-        else:
-            future.set_result(result)
+        deadline = (
+            monotonic()
+            + settings.inventory_sync_timeout_seconds * _CONFIG_DEADLINE_FRACTION
+        )
 
-    Thread(target=read, name=f"inventory-{vcenter.id}", daemon=True).start()
-    _reads[vcenter.id] = future
+        def publish(
+            observation: InventoryObservation, observed_at: datetime, content: object
+        ) -> None:
+            relation_future.set_result((observation, observed_at))
+            if not settings.inventory_config_enabled:
+                return
+            try:
+                config = read_inventory_config(
+                    content,
+                    vcenter.id,
+                    (baselines or {})
+                    if baseline_uuid == observation.instance_uuid
+                    else {},
+                    deadline=deadline,
+                )
+                if monotonic() >= expires:
+                    raise ConfigReadTimeout
+            except BaseException as exc:
+                config_future.set_exception(exc)
+            else:
+                config_future.set_result(config)
+
+        try:
+            observation = read_vcenter_inventory(
+                vcenter, settings, after_relations=publish
+            )
+            if not relation_future.done():
+                relation_future.set_result((observation, utcnow()))
+        except BaseException as exc:
+            if not relation_future.done():
+                relation_future.set_exception(exc)
+        finally:
+            if not config_future.done():
+                config_future.set_result(None)
+
+    config_future.thread = Thread(
+        target=read, name=f"inventory-{vcenter.id}", daemon=True
+    )
+    config_future.thread.start()
+    _reads[vcenter.id] = config_future
     try:
-        async with asyncio.timeout(settings.inventory_sync_timeout_seconds):
-            return await asyncio.wrap_future(future)
+        async with asyncio.timeout(max(0, expires - monotonic())):
+            observation, observed_at = await asyncio.wrap_future(relation_future)
+        return observation, observed_at, config_future, expires
     except TimeoutError as exc:
         raise InventoryReadTimeout from exc
     except vim.fault.HostConnectFault as exc:
@@ -308,9 +406,22 @@ async def _read_with_timeout(
         if isinstance(exc.__context__, TimeoutError):
             raise InventoryReadTimeout from exc
         raise
-    finally:
-        if future.done():
-            _reads.pop(vcenter.id, None)
+
+
+async def _wait_for_config(
+    future: Future[ConfigObservation | None],
+    expires: float,
+) -> ConfigObservation | None:
+    if future.done():
+        return future.result()
+    timeout = asyncio.timeout(max(0, expires - monotonic()))
+    try:
+        async with timeout:
+            return await asyncio.wrap_future(future)
+    except TimeoutError as exc:
+        if timeout.expired():
+            raise ConfigReadTimeout from exc
+        raise
 
 
 async def sync_inventory(settings: Settings) -> None:
@@ -339,12 +450,37 @@ async def _sync_enabled_vcenters(settings: Settings) -> None:
         async with lock:
             started_at = utcnow()
             try:
-                observation = (
-                    mock_inventory(started_at, vcenter_name=vcenter.name)
-                    if settings.mock_mode
-                    else await _read_with_timeout(vcenter, settings)
+                baseline_uuid = None
+                baselines: dict[str, ConfigBaseline] = {}
+                if settings.inventory_config_enabled:
+                    async with session_scope(settings=settings) as session:
+                        baseline_uuid, baselines = await config_baselines(
+                            session, vcenter.id
+                        )
+            except Exception as exc:
+                # 構成の準備だけが失敗しても、関係の読み取りと保存は続ける。
+                config_setup_error = exc
+                read_settings = settings.model_copy(
+                    update={"inventory_config_enabled": False}
                 )
-                observed_at = utcnow()
+            else:
+                config_setup_error = None
+                read_settings = settings
+
+            future = None
+            try:
+                if settings.mock_mode:
+                    observation = mock_inventory(started_at, vcenter_name=vcenter.name)
+                    observed_at = utcnow()
+                else:
+                    (
+                        observation,
+                        observed_at,
+                        future,
+                        expires,
+                    ) = await _read_with_timeout(
+                        vcenter, read_settings, baseline_uuid, baselines
+                    )
                 async with session_scope(settings=settings) as session:
                     await persist_inventory(
                         session,
@@ -355,11 +491,42 @@ async def _sync_enabled_vcenters(settings: Settings) -> None:
                     )
             except Exception as exc:
                 await _record_failure(settings, vcenter.id, started_at, exc)
+                continue
+
+            if not settings.inventory_config_enabled:
+                continue
+            try:
+                if config_setup_error is not None:
+                    raise config_setup_error
+                if settings.mock_mode:
+                    config = mock_inventory_config(
+                        started_at,
+                        observation=observation,
+                        vcenter_name=vcenter.name,
+                        baselines=baselines
+                        if baseline_uuid == observation.instance_uuid
+                        else {},
+                    )
+                else:
+                    assert future is not None
+                    config = await _wait_for_config(future, expires)
+                if config is None:
+                    raise ConfigReadMissing
+                async with session_scope(settings=settings) as session:
+                    await persist_inventory_config(session, vcenter.id, config)
+            except Exception as exc:
+                await _record_failure(
+                    settings, vcenter.id, started_at, exc, relations=False
+                )
+            finally:
+                if future is not None and not future.thread.is_alive():
+                    _reads.pop(vcenter.id, None)
 
 
 async def purge_old_inventory(session: AsyncSession, *, settings: Settings) -> None:
-    """保持期間を過ぎた閉じた関係、見えなくなった対象、観測時刻を削除する。"""
-    cutoff = utcnow() - timedelta(days=settings.event_retention_days)
+    """保持期間を過ぎた関係、管理対象、観測時刻、構成の差分を削除する。"""
+    now = utcnow()
+    cutoff = now - timedelta(days=settings.event_retention_days)
     await session.execute(
         delete(InventoryRelation).where(InventoryRelation.valid_to < cutoff)
     )
@@ -368,4 +535,10 @@ async def purge_old_inventory(session: AsyncSession, *, settings: Settings) -> N
     )
     await session.execute(
         delete(InventorySyncRun).where(InventorySyncRun.observed_at < cutoff)
+    )
+    config_cutoff = now - timedelta(days=settings.inventory_config_retention_days)
+    await session.execute(
+        delete(InventoryConfigDiff).where(
+            InventoryConfigDiff.observed_at < config_cutoff
+        )
     )

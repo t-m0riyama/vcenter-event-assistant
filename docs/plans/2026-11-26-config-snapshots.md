@@ -1,6 +1,6 @@
 # 構成の差分を記録する
 
-最終更新: 2026-11-26（本書を作成）
+最終更新: 2026-11-26（PR A マージ済み。PR B を実装中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 2b」（構成変更の追跡の第 2 段）にあたる。ESXi のビルド、クラスタの HA・DRS の設定、標準 vSwitch とポートグループ、VM の構成を定期的に読み、値が変わったときに「何から何に変わったか」を記録する。記録した差分は、タイムラインの対象の欄と、案 2a の「構成変更」のカードに出す。Issue は起票していない。
 
@@ -10,8 +10,8 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | 作成中 |
-| B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | 未着手 |
+| A | 本書 | マージ済み（[PR #395](https://github.com/t-m0riyama/vcenter-event-assistant/pull/395)） |
+| B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | 実装中 |
 | C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | 未着手 |
 | D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | 未着手 |
 
@@ -60,7 +60,7 @@
    | 型 | 読む属性 |
    |---|---|
    | `HostSystem` | `name`・`runtime.connectionState`・`summary.config.product`・`config.network.vswitch`・`config.network.portgroup` |
-   | `ClusterComputeResource` | `name`・`configurationEx.dasConfig`・`configurationEx.drsConfig` |
+   | `ClusterComputeResource` | `name`・`configuration.dasConfig`・`configuration.drsConfig`（下の「パスの代わり」） |
    | `VirtualMachine` | `name`・`runtime.connectionState`・`summary.config.template`・`config.changeVersion` |
 
 2. **VM の詳細（読む必要のある VM だけ）:** 接続している（`runtime.connectionState` が `connected`）VM で、`config.changeVersion` が段 1 で読めたもののうち、次のどれかに当たる VM だけを、下の順で読む。読み残しが出たときに、古いものから片付けるためである。
@@ -70,13 +70,30 @@
 
    群の中は、保存した行の `verified_at` の古い順（同じなら moid の順）に読む。行の無い VM は moid の順にする。毎晩のスナップショットのように、1 回で読める数より多くの VM が変わっても、同じ VM がいつまでも読み残しにならないようにするためである。接続していない VM と、`config.changeVersion` が読めなかった VM は段 2 で読まず、3 章のとおり持ち越す。
 
+   段 2 で必ず要る属性は `config.changeVersion`・`config.hardware.numCPU`・`config.hardware.memoryMB`・`config.hardware.device` だけとし、ほかの属性が `propSet` に無い（未設定）ときは、その項目を None にして比べる。必ず要る属性が欠けた VM と、どの属性でも `missingSet` に入った（権限や一時的な障害で読めなかった）VM は「段 2 で読めなかった VM」として持ち越し、その数を `config_deferred_count` とは別に警告に残す。段 1 と段 2 の間に削除されて `ManagedObjectNotFound` で外した VM も持ち越すが、警告の数には入れない。ディスクの元の backing が分からない（循環、`parent` が読めない、深さ 64 を超える）VM も、段 2 で読めなかった VM として持ち越す。
+
    ContainerView を使わず、段 1 で受け取った VM の参照（moid から作り直さない）を並べた `ObjectSpec`（`skip=False`、`selectSet` なし）で、200 台ずつ読む。読む属性は `config.changeVersion`・`config.hardware.numCPU`・`config.hardware.numCoresPerSocket`・`config.hardware.memoryMB`・`config.version`・`config.guestId`・`config.cpuAllocation`・`config.memoryAllocation`・`config.hardware.device` である。保存する `change_version` には、段 2 で読んだ値を使う（段 1 と段 2 の間に変わることがあるため）。
 
    段 1 と段 2 の間に VM が削除されると、組の要求全体が `ManagedObjectNotFound` で失敗することがある。そのときは、例外の `obj` の VM を組から外して、同じ組を読み直す（1 つの組で最大 10 回まで。超えたら構成の読み取りの失敗にする）。外した VM は、段 2 では読めなかった VM として扱う（3 章）。この例外の出方は、7 章の道具でも確かめる。
 
-`config.hardware.device` は VM 1 台で数 KB ある（vcsim の VM で、装置 13 個・直列化して 4,086 バイト）。VM 5,000 台なら毎回 20 MB 前後になるので、毎回は読まない。`config.changeVersion` は VM の構成が変わるたびに変わる値で、これを先に読めば、変わった VM だけを読める。
+`config.hardware.device` を含む段 2 の属性は、VM 1 台で 10 KB を超える（登録済みの vCenter で 21 台・265 KB、1 台あたり約 12.6 KB。vcsim では装置 13 個・4,086 バイト）。VM 5,000 台なら毎回 60 MB 前後になるので、毎回は読まない。`config.changeVersion` は VM の構成が変わるたびに変わる値で、これを先に読めば、変わった VM だけを読める。
 
-**パスの代わり:** 段 1 の要求が `vmodl.query.InvalidProperty` で失敗したら、クラスタのパスを `configuration.dasConfig`・`configuration.drsConfig` に替えて、段 1 を 1 回だけ読み直す。読み直しで成功したら、その vCenter ではプロセスが終わるまで古いパスを使う（vCenter ごとの記憶をプロセスの中に持つ）。記憶は複数の読み取りのスレッドから読み書きされるので、`threading.Lock` で守る。古いパスでも失敗したら、構成の読み取りの失敗にする。`configurationEx.dasConfig` が実機で使えるかを確かめていないため、実装に代わりの処理を入れておく（7 章の道具でも確かめる）。
+**パスの代わり:** クラスタは、古い `configuration.dasConfig`・`configuration.drsConfig`（`ClusterConfigInfo`）を先に使う。登録済みの vCenter（8.0.3）は、部分型を経る `configurationEx.dasConfig` を `vmodl.query.InvalidProperty` で拒んだためである（2026-11-26、下の「確かめた結果（実機）」）。段 1 の要求が `InvalidProperty` で失敗したら、`configurationEx.dasConfig`・`configurationEx.drsConfig` に替えて、段 1 を 1 回だけ読み直す。古いパスを除いた版の vCenter に備えるためである。読み直しで成功したら、その vCenter ではプロセスが終わるまで新しいパスを使う（vCenter ごとの記憶をプロセスの中に持つ）。記憶は複数の読み取りのスレッドから読み書きされるので、`threading.Lock` で守る。新しいパスでも失敗したら、構成の読み取りの失敗にする。
+
+### 確かめた結果（実機）
+
+利用者が、登録済みの vCenter（8.0.3、ホスト 1 台・クラスタ 1・VM 21 台）で 7 章の道具を実行した（2026-11-26）。
+
+- **段 1 のパス:** ホストと VM のパスは、すべて値が返った。クラスタの `configurationEx.dasConfig`・`configurationEx.drsConfig` は `vmodl.query.InvalidProperty` で拒まれ、古い `configuration.dasConfig`・`configuration.drsConfig` は値が返った。そのため、古いパスを先に使う（上の「パスの代わり」）。
+- **段 2 のパス:** 9 つの属性が、21 台すべてで返った。
+- **欠けた値:** `missingSet` に入った属性、`propSet` に無い属性、空の配列は、段 1・段 2 とも 0 件だった。
+- **時間と量:**
+  - 段 1 は 0.16〜0.18 秒で、約 13 KB だった（クラスタ 1,831 バイト、ホスト 8,189 バイト、VM 3,026 バイト）。
+  - 段 2 は全 21 台で 0.06〜0.08 秒、265,159 バイトだった。
+  - `ManagedObjectNotFound` は出なかった。
+- **偽の差分:** 構成を変えずに 300 秒空けて 2 回読み、正規化した値の差分は 0 件、`config.changeVersion` が変わった VM も 0 台だった。
+- **ディスク:** 42 台のディスクのすべてで、元の backing に `uuid` があった。スナップショットの差分ディスクは 4 台あった。その 4 台とも、今の backing と元の backing で `thin` も `uuid` も同じだった（`disks_with_different_thin=0`・`disks_with_different_uuid=0`）。
+- **見つかった不具合:** 最初の実行では、すべてのパスが `AttributeError` で失敗した。`pathSet` にタプルを渡していたため、pyVmomi が要求を組み立てられなかった。案 1 の関係の収集（`collectors/inventory.py`）にも同じ誤りがあり、PR #399 で直した。どちらにも、要求を `SoapAdapter.Serialize` で直列化するテストを足した。
 
 ### 確かめた結果（vcsim）
 
@@ -99,7 +116,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 正規化の規則:
 - 値は、数値・文字列・真偽・None と、それらの配列と辞書だけにする。pyVmomi の列挙は文字列にする。
-- 要素の集まりは、表の「キー」を文字列にして辞書にする。vSwitch とポートグループは名前を、ディスクと NIC は装置の `key`（ディスクは 2000 番台、NIC は 4000 番台。装置を足し外ししても変わらない）を使う。名前が重なったときは、そのうち 1 つだけを残して警告を記録する（ESXi では同じホストに同じ名前は作れないので、起きないはずである）。
+- 要素の集まりは、表の「キー」を文字列にして辞書にする。vSwitch とポートグループは名前を、ディスクと NIC は装置の `key`（ディスクは 2000 番台、NIC は 4000 番台）を使う。`key` は、装置が VM に付いている間は変わらないが、外した後は、後から足した別の装置に使い回されることがある（[vSphere Web Services API の `VirtualDevice`](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.vm.device.VirtualDevice.html)、Issue #397）。そこで、ディスクは下の「装置の入れ替わり」の規則で、同じ `key` の別の装置を見分ける。名前が重なったときは、そのうち 1 つだけを残して警告を記録する（ESXi では同じホストに同じ名前は作れないので、起きないはずである）。
 - ディスクと NIC のラベル（`deviceInfo.label`）は、表示のための項目として値に入れる。ラベルが変わっても差分として記録する（`label` の項目）。
 - 並び順に意味の無い配列（vSwitch のアップリンクの NIC、`failover_hosts`）は並べ替える。意味のある配列（アクティブ・スタンバイの NIC の順）は並べ替えない。
 - 物理 NIC は、参照のキー（`key-vim.host.PhysicalNic-vmnic0`）から装置名（`vmnic0`）だけを取る。
@@ -110,11 +127,17 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 | `host_build` | ホスト | `summary.config.product` | なし | `version`・`build` |
 | `host_vswitch` | ホスト | `config.network.vswitch[]` | `name` | `mtu`・`uplinks`（`pnic` の装置名、並べ替える）・`teaming_policy`（`spec.policy.nicTeaming.policy`）・`active_nics`・`standby_nics`（`spec.policy.nicTeaming.nicOrder`、順を保つ）・`allow_promiscuous`・`mac_changes`・`forged_transmits`（`spec.policy.security`） |
 | `host_portgroup` | ホスト | `config.network.portgroup[]` | `spec.name` | `vlan_id`・`vswitch`（`spec.vswitchName`）と、上書きの `teaming_policy`・`active_nics`・`standby_nics`・`allow_promiscuous`・`mac_changes`・`forged_transmits` |
-| `cluster_ha` | クラスタ | `configurationEx.dasConfig` | なし | `enabled`・`host_monitoring`・`vm_monitoring`・`admission_control_enabled`・`admission_control_policy`・`failover_level`・`auto_compute`・`cpu_failover_percent`・`memory_failover_percent`・`failover_hosts`・`restart_priority`・`isolation_response`（下の注） |
-| `cluster_drs` | クラスタ | `configurationEx.drsConfig` | なし | `enabled`・`default_vm_behavior`・`vmotion_rate` |
+| `cluster_ha` | クラスタ | `configuration.dasConfig`（代わりに `configurationEx.dasConfig`） | なし | `enabled`・`host_monitoring`・`vm_monitoring`・`admission_control_enabled`・`admission_control_policy`・`failover_level`・`auto_compute`・`cpu_failover_percent`・`memory_failover_percent`・`failover_hosts`・`restart_priority`・`isolation_response`（下の注） |
+| `cluster_drs` | クラスタ | `configuration.drsConfig`（代わりに `configurationEx.drsConfig`） | なし | `enabled`・`default_vm_behavior`・`vmotion_rate` |
 | `vm_config` | VM | 段 2 の属性 | なし | `num_cpu`・`cores_per_socket`・`memory_mb`・`hardware_version`（`config.version`）・`guest_id`・`cpu_reservation_mhz`・`cpu_limit_mhz`・`cpu_shares`・`memory_reservation_mb`・`memory_limit_mb`・`memory_shares`（`shares.level`。`custom` のときだけ `custom:<shares>`） |
-| （`vm_config` の中） | VM のディスク | `config.hardware.device` の `VirtualDisk` | `disk:<key>` | `label`・`capacity_kb`・`thin`（`backing.thinProvisioned`）・`disk_mode`（`backing.diskMode`） |
+| （`vm_config` の中） | VM のディスク | `config.hardware.device` の `VirtualDisk` | `disk:<key>` | `label`・`uuid`・`capacity_kb`・`thin`（`thinProvisioned`）・`disk_mode`（`diskMode`）。`uuid`・`thin`・`disk_mode` は、`backing.parent` を最後までたどった元のディスクの backing から読む。`uuid` は前後の空白を除いて小文字にし、空文字と、`uuid` を持たない backing（`FlatVer1`・`SparseVer1`）では None |
 | （`vm_config` の中） | VM の NIC | `config.hardware.device` の `VirtualEthernetCard` | `nic:<key>` | `label`・`adapter`（型名。例: `VirtualVmxnet3`）・`network`（標準のポートグループなら `backing.deviceName`、分散なら `backing.port.portgroupKey`、NSX なら `backing.opaqueNetworkId`、それ以外の backing なら None）・`start_connected`（`connectable.startConnected`）・`mac_address` |
+
+装置の入れ替わり:
+- 同じ `disk:<key>` で、前の値と今の値の `uuid` がどちらも None でなく、互いに違うときは、別のディスクに入れ替わったとみなす。項目ごとの差分は作らず、「要素が減った」行（前の値）と「要素が増えた」行（今の値）を、同じ観測で 1 行ずつ入れる。
+- `uuid` が片方でも None なら、入れ替わりは判定せず、今までどおり項目ごとに比べる（`uuid` が None から値に、値から None に変わった差分も、項目の差分として記録する）。
+- NIC は入れ替わりを判定しない。`mac_address` は項目として比べるだけにする。交換した NIC はふつう新しい MAC を受け取るので、その差分で気づける。ただし MAC は手で変えられるので、入れ替わりの判定には使わない。
+- 見分けられないこと: 同じ `key` で `uuid` が同じ（または無い）ディスクの交換と、同じ `key` の NIC の交換は、項目の差分として記録されるか、項目がすべて同じなら何も記録されない。差分は「観測した項目の違い」であり、画面と報告書は、同じ装置が続いていたとも、差分が無いので交換も無かったとも言い切らない（4 章・5 章）。
 
 `cluster_ha` の注:
 - `admission_control_policy` は型名（`vim.cluster.FailoverLevelAdmissionControlPolicy` など）から、先頭の `vim.cluster.Failover` と末尾の `AdmissionControlPolicy` を除いたもの（`Level`・`Resources`・`Host`）にする。ポリシーが無ければ None。
@@ -127,7 +150,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 外した項目と理由:
 - `HostPortGroup.port`・`HostVirtualSwitch.numPortsAvailable`: 構成を変えなくても変わる（上の確認）。
 - `HostVirtualSwitch.numPorts`: ESXi 5.5 からポートの数は自動で増減する。
-- ディスクの `backing.fileName`: スナップショットを取るとデルタディスクに替わる。データストアの移動は、案 1 の関係（`vm_datastore`）で分かる。
+- ディスクの `backing.fileName`: スナップショットを取るとデルタディスクに替わる。同じ理由で、`thin`・`disk_mode` は今の backing（差分ディスク。`SeSparseBackingInfo` は `thinProvisioned` を持たない）ではなく、`parent` をたどった元の backing から読む。データストアの移動は、案 1 の関係（`vm_datastore`）で分かる。
 - NIC の `connectable.connected`: 電源の状態で変わる。
 - `configurationEx` の残り（ルール、VM ごとの上書き、グループ）: 量が多く、最初の版では扱わない（8 章）。
 
@@ -148,7 +171,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 {"num_cpu": 2, "cores_per_socket": 1, "memory_mb": 4096, "hardware_version": "vmx-21", "guest_id": "otherGuest64",
  "cpu_reservation_mhz": 0, "cpu_limit_mhz": -1, "cpu_shares": "normal",
  "memory_reservation_mb": 0, "memory_limit_mb": -1, "memory_shares": "normal",
- "devices": {"disk:2000": {"label": "Hard disk 1", "capacity_kb": 10485760, "thin": true, "disk_mode": "persistent"},
+ "devices": {"disk:2000": {"label": "Hard disk 1", "uuid": "6000C29a-0000-0000-0000-000000000001", "capacity_kb": 10485760, "thin": true, "disk_mode": "persistent"},
              "nic:4000": {"label": "Network adapter 1", "adapter": "VirtualVmxnet3", "network": "VM Network",
                           "start_connected": true, "mac_address": "00:50:56:00:00:01"}}}
 ```
@@ -162,6 +185,8 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 | CPU の数を 2 から 4 に | NULL | `num_cpu` | `2` | `4` |
 | vSwitch0 の MTU を 1500 から 9000 に | `vSwitch0` | `mtu` | `1500` | `9000` |
 | ディスクを足した | `disk:2001` | NULL | NULL | `{"label":"Hard disk 2","capacity_kb":…}` |
+| 同じ key のディスクが別の `uuid` に入れ替わった | `disk:2000` | NULL | `{"label":"Hard disk 1","uuid":"6000C29a-…",…}` | NULL |
+| （同じ観測の 2 行め） | `disk:2000` | NULL | NULL | `{"label":"Hard disk 1","uuid":"6000C29b-…",…}` |
 | NIC のポートグループを替えた | `nic:4000` | `network` | `"VM Network"` | `"App Network"` |
 | HA の監視を設定から外した | NULL | `host_monitoring` | `"enabled"` | `null` |
 
@@ -207,7 +232,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 ### スレッドと時間
 
 - スレッドは、関係の結果と構成の結果を、別々の `Future` で返す。関係の `Future` は関係を読み終えた時点で値が入り、構成の `Future` は構成の読み取りを終えた時点で値か例外が入る。
-- 非同期の側は、関係の `Future` を受け取ったら、すぐに関係を保存する。その後で、構成の `Future` を、残りの時間（`inventory_sync_timeout_seconds` から経過した時間を引いた分）だけ待つ。間に合わなければ、構成の読み取りのタイムアウトとして記録する（関係の記録は残る）。今の `_reads` によるスレッドの数の管理は、スレッドが終わるまで続ける。そのため `_reads` には、スレッドの終わりを表す構成の `Future` を入れる（関係の `Future` を入れると、関係を読み終えた時点で done になり、同じ vCenter の読み取りが重なったり、スレッドが 3 つ以上になったりする）。構成の読み取りが無効なときや、関係の読み取りで例外が出たときも、スレッドの `finally` で、構成の `Future` にかならず値（読まなかったことを表す値）か例外を入れる。
+- 非同期の側は、関係の `Future` を受け取ったら、すぐに関係を保存する。その後で、構成の `Future` を、残りの時間（`inventory_sync_timeout_seconds` から経過した時間を引いた分）だけ待つ。間に合わなければ、構成の読み取りのタイムアウトとして記録する（関係の記録は残る）。今の `_reads` によるスレッドの数の管理は、スレッドが終わるまで続ける。そのため `_reads` の枠は、スレッドが生きている間（`thread.is_alive()`）は空けない。構成の `Future` は切断の前に値が入るので、枠の判定には使わない（関係や構成の `Future` で判定すると、切断の途中で枠が空き、同じ vCenter の読み取りが重なったり、スレッドが 3 つ以上になったりする）。構成の読み取りが無効なときや、関係の読み取りで例外が出たときも、スレッドの `finally` で、構成の `Future` にかならず値（読まなかったことを表す値）か例外を入れる。
 - スレッドの中の締め切りは、スレッドの開始から `inventory_sync_timeout_seconds` の 8 割とする。段 1 の各ページの前と、段 2 の各組の前で締め切りを見る。
   - 段 1 で締め切りを過ぎたら、構成の読み取りの失敗にする（段 1 は全件を読み終えないと使えない）。
   - 段 2 で締め切りを過ぎたら、新しい組を読み始めず、残りの VM を「読み残し」として返す。
@@ -229,7 +254,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
         - 元の属性が `missingSet` に入った種類。
         - 元の属性が `propSet` に無い種類（途中が未設定のパスは、`missingSet` にも入らずに消える）。
         - 元の属性の値そのものが None の種類（`dasConfig` が None など）。
-        - 段 2 で読めなかった VM（`ManagedObjectNotFound` で外した、属性が欠けた）の `vm_config`。
+        - 段 2 で読めなかった VM（`ManagedObjectNotFound` で外した、必ず要る属性が欠けた、どれかの属性が `missingSet` に入った、ディスクの元の backing が分からない）の `vm_config`。
       - 空の配列（vSwitch が 1 つも無い）は持ち越しではなく、空の値として比べる。`propSet` に無いことと、空の配列で返ることを区別するためである。区別が実機でどう出るかは、7 章の道具で確かめる。
       - **読み残し（何もしない）:** 段 2 で読み残した VM の `vm_config`。`change_version` も古いままにするので、次の観測で読み直す。
       - **初めての値:** 保存した行が無い。差分は記録せず、行を入れる（`verified_at` は今回の読み始め）。
@@ -263,7 +288,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 ### 量の見積もり
 
-- **読み取り:** 段 1 は、ホストのポートグループの `port`（ポートごとに数十バイト）が大半である。ホスト 100 台・ホストあたり VM 50 台（計 5,000 台）で、毎回 1 MB 前後の見込みである。段 2 は、最初の観測だけ全 VM（5,000 台で 20 MB 前後）を読み、その後は変わった VM だけを読む。最初の観測で締め切りを過ぎたら、残りは次の観測に回る。
+- **読み取り:** 段 1 は、ホストのポートグループの `port`（ポートごとに数十バイト）が大半である。ホスト 100 台・ホストあたり VM 50 台（計 5,000 台）で、毎回 1 MB 前後の見込みである（登録済みの vCenter はホスト 1 台・VM 21 台で、段 1 の全体が約 13 KB・0.17 秒だった）。段 2 は、最初の観測だけ全 VM（5,000 台で 60 MB 前後）を読み、その後は変わった VM だけを読む。最初の観測で締め切りを過ぎたら、残りは次の観測に回る。
 - **保存:** 今の値は、管理対象と種類ごとに 1 行で、VM 5,000 台なら 5,500 行前後、1 行は数百バイトから 2 KB 程度である。`verified_at` の一括の UPDATE は、観測のたびにこの行数だけ動く。差分は、変わった項目ごとに 1 行で、30 日で数万行の見込みである。
 - 実機の値は、7 章の道具で確かめる（登録済みの vCenter は VM 21 台と小さいので、大きな環境は見積もりのままになる）。
 
@@ -283,7 +308,8 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
   - `recorded_since`（`max(config_first_success_at, now - inventory_config_retention_days)`）、`last_success_at`（`config_last_success_at`）
   - `items`: `id`・`category`・`category_label`・`element`・`element_label`・`attribute`・`attribute_label`・`old_value`・`new_value`（JSON として読み直した値。`truncated` が真なら文字列のまま）・`truncated`・`changed_after`・`observed_at`
   - `total`
-- 種類と項目の表示名は、バックエンドの定義から返す。画面と報告書で同じ名前を使うためである。例: `host_vswitch` は「標準 vSwitch」、`num_cpu` は「CPU の数」。`element_label` は差分の行の列をそのまま返す（ラベルが無ければ `element` のまま）。今の値の行は、管理対象が見えなくなると消え、ラベルが変われば書き換わるので、後から引かない。
+- 差分は観測した項目の違いである。API の説明（OpenAPI の description）と画面・報告書の文言では、同じ装置が続いていた、または差分が無いので交換も無かった、と言い切らない（2 章の「装置の入れ替わり」）。同じ `element` に同じ観測で「減った」行と「増えた」行があれば、画面と報告書は「入れ替わり」としてまとめて出してよい。
+- 種類と項目の表示名は、バックエンドの定義から返す。画面と報告書で同じ名前を使うためである。例: `host_vswitch` は「標準 vSwitch」、`num_cpu` は「CPU の数」、ディスクの `uuid` は「ディスクの UUID」。2 章の表のすべての項目に表示名を付ける。`element_label` は差分の行の列をそのまま返す（ラベルが無ければ `element` のまま）。今の値の行は、管理対象が見えなくなると消え、ラベルが変われば書き換わるので、後から引かない。
 - 差分は LLM に渡さない（チャットとダイジェストには入れない）。
 
 ### カードへの差分の添付
@@ -305,7 +331,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
   - 足す前に保存した結果（既定値で None になる）。
 - それ以外は、判定して 0 件でも空の配列にする。
 - 差分の対象がカードの対象に含まれ、変化の幅がカードの時刻と重なる差分を添える。重なりは `changed_after < last_utc + 2 分` かつ `observed_at > first_utc - 2 分` で判定する。2 分は、vCenter の時計（イベントの時刻）と本体の時計（観測の時刻）のずれを見込んだ幅である。`first_utc`・`last_utc` は、カードの値（まとめた行の最初と最後の時刻）をそのまま使う。
-- カードごとに、件数（COUNT）と、`observed_at` の昇順・`category`・`element`・`attribute` の順の最初の 10 件を読み、`diffs` と `diffs_total` に入れる。カードは最大 20 枚なので、SELECT は最大 40 回である。
+- カードごとに、件数（COUNT）と、`observed_at` の昇順・`category`・`element`・`attribute`・「減った」行を先（`new_value IS NULL` を先）・`id` の順の最初の 10 件を読み、`diffs` と `diffs_total` に入れる。入れ替わりの 2 行（同じ観測・同じ `element` の「減った」行と「増えた」行）は、10 件の切れ目で分けない。10 件目が入れ替わりの「減った」行なら、対の「増えた」行も入れる（その場合だけ 11 件になる）。一覧の API の 200 件の切れ目も同じにする。カードは最大 20 枚なので、SELECT は最大 40 回である。
 - 同じ差分が、複数のカードに添わることがある（同じ VM の再構成が、1 回の観測の間に 2 回あった場合など）。どちらにも添える。
 
 カードに添わらない差分（イベントの無い変更、ESXi を直接操作した変更）は、タイムラインの対象の欄でだけ見える。
@@ -340,8 +366,9 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 - `status` ごとの表示:
   - `disabled`: 「構成の差分の記録は無効です」。残っている差分があれば、その下に出す。
   - `not_recorded`: 「まだ構成を読み取っていません」と、設定の vCenter の一覧への案内
-  - `ok` で 0 件: 「この期間の構成の差分はありません」。期間の始まりが `recorded_since` より前なら、「記録は ○○ から」と添える。
+  - `ok` で 0 件: 「この期間に観測した構成の差分はありません」。期間の始まりが `recorded_since` より前なら、「記録は ○○ から」と添える。
 - 変化の時刻は観測の時刻で決まり、幅があることを、短い注記で出す。
+- 差分の無いことを「変更なし」と言い切らない。注記は「観測した項目に違いはありません」のように、観測した範囲であることが分かる書き方にする。同じ観測で同じ要素の「削除」と「追加」があれば「入れ替わり」と出す。
 
 ### カード
 
@@ -374,6 +401,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
   - 比べる項目に無い値（`port`・`numPortsAvailable`・`numPorts`・`fileName`・`connected`）だけが変わっても、差分が出ない。`auto_compute` が真のときの割合の変化でも出ない。
   - アップリンクの並びだけが変わっても差分が出ず、アクティブ・スタンバイの順が変わると差分が出る。
   - 装置のラベルだけが変わると `label` の差分が出て、装置の並び順が変わっても差分が出ない（キーが `key` であること）。
+  - 同じ `key` のディスクで `uuid` が違うと、項目の差分ではなく「減った」行と「増えた」行が出る。`uuid` が片方 None なら項目ごとに比べる。同じ `key`・同じ `uuid` で項目が違えば項目の差分が出て、すべて同じなら差分が出ない。同じ `key` の NIC の交換は、項目が違えば項目の差分、すべて同じなら差分なしになる（Issue #397 の合成テスト）。
   - 初めての値、正規化の版の違い、`config_instance_uuid` の違い（関係の `reset` の回に構成が失敗した後の回を含む）で、差分が出ない。
   - 接続していないホストと VM、`missingSet`、`propSet` に無い属性、値が None のときに持ち越し、`verified_at` を動かさない。再び読めた回の `changed_after` が、持ち越しの前の `verified_at` になる。
   - `changeVersion` と版が同じ VM を段 2 で読まない。版が違う VM は読む。読み残しの順。読み残した VM の `change_version` と `verified_at` が動かず、次の観測で読まれる。
@@ -409,16 +437,18 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 - 段 1 のパスごとに、成功したか、失敗した例外の型（`InvalidProperty` など）を出す。`configurationEx.dasConfig` が失敗したら、`configuration.dasConfig` も試して結果を出す。
 - パスごとに、`propSet` にあった件数、`missingSet` に入った件数、どちらにも無かった件数、空の配列だった件数を出す。
 - 種類ごとの管理対象の数、直列化した大きさ（バイト）、段 1 と段 2 の時間を出す。段 2 は、全 VM を読んだときの値を出す。`ManagedObjectNotFound` が出たかも出す。
+- ディスクの件数を出す: 差分ディスク（`parent` のある）の数（`disks_with_parent`）、今の backing と元の backing で `thin` が違う数（`disks_with_different_thin`）、元の backing に `uuid` がある数とない数（`disks_with_uuid`・`disks_without_root_uuid`）、差分ディスクの `uuid` が元のディスクと違う数（`disks_with_different_uuid`）。
 - 間を空けて 2 回読み（既定 300 秒、引数で変えられる）、次を出す。
   - 正規化した値が変わった種類と項目の名前と、その件数（構成を変えていないのに変わる項目を見つけるため）。
   - `config.changeVersion` が変わった VM の数（バックアップの製品のスナップショットなどで、どれだけ変わるかを見るため）。
 - 管理対象の名前・moid・値・ホスト名と、要素のキー（vSwitch・ポートグループの名前、装置の key）は出さない。出すのは、パス、種類、項目の名前、件数、大きさ、時間、例外の型だけにする。
 
 確かめること:
-- 段 1・段 2 のパスが実機で使えるか（特に `configurationEx.dasConfig`）
+- 段 1・段 2 のパスが実機で使えるか（特に `configurationEx.dasConfig`。登録済みの vCenter では使えず、古いパスを先に使うことにした）
 - `propSet` に無い属性と空の配列の出方
 - 構成を変えずに 2 回読んで、差分が出ないか
 - 読み取りの量と時間
+- ディスクの `uuid` が元の backing で読めるか、差分ディスクの `uuid` が元のディスクと違うか（違うなら、今の backing から読むと入れ替わりを誤って記録することになり、元の backing から読む規則の根拠になる）
 
 ### 自動のテスト
 
@@ -439,12 +469,14 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 ## 9. リスク
 
 - **変化の時刻の幅:** 差分の時刻は観測の時刻で、本当の変化は前の値を最後に確かめた時刻との間のどこかである。幅はふつう、観測の間隔と読み取りの時間の和で、失敗・切断・読み残しが続くと広がる。画面と報告書は幅のまま出す。カードへの添付は幅との重なりで判定するので、同じ幅に入った別の変更の差分も添わることがある。
-- **実機と vcsim の違い:** パスの確認は vcsim だけである。実機で `configurationEx.dasConfig` が使えなければ、古い `configuration.*` に替える（実装に代わりの処理を入れる）。構成を変えなくても変わる項目が、vcsim の 2 つのほかにもあるかもしれない。`propSet` に無い属性と空の配列の出方も、実機で確かめていない。どれも PR B のマージの前に、7 章の道具で確かめる。
+- **実機と vcsim の違い:** 実機の確認は、ホスト 1 台・VM 21 台の小さな vCenter 1 台だけである（2 章の「確かめた結果（実機）」）。この環境では、`missingSet` に入った属性、`propSet` に無い属性、空の配列が 1 件も無く、その扱いは実機では確かめていない。構成を変えなくても変わる項目も、300 秒の間隔の 2 回の読み取りでは見つからなかったが、DRS の移動やスナップショットの作成をまたぐ間隔では確かめていない。
 - **最後の vSwitch を消したとき:** vSwitch が 1 つも無くなったホストで、属性が空の配列でなく `propSet` に無い形で返るなら、持ち越しになり、削除は記録されない。
 - **大量の差分:** vCenter や ESXi の更新で値の表し方が変わると、多くの行で差分が出る。警告で知らせる（3 章）。本体の正規化を変えるときは、`format` を上げて差分を出さない。
 - **読み取りの量:** 最初の観測では全 VM の装置を読む。大きな環境では締め切りで読み残し、次の観測に回る。その間の VM の差分は、幅が広がる。
 - **バックアップの製品のスナップショット:** 毎晩スナップショットを取る環境では、多くの VM の `config.changeVersion` が変わり、段 2 で多くの VM を読み直すことになる。読み残しと幅の広がりが毎晩起きるおそれがある。7 章の道具で、`changeVersion` が変わる VM の数を確かめる。
 - **持ち越しと見えない値:** 接続していないホストと VM の値は、切断の前の値のまま残る。権限で一部の値が見えないときも、前の値のまま残る。見えなくなった管理対象の行は消すので、再び見えたときの変化は記録しない。
+- **元のディスクを付け替える操作:** リンククローンのディスクの昇格、vCD の高速プロビジョニングの統合、Horizon の再構成のように、ディスクを替えずに元の backing そのものが別のファイルに替わる操作では、`uuid` が変わり、「入れ替わり」（削除と追加）として記録されうる。7 章の道具では、差分ディスクと元のディスクの `uuid` の違いまでしか確かめられない。
+- **装置の key の使い回し:** 装置の `key` は、外した後に別の装置に使い回されることがある。ディスクは `uuid` の違いで入れ替わりを見分けるが、`uuid` を持たない古い形式のディスクと NIC は見分けられない。その場合、交換は項目の差分として見えるか、項目がすべて同じなら見えない（Issue #397）。
 - **値に入る情報:** ポートグループ名・ネットワークの識別子・MAC アドレスが値に入る。viewer も見られる（イベントの一覧の対象の名前と同じ扱い）。報告書と `result.json` にも入るので、ユーザーガイドの「外部に渡すときの確認」に書く。保存したスナップショットの結果（既定 90 日）にも残る。
 - **記録のやり直しの前の差分:** `config_instance_uuid` が変わって記録をやり直しても、古い vCenter の差分は同じ `vcenter_id` のまま保持期間まで残る。moid が重なると、やり直しより前の期間を指定したときに、新しい対象の差分のように見える。イベントや案 1 の関係の閉じた行も同じ扱いである。一覧の API は `recorded_since`（やり直しの時刻以降）を返すので、画面はそれより前の差分に「記録をやり直す前の値」と注記する。
 - **moid が変わる操作:** VM の登録し直しや、Linked Mode の vCenter をまたぐ移動では moid が変わり、別の管理対象として初めての値になる。

@@ -309,7 +309,7 @@ async def test_inventory_write_failure_rolls_back_and_records_separately(
     monkeypatch.setattr(
         inventory,
         "read_vcenter_inventory",
-        lambda *_: observation(
+        lambda *_, **__: observation(
             H2, objects={key: OBJECTS[key] for key in ("vm-1", "host-2")}
         ),
     )
@@ -342,7 +342,7 @@ async def test_inventory_timeout_advances_and_skips_unfinished_read(monkeypatch)
     release = Event()
     calls = []
 
-    def read(vc, settings):
+    def read(vc, settings, *, after_relations):
         calls.append(vc.name)
         if vc.id == first.id:
             entered.set()
@@ -373,7 +373,7 @@ async def test_inventory_timeout_advances_and_skips_unfinished_read(monkeypatch)
     finally:
         release.set()
         for future in tuple(inventory._reads.values()):
-            await asyncio.wrap_future(future)
+            await asyncio.wait_for(asyncio.wrap_future(future), 5)
 
 
 async def test_inventory_same_vcenter_reads_do_not_overlap(vcenter_id, monkeypatch):
@@ -381,7 +381,7 @@ async def test_inventory_same_vcenter_reads_do_not_overlap(vcenter_id, monkeypat
     release = Event()
     calls = []
 
-    def read(vc, settings):
+    def read(vc, settings, *, after_relations):
         calls.append(vc.id)
         entered.set()
         release.wait(10)
@@ -409,7 +409,7 @@ async def test_inventory_deleted_vcenter_cascades_and_racing_read_records_nothin
     reading = Event()
     released = Event()
 
-    def read(vc, settings):
+    def read(vc, settings, *, after_relations):
         reading.set()
         released.wait(10)
         return observation(H2)
@@ -551,7 +551,7 @@ async def test_inventory_pool_saturation_skips_without_submitting(monkeypatch):
         started.append(thread)
         return thread
 
-    def read(vc, settings):
+    def read(vc, settings, *, after_relations):
         if vc.name != "c":
             release.wait(10)
         return observation(H1)
@@ -577,7 +577,7 @@ async def test_inventory_pool_saturation_skips_without_submitting(monkeypatch):
     finally:
         release.set()
         for future in tuple(inventory._reads.values()):
-            await asyncio.wrap_future(future)
+            await asyncio.wait_for(asyncio.wrap_future(future), 5)
 
     await inventory.sync_inventory(settings)
     async with session_scope() as session:
@@ -591,7 +591,7 @@ async def test_inventory_reads_are_closed_after_shutdown_and_reopen_with_lifespa
 
     reads = []
 
-    def read(vc, settings):
+    def read(vc, settings, *, after_relations):
         reads.append(vc.id)
         return observation(H1)
 
@@ -603,8 +603,8 @@ async def test_inventory_reads_are_closed_after_shutdown_and_reopen_with_lifespa
     monkeypatch.setattr(inventory, "read_vcenter_inventory", read)
     for _ in range(2):
         async with main.lifespan(main.create_app()):
-            await inventory.sync_inventory(require_settings())
-        await inventory.sync_inventory(require_settings())
+            await asyncio.wait_for(inventory.sync_inventory(require_settings()), 5)
+        await asyncio.wait_for(inventory.sync_inventory(require_settings()), 5)
         async with session_scope() as session:
             state = await session.get(InventorySyncState, vcenter_id)
             assert state.last_error.startswith("InventoryReadsClosed:")
@@ -623,7 +623,7 @@ def test_inventory_process_exits_with_stalled_read():
 
         entered = Event()
 
-        def stalled_read(*args):
+        def stalled_read(*args, **kwargs):
             entered.set()
             Event().wait()
 
