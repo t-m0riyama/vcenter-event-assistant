@@ -273,6 +273,7 @@ def test_vm_devices_use_keys_and_ignore_runtime(backing, network):
         "devices": {
             "disk:2000": {
                 "label": "Disk",
+                "uuid": None,
                 "capacity_kb": 1024,
                 "thin": True,
                 "disk_mode": "persistent",
@@ -654,14 +655,22 @@ def test_value_hash_uses_sorted_compact_utf8_json():
 
 
 def test_snapshot_chain_uses_base_disk_and_only_reports_changes_to_its_configuration():
-    base = Obj(thinProvisioned=True, diskMode="persistent")
+    base = Obj(thinProvisioned=True, diskMode="persistent", uuid="base-uuid")
     disk = VirtualDisk(key=2000, deviceInfo=Obj(label="Disk"), backing=base)
     original = normalize_vm(vm_details(disk))
+    assert original["devices"]["disk:2000"]["uuid"] == "base-uuid"
     disk.backing = Obj(
         diskMode="redo",
-        parent=Obj(thinProvisioned=False, diskMode="delta", parent=base),
+        uuid="delta-uuid",
+        parent=Obj(
+            thinProvisioned=False,
+            diskMode="delta",
+            uuid="intermediate-uuid",
+            parent=base,
+        ),
     )
     snapshot = normalize_vm(vm_details(disk))
+    assert snapshot["devices"]["disk:2000"]["uuid"] == "base-uuid"
     assert value_hash(snapshot) == value_hash(original)
     assert not list(diff_config("vm_config", original, snapshot))
     disk.backing = base
@@ -677,6 +686,33 @@ def test_snapshot_chain_uses_base_disk_and_only_reports_changes_to_its_configura
         "thin",
         "disk_mode",
     }
+
+
+@pytest.mark.parametrize(
+    ("raw_uuid", "expected"),
+    [
+        (" 6000C29A-ABCD ", "6000c29a-abcd"),
+        ("6000c29a-abcd", "6000c29a-abcd"),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        (12, None),
+    ],
+)
+def test_disk_uuid_is_trimmed_lowercased_and_empty_is_none(raw_uuid, expected):
+    base = Obj(thinProvisioned=True, diskMode="persistent", uuid=raw_uuid)
+    disk = VirtualDisk(key=2000, deviceInfo=Obj(label="Disk"), backing=base)
+    assert normalize_vm(vm_details(disk))["devices"]["disk:2000"]["uuid"] == expected
+
+
+def test_disk_uuid_case_and_spacing_do_not_record_a_replacement():
+    base = Obj(thinProvisioned=True, diskMode="persistent", uuid="6000c29a-abcd")
+    disk = VirtualDisk(key=2000, deviceInfo=Obj(label="Disk"), backing=base)
+    before = normalize_vm(vm_details(disk))
+    base.uuid = " 6000C29A-ABCD "
+    after = normalize_vm(vm_details(disk))
+    assert value_hash(after) == value_hash(before)
+    assert not list(diff_config("vm_config", before, after))
 
 
 def test_disk_backing_cycles_unreadable_parent_and_depth_limit():
@@ -754,3 +790,16 @@ def test_each_required_vm_detail_is_checked(path):
     )
     assert config.unread_vms == {"vm"} and config.carry_over == {("vm", "vm_config")}
     assert not config.values
+
+
+def test_disk_uuid_replacement_rule_does_not_apply_to_nic_keys():
+    # UUID が入力にあっても NIC は項目単位で比較する。
+    old = {"devices": {"nic:4000": {"label": "NIC", "uuid": "old"}}}
+    new = {"devices": {"nic:4000": {"label": "NIC", "uuid": "new"}}}
+    (diff,) = diff_config("vm_config", old, new)
+    assert (diff.element, diff.attribute, diff.old_value, diff.new_value) == (
+        "nic:4000",
+        "uuid",
+        '"old"',
+        '"new"',
+    )

@@ -208,6 +208,13 @@ def disk_backing_root(backing: object) -> object:
     return None
 
 
+def normalize_disk_uuid(value: object) -> str | None:
+    """ディスクの UUID を比べる形にする。前後の空白を除いて小文字にし、空なら None にする。"""
+    if not isinstance(value, str):
+        return None
+    return value.strip().lower() or None
+
+
 class DiskBackingUnreadable(Exception):
     """元のディスクの backing を特定できなかった。"""
 
@@ -225,6 +232,7 @@ def _devices(devices: Iterable[Any]) -> ConfigValue:
             fields = {
                 **_fields(device, capacity_kb="capacityInKB"),
                 **_fields(backing, thin="thinProvisioned", disk_mode="diskMode"),
+                "uuid": normalize_disk_uuid(getattr(backing, "uuid", None)),
             }
         elif "VirtualEthernetCard" in base_names:
             prefix = "nic"
@@ -336,6 +344,18 @@ def diff_config(
 
     for element in sorted(old_elements.keys() | new_elements.keys()):
         before, after = old_elements.get(element), new_elements.get(element)
+        if (
+            category == "vm_config"
+            and element.startswith("disk:")
+            and before is not None
+            and after is not None
+            and (old_uuid := before.get("uuid")) is not None
+            and (new_uuid := after.get("uuid")) is not None
+            and old_uuid != new_uuid
+        ):
+            yield _diff(element, before.get("label"), None, encode(before), None)
+            yield _diff(element, after.get("label"), None, None, encode(after))
+            continue
         label = element
         if category == "vm_config":
             label = (after if after is not None else before).get("label")

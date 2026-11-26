@@ -111,24 +111,32 @@ def test_probe_reports_paths_aggregate_changes_and_no_object_details(
         assert target is content and refs == [vm, disconnected]
         root = vim.vm.device.VirtualDisk.FlatVer2BackingInfo(
             fileName="secret-base",
+            uuid="secret-root-uuid",
             thinProvisioned=True,
             diskMode="persistent",
         )
         equivalent = vim.vm.device.VirtualDisk.FlatVer2BackingInfo(
             fileName="secret-equivalent",
             parent=root,
+            uuid=" SECRET-ROOT-UUID ",
             thinProvisioned=True,
         )
         intermediate = vim.vm.device.VirtualDisk.FlatVer2BackingInfo(
             fileName="secret-intermediate", parent=root, thinProvisioned=False
         )
         delta = vim.vm.device.VirtualDisk.FlatVer2BackingInfo(
-            fileName="secret-delta", parent=intermediate, thinProvisioned=False
+            fileName="secret-delta",
+            parent=intermediate,
+            uuid="secret-delta-uuid",
+            thinProvisioned=False,
         )
         devices = [
             vim.vm.device.VirtualDisk(key=2000, backing=delta),
             vim.vm.device.VirtualDisk(key=2001, backing=equivalent),
             vim.vm.device.VirtualDisk(key=2002, backing=root),
+            vim.vm.device.VirtualDisk(
+                key=2003, backing=vim.vm.device.VirtualDisk.FlatVer1BackingInfo()
+            ),
         ]
         props = dict(
             zip(
@@ -179,6 +187,10 @@ def test_probe_reports_paths_aggregate_changes_and_no_object_details(
     assert "requested=2" in captured.out and "ManagedObjectNotFound=1" in captured.out
     assert "stage2 VirtualMachine objects=1 bytes=" in captured.out
     assert "stage2 disks_with_parent=2 disks_with_different_thin=1" in captured.out
+    assert (
+        "stage2 disks_with_uuid=3 disks_without_root_uuid=1 disks_with_different_uuid=1"
+        in captured.out
+    )
     assert "changed host_vswitch mtu count=1" in captured.out
     assert "changed vm_config num_cpu count=1" in captured.out
     assert "changed config.changeVersion count=1" in captured.out
@@ -235,3 +247,24 @@ async def test_probe_uses_existing_sqlite_db_read_only_and_does_not_create_a_fil
             "target", Settings(database_url=f"sqlite+aiosqlite:///{missing}")
         )
     assert not missing.exists()
+
+
+def test_probe_uuid_counts_exclude_disks_without_a_resolved_root(capsys):
+    ref = vim.VirtualMachine("private-moid")
+    root = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
+    delta = vim.vm.device.VirtualDisk.FlatVer2BackingInfo(
+        parent=root, uuid="private-delta-uuid"
+    )
+    devices = [
+        vim.vm.device.VirtualDisk(key=2000, backing=delta),
+        vim.vm.device.VirtualDisk(key=2001),
+    ]
+    probe._report_disk_backings(
+        [PropertyRow(ref, {"config.hardware.device": devices}, set())]
+    )
+    printed = capsys.readouterr().out
+    assert (
+        "disks_with_uuid=0 disks_without_root_uuid=1 disks_with_different_uuid=0"
+        in printed
+    )
+    assert "private" not in printed

@@ -1,6 +1,7 @@
 """構成の観測・保存・定期収集を試験する。"""
 
 import asyncio
+import json
 from concurrent.futures import Future
 from datetime import datetime, timedelta, timezone
 from threading import Event
@@ -13,7 +14,11 @@ from sqlalchemy import delete, event, select, update
 
 from vcenter_event_assistant.auth.timeutil import as_utc
 from vcenter_event_assistant.collectors import inventory_config as reader
-from vcenter_event_assistant.collectors.config_values import VM_DETAIL_PATHS, value_hash
+from vcenter_event_assistant.collectors.config_values import (
+    VM_DETAIL_PATHS,
+    normalize_vm,
+    value_hash,
+)
 from vcenter_event_assistant.collectors.inventory import (
     InventoryObjectData,
     InventoryObservation,
@@ -1381,3 +1386,119 @@ async def test_config_diff_reads_json_only_for_rows_with_changes_in_same_format(
         '"old"',
         '"changed"',
     )
+
+
+def _observe_vm_device(t, device):
+    props = vm_props(2, "v1")
+    props["config.hardware.device"] = [device]
+    return snapshot(t, {VM: normalize_vm(props)})
+
+
+def _disk(uuid, *, label="ディスク", capacity=1024):
+    return vim.vm.device.VirtualDisk(
+        key=2000,
+        deviceInfo=vim.Description(label=label),
+        capacityInKB=capacity,
+        backing=vim.vm.device.VirtualDisk.FlatVer2BackingInfo(
+            uuid=uuid,
+            thinProvisioned=True,
+            diskMode="persistent",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "new_label,new_capacity", [("旧ディスク", 1024), ("新ディスク", 2048)]
+)
+async def test_config_diff_disk_replacement_same_key_records_two_rows(
+    new_label, new_capacity
+):
+    center = await add_center()
+    before = _observe_vm_device(T0, _disk("original-uuid", label="旧ディスク"))
+    after = _observe_vm_device(
+        T1, _disk("replacement-uuid", label=new_label, capacity=new_capacity)
+    )
+    await save(center, before)
+    await save(center, after)
+    rows, (removed, added), _ = await stored(center)
+
+    element = "disk:2000"
+    for diff in (removed, added):
+        assert (diff.moid, diff.category, diff.element, diff.attribute) == (
+            "vm",
+            "vm_config",
+            element,
+            None,
+        )
+        assert as_utc(diff.changed_after) == T0
+        assert as_utc(diff.observed_at) == after.observed_at
+        assert not diff.truncated
+
+    assert removed.element_label == "旧ディスク" and added.element_label == new_label
+    assert removed.new_value is None and added.old_value is None
+    assert json.loads(removed.old_value) == before.values[VM]["devices"][element]
+    assert json.loads(added.new_value) == after.values[VM]["devices"][element]
+    assert rows[VM].format == 1 and rows[VM].value == after.values[VM]
+
+
+@pytest.mark.parametrize(
+    "old_uuid,new_uuid,capacity,expected",
+    [
+        (
+            None,
+            "disk-uuid",
+            2048,
+            {"capacity_kb": ("1024", "2048"), "uuid": ("null", '"disk-uuid"')},
+        ),
+        (
+            "disk-uuid",
+            None,
+            2048,
+            {"capacity_kb": ("1024", "2048"), "uuid": ('"disk-uuid"', "null")},
+        ),
+        ("disk-uuid", "disk-uuid", 2048, {"capacity_kb": ("1024", "2048")}),
+        ("disk-uuid", "disk-uuid", 1024, {}),
+        (None, None, 2048, {"capacity_kb": ("1024", "2048")}),
+        (None, None, 1024, {}),
+    ],
+)
+async def test_config_diff_disk_same_key_compares_fields_without_replacement(
+    old_uuid, new_uuid, capacity, expected
+):
+    center = await add_center()
+    await save(center, _observe_vm_device(T0, _disk(old_uuid)))
+    await save(center, _observe_vm_device(T1, _disk(new_uuid, capacity=capacity)))
+    _, diffs, _ = await stored(center)
+    assert len(diffs) == len(expected)
+    assert {
+        diff.attribute: (diff.old_value, diff.new_value) for diff in diffs
+    } == expected
+    assert all(
+        diff.element == "disk:2000" and diff.element_label == "ディスク"
+        for diff in diffs
+    )
+
+
+@pytest.mark.parametrize("changed_mac", [False, True])
+async def test_config_diff_nic_same_key_compares_fields_without_replacement(
+    changed_mac,
+):
+    center = await add_center()
+    mac = "00:50:56:00:00:01"
+    next_mac = "00:50:56:00:00:02" if changed_mac else mac
+    before = vim.vm.device.VirtualVmxnet3(key=4000, macAddress=mac)
+    after = vim.vm.device.VirtualVmxnet3(key=4000, macAddress=next_mac)
+    await save(center, _observe_vm_device(T0, before))
+    await save(center, _observe_vm_device(T1, after))
+    rows, diffs, _ = await stored(center)
+    assert "uuid" not in rows[VM].value["devices"]["nic:4000"]
+    if changed_mac:
+        (diff,) = diffs
+        assert (diff.element, diff.attribute, diff.old_value, diff.new_value) == (
+            "nic:4000",
+            "mac_address",
+            json.dumps(mac),
+            json.dumps(next_mac),
+        )
+    else:
+        assert not diffs

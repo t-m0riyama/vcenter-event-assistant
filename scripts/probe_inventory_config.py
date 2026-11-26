@@ -22,6 +22,7 @@ from vcenter_event_assistant.collectors.config_values import (
     VM_DETAIL_PATHS,
     diff_config,
     disk_backing_root,
+    normalize_disk_uuid,
 )
 from vcenter_event_assistant.collectors.connection import connect_vcenter, disconnect
 from vcenter_event_assistant.collectors.inventory_config import (
@@ -122,6 +123,7 @@ def _probe_paths(content) -> tuple[dict, str]:
 
 def _report_disk_backings(rows: list[PropertyRow]) -> None:
     with_parent = different_thin = 0
+    with_uuid = without_root_uuid = different_uuid = 0
     for row in rows:
         for device in row.get("config.hardware.device") or ():
             if not isinstance(device, vim.vm.device.VirtualDisk):
@@ -131,16 +133,36 @@ def _report_disk_backings(rows: list[PropertyRow]) -> None:
                 parent = getattr(backing, "parent", None)
             except Exception:
                 continue
-            if parent is None:
-                continue
-            with_parent += 1
+            if parent is not None:
+                with_parent += 1
             root = disk_backing_root(backing)
-            if root is not None and getattr(
+            if root is None:
+                continue
+            root_uuid = normalize_disk_uuid(getattr(root, "uuid", None))
+            if root_uuid is None:
+                without_root_uuid += 1
+            else:
+                with_uuid += 1
+            # 差分ディスクの UUID が元のディスクと違うか（親を付け替える操作の見積もり）。
+            current_uuid = normalize_disk_uuid(getattr(backing, "uuid", None))
+            if (
+                parent is not None
+                and root_uuid is not None
+                and current_uuid is not None
+                and current_uuid != root_uuid
+            ):
+                different_uuid += 1
+            if parent is not None and getattr(
                 backing, "thinProvisioned", None
             ) != getattr(root, "thinProvisioned", None):
                 different_thin += 1
     print(
         f"stage2 disks_with_parent={with_parent} disks_with_different_thin={different_thin}"
+    )
+
+    print(
+        f"stage2 disks_with_uuid={with_uuid} disks_without_root_uuid={without_root_uuid}"
+        f" disks_with_different_uuid={different_uuid}"
     )
 
 
