@@ -85,7 +85,8 @@ def read_inventory(content: vim.ServiceInstanceContent) -> InventoryObservation:
                 )
             ],
             propSet=[
-                pc.PropertySpec(type=kind, pathSet=paths)
+                # pyVmomi は list でない配列を 1 つの値として直列化し、要求が送れない。
+                pc.PropertySpec(type=kind, pathSet=list(paths))
                 for kind, paths in _PROPERTIES.items()
             ],
         )
