@@ -17,6 +17,8 @@ from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 from zoneinfo import ZoneInfo
 
+from pydantic import JsonValue
+
 from vcenter_event_assistant.api.datetime_utils import to_utc
 from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     IncidentTimelineSavedViewRequest,
@@ -342,6 +344,10 @@ def _new_log_patterns_highlight(result: IncidentTimelineViewResponse, zone: Zone
     return lines
 
 
+def _config_diff_value(value: JsonValue) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
 def _config_changes_highlight(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[str]:
     highlights = result.highlights
     changes = highlights.config_changes
@@ -358,6 +364,23 @@ def _config_changes_highlight(result: IncidentTimelineViewResponse, zone: ZoneIn
             f"- {time} / {_code(change.label)} / {_code(change.entity_name or change.entity_moid)}"
             f" / {_code(change.vcenter_name)} / {users} / {change.event_count} 件"
         )
+        diffs = change.diffs or []
+        for diff in diffs:
+            label = " / ".join(
+                _code(part) for part in (diff.category_label, diff.element_label, diff.attribute_label) if part
+            )
+            old = _code(_config_diff_value(diff.old_value))
+            new = _code(_config_diff_value(diff.new_value))
+            if diff.attribute is None:
+                change_text = f"追加 {new}" if diff.old_value is None else f"削除 {old}"
+            else:
+                change_text = f"{old} → {new}"
+            lines.append(
+                f"  - {label}: {change_text}"
+                f"（{_time(diff.changed_after, zone)} から {_time(diff.observed_at, zone)} の間）"
+            )
+        if change.diffs_total > len(diffs):
+            lines.append(f"  - ほか {change.diffs_total - len(diffs)} 件")
     if not changes:
         lines.append("なし")
     counts = "、".join(

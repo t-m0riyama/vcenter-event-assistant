@@ -386,6 +386,8 @@ TLS:
 
 インベントリの収集には、対象の VM、ホスト、クラスタ、データストア、ポートグループを参照できる vCenter の読み取り権限が必要。見える範囲は登録したアカウントの権限に従う。管理対象の件数が前回の成功から半分以下に減った場合は、`inventory_sync_states` の `last_warning` と `last_warning_at` を確認する。
 
+構成の読み取りは `SCHEDULER_ENABLED`、`INVENTORY_SYNC_ENABLED`、`INVENTORY_CONFIG_ENABLED` がすべて真のときに動く。`GET /api/inventory/status` の `config_enabled` と、vCenter ごとの `config_last_success_at`、`config_last_failure_at`、`config_last_error`、`config_last_warning`、`config_deferred_count` で状況を確認できる。差分の保持期間は `INVENTORY_CONFIG_RETENTION_DAYS`（既定 30 日、最小 1 日）で設定する。
+
 `INVENTORY_SYNC_TIMEOUT_SECONDS` は vCenter ごとの観測の待ち時間と、収集用の HTTP ソケットのタイムアウトに使う。pyVmomi の制約により、`SmartConnect` の最初の API バージョン探索（`vimServiceVersions.xml` の取得）には HTTP タイムアウトが効かない。
 
 構成の読み取りも `INVENTORY_SYNC_TIMEOUT_SECONDS` の待ち時間に含まれる。構成の読み取りでは、専用スレッドの開始からこの値の 8 割を締め切りとする。構成の要求や切断が長引くと、関係の保存後もスレッド枠を占め続ける。次の関係の収集で「前回の読み取りがまだ実行中です」や「専用スレッドに空きがありません」と記録されることがある。

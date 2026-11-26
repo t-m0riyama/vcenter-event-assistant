@@ -1,10 +1,10 @@
-"""影響範囲とインベントリ収集状態の応答。"""
+"""インベントリの影響範囲・構成の差分・収集状態の応答。"""
 
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, JsonValue, field_validator
 
 from vcenter_event_assistant.api.schemas.base import _normalize_to_utc
 
@@ -59,6 +59,30 @@ class InventoryImpactResponse(BaseModel):
     changes: InventoryChanges | None = None
 
 
+class IncidentTimelineConfigDiff(BaseModel):
+    id: int
+    category: str
+    category_label: str
+    element: str | None
+    element_label: str | None
+    attribute: str | None
+    attribute_label: str | None
+    old_value: JsonValue
+    new_value: JsonValue
+    truncated: bool
+    changed_after: datetime
+    observed_at: datetime
+
+
+class InventoryConfigDiffResponse(BaseModel):
+    target: InventoryTarget
+    status: Literal["disabled", "not_recorded", "ok"]
+    recorded_since: datetime | None
+    last_success_at: datetime | None
+    items: list[IncidentTimelineConfigDiff]
+    total: int
+
+
 class InventoryVCenterStatus(BaseModel):
     vcenter_id: UUID
     vcenter_name: str
@@ -72,6 +96,15 @@ class InventoryVCenterStatus(BaseModel):
     last_warning_at: datetime | None = None
     object_count: int | None = None
     relation_count: int | None = None
+    config_first_success_at: datetime | None = None
+    config_last_started_at: datetime | None = None
+    config_last_success_at: datetime | None = None
+    config_last_failure_at: datetime | None = None
+    config_last_error: str | None = None
+    config_last_warning: str | None = None
+    config_last_warning_at: datetime | None = None
+    config_object_count: int | None = None
+    config_deferred_count: int | None = None
 
     @field_validator(
         "first_success_at",
@@ -79,6 +112,11 @@ class InventoryVCenterStatus(BaseModel):
         "last_success_at",
         "last_failure_at",
         "last_warning_at",
+        "config_first_success_at",
+        "config_last_started_at",
+        "config_last_success_at",
+        "config_last_failure_at",
+        "config_last_warning_at",
         mode="before",
     )
     @classmethod
@@ -88,6 +126,7 @@ class InventoryVCenterStatus(BaseModel):
 
 class InventoryStatusResponse(BaseModel):
     enabled: bool
+    config_enabled: bool
     interval_seconds: int
     timeout_seconds: int
     vcenters: list[InventoryVCenterStatus]

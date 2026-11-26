@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from vcenter_event_assistant.api.schemas.base import UtcDateTime, to_utc_or_value_error
+from vcenter_event_assistant.api.schemas.inventory import IncidentTimelineConfigDiff
 from vcenter_event_assistant.services.event_patterns.definitions import PatternLevel
 
 TimelineSource = Literal["event", "alert", "metric", "log"]
@@ -240,6 +241,8 @@ class IncidentTimelineConfigChange(BaseModel):
     event_types: list[str] = Field(default_factory=list)
     event_count: int = 0
     event_ids: list[int] = Field(default_factory=list)
+    diffs: list[IncidentTimelineConfigDiff] | None = None
+    diffs_total: int = 0
 
 
 class IncidentTimelineNewLogPattern(BaseModel):

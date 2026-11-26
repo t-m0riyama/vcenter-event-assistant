@@ -15,6 +15,10 @@ from vcenter_event_assistant.db.models import (
     DigestRecord,
     EventRecord,
     EventTypeGuide,
+    IncidentTimelineManualSnapshot,
+    InventoryConfigDiff,
+    InventoryConfigState,
+    InventorySyncState,
     LogPattern,
     LogPatternBackfillState,
     LogPatternBaseline,
@@ -202,6 +206,8 @@ async def test_screenshot_e2e_seed_inventory_history(monkeypatch) -> None:
         # この変更より前にシードした DB を再現する。
         for model in (
             InventorySyncState,
+            InventoryConfigDiff,
+            InventoryConfigState,
             InventorySyncRun,
             InventoryRelation,
             InventoryObject,
@@ -423,3 +429,118 @@ async def test_screenshot_diagnostics_seed_reuses_existing_rows(monkeypatch, ope
             })
             assert preview.status_code == 409
             assert preview.headers["X-VEA-Error-Code"] == "diagnostic_host_key_unapproved"
+
+
+async def test_screenshot_e2e_seed_config_history_matches_first_mock_observation(monkeypatch):
+    from vcenter_event_assistant.auth.timeutil import as_utc
+    from vcenter_event_assistant.collectors.config_values import value_hash
+    from vcenter_event_assistant.mocks.mock_inventory import (
+        SCREENSHOT_VCENTER_NAME,
+        mock_inventory,
+        mock_inventory_config,
+    )
+    from vcenter_event_assistant.services.inventory_config import config_baselines, persist_inventory_config
+
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    await run_screenshot_e2e_seed_if_enabled()
+    await run_screenshot_e2e_seed_if_enabled()
+    async with session_scope() as session:
+        vc = (await session.scalars(select(VCenter).where(VCenter.name == SCREENSHOT_VCENTER_NAME))).one()
+        state = await session.get(InventorySyncState, vc.id)
+        rows = (await session.scalars(select(InventoryConfigDiff).order_by(InventoryConfigDiff.id))).all()
+        assert {
+            (row.entity_name, row.category, row.attribute, row.element_label, row.old_value, row.new_value)
+            for row in rows
+        } == {
+            ("demo-vm-01", "vm_config", "num_cpu", None, "2", "4"),
+            ("demo-vm-01", "vm_config", "memory_mb", None, "4096", "8192"),
+            ("demo-esxi-01", "host_portgroup", "vlan_id", "VM Network", "10", "20"),
+        }
+        reconfigured = (await session.scalars(select(EventRecord.occurred_at).where(
+            EventRecord.chain_id == 9_003_001
+        ))).all()
+        assert len(reconfigured) == 2
+        for row in rows:
+            assert state.config_first_success_at < row.observed_at <= state.config_last_success_at
+            if row.moid == "vm-9001":
+                assert all(row.changed_after < at < row.observed_at for at in reconfigured)
+        snapshot = (await session.scalars(select(IncidentTimelineManualSnapshot))).first()
+        cards = snapshot.result_payload["highlights"]["config_changes"]
+        maintenance = [card for card in cards if card["kind"] in {"maintenance_enter", "maintenance_exit"}]
+        assert {card["kind"] for card in maintenance} == {"maintenance_enter", "maintenance_exit"}
+        assert all(as_utc(state.config_first_success_at) < datetime.fromisoformat(card["first_utc"]) for card in maintenance)
+        assert all(card["diffs"] == [] and card["diffs_total"] == 0 for card in maintenance)
+        with_diffs = [card for card in cards if card["diffs"]]
+        assert len(with_diffs) == 1
+        assert {diff["attribute"] for diff in with_diffs[0]["diffs"]} == {"num_cpu", "memory_mb"}
+
+        at = as_utc(state.config_last_success_at) + timedelta(minutes=30)
+        inventory = mock_inventory(at, vcenter_name=vc.name)
+        full = mock_inventory_config(at, observation=inventory, vcenter_name=vc.name)
+        saved = {
+            (row.moid, row.category): (row.value, row.value_hash, row.change_version)
+            for row in await session.scalars(select(InventoryConfigState))
+        }
+        assert saved == {
+            (moid, category): (value, value_hash(value), full.change_versions.get(moid))
+            for (moid, category), value in full.values.items()
+        }
+        instance, baselines = await config_baselines(session, vc.id)
+        assert state.config_instance_uuid == instance == inventory.instance_uuid
+        first = mock_inventory_config(at, observation=inventory, vcenter_name=vc.name, baselines=baselines)
+        assert first.unchanged_vms == full.change_versions.keys()
+        await persist_inventory_config(session, vc.id, first)
+        await session.flush()
+        assert list(await session.scalars(select(InventoryConfigDiff).order_by(InventoryConfigDiff.id))) == rows
+
+
+async def test_screenshot_e2e_seed_backfills_config_for_existing_demo(monkeypatch):
+    from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
+    from vcenter_event_assistant.auth.timeutil import as_utc
+    from vcenter_event_assistant.dev import screenshot_e2e_seed
+    from vcenter_event_assistant.mocks.mock_inventory import SCREENSHOT_VCENTER_NAME
+    from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
+
+    monkeypatch.setenv("SCREENSHOT_E2E_SEED", "1")
+    await run_screenshot_e2e_seed_if_enabled()
+    async with session_scope() as session:
+        vc = (await session.scalars(select(VCenter).where(VCenter.name == SCREENSHOT_VCENTER_NAME))).one()
+        vcenter_id = vc.id
+        original = await session.get(InventorySyncState, vcenter_id)
+        first_success = as_utc(original.config_first_success_at)
+        last_success = as_utc(original.config_last_success_at)
+        # PR C より前に投入されたデモを再現する。イベントと関係の収集記録は残す。
+        await session.execute(delete(InventoryConfigDiff))
+        await session.execute(delete(InventoryConfigState))
+        await session.execute(update(InventorySyncState).where(InventorySyncState.vcenter_id == vcenter_id).values(
+            config_instance_uuid=None, config_first_success_at=None, config_last_success_at=None,
+            config_last_started_at=None, config_object_count=None, config_deferred_count=None,
+        ))
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (last_success + timedelta(hours=2)).astimezone(tz)
+
+    monkeypatch.setattr(screenshot_e2e_seed, "datetime", Later)
+    await run_screenshot_e2e_seed_if_enabled()
+    await run_screenshot_e2e_seed_if_enabled()
+
+    async with session_scope() as session:
+        state = await session.get(InventorySyncState, vcenter_id)
+        assert as_utc(state.config_first_success_at) == first_success
+        assert as_utc(state.config_last_success_at) == last_success
+        rows = (await session.scalars(select(InventoryConfigDiff))).all()
+        assert sorted(row.attribute for row in rows) == ["memory_mb", "num_cpu", "vlan_id"]
+        request = IncidentTimelineViewRequest(
+            from_time=first_success - timedelta(minutes=5), to_time=last_success,
+            vcenter_id=vcenter_id, sources=["event"],
+        )
+        result = await build_incident_timeline_view(session, request, owner_key="screenshot-seed-test")
+
+    cards = {card.kind: card for card in result.highlights.config_changes}
+    for kind in ("maintenance_enter", "maintenance_exit"):
+        assert cards[kind].first_utc > first_success
+        assert cards[kind].diffs == []
+    assert {diff.attribute for diff in cards["vm_reconfigure"].diffs} == {"num_cpu", "memory_mb"}
+    assert cards["vm_reconfigure"].diffs_total == 2

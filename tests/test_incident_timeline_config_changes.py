@@ -20,7 +20,14 @@ from vcenter_event_assistant_plugin_api import limits
 
 from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
 from vcenter_event_assistant.db.base import Base
-from vcenter_event_assistant.db.models import EventRecord, IncidentTimelineManualSnapshot, LogRecord, VCenter
+from vcenter_event_assistant.db.models import (
+    EventRecord,
+    IncidentTimelineManualSnapshot,
+    InventoryConfigDiff,
+    InventorySyncState,
+    LogRecord,
+    VCenter,
+)
 from vcenter_event_assistant.db.session import session_scope
 from vcenter_event_assistant.services.incident_timeline_view import build_incident_timeline_view
 
@@ -512,3 +519,383 @@ async def test_config_change_export_and_legacy_snapshot(viewer_client: AsyncClie
     exported = await viewer_client.get(f"{SNAPSHOTS}/{sid}/export", params={"format": "md"})
     assert exported.status_code == 200, exported.text
     assert "判定していません（この機能の前に保存した結果、または種別にイベントが無い）" in exported.text
+
+
+def _diff(vc: VCenter, after: float, observed: float, **options: object) -> InventoryConfigDiff:
+    return InventoryConfigDiff(**{
+        "vcenter_id": vc.id, "moid": "vm-1", "category": "vm_config", "entity_type": "VirtualMachine",
+        "entity_name": "guest", "attribute": "num_cpu", "old_value": "2", "new_value": "4",
+        "truncated": False, "changed_after": _time(after), "observed_at": _time(observed), **options,
+    })
+
+
+@pytest.fixture
+def config_clock(monkeypatch):
+    from vcenter_event_assistant.services import incident_timeline_view
+    from vcenter_event_assistant.settings_binding import require_settings
+
+    monkeypatch.setattr(incident_timeline_view, "utcnow", lambda: END)
+    settings = require_settings()
+    monkeypatch.setattr(settings, "inventory_config_enabled", False)
+    monkeypatch.setattr(settings, "inventory_config_retention_days", 1)
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_chain_and_strict_padded_overlap(config_db, dialect, config_clock):
+    vc, other = _vc(), _vc("other")
+    config_db.add_all([vc, other])
+    await config_db.flush()
+    first = _event(vc, 10, VM, "guest", entity_moid="vm-1", chain_id=12, collector_id=EVENTS)
+    last = _event(
+        vc, 20, "task.success.VirtualMachine.reconfigure", "another guest",
+        entity_moid="vm-2", chain_id=12, collector_id=TASKS,
+    )
+    duplicate = _event(vc, 26, VM, "guest", entity_moid="vm-1", chain_id=13, collector_id=EVENTS)
+    through_first = _diff(vc, 6, 8.5)
+    through_last = _diff(vc, 21.5, 22.5, moid="vm-2")
+    across_cards = _diff(vc, 9, 27)
+    config_db.add_all([
+        InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+        first, last, duplicate, across_cards, through_last, through_first,
+        _diff(vc, 7, 8), _diff(vc, 22, 23, moid="vm-2"),
+        _diff(vc, 10, 11, moid="vm-unrelated"), _diff(other, 10, 11),
+    ])
+    await config_db.flush()
+
+    request = IncidentTimelineViewRequest.model_validate(_request())
+    result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
+    later, grouped = result.highlights.config_changes
+    assert grouped.first_utc == _time(10)
+    assert grouped.last_utc == _time(20)
+    assert [diff.id for diff in grouped.diffs] == [through_first.id, through_last.id, across_cards.id]
+    assert grouped.diffs_total == 3
+    assert [diff.id for diff in later.diffs] == [across_cards.id]
+    assert later.diffs_total == 1
+
+
+@pytest.mark.parametrize("case", ["no_vcenter", "no_moid", "no_success", "before_success", "expired", "empty"])
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_availability(config_db, dialect, case, monkeypatch):
+    from vcenter_event_assistant.services import incident_timeline_view as timeline
+
+    vc = _vc()
+    config_db.add(vc)
+    await config_db.flush()
+    first_success = {"no_success": None, "before_success": _time(11)}.get(case, START)
+    config_db.add(InventorySyncState(vcenter_id=vc.id, config_first_success_at=first_success))
+    if case != "empty":
+        config_db.add(_diff(vc, 9, 11))
+    await config_db.flush()
+    entry = timeline.TimelineEntry(
+        kind="event", source_id=1, timestamp_utc=_time(10), level="info", title=VM,
+        vcenter_id=None if case == "no_vcenter" else vc.id, config_change_kind="vm_reconfigure",
+        ref={} if case == "no_moid" else {"entity_moid": "vm-1"},
+    )
+    groups, _ = timeline._summarize_config_changes([entry])
+    read_since = timeline.config_recorded_since
+    calls = []
+
+    def recorded_since(*args):
+        calls.append(args)
+        return read_since(*args)
+
+    monkeypatch.setattr(timeline, "config_recorded_since", recorded_since)
+    cut = _time(11 if case == "expired" else 10)
+    (card,) = await timeline._attach_config_diffs(config_db, groups, retention_start=cut)
+    assert card.diffs == ([] if case == "empty" else None)
+    assert card.diffs_total == 0
+    assert len(calls) == (0 if case in {"no_vcenter", "no_moid"} else 1)
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_order_limit_and_pair(config_db, dialect, replacement, config_clock):
+    vc = _vc()
+    config_db.add(vc)
+    await config_db.flush()
+    early = _diff(vc, 9, 9.5, category="vm_config")
+    category_first = _diff(vc, 9, 10, category="cluster_ha", element="z", attribute="enabled")
+    attr_first = _diff(vc, 9, 10, element="a", attribute="capacity_kb")
+    attr_next = [_diff(vc, 9, 10, element="a", attribute="uuid") for _ in range(2)]
+    filler = [_diff(vc, 9, 10, element="b") for _ in range(4)]
+    disk = dict(element="disk:2000", attribute=None)
+    removed = _diff(vc, 9, 10, **disk, old_value='{"uuid":"old"}', new_value=None)
+    added = _diff(vc, 9, 10, **disk, old_value=None, new_value='{"uuid":"new"}')
+    tail = _diff(vc, 9, 10.5)
+    diffs = [
+        added, tail, *filler, *([removed] if replacement else []),
+        *attr_next, attr_first, category_first, early,
+    ]
+    config_db.add_all([
+        *diffs,
+        InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+        _event(vc, 10, VM, "guest", entity_moid="vm-1"),
+    ])
+    await config_db.flush()
+    request = IncidentTimelineViewRequest.model_validate(_request())
+    result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
+    (card,) = result.highlights.config_changes
+    expected = [early, category_first, attr_first, *attr_next, *filler]
+    if replacement:
+        expected.append(removed)
+    expected.append(added)
+    assert [diff.id for diff in card.diffs] == [diff.id for diff in expected]
+    assert card.diffs_total == len(diffs)
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_keeps_each_target_pair_together(config_db, dialect, config_clock):
+    """複数の対象をまとめたカードで、同じ装置の入れ替わりが対象ごとに対のまま切れ目に掛かる。"""
+    vc = _vc()
+    config_db.add(vc)
+    await config_db.flush()
+    filler = [_diff(vc, 9, 9.5, element="b") for _ in range(8)]
+    disk = dict(element="disk:2000", attribute=None)
+
+    def replaced(moid: str) -> tuple[InventoryConfigDiff, InventoryConfigDiff]:
+        return (
+            _diff(vc, 9, 10, moid=moid, **disk, old_value='{"uuid":"old"}', new_value=None),
+            _diff(vc, 9, 10, moid=moid, **disk, old_value=None, new_value='{"uuid":"new"}'),
+        )
+
+    removed_1, added_1 = replaced("vm-1")
+    removed_2, added_2 = replaced("vm-2")
+    config_db.add_all([
+        InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+        _event(vc, 10, VM, "guest", entity_moid="vm-1", chain_id=12, collector_id=EVENTS),
+        _event(
+            vc, 20, "task.success.VirtualMachine.reconfigure", "another guest",
+            entity_moid="vm-2", chain_id=12, collector_id=TASKS,
+        ),
+        *filler,
+    ])
+    await config_db.flush()
+    # ID の順に頼らないよう、2 台目の「減った」行を先に入れる。
+    for row in (removed_2, removed_1, added_2, added_1):
+        config_db.add(row)
+        await config_db.flush()
+
+    request = IncidentTimelineViewRequest.model_validate(_request())
+    result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
+    (card,) = result.highlights.config_changes
+    assert [diff.id for diff in card.diffs] == [diff.id for diff in (*filler, removed_1, added_1)]
+    assert card.diffs_total == 12
+
+
+@pytest.mark.parametrize("remaining", [0, 2])
+async def test_config_diff_report_remainder_and_safe_markdown(viewer_client, config_clock, remaining):
+    vc = _vc()
+    unsafe = "<img src=x>\n\u202e```[link](https://example.invalid)"
+    async with session_scope() as session:
+        session.add(vc)
+        await session.flush()
+        session.add_all([
+            InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+            _event(vc, 10, VM, "guest", entity_moid="vm-1"),
+            _diff(vc, 9, 10, element="nic:4000", element_label=unsafe, attribute="network",
+                  old_value=json.dumps(unsafe), new_value=json.dumps("VM Network")),
+            *[_diff(vc, 9, 10.5) for _ in range(8)],
+            _diff(vc, 9, 11, element="disk:2000", attribute=None, old_value='{"uuid":"old"}', new_value=None),
+            _diff(vc, 9, 11, element="disk:2000", attribute=None, old_value=None, new_value='{"uuid":"new"}'),
+            *[_diff(vc, 9, 11.5) for _ in range(remaining)],
+        ])
+
+    response = await viewer_client.post(
+        "/api/incident-timeline/export", params={"format": "zip"}, json=_request(),
+    )
+    assert response.status_code == 200, response.text
+    with ZipFile(io.BytesIO(response.content)) as archive:
+        report = archive.read("report.md").decode()
+        section = report.split("### 構成変更\n")[1].split("### ")[0]
+        assert "  - ` VM の構成 ` / ```` <img src=x> ```[link](https://example.invalid) ````" in section
+        assert section.count("```` <img src=x> ```[link](https://example.invalid) ````") == 2
+        assert "\u202e" not in section
+        if remaining:
+            assert f"  - ほか {remaining} 件" in section
+        else:
+            assert "  - ほか " not in section
+        assert "追加" in section and "削除" in section
+        assert "2026/03/22 00:09:00 +00:00 から 2026/03/22 00:10:00 +00:00 の間" in section
+        result = json.loads(archive.read("result.json"))
+        (card,) = result["highlights"]["config_changes"]
+        assert card["diffs_total"] == 11 + remaining
+        assert len(card["diffs"]) == 11
+        assert card["diffs"][0]["old_value"] == unsafe
+        reader = csv.DictReader(io.StringIO(archive.read("items.csv").decode("utf-8-sig")))
+        assert reader.fieldnames == [
+            "timestamp", "timestamp_utc_offset", "kind_label", "level", "vcenter_name",
+            "entity_name", "title", "detail", "count", "score", "id", "kind", "entity_type",
+            "vcenter_id", "entity_moid", "end", "end_utc_offset", "event_id", "event_type",
+            "alert_history_id", "alert_rule_id", "alert_rule_name", "alert_rule_type",
+            "alert_state", "metric_key", "log_id", "threshold_pct", "peak_value", "peak_at",
+            "peak_at_utc_offset", "sample_count", "continues_from_before", "continues_after",
+            "time_zone", "config_change_kind",
+        ]
+        (row,) = reader
+        assert unsafe not in row.values()
+
+
+async def test_config_diff_snapshot_with_legacy_card_loads(viewer_client):
+    sid = uuid.uuid4()
+    async with session_scope() as session:
+        session.add(IncidentTimelineManualSnapshot(
+            id=sid, from_time=START, to_time=END, timestamp_utc=START, operator_note="保存済み",
+            result_payload={
+                "from_utc": START.isoformat(), "to_utc": END.isoformat(), "bucket_seconds": 60,
+                "overview": [], "items": [], "total_items": 0, "truncated": False,
+                "highlights": {"config_changes": [{
+                    "kind": "vm_reconfigure", "label": "VM の構成変更",
+                    "first_utc": START.isoformat(), "last_utc": START.isoformat(), "event_count": 1,
+                }]},
+            },
+        ))
+    response = await viewer_client.get(f"{SNAPSHOTS}/{sid}")
+    assert response.status_code == 200, response.text
+    detail = response.json()
+    assert detail["has_result"] is True
+    (card,) = detail["result"]["highlights"]["config_changes"]
+    assert card["diffs"] is None and card["diffs_total"] == 0
+    assert card["event_count"] == 1
+
+    report = await viewer_client.get(f"{SNAPSHOTS}/{sid}/export", params={"format": "md"})
+    assert report.status_code == 200, report.text
+    section = report.text.split("### 構成変更\n")[1].split("### ")[0]
+    assert "- 2026/03/22 00:00:00 +00:00 / ` VM の構成変更 ` / - / - / - / 1 件" in section
+    assert not any(line.startswith("  - ") for line in section.splitlines())
+
+
+async def test_config_diff_values_stay_out_of_chat_and_digest_llm(monkeypatch, config_clock):
+    from vcenter_event_assistant.services.chat import chat_llm
+    from vcenter_event_assistant.services.digest import digest_llm
+    from vcenter_event_assistant.services.digest.digest_run import run_digest_once
+    from vcenter_event_assistant.settings_binding import require_settings
+
+    value = "only-in-inventory-config-diff-5096"
+    vc = _vc()
+    async with session_scope() as session:
+        session.add(vc)
+        await session.flush()
+        session.add_all([
+            InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+            _event(vc, 10, VM, "guest", 80, entity_moid="vm-1"),
+            _diff(vc, 9, 11, attribute="guest_id", new_value=json.dumps(value)),
+        ])
+        await session.flush()
+
+        request = IncidentTimelineViewRequest.model_validate(_request())
+        view = await build_incident_timeline_view(session, request, owner_key="config-diff")
+        assert view.highlights.config_changes[0].diffs[0].new_value == value
+        settings = require_settings()
+        for name in ("chat", "digest"):
+            monkeypatch.setattr(settings, f"llm_{name}_api_key", "test-key")
+            monkeypatch.setattr(settings, f"llm_{name}_provider", "openai_compatible")
+        monkeypatch.setattr(settings, "llm_anonymization_enabled", False)
+        prompts = {}
+
+        def capture(kind):
+            async def receive(_model, messages, **_kwargs):
+                prompts[kind] = json.dumps([message.content for message in messages], ensure_ascii=False)
+                return "要約", None, None
+            return receive
+
+        for kind, module in (("chat", chat_llm), ("digest", digest_llm)):
+            monkeypatch.setattr(module, "build_chat_model", lambda *args, **kwargs: object())
+            monkeypatch.setattr(module, "stream_chat_to_text", capture(kind))
+        from vcenter_event_assistant.api.schemas.chat import ChatRequest
+        from vcenter_event_assistant.services.chat.chat_context_payloads import build_chat_context_payloads
+
+        chat = ChatRequest.model_validate({
+            "from": START.isoformat(), "to": END.isoformat(),
+            "messages": [{"role": "user", "content": "構成変更を調べて"}],
+        })
+        payload = await build_chat_context_payloads(session, chat, owner_key="config-diff")
+        await chat_llm.run_period_chat(
+            context=payload.context, messages=chat.messages, period_metrics=payload.period_metrics,
+            event_time_buckets=payload.event_time_buckets, incident_timeline=payload.incident_timeline,
+            settings=settings,
+        )
+        await run_digest_once(session, kind="weekly", from_utc=START, to_utc=END, settings=settings)
+
+    assert set(prompts) == {"chat", "digest"}
+    assert all(VM in prompt and value not in prompt and '"diffs"' not in prompt for prompt in prompts.values())
+
+
+@pytest.mark.parametrize("dialect_name", ["sqlite", "postgresql"])
+async def test_config_diff_card_order_uses_binary_collation_in_sql(dialect_name):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy.dialects import postgresql, sqlite
+
+    from vcenter_event_assistant.services.inventory_config_diffs import read_config_diffs
+
+    dialect = {"sqlite": sqlite.dialect(), "postgresql": postgresql.dialect()}[dialect_name]
+    session = SimpleNamespace(
+        get_bind=lambda: SimpleNamespace(dialect=dialect),
+        execute=AsyncMock(return_value=SimpleNamespace(all=list)),
+    )
+    await read_config_diffs(
+        session, InventoryConfigDiff.vcenter_id == uuid.uuid4(),
+        from_time=START, to_time=END, newest_first=False,
+    )
+
+    statement = session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=dialect))
+    collation = '"C"' if dialect_name == "postgresql" else '"BINARY"'
+    for column, suffix in [
+        ("category", "ASC"), ("element", "ASC NULLS FIRST"), ("attribute", "ASC NULLS LAST"),
+    ]:
+        # 表示順だけでなく、ページ・切れ目・対の選択にも同じ並びを使う。
+        assert sql.count(f"inventory_config_diffs.{column} COLLATE {collation} {suffix}") == 4
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_limit_preserves_cpu_and_memory(config_db, dialect, config_clock):
+    vc = _vc()
+    config_db.add(vc)
+    await config_db.flush()
+    devices = [_diff(vc, 9, 10, element=f"disk:{key:04d}", attribute="capacity_kb") for key in range(11)]
+    cpu = _diff(vc, 9, 10)
+    memory = _diff(vc, 9, 10, attribute="memory_mb", old_value="4096", new_value="8192")
+    config_db.add_all([
+        *devices, cpu, memory,
+        InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+        _event(vc, 10, VM, "guest", entity_moid="vm-1"),
+    ])
+    await config_db.flush()
+
+    request = IncidentTimelineViewRequest.model_validate(_request())
+    result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
+    (card,) = result.highlights.config_changes
+    assert [diff.id for diff in card.diffs] == [diff.id for diff in [memory, cpu, *devices[:8]]]
+    assert card.diffs_total == 13
+
+
+@pytest.mark.parametrize("mismatch", ["observed_at", "moid", "category"])
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_pair_rejects_unrelated_addition(config_db, dialect, mismatch, config_clock):
+    vc = _vc()
+    config_db.add(vc)
+    await config_db.flush()
+    disk = dict(element="disk:2000", attribute=None)
+    preceding = [_diff(vc, 8, 9) for _ in range(9)]
+    removed = _diff(vc, 9, 10, **disk, old_value='{"uuid":"old"}', new_value=None)
+    unrelated = _diff(
+        vc, 9, 10.5 if mismatch == "observed_at" else 10,
+        **disk, old_value=None, new_value='{"uuid":"other"}',
+        moid="vm-2" if mismatch == "moid" else "vm-1",
+        category="vm_other" if mismatch == "category" else "vm_config",
+    )
+    config_db.add_all([
+        *preceding, removed, unrelated,
+        InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+        _event(vc, 10, VM, "guest", entity_moid="vm-1", chain_id=12, collector_id=EVENTS),
+        _event(vc, 10, VM, "another guest", entity_moid="vm-2", chain_id=12, collector_id=EVENTS),
+    ])
+    await config_db.flush()
+
+    request = IncidentTimelineViewRequest.model_validate(_request())
+    result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
+    (card,) = result.highlights.config_changes
+    assert [diff.id for diff in card.diffs] == [diff.id for diff in [*preceding, removed]]
+    assert card.diffs_total == 11

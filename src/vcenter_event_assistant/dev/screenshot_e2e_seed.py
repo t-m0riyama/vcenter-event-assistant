@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vcenter_event_assistant.api.schemas.chat import IncidentTimelineBuildRequest
 from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
 from vcenter_event_assistant.api.schemas.incidents import TimedSource
+from vcenter_event_assistant.auth.timeutil import as_utc
+from vcenter_event_assistant.collectors.config_values import value_hash
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
@@ -39,6 +41,7 @@ from vcenter_event_assistant.db.models import (
     IncidentEvent,
     IncidentSnapshot,
     IncidentTimelineManualSnapshot,
+    InventorySyncState,
     LogPatternBackfillState,
     LogRecord,
     MetricSample,
@@ -52,6 +55,8 @@ from vcenter_event_assistant.mocks.mock_inventory import (
     SCREENSHOT_HOSTS,
     SCREENSHOT_VCENTER_NAME,
     SCREENSHOT_VMS,
+    mock_inventory,
+    mock_inventory_config,
 )
 from vcenter_event_assistant.plugins.builtin import EventsCollector, TasksCollector
 from vcenter_event_assistant.rules.notable import final_notable_score
@@ -63,6 +68,7 @@ from vcenter_event_assistant.services.incidents import (
     record_link_additions,
     reference_snapshot,
 )
+from vcenter_event_assistant.services.inventory_config import persist_inventory_config
 from vcenter_event_assistant.services.log_patterns.ledger import update_ledger
 from vcenter_event_assistant.services.log_patterns.masking import MASK_VERSION, mask_message, pattern_key
 from vcenter_event_assistant.settings_binding import require_settings
@@ -86,6 +92,16 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         if existing := res.scalar_one_or_none():
             now = datetime.now(timezone.utc)
             await seed_inventory(session, existing, now)
+            # 既存のデモでは、同じ再構成イベントの時刻を基準にして構成だけを補う。
+            reconfigured_at = await session.scalar(
+                select(EventRecord.occurred_at).where(
+                    EventRecord.vcenter_id == existing.id,
+                    EventRecord.chain_id == 9_003_001,
+                    EventRecord.event_type == "vim.event.VmReconfiguredEvent",
+                ).order_by(EventRecord.id).limit(1)
+            )
+            if reconfigured_at is not None:
+                await _seed_inventory_config(session, existing, as_utc(reconfigured_at) + timedelta(minutes=45))
             await seed_screenshot_diagnostics(session, existing, now)
             return
 
@@ -128,6 +144,7 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
 
         now = datetime.now(timezone.utc)
         await seed_inventory(session, vc, now)
+        await _seed_inventory_config(session, vc, now)
         vm_moid, vm_name = SCREENSHOT_VMS[2]
         session.add(
             EventRecord(
@@ -217,6 +234,33 @@ async def run_screenshot_e2e_seed_if_enabled() -> None:
         await session.flush()
         await _seed_incidents(session, vc, now, alert)
         await seed_screenshot_diagnostics(session, vc, now)
+
+
+async def _seed_inventory_config(session: AsyncSession, vcenter: VCenter, now: datetime) -> None:
+    state = await session.get(InventorySyncState, vcenter.id)
+    if state is not None and state.config_first_success_at is not None:
+        return
+
+    inventory = mock_inventory(now, vcenter_name=vcenter.name)
+    vm = SCREENSHOT_VMS[0][0]
+    host = SCREENSHOT_HOSTS[0][0]
+    # 最初の観測は、53 分前に始まるホストのメンテナンスより前に置く。
+    for minutes in (55, 40, 25):
+        at = now - timedelta(minutes=minutes)
+        config = mock_inventory_config(at, observation=inventory, vcenter_name=vcenter.name)
+        config.started_at = config.observed_at = at
+        if minutes == 55:
+            value = config.values[vm, "vm_config"]
+            value.update(num_cpu=2, memory_mb=4096)
+            # 保存する構成と同じ値から版を作る。
+            config.change_versions[vm] = value_hash(value)
+        if minutes > 25:
+            # ホストのメンテナンスのカードと重ならない観測で VLAN が変わる。
+            portgroup = config.values[host, "host_portgroup"]["VM Network"]
+            assert isinstance(portgroup, dict)
+            portgroup["vlan_id"] = 10
+        await persist_inventory_config(session, vcenter.id, config)
+        await session.flush()
 
 
 async def _seed_incidents(session: AsyncSession, vcenter: VCenter, now: datetime, alert: AlertHistory) -> None:
