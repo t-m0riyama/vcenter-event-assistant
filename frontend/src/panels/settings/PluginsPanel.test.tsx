@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, AUTH_DISABLED_ME } from '../../auth/authContext'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { PluginsPanel } from './PluginsPanel'
 
@@ -93,6 +94,12 @@ describe('PluginsPanel', () => {
     expect(screen.getByText('成功')).toBeInTheDocument()
     expect(screen.getByText('イベント 2 / メトリクス 3 / ログ 0')).toBeInTheDocument()
     expect(screen.getByText(/10:00:05 AM/)).toBeInTheDocument()
+    const table = screen.getByRole('columnheader', { name: 'エラー' }).closest('table')!
+    expect(within(table).getByRole('columnheader', { name: '成功日時' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: '失敗日時' })).toBeInTheDocument()
+    const cells = within(table).getAllByRole('cell')
+    expect(cells[5]).toHaveTextContent(/^—$/)
+    expect(cells[7]).toHaveTextContent(/^—$/)
     expect(screen.getByRole('button', { name: 'Temperature の詳細を閉じる' }))
       .toHaveAttribute('aria-expanded', 'true')
   })
@@ -108,6 +115,84 @@ describe('PluginsPanel', () => {
     expect(screen.getByText('実行記録はありません。')).toBeInTheDocument()
     // 応答に description が無くてもパースは通り、説明の段落は出ない。
     expect(document.querySelector('.plugin-description')).toBeNull()
+  })
+
+  it.each([
+    { success: null, status: 'failed', error: 'vim.fault.InvalidLogin: collector execution failed', label: '失敗中' },
+    { success: '2026-09-12T01:00:04Z', status: 'failed', error: 'vim.fault.InvalidLogin: collector execution failed', label: '失敗中' },
+    { success: '2026-09-12T01:00:06Z', status: 'ok', error: 'vim.fault.InvalidLogin: collector execution failed', label: '過去の失敗' },
+    { success: '2026-09-12T01:00:06Z', status: 'ok', error: null, label: '過去の失敗' },
+    { success: '2026-09-12T01:00:04Z', status: 'running', error: null, label: '失敗中' },
+  ] as const)('状態が $status、成功時刻が $success、エラーが $error の実行記録は $label と表示する', async ({ success, status, error, label }) => {
+    const collector = pluginResponse.collectors[0]
+    const run = { ...collector.runs[0], status, last_success_at: success, last_failure_at: '2026-09-12T01:00:05Z', error }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...pluginResponse, collectors: [{ ...collector, runs: [run] }],
+    })))
+
+    renderPanel()
+    await screen.findByText('Temperature')
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
+
+    const row = screen.getByText('Tokyo vCenter').closest('tr')!
+    expect(within(row).getByText({ ok: '成功', failed: '失敗', running: '実行中' }[status])).toBeInTheDocument()
+    expect(within(row).getByText(label)).toBeInTheDocument()
+    expect(within(row).queryByText(label === '失敗中' ? '過去の失敗' : '失敗中')).not.toBeInTheDocument()
+    if (label === '過去の失敗' && success) {
+      expect(within(row).getByText(/この後、/))
+        .toHaveTextContent(`この後、${formatIsoInTimeZone(success, 'Asia/Tokyo')} に成功しています`)
+    } else {
+      expect(within(row).queryByText(/この後、/)).not.toBeInTheDocument()
+    }
+    if (error) {
+      expect(within(row).getByText('認証または権限の問題で収集できませんでした。ユーザー名、パスワード、接続先での権限を確認してください。（種類: vim.fault.InvalidLogin）')).toBeInTheDocument()
+      const summary = within(row).getByText('詳細')
+      expect(summary).toHaveAccessibleName('詳細（Tokyo vCenter のエラー）')
+      const details = summary.closest('details')!
+      expect(details).not.toHaveAttribute('open')
+      expect(within(details).getByText(error)).toBeInTheDocument()
+      expect(within(row).getAllByText(error)).toEqual([within(details).getByText(error)])
+    } else {
+      expect(within(row).queryByText('詳細')).not.toBeInTheDocument()
+    }
+  })
+
+  it('成功と失敗が同時刻でエラー本文がなければ、エラー欄に「—」を表示する', async () => {
+    const collector = pluginResponse.collectors[0]
+    const run = { ...collector.runs[0], last_failure_at: '2026-09-12T10:00:05+09:00' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...pluginResponse, collectors: [{ ...collector, runs: [run] }],
+    })))
+    renderPanel()
+    await screen.findByText('Temperature')
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
+
+    const row = screen.getByText('Tokyo vCenter').closest('tr')!
+    expect(within(row).getAllByRole('cell')[7]).toHaveTextContent(/^—$/)
+  })
+
+  it('失敗時刻がなくても、エラー本文があれば案内と名前付きの詳細を表示する', async () => {
+    const collector = pluginResponse.collectors[0]
+    const error = 'worker exited before responding: collector execution failed'
+    const run = { ...collector.runs[0], last_success_at: null, error }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...pluginResponse, collectors: [{ ...collector, runs: [
+        run, { ...run, vcenter_id: 'osaka', vcenter_name: 'Osaka vCenter' },
+      ] }],
+    })))
+    renderPanel()
+    await screen.findByText('Temperature')
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature の詳細を開く' }))
+
+    for (const name of ['Tokyo vCenter', 'Osaka vCenter']) {
+      const row = screen.getByText(name).closest('tr')!
+      const cell = within(row).getAllByRole('cell')[7]
+      expect(within(cell).getByText('収集を実行するプロセスが異常終了したか、利用できません。続く場合は管理者に連絡してください。（種類: worker exited before responding）')).toBeInTheDocument()
+      expect(cell).not.toHaveTextContent(/失敗中|過去の失敗/)
+      const summary = within(cell).getByText('詳細')
+      expect(summary).toHaveAccessibleName(`詳細（${name} のエラー）`)
+      expect(within(summary.closest('details')!).getByText(error)).toBeInTheDocument()
+    }
   })
 
   it('手動更新中はボタンを無効化し、失敗しても取得済み一覧を保持する', async () => {

@@ -167,14 +167,3 @@
 .vcenter-inventory-status time {
   white-space: nowrap;
 }
-
-.vcenter-inventory-status__failing {
-  color: var(--color-warning-text);
-}
-
-.vcenter-inventory-status__error {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}

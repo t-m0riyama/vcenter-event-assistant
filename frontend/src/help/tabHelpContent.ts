@@ -81,8 +81,9 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
   },
   vcenters: {
     summary:
-      '【vCenter 設定】\n接続先 vCenter の登録・編集・削除と接続テストを行います。',
-    userGuideDoc: 'docs/development/frontend.md',
+      '【vCenter 設定】\n接続先 vCenter の登録・編集・削除と接続テストを行います。\n- 「関係の収集」では、失敗後にまだ成功していなければ「失敗中」、成功していれば「過去の失敗」と成功時刻を表示します。失敗の説明にある「詳細」を開くと、記録されたエラーを確認できます。',
+    userGuideDoc: 'docs/userguide/summary.md',
+    markerId: 'summary',
   },
   score_rules: {
     summary:
@@ -103,7 +104,7 @@ export const SETTINGS_SUB_TAB_HELP: Partial<Record<SettingsSubTabId, TabHelpEntr
   },
   plugins: {
     summary:
-      '【プラグイン管理】\nコレクタプラグインの構成と vCenter 別の最新実行状態を確認します。\n- 管理機能が有効な場合、変更は 2 段階です。① 行を開いて有効/無効や実行間隔を変え「保存」を押す（この時点ではまだ動作は変わりません）。② 一覧右上の「変更を反映」を押すと稼働中の構成に適用されます（アプリの再起動は不要です）。\n- 管理機能が無効な場合は参照専用です。設定は TOML または環境変数で変更し、アプリを再起動して反映します。',
+      '【プラグイン管理】\nコレクタプラグインの構成と vCenter 別の最新実行状態を確認します。\n- 実行状況の「エラー」欄には、失敗後にまだ成功していなければ「失敗中」、成功していれば「過去の失敗」と成功時刻を表示します。失敗の説明にある「詳細」を開くと、記録されたエラーを確認できます。\n- 管理機能が有効な場合、変更は 2 段階です。① 行を開いて有効/無効や実行間隔を変え「保存」を押す（この時点ではまだ動作は変わりません）。② 一覧右上の「変更を反映」を押すと稼働中の構成に適用されます（アプリの再起動は不要です）。\n- 管理機能が無効な場合は参照専用です。設定は TOML または環境変数で変更し、アプリを再起動して反映します。',
     userGuideDoc: 'docs/userguide/plugins.md',
     markerId: 'plugins',
   },
