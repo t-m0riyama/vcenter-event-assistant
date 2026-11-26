@@ -284,6 +284,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             content = si.RetrieveContent()
             paths, cluster_path = _probe_paths(content)
+            if not paths:
+                print("段 1 のパスを 1 つも読めなかったため、ここで止めます。", file=sys.stderr)
+                return 1
             before = _sample(content, paths, cluster_path)
             sleep(args.interval_seconds)
             after = _sample(content, paths, cluster_path)

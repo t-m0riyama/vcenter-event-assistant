@@ -211,6 +211,28 @@ def test_probe_prints_only_type_when_connection_fails(monkeypatch, capsys):
     assert capsys.readouterr().err == "OSError\n"
 
 
+def test_probe_stops_when_no_stage_one_path_is_readable(monkeypatch, capsys):
+    async def lookup(*_):
+        return VCenter(host="hidden", username="hidden", password="hidden")
+
+    connection = Mock()
+    disconnect = Mock()
+    monkeypatch.setattr(probe, "_find_vcenter", lookup)
+    monkeypatch.setattr(probe, "connect_vcenter", Mock(return_value=connection))
+    monkeypatch.setattr(probe, "disconnect", disconnect)
+    monkeypatch.setattr(probe, "_probe_paths", Mock(return_value=({}, "configurationEx")))
+    sample = Mock(side_effect=AssertionError("段 2 に進んだ"))
+    monkeypatch.setattr(probe, "_sample", sample)
+    pause = Mock()
+    monkeypatch.setattr(probe, "sleep", pause)
+    assert probe.main(["hidden"]) == 1
+    sample.assert_not_called()
+    pause.assert_not_called()
+    disconnect.assert_called_once_with(connection)
+    err = capsys.readouterr().err
+    assert "1 つも読めなかった" in err and "hidden" not in err
+
+
 async def test_probe_uses_existing_sqlite_db_read_only_and_does_not_create_a_file(
     tmp_path,
 ):

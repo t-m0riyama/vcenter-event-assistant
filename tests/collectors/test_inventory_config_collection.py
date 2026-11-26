@@ -8,7 +8,7 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from pyVmomi import vim, vmodl
+from pyVmomi import SoapAdapter, vim, vmodl
 
 from vcenter_event_assistant.collectors import inventory_config as reader
 from vcenter_event_assistant.collectors.config_values import (
@@ -803,3 +803,26 @@ def test_disk_uuid_replacement_rule_does_not_apply_to_nic_keys():
         '"old"',
         '"new"',
     )
+
+
+def _assert_serializes(spec):
+    """偽の collector は直列化しないので、実機に送るときと同じ直列化を通す。"""
+    for prop in spec.propSet:
+        assert isinstance(prop.pathSet, list)
+        xml = SoapAdapter.Serialize(prop)
+        for path in prop.pathSet:
+            assert f"<pathSet>{path}</pathSet>".encode() in xml
+
+
+@pytest.mark.parametrize("cluster_path", ["configurationEx", "configuration"])
+def test_overview_request_serializes_for_the_soap_call(no_view_rpc, cluster_path):
+    content, pc = pc_content(page())
+    reader.read_overview(content, reader.overview_paths(cluster_path), deadline=INF)
+    _assert_serializes(pc.RetrievePropertiesEx.call_args.kwargs["specSet"][0])
+
+
+def test_vm_details_request_serializes_for_the_soap_call():
+    ref = vim.VirtualMachine("vm-1")
+    content, pc = pc_content(page(raw(ref, vm_details())))
+    reader.read_vm_details(content, [ref], deadline=INF)
+    _assert_serializes(pc.RetrievePropertiesEx.call_args.kwargs["specSet"][0])
