@@ -1,6 +1,6 @@
 # 構成の差分を記録する
 
-最終更新: 2026-11-26（本書を作成）
+最終更新: 2026-11-26（PR A マージ済み。PR B を実装中）
 
 [障害調査を楽にする機能 10 案](2026-11-22-troubleshooting-ideas.md)（以下「10 案」）の「案 2b」（構成変更の追跡の第 2 段）にあたる。ESXi のビルド、クラスタの HA・DRS の設定、標準 vSwitch とポートグループ、VM の構成を定期的に読み、値が変わったときに「何から何に変わったか」を記録する。記録した差分は、タイムラインの対象の欄と、案 2a の「構成変更」のカードに出す。Issue は起票していない。
 
@@ -10,8 +10,8 @@
 
 | PR | 内容 | 状態 |
 |---|---|---|
-| A | 本書 | 作成中 |
-| B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | 未着手 |
+| A | 本書 | マージ済み（[PR #395](https://github.com/t-m0riyama/vcenter-event-assistant/pull/395)） |
+| B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | 実装中 |
 | C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | 未着手 |
 | D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | 未着手 |
 
@@ -70,6 +70,8 @@
 
    群の中は、保存した行の `verified_at` の古い順（同じなら moid の順）に読む。行の無い VM は moid の順にする。毎晩のスナップショットのように、1 回で読める数より多くの VM が変わっても、同じ VM がいつまでも読み残しにならないようにするためである。接続していない VM と、`config.changeVersion` が読めなかった VM は段 2 で読まず、3 章のとおり持ち越す。
 
+   段 2 で必ず要る属性は `config.changeVersion`・`config.hardware.numCPU`・`config.hardware.memoryMB`・`config.hardware.device` だけとし、ほかの属性が `propSet` に無い（未設定）ときは、その項目を None にして比べる。必ず要る属性が欠けた VM と、どの属性でも `missingSet` に入った（権限や一時的な障害で読めなかった）VM は「段 2 で読めなかった VM」として持ち越し、その数を `config_deferred_count` とは別に警告に残す。段 1 と段 2 の間に削除されて `ManagedObjectNotFound` で外した VM も持ち越すが、警告の数には入れない。ディスクの元の backing が分からない（循環、`parent` が読めない、深さ 64 を超える）VM も、段 2 で読めなかった VM として持ち越す。
+
    ContainerView を使わず、段 1 で受け取った VM の参照（moid から作り直さない）を並べた `ObjectSpec`（`skip=False`、`selectSet` なし）で、200 台ずつ読む。読む属性は `config.changeVersion`・`config.hardware.numCPU`・`config.hardware.numCoresPerSocket`・`config.hardware.memoryMB`・`config.version`・`config.guestId`・`config.cpuAllocation`・`config.memoryAllocation`・`config.hardware.device` である。保存する `change_version` には、段 2 で読んだ値を使う（段 1 と段 2 の間に変わることがあるため）。
 
    段 1 と段 2 の間に VM が削除されると、組の要求全体が `ManagedObjectNotFound` で失敗することがある。そのときは、例外の `obj` の VM を組から外して、同じ組を読み直す（1 つの組で最大 10 回まで。超えたら構成の読み取りの失敗にする）。外した VM は、段 2 では読めなかった VM として扱う（3 章）。この例外の出方は、7 章の道具でも確かめる。
@@ -113,7 +115,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 | `cluster_ha` | クラスタ | `configurationEx.dasConfig` | なし | `enabled`・`host_monitoring`・`vm_monitoring`・`admission_control_enabled`・`admission_control_policy`・`failover_level`・`auto_compute`・`cpu_failover_percent`・`memory_failover_percent`・`failover_hosts`・`restart_priority`・`isolation_response`（下の注） |
 | `cluster_drs` | クラスタ | `configurationEx.drsConfig` | なし | `enabled`・`default_vm_behavior`・`vmotion_rate` |
 | `vm_config` | VM | 段 2 の属性 | なし | `num_cpu`・`cores_per_socket`・`memory_mb`・`hardware_version`（`config.version`）・`guest_id`・`cpu_reservation_mhz`・`cpu_limit_mhz`・`cpu_shares`・`memory_reservation_mb`・`memory_limit_mb`・`memory_shares`（`shares.level`。`custom` のときだけ `custom:<shares>`） |
-| （`vm_config` の中） | VM のディスク | `config.hardware.device` の `VirtualDisk` | `disk:<key>` | `label`・`capacity_kb`・`thin`（`backing.thinProvisioned`）・`disk_mode`（`backing.diskMode`） |
+| （`vm_config` の中） | VM のディスク | `config.hardware.device` の `VirtualDisk` | `disk:<key>` | `label`・`capacity_kb`・`thin`（`thinProvisioned`）・`disk_mode`（`diskMode`。どちらも、`backing.parent` を最後までたどった元のディスクの backing から読む） |
 | （`vm_config` の中） | VM の NIC | `config.hardware.device` の `VirtualEthernetCard` | `nic:<key>` | `label`・`adapter`（型名。例: `VirtualVmxnet3`）・`network`（標準のポートグループなら `backing.deviceName`、分散なら `backing.port.portgroupKey`、NSX なら `backing.opaqueNetworkId`、それ以外の backing なら None）・`start_connected`（`connectable.startConnected`）・`mac_address` |
 
 `cluster_ha` の注:
@@ -127,7 +129,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 外した項目と理由:
 - `HostPortGroup.port`・`HostVirtualSwitch.numPortsAvailable`: 構成を変えなくても変わる（上の確認）。
 - `HostVirtualSwitch.numPorts`: ESXi 5.5 からポートの数は自動で増減する。
-- ディスクの `backing.fileName`: スナップショットを取るとデルタディスクに替わる。データストアの移動は、案 1 の関係（`vm_datastore`）で分かる。
+- ディスクの `backing.fileName`: スナップショットを取るとデルタディスクに替わる。同じ理由で、`thin`・`disk_mode` は今の backing（差分ディスク。`SeSparseBackingInfo` は `thinProvisioned` を持たない）ではなく、`parent` をたどった元の backing から読む。データストアの移動は、案 1 の関係（`vm_datastore`）で分かる。
 - NIC の `connectable.connected`: 電源の状態で変わる。
 - `configurationEx` の残り（ルール、VM ごとの上書き、グループ）: 量が多く、最初の版では扱わない（8 章）。
 
@@ -207,7 +209,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 ### スレッドと時間
 
 - スレッドは、関係の結果と構成の結果を、別々の `Future` で返す。関係の `Future` は関係を読み終えた時点で値が入り、構成の `Future` は構成の読み取りを終えた時点で値か例外が入る。
-- 非同期の側は、関係の `Future` を受け取ったら、すぐに関係を保存する。その後で、構成の `Future` を、残りの時間（`inventory_sync_timeout_seconds` から経過した時間を引いた分）だけ待つ。間に合わなければ、構成の読み取りのタイムアウトとして記録する（関係の記録は残る）。今の `_reads` によるスレッドの数の管理は、スレッドが終わるまで続ける。そのため `_reads` には、スレッドの終わりを表す構成の `Future` を入れる（関係の `Future` を入れると、関係を読み終えた時点で done になり、同じ vCenter の読み取りが重なったり、スレッドが 3 つ以上になったりする）。構成の読み取りが無効なときや、関係の読み取りで例外が出たときも、スレッドの `finally` で、構成の `Future` にかならず値（読まなかったことを表す値）か例外を入れる。
+- 非同期の側は、関係の `Future` を受け取ったら、すぐに関係を保存する。その後で、構成の `Future` を、残りの時間（`inventory_sync_timeout_seconds` から経過した時間を引いた分）だけ待つ。間に合わなければ、構成の読み取りのタイムアウトとして記録する（関係の記録は残る）。今の `_reads` によるスレッドの数の管理は、スレッドが終わるまで続ける。そのため `_reads` の枠は、スレッドが生きている間（`thread.is_alive()`）は空けない。構成の `Future` は切断の前に値が入るので、枠の判定には使わない（関係や構成の `Future` で判定すると、切断の途中で枠が空き、同じ vCenter の読み取りが重なったり、スレッドが 3 つ以上になったりする）。構成の読み取りが無効なときや、関係の読み取りで例外が出たときも、スレッドの `finally` で、構成の `Future` にかならず値（読まなかったことを表す値）か例外を入れる。
 - スレッドの中の締め切りは、スレッドの開始から `inventory_sync_timeout_seconds` の 8 割とする。段 1 の各ページの前と、段 2 の各組の前で締め切りを見る。
   - 段 1 で締め切りを過ぎたら、構成の読み取りの失敗にする（段 1 は全件を読み終えないと使えない）。
   - 段 2 で締め切りを過ぎたら、新しい組を読み始めず、残りの VM を「読み残し」として返す。
@@ -229,7 +231,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
         - 元の属性が `missingSet` に入った種類。
         - 元の属性が `propSet` に無い種類（途中が未設定のパスは、`missingSet` にも入らずに消える）。
         - 元の属性の値そのものが None の種類（`dasConfig` が None など）。
-        - 段 2 で読めなかった VM（`ManagedObjectNotFound` で外した、属性が欠けた）の `vm_config`。
+        - 段 2 で読めなかった VM（`ManagedObjectNotFound` で外した、必ず要る属性が欠けた、どれかの属性が `missingSet` に入った、ディスクの元の backing が分からない）の `vm_config`。
       - 空の配列（vSwitch が 1 つも無い）は持ち越しではなく、空の値として比べる。`propSet` に無いことと、空の配列で返ることを区別するためである。区別が実機でどう出るかは、7 章の道具で確かめる。
       - **読み残し（何もしない）:** 段 2 で読み残した VM の `vm_config`。`change_version` も古いままにするので、次の観測で読み直す。
       - **初めての値:** 保存した行が無い。差分は記録せず、行を入れる（`verified_at` は今回の読み始め）。

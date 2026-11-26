@@ -151,6 +151,60 @@ class InventorySyncState(Base):
     object_count: Mapped[int | None] = mapped_column(Integer)
     relation_count: Mapped[int | None] = mapped_column(Integer)
 
+    config_instance_uuid: Mapped[str | None] = mapped_column(String(256))
+    config_first_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    config_last_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    config_last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    config_last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    config_last_error: Mapped[str | None] = mapped_column(Text)
+    config_last_warning: Mapped[str | None] = mapped_column(Text)
+    config_last_warning_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    config_object_count: Mapped[int | None] = mapped_column(Integer)
+    config_deferred_count: Mapped[int | None] = mapped_column(Integer)
+
+
+class InventoryConfigState(Base):
+    __tablename__ = "inventory_config_states"
+    __table_args__ = (
+        UniqueConstraint("vcenter_id", "moid", "category", name="uq_inventory_config_states_entity"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vcenters.id", ondelete="CASCADE"))
+    moid: Mapped[str] = mapped_column(String(256))
+    category: Mapped[str] = mapped_column(String(32))
+    entity_type: Mapped[str] = mapped_column(String(256))
+    entity_name: Mapped[str] = mapped_column(String(1024))
+    format: Mapped[int] = mapped_column(Integer)
+    value: Mapped[dict] = mapped_column(JSON)
+    value_hash: Mapped[str] = mapped_column(String(64))
+    change_version: Mapped[str | None] = mapped_column(String(256))
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class InventoryConfigDiff(Base):
+    __tablename__ = "inventory_config_diffs"
+    __table_args__ = (
+        CheckConstraint("changed_after <= observed_at", name="ck_inventory_config_diffs_period"),
+        Index("ix_inventory_config_diffs_entity", "vcenter_id", "moid", "observed_at"),
+        Index("ix_inventory_config_diffs_observed", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vcenter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vcenters.id", ondelete="CASCADE"))
+    moid: Mapped[str] = mapped_column(String(256))
+    category: Mapped[str] = mapped_column(String(32))
+    entity_type: Mapped[str] = mapped_column(String(256))
+    entity_name: Mapped[str] = mapped_column(String(1024))
+    element: Mapped[str | None] = mapped_column(String(1024))
+    element_label: Mapped[str | None] = mapped_column(String(1024))
+    attribute: Mapped[str | None] = mapped_column(String(64))
+    old_value: Mapped[str | None] = mapped_column(Text)
+    new_value: Mapped[str | None] = mapped_column(Text)
+    truncated: Mapped[bool] = mapped_column(Boolean)
+    changed_after: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
 
 class EventRecord(Base):
     __tablename__ = "events"

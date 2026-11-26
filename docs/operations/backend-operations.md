@@ -388,9 +388,16 @@ TLS:
 
 `INVENTORY_SYNC_TIMEOUT_SECONDS` は vCenter ごとの観測の待ち時間と、収集用の HTTP ソケットのタイムアウトに使う。pyVmomi の制約により、`SmartConnect` の最初の API バージョン探索（`vimServiceVersions.xml` の取得）には HTTP タイムアウトが効かない。
 
+構成の読み取りも `INVENTORY_SYNC_TIMEOUT_SECONDS` の待ち時間に含まれる。構成の読み取りでは、専用スレッドの開始からこの値の 8 割を締め切りとする。構成の要求や切断が長引くと、関係の保存後もスレッド枠を占め続ける。次の関係の収集で「前回の読み取りがまだ実行中です」や「専用スレッドに空きがありません」と記録されることがある。
+
 探索で止まったデーモンスレッドは、呼び出しが戻るまで専用の収集枠を占める。ジョブは観測がタイムアウトすると次の vCenter に進む。前回の読み取りが残っている場合や専用スレッドに空きがない場合は、待たずにその回の失敗として記録する。イベントの取り込みは別のスレッドで動く。アプリの終了時は新しい読み取りの受付を閉じ、実行中のデーモンスレッドの完了を待たずに終了する。
 
 vCenter を順に収集するため、1 回のジョブの読み取り待ち時間は最大で「有効な vCenter の数 × `INVENTORY_SYNC_TIMEOUT_SECONDS`」になり、DB 更新時間が加わる。前のジョブが収集間隔を超えて次回の実行時刻にも動いていると、APScheduler は次の実行を飛ばし、`maximum number of running instances reached` を WARNING で記録する。
+
+#### 構成の差分の記録
+
+- `INVENTORY_CONFIG_ENABLED`（既定 `true`）で、インベントリ収集時にホスト・クラスタ・VM の構成を読み、差分を記録する。動作には `SCHEDULER_ENABLED` と `INVENTORY_SYNC_ENABLED` も必要。無効にしている間は今の構成を保持し、再開時はその値と比較する。
+- `INVENTORY_CONFIG_RETENTION_DAYS`（既定 30、最小 1）は構成の差分の保持期間。イベントの保持期間とは独立している。構成の読み取りが無効でも、保持期間を過ぎた差分は定期削除の対象になる。
 
 ### 3.4 DB障害（接続失敗/遅い/ディスク）
 
@@ -483,7 +490,7 @@ vCenter を順に収集するため、1 回のジョブの読み取り待ち時�
 - スケジューラ有効化: `SCHEDULER_ENABLED`
 - インベントリ収集は `INVENTORY_SYNC_ENABLED`（既定 `true`）で切り替える。`INVENTORY_SYNC_INTERVAL_SECONDS`（既定 600 秒、下限 60 秒）で収集間隔を、`INVENTORY_SYNC_TIMEOUT_SECONDS`（既定 300 秒）で vCenter ごとの読み取りを待つ上限を設定する。
 - APScheduler の `misfire_grace_time`: interval ジョブは各間隔の半分、cron ダイジェストは 3600 秒（`jobs/scheduler.py`）。イベントループ停止後の取りこぼし軽減用
-- イベントとインベントリの保持期間は `EVENT_RETENTION_DAYS`（既定 7 日、下限 1 日）で設定する。メトリクスは `METRIC_RETENTION_DAYS` で設定する。`ALERT_HISTORY_RETENTION_DAYS`、`DIGEST_RETENTION_DAYS`、`INCIDENT_RETENTION_DAYS`、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS` は `0` でそれぞれの削除を無効にする。`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` は保存結果だけの保持期間を設定し、`0` で保存結果の削除を無効にする。詳細は「インシデントの保持期間」と「スナップショットの保存結果の保持期間」を参照する。
+- イベントとインベントリの関係の保持期間は `EVENT_RETENTION_DAYS`（既定 7 日、下限 1 日）で設定する。メトリクスは `METRIC_RETENTION_DAYS` で設定する。`ALERT_HISTORY_RETENTION_DAYS`、`DIGEST_RETENTION_DAYS`、`INCIDENT_RETENTION_DAYS`、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS` は `0` でそれぞれの削除を無効にする。`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` は保存結果だけの保持期間を設定し、`0` で保存結果の削除を無効にする。詳細は「インシデントの保持期間」と「スナップショットの保存結果の保持期間」を参照する。
   - タイムラインのスナップショットは、保存時点の結果（JSON）も残す。結果は、元のイベント・ログ・メトリクスの保持期間を過ぎても、`INCIDENT_TIMELINE_SNAPSHOT_RETENTION_DAYS`（既定 90 日）のあいだは残る。先に結果だけを消したいときは、`INCIDENT_TIMELINE_SNAPSHOT_RESULT_RETENTION_DAYS` を設定する。紐付いたスナップショットは行と保存結果の両方が削除の対象外になる。保存する結果は 1 件あたり最大 8 MiB で、超えると保存せず 413 を返す。
   - SQLite は、削除した行の領域をファイルサイズへ戻さない（空いた領域は次の書き込みで再利用される）。ファイルを縮めるには `VACUUM` が要る。
 - ダイジェスト: `DIGEST_*`

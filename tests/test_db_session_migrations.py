@@ -1128,3 +1128,120 @@ async def test_diagnostic_migration_preserves_ssh_rows_and_adds_constraints(tmp_
                 await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_inventory_config_diff_migration_round_trip(tmp_path, backend) -> None:
+    """差分の表を足し、構成の列だけを外して元の関係の状態に戻せる。"""
+    import os
+    from uuid import uuid4
+
+    from alembic import command
+    from sqlalchemy import Uuid, bindparam
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from vcenter_event_assistant.db.alembic_runner import _run_with_connection, alembic_config
+
+    if backend == "postgres":
+        url = os.environ.get("VEA_TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("VEA_TEST_POSTGRES_URL must point to a dedicated test DB")
+    else:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'inventory_config.db'}"
+    cfg = alembic_config(settings=get_settings().model_copy(update={"database_url": url}))
+    engine = create_async_engine(url)
+    before = "e4f5a6b7c8d9"
+    vc = uuid4()
+    table_states = "inventory_config_states"
+    table_diffs = "inventory_config_diffs"
+    config_columns = {
+        "config_instance_uuid", "config_first_success_at", "config_last_started_at",
+        "config_last_success_at", "config_last_failure_at", "config_last_error",
+        "config_last_warning", "config_last_warning_at", "config_object_count",
+        "config_deferred_count",
+    }
+
+    def migrate(conn, action, revision):
+        _run_with_connection(conn, cfg, lambda cc: action(cc, revision))
+
+    def check_schema(conn, *, has_config):
+        inspector = inspect(conn)
+        sync_columns = {
+            c["name"]: c for c in inspector.get_columns("inventory_sync_states")
+        }
+        if not has_config:
+            assert not inspector.has_table(table_states)
+            assert not inspector.has_table(table_diffs)
+            assert not config_columns & sync_columns.keys()
+            return
+
+        assert {name for name in sync_columns if name.startswith("config_")} == config_columns
+        assert all(sync_columns[name]["nullable"] for name in config_columns)
+        shared = {"id", "vcenter_id", "moid", "category", "entity_type", "entity_name"}
+        states = {c["name"]: c for c in inspector.get_columns(table_states)}
+        diffs = {c["name"]: c for c in inspector.get_columns(table_diffs)}
+        assert states.keys() == shared | {"format", "value", "value_hash", "change_version", "verified_at"}
+        assert diffs.keys() == shared | {
+            "element", "element_label", "attribute", "old_value", "new_value",
+            "truncated", "changed_after", "observed_at",
+        }
+        assert {name for name, c in states.items() if c["nullable"]} == {"change_version"}
+        assert {name for name, c in diffs.items() if c["nullable"]} == {
+            "element", "element_label", "attribute", "old_value", "new_value",
+        }
+        for table in (table_states, table_diffs):
+            key, = inspector.get_foreign_keys(table)
+            assert key["referred_table"] == "vcenters"
+            assert key["options"]["ondelete"] == "CASCADE"
+        unique, = inspector.get_unique_constraints(table_states)
+        assert unique["column_names"] == ["vcenter_id", "moid", "category"]
+        assert {tuple(i["column_names"]) for i in inspector.get_indexes(table_diffs)} == {
+            ("vcenter_id", "moid", "observed_at"), ("observed_at",),
+        }
+
+    def statement(sql):
+        return text(sql).bindparams(bindparam("id", type_=Uuid()))
+
+    try:
+        async with engine.connect() as conn, conn.begin() as tx:
+            if backend == "postgres":
+                schema = f"inventory_config_{vc.hex}"
+                await conn.execute(text(f"CREATE SCHEMA {schema}"))
+                await conn.execute(text(f"SET LOCAL search_path TO {schema}"))
+            await conn.run_sync(migrate, command.upgrade, before)
+            await conn.run_sync(check_schema, has_config=False)
+            await conn.execute(statement("""
+                INSERT INTO vcenters
+                    (id, name, host, protocol, port, username, password, verify_ssl, is_enabled, created_at)
+                VALUES (:id, 'existing', 'vc.example', 'https', 443, 'u', 'p', true, true, CURRENT_TIMESTAMP)
+            """), {"id": vc})
+            await conn.execute(statement("""
+                INSERT INTO inventory_sync_states (vcenter_id, instance_uuid) VALUES (:id, 'keep')
+            """), {"id": vc})
+
+            for _ in range(2):
+                await conn.run_sync(migrate, command.upgrade, "head")
+                await conn.run_sync(check_schema, has_config=True)
+                assert tuple((await conn.execute(text("""
+                    SELECT instance_uuid, config_instance_uuid FROM inventory_sync_states
+                """))).one()) == ("keep", None)
+                await conn.execute(statement("""
+                    INSERT INTO inventory_config_states
+                        (vcenter_id, moid, category, entity_type, entity_name, format, value, value_hash, verified_at)
+                    VALUES (:id, 'vm-1', 'vm_config', 'VirtualMachine', 'vm', 1, '{}', 'hash', CURRENT_TIMESTAMP)
+                """), {"id": vc})
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(statement("""
+                            INSERT INTO inventory_config_diffs
+                                (vcenter_id, moid, category, entity_type, entity_name, truncated, changed_after, observed_at)
+                            VALUES (:id, 'vm-1', 'vm_config', 'VirtualMachine', 'vm', false,
+                                    CURRENT_TIMESTAMP, '2000-01-01 00:00:00')
+                        """), {"id": vc})
+                await conn.run_sync(migrate, command.downgrade, before)
+                await conn.run_sync(check_schema, has_config=False)
+                assert await conn.scalar(text("SELECT instance_uuid FROM inventory_sync_states")) == "keep"
+            await tx.rollback()
+    finally:
+        await engine.dispose()

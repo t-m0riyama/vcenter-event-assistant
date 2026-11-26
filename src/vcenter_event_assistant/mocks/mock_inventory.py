@@ -2,9 +2,16 @@
 
 from datetime import datetime
 
+from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.collectors.config_values import ConfigValue, value_hash
 from vcenter_event_assistant.collectors.inventory import (
     InventoryObjectData,
     InventoryObservation,
+)
+from vcenter_event_assistant.collectors.inventory_config import (
+    ConfigBaseline,
+    ConfigObservation,
+    select_vm_details,
 )
 from vcenter_event_assistant.mocks.mock_collectors import MOCK_HOST_MOID, MOCK_VM_MOID
 
@@ -79,3 +86,102 @@ def mock_inventory(
         relations.add(("vm_datastore", vm, datastores[index % len(datastores)][0]))
         relations.add(("vm_network", vm, _NETWORKS[1]))
     return InventoryObservation(MOCK_INSTANCE_UUID, objects, relations, set())
+
+
+def mock_inventory_config(
+    now: datetime,
+    *,
+    observation: InventoryObservation,
+    vcenter_name: str = "",
+    baselines: dict[str, ConfigBaseline] | None = None,
+) -> ConfigObservation:
+    """関係のモックと同じ対象の構成を返す。"""
+    started_at = utcnow()
+    result = ConfigObservation(
+        observation.instance_uuid, started_at, started_at, "configurationEx"
+    )
+    screenshot = vcenter_name == SCREENSHOT_VCENTER_NAME
+    slot = int(now.timestamp()) // MOCK_INVENTORY_SLOT_SECONDS
+    vm_values: dict[str, ConfigValue] = {}
+    for moid, obj in observation.objects.items():
+        match obj.entity_type:
+            case "HostSystem":
+                result.values[moid, "host_build"] = {
+                    "version": "8.0.2",
+                    "build": "21997540",
+                }
+                result.values[moid, "host_vswitch"] = {
+                    "vSwitch0": {
+                        "mtu": 1500,
+                        "uplinks": ["vmnic0", "vmnic1"],
+                        "teaming_policy": "loadbalance_srcid",
+                        "active_nics": ["vmnic0"],
+                        "standby_nics": ["vmnic1"],
+                        "allow_promiscuous": False,
+                        "mac_changes": False,
+                        "forged_transmits": False,
+                    }
+                }
+                result.values[moid, "host_portgroup"] = {
+                    "VM Network": {
+                        "vlan_id": 20
+                        if screenshot and moid == SCREENSHOT_HOSTS[0][0]
+                        else 0,
+                        "vswitch": "vSwitch0",
+                        "teaming_policy": None,
+                        "active_nics": None,
+                        "standby_nics": None,
+                        "allow_promiscuous": None,
+                        "mac_changes": None,
+                        "forged_transmits": None,
+                    }
+                }
+            case "ClusterComputeResource":
+                result.values[moid, "cluster_ha"] = {
+                    "enabled": True,
+                    "host_monitoring": "enabled",
+                    "vm_monitoring": None,
+                    "admission_control_enabled": False,
+                    "admission_control_policy": None,
+                    "failover_level": None,
+                    "auto_compute": None,
+                    "cpu_failover_percent": None,
+                    "memory_failover_percent": None,
+                    "failover_hosts": None,
+                    "restart_priority": "medium",
+                    "isolation_response": None,
+                }
+                result.values[moid, "cluster_drs"] = {
+                    "enabled": True,
+                    "default_vm_behavior": "fullyAutomated",
+                    "vmotion_rate": 3,
+                }
+            case "VirtualMachine":
+                demo_vm = screenshot and moid == SCREENSHOT_VMS[0][0]
+                changing = moid == _VMS[0][0]
+                vm_values[moid] = {
+                    "num_cpu": 4 if demo_vm or (changing and slot % 2 == 1) else 2,
+                    "cores_per_socket": 1,
+                    "memory_mb": 8192 if demo_vm else 4096,
+                    "hardware_version": "vmx-21",
+                    "guest_id": "otherGuest64",
+                    "cpu_reservation_mhz": 0,
+                    "cpu_limit_mhz": -1,
+                    "cpu_shares": "normal",
+                    "memory_reservation_mb": 0,
+                    "memory_limit_mb": -1,
+                    "memory_shares": "normal",
+                    "devices": {},
+                }
+            case _:
+                continue
+        result.objects[moid] = obj
+
+    result.change_versions = {
+        moid: value_hash(value) for moid, value in vm_values.items()
+    }
+    selected = select_vm_details(result.change_versions, baselines or {})
+    result.values.update({(moid, "vm_config"): vm_values[moid] for moid in selected})
+    result.unchanged_vms = vm_values.keys() - set(selected)
+    result.observed_at = utcnow()
+    return result

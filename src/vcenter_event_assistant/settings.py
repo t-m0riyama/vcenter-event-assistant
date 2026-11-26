@@ -56,6 +56,8 @@ class DatabaseSettingsMixin(BaseModel):
     inventory_sync_enabled: bool = True
     inventory_sync_interval_seconds: int = Field(default=600, ge=60)
     inventory_sync_timeout_seconds: int = Field(default=300, ge=1)
+    inventory_config_enabled: bool = True
+    inventory_config_retention_days: int = Field(default=30, ge=1)
     event_rate_max_buckets: int = Field(
         default=5000,
         ge=1,
