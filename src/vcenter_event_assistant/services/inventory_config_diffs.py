@@ -107,6 +107,9 @@ def _value(text: str | None, truncated: bool) -> JsonValue:
 def _to_item(row: InventoryConfigDiff) -> IncidentTimelineConfigDiff:
     return IncidentTimelineConfigDiff(
         id=row.id,
+        vcenter_id=row.vcenter_id,
+        entity_moid=row.moid,
+        entity_name=row.entity_name,
         category=row.category,
         category_label=_CATEGORY_LABELS.get(row.category, row.category),
         element=row.element,
@@ -248,6 +251,7 @@ async def get_inventory_config_diffs(
     return InventoryConfigDiffResponse(
         target=target,
         status=status,
+        first_success_at=as_utc(first_success) if first_success is not None else None,
         recorded_since=recorded_since,
         last_success_at=last_success_at,
         items=items,

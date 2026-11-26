@@ -12,8 +12,8 @@
 |---|---|---|
 | A | 本書 | マージ済み（[PR #395](https://github.com/t-m0riyama/vcenter-event-assistant/pull/395)） |
 | B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | マージ済み（[PR #396](https://github.com/t-m0riyama/vcenter-event-assistant/pull/396)） |
-| C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | 実装中 |
-| D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | 未着手 |
+| C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | マージ済み（[PR #401](https://github.com/t-m0riyama/vcenter-event-assistant/pull/401)） |
+| D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | 実装中 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
@@ -305,8 +305,8 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 - 応答:
   - `target`（moid・種別・名前。名前と種別は、見えなくなった対象も含めて `inventory_objects` の行から取り、行が無ければ最新の差分の値を使う）
   - `status`: `disabled`（構成の読み取りが無効）、`not_recorded`（一度も構成の読み取りに成功していない）、`ok` のどれか。`disabled` でも、残っている差分は返す。
-  - `recorded_since`（`max(config_first_success_at, now - inventory_config_retention_days)`）、`last_success_at`（`config_last_success_at`）
-  - `items`: `id`・`category`・`category_label`・`element`・`element_label`・`attribute`・`attribute_label`・`old_value`・`new_value`（JSON として読み直した値。`truncated` が真なら文字列のまま）・`truncated`・`changed_after`・`observed_at`
+  - `first_success_at`（`config_first_success_at`）、`recorded_since`（`max(config_first_success_at, now - inventory_config_retention_days)`）、`last_success_at`（`config_last_success_at`）
+  - `items`: `id`・`vcenter_id`・`entity_moid`・`entity_name`・`category`・`category_label`・`element`・`element_label`・`attribute`・`attribute_label`・`old_value`・`new_value`（JSON として読み直した値。`truncated` が真なら文字列のまま）・`truncated`・`changed_after`・`observed_at`
   - `total`
 - 差分は観測した項目の違いである。API の説明（OpenAPI の description）と画面・報告書の文言では、同じ装置が続いていた、または差分が無いので交換も無かった、と言い切らない（2 章の「装置の入れ替わり」）。同じ `element` に同じ観測で「減った」行と「増えた」行があれば、画面と報告書は「入れ替わり」としてまとめて出してよい。
 - 種類と項目の表示名は、バックエンドの定義から返す。画面と報告書で同じ名前を使うためである。例: `host_vswitch` は「標準 vSwitch」、`num_cpu` は「CPU の数」、ディスクの `uuid` は「ディスクの UUID」。2 章の表のすべての項目に表示名を付ける。`element_label` は差分の行の列をそのまま返す（ラベルが無ければ `element` のまま）。今の値の行は、管理対象が見えなくなると消え、ラベルが変われば書き換わるので、後から引かない。
@@ -318,8 +318,10 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 - `diffs: list[IncidentTimelineConfigDiff] | None = None`
 - `diffs_total: int = 0`
+- `diffs_first_success_at: datetime | None = None`（差分を添えた時点での `config_first_success_at`）
+- `diffs_multiple_targets: bool = False`（添えた差分に含まれる管理対象の `(vcenter_id, entity_moid)` が複数なら真）
 
-`IncidentTimelineConfigDiff` は、一覧の `items` と同じ項目を持つ。
+`IncidentTimelineConfigDiff` は、一覧の `items` と同じ項目を持つ。PR C の応答には差分ごとの対象が入っていなかったため、PR D で `vcenter_id` と `entity_moid` を足す。複数の対象を含むカードで、別の対象の行を「入れ替わり」にまとめないためである。対象の無い保存済みの差分は、追加・削除を個別に表示する。
 
 添付の規則:
 - `_ConfigChangeGroup` に、組の行が持つ `(vcenter_id, entity_moid)` の集まりを足し、`add()` で集める。これをカードの対象とする。chain でまとめたカードは、クラスタとホストのように対象を複数持つことがある。
@@ -338,7 +340,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 ### 出力（案 10）
 
-- 報告書（`report.md`）の「### 構成変更」の節で、カードごとに差分を字下げして書く（例: 「CPU の数: 2 → 4（12:30 から 12:40 の間）」）。`diffs_total` が実際に表示した件数を超えれば、残りの件数を書く。無害化の規則は、ほかの節と同じにする。
+- 報告書（`report.md`）の「### 構成変更」の節で、カードごとに差分を字下げして書く（例: 「CPU の数: 2 → 4（12:30 から 12:40 の間）」）。`diffs_total` が実際に表示した件数を超えれば、残りの件数を書く。添えた差分の対象が複数なら対象名を先頭に出し、名前が無ければ moid を使う。記録をやり直す前の差分にはカードと同じ注記を添える。無害化の規則は、ほかの節と同じにする。
 - `items.csv` は変えない（一覧の行には項目を足さない）。
 - `result.json` には、足した項目がそのまま入る。
 
@@ -360,9 +362,9 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 ### タイムラインの「構成の差分」の欄
 
 - タイムラインで対象を moid で絞ったときだけ、影響範囲の欄（`TimelineImpactSection`）の隣に出す。
-- 期間は、タイムラインの期間（`from`・`to`）を使う。タイムラインの応答を待たずに要求してよい（影響範囲と違い、既定の時点を応答から決める必要が無い）。期間と対象が同じなら、読み込み直しても、別のタブから戻っても、要求し直さない。
+- 期間は、タイムラインの期間（`from`・`to`）を使う。タイムラインの応答を待たずに要求してよい（影響範囲と違い、既定の時点を応答から決める必要が無い）。期間と対象が同じなら、読み込み直しても、別のタブから戻っても、要求し直さない。同じ対象で期間を取り直す間は「構成の差分を更新中…」と表示する。直前の一覧と期間の注記は保ち、直前のエラーは表示から外す。
 - 差分を新しい順に並べ、1 行に「種類・要素・項目: 古い値 → 新しい値」と、変化の幅（「12:30 から 12:40 の間」）を出す。要素が増えた・減ったときは「追加」「削除」と出し、項目を折りたたみで出す。
-- 200 件を超えたら「N 件のうち新しい 200 件を出しています」と出す。
+- 一部だけ返ったときは「N 件のうち新しい M 件を出しています」と出す。入れ替わりの対を含めて 201 件返ったときも、実際の件数 M を添える。
 - `status` ごとの表示:
   - `disabled`: 「構成の差分の記録は無効です」。残っている差分があれば、その下に出す。
   - `not_recorded`: 「まだ構成を読み取っていません」と、設定の vCenter の一覧への案内
@@ -372,7 +374,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 ### カード
 
-- 構成変更のカード（`TimelineHighlights.tsx`）の各項目の下に、添えた差分を出す。`diffs` が None か空なら、何も出さない。
+- 構成変更のカード（`TimelineHighlights.tsx`）の各項目の下に、添えた差分を出す。添えた差分の対象が複数の場合は差分の行に観測時の対象名を添え、名前が無ければ moid を使う。`diffs` が None か空なら、何も出さない。
 - `diffs_total` が出した件数より多ければ、「ほか N 件」と出し、対象で絞ったときの欄で全件を見られることを添える。
 - 画面の zod のスキーマでは、`diffs` と `diffs_total` を省略可（nullish と既定値）にする。足す前に保存したスナップショットの結果を読めるようにするためである。
 
@@ -478,6 +480,6 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 - **元のディスクを付け替える操作:** リンククローンのディスクの昇格、vCD の高速プロビジョニングの統合、Horizon の再構成のように、ディスクを替えずに元の backing そのものが別のファイルに替わる操作では、`uuid` が変わり、「入れ替わり」（削除と追加）として記録されうる。7 章の道具では、差分ディスクと元のディスクの `uuid` の違いまでしか確かめられない。
 - **装置の key の使い回し:** 装置の `key` は、外した後に別の装置に使い回されることがある。ディスクは `uuid` の違いで入れ替わりを見分けるが、`uuid` を持たない古い形式のディスクと NIC は見分けられない。その場合、交換は項目の差分として見えるか、項目がすべて同じなら見えない（Issue #397）。
 - **値に入る情報:** ポートグループ名・ネットワークの識別子・MAC アドレスが値に入る。viewer も見られる（イベントの一覧の対象の名前と同じ扱い）。報告書と `result.json` にも入るので、ユーザーガイドの「外部に渡すときの確認」に書く。保存したスナップショットの結果（既定 90 日）にも残る。
-- **記録のやり直しの前の差分:** `config_instance_uuid` が変わって記録をやり直しても、古い vCenter の差分は同じ `vcenter_id` のまま保持期間まで残る。moid が重なると、やり直しより前の期間を指定したときに、新しい対象の差分のように見える。イベントや案 1 の関係の閉じた行も同じ扱いである。一覧の API は `recorded_since`（やり直しの時刻以降）を返すので、画面はそれより前の差分に「記録をやり直す前の値」と注記する。
+- **記録のやり直しの前の差分:** `config_instance_uuid` が変わって記録をやり直しても、古い vCenter の差分は同じ `vcenter_id` のまま保持期間まで残る。moid が重なると、やり直しより前の期間を指定したときに、新しい対象の差分のように見える。イベントや案 1 の関係の閉じた行も同じ扱いである。一覧の API は PR D で `first_success_at` を返す。画面は、その時刻より前に観測した差分に「記録をやり直す前の値」と注記する。カードでは、差分を添えた時点で保存した `diffs_first_success_at` で同じ判定をする。追加前の保存結果でこの値が無い場合は注記を表示しない。`recorded_since` は保持期限に切り上がるため、期限を過ぎて定期削除を待つ差分を、記録のやり直し前の差分と区別する。
 - **moid が変わる操作:** VM の登録し直しや、Linked Mode の vCenter をまたぐ移動では moid が変わり、別の管理対象として初めての値になる。
 - **記録の始まりと保持期間:** 機能を入れる前と、保持期間より前の差分は無い。`recorded_since` で示す。

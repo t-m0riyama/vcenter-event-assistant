@@ -38,6 +38,38 @@ describe('スナップショットの結果保存のスキーマ', () => {
     expect(drifted.result).toBeNull()
   })
 
+  it.each([{}, { diffs: null, diffs_total: null }])('差分が追加される前の構成変更カードを読める（%j）', (fields) => {
+    const detail = incidentTimelineManualSnapshotDetailSchema.parse({
+      ...base, has_result: true, result: emptyViewResponse({
+        highlights: { config_changes: [{
+          kind: 'vm_reconfigure', label: 'VM の構成変更',
+          first_utc: base.from, last_utc: base.to, event_ids: [42], ...fields,
+        }] },
+      }),
+    })
+    expect(detail.result?.highlights.config_changes?.[0]).toMatchObject({
+      event_ids: [42], diffs: null, diffs_total: 0,
+    })
+  })
+
+  it('PR C の対象のキーが無い差分つきカードも保存結果から読める', () => {
+    const diff = {
+      id: 42, category: 'vm_config', category_label: 'VM の構成',
+      element: null, element_label: null, attribute: 'num_cpu', attribute_label: 'CPU の数',
+      old_value: 2, new_value: 4, truncated: false, changed_after: '2026-03-10T00:00:00Z',
+      observed_at: '2026-03-10T00:05:00Z',
+    }
+    const detail = incidentTimelineManualSnapshotDetailSchema.parse({
+      ...base, has_result: true, result: emptyViewResponse({
+        highlights: { config_changes: [{
+          kind: 'vm_reconfigure', label: 'VM の構成変更',
+          first_utc: diff.changed_after, last_utc: diff.observed_at, diffs: [diff], diffs_total: 1,
+        }] },
+      }),
+    })
+    expect(detail.result?.highlights.config_changes?.[0]).toMatchObject({ diffs: [diff], diffs_total: 1 })
+  })
+
   it('構成変更の項目が無い保存済みの結果を既定値で読む', () => {
     const detail = incidentTimelineManualSnapshotDetailSchema.parse({
       ...base, has_result: true, result: VIEW_RESPONSE_EXAMPLE,

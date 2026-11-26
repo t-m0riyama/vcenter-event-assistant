@@ -101,6 +101,7 @@ describe('App のロールによる出し分け', () => {
         if (url === '/api/inventory/status') {
           return Promise.resolve(jsonResponse({
             enabled: true,
+            config_enabled: true,
             interval_seconds: 600,
             timeout_seconds: 300,
             vcenters: [{
@@ -214,7 +215,10 @@ describe('App のロールによる出し分け', () => {
     const { unmount } = renderAs('viewer')
     await openSettings('vCenter')
     expect(await screen.findByText('vc-lab')).toBeInTheDocument()
-    expect(await screen.findByText('最後の成功 未収集')).toBeInTheDocument()
+    const relation = within(await screen.findByRole('group', { name: '関係の収集' }))
+    expect(await relation.findByText('最後の成功 未収集')).toBeInTheDocument()
+    const config = within(await screen.findByRole('group', { name: '構成の読み取り' }))
+    expect(config.getByText('最後の成功 未収集')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '接続テスト' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '編集' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '追加' })).not.toBeInTheDocument()

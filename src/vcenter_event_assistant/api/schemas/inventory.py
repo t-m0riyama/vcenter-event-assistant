@@ -61,6 +61,10 @@ class InventoryImpactResponse(BaseModel):
 
 class IncidentTimelineConfigDiff(BaseModel):
     id: int
+    # 既に保存したスナップショットの差分には対象が含まれない。
+    vcenter_id: UUID | None = None
+    entity_moid: str | None = None
+    entity_name: str | None = None
     category: str
     category_label: str
     element: str | None
@@ -77,6 +81,7 @@ class IncidentTimelineConfigDiff(BaseModel):
 class InventoryConfigDiffResponse(BaseModel):
     target: InventoryTarget
     status: Literal["disabled", "not_recorded", "ok"]
+    first_success_at: datetime | None
     recorded_since: datetime | None
     last_success_at: datetime | None
     items: list[IncidentTimelineConfigDiff]

@@ -10,6 +10,7 @@ import {
   incidentTimelineBuildRequestSchema,
   incidentTimelineManualSnapshotListItemSchema,
   incidentTimelineSchema,
+  inventoryConfigDiffResponseSchema,
   inventoryImpactResponseSchema,
   inventoryStatusResponseSchema,
 } from './schemas'
@@ -552,9 +553,56 @@ describe('inventory API schemas', () => {
     }).success).toBe(false)
   })
 
+  it('構成の差分の JSON 値と対象を保持し、不正な状態・時刻・値を拒否する', () => {
+    const item = {
+      id: 1, vcenter_id: '11111111-1111-4111-8111-111111111111', entity_moid: 'vm-1',
+      category: 'vm_config', category_label: 'VM の構成', element: 'disk:2000', element_label: 'ディスク',
+      attribute: null, attribute_label: null, old_value: null, new_value: { uuid: 'disk-uuid', labels: ['disk'], thin: false },
+      truncated: false, changed_after: '2026-03-22T00:00:00Z', observed_at: '2026-03-22T00:03:00.123456Z',
+    }
+    const raw = {
+      target: { moid: 'vm-1', name: 'vm1', entity_type: 'VirtualMachine' }, status: 'disabled',
+      first_success_at: item.changed_after, recorded_since: item.changed_after, last_success_at: item.observed_at,
+      items: [item], total: 1,
+    }
+    expect(inventoryConfigDiffResponseSchema.parse(raw)).toEqual(raw)
+    expect(inventoryConfigDiffResponseSchema.safeParse({ ...raw, status: 'unknown' }).success).toBe(false)
+    expect(inventoryConfigDiffResponseSchema.safeParse({ ...raw, items: [{ ...item, observed_at: 'yesterday' }] }).success).toBe(false)
+    expect(inventoryConfigDiffResponseSchema.safeParse({ ...raw, items: [{ ...item, new_value: undefined }] }).success).toBe(false)
+  })
+
+  it('収集状態の config_enabled を必須にし、config_* の値を検査する', () => {
+    const at = '2026-03-22T00:00:00Z'
+    const config = {
+      config_first_success_at: at, config_last_started_at: at, config_last_success_at: at,
+      config_last_failure_at: at, config_last_warning_at: at,
+      config_last_error: 'ConfigReadMissing', config_last_warning: '警告',
+      config_object_count: 10, config_deferred_count: 0,
+    }
+    const raw = {
+      enabled: true, config_enabled: false, interval_seconds: 300, timeout_seconds: 60,
+      vcenters: [{
+        vcenter_id: '11111111-1111-4111-8111-111111111111', vcenter_name: 'lab', is_enabled: true,
+        first_success_at: null, last_started_at: null, last_success_at: null, last_failure_at: null,
+        last_error: null, last_warning: null, last_warning_at: null, object_count: null, relation_count: null,
+        ...config,
+      }],
+    }
+    expect(inventoryStatusResponseSchema.parse(raw)).toEqual(raw)
+    for (const config_enabled of [undefined, 'false']) {
+      expect(inventoryStatusResponseSchema.safeParse({ ...raw, config_enabled }).success).toBe(false)
+    }
+    for (const [field, value] of Object.entries(config)) {
+      for (const invalid of [typeof value === 'number' ? -1 : 5, ...(field.endsWith('_at') ? ['yesterday'] : [])]) {
+        const vcenters = [{ ...raw.vcenters[0], [field]: invalid }]
+        expect(inventoryStatusResponseSchema.safeParse({ ...raw, vcenters }).success, field).toBe(false)
+      }
+    }
+  })
+
   it('parses an unobserved vCenter with null collection fields', () => {
     const raw = {
-      enabled: false, interval_seconds: 300, timeout_seconds: 60,
+      enabled: false, config_enabled: false, interval_seconds: 300, timeout_seconds: 60,
       vcenters: [{
         vcenter_id: '11111111-1111-4111-8111-111111111111', vcenter_name: 'lab', is_enabled: false,
         first_success_at: null, last_started_at: null, last_success_at: null, last_failure_at: null,

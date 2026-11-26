@@ -35,6 +35,38 @@ export const inventoryImpactResponseSchema = z.object({
   }).nullish(),
 })
 
+export const timelineConfigDiffSchema = z.object({
+  id: z.number().int(),
+  // 対象が入る前に保存したカードの差分も読み込む。
+  vcenter_id: z.guid().nullish(),
+  entity_moid: z.string().nullish(),
+  entity_name: z.string().nullish(),
+  category: z.string(),
+  category_label: z.string(),
+  element: z.string().nullable(),
+  element_label: z.string().nullable(),
+  attribute: z.string().nullable(),
+  attribute_label: z.string().nullable(),
+  old_value: z.json(),
+  new_value: z.json(),
+  truncated: z.boolean(),
+  changed_after: isoOffsetDateTimeSchema,
+  observed_at: isoOffsetDateTimeSchema,
+})
+
+export const inventoryConfigDiffResponseSchema = z.object({
+  target: inventoryTargetSchema,
+  status: z.enum(['disabled', 'not_recorded', 'ok']),
+  first_success_at: observationSchema.default(null),
+  recorded_since: observationSchema,
+  last_success_at: observationSchema,
+  items: z.array(timelineConfigDiffSchema),
+  total: countSchema,
+})
+
+export type TimelineConfigDiff = z.infer<typeof timelineConfigDiffSchema>
+export type InventoryConfigDiffResponse = z.infer<typeof inventoryConfigDiffResponseSchema>
+
 const inventoryVCenterStatusSchema = z.object({
   vcenter_id: z.guid(),
   vcenter_name: z.string(),
@@ -48,10 +80,20 @@ const inventoryVCenterStatusSchema = z.object({
   last_warning_at: observationSchema,
   object_count: countSchema.nullable(),
   relation_count: countSchema.nullable(),
+  config_first_success_at: observationSchema.optional(),
+  config_last_started_at: observationSchema.optional(),
+  config_last_success_at: observationSchema.optional(),
+  config_last_failure_at: observationSchema.optional(),
+  config_last_error: z.string().nullable().optional(),
+  config_last_warning: z.string().nullable().optional(),
+  config_last_warning_at: observationSchema.optional(),
+  config_object_count: countSchema.nullable().optional(),
+  config_deferred_count: countSchema.nullable().optional(),
 })
 
 export const inventoryStatusResponseSchema = z.object({
   enabled: z.boolean(),
+  config_enabled: z.boolean(),
   interval_seconds: z.number().int(),
   timeout_seconds: z.number().int(),
   vcenters: z.array(inventoryVCenterStatusSchema),

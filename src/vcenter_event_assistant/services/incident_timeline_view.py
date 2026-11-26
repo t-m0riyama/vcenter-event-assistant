@@ -44,7 +44,7 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     TimelineLevel,
     TimelineSource,
 )
-from vcenter_event_assistant.auth.timeutil import utcnow
+from vcenter_event_assistant.auth.timeutil import as_utc, utcnow
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
@@ -1141,18 +1141,22 @@ async def _attach_config_diffs(
     for group, card in zip(groups, cards, strict=True):
         if card.vcenter_id is None or not group.entities:
             continue
-        recorded_since = config_recorded_since(first_success.get(card.vcenter_id), retention_start)
+        first_success_at = first_success.get(card.vcenter_id)
+        recorded_since = config_recorded_since(first_success_at, retention_start)
         if recorded_since is None or card.last_utc < recorded_since:
             continue
+        target_moids = {moid for center, moid in group.entities if center == card.vcenter_id}
         diff = InventoryConfigDiff
         card.diffs, card.diffs_total = await read_config_diffs(
             session,
-            (diff.vcenter_id == card.vcenter_id)
-            & diff.moid.in_([moid for center, moid in group.entities if center == card.vcenter_id]),
+            (diff.vcenter_id == card.vcenter_id) & diff.moid.in_(target_moids),
             from_time=card.first_utc - padding,
             to_time=card.last_utc + padding,
             newest_first=False,
         )
+        if card.diffs:
+            card.diffs_first_success_at = as_utc(first_success_at) if first_success_at is not None else None
+            card.diffs_multiple_targets = len({(diff.vcenter_id, diff.entity_moid) for diff in card.diffs}) > 1
     return cards
 
 

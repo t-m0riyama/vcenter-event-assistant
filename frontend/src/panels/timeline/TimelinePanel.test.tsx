@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TimelineDetectedPattern, TimelineViewItem } from '../../api/schemas'
 import { AUTH_DISABLED_ME, AuthContext } from '../../auth/authContext'
 import { INCIDENT_ID, INCIDENT_LIST, INCIDENT_TITLE } from '../../test/incidentFixtures'
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { TimeZoneProvider } from '../../datetime/TimeZoneProvider'
 import { DISPLAY_TIME_ZONE_STORAGE_KEY } from '../../datetime/timeZoneStorage'
 import { TIMELINE_ENTITY_DEBOUNCE_MS } from '../../hooks/useTimelineViewController'
@@ -55,6 +56,29 @@ const CONFIG_CHANGE = {
   event_count: 3,
   event_ids: [99, 3, 1],
 }
+
+const CONFIG_DIFF = {
+  id: 1,
+  category: 'vm_config',
+  category_label: 'VM の構成',
+  vcenter_id: VC,
+  entity_moid: 'vm-10',
+  element: null,
+  element_label: null,
+  attribute: 'num_cpu',
+  attribute_label: 'CPU の数',
+  old_value: 2,
+  new_value: 4,
+  truncated: false,
+  changed_after: '2026-03-22T00:05:00Z',
+  observed_at: '2026-03-22T00:10:00Z',
+}
+
+const DISK_REMOVED = {
+  ...CONFIG_DIFF, id: 2, element: 'disk:2000', element_label: 'Hard disk 1',
+  attribute: null, attribute_label: null, old_value: { uuid: 'old-uuid' }, new_value: null,
+}
+const DISK_ADDED = { ...DISK_REMOVED, id: 3, old_value: null, new_value: { uuid: 'new-uuid' } }
 
 function bucket(start: string, total = 0, notable = 0, alert = 0) {
   return {
@@ -203,6 +227,384 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(screen.queryByRole('heading', { name: '影響範囲' })).not.toBeInTheDocument()
   })
 
+  const configDiffResponse = (overrides: Record<string, unknown> = {}) => ({
+    target: { moid: 'vm-10', entity_type: 'VirtualMachine', name: 'vm-a' },
+    status: 'ok', recorded_since: '2026-03-21T00:00:00Z', first_success_at: '2026-03-21T00:00:00Z', last_success_at: CONFIG_DIFF.observed_at,
+    items: [CONFIG_DIFF], total: 1, ...overrides,
+  })
+  const configSection = () => within(screen.getByRole('region', { name: '構成の差分' }))
+
+  it('対象名だけの絞り込みでは、構成の差分の欄も要求も出さない', async () => {
+    setup()
+    const diffs = vi.fn(() => jsonResponse(configDiffResponse()))
+    harness.extra.set('/api/inventory/config-diffs?', diffs)
+    window.history.replaceState(null, '', timelineEntryHash({ at: '2026-03-22T00:30:00Z', vcenterId: VC, entity: 'vm-a' }))
+    renderTimeline()
+    await answer(0)
+    expect(screen.queryByRole('region', { name: '構成の差分' })).not.toBeInTheDocument()
+    expect(diffs).not.toHaveBeenCalled()
+  })
+
+  it('期間・対象が同じなら再集計やタブ移動で要求し直さず、期間または対象が変われば読み直す', async () => {
+    setup()
+    const diffs = vi.fn<(url: string) => Response>(() => jsonResponse(configDiffResponse()))
+    harness.extra.set('/api/inventory/config-diffs?', diffs)
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    const { rerender } = renderTimeline()
+    const item = await configSection().findByText('VM の構成・CPU の数: 2 → 4')
+    const query = (index: number) => Object.fromEntries(new URL(diffs.mock.calls[index][0], location.origin).searchParams)
+    expect(query(0)).toEqual({
+      vcenter_id: VC, entity_moid: 'vm-10', from: '2026-03-22T00:00:00.000Z', to: '2026-03-22T01:00:00.000Z',
+    })
+    await answer(0)
+    fireEvent.click(screen.getByLabelText('イベント'))
+    await answer(1)
+    fireEvent.click(screen.getByRole('button', { name: '更新' }))
+    await answer(2)
+    const showTab = (active: boolean) => rerender(
+      <ThemeProvider><TimeZoneProvider><TimelinePanel onError={onError} active={active} /></TimeZoneProvider></ThemeProvider>,
+    )
+    window.history.replaceState(null, '', '/#/settings/vcenters')
+    showTab(false)
+    window.history.replaceState(null, '', '/#/timeline')
+    showTab(true)
+    expect(configSection().getByText('VM の構成・CPU の数: 2 → 4')).toBe(item)
+    expect(diffs).toHaveBeenCalledTimes(1)
+    const navigate = (hash: string) => {
+      window.history.replaceState(null, '', hash)
+      fireEvent(window, new HashChangeEvent('hashchange'))
+    }
+    const changedPeriod = FIXED_IMPACT_HASH.replace('T01:00:00Z', 'T02:00:00Z')
+    navigate(changedPeriod)
+    await waitFor(() => expect(diffs).toHaveBeenCalledTimes(2))
+    expect(query(1).to).toBe('2026-03-22T02:00:00.000Z')
+    navigate(changedPeriod.replace('vm-10', 'vm-20'))
+    await waitFor(() => expect(diffs).toHaveBeenCalledTimes(3))
+    expect(query(2).entity_moid).toBe('vm-20')
+  })
+
+  it('対象を切り替えた後に古い差分が届いても、新しい対象の欄を上書きしない', async () => {
+    setup()
+    let finish!: (response: Response) => void
+    const oldResponse = new Promise<Response>((resolve) => { finish = resolve })
+    const originalFetch = globalThis.fetch
+    const oldDiff = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(() => oldResponse)
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/api/inventory/config-diffs?') && String(input).includes('entity_moid=vm-10')
+        ? oldDiff(input, init) : originalFetch(input, init),
+    ))
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse(configDiffResponse({
+      target: { moid: 'vm-20', entity_type: 'VirtualMachine', name: 'vm-b' },
+      items: [], total: 0,
+    })))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await waitFor(() => expect(oldDiff).toHaveBeenCalledTimes(1))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH.replace('vm-10', 'vm-20'))
+    fireEvent(window, new HashChangeEvent('hashchange'))
+    await configSection().findByText('vm-b')
+    expect(oldDiff.mock.calls[0][1]?.signal?.aborted).toBe(true)
+    await act(async () => { finish(jsonResponse(configDiffResponse())) })
+    expect(configSection().getByText('vm-b')).toBeInTheDocument()
+    expect(configSection().queryByText(/CPU の数/)).not.toBeInTheDocument()
+  })
+
+  it('新しい順に出し、観測の幅・200 件の上限・記録をやり直す前の値を添える', async () => {
+    setup()
+    const newer = { ...CONFIG_DIFF, id: 300, attribute_label: 'メモリ', observed_at: '2026-03-22T00:20:00Z' }
+    const filler = Array.from({ length: 198 }, (_, index) => ({ ...CONFIG_DIFF, id: index + 10, attribute_label: '補足項目' }))
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse(configDiffResponse({
+      items: [CONFIG_DIFF, ...filler, newer], total: 201, recorded_since: '2026-03-22T00:30:00Z', first_success_at: '2026-03-22T00:15:00Z',
+    })))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await configSection().findByText('201 件のうち新しい 200 件を出しています')
+    const rows = configSection().getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('メモリ')
+    const cpu = rows.at(-1)
+    expect(cpu).toHaveTextContent('CPU の数')
+    expect(cpu).toHaveTextContent(`${formatIsoInTimeZone(CONFIG_DIFF.changed_after, 'UTC')} から ${formatIsoInTimeZone(CONFIG_DIFF.observed_at, 'UTC')} の間`)
+    expect(cpu).toHaveTextContent('記録をやり直す前の値')
+    expect(rows[0]).not.toHaveTextContent('記録をやり直す前の値')
+    expect(configSection().getByText(/観測の時刻/)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['disabled', '構成の差分の記録は無効です'],
+    ['not_recorded', 'まだ構成を読み取っていません'],
+    ['ok', 'この期間に観測した構成の差分はありません'],
+  ])('構成の差分が %s のときに状態を示す', async (status, message) => {
+    setup()
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse(configDiffResponse({
+      status, recorded_since: status === 'ok' ? '2026-03-22T00:05:00Z' : null,
+      items: status === 'disabled' ? [CONFIG_DIFF] : [], total: status === 'disabled' ? 1 : 0,
+    })))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await configSection().findByText(message)
+    expect(configSection().getByRole('status')).toHaveTextContent(message)
+    if (status === 'disabled') {
+      const list = configSection().getByRole('list', { name: '観測した構成の差分' })
+      expect(within(list).getByText(/CPU の数/)).toBeInTheDocument()
+      expect(list.closest('[aria-live], [role="status"]')).toBeNull()
+      expect(configSection().getByText(/観測の時刻/)).toBeInTheDocument()
+    } else {
+      expect(configSection().queryByText(/観測の時刻/)).not.toBeInTheDocument()
+    }
+    if (status === 'not_recorded') {
+      expect(configSection().getByRole('link', { name: '設定の vCenter 一覧' })).toHaveAttribute('href', '#/settings/vcenters')
+    }
+    if (status === 'ok') expect(configSection().getByText(/記録は/)).toHaveTextContent(`記録は ${formatIsoInTimeZone('2026-03-22T00:05:00Z', 'UTC')} から`)
+  })
+
+  it('記録の開始以降の期間では、0 件の表示に記録開始の注記を重ねない', async () => {
+    setup()
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse(configDiffResponse({ items: [], total: 0 })))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await configSection().findByText('この期間に観測した構成の差分はありません')
+    expect(configSection().queryByText(/記録は .*から/)).not.toBeInTheDocument()
+  })
+
+  it.each([{ diffs: null }, { diffs: [] }])('差分が $diffs の構成変更には差分の表示を足さない', async ({ diffs }) => {
+    setup()
+    renderTimeline()
+    await answer(0, emptyViewResponse({ highlights: { config_changes: [{ ...CONFIG_CHANGE, diffs, diffs_total: 4 }] } }))
+    const card = within(await screen.findByRole('region', { name: '構成変更' }))
+    expect(card.getByText('VM の構成変更')).toBeInTheDocument()
+    expect(card.queryByRole('list', { name: '観測した構成の差分' })).not.toBeInTheDocument()
+    expect(card.queryByText(/ほか .*件/)).not.toBeInTheDocument()
+  })
+
+  it('カードと欄で追加・削除・入れ替わりを同じように折りたたみ、カードに残り件数を出す', async () => {
+    setup()
+    const unmatched = [
+      { ...DISK_ADDED, id: 4, entity_moid: 'vm-other' },
+      { ...DISK_REMOVED, id: 5, observed_at: '2026-03-22T00:15:00Z' },
+      { ...DISK_ADDED, id: 6, category: 'host_vswitch' },
+      { ...DISK_REMOVED, id: 7, element: 'disk:2001' },
+      { ...DISK_ADDED, id: 8, vcenter_id: '22222222-2222-4222-8222-222222222222' },
+    ]
+    const diffs = [DISK_ADDED, ...unmatched, DISK_REMOVED]
+    // 欄は API の対象が一つなので、対象違いの行はカードだけに入れる。
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse(configDiffResponse({
+      items: [DISK_ADDED, unmatched[1], unmatched[2], unmatched[3], DISK_REMOVED], total: 5,
+    })))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await answer(0, emptyViewResponse({
+      highlights: { config_changes: [{ ...CONFIG_CHANGE, diffs, diffs_total: 9 }] },
+    }))
+    const card = within(await screen.findByRole('region', { name: '構成変更' }))
+    for (const [area, additions] of [[card, 3], [configSection(), 1]] as const) {
+      const exchange = (await area.findByText(/Hard disk 1・入れ替わり/)).closest('details')!
+      expect(exchange).not.toHaveAttribute('open')
+      expect(within(exchange).getByText('uuid: old-uuid')).toBeInTheDocument()
+      expect(within(exchange).getByText('uuid: new-uuid')).toBeInTheDocument()
+      fireEvent.click(within(exchange).getByText(/Hard disk 1・入れ替わり/))
+      expect(exchange).toHaveAttribute('open')
+      const added = area.getAllByText(/Hard disk 1・追加/)
+      const removed = area.getAllByText(/Hard disk 1・削除/)
+      expect(added).toHaveLength(additions)
+      expect(removed).toHaveLength(2)
+      for (const [summary, value] of [[added[0], 'new-uuid'], [removed[0], 'old-uuid']] as const) {
+        const details = summary.closest('details')!
+        expect(details).not.toHaveAttribute('open')
+        expect(within(details).getByText('uuid: ' + value)).toBeInTheDocument()
+      }
+    }
+    expect(card.getByText('ほか 2 件')).toBeInTheDocument()
+    expect(card.getByText(/対象で絞ると.*全件/)).toBeInTheDocument()
+  })
+
+  it.each([
+    { entity_moid: 'vm-other' },
+    { vcenter_id: '22222222-2222-4222-8222-222222222222' },
+    { observed_at: '2026-03-22T00:15:00Z' },
+    { category: 'host_vswitch' },
+    { element: 'disk:2001' },
+    { vcenter_id: null, entity_moid: null },
+  ])('異なる対象・観測・種類・要素の差分を入れ替わりにまとめない（%j）', async (different) => {
+    setup()
+    renderTimeline()
+    const removed = different.entity_moid === null
+      ? { ...DISK_REMOVED, vcenter_id: null, entity_moid: null }
+      : DISK_REMOVED
+    await answer(0, emptyViewResponse({
+      highlights: { config_changes: [{ ...CONFIG_CHANGE, diffs: [removed, { ...DISK_ADDED, ...different }] }] },
+    }))
+    const card = within(await screen.findByRole('region', { name: '構成変更' }))
+    expect(card.getByText(/Hard disk 1・追加/)).toBeInTheDocument()
+    expect(card.getByText(/Hard disk 1・削除/)).toBeInTheDocument()
+    expect(card.queryByText(/入れ替わり/)).not.toBeInTheDocument()
+  })
+
+  it.each([201, 202])('入れ替わりの片方が 201 行目のときは実際の表示件数を使う（全 %s 件）', async (total) => {
+    setup()
+    const items = [
+      ...Array.from({ length: 199 }, (_, index) => ({ ...CONFIG_DIFF, id: index + 10 })),
+      DISK_ADDED, DISK_REMOVED,
+    ]
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse(configDiffResponse({ items, total })))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    await configSection().findByText(/Hard disk 1・入れ替わり/)
+    if (total === 201) expect(configSection().queryByText(/件のうち新しい/)).not.toBeInTheDocument()
+    else expect(configSection().getByText('202 件のうち新しい 201 件を出しています')).toBeInTheDocument()
+  })
+
+  it.each([404, 500])('構成の差分を取得できない場合の状態を知らせる（%s）', async (code) => {
+    setup()
+    harness.extra.set('/api/inventory/config-diffs?', () => jsonResponse({}, code))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    expect(configSection().getByRole('status')).toHaveTextContent('構成の差分を読み込み中…')
+    const expected = code === 404 ? 'この vCenter は登録されていません。' : '構成の差分を読み込めませんでした。'
+    await waitFor(() => expect(configSection().getByRole('status')).toHaveTextContent(expected))
+  })
+
+  it.each([
+    { action: '更新', empty: false },
+    { action: 'タブ復帰', empty: false },
+    { action: '更新', empty: true },
+  ])('直近の期間で $action したとき、新しい応答まで直前の差分を保つ（0 件: $empty）', async ({ action, empty }) => {
+    setup()
+    const rollingHash = `/#/timeline?vcenter_id=${VC}&entity_moid=vm-10`
+    window.history.replaceState(null, '', rollingHash)
+    vi.setSystemTime(new Date('2026-03-22T01:00:00Z'))
+    const originalFetch = globalThis.fetch
+    let finish!: (response: Response) => void
+    const nextResponse = new Promise<Response>((resolve) => { finish = resolve })
+    const initial = empty ? { items: [], total: 0, recorded_since: '2026-03-22T00:01:00Z' } : {}
+    const diffs = vi.fn<(url: string) => Promise<Response>>()
+      .mockResolvedValueOnce(jsonResponse(configDiffResponse(initial)))
+      .mockReturnValueOnce(nextResponse)
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/api/inventory/config-diffs?') ? diffs(String(input)) : originalFetch(input, init),
+    ))
+    const { rerender } = renderTimeline()
+    const old = await configSection().findByText(empty ? /記録は/ : 'VM の構成・CPU の数: 2 → 4')
+    await answer(0)
+    vi.setSystemTime(new Date('2026-03-22T01:03:00Z'))
+    if (action === '更新') {
+      fireEvent.click(screen.getByRole('button', { name: '更新' }))
+    } else {
+      const showTab = (active: boolean) => rerender(
+        <ThemeProvider><TimeZoneProvider><TimelinePanel onError={onError} active={active} /></TimeZoneProvider></ThemeProvider>,
+      )
+      window.history.replaceState(null, '', '/#/settings/vcenters')
+      showTab(false)
+      window.history.replaceState(null, '', '/#/timeline')
+      showTab(true)
+    }
+    await waitFor(() => expect(diffs).toHaveBeenCalledTimes(2))
+    expect(new URL(diffs.mock.calls[1][0], location.origin).searchParams.get('to')).toBe('2026-03-22T01:03:00.000Z')
+    expect(old).toBeInTheDocument()
+    expect(configSection().getByRole('status')).toHaveTextContent('構成の差分を更新中…')
+    await act(async () => { finish(jsonResponse(configDiffResponse({ items: [{ ...CONFIG_DIFF, new_value: 6 }] }))) })
+    expect(configSection().getByText('VM の構成・CPU の数: 2 → 6')).toBeInTheDocument()
+  })
+
+  it.each([
+    { previous: '一覧', changed: 'from', status: 200 },
+    { previous: '0 件', changed: 'to', status: 200 },
+    { previous: 'エラー', changed: 'to', status: 500 },
+  ])('固定期間の $changed だけを変えると、$previous の結果に代わって更新状態を知らせる', async ({ previous, changed, status }) => {
+    setup()
+    const originalFetch = globalThis.fetch
+    let finish!: (response: Response) => void
+    const nextResponse = new Promise<Response>((resolve) => { finish = resolve })
+    const initial = previous === '0 件' ? { items: [], total: 0, recorded_since: '2026-03-22T00:05:00Z' } : {}
+    const diffs = vi.fn<(url: string) => Promise<Response>>()
+      .mockResolvedValueOnce(jsonResponse(configDiffResponse(initial), status))
+      .mockReturnValueOnce(nextResponse)
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/api/inventory/config-diffs?') ? diffs(String(input)) : originalFetch(input, init),
+    ))
+    window.history.replaceState(null, '', FIXED_IMPACT_HASH)
+    renderTimeline()
+    const old = previous === '一覧'
+      ? await configSection().findByText('VM の構成・CPU の数: 2 → 4')
+      : previous === '0 件' ? await configSection().findByText(/記録は/) : null
+    if (previous === 'エラー') await configSection().findByText('構成の差分を読み込めませんでした。')
+    await answer(0)
+
+    const hash = changed === 'from'
+      ? FIXED_IMPACT_HASH.replace('T00:00:00Z', 'T00:15:00Z')
+      : FIXED_IMPACT_HASH.replace('T01:00:00Z', 'T02:00:00Z')
+    window.history.replaceState(null, '', hash)
+    fireEvent(window, new HashChangeEvent('hashchange'))
+    await waitFor(() => expect(diffs).toHaveBeenCalledTimes(2))
+    const region = configSection()
+    expect(region.getByRole('status')).toHaveTextContent('構成の差分を更新中…')
+    expect(region.queryByText('この期間に観測した構成の差分はありません')).not.toBeInTheDocument()
+    expect(region.queryByText('構成の差分を読み込めませんでした。')).not.toBeInTheDocument()
+    if (old) expect(old).toBeInTheDocument()
+
+    const next = previous === 'エラー' ? jsonResponse({}, 404)
+      : jsonResponse(configDiffResponse({ items: [{ ...CONFIG_DIFF, new_value: 6 }] }))
+    await act(async () => { finish(next) })
+    if (previous === 'エラー') {
+      expect(region.getByRole('status')).toHaveTextContent('この vCenter は登録されていません。')
+    } else {
+      expect(region.getByRole('status')).toBeEmptyDOMElement()
+      expect(region.getByText('VM の構成・CPU の数: 2 → 6')).toBeInTheDocument()
+      expect(region.queryByText(/記録は|CPU の数: 2 → 4/)).not.toBeInTheDocument()
+    }
+  })
+
+  it('カードには記録をやり直す前の差分だけ注記し、複数対象のときは名前または moid を添える', async () => {
+    setup()
+    const named = { ...CONFIG_DIFF, entity_name: 'disk-owner', new_value: 6 }
+    const unnamed = { ...CONFIG_DIFF, id: 2, entity_name: '', entity_moid: 'vm-other', new_value: 8, observed_at: '2026-03-22T00:20:00Z' }
+    renderTimeline()
+    await answer(0, emptyViewResponse({ highlights: { config_changes: [
+      { ...CONFIG_CHANGE, diffs: [named, unnamed], diffs_multiple_targets: true, diffs_first_success_at: '2026-03-22T00:15:00Z' },
+      { ...CONFIG_CHANGE, event_ids: [100], diffs: [{ ...named, new_value: 10 }], diffs_multiple_targets: false },
+      { ...CONFIG_CHANGE, event_ids: [101], diffs: [{ ...named, new_value: 12 }], diffs_multiple_targets: false },
+    ] } }))
+    const card = within(await screen.findByRole('region', { name: '構成変更' }))
+    expect(card.getByText(/disk-owner.*2 → 6/).closest('li')).toHaveTextContent('記録をやり直す前の値')
+    expect(card.getByText(/vm-other.*2 → 8/).closest('li')).not.toHaveTextContent('記録をやり直す前の値')
+    expect(card.getByText('VM の構成・CPU の数: 2 → 10')).toBeInTheDocument()
+    expect(card.getByText('VM の構成・CPU の数: 2 → 12')).toBeInTheDocument()
+  })
+
+  it('差分の切り詰めた値の引用符を整え、空文字と真偽を区別する', async () => {
+    setup()
+    const diffs = [
+      { ...CONFIG_DIFF, old_value: '""', new_value: '"very', truncated: true },
+      { ...CONFIG_DIFF, id: 2, attribute_label: '有効', old_value: false, new_value: true },
+      { ...DISK_ADDED, old_value: null, new_value: '"fragment', truncated: true },
+    ]
+    renderTimeline()
+    await answer(0, emptyViewResponse({ highlights: { config_changes: [{ ...CONFIG_CHANGE, diffs }] } }))
+    const card = within(await screen.findByRole('region', { name: '構成変更' }))
+    expect(card.getByText('VM の構成・CPU の数: （空） → very（一部を省略）')).toBeInTheDocument()
+    expect(card.getByText('VM の構成・有効: いいえ → はい')).toBeInTheDocument()
+    expect(card.getByText('fragment（一部を省略）')).toBeInTheDocument()
+    expect(card.queryByText('（値の一部を省略）')).not.toBeInTheDocument()
+  })
+
+  it('差分の省略された側に印を付け、側を特定できない場合は行末に注記する', async () => {
+    setup()
+    const numericPrefix = '1234'.repeat(256)
+    const diffs = [
+      { ...CONFIG_DIFF, attribute_label: '古い値だけ', old_value: String.raw`"a\"b\\c\u3042\u30`, new_value: '"complete"', truncated: true },
+      { ...CONFIG_DIFF, id: 2, attribute_label: '両側', old_value: '"old', new_value: '"new', truncated: true },
+      { ...CONFIG_DIFF, id: 3, attribute_label: '側が不明', old_value: numericPrefix, new_value: 'false', truncated: true },
+      { ...CONFIG_DIFF, id: 4, attribute_label: '新しい値だけ', old_value: '""', new_value: String.raw`"a\"b` + '\\', truncated: true },
+    ]
+    renderTimeline()
+    await answer(0, emptyViewResponse({ highlights: { config_changes: [{ ...CONFIG_CHANGE, diffs }] } }))
+    const card = within(await screen.findByRole('region', { name: '構成変更' }))
+    expect(card.getByText('VM の構成・古い値だけ: a"b\\cあ（一部を省略） → complete')).toBeInTheDocument()
+    expect(card.getByText('VM の構成・両側: old（一部を省略） → new（一部を省略）')).toBeInTheDocument()
+    expect(card.getByText(`VM の構成・側が不明: ${numericPrefix} → いいえ`)).toBeInTheDocument()
+    expect(card.getByText('（値の一部を省略）').closest('li')?.textContent).toMatch(/の間）（値の一部を省略）$/)
+    expect(card.getByText('VM の構成・新しい値だけ: （空） → a"b（一部を省略）')).toBeInTheDocument()
+  })
+
   it('影響範囲は最新のタイムラインの応答を待ち、その期間と最初の兆候を使う', async () => {
     setup()
     const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
@@ -212,7 +614,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     await waitFor(() => expect(harness.calls).toHaveLength(1))
     expect(impact).not.toHaveBeenCalled()
     await answer(0)
-    await screen.findByText('この vCenter は登録されていません。')
+    await within(await screen.findByRole('region', { name: '影響範囲' })).findByText('この vCenter は登録されていません。')
     const params = new URL(impact.mock.calls[0][0], window.location.origin).searchParams
     expect(Object.fromEntries(params)).toEqual({
       vcenter_id: VC,
@@ -1536,9 +1938,13 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       result: populated({ from_utc: '2026-03-10T00:00:00Z', to_utc: '2026-03-10T03:00:00Z' }),
       ...overrides,
     })
-    const openSnapshot = async (item: unknown, detail: unknown, impact?: (url: string) => Response) => {
+    const openSnapshot = async (item: unknown, detail: unknown, mocks: {
+      impact?: (url: string) => Response
+      configDiffs?: (url: string) => Response
+    } = {}) => {
       setup({ snapshots: [item] })
-      if (impact) harness.extra.set('/api/inventory/impact?', impact)
+      if (mocks.impact) harness.extra.set('/api/inventory/impact?', mocks.impact)
+      if (mocks.configDiffs) harness.extra.set('/api/inventory/config-diffs?', mocks.configDiffs)
       harness.extra.set(`/api/incident-timeline/snapshots/manual/${SNAPSHOT_ID}`, () => jsonResponse(detail))
       renderTimeline()
       await answer(0, emptyViewResponse())
@@ -1634,14 +2040,30 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     it('保存した結果の対象・起点・期間で影響範囲を取得する', async () => {
       const savedRequest = { ...viewRequest, entity_moid: 'host-20', anchor: '2026-03-10T01:00:00Z' }
       const impact = vi.fn((url: string) => jsonResponse({ detail: url }, 404))
-      await openSnapshot(listItem({ view_request: savedRequest }), detailOf({ view_request: savedRequest }), impact)
-      await screen.findByText('この vCenter は登録されていません。')
+      await openSnapshot(listItem({ view_request: savedRequest }), detailOf({ view_request: savedRequest }), { impact })
+      await within(await screen.findByRole('region', { name: '影響範囲' })).findByText('この vCenter は登録されていません。')
       expect(harness.calls).toHaveLength(1)
       expect(impact).toHaveBeenCalledTimes(1)
       expect(Object.fromEntries(new URL(impact.mock.calls[0][0], window.location.origin).searchParams)).toEqual({
         vcenter_id: VC, entity_moid: 'host-20',
         from: '2026-03-10T00:00:00.000Z', to: '2026-03-10T03:00:00.000Z', at: '2026-03-10T01:00:00.000Z',
       })
+    })
+
+    it('保存時の対象・期間で、現在残っている構成の差分を取得する', async () => {
+      const savedRequest = { ...viewRequest, entity_moid: 'host-20' }
+      const diffs = vi.fn<(url: string) => Response>(() => jsonResponse(configDiffResponse({
+        items: [], total: 0, target: { moid: 'host-20', name: 'esx01', entity_type: 'HostSystem' },
+      })))
+      await openSnapshot(listItem({ view_request: savedRequest }), detailOf({ view_request: savedRequest }), { configDiffs: diffs })
+      await screen.findByRole('region', { name: '構成の差分' })
+      await configSection().findByText('esx01（現在残っている差分）')
+      expect(diffs).toHaveBeenCalledTimes(1)
+      expect(Object.fromEntries(new URL(diffs.mock.calls[0][0], window.location.origin).searchParams)).toEqual({
+        vcenter_id: VC, entity_moid: 'host-20',
+        from: '2026-03-10T00:00:00.000Z', to: '2026-03-10T03:00:00.000Z',
+      })
+      expect(harness.calls).toHaveLength(1)
     })
 
     it('検知や構成変更の項目が無い保存済みの結果も表示する', async () => {
