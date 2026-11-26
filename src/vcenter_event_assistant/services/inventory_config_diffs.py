@@ -149,6 +149,9 @@ async def read_config_diffs(
             diff.observed_at.asc(),
             diff.category.collate(collation).asc(),
             diff.element.collate(collation).asc().nulls_first(),
+            # 複数の対象をまとめたカードで、同じ装置の入れ替わりの対が対象ごとに隣り合うようにする。
+            diff.vcenter_id.asc(),
+            diff.moid.collate(collation).asc(),
             diff.attribute.collate(collation).asc().nulls_last(),
             diff.new_value.is_(None).desc(),
             diff.id.asc(),

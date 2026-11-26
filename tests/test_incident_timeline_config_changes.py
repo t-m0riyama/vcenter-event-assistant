@@ -643,6 +643,45 @@ async def test_config_diff_card_order_limit_and_pair(config_db, dialect, replace
     assert card.diffs_total == len(diffs)
 
 
+@pytest.mark.parametrize("dialect", ["sqlite", "postgres"])
+async def test_config_diff_card_keeps_each_target_pair_together(config_db, dialect, config_clock):
+    """複数の対象をまとめたカードで、同じ装置の入れ替わりが対象ごとに対のまま切れ目に掛かる。"""
+    vc = _vc()
+    config_db.add(vc)
+    await config_db.flush()
+    filler = [_diff(vc, 9, 9.5, element="b") for _ in range(8)]
+    disk = dict(element="disk:2000", attribute=None)
+
+    def replaced(moid: str) -> tuple[InventoryConfigDiff, InventoryConfigDiff]:
+        return (
+            _diff(vc, 9, 10, moid=moid, **disk, old_value='{"uuid":"old"}', new_value=None),
+            _diff(vc, 9, 10, moid=moid, **disk, old_value=None, new_value='{"uuid":"new"}'),
+        )
+
+    removed_1, added_1 = replaced("vm-1")
+    removed_2, added_2 = replaced("vm-2")
+    config_db.add_all([
+        InventorySyncState(vcenter_id=vc.id, config_first_success_at=START),
+        _event(vc, 10, VM, "guest", entity_moid="vm-1", chain_id=12, collector_id=EVENTS),
+        _event(
+            vc, 20, "task.success.VirtualMachine.reconfigure", "another guest",
+            entity_moid="vm-2", chain_id=12, collector_id=TASKS,
+        ),
+        *filler,
+    ])
+    await config_db.flush()
+    # ID の順に頼らないよう、2 台目の「減った」行を先に入れる。
+    for row in (removed_2, removed_1, added_2, added_1):
+        config_db.add(row)
+        await config_db.flush()
+
+    request = IncidentTimelineViewRequest.model_validate(_request())
+    result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
+    (card,) = result.highlights.config_changes
+    assert [diff.id for diff in card.diffs] == [diff.id for diff in (*filler, removed_1, added_1)]
+    assert card.diffs_total == 12
+
+
 @pytest.mark.parametrize("remaining", [0, 2])
 async def test_config_diff_report_remainder_and_safe_markdown(viewer_client, config_clock, remaining):
     vc = _vc()
