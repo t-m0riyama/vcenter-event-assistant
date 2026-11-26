@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from pyVmomi import vim, vmodl
 
+from vcenter_event_assistant.collectors.property_specs import property_spec
+
 Relation = tuple[str, str, str]
 
 _NETWORK_TYPES = frozenset({"Network", "DistributedVirtualPortgroup", "OpaqueNetwork"})
@@ -85,9 +87,7 @@ def read_inventory(content: vim.ServiceInstanceContent) -> InventoryObservation:
                 )
             ],
             propSet=[
-                # pyVmomi は list でない配列を 1 つの値として直列化し、要求が送れない。
-                pc.PropertySpec(type=kind, pathSet=list(paths))
-                for kind, paths in _PROPERTIES.items()
+                property_spec(kind, paths) for kind, paths in _PROPERTIES.items()
             ],
         )
         page = collector.RetrievePropertiesEx(

@@ -84,6 +84,8 @@ class ConfigReadMissing(Exception):
     """有効な構成読み取りから結果が返らなかった。"""
 
 
+# 画面の案内は frontend/src/utils/collectionErrorMessage.ts。型を足したら
+# tests/test_collection_error_records.py の一覧を書き直し、案内も足す。
 _READ_ERRORS = {
     InventoryReadTimeout: "読み取りがタイムアウトしました。",
     ConfigReadTimeout: "構成の読み取りがタイムアウトしました。",

@@ -27,6 +27,7 @@ from vcenter_event_assistant.collectors.config_values import (
     normalize_vm,
 )
 from vcenter_event_assistant.collectors.inventory import InventoryObjectData
+from vcenter_event_assistant.collectors.property_specs import property_spec
 
 _PC = vmodl.query.PropertyCollector
 _CONNECTION = "runtime.connectionState"
@@ -156,9 +157,7 @@ def read_overview(
                 )
             ],
             propSet=[
-                # pyVmomi は list でない配列を 1 つの値として直列化し、要求が送れない。
-                _PC.PropertySpec(type=kind, pathSet=list(attrs))
-                for kind, attrs in paths.items()
+                property_spec(kind, attrs) for kind, attrs in paths.items()
             ],
         )
 
@@ -178,7 +177,7 @@ def read_overview(
 
 def read_vm_details(content: Any, refs: list[Any], *, deadline: float) -> VMDetails:
     result = VMDetails()
-    props = _PC.PropertySpec(type=vim.VirtualMachine, pathSet=list(VM_DETAIL_PATHS))
+    props = property_spec(vim.VirtualMachine, VM_DETAIL_PATHS)
     for index in range(0, len(refs), VM_BATCH_SIZE):
         batch = {ref._moId: ref for ref in refs[index : index + VM_BATCH_SIZE]}
         retries = 0

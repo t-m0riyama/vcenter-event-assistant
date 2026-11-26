@@ -54,6 +54,9 @@ _SHUTDOWN_GRACE_SECONDS = 5.0
 class CollectorWorkerError(RuntimeError):
     """ワーカーが要求を処理できなかった。
 
+    渡す文言は失敗の記録の型名の位置に残り、画面の案内（frontend/src/utils/collectionErrorMessage.ts）
+    の対象になる。文言を足したら tests/test_collection_error_records.py の一覧を書き直す。
+
     ``str()`` はプラグイン側の例外型名（ワーカーが返した ``error``）であり、
     従来からこの形を保っている。``detail`` はワーカーが allow-list に載る型に
     限って添えてくるメッセージで、無い場合は ``None``。

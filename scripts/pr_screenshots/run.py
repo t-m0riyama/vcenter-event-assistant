@@ -14,6 +14,11 @@ Playwright（Chromium）で撮ってからサーバーを止める。外部の�
     uv run python scripts/pr_screenshots/run.py diagnostics-settings --out /tmp/shots
     uv run python scripts/pr_screenshots/run.py diagnostics-settings --out /tmp/shots --build
     uv run python scripts/pr_screenshots/run.py --list
+    uv run python scripts/pr_screenshots/run.py config-diffs --out /tmp/shots --publish config-diffs-ui
+
+``--publish <名前>`` は、撮った PNG だけを入れた親の無いコミットを作り、``origin`` の
+``screenshots/<名前>`` ブランチに push する（作業ツリーと今のブランチには触れない）。PR の説明に
+貼る画像の Markdown を出す。同じ名前のブランチが既にあるときと、出力先が空でないときは、撮らずに止まる。
 
 前提: ``frontend`` で ``npm install`` と ``npx playwright install chromium`` を済ませておく。
 """
@@ -23,6 +28,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -30,6 +36,7 @@ import tempfile
 import time
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import quote
 
 import httpx
 
@@ -96,6 +103,104 @@ def login(base: str) -> httpx.Client:
     return client
 
 
+def github_slug(remote_url: str) -> str:
+    """``origin`` の URL から ``owner/repo`` を取り出す（https と ssh の両方の形）。"""
+    match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$", remote_url)
+    if match is None:
+        raise ValueError(f"GitHub のリポジトリの URL ではありません: {remote_url}")
+    return match.group(1)
+
+
+class PublishError(Exception):
+    """公開できない（利用者に短い案内で返す）。"""
+
+
+def _git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=cwd, env=env, check=False, capture_output=True, text=True)
+
+
+def prepare_publish(name: str, out: Path, cwd: Path = REPOSITORY_ROOT) -> str:
+    """撮る前に公開できるかを確かめ、``owner/repo`` を返す。
+
+    名前の形、``origin`` が GitHub か、同じ名前のブランチが無いか、出力先が空かを確かめる。
+    出力先に前の PNG が残っていると、それも公開してしまうため。
+    """
+    branch = f"refs/heads/screenshots/{name}"
+    if _git("check-ref-format", branch, cwd=cwd).returncode != 0:
+        raise PublishError(f"ブランチの名前に使えません: {name}")
+    remote = _git("remote", "get-url", "origin", cwd=cwd)
+    if remote.returncode != 0:
+        raise PublishError("origin が設定されていません。")
+    try:
+        slug = github_slug(remote.stdout.strip())
+    except ValueError as exc:
+        raise PublishError(str(exc)) from exc
+    exists = _git("ls-remote", "--exit-code", "origin", branch, cwd=cwd)
+    if exists.returncode == 0:
+        raise PublishError(f"origin に {branch} が既にあります。別の名前を指定してください。")
+    if exists.returncode != 2:
+        raise PublishError(f"origin を確かめられませんでした: {exists.stderr.strip()}")
+    if out.exists() and not out.is_dir():
+        raise PublishError(f"{out} はディレクトリではありません。")
+    if out.exists() and any(out.iterdir()):
+        raise PublishError(f"{out} が空ではありません。--publish では空の出力先を指定してください。")
+    return slug
+
+
+def screenshot_commit(out: Path, cwd: Path = REPOSITORY_ROOT) -> tuple[str, list[str]]:
+    """``out`` の PNG だけを入れた親の無いコミットを作り、そのハッシュとファイル名を返す。
+
+    一時の index を使うので、作業ツリー、今の index、今のブランチは変わらない。
+    """
+    names = sorted(path.name for path in out.glob("*.png"))
+    if not names:
+        raise PublishError(f"{out} に PNG がありません。")
+
+    def git(*args: str, env: dict[str, str] | None = None) -> str:
+        result = _git(*args, cwd=cwd, env=env)
+        if result.returncode != 0:
+            raise PublishError(f"git {args[0]} に失敗しました: {result.stderr.strip()}")
+        return result.stdout.strip()
+
+    with tempfile.TemporaryDirectory(prefix="vea-pr-shots-index-") as work:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(work) / "index")}
+        for name in names:
+            blob = git("hash-object", "-w", str(out / name))
+            git("update-index", "--add", "--cacheinfo", f"100644,{blob},{name}", env=env)
+        tree = git("write-tree", env=env)
+    commit = git("commit-tree", tree, "-m", f"screenshots: {out.name}")
+    return commit, names
+
+
+def _pair_key(name: str) -> tuple[str, int]:
+    """``light-<名前>.png`` と ``dark-<名前>.png`` を、場面ごとに明るい側を先にして並べる。"""
+    for order, theme in enumerate(("light-", "dark-")):
+        if name.startswith(theme):
+            return name.removeprefix(theme), order
+    return name, 2
+
+
+def image_markdown(slug: str, commit: str, names: list[str]) -> str:
+    """PR の説明に貼る画像の Markdown（場面ごとに明暗の組で並べる）。"""
+    base = f"https://raw.githubusercontent.com/{slug}/{commit}"
+    return "\n".join(
+        f"![{name.removesuffix('.png')}]({base}/{quote(name)})" for name in sorted(names, key=_pair_key)
+    )
+
+
+def publish(out: Path, name: str, slug: str, cwd: Path = REPOSITORY_ROOT) -> str:
+    """PNG を ``screenshots/<name>`` に push し、画像の Markdown を返す。
+
+    ``+`` を付けずに push するので、同じ名前のブランチが後からできていても上書きしない。
+    refspec は 1 つの引数で渡す（シェルを通さないので、変数の修飾子などで崩れない）。
+    """
+    commit, names = screenshot_commit(out, cwd=cwd)
+    pushed = _git("push", "origin", f"{commit}:refs/heads/screenshots/{name}", cwd=cwd)
+    if pushed.returncode != 0:
+        raise PublishError(f"push に失敗しました: {pushed.stderr.strip()}")
+    return image_markdown(slug, commit, names)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("scenario", nargs="?", help="撮る場面（--list で一覧）")
@@ -103,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=9331, help="一時のサーバーのポート（既定 9331）")
     parser.add_argument("--build", action="store_true", help="撮る前に frontend で npm run build する")
     parser.add_argument("--list", action="store_true", help="場面の一覧を表示して終わる")
+    parser.add_argument(
+        "--publish", metavar="NAME", help="撮った PNG を origin の screenshots/NAME ブランチに push し、画像の Markdown を出す",
+    )
     args = parser.parse_args(argv)
 
     if args.list:
@@ -110,6 +218,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.scenario not in scenario_names() or args.out is None:
         parser.error(f"場面（{', '.join(scenario_names())}）と --out を指定してください。")
+    args.out = args.out.resolve()
+    slug = None
+    if args.publish:
+        try:
+            slug = prepare_publish(args.publish, args.out)
+        except PublishError as exc:
+            print(exc, file=sys.stderr)
+            return 1
     if port_in_use(args.port):
         print(f"ポート {args.port} は使用中です。--port で別のポートを指定してください。", file=sys.stderr)
         return 1
@@ -140,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
                     finally:
                         client.close()
                 result = subprocess.run(
-                    ["node", str(HERE / "shoot.mjs"), base, str(args.out.resolve()), args.scenario],
+                    ["node", str(HERE / "shoot.mjs"), base, str(args.out), args.scenario],
                     cwd=REPOSITORY_ROOT / "frontend",
                     env={**os.environ, "VEA_DEMO_USERNAME": ADMIN_USERNAME, "VEA_DEMO_PASSWORD": ADMIN_PASSWORD},
                     check=False,
@@ -151,9 +267,16 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 server.terminate()
                 server.wait(timeout=30)
-    if result.returncode == 0:
-        print(f"{args.out} に書き出しました。")
-    return result.returncode
+    if result.returncode != 0:
+        return result.returncode
+    print(f"{args.out} に書き出しました。")
+    if args.publish and slug is not None:
+        try:
+            print(publish(args.out, args.publish, slug))
+        except PublishError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
