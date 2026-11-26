@@ -154,6 +154,10 @@
 
 判定は各パターンの時間幅だけ期間の起点より前からイベントを読み、期間内のイベントを含む検知を返す。対象の絞り込みは子表の `entity_moid` を使い、名前だけが指定された場合は判定後に `entity_name` に部分一致を当てる。`min_score` に関わらず判定する。
 
+`highlights.config_changes` の各カードは、グループに含まれる対象の構成差分を `diffs` に、上限適用前の件数を `diffs_total` に返す。イベントと観測の時計のずれを見込み、`changed_after < last_utc + 2 分` かつ `observed_at > first_utc - 2 分` の差分を最大 10 件返す。10 件目が装置の入れ替わりの削除行なら、対の追加行も返す。
+
+カードに vCenter または対象の moid が無い場合、その vCenter で構成収集が成功していない場合、カードの `last_utc` が `recorded_since` より前の場合、または差分の項目を持たない保存済み結果では `diffs` は `null`、`diffs_total` は 0 になる。判定した結果が 0 件なら `diffs` は空配列になる。構成収集を無効にしても保存済みの差分は添付される。
+
 #### 調査資料の出力
 
 どちらの API も viewer 以上で使える。
@@ -169,14 +173,17 @@
 
 ### 2.7 インベントリ
 
-両 API とも viewer 以上で参照できる。
+各 API は viewer 以上で参照できる。
 
 - `GET /api/inventory/impact` は `vcenter_id` と `entity_moid` が必須。任意の `at` は UTC にそろえる。現在時刻と `last_success_at` の遅い方を上限とし、省略時はその上限を使う。指定値が上限を超える場合も、その時刻に丸める。関係は `valid_from <= at < valid_to` の区間で有効で、`valid_to` が空なら開いたままとみなす。
 - 応答の `target` は `moid`、`entity_type`、`name` を持つ。対象の種別は収集した値を優先し、収集した値が無ければ同じ vCenter と moid の最新のイベント対象の種別を使う。名前は現在の収集値を使い、空なら moid を返す。
 - 未登録の vCenter は 404。ほかの結果は `status` に、優先順に `unsupported_type`、`not_recorded`、`unknown_target`、`absent_at_time`、`stale`、`ok` を返す。`recorded_since` は最初の成功と保持期限の遅い方で、成功が無いときは `null`。`observed_before` は `at` 以前、`observed_after` は `at` より後の最も近い観測を示す。前の観測が無いか、前の観測から設定間隔の 2 倍を超える場合は `stale` になる。
 - `groups` の `relation` は起点から見た相手を示す。ホストは `cluster`、`vms`、`datastores`、`networks`、VM は `hosts`、`cluster`、`datastores`、`networks` を返す。クラスタとデータストア、ネットワークは `hosts`、`vms` を返す。VM のクラスタとクラスタの VM は同じ `at` のホスト関係を経由する。各グループの `items` はASCII の英字を小文字にした表示名、表示名、moid の順で最大 200 件、`total` は上限を適用する前の件数。`removed` は現在の観測で見えないことを示す。`stale` と `absent_at_time` でも一覧を返す。
 - `from` と `to` を両方指定すると `changes` を返す。片方だけを指定した場合と、`from` が `to` より後の場合は 422 を返す。対象と直接結ばれた関係のうち、`max(from, recorded_since) < 時刻 <= to` の変化を時刻順に最大 200 件返す。ちょうど `from` の時刻の変化は期間外とし、ちょうど `to` の時刻の変化は期間内とする。`items` の各要素は `kind`、相手の `other`、観測時刻の `at`、`action`（`opened` または `closed`）を持つ。`total` は上限を適用する前の件数。記録を始めた時点の構成は期間の起点として扱う。
-- `GET /api/inventory/status` は収集の設定 `enabled`、`interval_seconds`、`timeout_seconds` と、`vcenters` を返す。`enabled` はスケジューラと収集の設定が両方有効なときに真になる。各行には `vcenter_id`、`vcenter_name`、`is_enabled`、収集の日時、直近成功時の件数、`last_error` と `last_warning` が入る。状態の行が無い vCenter も表示され、収集状態の各項目は `null` になる。
+- `GET /api/inventory/config-diffs` は `vcenter_id` と `entity_moid` が必須。任意の `from` と `to` は UTC にそろえ、両方を省略すると、現在時刻から構成差分の保持期間を引いた時刻から、現在時刻と最後の構成収集成功時刻の遅い方までを使う。片方だけの指定や `from > to` は 422、未登録の vCenter は 404 を返す。
+- 差分は `changed_after < to` かつ `observed_at > from` を満たすものを、観測時刻と ID の降順で最大 200 件返す。切れ目に装置の入れ替わりがある場合は対の行も返す。`total` は上限を適用する前の件数。`target` の種別と名前は、見えなくなった対象も含むインベントリの行から取り、対応する行がなければ最新の差分から取る。
+- 応答の `status` は `disabled`、`not_recorded`、`ok` のいずれかで、無効でも保存済みの差分は返す。`recorded_since` は構成を最初に観測できた時刻と保持期限の遅い方。`last_success_at` は直近の構成観測の成功時刻。各項目には種類と項目の表示名、観測区間、変更前後の JSON 値が入る。`old_value` と `new_value` の JSON の `null` は、要素の追加・削除の行（`attribute` が `null`）ではその側に要素が無いことを、項目の差分の行ではその側の値が未設定であることを表す。値の切り詰めがある行では、`truncated` が真になり前後の値が文字列で返る。装置の交換は観測した項目から見分けられない場合がある。
+- `GET /api/inventory/status` は収集の設定 `enabled`、`config_enabled`、`interval_seconds`、`timeout_seconds` と、`vcenters` を返す。`enabled` はスケジューラと収集の設定が両方有効なときに真になる。各行には `vcenter_id`、`vcenter_name`、`is_enabled`、収集の日時、直近成功時の件数、`last_error` と `last_warning` が入る。状態の行が無い vCenter も表示され、収集状態の各項目は `null` になる。`config_enabled` はスケジューラ、インベントリ収集、構成収集がすべて有効なときに真になり、各 vCenter の `config_*` 項目に構成の収集状態を返す。
 
 影響範囲は、収集アカウントで見えた範囲を示す。時刻は関係の変化を観測した時点を表す。管理対象が一時的に見えなくなり、その後また見えた場合は、見えなかった期間を管理対象の状態からは判定できない。
 

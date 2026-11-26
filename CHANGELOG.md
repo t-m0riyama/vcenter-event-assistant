@@ -49,6 +49,7 @@
 
 ### 追加
 
+- viewer 以上で使える構成差分 API `GET /api/inventory/config-diffs` を追加した。タイムラインの構成変更と調査資料に観測した差分を添え、`GET /api/inventory/status` で構成の収集状態を確認できる。
 - ESXi のビルド、クラスタの HA・DRS、標準 vSwitch・ポートグループ、VM の構成の差分を記録するようにした。`INVENTORY_CONFIG_ENABLED`（既定 `true`）で切り替え、`INVENTORY_CONFIG_RETENTION_DAYS`（既定 30 日）で差分の保持期間を指定する。
 - インシデント記録 API（`/api/incidents`）を追加した。件名・状態・担当・要約と経過を残し、イベント・通知の写しや保存済みスナップショットを紐付けられる。解決から既定 90 日でインシデントを削除する。紐付いたスナップショットの行と保存結果は、紐付けがある間は保持期間による削除の対象外になる。[バックエンド運用ガイド](docs/operations/backend-operations.md)
 - 「インシデント」タブを追加した。状態・担当・要約や経過のメモを記録し、イベント・通知履歴・タイムラインから調査に関係する行を紐付けられる。詳細から保存済みのスナップショットを開き、調査資料を出力できる。[インシデントの使い方](docs/userguide/incidents.md)

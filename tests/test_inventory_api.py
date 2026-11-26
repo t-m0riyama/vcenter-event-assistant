@@ -18,6 +18,7 @@ from vcenter_event_assistant.db.base import Base
 from vcenter_event_assistant.db.models import (
     EventEntity,
     EventRecord,
+    InventoryConfigDiff,
     InventorySyncRun,
     InventorySyncState,
     VCenter,
@@ -28,6 +29,7 @@ from vcenter_event_assistant.services.inventory import persist_inventory
 from vcenter_event_assistant.settings import get_settings
 
 IMPACT = "/api/inventory/impact"
+CONFIG_DIFFS = "/api/inventory/config-diffs"
 STATUS = "/api/inventory/status"
 NOW = utcnow().replace(microsecond=0)
 T0 = NOW - timedelta(hours=2)
@@ -523,6 +525,16 @@ async def test_inventory_status_returns_configuration_and_empty_vcenters(
             last_warning_at=T1,
             object_count=10,
             relation_count=7,
+            config_instance_uuid="hidden-config",
+            config_first_success_at=T0,
+            config_last_started_at=T2,
+            config_last_success_at=T1,
+            config_last_failure_at=T2,
+            config_last_error="config failed",
+            config_last_warning="config warning",
+            config_last_warning_at=T1,
+            config_object_count=8,
+            config_deferred_count=2,
         )
     )
     await inventory_session.flush()
@@ -536,6 +548,7 @@ async def test_inventory_status_returns_configuration_and_empty_vcenters(
         "interval_seconds": 600,
         "timeout_seconds": 90,
     }
+    assert body["config_enabled"] is False
     missing, present = body["vcenters"]
     times = {
         "first_success_at": T0,
@@ -550,6 +563,11 @@ async def test_inventory_status_returns_configuration_and_empty_vcenters(
         "object_count": 10,
         "relation_count": 7,
     }
+    times.update({f"config_{key}": at for key, at in times.items()})
+    counters.update(
+        config_last_error="config failed", config_last_warning="config warning",
+        config_object_count=8, config_deferred_count=2,
+    )
     assert missing == {
         "vcenter_id": str(empty),
         "vcenter_name": "empty",
@@ -592,3 +610,242 @@ async def test_inventory_viewer_and_anonymous_permissions(viewer_client, anon_cl
     assert response.status_code == 200
     assert response.json()["vcenters"][0]["last_error"] == "failed"
     assert response.json()["vcenters"][0]["last_warning"] == "warning"
+
+
+@pytest.mark.parametrize("disabled", [
+    None, "scheduler_enabled", "inventory_sync_enabled", "inventory_config_enabled",
+])
+async def test_inventory_status_config_enabled_requires_all_flags(
+    inventory_client, inventory_settings, disabled,
+):
+    inventory_settings.scheduler_enabled = True
+    inventory_settings.inventory_sync_enabled = True
+    inventory_settings.inventory_config_enabled = True
+    if disabled:
+        setattr(inventory_settings, disabled, False)
+    response = await inventory_client.get(STATUS)
+    assert response.status_code == 200
+    assert response.json()["config_enabled"] is (disabled is None)
+
+
+async def config_diffs(client, vc, moid="vm", **params):
+    return await client.get(
+        CONFIG_DIFFS, params={"vcenter_id": str(vc), "entity_moid": moid, **params}
+    )
+
+
+def config_diff(vc, after, observed, **options):
+    return InventoryConfigDiff(**{
+        "vcenter_id": vc, "moid": "vm", "entity_type": "VirtualMachine",
+        "entity_name": "historical guest", "category": "vm_config", "attribute": "num_cpu",
+        "old_value": "2", "new_value": "4", "truncated": False,
+        "changed_after": after, "observed_at": observed, **options,
+    })
+
+
+async def test_inventory_config_diff_permissions(viewer_client, anon_client):
+    async with session_scope() as session:
+        vc = await add_center(session)
+    assert (await config_diffs(viewer_client, vc)).status_code == 200
+    assert (await config_diffs(anon_client, vc)).status_code == 401
+
+
+async def test_inventory_config_diff_validation(inventory_client, inventory_session):
+    vc = await add_center(inventory_session)
+    assert (await config_diffs(inventory_client, uuid4())).status_code == 404
+    for params in ({}, {"vcenter_id": str(vc)}, {"entity_moid": "vm"}):
+        assert (await inventory_client.get(CONFIG_DIFFS, params=params)).status_code == 422
+    for moid in ("", "x" * 257):
+        assert (await config_diffs(inventory_client, vc, moid)).status_code == 422
+    assert (await config_diffs(inventory_client, "invalid")).status_code == 422
+    for bounds in (
+        {"from": T1.isoformat()},
+        {"to": T2.isoformat()},
+        {"from": T2.isoformat(), "to": T1.isoformat()},
+        {"from": "invalid", "to": T1.isoformat()},
+        {"from": T0.isoformat(), "to": "invalid"},
+    ):
+        assert (await config_diffs(inventory_client, vc, **bounds)).status_code == 422
+    equal = {"from": T1.isoformat(), "to": T1.isoformat()}
+    assert (await config_diffs(inventory_client, vc, **equal)).status_code == 200
+
+
+async def test_inventory_config_diff_overlap_and_status(
+    inventory_client, inventory_session, inventory_settings, monkeypatch,
+):
+    from vcenter_event_assistant.services import inventory_config_diffs
+
+    monkeypatch.setattr(inventory_config_diffs, "utcnow", lambda: NOW)
+    vc = await add_center(inventory_session)
+    other = await add_center(inventory_session, "another")
+    inventory_settings.inventory_sync_enabled = True
+    inventory_settings.inventory_config_enabled = True
+    unrecorded = (await config_diffs(inventory_client, vc)).json()
+    assert unrecorded == {
+        "target": {"moid": "vm", "entity_type": None, "name": "vm"},
+        "status": "not_recorded", "recorded_since": None, "last_success_at": None,
+        "items": [], "total": 0,
+    }
+    await observe(inventory_session, vc, T0, OBJECTS, RELATIONS)
+    state = await inventory_session.get(InventorySyncState, vc)
+    outside = NOW - timedelta(days=31)
+    state.config_first_success_at = outside
+    state.config_last_success_at = T2
+    matches = [
+        config_diff(vc, T0, T2, attribute="guest_id", old_value='"old"', new_value='"new"'),
+        config_diff(vc, T0, T2, attribute="memory_mb", old_value="null", new_value="4096"),
+        config_diff(vc, T1, T2 + timedelta(minutes=5), element="nic:4000",
+                    element_label="recorded NIC", attribute="network", old_value='"very',
+                    new_value='"other"', truncated=True),
+    ]
+    inventory_session.add_all([
+        matches[2], *matches[:2], config_diff(vc, T2, T2, entity_name="latest by ID"),
+        config_diff(vc, T0, T1), config_diff(vc, T1, T2, moid="vm-other"),
+        config_diff(other, T1, T2), config_diff(vc, outside, outside),
+        config_diff(vc, NOW, NOW + timedelta(minutes=1), entity_name="latest observation"),
+        config_diff(vc, T0, T1, moid="untracked", entity_name="older observation"),
+        config_diff(vc, NOW, NOW + timedelta(minutes=1), moid="untracked", entity_name="latest untracked name"),
+    ])
+    await inventory_session.flush()
+    bounds = {
+        "from": T1.astimezone(timezone(timedelta(hours=9))).isoformat(),
+        "to": T2.isoformat(),
+    }
+    body = (await config_diffs(inventory_client, vc, **bounds)).json()
+    assert body["target"] == {"moid": "vm", "entity_type": "VirtualMachine", "name": "guest"}
+    assert body["status"] == "ok"
+    assert utc_field(body, "recorded_since") == NOW - timedelta(days=30)
+    assert utc_field(body, "last_success_at") == T2
+    assert body["total"] == 3
+    assert [row["id"] for row in body["items"]] == [row.id for row in reversed(matches)]
+    assert [(row["old_value"], row["new_value"]) for row in body["items"]] == [
+        ('"very', '"other"'), (None, 4096), ("old", "new"),
+    ]
+    assert body["items"][0]["element_label"] == "recorded NIC"
+    default = (await config_diffs(inventory_client, vc)).json()
+    assert default["total"] == 5
+    historical = (await config_diffs(inventory_client, vc, **{
+        "from": (outside - timedelta(seconds=1)).isoformat(), "to": T0.isoformat(),
+    })).json()
+    assert historical["total"] == 1
+    state.config_first_success_at = T0
+    await observe(inventory_session, vc, T2, {"h1": OBJECTS["h1"]}, set())
+    inventory_settings.inventory_config_enabled = False
+    disabled = (await config_diffs(inventory_client, vc, **bounds)).json()
+    assert disabled["status"] == "disabled"
+    assert disabled["items"] == body["items"]
+    assert disabled["target"] == {"moid": "vm", "entity_type": "VirtualMachine", "name": "guest"}
+    untracked = (await config_diffs(inventory_client, vc, "untracked", **bounds)).json()
+    assert untracked["target"] == {
+        "moid": "untracked", "entity_type": "VirtualMachine", "name": "latest untracked name",
+    }
+    assert utc_field(disabled, "recorded_since") == T0
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+async def test_inventory_config_diff_limit_and_pair(inventory_client, inventory_session, replacement):
+    vc = await add_center(inventory_session)
+    disk = dict(element="disk:2000", attribute=None)
+    before = config_diff(vc, T0, T1)
+    removed = config_diff(vc, T0, T1, **disk, old_value='{"uuid":"old"}', new_value=None)
+    distractor = config_diff(vc, T0, T1, **{**disk, "element": "disk:2001"}, old_value="{}", new_value=None)
+    added = config_diff(vc, T0, T1, **disk, old_value=None, new_value='{"uuid":"new"}')
+    later = [config_diff(vc, T1, T2) for _ in range(199)]
+    wrong_observation = config_diff(
+        vc, T0, T1 - timedelta(seconds=1), **disk, old_value="{}", new_value=None,
+    )
+    wrong_category = config_diff(
+        vc, T0, T1, **disk, category="host_vswitch", old_value="{}", new_value=None,
+    )
+    rows = [
+        before, wrong_observation, *([removed] if replacement else []),
+        wrong_category, distractor, added, *later,
+    ]
+    inventory_session.add_all(rows)
+    await inventory_session.flush()
+
+    result = (await config_diffs(inventory_client, vc)).json()
+    expected = [*reversed(later), added]
+    if replacement:
+        expected.append(removed)
+    assert result["total"] == len(rows)
+    assert [item["id"] for item in result["items"]] == [row.id for row in expected]
+    assert result["items"][199]["element_label"] == "disk:2000"
+    assert result["items"][199]["new_value"] == {"uuid": "new"}
+
+
+async def test_inventory_config_diff_labels_cover_recorded_attributes(inventory_client, inventory_session):
+    vc = await add_center(inventory_session)
+    # 計画書の比較項目。実装の辞書から作るとラベルの欠落を検出できない。
+    fields = {
+        "host_build": "version build",
+        "host_vswitch": (
+            "mtu uplinks teaming_policy active_nics standby_nics allow_promiscuous mac_changes forged_transmits"
+        ),
+        "host_portgroup": (
+            "vlan_id vswitch teaming_policy active_nics standby_nics allow_promiscuous mac_changes forged_transmits"
+        ),
+        "cluster_ha": (
+            "enabled host_monitoring vm_monitoring admission_control_enabled admission_control_policy "
+            "failover_level auto_compute cpu_failover_percent memory_failover_percent failover_hosts "
+            "restart_priority isolation_response"
+        ),
+        "cluster_drs": "enabled default_vm_behavior vmotion_rate",
+        "vm_config": (
+            "num_cpu cores_per_socket memory_mb hardware_version guest_id cpu_reservation_mhz cpu_limit_mhz "
+            "cpu_shares memory_reservation_mb memory_limit_mb memory_shares label uuid capacity_kb thin "
+            "disk_mode adapter network start_connected mac_address"
+        ),
+    }
+    expected = {(category, attribute) for category, keys in fields.items() for attribute in keys.split()}
+    inventory_session.add_all([
+        config_diff(vc, T0, T1, category=category, attribute=attribute)
+        for category, attribute in sorted(expected)
+    ])
+    await inventory_session.flush()
+    items = (await config_diffs(inventory_client, vc)).json()["items"]
+    assert {(row["category"], row["attribute"]) for row in items} == expected
+    for row in items:
+        assert row["attribute_label"] and row["attribute_label"] != row["attribute"]
+        assert row["category_label"] and row["category_label"] != row["category"]
+    assert next(row for row in items if row["attribute"] == "uuid")["attribute_label"] == "ディスクの UUID"
+
+
+async def test_inventory_config_diff_target_keeps_removed_inventory_object(inventory_client, inventory_session):
+    vc = await add_center(inventory_session)
+    await observe(inventory_session, vc, T0, OBJECTS, RELATIONS)
+    await observe(inventory_session, vc, T1, {"h1": OBJECTS["h1"]}, set())
+
+    response = await config_diffs(inventory_client, vc)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["target"] == {"moid": "vm", "entity_type": "VirtualMachine", "name": "guest"}
+    assert body["items"] == [] and body["total"] == 0
+    impact_body = (await impact(inventory_client, vc, "vm", T1)).json()
+    assert body["target"] == impact_body["target"]
+
+
+async def test_inventory_config_diff_default_to_uses_later_success(
+    inventory_client, inventory_session, monkeypatch,
+):
+    from vcenter_event_assistant.services import inventory_config_diffs
+
+    monkeypatch.setattr(inventory_config_diffs, "utcnow", lambda: NOW)
+    vc = await add_center(inventory_session)
+    success_at = NOW + timedelta(minutes=2)
+    observed = config_diff(vc, NOW, success_at)
+    inventory_session.add_all([
+        InventorySyncState(vcenter_id=vc, config_first_success_at=T0, config_last_success_at=success_at),
+        observed,
+        config_diff(vc, success_at, success_at + timedelta(seconds=1)),
+    ])
+    await inventory_session.flush()
+
+    body = (await config_diffs(inventory_client, vc)).json()
+    assert utc_field(body, "last_success_at") == success_at
+    assert [item["id"] for item in body["items"]] == [observed.id]
+    assert body["total"] == 1
+    explicit = (await config_diffs(inventory_client, vc, **{
+        "from": T0.isoformat(), "to": NOW.isoformat(),
+    })).json()
+    assert explicit["items"] == []

@@ -11,8 +11,8 @@
 | PR | 内容 | 状態 |
 |---|---|---|
 | A | 本書 | マージ済み（[PR #395](https://github.com/t-m0riyama/vcenter-event-assistant/pull/395)） |
-| B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | 実装中 |
-| C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | 未着手 |
+| B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | マージ済み（[PR #396](https://github.com/t-m0riyama/vcenter-event-assistant/pull/396)） |
+| C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | 実装中 |
 | D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | 未着手 |
 
 各 PR は単独でマージでき、テストが通る状態にする。
@@ -299,11 +299,11 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 `GET /api/inventory/config-diffs?vcenter_id=…&entity_moid=…&from=…&to=…`（viewer 以上）。
 
 - `vcenter_id` と `entity_moid` は必須にする。`entity_moid` は影響範囲の API と同じく `min_length=1`・`max_length=256` にする。
-- `from` と `to` は `UtcDateTime` で受ける。両方を省いたら、直近の保持期間を対象にする。片方だけのときと、`from > to` のときは 422 にする。vCenter が無ければ 404 にする。
+- `from` と `to` は `UtcDateTime` で受ける。両方を省いたら、`from` は現在時刻から保持期間を引いた時刻、`to` は現在時刻と最後の構成収集の成功時刻の遅い方にする。片方だけのときと、`from > to` のときは 422 にする。vCenter が無ければ 404 にする。
 - 返すのは、変化の幅が期間と重なる差分である（`changed_after < to` かつ `observed_at > from`）。
 - 並びは `observed_at` の降順、`id` の降順で、最大 200 件と総数を返す。
 - 応答:
-  - `target`（moid・種別・名前。名前と種別は、`inventory_objects` の今の値、無ければ最新の差分の値）
+  - `target`（moid・種別・名前。名前と種別は、見えなくなった対象も含めて `inventory_objects` の行から取り、行が無ければ最新の差分の値を使う）
   - `status`: `disabled`（構成の読み取りが無効）、`not_recorded`（一度も構成の読み取りに成功していない）、`ok` のどれか。`disabled` でも、残っている差分は返す。
   - `recorded_since`（`max(config_first_success_at, now - inventory_config_retention_days)`）、`last_success_at`（`config_last_success_at`）
   - `items`: `id`・`category`・`category_label`・`element`・`element_label`・`attribute`・`attribute_label`・`old_value`・`new_value`（JSON として読み直した値。`truncated` が真なら文字列のまま）・`truncated`・`changed_after`・`observed_at`
@@ -331,14 +331,14 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
   - 足す前に保存した結果（既定値で None になる）。
 - それ以外は、判定して 0 件でも空の配列にする。
 - 差分の対象がカードの対象に含まれ、変化の幅がカードの時刻と重なる差分を添える。重なりは `changed_after < last_utc + 2 分` かつ `observed_at > first_utc - 2 分` で判定する。2 分は、vCenter の時計（イベントの時刻）と本体の時計（観測の時刻）のずれを見込んだ幅である。`first_utc`・`last_utc` は、カードの値（まとめた行の最初と最後の時刻）をそのまま使う。
-- カードごとに、件数（COUNT）と、`observed_at` の昇順・`category`・`element`・`attribute`・「減った」行を先（`new_value IS NULL` を先）・`id` の順の最初の 10 件を読み、`diffs` と `diffs_total` に入れる。入れ替わりの 2 行（同じ観測・同じ `element` の「減った」行と「増えた」行）は、10 件の切れ目で分けない。10 件目が入れ替わりの「減った」行なら、対の「増えた」行も入れる（その場合だけ 11 件になる）。一覧の API の 200 件の切れ目も同じにする。カードは最大 20 枚なので、SELECT は最大 40 回である。
+- カードごとに、件数（COUNT）と、`observed_at` の昇順・`category`・`element`・`attribute`・「減った」行を先（`new_value IS NULL` を先）・`id` の順の最初の 10 件を読み、`diffs` と `diffs_total` に入れる。文字列はバイト順で、`element` の NULL は先に、`attribute` の NULL は後に置く。入れ替わりの 2 行（同じ観測・同じ対象・同じ `category`・同じ `element` の「減った」行と「増えた」行）は、10 件の切れ目で分けない。10 件目が入れ替わりの「減った」行なら、対の「増えた」行も入れる（その場合だけ 11 件になる）。一覧の API の 200 件の切れ目も同じにする。カードは最大 20 枚なので、SELECT は最大 40 回である。
 - 同じ差分が、複数のカードに添わることがある（同じ VM の再構成が、1 回の観測の間に 2 回あった場合など）。どちらにも添える。
 
 カードに添わらない差分（イベントの無い変更、ESXi を直接操作した変更）は、タイムラインの対象の欄でだけ見える。
 
 ### 出力（案 10）
 
-- 報告書（`report.md`）の「### 構成変更」の節で、カードごとに差分を字下げして書く（例: 「CPU の数: 2 → 4（12:30 から 12:40 の間）」）。`diffs_total` が 10 を超えれば、残りの件数を書く。無害化の規則は、ほかの節と同じにする。
+- 報告書（`report.md`）の「### 構成変更」の節で、カードごとに差分を字下げして書く（例: 「CPU の数: 2 → 4（12:30 から 12:40 の間）」）。`diffs_total` が実際に表示した件数を超えれば、残りの件数を書く。無害化の規則は、ほかの節と同じにする。
 - `items.csv` は変えない（一覧の行には項目を足さない）。
 - `result.json` には、足した項目がそのまま入る。
 
@@ -350,8 +350,8 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 スクリーンショット用のシード（`dev/screenshot_e2e_seed.py`）に、次を足す。テスト（`tests/test_screenshot_e2e_seed.py`）も合わせる。
 
-- 今の値の行（3 章のモックのスクリーンショット用の値と同じ）と、`config_instance_uuid`（モックと同じ固定値）・`config_first_success_at`（差分より前）・`config_last_success_at`。
-- `demo-vm-01` の差分: CPU の数 2 → 4、メモリ 4,096 → 8,192 MB。幅はシードの `VmReconfiguredEvent`（45 分前）と、そのタスク（44 分前）を含むようにする（例: 50 分前から 40 分前）。カードに添わる例になる。
+- 今の値の行（3 章のモックのスクリーンショット用の値と同じ）と、`config_instance_uuid`（モックと同じ固定値）・`config_first_success_at`（差分とホストのメンテナンスより前）・`config_last_success_at`。
+- `demo-vm-01` の差分: CPU の数 2 → 4、メモリ 4,096 → 8,192 MB。幅はシードの `VmReconfiguredEvent`（45 分前）と、そのタスク（44 分前）を含むようにする（55 分前から 40 分前）。カードに添わる例になる。
 - 差分の行には `element_label` も入れる。
 - `demo-esxi-01` の差分: ポートグループの VLAN の変更。対応するイベントは入れない。対象の欄でだけ見える例になる。
 

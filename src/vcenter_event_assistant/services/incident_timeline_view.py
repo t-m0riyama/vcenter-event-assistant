@@ -44,10 +44,13 @@ from vcenter_event_assistant.api.schemas.incident_timeline_view import (
     TimelineLevel,
     TimelineSource,
 )
+from vcenter_event_assistant.auth.timeutil import utcnow
 from vcenter_event_assistant.db.models import (
     AlertHistory,
     AlertRule,
     EventRecord,
+    InventoryConfigDiff,
+    InventorySyncState,
     LogRecord,
     MetricSample,
     VCenter,
@@ -85,6 +88,7 @@ from vcenter_event_assistant.services.chat.aggregation_limiter import (
 from vcenter_event_assistant.services.chat.chat_period_metrics import METRIC_CPU, METRIC_MEM
 from vcenter_event_assistant.services.event_patterns.definitions import BUILTIN_PATTERNS
 from vcenter_event_assistant.services.event_patterns.query import query_event_patterns
+from vcenter_event_assistant.services.inventory_config_diffs import config_recorded_since, read_config_diffs
 from vcenter_event_assistant.services.log_patterns.timeline import collect_new_log_patterns
 from vcenter_event_assistant.services.metric_vcenter_filter import metric_vcenter_clause, pin_metric_covering_index
 from vcenter_event_assistant.services.sql_like import contains_case_insensitive, equals_case_insensitive
@@ -833,6 +837,7 @@ async def build_incident_timeline_view(
                 metric_name_lookback=metric_name_lookback(settings.perf_sample_interval_seconds),
                 metric_max_gap_seconds=settings.effective_metric_staleness_window_seconds,
                 metric_breach_sample_limit=settings.timeline_metric_breach_sample_limit,
+                config_retention_days=settings.inventory_config_retention_days,
             )
     except AggregationLimitExceeded as exc:
         raise HTTPException(
@@ -862,6 +867,7 @@ async def _build_in_slot(
     metric_name_lookback: timedelta,
     metric_max_gap_seconds: int,
     metric_breach_sample_limit: int | None = None,
+    config_retention_days: int,
 ) -> IncidentTimelineViewResponse:
     bucket_sec = choose_bucket_seconds(ft, tt)
     n_buckets = overview_bucket_count(ft, tt, bucket_sec)
@@ -946,10 +952,12 @@ async def _build_in_slot(
         )
     if "event" in requested:
         card_from = config_truncated_from or ft
-        cards, counts = _summarize_config_changes(
+        groups, counts = _summarize_config_changes(
             e for e in named if e.config_change_kind is not None and card_from <= e.timestamp_utc < config_to
         )
-        highlights.config_changes = cards
+        highlights.config_changes = await _attach_config_diffs(
+            session, groups, retention_start=utcnow() - timedelta(days=config_retention_days),
+        )
         highlights.config_changes_total = sum(counts.values())
         highlights.config_change_counts = counts
         highlights.config_changes_truncated = config_truncated_from is not None
@@ -993,10 +1001,13 @@ class _ConfigChangeGroup:
     event_types: list[str] = field(default_factory=list)
     user_names: list[str] = field(default_factory=list)
     match_keys: set[_ChangeMatchKey] = field(default_factory=set)
+    entities: set[tuple[uuid.UUID | None, str]] = field(default_factory=set)
 
     def add(self, entry: TimelineEntry) -> None:
         self.last = entry
         self.event_count += 1
+        if moid := entry.ref.get("entity_moid"):
+            self.entities.add((entry.vcenter_id, moid))
         if len(self.event_ids) < 20:
             self.event_ids.append(entry.source_id)
         if len(self.event_types) < 5 and entry.title not in self.event_types:
@@ -1078,7 +1089,7 @@ class _ConfigChangeGroups:
 
 def _summarize_config_changes(
     entries: Iterable[TimelineEntry],
-) -> tuple[list[IncidentTimelineConfigChange], dict[str, int]]:
+) -> tuple[list[_ConfigChangeGroup], dict[str, int]]:
     groups: list[_ConfigChangeGroup] = []
     by_kind_and_vcenter: defaultdict[tuple[str, uuid.UUID | None], _ConfigChangeGroups] = defaultdict(
         _ConfigChangeGroups
@@ -1106,7 +1117,43 @@ def _summarize_config_changes(
         if definition.kind in counts
     }
     groups.sort(key=lambda group: entry_sort_key(group.last), reverse=True)
-    return [group.to_card() for group in groups[:_CONFIG_CHANGE_CARD_LIMIT]], ordered_counts
+    return groups[:_CONFIG_CHANGE_CARD_LIMIT], ordered_counts
+
+
+async def _attach_config_diffs(
+    session: AsyncSession,
+    groups: list[_ConfigChangeGroup],
+    *,
+    retention_start: datetime,
+) -> list[IncidentTimelineConfigChange]:
+    cards = [group.to_card() for group in groups]
+    centers = {card.vcenter_id for card in cards if card.vcenter_id is not None}
+    first_success = {}
+    if centers:
+        first_success = dict(
+            (await session.execute(
+                select(InventorySyncState.vcenter_id, InventorySyncState.config_first_success_at)
+                .where(InventorySyncState.vcenter_id.in_(centers))
+            )).tuples().all()
+        )
+
+    padding = timedelta(minutes=2)
+    for group, card in zip(groups, cards, strict=True):
+        if card.vcenter_id is None or not group.entities:
+            continue
+        recorded_since = config_recorded_since(first_success.get(card.vcenter_id), retention_start)
+        if recorded_since is None or card.last_utc < recorded_since:
+            continue
+        diff = InventoryConfigDiff
+        card.diffs, card.diffs_total = await read_config_diffs(
+            session,
+            (diff.vcenter_id == card.vcenter_id)
+            & diff.moid.in_([moid for center, moid in group.entities if center == card.vcenter_id]),
+            from_time=card.first_utc - padding,
+            to_time=card.last_utc + padding,
+            newest_first=False,
+        )
+    return cards
 
 
 # --- 収集: イベント ---------------------------------------------------------------------
