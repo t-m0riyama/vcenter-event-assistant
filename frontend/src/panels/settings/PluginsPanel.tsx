@@ -13,6 +13,8 @@ import {
 import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
 import { useAuth } from '../../auth/useAuth'
+import { CollectionFailure } from '../../components/CollectionFailure'
+import { getCollectionFailureState } from '../../utils/collectionFailureState'
 import { toErrorMessage } from '../../utils/errors'
 import './PluginsPanel.css'
 import PluginSetupPanel from './PluginSetupPanel'
@@ -127,7 +129,17 @@ function RunsTable({ runs, timeZone }: { readonly runs: CollectorRunStatus[]; re
               <td>
                 イベント {run.events_inserted} / メトリクス {run.metrics_inserted} / ログ {run.logs_inserted}
               </td>
-              <td className="plugin-error-cell">{run.error || '—'}</td>
+              <td>
+                <CollectionFailure
+                  state={getCollectionFailureState(run.last_success_at, run.last_failure_at)}
+                  targetName={run.vcenter_name}
+                  lastSuccessAt={run.last_success_at}
+                  lastFailureAt={run.last_failure_at}
+                  error={run.error}
+                  timeZone={timeZone}
+                  emptyContent="—"
+                />
+              </td>
             </tr>
           ))}
         </tbody>

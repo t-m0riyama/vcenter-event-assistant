@@ -41,7 +41,7 @@ describe('VCentersPanel protocol selector', () => {
           vcenters: [{
             vcenter_id: id, vcenter_name: 'lab', is_enabled: true, first_success_at: at,
             last_started_at: failure, last_success_at: at, last_failure_at: failure,
-            last_error: '権限不足', last_warning: '関係の件数が急減', last_warning_at: warning,
+            last_error: 'NoPermission: 権限不足', last_warning: '関係の件数が急減', last_warning_at: warning,
             object_count: 0, relation_count: 21,
           }],
         })
@@ -51,11 +51,13 @@ describe('VCentersPanel protocol selector', () => {
         }])))
 
     render(<TimeZoneProvider><VCentersPanel onError={vi.fn()} /></TimeZoneProvider>)
-    expect(await screen.findByText('権限不足')).toBeInTheDocument()
+    expect(await screen.findByText(/接続先での権限を確認してください。権限不足（種類: NoPermission）/)).toBeInTheDocument()
     expect(screen.getByText('関係の件数が急減')).toBeInTheDocument()
     for (const time of [at, failure, warning]) {
       expect(screen.getByText(formatIsoInTimeZone(time, zone))).toBeInTheDocument()
     }
+    expect(screen.getByText('最後の成功')).toBeInTheDocument()
+    expect(screen.getByText('最後の失敗')).toBeInTheDocument()
     expect(screen.getByText(/管理対象 0 件、関係 21 件/)).toBeInTheDocument()
     expect(Boolean(screen.queryByText('関係の収集は無効です。'))).toBe(!enabled)
   })
@@ -67,14 +69,36 @@ describe('VCentersPanel protocol selector', () => {
   }
   const inventory = { enabled: true, interval_seconds: 300, timeout_seconds: 60, vcenters: [] }
 
+  it('成功も失敗もない接続の収集状態を未収集と表示する', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/inventory/status'
+      ? jsonResponse({
+          ...inventory,
+          vcenters: [{
+            vcenter_id: center.id, vcenter_name: center.name, is_enabled: true,
+            first_success_at: null, last_started_at: null, last_success_at: null,
+            last_failure_at: null, last_error: null, last_warning: null, last_warning_at: null,
+            object_count: null, relation_count: null,
+          }],
+        })
+      : jsonResponse([{ ...center, is_enabled: true }])))
+
+    render(<TimeZoneProvider><VCentersPanel onError={vi.fn()} /></TimeZoneProvider>)
+    const cell = (await screen.findByText('最後の成功 未収集')).closest('td')!
+    expect(cell).toHaveTextContent('管理対象 — 件、関係 — 件')
+    expect(within(cell).queryByText(/最後の失敗|失敗中|警告/)).not.toBeInTheDocument()
+  })
+
   it.each([
-    [null, true],
-    ['2026-04-24T09:00:00+09:00', true],
-    ['2026-04-24T00:05:00.123455Z', true],
-    ['2026-04-24T00:05:00.123456Z', false],
-    ['2026-04-24T00:10:00Z', false],
-  ])('最後の成功が %s のとき、失敗中の表示は %s', async (success, failing) => {
-    const error = '権限不足のため管理対象と関係を取得できませんでした。'.repeat(10)
+    [null, '失敗中'],
+    ['2026-04-24T09:00:00+09:00', '失敗中'],
+    ['2026-04-24T00:05:00.123455Z', '失敗中'],
+    ['2026-04-24T09:05:00.123456+09:00', null],
+    ['2026-04-24T09:05:00.123457+09:00', '過去の失敗'],
+    ['2026-04-24T00:10:00Z', '過去の失敗'],
+  ])('最後の成功が %s のとき、失敗の表示を %s にする', async (success, label) => {
+    const error = 'AttributeError: collector execution failed'
+    const zone = 'Asia/Tokyo'
+    localStorage.setItem(DISPLAY_TIME_ZONE_STORAGE_KEY, zone)
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/inventory/status'
       ? jsonResponse({
           ...inventory,
@@ -87,15 +111,30 @@ describe('VCentersPanel protocol selector', () => {
         })
       : jsonResponse([center])))
     render(<TimeZoneProvider><VCentersPanel onError={vi.fn()} /></TimeZoneProvider>)
-    const detail = await screen.findByText(error)
-    expect(detail).toHaveAttribute('title', error)
-    const cell = detail.closest('td')!
+    const message = await screen.findByText('アプリまたはプラグインの内部エラーの可能性があります。設定を確かめても直らなければ、管理者に連絡してください。（種類: AttributeError）')
+    const cell = message.closest('td')!
     expect(within(cell).getByText('接続が無効のため収集しません')).toBeInTheDocument()
-    if (failing) {
+    expect(Boolean(within(cell).queryByText('失敗中'))).toBe(label === '失敗中')
+    if (label === '失敗中') {
       expect(cell.textContent?.startsWith('失敗中')).toBe(true)
-    } else {
-      expect(within(cell).queryByText('失敗中')).not.toBeInTheDocument()
     }
+    const pastFailure = within(cell).queryByText('過去の失敗')
+    expect(Boolean(pastFailure)).toBe(label === '過去の失敗')
+    if (label === '過去の失敗' && success) {
+      expect(pastFailure?.parentElement).toHaveClass('collection-failure--past')
+      expect(within(cell).getByText(/この後、/)).toHaveTextContent(`この後、${formatIsoInTimeZone(success, zone)} に成功しています`)
+    } else {
+      expect(within(cell).queryByText(/この後、/)).not.toBeInTheDocument()
+    }
+    const summary = within(cell).getByText('詳細')
+    expect(summary).toHaveAccessibleName('詳細（lab のエラー）')
+    const details = summary.closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    expect(within(details).getByText(error)).toBeInTheDocument()
+    expect(within(cell).getAllByText(error)).toEqual([within(details).getByText(error)])
+    expect(message).not.toHaveAttribute('title')
+    fireEvent.click(summary)
+    expect(details).toHaveAttribute('open')
   })
 
   it.each([false, true])('読み込み中と、収集状態の行がない場合や API が失敗した場合を区別する（失敗: %s）', async (fails) => {

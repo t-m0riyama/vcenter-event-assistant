@@ -4,8 +4,10 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '../../api'
 import { getInventoryStatus } from '../../api/inventory'
 import { vcenterSchema, type InventoryStatusResponse, type InventoryVCenterStatus, type VCenter } from '../../api/schemas'
 import { useAuth } from '../../auth/useAuth'
-import { formatIsoInTimeZone, parseApiUtcInstantMs } from '../../datetime/formatIsoInTimeZone'
+import { CollectionFailure, CurrentCollectionFailure } from '../../components/CollectionFailure'
+import { formatIsoInTimeZone } from '../../datetime/formatIsoInTimeZone'
 import { useTimeZone } from '../../datetime/useTimeZone'
+import { getCollectionFailureState } from '../../utils/collectionFailureState'
 import { toErrorMessage } from '../../utils/errors'
 
 const vcenterListSchema = z.array(vcenterSchema)
@@ -442,13 +444,6 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
   )
 }
 
-function isLaterObservation(at: string, previous: string): boolean {
-  const differenceMs = parseApiUtcInstantMs(at) - parseApiUtcInstantMs(previous)
-  if (differenceMs !== 0) return differenceMs > 0
-  // API の小数秒はミリ秒より細かいことがある。
-  return Number(at.match(/\.\d+/)?.[0] ?? 0) > Number(previous.match(/\.\d+/)?.[0] ?? 0)
-}
-
 function InventoryStatusCell({
   status, availability, connectionEnabled, timeZone,
 }: {
@@ -470,19 +465,23 @@ function InventoryStatusCell({
 
   const showTime = (at: string | null) => at ? <time dateTime={at}>{formatIsoInTimeZone(at, timeZone)}</time> : '—'
   const { last_success_at, last_failure_at, last_error, last_warning, last_warning_at, object_count, relation_count } = status
-  const failing = last_failure_at && (!last_success_at || isLaterObservation(last_failure_at, last_success_at))
+  const failureState = getCollectionFailureState(last_success_at, last_failure_at)
 
   return (
     <div className="vcenter-inventory-status">
-      {failing && <strong className="vcenter-inventory-status__failing">失敗中</strong>}
+      {failureState === 'current' && <CurrentCollectionFailure />}
       {disabled && <div>接続が無効のため収集しません</div>}
       <div>最後の成功 {last_success_at ? showTime(last_success_at) : '未収集'}</div>
-      {(last_failure_at || last_error) && (
-        <div>
-          最後の失敗 {showTime(last_failure_at)}
-          {last_error && <div className="vcenter-inventory-status__error" title={last_error}>{last_error}</div>}
-        </div>
-      )}
+      <CollectionFailure
+        state={failureState}
+        targetName={status.vcenter_name}
+        lastSuccessAt={last_success_at}
+        lastFailureAt={last_failure_at}
+        error={last_error}
+        timeZone={timeZone}
+        showFailureTime
+        hideCurrentLabel
+      />
       {(last_warning_at || last_warning) && (
         <div>警告 {showTime(last_warning_at)}{last_warning && <div>{last_warning}</div>}</div>
       )}
