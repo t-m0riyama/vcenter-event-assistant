@@ -131,6 +131,10 @@
   white-space: nowrap;
 }
 
+.plugin-runs-table td:last-child {
+  min-width: 16rem;
+}
+
 .plugin-error-cell {
   max-width: 260px;
   color: var(--color-error);

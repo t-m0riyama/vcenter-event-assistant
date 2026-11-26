@@ -1,0 +1,22 @@
+.collection-failure {
+  display: grid;
+  gap: var(--spacing-1);
+  overflow-wrap: anywhere;
+}
+
+.collection-failure--past {
+  /* 表のホバー時の背景でも読めるようにする。 */
+  color: color-mix(in srgb, var(--color-text-secondary) 90%, var(--color-text-primary));
+}
+
+.collection-failure__current {
+  color: var(--color-warning-text);
+}
+
+.collection-failure summary {
+  cursor: pointer;
+}
+
+.collection-failure__record {
+  white-space: pre-wrap;
+}
