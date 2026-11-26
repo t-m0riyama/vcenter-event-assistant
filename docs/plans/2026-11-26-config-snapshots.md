@@ -13,7 +13,7 @@
 | A | 本書 | マージ済み（[PR #395](https://github.com/t-m0riyama/vcenter-event-assistant/pull/395)） |
 | B | 構成の読み取り、保存、差分の記録（実機の確認の道具を含む） | マージ済み（[PR #396](https://github.com/t-m0riyama/vcenter-event-assistant/pull/396)） |
 | C | API（差分の一覧、カードへの差分の添付、出力、収集の状態）とシード | マージ済み（[PR #401](https://github.com/t-m0riyama/vcenter-event-assistant/pull/401)） |
-| D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | 実装中 |
+| D | 画面（タイムラインの対象の欄、カード、設定の収集の状態）と文書 | マージ済み（[PR #402](https://github.com/t-m0riyama/vcenter-event-assistant/pull/402)） |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
