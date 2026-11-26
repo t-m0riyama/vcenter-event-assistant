@@ -40,7 +40,9 @@ _HOST_PATHS = {
 VM_BATCH_SIZE = 200
 VM_BATCH_RETRIES = 10
 _CLUSTER_PATHS_LOCK = Lock()
-_LEGACY_CLUSTER_PATHS: set[UUID] = set()
+_PRIMARY_CLUSTER_PATH = "configuration"
+_FALLBACK_CLUSTER_PATH = "configurationEx"
+_FALLBACK_CLUSTER_PATHS: set[UUID] = set()
 
 
 class ConfigReadTimeout(TimeoutError):
@@ -319,21 +321,23 @@ def read_inventory_config(
 ) -> ConfigObservation:
     """現在の構成を読み、持ち越しと読み残しを区別して返す。"""
     with _CLUSTER_PATHS_LOCK:
-        legacy = vcenter_id in _LEGACY_CLUSTER_PATHS
-    cluster_path = "configuration" if legacy else "configurationEx"
+        fallback = vcenter_id in _FALLBACK_CLUSTER_PATHS
+    # 実機の vCenter 8.0.3 は部分型の configurationEx.dasConfig を InvalidProperty で
+    # 拒んだので、古い configuration.* を先に使い、拒まれたときだけ新しいパスに替える。
+    cluster_path = _FALLBACK_CLUSTER_PATH if fallback else _PRIMARY_CLUSTER_PATH
     try:
         rows, started_at = read_overview(
             content, overview_paths(cluster_path), deadline=deadline
         )
     except vmodl.query.InvalidProperty:
-        if legacy:
+        if fallback:
             raise
-        cluster_path = "configuration"
+        cluster_path = _FALLBACK_CLUSTER_PATH
         rows, started_at = read_overview(
             content, overview_paths(cluster_path), deadline=deadline
         )
         with _CLUSTER_PATHS_LOCK:
-            _LEGACY_CLUSTER_PATHS.add(vcenter_id)
+            _FALLBACK_CLUSTER_PATHS.add(vcenter_id)
 
     observation = ConfigObservation(
         content.about.instanceUuid or "", started_at, started_at, cluster_path

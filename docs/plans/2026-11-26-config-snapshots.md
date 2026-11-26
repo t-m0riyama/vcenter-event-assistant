@@ -60,7 +60,7 @@
    | 型 | 読む属性 |
    |---|---|
    | `HostSystem` | `name`・`runtime.connectionState`・`summary.config.product`・`config.network.vswitch`・`config.network.portgroup` |
-   | `ClusterComputeResource` | `name`・`configurationEx.dasConfig`・`configurationEx.drsConfig` |
+   | `ClusterComputeResource` | `name`・`configuration.dasConfig`・`configuration.drsConfig`（下の「パスの代わり」） |
    | `VirtualMachine` | `name`・`runtime.connectionState`・`summary.config.template`・`config.changeVersion` |
 
 2. **VM の詳細（読む必要のある VM だけ）:** 接続している（`runtime.connectionState` が `connected`）VM で、`config.changeVersion` が段 1 で読めたもののうち、次のどれかに当たる VM だけを、下の順で読む。読み残しが出たときに、古いものから片付けるためである。
@@ -76,9 +76,24 @@
 
    段 1 と段 2 の間に VM が削除されると、組の要求全体が `ManagedObjectNotFound` で失敗することがある。そのときは、例外の `obj` の VM を組から外して、同じ組を読み直す（1 つの組で最大 10 回まで。超えたら構成の読み取りの失敗にする）。外した VM は、段 2 では読めなかった VM として扱う（3 章）。この例外の出方は、7 章の道具でも確かめる。
 
-`config.hardware.device` は VM 1 台で数 KB ある（vcsim の VM で、装置 13 個・直列化して 4,086 バイト）。VM 5,000 台なら毎回 20 MB 前後になるので、毎回は読まない。`config.changeVersion` は VM の構成が変わるたびに変わる値で、これを先に読めば、変わった VM だけを読める。
+`config.hardware.device` を含む段 2 の属性は、VM 1 台で 10 KB を超える（登録済みの vCenter で 21 台・265 KB、1 台あたり約 12.6 KB。vcsim では装置 13 個・4,086 バイト）。VM 5,000 台なら毎回 60 MB 前後になるので、毎回は読まない。`config.changeVersion` は VM の構成が変わるたびに変わる値で、これを先に読めば、変わった VM だけを読める。
 
-**パスの代わり:** 段 1 の要求が `vmodl.query.InvalidProperty` で失敗したら、クラスタのパスを `configuration.dasConfig`・`configuration.drsConfig` に替えて、段 1 を 1 回だけ読み直す。読み直しで成功したら、その vCenter ではプロセスが終わるまで古いパスを使う（vCenter ごとの記憶をプロセスの中に持つ）。記憶は複数の読み取りのスレッドから読み書きされるので、`threading.Lock` で守る。古いパスでも失敗したら、構成の読み取りの失敗にする。`configurationEx.dasConfig` が実機で使えるかを確かめていないため、実装に代わりの処理を入れておく（7 章の道具でも確かめる）。
+**パスの代わり:** クラスタは、古い `configuration.dasConfig`・`configuration.drsConfig`（`ClusterConfigInfo`）を先に使う。登録済みの vCenter（8.0.3）は、部分型を経る `configurationEx.dasConfig` を `vmodl.query.InvalidProperty` で拒んだためである（2026-11-26、下の「確かめた結果（実機）」）。段 1 の要求が `InvalidProperty` で失敗したら、`configurationEx.dasConfig`・`configurationEx.drsConfig` に替えて、段 1 を 1 回だけ読み直す。古いパスを除いた版の vCenter に備えるためである。読み直しで成功したら、その vCenter ではプロセスが終わるまで新しいパスを使う（vCenter ごとの記憶をプロセスの中に持つ）。記憶は複数の読み取りのスレッドから読み書きされるので、`threading.Lock` で守る。新しいパスでも失敗したら、構成の読み取りの失敗にする。
+
+### 確かめた結果（実機）
+
+利用者が、登録済みの vCenter（8.0.3、ホスト 1 台・クラスタ 1・VM 21 台）で 7 章の道具を実行した（2026-11-26）。
+
+- **段 1 のパス:** ホストと VM のパスは、すべて値が返った。クラスタの `configurationEx.dasConfig`・`configurationEx.drsConfig` は `vmodl.query.InvalidProperty` で拒まれ、古い `configuration.dasConfig`・`configuration.drsConfig` は値が返った。そのため、古いパスを先に使う（上の「パスの代わり」）。
+- **段 2 のパス:** 9 つの属性が、21 台すべてで返った。
+- **欠けた値:** `missingSet` に入った属性、`propSet` に無い属性、空の配列は、段 1・段 2 とも 0 件だった。
+- **時間と量:**
+  - 段 1 は 0.16〜0.18 秒で、約 13 KB だった（クラスタ 1,831 バイト、ホスト 8,189 バイト、VM 3,026 バイト）。
+  - 段 2 は全 21 台で 0.06〜0.08 秒、265,159 バイトだった。
+  - `ManagedObjectNotFound` は出なかった。
+- **偽の差分:** 構成を変えずに 300 秒空けて 2 回読み、正規化した値の差分は 0 件、`config.changeVersion` が変わった VM も 0 台だった。
+- **ディスク:** 42 台のディスクのすべてで、元の backing に `uuid` があった。スナップショットの差分ディスクは 4 台あった。その 4 台とも、今の backing と元の backing で `thin` も `uuid` も同じだった（`disks_with_different_thin=0`・`disks_with_different_uuid=0`）。
+- **見つかった不具合:** 最初の実行では、すべてのパスが `AttributeError` で失敗した。`pathSet` にタプルを渡していたため、pyVmomi が要求を組み立てられなかった。案 1 の関係の収集（`collectors/inventory.py`）にも同じ誤りがあり、PR #399 で直した。どちらにも、要求を `SoapAdapter.Serialize` で直列化するテストを足した。
 
 ### 確かめた結果（vcsim）
 
@@ -112,8 +127,8 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 | `host_build` | ホスト | `summary.config.product` | なし | `version`・`build` |
 | `host_vswitch` | ホスト | `config.network.vswitch[]` | `name` | `mtu`・`uplinks`（`pnic` の装置名、並べ替える）・`teaming_policy`（`spec.policy.nicTeaming.policy`）・`active_nics`・`standby_nics`（`spec.policy.nicTeaming.nicOrder`、順を保つ）・`allow_promiscuous`・`mac_changes`・`forged_transmits`（`spec.policy.security`） |
 | `host_portgroup` | ホスト | `config.network.portgroup[]` | `spec.name` | `vlan_id`・`vswitch`（`spec.vswitchName`）と、上書きの `teaming_policy`・`active_nics`・`standby_nics`・`allow_promiscuous`・`mac_changes`・`forged_transmits` |
-| `cluster_ha` | クラスタ | `configurationEx.dasConfig` | なし | `enabled`・`host_monitoring`・`vm_monitoring`・`admission_control_enabled`・`admission_control_policy`・`failover_level`・`auto_compute`・`cpu_failover_percent`・`memory_failover_percent`・`failover_hosts`・`restart_priority`・`isolation_response`（下の注） |
-| `cluster_drs` | クラスタ | `configurationEx.drsConfig` | なし | `enabled`・`default_vm_behavior`・`vmotion_rate` |
+| `cluster_ha` | クラスタ | `configuration.dasConfig`（代わりに `configurationEx.dasConfig`） | なし | `enabled`・`host_monitoring`・`vm_monitoring`・`admission_control_enabled`・`admission_control_policy`・`failover_level`・`auto_compute`・`cpu_failover_percent`・`memory_failover_percent`・`failover_hosts`・`restart_priority`・`isolation_response`（下の注） |
+| `cluster_drs` | クラスタ | `configuration.drsConfig`（代わりに `configurationEx.drsConfig`） | なし | `enabled`・`default_vm_behavior`・`vmotion_rate` |
 | `vm_config` | VM | 段 2 の属性 | なし | `num_cpu`・`cores_per_socket`・`memory_mb`・`hardware_version`（`config.version`）・`guest_id`・`cpu_reservation_mhz`・`cpu_limit_mhz`・`cpu_shares`・`memory_reservation_mb`・`memory_limit_mb`・`memory_shares`（`shares.level`。`custom` のときだけ `custom:<shares>`） |
 | （`vm_config` の中） | VM のディスク | `config.hardware.device` の `VirtualDisk` | `disk:<key>` | `label`・`uuid`・`capacity_kb`・`thin`（`thinProvisioned`）・`disk_mode`（`diskMode`）。`uuid`・`thin`・`disk_mode` は、`backing.parent` を最後までたどった元のディスクの backing から読む。`uuid` は前後の空白を除いて小文字にし、空文字と、`uuid` を持たない backing（`FlatVer1`・`SparseVer1`）では None |
 | （`vm_config` の中） | VM の NIC | `config.hardware.device` の `VirtualEthernetCard` | `nic:<key>` | `label`・`adapter`（型名。例: `VirtualVmxnet3`）・`network`（標準のポートグループなら `backing.deviceName`、分散なら `backing.port.portgroupKey`、NSX なら `backing.opaqueNetworkId`、それ以外の backing なら None）・`start_connected`（`connectable.startConnected`）・`mac_address` |
@@ -273,7 +288,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 
 ### 量の見積もり
 
-- **読み取り:** 段 1 は、ホストのポートグループの `port`（ポートごとに数十バイト）が大半である。ホスト 100 台・ホストあたり VM 50 台（計 5,000 台）で、毎回 1 MB 前後の見込みである。段 2 は、最初の観測だけ全 VM（5,000 台で 20 MB 前後）を読み、その後は変わった VM だけを読む。最初の観測で締め切りを過ぎたら、残りは次の観測に回る。
+- **読み取り:** 段 1 は、ホストのポートグループの `port`（ポートごとに数十バイト）が大半である。ホスト 100 台・ホストあたり VM 50 台（計 5,000 台）で、毎回 1 MB 前後の見込みである（登録済みの vCenter はホスト 1 台・VM 21 台で、段 1 の全体が約 13 KB・0.17 秒だった）。段 2 は、最初の観測だけ全 VM（5,000 台で 60 MB 前後）を読み、その後は変わった VM だけを読む。最初の観測で締め切りを過ぎたら、残りは次の観測に回る。
 - **保存:** 今の値は、管理対象と種類ごとに 1 行で、VM 5,000 台なら 5,500 行前後、1 行は数百バイトから 2 KB 程度である。`verified_at` の一括の UPDATE は、観測のたびにこの行数だけ動く。差分は、変わった項目ごとに 1 行で、30 日で数万行の見込みである。
 - 実機の値は、7 章の道具で確かめる（登録済みの vCenter は VM 21 台と小さいので、大きな環境は見積もりのままになる）。
 
@@ -429,7 +444,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 - 管理対象の名前・moid・値・ホスト名と、要素のキー（vSwitch・ポートグループの名前、装置の key）は出さない。出すのは、パス、種類、項目の名前、件数、大きさ、時間、例外の型だけにする。
 
 確かめること:
-- 段 1・段 2 のパスが実機で使えるか（特に `configurationEx.dasConfig`）
+- 段 1・段 2 のパスが実機で使えるか（特に `configurationEx.dasConfig`。登録済みの vCenter では使えず、古いパスを先に使うことにした）
 - `propSet` に無い属性と空の配列の出方
 - 構成を変えずに 2 回読んで、差分が出ないか
 - 読み取りの量と時間
@@ -454,7 +469,7 @@ vcsim（既定の環境）で、次を確かめた（2026-11-26）。
 ## 9. リスク
 
 - **変化の時刻の幅:** 差分の時刻は観測の時刻で、本当の変化は前の値を最後に確かめた時刻との間のどこかである。幅はふつう、観測の間隔と読み取りの時間の和で、失敗・切断・読み残しが続くと広がる。画面と報告書は幅のまま出す。カードへの添付は幅との重なりで判定するので、同じ幅に入った別の変更の差分も添わることがある。
-- **実機と vcsim の違い:** パスの確認は vcsim だけである。実機で `configurationEx.dasConfig` が使えなければ、古い `configuration.*` に替える（実装に代わりの処理を入れる）。構成を変えなくても変わる項目が、vcsim の 2 つのほかにもあるかもしれない。`propSet` に無い属性と空の配列の出方も、実機で確かめていない。どれも PR B のマージの前に、7 章の道具で確かめる。
+- **実機と vcsim の違い:** 実機の確認は、ホスト 1 台・VM 21 台の小さな vCenter 1 台だけである（2 章の「確かめた結果（実機）」）。この環境では、`missingSet` に入った属性、`propSet` に無い属性、空の配列が 1 件も無く、その扱いは実機では確かめていない。構成を変えなくても変わる項目も、300 秒の間隔の 2 回の読み取りでは見つからなかったが、DRS の移動やスナップショットの作成をまたぐ間隔では確かめていない。
 - **最後の vSwitch を消したとき:** vSwitch が 1 つも無くなったホストで、属性が空の配列でなく `propSet` に無い形で返るなら、持ち越しになり、削除は記録されない。
 - **大量の差分:** vCenter や ESXi の更新で値の表し方が変わると、多くの行で差分が出る。警告で知らせる（3 章）。本体の正規化を変えるときは、`format` を上げて差分を出さない。
 - **読み取りの量:** 最初の観測では全 VM の装置を読む。大きな環境では締め切りで読み残し、次の観測に回る。その間の VM の差分は、幅が広がる。

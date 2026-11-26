@@ -380,7 +380,7 @@ def vm_overview(ref, version="v1", **props):
 
 
 def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch):
-    monkeypatch.setattr(reader, "_LEGACY_CLUSTER_PATHS", set())
+    monkeypatch.setattr(reader, "_FALLBACK_CLUSTER_PATHS", set())
     host = vim.HostSystem("host-1")
     cluster = vim.ClusterComputeResource("cluster-1")
     result = page(
@@ -394,8 +394,8 @@ def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch
         raw(
             cluster,
             {
-                "configuration.dasConfig": Obj(enabled=False),
-                "configuration.drsConfig": Obj(
+                "configurationEx.dasConfig": Obj(enabled=False),
+                "configurationEx.drsConfig": Obj(
                     enabled=True, defaultVmBehavior="manual", vmotionRate=3
                 ),
             },
@@ -406,7 +406,7 @@ def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch
     )
     cid = uuid4()
     first = reader.read_inventory_config(content, cid, {}, deadline=INF)
-    assert first.cluster_path == "configuration"
+    assert first.cluster_path == "configurationEx"
     assert first.values["host-1", "host_build"] == {"version": "8.0", "build": "10"}
     assert first.values["cluster-1", "cluster_drs"] == {
         "enabled": True,
@@ -414,9 +414,9 @@ def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch
         "vmotion_rate": 3,
     }
     second = reader.read_inventory_config(content, cid, {}, deadline=INF)
-    assert second.cluster_path == "configuration"
+    assert second.cluster_path == "configurationEx"
     third = reader.read_inventory_config(content, uuid4(), {}, deadline=INF)
-    assert third.cluster_path == "configurationEx"
+    assert third.cluster_path == "configuration"
     calls = collector.RetrievePropertiesEx.call_args_list
     paths = [
         {p.type._wsdlName: list(p.pathSet) for p in call.kwargs["specSet"][0].propSet}
@@ -432,8 +432,8 @@ def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch
         ],
         "ClusterComputeResource": [
             "name",
-            "configurationEx.dasConfig",
-            "configurationEx.drsConfig",
+            "configuration.dasConfig",
+            "configuration.drsConfig",
         ],
         "VirtualMachine": [
             "name",
@@ -443,10 +443,10 @@ def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch
         ],
     }
     assert [p["ClusterComputeResource"][1] for p in paths] == [
-        "configurationEx.dasConfig",
-        "configuration.dasConfig",
         "configuration.dasConfig",
         "configurationEx.dasConfig",
+        "configurationEx.dasConfig",
+        "configuration.dasConfig",
     ]
 
     content, collector = pc_content(
@@ -458,7 +458,7 @@ def test_overview_fallback_is_per_vcenter_and_cached_only_on_success(monkeypatch
     assert collector.RetrievePropertiesEx.call_count == 2
     assert (
         reader.read_inventory_config(content, cid, {}, deadline=INF).cluster_path
-        == "configurationEx"
+        == "configuration"
     )
 
 
