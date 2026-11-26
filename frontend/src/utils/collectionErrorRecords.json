@@ -1,0 +1,53 @@
+{
+  "inventory_reads": [
+    "InventoryReadTimeout: 読み取りがタイムアウトしました。",
+    "ConfigReadTimeout: 構成の読み取りがタイムアウトしました。",
+    "InventoryReadStillRunning: 前回の読み取りがまだ実行中です。",
+    "InventoryWorkerUnavailable: 専用スレッドに空きがありません。",
+    "InventoryReadsClosed: インベントリの読み取り受付は終了しました。",
+    "ConfigReadMissing: 構成の読み取り結果を受け取れませんでした。"
+  ],
+  "worker": [
+    "ResponseTooLarge: collector execution failed",
+    "plugin worker request exceeds size limit: collector execution failed",
+    "plugin worker service is unavailable: collector execution failed",
+    "remote collectors require collect_with_connection(): collector execution failed",
+    "unknown error: collector execution failed",
+    "worker exited before responding: collector execution failed",
+    "worker is not running: collector execution failed",
+    "worker pipe is closed: collector execution failed",
+    "worker response exceeds size limit: collector execution failed",
+    "worker sent an invalid response ID: collector execution failed",
+    "worker sent malformed response: collector execution failed"
+  ],
+  "safe_detail": [
+    "ImportError: detail",
+    "NotImplementedError: detail",
+    "BatchValidationError: バッチの検証に失敗しました"
+  ],
+  "representative": [
+    "vim.fault.InvalidLogin: collector execution failed",
+    "vim.fault.NoPermission: collector execution failed",
+    "vim.fault.NotAuthenticated: collector execution failed",
+    "vmodl.fault.SecurityError: collector execution failed",
+    "vmodl.fault.HostCommunication: collector execution failed",
+    "vmodl.fault.ManagedObjectNotFound: collector execution failed",
+    "vmodl.query.InvalidProperty: collector execution failed",
+    "SSLCertVerificationError: collector execution failed",
+    "gaierror: collector execution failed",
+    "ConnectionRefusedError: collector execution failed",
+    "ConnectionResetError: collector execution failed",
+    "TimeoutError: collector execution failed",
+    "OSError: collector execution failed",
+    "ValueError: collector execution failed",
+    "AttributeError: collector execution failed",
+    "TypeError: collector execution failed",
+    "KeyError: collector execution failed",
+    "RuntimeError: collector execution failed",
+    "Exception: collector execution failed"
+  ],
+  "japanese": [
+    "APP_ENV=production では vCenter protocol は https のみ許可されます",
+    "分離モードではSSH鍵とknown_hostsのファイルパスを直接指定できません。登録済みのSSH接続先を選択して保存してください。"
+  ]
+}

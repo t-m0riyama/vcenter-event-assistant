@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from pyVmomi import SoapAdapter, vim, vmodl
+from pyVmomi import vim, vmodl
 
 from vcenter_event_assistant.collectors.inventory import read_inventory
 
@@ -169,17 +169,12 @@ def test_inventory_cancels_token_and_destroys_view_after_failure():
     view.Destroy.assert_called_once_with()
 
 
-def test_inventory_request_serializes_for_the_soap_call():
-    """偽の collector は直列化しないので、pathSet の型の誤りは実機でしか出ない。"""
+def test_inventory_request_serializes_for_the_soap_call(serialize_retrieve_call):
+    """偽の collector は直列化しないので、配列の型の誤りは実機でしか出ない。"""
     cluster = vim.ClusterComputeResource("domain-c1")
     content, _view, collector = content_for(
         pc.RetrieveResult(objects=[row(cluster, name="cluster")])
     )
     read_inventory(content)
-    spec = collector.RetrievePropertiesEx.call_args.kwargs["specSet"][0]
-    for prop in spec.propSet:
-        assert isinstance(prop.pathSet, list)
-        # 実機に送るときと同じ直列化を通す。タプルだと AttributeError になる。
-        xml = SoapAdapter.Serialize(prop)
-        for path in prop.pathSet:
-            assert f"<pathSet>{path}</pathSet>".encode() in xml
+    xml = serialize_retrieve_call(collector)
+    assert b"<maxObjects>1000</maxObjects>" in xml

@@ -4,9 +4,13 @@ const workerFailureMessage = '収集を実行するプロセスが異常終了�
 const sizeAdvice = '取得の範囲を見直すか、プラグインの提供元に連絡してください。'
 const oversizedRequest = `プラグインの要求が大きすぎます。${sizeAdvice}`
 const oversizedResponse = `プラグインの応答が大きすぎます。${sizeAdvice}`
+const internalErrorMessage = 'アプリまたはプラグインの内部エラーの可能性があります。設定を確かめても直らなければ、管理者に連絡してください。'
 
 // ワーカーの通信エラーでは、例外の型名が入る位置に remote.py の文言が記録される。
+// バックエンドが記録しうる文言の一覧は collectionErrorRecords.json にあり、collectionErrorRecords.test.ts が
+// どれにも案内があることを確かめる。
 const workerMessages = new Map([
+  ['remote collectors require collect_with_connection()', internalErrorMessage],
   ['plugin worker service is unavailable', workerFailureMessage],
   ['worker is not running', workerFailureMessage],
   ['plugin worker request exceeds size limit', oversizedRequest],
@@ -22,10 +26,10 @@ const collectionErrorMessages = [
   {
     types: [
       'AttributeError', 'TypeError', 'KeyError', 'IndexError', 'NameError', 'UnboundLocalError',
-      'AssertionError', 'ZeroDivisionError', 'RecursionError',
+      'AssertionError', 'ZeroDivisionError', 'RecursionError', 'RuntimeError',
       'InvalidArgument', 'InvalidType', 'InvalidRequest',
     ],
-    message: 'アプリまたはプラグインの内部エラーの可能性があります。設定を確かめても直らなければ、管理者に連絡してください。',
+    message: internalErrorMessage,
   },
   {
     types: ['InvalidLogin', 'NoPermission', 'NotAuthenticated', 'PasswordExpired', 'SecurityError', 'PermissionDenied'],
@@ -76,6 +80,14 @@ const collectionErrorMessages = [
     detailFirst: true,
   },
   {
+    types: ['InvalidProperty'],
+    message: 'vCenter が読み取りの項目を受け付けませんでした。vCenter の版がアプリの想定と違う可能性があります。管理者に連絡してください。',
+  },
+  {
+    types: ['ManagedObjectNotFound'],
+    message: '読み取りの途中で対象が削除された可能性があります。次の収集で自動的にやり直します。続く場合は管理者に連絡してください。',
+  },
+  {
     types: ['SSLError', 'SSLCertVerificationError', 'SSLEOFError', 'SSLZeroReturnError'],
     message: '証明書のエラーで収集できませんでした。vCenter の証明書と検証の設定（verify_ssl、CA バンドル）を確認してください。',
   },
@@ -97,15 +109,24 @@ const collectionErrorMessages = [
   },
 ]
 
-/** 保存済みのエラー文字列から利用者向けの説明を作る。 */
-export function collectionErrorMessage(record: string): string {
+function parseRecord(record: string) {
   const separator = record.indexOf(':')
   const prefix = separator === -1 ? record : record.slice(0, separator)
   const workerGuidance = separator === -1 ? undefined : workerMessages.get(prefix)
   const typeName = workerGuidance || /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/.test(prefix) ? prefix : undefined
   const shortName = typeName?.split('.').at(-1)
   const category = collectionErrorMessages.find(({ types }) => shortName && types.includes(shortName))
-  const guidance = workerGuidance ?? category?.message
+  return { separator, typeName, category, guidance: workerGuidance ?? category?.message }
+}
+
+/** 記録に当てる案内の文。種類を判別できなければ undefined（一般の「収集できませんでした。」になる）。 */
+export function collectionErrorGuidance(record: string): string | undefined {
+  return parseRecord(record).guidance
+}
+
+/** 保存済みのエラー文字列から利用者向けの説明を作る。 */
+export function collectionErrorMessage(record: string): string {
+  const { separator, typeName, category, guidance } = parseRecord(record)
   const detail = typeName && separator !== -1 ? record.slice(separator + 1).replace(/^[ \t]+/, '') : record
   const japaneseDetail = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(detail) ? detail : undefined
   const parts = category?.detailFirst ? [japaneseDetail, guidance] : [guidance, japaneseDetail]

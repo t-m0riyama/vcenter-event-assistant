@@ -83,6 +83,20 @@ vCenter 取得など **ブロッキング処理**は `services/ingestion.py` の
 - **トランザクション境界**: `get_session()` の前提と矛盾する `commit()` を増やしていないか
 - **テスト**: `tests/test_*_api.py` を起点に、最低限の回帰を追加する
 
+### 実装とレビューで確かめること
+
+案 2b（PR #395・#396・#401・#402）、案 1 の収集を直した PR #399、収集の失敗の案内の PR #400 で、レビューを通り抜けたり何度も指摘されたりした点をまとめる。実装の依頼とレビューの依頼では、この節を指す。画面の側は [`frontend.md`](frontend.md) の同じ名前の節を見る。
+
+- **vCenter への要求:**
+  - 偽の PropertyCollector を使うテストは、pyVmomi が要求を XML に組み立てる処理を通らない。新しい要求を足したら、`pyVmomi.SoapAdapter.Serialize` で直列化するテストを書く。PropertySpec は `collectors/property_specs.py` の `property_spec()` だけで作る（`tests/collectors/test_property_specs.py` が確かめる）。偽の collector に渡した要求は、`tests/collectors/conftest.py` の `serialize_retrieve_call` で FilterSpec ごと直列化する（`propSet` などほかの配列も、タプルだと同じく失敗する）。
+  - vcsim で読めるプロパティのパスが、実機では `InvalidProperty` で拒まれることがある（案 2b の `configurationEx.dasConfig`）。新しいパスは、読み取り専用の確認の道具で実機を確かめてからマージする。
+- **上限と切れ目:**
+  - 件数の上限で切るとき、まとめた単位（カード、chain）が複数の対象や vCenter を持つ場合を確かめる。対で出す行（装置の入れ替わりの「減った」と「増えた」）は、並びに対象を含め、対ごとに隣り合わせる。
+  - 文字列の並びは、DB の照合順序に頼らない（PostgreSQL は `COLLATE "C"`、SQLite は `BINARY`）。NULL の位置（`nulls_first`・`nulls_last`）も明示する。SQLite と PostgreSQL で、上限に入る行が変わらないようにする。
+- **保存済みの結果の互換:** 応答の項目を足したら、保存済みのスナップショットの JSON（足した項目のキー自体が無い形）を、バックエンドの `model_validate` と画面の zod の両方で読めることをテストする。明示した `null` だけでは、キーが無い形を確かめたことにならない。
+- **画面が前提にする記録の文字列:** 収集の失敗の型や、ワーカーの文言を足したら、`tests/test_collection_error_records.py` の一覧を書き直し、画面の案内（`frontend/src/utils/collectionErrorMessage.ts`）も足す。一覧に無い型（代表の例外は同じテストの `_REPRESENTATIVE_ERRORS`）は、照合されない。
+- **文書の Issue 番号:** CHANGELOG や計画書に書く Issue・PR の番号が、その変更に実際に関係するかを確かめる。作業ディレクトリやブランチの名前にある番号は、関係が無いことがある。
+
 ## 4. 依存関係（概略）
 
 ```mermaid
