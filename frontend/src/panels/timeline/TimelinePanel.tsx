@@ -18,6 +18,7 @@ import { createGuideLoader } from './eventTypeGuideLoader'
 import { TimelineExportControls } from './TimelineExportControls'
 import { useTimelineExportActivity } from './useTimelineExportActivity'
 import { TimelineHighlights } from './TimelineHighlights'
+import { TimelineConfigDiffSection } from './TimelineConfigDiffSection'
 import { TimelineImpactSection } from './TimelineImpactSection'
 import { TimelineItemList } from './TimelineItemList'
 import { TimelineOverviewChart } from './TimelineOverviewChart'
@@ -33,7 +34,7 @@ import {
 
 /**
  * タイムライン: 開くと自動で読み込み、期間・対象・種別の条件を URL に持つ。
- * 条件バー → 件数の俯瞰 → ハイライト → 影響範囲（対象を moid で絞ったとき） → 時系列リスト → スナップショット（折りたたみ）の順に並ぶ。
+ * 条件バー → 件数の俯瞰 → ハイライト → 影響範囲と構成の差分（対象を moid で絞ったとき） → 時系列リスト → スナップショット（折りたたみ）の順に並ぶ。
  */
 export function TimelinePanel({
   onError,
@@ -87,6 +88,7 @@ export function TimelinePanel({
     : data && c.loadedRequest ? { request: c.loadedRequest } : null
   const { entityMoid, vcenterId } = c.conditions
   const showImpact = !c.urlIssue && validateApiRange(c.resolvedRange) === null && entityMoid && vcenterId
+  const { configDiffQuery } = c
   const impactRange = c.loadedRange ?? c.resolvedRange
   const impactPeriod = c.impactTimelineState === 'ready' || c.impactTimelineState === 'unprocessable' ? {
     ...impactRange,
@@ -240,14 +242,24 @@ export function TimelinePanel({
           </>
         )}
         {showImpact && (
-          <TimelineImpactSection
-            vcenterId={vcenterId}
-            entityMoid={entityMoid}
-            period={impactPeriod}
-            timelineFailed={c.impactTimelineState === 'failed'}
-            timeZone={c.timeZone}
-            onFilterEntity={c.filterByEntity}
-          />
+          <div className="timeline-target-sections">
+            <TimelineImpactSection
+              vcenterId={vcenterId}
+              entityMoid={entityMoid}
+              period={impactPeriod}
+              timelineFailed={c.impactTimelineState === 'failed'}
+              timeZone={c.timeZone}
+              onFilterEntity={c.filterByEntity}
+            />
+            {configDiffQuery?.vcenter_id === vcenterId && configDiffQuery.entity_moid === entityMoid && (
+              <TimelineConfigDiffSection
+                key={JSON.stringify([vcenterId, entityMoid])}
+                query={configDiffQuery}
+                showingSaved={c.savedView !== null}
+                timeZone={c.timeZone}
+              />
+            )}
+          </div>
         )}
         {data && (
           <section className="timeline-items" aria-label="時系列リスト">

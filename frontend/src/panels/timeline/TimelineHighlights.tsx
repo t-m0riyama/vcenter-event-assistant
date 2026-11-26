@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { TimelineConfigChange, TimelineDetectedPattern, TimelineHighlights as Highlights, TimelineViewItem } from '../../api/schemas'
 import type { TimelineNewLogPattern } from '../../api/schemas/logPatterns'
 import { useAuth } from '../../auth/useAuth'
+import { TimelineConfigDiffList } from './TimelineConfigDiffList'
 import { TimelineCardIncidentButton } from './TimelineIncidentButtons'
 import { SeverityBadge } from '../../components/badges'
 import { correlationHash } from '../../routing/correlationRange'
@@ -98,6 +99,22 @@ function ConfigChangeItem({ change, listedIds, timeZone, onRevealItem, onFilterE
         <p className="timeline-highlights__meta">利用者 {users}</p>
       ) : null}
       <p className="timeline-highlights__meta">{time}</p>
+      {change.diffs?.length ? (
+        <div className="timeline-highlights__config-diffs">
+          <TimelineConfigDiffList
+            items={change.diffs}
+            timeZone={timeZone}
+            firstSuccessAt={change.diffs_first_success_at}
+            showTargets={change.diffs_multiple_targets}
+          />
+          {change.diffs_total > change.diffs.length && (
+            <p className="hint">
+              <span>ほか {change.diffs_total - change.diffs.length} 件</span>
+              {'。対象で絞ると「構成の差分」の欄で全件を確認できます。'}
+            </p>
+          )}
+        </div>
+      ) : null}
       <div className="timeline-highlights__actions">
         {canLink && <TimelineCardIncidentButton card={change} />}
         <button

@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import { collectionErrorMessage } from './collectionErrorMessage'
 
+it.each([
+  ['ConfigReadTimeout: 構成の読み取りがタイムアウトしました。', /タイムアウトしました。.*インベントリの収集のタイムアウト設定（INVENTORY_SYNC_TIMEOUT_SECONDS）/],
+  ['ConfigReadMissing: 構成の読み取り結果を受け取れませんでした。', /受け取れませんでした。次の収集で自動的にやり直します。続く場合は管理者に連絡してください。/],
+  ['InventoryReadsClosed: インベントリの読み取り受付は終了しました。', /受付は終了しました。.*管理者/],
+])('構成にも記録される %s に案内を出す', (record, advice) => {
+  expect(collectionErrorMessage(record)).toMatch(advice)
+})
+
 describe('collectionErrorMessage', () => {
   const connectionAdvice = '接続先、ポート、ネットワーク、vCenter の状態を確認してください。'
 
@@ -68,7 +76,7 @@ describe('collectionErrorMessage', () => {
 
   it('関係の読み取りの時間切れは、記録に続けて管理者への設定見直し依頼を案内する', () => {
     expect(collectionErrorMessage('InventoryReadTimeout: 読み取りがタイムアウトしました。'))
-      .toBe('読み取りがタイムアウトしました。vCenter の応答に時間がかかっていないか確認し、関係の収集のタイムアウト設定（INVENTORY_SYNC_TIMEOUT_SECONDS）の見直しを管理者に依頼してください。（種類: InventoryReadTimeout）')
+      .toBe('読み取りがタイムアウトしました。vCenter の応答に時間がかかっていないか確認し、インベントリの収集のタイムアウト設定（INVENTORY_SYNC_TIMEOUT_SECONDS）の見直しを管理者に依頼してください。（種類: InventoryReadTimeout）')
   })
 
   it.each([
@@ -118,8 +126,8 @@ describe('collectionErrorMessage', () => {
   })
 
   it('未知の型の日本語は種類と合わせてそのまま表示する', () => {
-    expect(collectionErrorMessage('InventoryReadsClosed: インベントリの読み取り受付は終了しました。'))
-      .toBe('インベントリの読み取り受付は終了しました。（種類: InventoryReadsClosed）')
+    expect(collectionErrorMessage('CustomReadFault: 読み取り受付は終了しました。'))
+      .toBe('読み取り受付は終了しました。（種類: CustomReadFault）')
   })
 
   it('型名のない日本語はそのまま表示する', () => {

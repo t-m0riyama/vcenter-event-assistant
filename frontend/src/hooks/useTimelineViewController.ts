@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, apiGet } from '../api'
-import { validateApiRange } from '../datetime/apiRangeLimit'
 import {
   postIncidentTimelineView,
   TimelineBusyError,
   TimelineRateLimitedError,
   TimelineRequestSupersededError,
 } from '../api/incidentTimelineView'
+import type { InventoryConfigDiffQuery } from '../api/inventory'
 import type {
   IncidentTimelineViewRequest,
   IncidentTimelineViewResponse,
   SavedIncidentTimelineViewRequest,
   VCenter,
 } from '../api/schemas'
+import { validateApiRange } from '../datetime/apiRangeLimit'
 import { parseApiUtcInstantMs } from '../datetime/formatIsoInTimeZone'
 import { resolveEditedRange } from '../datetime/resolveEditedRange'
 import { useTimeZone } from '../datetime/useTimeZone'
@@ -94,6 +95,11 @@ function toLoadError(e: unknown): TimelineLoadError {
   return { kind: 'error', message: toErrorMessage(e) }
 }
 
+function configDiffQueryFor(conditions: TimelineConditions, range: ResolvedRange): InventoryConfigDiffQuery | null {
+  const { vcenterId, entityMoid } = conditions
+  return vcenterId && entityMoid ? { ...range, vcenter_id: vcenterId, entity_moid: entityMoid } : null
+}
+
 /**
  * タイムラインタブの条件・URL・読み込みをまとめる。
  *
@@ -121,6 +127,7 @@ export function useTimelineViewController(
   const [resolvedRange, setResolvedRange] = useState<ResolvedRange>(() =>
     resolveTimelineRange(conditions.range, Date.now()),
   )
+  const [configDiffQuery, setConfigDiffQuery] = useState<InventoryConfigDiffQuery | null>(null)
   const [data, setData] = useState<IncidentTimelineViewResponse | null>(null)
   /** `data` を取得したときの期間（保存・スナップショットに使う。応答の時刻表記には頼らない）。 */
   const [loadedRange, setLoadedRange] = useState<ResolvedRange | null>(null)
@@ -371,10 +378,13 @@ export function useTimelineViewController(
     // 前の要求の再試行待ちは、新しい条件を待たせないよう中断する
     desiredRef.current?.abort.abort()
     const abort = new AbortController()
-    const range = resolveTimelineRange(conditionsRef.current.range, Date.now())
+    const current = conditionsRef.current
+    const range = resolveTimelineRange(current.range, Date.now())
     setResolvedRange(range)
     setSettledLoad(null)
     const invalid = urlIssue ?? validateApiRange(range)
+    // 構成の差分には、タイムラインの要求と同じ対象・期間を渡す。
+    setConfigDiffQuery(invalid ? null : configDiffQueryFor(current, range))
     if (invalid) {
       desiredRef.current = { id: ++jobCounterRef.current, loadKey, body: null, abort }
       setData(null)
@@ -387,7 +397,7 @@ export function useTimelineViewController(
     desiredRef.current = {
       id: ++jobCounterRef.current,
       loadKey,
-      body: buildViewRequest(conditionsRef.current, range),
+      body: buildViewRequest(current, range),
       abort,
     }
     // 前の条件のエラーを残さない（次の結果かエラーが来るまで読み込み中として見せる）
@@ -575,6 +585,7 @@ export function useTimelineViewController(
       // 読み込みの effect は保存済みの表示中は動かないので、条件バーの期間（表示・入力欄・「適用」の基準）は
       // ここで保存した期間に合わせる。入力途中の値も捨てる
       setResolvedRange(range)
+      setConfigDiffQuery(configDiffQueryFor(conditions, range))
       setRangeDraft(null)
       setSavedView({ ...saved, range })
       setLoading(false)
@@ -629,6 +640,7 @@ export function useTimelineViewController(
     vcentersLoaded,
     rangeInputError,
     resolvedRange,
+    configDiffQuery,
     canUndoZoom: rangeHistory.length > 0,
     selectRollingPreset,
     setFixedRange,

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
+import { isoOffsetDateTimeSchema } from './base'
 import { eventPatternLevelSchema } from './eventPatterns'
+import { timelineConfigDiffSchema } from './inventory'
 import { timelineNewLogPatternSchema } from './logPatterns'
 
 /**
@@ -116,6 +118,10 @@ export const timelineConfigChangeSchema = z.object({
   event_types: z.array(z.string()).default([]),
   event_count: z.number().int().min(0).default(0),
   event_ids: z.array(z.number().int()).default([]),
+  diffs: z.array(timelineConfigDiffSchema).nullish().transform((diffs) => diffs ?? null),
+  diffs_total: z.number().int().nonnegative().nullish().transform((total) => total ?? 0),
+  diffs_first_success_at: isoOffsetDateTimeSchema.nullish(),
+  diffs_multiple_targets: z.boolean().optional(),
 })
 export type TimelineConfigChange = z.infer<typeof timelineConfigChangeSchema>
 

@@ -243,6 +243,8 @@ class IncidentTimelineConfigChange(BaseModel):
     event_ids: list[int] = Field(default_factory=list)
     diffs: list[IncidentTimelineConfigDiff] | None = None
     diffs_total: int = 0
+    diffs_first_success_at: datetime | None = None
+    diffs_multiple_targets: bool = False
 
 
 class IncidentTimelineNewLogPattern(BaseModel):

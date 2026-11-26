@@ -296,7 +296,7 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
               <th>SSL 検証</th>
               <th>有効</th>
               <th>ユーザー</th>
-              <th>関係の収集</th>
+              <th>関係の収集・構成の読み取り</th>
               <th />
             </tr>
           </thead>
@@ -380,12 +380,22 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                       style={{ width: '100%', boxSizing: 'border-box' }}
                     />
                   </td>
-                  <td><InventoryStatusCell
-                    status={inventoryById.get(v.id)}
-                    availability={inventory === 'error' ? 'error' : inventory ? 'ready' : 'loading'}
-                    connectionEnabled={v.is_enabled}
-                    timeZone={timeZone}
-                  /></td>
+                  <td>
+                    <InventoryStatusCell
+                      status={inventoryById.get(v.id)}
+                      availability={inventory === 'error' ? 'error' : inventory ? 'ready' : 'loading'}
+                      connectionEnabled={v.is_enabled}
+                      timeZone={timeZone}
+                    />
+                    {inventory && inventory !== 'error' && (
+                      <ConfigReadStatus
+                        status={inventoryById.get(v.id)}
+                        collectionEnabled={inventory.config_enabled}
+                        connectionEnabled={v.is_enabled}
+                        timeZone={timeZone}
+                      />
+                    )}
+                  </td>
                   <td className="actions">
                     <button type="button" className="btn btn--filled" onClick={() => void saveEdit()}>
                       保存
@@ -404,12 +414,22 @@ export function VCentersPanel({ onError }: { onError: (e: string | null) => void
                   <td>{v.protocol === 'https' && v.verify_ssl ? 'はい' : 'いいえ'}</td>
                   <td>{v.is_enabled ? 'はい' : 'いいえ'}</td>
                   <td>{v.username}</td>
-                  <td><InventoryStatusCell
-                    status={inventoryById.get(v.id)}
-                    availability={inventory === 'error' ? 'error' : inventory ? 'ready' : 'loading'}
-                    connectionEnabled={v.is_enabled}
-                    timeZone={timeZone}
-                  /></td>
+                  <td>
+                    <InventoryStatusCell
+                      status={inventoryById.get(v.id)}
+                      availability={inventory === 'error' ? 'error' : inventory ? 'ready' : 'loading'}
+                      connectionEnabled={v.is_enabled}
+                      timeZone={timeZone}
+                    />
+                    {inventory && inventory !== 'error' && (
+                      <ConfigReadStatus
+                        status={inventoryById.get(v.id)}
+                        collectionEnabled={inventory.config_enabled}
+                        connectionEnabled={v.is_enabled}
+                        timeZone={timeZone}
+                      />
+                    )}
+                  </td>
                   <td className="actions">
                     {canTest && (
                       <button type="button" className="btn btn--gray" onClick={() => void test(v.id)}>
@@ -456,7 +476,7 @@ function InventoryStatusCell({
   if (!status) {
     const message = { ready: '—', loading: '読み込み中…', error: '取得できません' }[availability]
     return (
-      <div className="vcenter-inventory-status">
+      <div className="vcenter-inventory-status" role="group" aria-label="関係の収集">
         {disabled && <div>接続が無効のため収集しません</div>}
         <div>{message}</div>
       </div>
@@ -468,7 +488,7 @@ function InventoryStatusCell({
   const failureState = getCollectionFailureState(last_success_at, last_failure_at)
 
   return (
-    <div className="vcenter-inventory-status">
+    <div className="vcenter-inventory-status" role="group" aria-label="関係の収集">
       {failureState === 'current' && <CurrentCollectionFailure />}
       {disabled && <div>接続が無効のため収集しません</div>}
       <div>最後の成功 {last_success_at ? showTime(last_success_at) : '未収集'}</div>
@@ -486,6 +506,52 @@ function InventoryStatusCell({
         <div>警告 {showTime(last_warning_at)}{last_warning && <div>{last_warning}</div>}</div>
       )}
       <div>管理対象 {object_count ?? '—'} 件、関係 {relation_count ?? '—'} 件</div>
+    </div>
+  )
+}
+
+
+function ConfigReadStatus({ status, collectionEnabled, connectionEnabled, timeZone }: {
+  status?: InventoryVCenterStatus
+  collectionEnabled: boolean
+  connectionEnabled: boolean
+  timeZone: string
+}) {
+  const {
+    config_last_success_at: success = null,
+    config_last_failure_at: failure = null,
+    config_last_error: error = null,
+    config_last_warning: warning = null,
+    config_last_warning_at: warningAt = null,
+    config_deferred_count: deferred,
+  } = status ?? {}
+  const enabled = status?.is_enabled ?? connectionEnabled
+  const disabledReason = !enabled ? '接続が無効のため収集しません' : !collectionEnabled
+    ? 'スケジューラ、関係の収集、または構成の読み取りが無効のため収集しません'
+    : null
+  const failureState = getCollectionFailureState(success, failure)
+  const showTime = (at: string) => <time dateTime={at}>{formatIsoInTimeZone(at, timeZone)}</time>
+
+  return (
+    <div className="vcenter-inventory-status vcenter-config-status" role="group" aria-label="構成の読み取り">
+      <strong>構成の読み取り</strong>
+      {disabledReason && <div>無効（{disabledReason}）</div>}
+      {!disabledReason && failureState === 'current' && <CurrentCollectionFailure />}
+      <div>最後の成功 {success ? showTime(success) : '未収集'}</div>
+      <CollectionFailure
+        state={failureState}
+        targetName={`${status?.vcenter_name ?? ''} の構成の読み取り`}
+        lastSuccessAt={success}
+        lastFailureAt={failure}
+        error={error}
+        timeZone={timeZone}
+        showFailureTime
+        hideCurrentLabel
+      />
+      {(warningAt || warning) && (
+        <div>警告 {warningAt ? showTime(warningAt) : '—'}{warning && <div>{warning}</div>}</div>
+      )}
+      {deferred != null && <div>読み残した VM {deferred} 台</div>}
     </div>
   )
 }

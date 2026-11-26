@@ -683,7 +683,7 @@ async def test_inventory_config_diff_overlap_and_status(
     unrecorded = (await config_diffs(inventory_client, vc)).json()
     assert unrecorded == {
         "target": {"moid": "vm", "entity_type": None, "name": "vm"},
-        "status": "not_recorded", "recorded_since": None, "last_success_at": None,
+        "status": "not_recorded", "recorded_since": None, "first_success_at": None, "last_success_at": None,
         "items": [], "total": 0,
     }
     await observe(inventory_session, vc, T0, OBJECTS, RELATIONS)
@@ -714,10 +714,12 @@ async def test_inventory_config_diff_overlap_and_status(
     body = (await config_diffs(inventory_client, vc, **bounds)).json()
     assert body["target"] == {"moid": "vm", "entity_type": "VirtualMachine", "name": "guest"}
     assert body["status"] == "ok"
+    assert utc_field(body, "first_success_at") == outside
     assert utc_field(body, "recorded_since") == NOW - timedelta(days=30)
     assert utc_field(body, "last_success_at") == T2
     assert body["total"] == 3
     assert [row["id"] for row in body["items"]] == [row.id for row in reversed(matches)]
+    assert [(row["vcenter_id"], row["entity_moid"]) for row in body["items"]] == [(str(vc), "vm")] * 3
     assert [(row["old_value"], row["new_value"]) for row in body["items"]] == [
         ('"very', '"other"'), (None, 4096), ("old", "new"),
     ]

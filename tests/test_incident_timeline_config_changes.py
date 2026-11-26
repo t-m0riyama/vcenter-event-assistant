@@ -18,7 +18,10 @@ from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from vcenter_event_assistant_plugin_api import limits
 
-from vcenter_event_assistant.api.schemas.incident_timeline_view import IncidentTimelineViewRequest
+from vcenter_event_assistant.api.schemas.incident_timeline_view import (
+    IncidentTimelineViewRequest,
+    IncidentTimelineViewResponse,
+)
 from vcenter_event_assistant.db.base import Base
 from vcenter_event_assistant.db.models import (
     EventRecord,
@@ -569,8 +572,10 @@ async def test_config_diff_card_chain_and_strict_padded_overlap(config_db, diale
     assert grouped.last_utc == _time(20)
     assert [diff.id for diff in grouped.diffs] == [through_first.id, through_last.id, across_cards.id]
     assert grouped.diffs_total == 3
+    assert grouped.diffs_multiple_targets is True
     assert [diff.id for diff in later.diffs] == [across_cards.id]
     assert later.diffs_total == 1
+    assert later.diffs_multiple_targets is False
 
 
 @pytest.mark.parametrize("case", ["no_vcenter", "no_moid", "no_success", "before_success", "expired", "empty"])
@@ -679,6 +684,10 @@ async def test_config_diff_card_keeps_each_target_pair_together(config_db, diale
     result = await build_incident_timeline_view(config_db, request, owner_key="config-diff")
     (card,) = result.highlights.config_changes
     assert [diff.id for diff in card.diffs] == [diff.id for diff in (*filler, removed_1, added_1)]
+    assert [(diff.vcenter_id, diff.entity_moid) for diff in card.diffs[-2:]] == [(vc.id, "vm-1")] * 2
+    assert card.diffs_multiple_targets is False
+    assert card.diffs_first_success_at == START
+    assert card.diffs[-1].entity_name == added_1.entity_name
     assert card.diffs_total == 12
 
 
@@ -715,6 +724,8 @@ async def test_config_diff_report_remainder_and_safe_markdown(viewer_client, con
         else:
             assert "  - ほか " not in section
         assert "追加" in section and "削除" in section
+        assert "  - ` guest ` / " not in section
+        assert "記録をやり直す前の値" not in section
         assert "2026/03/22 00:09:00 +00:00 から 2026/03/22 00:10:00 +00:00 の間" in section
         result = json.loads(archive.read("result.json"))
         (card,) = result["highlights"]["config_changes"]
@@ -733,6 +744,35 @@ async def test_config_diff_report_remainder_and_safe_markdown(viewer_client, con
         ]
         (row,) = reader
         assert unsafe not in row.values()
+
+
+async def test_config_diff_report_shows_multiple_targets_and_pre_reset_note(viewer_client, config_clock):
+    vc = _vc()
+    unsafe = "<img src=x>\n\u202e```[link](https://example.invalid)"
+    async with session_scope() as session:
+        session.add(vc)
+        await session.flush()
+        session.add_all([
+            InventorySyncState(vcenter_id=vc.id, config_first_success_at=_time(10)),
+            _event(vc, 9, VM, "guest", entity_moid="vm-1", chain_id=12, collector_id=EVENTS),
+            _event(vc, 11, VM, "another guest", entity_moid="vm-2", chain_id=12, collector_id=EVENTS),
+            _diff(vc, 8, 9, entity_name=unsafe),
+            _diff(vc, 9, 10, moid="vm-2", entity_name=""),
+            _diff(vc, 10, 11, entity_name="guest"),
+        ])
+    response = await viewer_client.post(
+        "/api/incident-timeline/export", params={"format": "md"}, json=_request(),
+    )
+    assert response.status_code == 200, response.text
+    section = response.text.split("### 構成変更\n")[1].split("### ")[0]
+    rows = [line for line in section.splitlines() if line.startswith("  - ")]
+    assert len(rows) == 3
+    assert rows[0].startswith("  - ```` <img src=x> ```[link](https://example.invalid) ```` / ` VM の構成 `")
+    assert "\u202e" not in section
+    assert rows[0].endswith(" 記録をやり直す前の値")
+    assert rows[1].startswith("  - ` vm-2 ` / ` VM の構成 `")
+    assert rows[2].startswith("  - ` guest ` / ` VM の構成 `")
+    assert all("記録をやり直す前の値" not in row for row in rows[1:])
 
 
 async def test_config_diff_snapshot_with_legacy_card_loads(viewer_client):
@@ -762,6 +802,39 @@ async def test_config_diff_snapshot_with_legacy_card_loads(viewer_client):
     section = report.text.split("### 構成変更\n")[1].split("### ")[0]
     assert "- 2026/03/22 00:00:00 +00:00 / ` VM の構成変更 ` / - / - / - / 1 件" in section
     assert not any(line.startswith("  - ") for line in section.splitlines())
+
+
+async def test_config_diff_snapshot_with_pr_c_diffs_loads(viewer_client):
+    """PR C の JSON には差分の対象のキー自体が無い。"""
+    at = START.isoformat()
+    diff = {
+        "id": 42, "category": "vm_config", "category_label": "VM の構成", "element": None,
+        "element_label": None, "attribute": "num_cpu", "attribute_label": "CPU の数",
+        "old_value": 2, "new_value": 4, "truncated": False, "changed_after": at, "observed_at": at,
+    }
+    raw = {
+        "from_utc": at, "to_utc": END.isoformat(), "bucket_seconds": 60,
+        "overview": [], "items": [], "total_items": 0, "truncated": False,
+        "highlights": {"config_changes": [{
+            "kind": "vm_reconfigure", "label": "VM の構成変更", "first_utc": at, "last_utc": at,
+            "diffs": [diff], "diffs_total": 1,
+        }]},
+    }
+    (card,) = IncidentTimelineViewResponse.model_validate(raw).highlights.config_changes
+    (attached,) = card.diffs
+    assert attached.vcenter_id is None and attached.entity_moid is None
+    assert attached.old_value == 2 and attached.new_value == 4
+    assert card.diffs_total == 1
+
+    sid = uuid.uuid4()
+    async with session_scope() as session:
+        session.add(IncidentTimelineManualSnapshot(
+            id=sid, from_time=START, to_time=END, timestamp_utc=START,
+            operator_note="保存済み", result_payload=raw,
+        ))
+    response = await viewer_client.get(f"{SNAPSHOTS}/{sid}")
+    assert response.status_code == 200, response.text
+    assert response.json()["result"]["highlights"]["config_changes"][0] == card.model_dump(mode="json")
 
 
 async def test_config_diff_values_stay_out_of_chat_and_digest_llm(monkeypatch, config_clock):

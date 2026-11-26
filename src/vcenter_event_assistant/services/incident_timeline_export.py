@@ -365,9 +365,13 @@ def _config_changes_highlight(result: IncidentTimelineViewResponse, zone: ZoneIn
             f" / {_code(change.vcenter_name)} / {users} / {change.event_count} 件"
         )
         diffs = change.diffs or []
+        first_success = change.diffs_first_success_at
         for diff in diffs:
+            target = (diff.entity_name or diff.entity_moid) if change.diffs_multiple_targets else None
             label = " / ".join(
-                _code(part) for part in (diff.category_label, diff.element_label, diff.attribute_label) if part
+                _code(part)
+                for part in (target, diff.category_label, diff.element_label, diff.attribute_label)
+                if part
             )
             old = _code(_config_diff_value(diff.old_value))
             new = _code(_config_diff_value(diff.new_value))
@@ -375,9 +379,12 @@ def _config_changes_highlight(result: IncidentTimelineViewResponse, zone: ZoneIn
                 change_text = f"追加 {new}" if diff.old_value is None else f"削除 {old}"
             else:
                 change_text = f"{old} → {new}"
+            reset_note = ""
+            if first_success is not None and to_utc(diff.observed_at) < to_utc(first_success):
+                reset_note = " 記録をやり直す前の値"
             lines.append(
                 f"  - {label}: {change_text}"
-                f"（{_time(diff.changed_after, zone)} から {_time(diff.observed_at, zone)} の間）"
+                f"（{_time(diff.changed_after, zone)} から {_time(diff.observed_at, zone)} の間）{reset_note}"
             )
         if change.diffs_total > len(diffs):
             lines.append(f"  - ほか {change.diffs_total - len(diffs)} 件")

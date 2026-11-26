@@ -56,13 +56,23 @@ const collectionErrorMessages = [
     message: `収集がタイムアウトしました。${connectionAdvice}コレクタの「タイムアウト（秒）」と「実行間隔（秒）」も見直してください。`,
   },
   {
-    types: ['InventoryReadTimeout'],
-    message: 'vCenter の応答に時間がかかっていないか確認し、関係の収集のタイムアウト設定（INVENTORY_SYNC_TIMEOUT_SECONDS）の見直しを管理者に依頼してください。',
+    types: ['InventoryReadTimeout', 'ConfigReadTimeout'],
+    message: 'vCenter の応答に時間がかかっていないか確認し、インベントリの収集のタイムアウト設定（INVENTORY_SYNC_TIMEOUT_SECONDS）の見直しを管理者に依頼してください。',
     detailFirst: true,
   },
   {
     types: ['InventoryReadStillRunning', 'InventoryWorkerUnavailable'],
     message: '前回の読み取りが長引いている可能性があります。次の収集で自動的にやり直します。続く場合は管理者に連絡してください。',
+    detailFirst: true,
+  },
+  {
+    types: ['ConfigReadMissing'],
+    message: '次の収集で自動的にやり直します。続く場合は管理者に連絡してください。',
+    detailFirst: true,
+  },
+  {
+    types: ['InventoryReadsClosed'],
+    message: '収集が再開しない場合は管理者に連絡してください。',
     detailFirst: true,
   },
   {

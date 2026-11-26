@@ -167,3 +167,9 @@
 .vcenter-inventory-status time {
   white-space: nowrap;
 }
+
+.vcenter-config-status {
+  margin-block-start: var(--spacing-2);
+  padding-block-start: var(--spacing-2);
+  border-block-start: 1px solid var(--color-border);
+}
