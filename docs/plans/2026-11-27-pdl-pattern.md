@@ -9,7 +9,7 @@ Issue #398 の計画書である。[既知の障害パターンの計画書](202
 | PR | 内容 | 状態 |
 |---|---|---|
 | — | 実機で確かめる道具（`scripts/probe_event_types.py`） | レビュー中 [PR #405](https://github.com/t-m0riyama/vcenter-event-assistant/pull/405) |
-| A | 本書 | 作成中（PR #405 の後にマージする） |
+| A | 本書 | レビュー中 [PR #406](https://github.com/t-m0riyama/vcenter-event-assistant/pull/406)（PR #405 の後にマージする） |
 | B | 種類 `occurrence`、デバイスの取り出し、パターン `pdl`、API・通知・調査資料・対応手順、画面のスキーマ、利用者ガイド | 未着手 |
 | C | タイムラインの画面（デバイスの表示） | 未着手 |
 
