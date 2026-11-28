@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 PatternLevel = Literal["critical", "error", "warning"]
-PatternKind = Literal["repeat", "sequence"]
+PatternKind = Literal["repeat", "sequence", "occurrence"]
+PatternSubject = Literal["device"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,7 @@ class EventPattern:
     within_minutes: int
     min_count: int | None = None
     collapse_seconds: int = 0
+    subject: PatternSubject | None = None
 
 
 def _step(*event_types: str) -> PatternStep:
@@ -120,5 +122,24 @@ BUILTIN_PATTERNS = (
         target=_HOST,
         within_minutes=60,
         min_count=3,
+    ),
+    EventPattern(
+        id="pdl",
+        title="デバイスの恒久的な喪失（PDL）",
+        description=(
+            "ホストからストレージデバイス（LUN）が恒久的に失われた（PDL）と報告されました。"
+            "パスが戻るのを待っても回復しません。"
+            "まずデバイスの状態と、同じデバイスを使うほかのホストを確認してください。"
+        ),
+        level="critical",
+        kind="occurrence",
+        steps=(_step(
+            "esx.problem.scsi.device.state.permanentloss",
+            "esx.problem.psastor.device.state.permanentloss",
+        ),),
+        target=_HOST,
+        within_minutes=5,
+        collapse_seconds=300,
+        subject="device",
     ),
 )

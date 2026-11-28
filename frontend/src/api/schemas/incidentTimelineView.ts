@@ -101,6 +101,8 @@ export const timelineDetectedPatternSchema = z.object({
   last_utc: z.string(),
   event_count: z.number().int().min(1),
   event_ids: z.array(z.number().int()).max(20),
+  subject: z.literal('device').nullable().default(null),
+  device_id: z.string().nullable().default(null),
 })
 export type TimelineDetectedPattern = z.infer<typeof timelineDetectedPatternSchema>
 

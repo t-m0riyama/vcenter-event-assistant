@@ -1,6 +1,7 @@
 """障害パターン型アラートルールの評価。"""
 
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -20,6 +21,7 @@ from vcenter_event_assistant.services.event_patterns.detection import PatternDet
 from vcenter_event_assistant.services.event_patterns.query import query_event_patterns
 
 logger = logging.getLogger(__name__)
+_DEVICE_DETAILS_LIMIT = 10
 
 
 def _should_notify(state: AlertState, now: datetime, cooldown_minutes: int) -> bool:
@@ -33,18 +35,33 @@ def _should_notify(state: AlertState, now: datetime, cooldown_minutes: int) -> b
 
 def _details(
     detection: PatternDetection, vcenter_name: str | None, entity_name: str | None,
+    detections: list[PatternDetection],
 ) -> str:
     pattern = detection.pattern
     entity = f"{entity_name} ({detection.entity_moid})" if entity_name else detection.entity_moid
     vcenter = f"{vcenter_name} ({detection.vcenter_id})" if vcenter_name else str(detection.vcenter_id)
-    return "\n".join((
+    lines = [
         f"パターン: {pattern.title} ({alert_level_label_ja(pattern.level)})",
         f"対象: {entity}",
         f"vCenter: {vcenter}",
         f"期間: {detection.first_utc.isoformat()} ～ {detection.last_utc.isoformat()}",
         f"件数: {len(detection.event_ids)}",
         f"説明: {pattern.description}",
-    ))
+    ]
+    if pattern.subject == "device":
+        devices = [
+            match.device_id
+            for match in sorted(detections, key=lambda d: (d.first_utc, d.event_ids[0]))
+            if match.device_id is not None
+        ]
+        shown = devices[:_DEVICE_DETAILS_LIMIT]
+        if len(devices) > _DEVICE_DETAILS_LIMIT:
+            shown.append(f"ほかに {len(devices) - _DEVICE_DETAILS_LIMIT} 件")
+        unknown = len(detections) - len(devices)
+        if unknown:
+            shown.append(f"デバイスを特定できません（{unknown} 件）")
+        lines.append(f"範囲内で検知したデバイス: {'、'.join(shown)}")
+    return "\n".join(lines)
 
 
 async def evaluate_event_pattern_rule(
@@ -79,18 +96,18 @@ async def evaluate_event_pattern_rule(
             logger.warning("event_pattern rule=%s id=%s: row limit exceeded for %s", rule.name, rule.id, pattern_id)
         evaluated = selected.difference(omitted)
 
-        latest: dict[str, PatternDetection] = {}
+        by_key: defaultdict[str, list[PatternDetection]] = defaultdict(list)
         for detection in detections:
             key = event_pattern_context_key(detection.vcenter_id, detection.entity_moid, detection.pattern.id)
-            if key not in latest or detection.last_utc > latest[key].last_utc:
-                latest[key] = detection
+            by_key[key].append(detection)
 
         states = {
             state.context_key: state
             for state in await session.scalars(select(AlertState).where(AlertState.rule_id == rule.id))
         }
         notifications: list[tuple[AlertState, PatternDetection]] = []
-        for key, detection in latest.items():
+        for key, matches in by_key.items():
+            detection = max(matches, key=lambda match: match.last_utc)
             state = states.get(key)
             if state is None:
                 state = AlertState(rule_id=rule.id, context_key=key)
@@ -109,7 +126,7 @@ async def evaluate_event_pattern_rule(
             firings += 1
 
         for key, state in states.items():
-            if state.state != "firing" or key in latest:
+            if state.state != "firing" or key in by_key:
                 continue
             parsed = parse_event_pattern_context_key(key)
             if parsed is None:
@@ -130,7 +147,9 @@ async def evaluate_event_pattern_rule(
             for state, detection in notifications:
                 entity = entities.get((detection.vcenter_id, detection.entity_moid))
                 entity_name = entity.name if entity else detection.entity_name
-                details = _details(detection, names.get(detection.vcenter_id), entity_name)
+                details = _details(
+                    detection, names.get(detection.vcenter_id), entity_name, by_key[state.context_key],
+                )
                 deps.queue_notify(rule, state, {"details": details})
         await deps.persist_pending(session)
 

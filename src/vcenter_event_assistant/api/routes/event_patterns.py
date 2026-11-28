@@ -22,6 +22,7 @@ async def list_event_patterns() -> list[EventPatternRead]:
             steps=[EventPatternStepRead(event_types=sorted(step.event_types)) for step in pattern.steps],
             within_minutes=pattern.within_minutes,
             min_count=pattern.min_count,
+            subject=pattern.subject,
         )
         for pattern in BUILTIN_PATTERNS
     ]

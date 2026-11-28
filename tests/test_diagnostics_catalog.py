@@ -96,7 +96,7 @@ VALID_VALUES = {
     "vmnic": ("vmnic0", "vmnic999"),
     "vmk": ("vmk0", "vmk123"),
     "ipv4": ("0.0.0.0", "192.168.0.1", "255.255.255.255"),
-    "device": ("naa.60a", "mpx.vmhba0:C0:T0:L0", "x41", "HOME", "Z" * 128),
+    "device": ("naa.60a", "mpx.vmhba0:C0:T0:L0", "t10.ATA___X", "x41", "HOME", "Z" * 128),
 }
 
 

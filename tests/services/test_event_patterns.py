@@ -3,12 +3,14 @@
 import re
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from math import ceil
 from uuid import UUID
 
 import pytest
 
 from vcenter_event_assistant.services.event_patterns.definitions import BUILTIN_PATTERNS, PatternStep
 from vcenter_event_assistant.services.event_patterns.detection import PatternEvent, detect_pattern
+from vcenter_event_assistant.device_ids import extract_storage_device_id
 
 T0 = datetime(2026, 3, 22, tzinfo=timezone.utc)
 VC = UUID(int=1)
@@ -20,12 +22,21 @@ SEQUENCE = replace(
 )
 
 
-def _event(event_id, minute, kind="A", moid="host-1", name=None):
-    return PatternEvent(event_id, VC, T0 + timedelta(minutes=minute), kind, moid, name, "HostSystem")
+def _event(event_id, minute, kind="A", moid="host-1", name=None, **kwargs):
+    return PatternEvent(event_id, VC, T0 + timedelta(minutes=minute), kind, moid, name, "HostSystem", **kwargs)
+
+
+@pytest.mark.parametrize(("gap", "expected"), [(0.5, [(1, 2)]), (300, [(1, 2)]), (301, [(1,), (2,)])])
+def test_pdl_collapses_same_device_from_first_occurrence(gap, expected):
+    first = _event(1, 0, "esx.problem.scsi.device.state.permanentloss", message="Device naa.A012 has been removed or is permanently inaccessible")
+    second = _event(2, gap / 60, "esx.problem.psastor.device.state.permanentloss", message="Device naa.a012 has been removed or is permanently inaccessible")
+    detections = detect_pattern(PATTERNS["pdl"], [second, first])
+    assert [d.event_ids for d in detections] == expected
+    assert detections[0].device_id == "naa.A012"
 
 
 def test_builtin_event_pattern_definitions():
-    assert len(PATTERNS) == len(BUILTIN_PATTERNS) == 7
+    assert len(PATTERNS) == len(BUILTIN_PATTERNS) == 8
     for pattern in BUILTIN_PATTERNS:
         assert re.fullmatch(r"[a-z0-9-]{1,32}", pattern.id)
         assert 1 <= pattern.within_minutes <= 1440
@@ -35,15 +46,58 @@ def test_builtin_event_pattern_definitions():
             assert len(pattern.steps) == 1
             assert pattern.min_count is not None and pattern.min_count >= 2
             assert pattern.collapse_seconds >= 0
-        else:
-            assert pattern.kind == "sequence" and len(pattern.steps) >= 2
+        elif pattern.kind == "sequence":
+            assert len(pattern.steps) >= 2
             assert pattern.min_count is None and pattern.collapse_seconds == 0
+        else:
+            assert pattern.kind == "occurrence"
+            assert len(pattern.steps) == 1 and pattern.min_count is None
+            assert pattern.collapse_seconds >= 1
+            assert pattern.within_minutes == ceil(pattern.collapse_seconds / 60)
+        assert pattern.subject == ("device" if pattern.id == "pdl" else None)
         if pattern.id == "ha-failover":
             assert pattern.target.roles == {"computeResource"}
             assert pattern.target.entity_types == {"ClusterComputeResource"}
         else:
             assert pattern.target.roles == {"host", "object", "managedObject"}
             assert pattern.target.entity_types == {"HostSystem"}
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Device t10.ATA___X has been removed or is permanently inaccessible", "t10.ATA___X"),
+        ("Device mpx.vmhba1:C0:T0:L0 has been removed or is permanently inaccessible", "mpx.vmhba1:C0:T0:L0"),
+        ("Device naa.A(X) has been removed or is permanently inaccessible. naa.B", None),
+        ("Device t10.ATA___X(Y) has been removed or is permanently inaccessible. naa.B", None),
+        ("Device t10.ATA WITH SPACE has been removed or is permanently inaccessible", None),
+        ("Device naa.123 disk A has been removed or is permanently inaccessible", None),
+        ("Device t10.ATA WITH SPACE has been removed or is permanently inaccessible. Affected datastores: naa.other", None),
+        ("(vim.event.EventEx) {fullFormattedMessage = 'Disk naa.a'}", "naa.a"),
+        ("Disk eui.001", "eui.001"),
+        ("Disk naa.a, NAA.A", "naa.a"),
+        ("Disk naa.a, eui.1", None),
+        ("Disk ds-naa.a", None),
+        ("Disk naa.a.", "naa.a"),
+        ("Disk naa.a. Next", "naa.a"),
+        ("Disk naa.a, affected datastores", "naa.a"),
+        ("Disk naa.", None),
+        ("Disk naa." + "a" * 124, "naa." + "a" * 124),
+        ("Disk naa." + "a" * 125, None),
+        ("Disk naa.a(abc)", None),
+        ("Disk naa.a/abc", None),
+        ("Disk naa.a+abc", None),
+        ("Disk naa.a/naa.b", None),
+        ("Disk naa.a(naa.b)", None),
+        ("Disk naa.a+naa.b", None),
+        ("Disk (naa.a)", "naa.a"),
+        ("Disk naa.a/abc, eui.01", "eui.01"),
+        ("失ったデバイス naa.a。", "naa.a"),
+        ("失ったデバイス（naa.a）", "naa.a"),
+    ],
+)
+def test_device_id_extraction(message, expected):
+    assert extract_storage_device_id(message) == expected
 
 
 @pytest.mark.parametrize(

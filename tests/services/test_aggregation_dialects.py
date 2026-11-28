@@ -1033,8 +1033,9 @@ async def test_sqlite_event_patterns_use_the_event_type_time_index(
         statements.clear()
         await query_event_patterns(session, TO - timedelta(days=50), TO, vcenter_id=vc, entity_moid=moid)
         assert len(statements) == len(BUILTIN_PATTERNS)
-        for stmt in statements:
+        for pattern, stmt in zip(BUILTIN_PATTERNS, statements, strict=True):
             sql = str(stmt.compile(dialect=bind.dialect, compile_kwargs={"literal_binds": True}))
+            assert ("message" in stmt.selected_columns) == (pattern.id == "pdl")
             plan = "\n".join(row[-1] for row in (await conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql)).all())
             assert re.search(
                 r"SEARCH events USING (COVERING )?INDEX ix_events_event_type_occurred_at "

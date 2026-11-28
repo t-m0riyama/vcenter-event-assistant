@@ -10,6 +10,7 @@ level の決め方:
 from __future__ import annotations
 
 import itertools
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -85,14 +86,16 @@ async def _post(client: AsyncClient, **overrides: object) -> dict:
 
 
 def _message_fetch_ids(statements: list, table: str) -> set[int]:
-    """横取りした問い合わせのうち ``{table}.message`` を読むものについて、IN に渡した id をすべて集める。"""
+    """本文を ID で後引きする問い合わせから、IN に渡した ID を集める。"""
     ids: set[int] = set()
     for stmt in statements:
-        if f"{table}.message" not in str(stmt):
+        compiled = stmt.compile()
+        sql = str(compiled)
+        if f"{table}.message" not in sql:
             continue
-        for value in stmt.compile().params.values():
-            if isinstance(value, (list, tuple)):
-                ids.update(int(v) for v in value)
+        id_params = re.findall(rf"\b{re.escape(table)}\.id IN \(__\[POSTCOMPILE_(\w+)\]\)", sql)
+        for param in id_params:
+            ids.update(int(value) for value in compiled.params[param])
     return ids
 
 

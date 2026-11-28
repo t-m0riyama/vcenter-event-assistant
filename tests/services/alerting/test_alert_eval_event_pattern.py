@@ -25,13 +25,15 @@ _PATTERN = "host-conn-flapping"
 _MOID = "host:" + "a" * 251
 _DISCONNECT = "vim.event.HostConnectionLostEvent"
 _RECONNECT_FAILED = "vim.event.HostReconnectionFailedEvent"
+_PDL = "esx.problem.scsi.device.state.permanentloss"
 
 
 async def _add_events(vid, *events, entity_name="ESXi"):
     async with session_scope() as session:
-        for key, at, event_type in events:
+        for key, at, event_type, *message in events:
             session.add(EventRecord(
                 vcenter_id=vid, vmware_key=key, occurred_at=at, event_type=event_type,
+                message=message[0] if message else "",
                 entities=[EventEntity(
                     vcenter_id=vid, role="host", position=0, is_primary=True,
                     entity_moid=_MOID, entity_name=entity_name, entity_type="HostSystem",
@@ -54,6 +56,37 @@ async def _setup(pattern_ids):
 async def _state():
     async with session_scope() as session:
         return (await session.scalars(select(AlertState))).one()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("device_count", [2, 12])
+async def test_pdl_lists_devices_in_one_host_notification_and_absorbs_new_device(device_count):
+    vid, _ = await _setup(["pdl"])
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(minutes=3)
+    await _add_events(vid, *(
+        (i, start + timedelta(seconds=i), _PDL, f"失ったディスク naa.d{i:02d}。")
+        for i in reversed(range(device_count))
+    ), (100, start, _PDL), (101, start, _PDL))
+    evaluator = AlertEvaluator(get_settings().model_copy(update={"mock_mode": True}))
+    assert (await evaluator.evaluate_all()).firings == 1
+    state = await _state()
+    assert state.context_key == f"{vid}:{_MOID}:pdl"
+    assert state.fired_at.replace(tzinfo=timezone.utc) == start + timedelta(seconds=device_count - 1)
+    async with session_scope() as session:
+        outbox = (await session.scalars(select(AlertNotificationOutbox))).one()
+    expected = "、".join(f"naa.d{i:02d}" for i in range(min(device_count, 10)))
+    if device_count > 10:
+        expected += "、ほかに 2 件"
+    assert f"範囲内で検知したデバイス: {expected}、デバイスを特定できません（2 件）" in outbox.body
+    assert "naa.d10" not in outbox.body
+
+    later = now - timedelta(minutes=1)
+    await _add_events(vid, (102, later, _PDL, "Device naa.new has been removed or is permanently inaccessible"))
+    assert (await evaluator.evaluate_all()).firings == 0
+    after = await _state()
+    assert after.last_notified_at == state.last_notified_at
+    assert after.fired_at.replace(tzinfo=timezone.utc) == later
 
 
 @pytest.mark.asyncio

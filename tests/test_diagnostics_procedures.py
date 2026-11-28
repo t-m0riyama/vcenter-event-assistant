@@ -43,6 +43,7 @@ def test_procedure_commands_match_the_plan_table():
         "host-reconnect-failed": {"esxi.hostname", "esxi.hostd", "esxi.vpxa", "esxi.vmk", "esxi.ping", "esxi.uptime"},
         "apd-timeout": {"esxi.hostname", "esxi.paths", "esxi.device", "esxi.adapters"},
         "apd-repeated": {"esxi.hostname", "esxi.paths", "esxi.device", "esxi.adapters"},
+        "pdl": {"esxi.hostname", "esxi.paths", "esxi.device", "esxi.adapters"},
         "nic-link-flapping": {"esxi.hostname", "esxi.nic", "esxi.nic-stats"},
         "ha-failover": {"esxi.hostname", "esxi.fdm", "esxi.uptime", "esxi.maintenance"},
         "vmotion-failures": {"esxi.hostname", "esxi.vmk", "esxi.ping"},

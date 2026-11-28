@@ -79,7 +79,7 @@
 - `GET/POST/PATCH/DELETE /api/event-type-guides`
 - `POST /api/event-type-guides/import`
 - `GET /api/event-patterns`
-  組み込みの障害パターンの一覧。viewer 以上で参照できる。各定義は `id`、`title`、`description`、`level`、`kind`、`steps`（段ごとの `event_types`）、`within_minutes`、`min_count`（sequence は `null`）を持つ。
+  組み込みの障害パターンの一覧。viewer 以上で参照できる。各定義は `id`、`title`、`description`、`level`、`kind`（`repeat`、`sequence`、`occurrence`）、`steps`（段ごとの `event_types`）、`within_minutes`、`min_count`（`repeat` 以外は `null`）、`subject`（`device` または `null`）を持つ。
 - `GET/POST/PATCH/DELETE /api/alerts/rules`
 - `POST /api/alerts/rules/import`
 - `GET /api/alerts/history`
@@ -146,7 +146,7 @@
 
 要求の `sources` に `event` が入ると、ハイライトに障害パターンの判定結果を返す。
 
-- `detected_patterns` は最大 20 件。各検知は `pattern_id`、`title`、`description`、`level`、`vcenter_id`、`vcenter_name`、`entity_moid`、`entity_name`、`entity_type`、`first_utc`、`last_utc`、`event_count`、`event_ids` を持つ。レベル、`last_utc` の新しい順、パターン ID、vCenter ID、moid の順で、各 `event_ids` は時刻順の先頭 20 件を返す。
+- `detected_patterns` は最大 20 件。各検知は `pattern_id`、`title`、`description`、`level`、`vcenter_id`、`vcenter_name`、`entity_moid`、`entity_name`、`entity_type`、`first_utc`、`last_utc`、`event_count`、`event_ids`、`subject`、`device_id` を持つ。レベル、`last_utc` の新しい順、パターン ID、vCenter ID、moid、デバイス ID（不明が先）、`first_utc` の古い順、先頭イベントの ID の順に並ぶ。各 `event_ids` は時刻順の先頭 20 件を返す。保存済みの検知に `subject` や `device_id` が無ければ `null` になる。
 - `detected_patterns_total` は上限で切る前の件数。
 - `omitted_patterns` は対象の子表との結合が 10,000 行を超え、判定を省いたパターンの ID。
 

@@ -293,12 +293,16 @@ def _highlights(result: IncidentTimelineViewResponse, zone: ZoneInfo) -> list[st
     lines.extend(("", "### 初めて警告以上で出たログの型", ""))
     lines.extend(_new_log_patterns_highlight(result, zone))
     lines.extend(("", "### 検知した障害パターン", ""))
-    lines.extend(
-        f"- {_code(pattern.title)} / {_code(pattern.entity_name or pattern.entity_moid)} / "
-        f"{_time(pattern.first_utc, zone)} ～ {_time(pattern.last_utc, zone)} / {pattern.event_count} 件"
-        f" / {_code(pattern.description)}"
-        for pattern in highlights.detected_patterns
-    )
+    for pattern in highlights.detected_patterns:
+        parts = [_code(pattern.title), _code(pattern.entity_name or pattern.entity_moid)]
+        if pattern.subject == "device":
+            parts.append(_code(pattern.device_id) if pattern.device_id else "デバイスを特定できません")
+        parts.extend((
+            f"{_time(pattern.first_utc, zone)} ～ {_time(pattern.last_utc, zone)}",
+            f"{pattern.event_count} 件",
+            _code(pattern.description),
+        ))
+        lines.append("- " + " / ".join(parts))
     if not highlights.detected_patterns:
         lines.append("判定の無い結果と、判定して 0 件だった結果は見分けられません。")
         lines.append("")

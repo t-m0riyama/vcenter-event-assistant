@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from vcenter_event_assistant.services.event_patterns.definitions import PatternKind, PatternLevel
+from vcenter_event_assistant.services.event_patterns.definitions import PatternKind, PatternLevel, PatternSubject
 
 
 class EventPatternStepRead(BaseModel):
@@ -18,3 +18,4 @@ class EventPatternRead(BaseModel):
     steps: list[EventPatternStepRead]
     within_minutes: int
     min_count: int | None
+    subject: PatternSubject | None = None

@@ -49,6 +49,8 @@
 
 ### 追加
 
+- ストレージデバイスの恒久的な喪失（PDL）を障害パターンとして検知する（Issue #398）。同じホストとデバイスで 300 秒以内に続くイベントは 1 件にまとめる。通知と調査資料には特定できたデバイス ID を出す。[障害パターン](docs/userguide/timeline.md#検知した障害パターン)
+
 - タイムラインで対象を moid で絞ると、影響範囲の隣で観測した構成の差分を確認できる。「構成変更」カードにも関連する差分を表示する。設定の vCenter 一覧に、構成の読み取りの成否、警告、読み残した VM の台数を表示する。[タイムラインの使い方](docs/userguide/timeline.md#構成の差分)
 - viewer 以上で使える構成差分 API `GET /api/inventory/config-diffs` を追加した。タイムラインの構成変更と調査資料に観測した差分を添え、`GET /api/inventory/status` で構成の収集状態を確認できる。
 - ESXi のビルド、クラスタの HA・DRS、標準 vSwitch・ポートグループ、VM の構成の差分を記録するようにした。`INVENTORY_CONFIG_ENABLED`（既定 `true`）で切り替え、`INVENTORY_CONFIG_RETENTION_DAYS`（既定 30 日）で差分の保持期間を指定する。
