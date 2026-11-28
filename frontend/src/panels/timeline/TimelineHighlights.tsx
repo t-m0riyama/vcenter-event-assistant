@@ -39,9 +39,29 @@ function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
   const id = useId()
   const titleId = `${id}-title`
   const entityId = `${id}-entity`
+  const deviceId = `${id}-device`
+  const timeId = `${id}-time`
   const sameTime = parseApiUtcInstantMs(pattern.first_utc) === parseApiUtcInstantMs(pattern.last_utc)
+  const firstTime = formatIsoInTimeZone(pattern.first_utc, timeZone)
+  const time = sameTime ? firstTime : `${firstTime} ～ ${formatIsoInTimeZone(pattern.last_utc, timeZone)}`
   const canLink = useAuth().hasRole('operator')
-  const descriptionIds = `${titleId} ${entityId}`
+  const entity = pattern.entity_name || pattern.entity_moid
+  const eventCount = `${pattern.event_count} 件`
+  const firstEventId = pattern.event_ids[0]
+  let deviceLabel: string | null = null
+  if (pattern.subject === 'device') {
+    deviceLabel = pattern.device_id
+      ? `デバイス ${pattern.device_id}`
+      : 'デバイスを特定できません'
+    if (!pattern.device_id && firstEventId !== undefined) {
+      deviceLabel += `（イベント ID ${firstEventId}）`
+    }
+  }
+  const descriptionIds = deviceLabel ? `${titleId} ${entityId} ${deviceId} ${timeId}` : `${titleId} ${entityId}`
+  const selectionSummary = deviceLabel ? [
+    entity, pattern.vcenter_name, deviceLabel, time, eventCount,
+    pattern.device_id && firstEventId !== undefined ? `先頭イベント ID ${firstEventId}` : undefined,
+  ].filter(Boolean).join('・') : undefined
 
   return (
     <li>
@@ -50,14 +70,12 @@ function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
         <span className={LEVEL_BADGE_CLASS[pattern.level]}>{LEVEL_LABELS[pattern.level]}</span>
       </p>
       <p className="timeline-highlights__meta">
-        <span id={entityId}>{pattern.entity_name || pattern.entity_moid}</span>
+        <span id={entityId}>{entity}</span>
         {pattern.vcenter_name ? <>・<span>{pattern.vcenter_name}</span></> : null}
-        ・<span>{pattern.event_count} 件</span>
+        ・<span>{eventCount}</span>
       </p>
-      <p className="timeline-highlights__meta">
-        {formatIsoInTimeZone(pattern.first_utc, timeZone)}
-        {sameTime ? null : ` ～ ${formatIsoInTimeZone(pattern.last_utc, timeZone)}`}
-      </p>
+      {deviceLabel && <p className="timeline-highlights__meta" id={deviceId}>{deviceLabel}</p>}
+      <p className="timeline-highlights__meta" id={timeId}>{time}</p>
       <details>
         <summary aria-describedby={descriptionIds}>説明</summary>
         <p className="timeline-highlights__meta">{pattern.description}</p>
@@ -70,7 +88,13 @@ function DetectedPatternItem({ pattern, timeZone, onSetAnchor }: {
       >
         ここを起点にする
       </button>
-      {canLink && <TimelineCardIncidentButton card={pattern} />}
+      {canLink && (
+        <TimelineCardIncidentButton
+          card={pattern}
+          describedBy={deviceLabel ? descriptionIds : undefined}
+          selectionSummary={selectionSummary}
+        />
+      )}
     </li>
   )
 }

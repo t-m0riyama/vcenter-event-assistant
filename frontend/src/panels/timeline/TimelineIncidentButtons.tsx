@@ -14,7 +14,11 @@ export function TimelineRowIncidentButton({ item }: { item: TimelineViewItem }) 
   )
 }
 
-export function TimelineCardIncidentButton({ card }: { card: TimelineConfigChange | TimelineDetectedPattern }) {
+export function TimelineCardIncidentButton({ card, describedBy, selectionSummary }: {
+  card: TimelineConfigChange | TimelineDetectedPattern
+  describedBy?: string
+  selectionSummary?: string
+}) {
   const items = card.event_ids.slice(0, 20).map((id) => ({
     id,
     occurred_from: card.first_utc,
@@ -22,5 +26,12 @@ export function TimelineCardIncidentButton({ card }: { card: TimelineConfigChang
   }))
   if (items.length === 0) return null
   const notice = card.event_count > items.length ? `${card.event_count} 件のうち、先頭の ${items.length} 件を追加します` : undefined
-  return <IncidentLinkButton source={{ kind: 'events', items }} notice={notice} />
+  return (
+    <IncidentLinkButton
+      source={{ kind: 'events', items }}
+      notice={notice}
+      describedBy={describedBy}
+      selectionSummary={selectionSummary}
+    />
+  )
 }
