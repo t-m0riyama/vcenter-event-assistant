@@ -35,7 +35,10 @@ export function IncidentLinkDialogProvider({ active, className, hidden, children
   )
 }
 
-export function IncidentLinkButton({ compact = false, ...selection }: LinkSelection & { compact?: boolean }) {
+export function IncidentLinkButton({ compact = false, describedBy, ...selection }: LinkSelection & {
+  compact?: boolean
+  describedBy?: string
+}) {
   const open = useContext(IncidentLinkContext)
   if (!open) return null
   const className = selection.createOnly && !selection.source
@@ -45,6 +48,7 @@ export function IncidentLinkButton({ compact = false, ...selection }: LinkSelect
     <button
       type="button"
       className={className}
+      aria-describedby={describedBy}
       onClick={() => open(selection)}
     >
       {selection.createOnly ? 'インシデントを作る' : 'インシデントに追加'}

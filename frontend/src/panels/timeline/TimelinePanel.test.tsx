@@ -1141,6 +1141,37 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(within(details).getByText(DETECTED_PATTERN.description)).toBeVisible()
   })
 
+  it('同じホストの PDL をデバイス ID と特定できない表示で区別できる', async () => {
+    setup()
+    renderTimeline()
+    const pdl = { ...DETECTED_PATTERN, pattern_id: 'pdl', title: 'PDL', subject: 'device', event_count: 1 } as const
+    await answer(0, populated({ highlights: {
+      ...populated().highlights,
+      detected_patterns: [
+        { ...pdl, device_id: 'naa.a01', event_ids: [20] },
+        { ...pdl, device_id: 'naa.b02', event_ids: [21] },
+        { ...pdl, device_id: null, event_ids: [22] },
+        { ...pdl, device_id: null, event_ids: [23] },
+        DETECTED_PATTERN,
+      ],
+      detected_patterns_total: 5,
+    } }))
+    const patterns = within(await screen.findByRole('region', { name: '検知した障害パターン' }))
+    for (const text of ['デバイス naa.a01', 'デバイス naa.b02',
+      'デバイスを特定できません（イベント ID 22）', 'デバイスを特定できません（イベント ID 23）']) {
+      expect(patterns.getByText(text)).toBeVisible()
+      expect(patterns.getByRole('button', {
+        name: 'ここを起点にする', description: `PDL esx-pattern ${text}`,
+      })).toBeInTheDocument()
+      expect(patterns.getByRole('button', {
+        name: 'インシデントに追加', description: `PDL esx-pattern ${text}`,
+      })).toBeInTheDocument()
+    }
+    expect(patterns.getByRole('button', {
+      name: 'ここを起点にする', description: `${DETECTED_PATTERN.title} esx-pattern`,
+    })).toBeInTheDocument()
+  })
+
   it('検知から「ここを起点にする」と、検知の最初の時刻で再集計する', async () => {
     setup()
     window.history.replaceState(null, '', '/#/timeline?from=2026-03-22T00:00:00Z&to=2026-03-22T01:00:00Z')
@@ -3315,7 +3346,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       }
     }
 
-    const expectLinkRequest = async (region: HTMLElement, items: unknown[], notice?: string) => {
+    const expectLinkRequest = async (region: HTMLElement, items: unknown[], notice?: string, description?: string) => {
       const sent = vi.fn()
       harness.extra.set(`/api/incidents/${INCIDENT_ID}/events`, (_url, init) => {
         sent(JSON.parse(String(init?.body)))
@@ -3325,7 +3356,7 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
         })
       })
       harness.extra.set('/api/incidents?', () => jsonResponse(INCIDENT_LIST))
-      fireEvent.click(within(region).getByRole('button', { name: 'インシデントに追加' }))
+      fireEvent.click(within(region).getByRole('button', { name: 'インシデントに追加', description }))
       const dialog = screen.getByRole('dialog', { name: 'インシデントに追加' })
       const picker = within(dialog)
       if (notice) expect(picker.getByText(notice)).toBeVisible()
@@ -3347,6 +3378,24 @@ describe('TimelinePanel', { timeout: TEST_TIMEOUT_MS }, () => {
       await expectLinkRequest(region, card.event_ids.map((id) => ({
         id, occurred_from: card.first_utc, occurred_to: card.last_utc,
       })), notice)
+    })
+
+    it('同時刻のデバイス不明の PDL から選んだイベントだけを送る', async () => {
+      setup()
+      renderTimeline()
+      const data = result()
+      const pdl = {
+        ...DETECTED_PATTERN, pattern_id: 'pdl', title: 'PDL',
+        subject: 'device' as const, device_id: null, event_count: 1,
+      }
+      await answer(0, { ...data, highlights: {
+        ...data.highlights,
+        detected_patterns: [{ ...pdl, event_ids: [22] }, { ...pdl, event_ids: [23] }],
+        detected_patterns_total: 2,
+      } })
+      const region = await screen.findByRole('region', { name: '検知した障害パターン' })
+      await expectLinkRequest(region, [{ id: 23, occurred_from: pdl.first_utc, occurred_to: pdl.last_utc }],
+        undefined, 'PDL esx-pattern デバイスを特定できません（イベント ID 23）')
     })
 
     it('まとめた行は先頭の 1 件とその発生時刻を送る', async () => {
