@@ -1,6 +1,6 @@
 # PDL（Permanent Device Loss）の障害パターンを足す
 
-最終更新: 2026-11-28（PR B のレビューと進捗を反映）
+最終更新: 2026-11-28（PR B のレビューと PR C の進捗を反映）
 
 Issue #398 の計画書である。[既知の障害パターンの計画書](2026-11-23-event-patterns.md)（以下「パターンの計画書」）の 10 章で後続に回した「PDL など、種別の名前を確かめられなかったパターン」のうち、PDL を足す。用語（moid・対象・役割）はパターンの計画書に合わせる。コードの場所は、バックエンドを `src/vcenter_event_assistant/` から、画面を `frontend/src/` から書く。行番号は、本書を書いた時点の main のものである。
 
@@ -11,7 +11,7 @@ Issue #398 の計画書である。[既知の障害パターンの計画書](202
 | — | 実機で確かめる道具（`scripts/probe_event_types.py`） | マージ済み [PR #405](https://github.com/t-m0riyama/vcenter-event-assistant/pull/405) |
 | A | 本書 | マージ済み [PR #406](https://github.com/t-m0riyama/vcenter-event-assistant/pull/406) |
 | B | 種類 `occurrence`、デバイスの取り出し、パターン `pdl`、API・通知・調査資料・対応手順、画面のスキーマ、利用者ガイド | PR 作成済み [PR #407](https://github.com/t-m0riyama/vcenter-event-assistant/pull/407) |
-| C | タイムラインの画面（デバイスの表示） | 未着手 |
+| C | タイムラインの画面（デバイスの表示） | PR 作成済み [PR #408](https://github.com/t-m0riyama/vcenter-event-assistant/pull/408)（PR #407 の後にマージする） |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
