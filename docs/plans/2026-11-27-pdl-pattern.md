@@ -10,8 +10,8 @@ Issue #398 の計画書である。[既知の障害パターンの計画書](202
 |---|---|---|
 | — | 実機で確かめる道具（`scripts/probe_event_types.py`） | マージ済み [PR #405](https://github.com/t-m0riyama/vcenter-event-assistant/pull/405) |
 | A | 本書 | マージ済み [PR #406](https://github.com/t-m0riyama/vcenter-event-assistant/pull/406) |
-| B | 種類 `occurrence`、デバイスの取り出し、パターン `pdl`、API・通知・調査資料・対応手順、画面のスキーマ、利用者ガイド | PR 作成済み [PR #407](https://github.com/t-m0riyama/vcenter-event-assistant/pull/407) |
-| C | タイムラインの画面（デバイスの表示） | PR 作成済み [PR #408](https://github.com/t-m0riyama/vcenter-event-assistant/pull/408)（PR #407 の後にマージする） |
+| B | 種類 `occurrence`、デバイスの取り出し、パターン `pdl`、API・通知・調査資料・対応手順、画面のスキーマ、利用者ガイド | `main` にマージ済み [PR #407](https://github.com/t-m0riyama/vcenter-event-assistant/pull/407) |
+| C | タイムラインの画面（デバイスの表示） | [PR #408](https://github.com/t-m0riyama/vcenter-event-assistant/pull/408) でレビューし、[PR #409](https://github.com/t-m0riyama/vcenter-event-assistant/pull/409) で `main` に取り込む |
 
 各 PR は単独でマージでき、テストが通る状態にする。
 
