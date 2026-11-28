@@ -254,10 +254,11 @@ async def test_pdl_splits_vcenters_and_hosts_before_applying_the_response_limit(
         (1, PDL_SCSI, [_entity(role="vm")], "naa.outside"),
     ])
     second_ids = await _seed(v2, [
-        (1, PDL_SCSI, [_entity()], device) for device in known_devices[:3]
+        *((1, PDL_SCSI, [_entity()], device) for device in known_devices[:3]),
+        (1, PDL_PSASTOR, [_entity()], ""),
     ])
     highlights = (await _view(client))["highlights"]
-    assert highlights["detected_patterns_total"] == 21
+    assert highlights["detected_patterns_total"] == 22
     assert [
         (d["vcenter_id"], d["entity_moid"], d["device_id"], d["event_ids"])
         for d in highlights["detected_patterns"]
@@ -267,8 +268,8 @@ async def test_pdl_splits_vcenters_and_hosts_before_applying_the_response_limit(
         *((str(v1), "host-1", device, [event_id])
           for device, event_id in zip(known_devices, reversed(first_ids[:15]), strict=True)),
         (str(v1), "host-2", "naa.d00", [first_ids[17]]),
+        (str(v2), "host-1", None, [second_ids[3]]),
         (str(v2), "host-1", "naa.d00", [second_ids[0]]),
-        (str(v2), "host-1", "naa.d01", [second_ids[1]]),
     ]
 
 

@@ -5,7 +5,7 @@ import re
 DEVICE_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _PDL_MESSAGE = re.compile(r"Device (.*?) has been removed or is permanently inaccessible", re.DOTALL)
 _STORAGE_ID_IN_MESSAGE = re.compile(
-    r"(?<![A-Za-z0-9._:-])(?ai:naa|eui|mpx)\.[A-Za-z0-9_.:-]*[A-Za-z0-9_]"
+    r"(?<![A-Za-z0-9._:-])(?ai:naa|eui|mpx|t10)\.[A-Za-z0-9_.:-]*[A-Za-z0-9_]"
 )
 _STORAGE_ID_SEPARATOR = re.compile(r"""[\s,;'")\]]|[^\x00-\x7f]""")
 _STORAGE_ID_END = re.compile(rf"\Z|{_STORAGE_ID_SEPARATOR.pattern}|\.(?:\Z|\s)")
@@ -31,6 +31,8 @@ def extract_storage_device_id(message: str | None) -> str | None:
             continue
         rejected_end = None
         value = match[0]
-        if DEVICE_ID_PATTERN.fullmatch(value):
-            candidates.setdefault(value.lower(), value)
+        normalized = value.lower()
+        # t10 は連結の判定にだけ使う。定型文の外では ID として返さない。
+        if not normalized.startswith("t10.") and DEVICE_ID_PATTERN.fullmatch(value):
+            candidates.setdefault(normalized, value)
     return next(iter(candidates.values())) if len(candidates) == 1 else None
