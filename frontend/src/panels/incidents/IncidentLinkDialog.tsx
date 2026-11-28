@@ -11,6 +11,7 @@ import './IncidentsPanel.css'
 type LinkSelection = {
   source?: IncidentLinkSource
   notice?: string
+  selectionSummary?: string
   draftTitle?: string
   createOnly?: boolean
   /** 詳細に移った場合は true を返し、ダイアログの結果表示を省く。 */
@@ -57,12 +58,13 @@ export function IncidentLinkButton({ compact = false, describedBy, ...selection 
 }
 
 function IncidentLinkDialog({
-  active, source, notice, draftTitle = '', createOnly = false, onClose, onCreated,
+  active, source, notice, selectionSummary, draftTitle = '', createOnly = false, onClose, onCreated,
 }: LinkSelection & { active: boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const mounted = useRef(false)
   const wasHidden = useRef(false)
   const headingId = useId()
+  const summaryId = useId()
   const [create, setCreate] = useState(createOnly)
   const [title, setTitle] = useState(draftTitle)
   const [selectedId, setSelectedId] = useState('')
@@ -143,6 +145,7 @@ function IncidentLinkDialog({
       ref={dialog}
       className="dialog incident-dialog"
       aria-labelledby={headingId}
+      aria-describedby={selectionSummary ? summaryId : undefined}
       onClose={onClose}
       onCancel={(event) => { if (busy) event.preventDefault() }}
     >
@@ -151,6 +154,7 @@ function IncidentLinkDialog({
           <h2 id={headingId} className="dialog__title">{createOnly ? 'インシデントを作る' : 'インシデントに追加'}</h2>
         </header>
         <div className="dialog__body incident-dialog__fields">
+          {selectionSummary && <p className="hint incident-text" id={summaryId}>{selectionSummary}</p>}
           {done ? (
             <>
               <p role="status">{done.message}</p>
