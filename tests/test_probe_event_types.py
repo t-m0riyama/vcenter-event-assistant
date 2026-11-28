@@ -896,8 +896,9 @@ def test_pair_at_same_time_is_used_once(capsys):
     assert f"{_SCSI} 同じ時刻の重複=1" in out
 
 
-def test_database_pairs_use_host_role_and_body_device(
-    database, monkeypatch, endpoints, capsys
+@pytest.mark.parametrize("host_role", ["host", "managedObject"])
+def test_database_pairs_use_known_host_before_object_fallback(
+    database, monkeypatch, endpoints, capsys, host_role
 ):
     read = probe._read_database
 
@@ -905,6 +906,13 @@ def test_database_pairs_use_host_role_and_body_device(
         center, rows = await read(*args)
         rows[0].entity_type = "Datastore"
         rows[0].entity_moid = _DS_ID
+        next(
+            entity for entity in rows[0].entities if entity.role == "host"
+        ).role = host_role
+        rows[0].entities.insert(
+            0,
+            EventEntity(vcenter_id=center.id, role="object", entity_moid="host-4321"),
+        )
         rows.append(
             EventRecord(
                 vcenter_id=center.id,
@@ -923,6 +931,61 @@ def test_database_pairs_use_host_role_and_body_device(
     assert "両種別の組=0" in api
     assert "両種別の組=1" in database_output
     assert "組の時刻差 psastor−scsi 最小=3秒 最大=3秒" in database_output
+
+
+@pytest.mark.parametrize(
+    ("role", "entity_type", "moid", "expected_pairs"),
+    [
+        ("object", None, _HOST_ID, 1),
+        ("object", "", _HOST_ID, 1),
+        ("object", "Datastore", _HOST_ID, 0),
+        ("managedObject", None, _HOST_ID, 0),
+        ("object", None, f"{_HOST_ID}-extra", 0),
+    ],
+)
+def test_database_pairs_fall_back_to_untyped_host_object(
+    endpoints, stub_db, capsys, role, entity_type, moid, expected_pairs
+):
+    _, rows = probe._read_database.return_value
+    for kind in probe.PDL_TYPES:
+        body = f"Device {_DEVICE} at {moid} became unavailable."
+        rows.append(
+            EventRecord(
+                vcenter_id=1,
+                event_type=kind,
+                occurred_at=_NOW,
+                message=body,
+                entity_type=entity_type,
+                entity_moid=moid,
+                entities=[
+                    EventEntity(
+                        vcenter_id=1,
+                        role=role,
+                        entity_type=entity_type,
+                        entity_moid=moid,
+                    )
+                ],
+            )
+        )
+        endpoints.manager.QueryEvents.return_value.append(
+            vim.event.EventEx(
+                eventTypeId=kind,
+                createdTime=_NOW,
+                fullFormattedMessage=body,
+                objectId=moid,
+            )
+        )
+
+    assert probe.main([_NAME]) == 0
+    output = capsys.readouterr().out
+    api, database_output = output.split("[アプリの DB]", 1)
+    assert f"両種別の組={expected_pairs}" in database_output
+    assert f"ホスト不明={0 if expected_pairs else 2}" in database_output
+    assert "objectId=h:" in api
+    assert moid not in output
+    if expected_pairs:
+        assert "両種別の組=1" in api
+        assert "at {host} became unavailable" in database_output
 
 
 @pytest.mark.parametrize("phase", ["_database_summary", "emit"])

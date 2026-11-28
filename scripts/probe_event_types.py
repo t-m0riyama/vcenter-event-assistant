@@ -879,12 +879,20 @@ def _database_summary(
             message = _Message(row.message)
             report.remember(row.user_name)
             host = None
+            object_host = None
             for entity in row.entities:
                 if entity.vcenter_id != row.vcenter_id:
                     continue
                 role = _metadata(entity.role, allowed_roles, report)
                 entity_type = _metadata(entity.entity_type or "", _TYPES, report)
                 roles[role, entity_type] += 1
+                is_untyped_host_object = (
+                    entity.role == "object"
+                    and not entity.entity_type
+                    and _HOST_MOID.fullmatch(entity.entity_moid or "") is not None
+                )
+                if is_untyped_host_object and object_host is None:
+                    object_host = entity.entity_moid
                 if entity.entity_moid and (
                     entity.role == "host"
                     or (host is None and entity_type == "HostSystem")
@@ -892,7 +900,7 @@ def _database_summary(
                     host = entity.entity_moid
                 label = (
                     "host"
-                    if entity.role == "host"
+                    if entity.role == "host" or is_untyped_host_object
                     else {
                         "HostSystem": "host",
                         "Datastore": "ds",
@@ -912,7 +920,9 @@ def _database_summary(
                     _Occurrence(
                         kind,
                         ensure_aware(row.occurred_at),
-                        host or (row.entity_moid if label == "host" else None),
+                        host
+                        or (row.entity_moid if label == "host" else None)
+                        or object_host,
                         next(iter(devices)) if len(devices) == 1 else None,
                         len(devices),
                     )
