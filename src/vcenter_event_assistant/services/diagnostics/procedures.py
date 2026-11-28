@@ -54,6 +54,17 @@ BUILTIN_PROCEDURES = {
     "host-reconnect-failed": (_CHECK_HOST, _UPTIME, _MANAGEMENT_NETWORK, _MANAGEMENT_AGENTS),
     "apd-timeout": _APD_STEPS,
     "apd-repeated": _APD_STEPS,
+    "pdl": (
+        _CHECK_HOST,
+        ProcedureStep("タイムラインで、同じ時間帯にほかのホストでも同じデバイスの PDL が起きていたかを確認します。"),
+        ProcedureStep(
+            "検知に出たデバイス ID を指定し、デバイスの状態を確認します。"
+            "ID が拒まれた場合は、次の手順のパスの一覧から探します。",
+            ("esxi.device",),
+        ),
+        ProcedureStep("該当デバイスのストレージパスの状態を確認します。", ("esxi.paths",)),
+        ProcedureStep("該当するパスが使うストレージアダプタ（HBA）の状態を確認します。", ("esxi.adapters",)),
+    ),
     "nic-link-flapping": (
         _CHECK_HOST,
         ProcedureStep("イベントで該当する vmnic を特定し、物理 NIC の一覧でリンク状態と速度を確認します。", ("esxi.nic",)),

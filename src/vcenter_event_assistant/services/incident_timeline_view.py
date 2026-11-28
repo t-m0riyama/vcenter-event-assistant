@@ -1172,7 +1172,10 @@ async def _collect_detected_patterns(
     if scope.entity_moid is None and scope.entity:
         detections = [d for d in detections if entity_matches(d.entity_name, scope.entity)]
     # 同順位の並びを保ちながら、時刻とレベルを降順にする。
-    detections.sort(key=lambda d: (d.pattern.id, d.vcenter_id, d.entity_moid))
+    detections.sort(key=lambda d: (
+        d.pattern.id, d.vcenter_id, d.entity_moid, d.device_id is not None,
+        d.device_id or "", d.first_utc, d.event_ids[0],
+    ))
     detections.sort(key=lambda d: d.last_utc, reverse=True)
     detections.sort(key=lambda d: _LEVEL_RANK[d.pattern.level], reverse=True)
     kept = detections[:_DETECTED_PATTERNS_LIMIT]
@@ -1192,6 +1195,8 @@ async def _collect_detected_patterns(
             last_utc=d.last_utc,
             event_count=len(d.event_ids),
             event_ids=list(d.event_ids[:_DETECTED_PATTERN_EVENT_IDS_LIMIT]),
+            subject=d.pattern.subject,
+            device_id=d.device_id,
         )
         for d in kept
     ]

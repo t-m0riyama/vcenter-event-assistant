@@ -36,17 +36,19 @@ def _pattern_rows_statement(
             ),
         )
 
+    columns = select(
+        EventRecord.id,
+        EventRecord.vcenter_id,
+        EventRecord.occurred_at,
+        EventRecord.event_type,
+        EventEntity.entity_moid,
+        EventEntity.entity_name,
+        EventEntity.entity_type,
+    )
+    if pattern.subject is not None:
+        columns = columns.add_columns(EventRecord.message)
     stmt = (
-        select(
-            EventRecord.id,
-            EventRecord.vcenter_id,
-            EventRecord.occurred_at,
-            EventRecord.event_type,
-            EventEntity.entity_moid,
-            EventEntity.entity_name,
-            EventEntity.entity_type,
-        )
-        .select_from(EventRecord)
+        columns.select_from(EventRecord)
         .join(EventEntity, EventEntity.event_id == EventRecord.id)
         # 統計の無い SQLite でも、vCenter の期間内にある全種別のイベントを読まない。
         .with_hint(EventRecord.__table__, indexed_by(_EVENT_TYPE_TIME_INDEX), dialect_name="sqlite")
@@ -97,8 +99,8 @@ async def query_event_patterns(
             omitted.append(pattern.id)
             continue
         events = (
-            PatternEvent(event_id, vc, to_utc(at), event_type, moid, name, entity_type)
-            for event_id, vc, at, event_type, moid, name, entity_type in rows
+            PatternEvent(event_id, vc, to_utc(at), event_type, moid, name, entity_type, *message)
+            for event_id, vc, at, event_type, moid, name, entity_type, *message in rows
         )
         # 読んだイベントはすべて until_utc より前なので、最後の時刻だけで期間内か分かる。
         detections.extend(d for d in detect_pattern(pattern, events) if d.last_utc >= from_utc)

@@ -39,6 +39,8 @@ const DETECTED_PATTERN: TimelineDetectedPattern = {
   last_utc: '2026-03-22T00:15:00Z',
   event_count: 3,
   event_ids: [11, 12, 13],
+  subject: null,
+  device_id: null,
 }
 
 const CONFIG_CHANGE = {

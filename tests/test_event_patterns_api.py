@@ -19,6 +19,8 @@ LOST = "vim.event.HostConnectionLostEvent"
 RECONNECT = "vim.event.HostReconnectionFailedEvent"
 APD = "esx.problem.storage.apd.start"
 TIMEOUT = "esx.problem.storage.apd.timeout"
+PDL_SCSI = "esx.problem.scsi.device.state.permanentloss"
+PDL_PSASTOR = "esx.problem.psastor.device.state.permanentloss"
 LINK = "esx.problem.net.vmnic.linkstate.down"
 HA = "vim.event.DasHostFailedEvent"
 RESTART = "vim.event.VmRestartedOnAlternateHostEvent"
@@ -44,10 +46,11 @@ def _entity(moid="host-1", role="host", kind="HostSystem", name="ESXi_One", posi
 async def _seed(vid, specs):
     async with session_scope() as session:
         events = []
-        for minute, event_type, entities in specs:
+        for minute, event_type, entities, *message in specs:
             event = EventRecord(
                 vcenter_id=vid, occurred_at=_at(minute), event_type=event_type,
                 vmware_key=next(_KEYS), entity_moid="vm-primary", entity_name="Primary VM",
+                message=message[0] if message else "",
                 entities=[EventEntity(vcenter_id=vid, **entity) for entity in entities],
             )
             session.add(event)
@@ -62,6 +65,32 @@ async def _view(client, **kwargs):
     })
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.mark.asyncio
+async def test_pdl_uses_saved_messages_and_the_requested_range(client):
+    vid = await _vc()
+    host_rows = [_entity(role="object", kind=None, name=None), _entity()]
+    apd = [(1, APD, host_rows), (2, TIMEOUT, host_rows), (4, APD, host_rows)]
+    await _seed(vid, apd)
+    baseline = (await _view(client))["highlights"]["detected_patterns"]
+    assert {d["pattern_id"] for d in baseline} == {"apd-repeated", "apd-timeout"}
+
+    first, second, third, other, unknown_a, unknown_b = await _seed(vid, [
+        (-310 / 60, PDL_SCSI, host_rows, "Device naa.a has been removed or is permanently inaccessible"),
+        (-200 / 60, PDL_PSASTOR, host_rows, "Device naa.a has been removed or is permanently inaccessible"),
+        (50 / 60, PDL_SCSI, host_rows, "Device naa.a has been removed or is permanently inaccessible"),
+        (50 / 60, PDL_SCSI, host_rows, "Device naa.b has been removed or is permanently inaccessible"),
+        (50 / 60, PDL_SCSI, host_rows, ""),
+        (50 / 60, PDL_PSASTOR, host_rows, ""),
+    ])
+    all_detections = (await _view(client, **{"from": _at(-10).isoformat()}))["highlights"]["detected_patterns"]
+    assert [d["event_ids"] for d in all_detections if d["device_id"] == "naa.a"] == [[third], [first, second]]
+    detections = (await _view(client))["highlights"]["detected_patterns"]
+    assert [d for d in detections if d["pattern_id"] != "pdl"] == baseline
+    assert [(d["device_id"], d["event_ids"]) for d in detections if d["subject"] == "device"] == [
+        (None, [unknown_a]), (None, [unknown_b]), ("naa.a", [second, third]), ("naa.b", [other]),
+    ]
 
 
 @pytest.mark.asyncio
@@ -213,6 +242,38 @@ async def test_event_pattern_sort_and_response_limits(client):
 
 
 @pytest.mark.asyncio
+async def test_pdl_splits_vcenters_and_hosts_before_applying_the_response_limit(client):
+    v1 = await _vc("vc-one", uuid.UUID(int=1))
+    v2 = await _vc("vc-two", uuid.UUID(int=2))
+    known_devices = [f"naa.d{i:02d}" for i in range(15)]
+    first_ids = await _seed(v1, [
+        *((1, PDL_PSASTOR, [_entity()], device) for device in reversed(known_devices)),
+        (1, PDL_SCSI, [_entity()], ""),
+        (1, PDL_PSASTOR, [_entity(role="object", kind=None)], ""),
+        (1, PDL_SCSI, [_entity("host-2")], "naa.d00"),
+        (1, PDL_SCSI, [_entity(role="vm")], "naa.outside"),
+    ])
+    second_ids = await _seed(v2, [
+        *((1, PDL_SCSI, [_entity()], device) for device in known_devices[:3]),
+        (1, PDL_PSASTOR, [_entity()], ""),
+    ])
+    highlights = (await _view(client))["highlights"]
+    assert highlights["detected_patterns_total"] == 22
+    assert [
+        (d["vcenter_id"], d["entity_moid"], d["device_id"], d["event_ids"])
+        for d in highlights["detected_patterns"]
+    ] == [
+        (str(v1), "host-1", None, [first_ids[15]]),
+        (str(v1), "host-1", None, [first_ids[16]]),
+        *((str(v1), "host-1", device, [event_id])
+          for device, event_id in zip(known_devices, reversed(first_ids[:15]), strict=True)),
+        (str(v1), "host-2", "naa.d00", [first_ids[17]]),
+        (str(v2), "host-1", None, [second_ids[3]]),
+        (str(v2), "host-1", "naa.d00", [second_ids[0]]),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_event_pattern_join_row_limit_omits_only_overflowing_pattern(client):
     vid = await _vc()
     # 5000 件 × 2 役割を読み、同じ対象の 5000 件にまとめる。
@@ -236,14 +297,20 @@ async def test_event_patterns_catalog_is_viewer_read_only(viewer_client, anon_cl
     assert [p["id"] for p in patterns] == [
         "host-conn-flapping", "host-reconnect-failed", "apd-timeout",
         "apd-repeated", "nic-link-flapping", "ha-failover", "vmotion-failures",
+        "pdl",
     ]
     assert patterns[0] == {
         "id": "host-conn-flapping", "title": "ホストの切断の繰り返し", "description": patterns[0]["description"],
         "level": "error", "kind": "repeat", "steps": [{"event_types": [LOST]}],
-        "within_minutes": 60, "min_count": 3,
+        "within_minutes": 60, "min_count": 3, "subject": None,
     }
     assert patterns[0]["description"]
     assert patterns[2]["steps"] == [{"event_types": [APD]}, {"event_types": [TIMEOUT]}]
     assert patterns[2]["min_count"] is None
+    pdl = patterns[-1]
+    assert (pdl["kind"], pdl["subject"], pdl["within_minutes"], pdl["min_count"]) == (
+        "occurrence", "device", 5, None,
+    )
+    assert pdl["steps"] == [{"event_types": [PDL_PSASTOR, PDL_SCSI]}]
     assert (await viewer_client.post(url, json={})).status_code == 405
     assert (await anon_client.get(url)).status_code == 401

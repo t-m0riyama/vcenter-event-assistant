@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from vcenter_event_assistant.device_ids import extract_storage_device_id
 from vcenter_event_assistant.services.event_patterns.definitions import EventPattern
 
 
@@ -19,6 +20,7 @@ class PatternEvent:
     entity_moid: str
     entity_name: str | None
     entity_type: str | None
+    message: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,26 +33,52 @@ class PatternDetection:
     first_utc: datetime
     last_utc: datetime
     event_ids: tuple[int, ...]
+    device_id: str | None = None
 
 
 def detect_pattern(pattern: EventPattern, rows: Iterable[PatternEvent]) -> list[PatternDetection]:
     """対象ごとに重複を除き、時刻とイベント ID の順で判定する。"""
-    grouped: dict[tuple[UUID, str], dict[int, PatternEvent]] = defaultdict(dict)
+    grouped: dict[tuple[UUID, str] | tuple[UUID, str, int, str | int], dict[int, PatternEvent]]
+    grouped = defaultdict(dict)
     for row in rows:
+        target: tuple[UUID, str] | tuple[UUID, str, int, str | int] = (row.vcenter_id, row.entity_moid)
+        if pattern.subject == "device":
+            device = extract_storage_device_id(row.message)
+            target = (*target, 0, device.lower()) if device is not None else (*target, 1, row.event_id)
         # 同じイベントと対象では、問い合わせが優先した先頭の行を残す。
-        grouped[row.vcenter_id, row.entity_moid].setdefault(row.event_id, row)
+        grouped[target].setdefault(row.event_id, row)
 
     detections: list[PatternDetection] = []
     for target in sorted(grouped):
         events = sorted(grouped[target].values(), key=lambda e: (e.occurred_at, e.event_id))
-        matches = _repeat(pattern, events) if pattern.kind == "repeat" else _sequence(pattern, events)
+        if pattern.kind == "repeat":
+            matches = _repeat(pattern, events)
+        elif pattern.kind == "sequence":
+            matches = _sequence(pattern, events)
+        else:
+            matches = _occurrence(pattern, events)
         for matched in matches:
             first, last = matched[0], matched[-1]
             detections.append(PatternDetection(
                 pattern, last.vcenter_id, last.entity_moid, last.entity_name, last.entity_type,
                 first.occurred_at, last.occurred_at, tuple(e.event_id for e in matched),
+                extract_storage_device_id(first.message) if pattern.subject == "device" else None,
             ))
     return detections
+
+
+def _occurrence(pattern: EventPattern, events: list[PatternEvent]) -> Iterator[list[PatternEvent]]:
+    collapse = timedelta(seconds=pattern.collapse_seconds)
+    matched: list[PatternEvent] = []
+    for event in events:
+        if event.event_type not in pattern.steps[0].event_types:
+            continue
+        if matched and event.occurred_at - matched[0].occurred_at > collapse:
+            yield matched
+            matched = []
+        matched.append(event)
+    if matched:
+        yield matched
 
 
 def _repeat(pattern: EventPattern, events: list[PatternEvent]) -> Iterator[list[PatternEvent]]:

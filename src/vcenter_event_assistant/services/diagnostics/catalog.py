@@ -7,12 +7,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from ipaddress import IPv4Address
 
+from vcenter_event_assistant.device_ids import DEVICE_ID_PATTERN
+
 _PARAMETER_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}")
 _PLACEHOLDER = re.compile(r"\{\{([A-Za-z0-9_]+)\}\}")
 _PARAMETER_PATTERNS = {
     "vmnic": re.compile(r"vmnic[0-9]{1,3}"),
     "vmk": re.compile(r"vmk[0-9]{1,3}"),
-    "device": re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"),
+    "device": DEVICE_ID_PATTERN,
 }
 PARAMETER_TYPES = ("vmnic", "vmk", "ipv4", "device")
 

@@ -118,6 +118,39 @@ def _archive(content: bytes) -> dict[str, bytes]:
 
 
 @pytest.mark.asyncio
+async def test_report_reads_legacy_patterns_and_shows_device_for_pdl(viewer_client: AsyncClient) -> None:
+    pattern = {
+        "pattern_id": "apd-timeout",
+        "title": "APD のタイムアウト",
+        "description": "",
+        "level": "critical",
+        "vcenter_id": str(VC),
+        "entity_moid": "host-1",
+        "first_utc": FROM,
+        "last_utc": TO,
+        "event_count": 1,
+        "event_ids": [1],
+    }
+    payload = _result().model_dump(mode="json")
+    payload["highlights"]["detected_patterns"] = [
+        pattern,
+        {**pattern, "pattern_id": "pdl", "title": "PDL", "subject": "device", "device_id": "naa.123"},
+        {**pattern, "pattern_id": "pdl", "title": "PDL", "subject": "device", "device_id": None},
+    ]
+    parsed = IncidentTimelineViewResponse.model_validate(payload)
+    old, *_ = parsed.highlights.detected_patterns
+    assert (old.subject, old.device_id) == (None, None)
+
+    response = await viewer_client.get(await _snapshot(payload), params={"format": "md"})
+    assert response.status_code == 200
+    pattern_lines = [line for line in response.text.splitlines() if line.startswith("- ` APD") or line.startswith("- ` PDL")]
+    assert len(pattern_lines) == 3
+    assert "デバイスを特定できません" not in pattern_lines[0]
+    assert "` naa.123 `" in pattern_lines[1]
+    assert "デバイスを特定できません" in pattern_lines[2]
+
+
+@pytest.mark.asyncio
 async def test_saved_report_and_archive(viewer_client: AsyncClient) -> None:
     signal = _item(
         vcenter_id=str(VC),

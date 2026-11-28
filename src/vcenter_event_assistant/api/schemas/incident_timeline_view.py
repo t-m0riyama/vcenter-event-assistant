@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from vcenter_event_assistant.api.schemas.base import UtcDateTime, to_utc_or_value_error
 from vcenter_event_assistant.api.schemas.inventory import IncidentTimelineConfigDiff
-from vcenter_event_assistant.services.event_patterns.definitions import PatternLevel
+from vcenter_event_assistant.services.event_patterns.definitions import PatternLevel, PatternSubject
 
 TimelineSource = Literal["event", "alert", "metric", "log"]
 TimelineLevel = Literal["critical", "error", "warning", "info"]
@@ -223,6 +223,8 @@ class IncidentTimelineDetectedPattern(BaseModel):
     last_utc: datetime
     event_count: int
     event_ids: list[int]
+    subject: PatternSubject | None = None
+    device_id: str | None = None
 
 
 class IncidentTimelineConfigChange(BaseModel):
